@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agora — Orthodox Events Sydney</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <h1>Agora</h1>
+      <p class="subtitle">Orthodox Events in Sydney</p>
+      <div class="user-area" id="user-area"></div>
+    </div>
+  </header>
+
+  <nav class="filters" id="filters">
+    <div class="filter-row">
+      <div class="jurisdiction-chips" id="jurisdiction-chips"></div>
+      <div class="event-type-select">
+        <select id="type-filter">
+          <option value="">All types</option>
+          <option value="liturgy">Liturgy</option>
+          <option value="vespers">Vespers</option>
+          <option value="feast">Feast</option>
+          <option value="festival">Festival</option>
+          <option value="youth">Youth</option>
+          <option value="talk">Talk</option>
+          <option value="fundraiser">Fundraiser</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="distance-slider">
+        <label for="distance-filter">Within <span id="distance-value">50</span> km</label>
+        <input type="range" id="distance-filter" min="1" max="100" value="50">
+      </div>
+    </div>
+    <div class="view-toggle">
+      <button class="view-btn active" data-view="list" id="btn-list">List</button>
+      <button class="view-btn" data-view="map" id="btn-map">Map</button>
+    </div>
+  </nav>
+
+  <main>
+    <div id="list-view" class="view active">
+      <div id="events-list" class="events-list"></div>
+    </div>
+    <div id="map-view" class="view">
+      <div id="map"></div>
+    </div>
+  </main>
+
+  <div id="event-detail" class="event-detail-panel hidden">
+    <button class="close-btn" id="close-detail">&times;</button>
+    <div id="detail-content"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/map.js"></script>
+  <script src="/filters.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
