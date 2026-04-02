@@ -7,6 +7,9 @@ const router = Router();
 
 // Auth is handled by Caddy forward_auth to keycard — only Tailnet user "paul" reaches here
 
+// GET /api/admin/ping — lightweight check for admin access
+router.get('/ping', (req, res) => res.json({ ok: true }));
+
 // GET /api/admin/events/pending — list pending_review events
 router.get('/events/pending', (req, res) => {
   const db = getDb();

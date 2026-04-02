@@ -265,6 +265,12 @@ main {
   text-decoration: underline;
 }
 
+.admin-link {
+  color: var(--gold);
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+}
+
 .event-parish-logo {
   width: 20px;
   height: 20px;

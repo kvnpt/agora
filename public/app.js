@@ -3,6 +3,7 @@ const state = {
   events: [],
   parishes: [],
   user: null,
+  isAdmin: false,
   userLat: -33.8688,
   userLng: 151.2093,
   filters: {
@@ -18,7 +19,7 @@ const TZ = 'Australia/Sydney';
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
   requestGeolocation();
-  await Promise.all([fetchUser(), fetchParishes()]);
+  await Promise.all([fetchUser(), fetchParishes(), checkAdmin()]);
   await fetchEvents();
   initFilters(state);
   renderUserArea();
@@ -204,16 +205,33 @@ document.getElementById('close-detail').addEventListener('click', () => {
 // User area
 function renderUserArea() {
   const area = document.getElementById('user-area');
+  let html = '';
   if (state.user) {
-    area.innerHTML = `${esc(state.user.name || state.user.email)} <a href="#" id="logout-link">Logout</a>`;
+    html = `${esc(state.user.name || state.user.email)} <a href="#" id="logout-link">Logout</a>`;
+  } else {
+    html = '<a href="/auth/login">Sign in</a>';
+  }
+  if (state.isAdmin) {
+    html += ' <a href="/admin" class="admin-link">Admin</a>';
+  }
+  area.innerHTML = html;
+  if (state.user) {
     document.getElementById('logout-link').addEventListener('click', async e => {
       e.preventDefault();
       await fetch('/auth/logout', { method: 'POST' });
       state.user = null;
       renderUserArea();
     });
-  } else {
-    area.innerHTML = '<a href="/auth/login">Sign in</a>';
+  }
+}
+
+// Check admin access (keycard on Tailnet)
+async function checkAdmin() {
+  try {
+    const res = await fetch('/api/admin/ping');
+    state.isAdmin = res.ok;
+  } catch {
+    state.isAdmin = false;
   }
 }
 
