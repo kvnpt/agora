@@ -1,0 +1,16 @@
+services:
+  agora:
+    build: .
+    container_name: agora
+    restart: unless-stopped
+    env_file:
+      - /home/ubuntu/.env
+    volumes:
+      - /opt/agora/data:/app/data
+    networks:
+      homelab:
+        ipv4_address: 172.18.0.11
+
+networks:
+  homelab:
+    external: true

@@ -265,6 +265,21 @@ main {
   text-decoration: underline;
 }
 
+.event-parish-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+}
+
+.event-source {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Map */
 #map {
   height: 500px;

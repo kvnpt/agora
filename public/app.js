@@ -113,6 +113,9 @@ function renderEvents() {
     const lat = evt.lat || 0;
     const lng = evt.lng || 0;
 
+    const logoHtml = evt.parish_logo ? `<img src="${esc(evt.parish_logo)}" class="event-parish-logo" alt="">` : '';
+    const sourceTag = evt.source_adapter && evt.source_adapter !== 'schedule' ? `<span class="event-source">via ${esc(evt.source_adapter)}</span>` : '';
+
     return `
       <div class="event-card" data-id="${evt.id}">
         <div class="event-date-col">
@@ -124,8 +127,9 @@ function renderEvents() {
           <div class="event-title">${esc(evt.title)}</div>
           <div class="event-meta">
             <span>${time}</span>
-            <span>${esc(evt.parish_name || '')}</span>
+            <span>${logoHtml}${esc(evt.parish_name || '')}</span>
             <span class="event-badge badge-${evt.event_type}">${evt.event_type}</span>
+            ${sourceTag}
           </div>
         </div>
         <div class="event-actions">
@@ -171,12 +175,15 @@ function showEventDetail(id) {
   const lat = evt.lat || 0;
   const lng = evt.lng || 0;
 
+  const parishLogo = evt.parish_logo ? `<img src="${esc(evt.parish_logo)}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;margin-right:0.5rem;vertical-align:middle;">` : '';
+  const websiteCta = evt.parish_website ? `<a class="btn btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
+
   content.innerHTML = `
     <h2 class="detail-title">${esc(evt.title)}</h2>
     <div class="detail-meta">
       <div>${dateFmt}</div>
       <div>${timeFmt}${endStr}</div>
-      <div>${esc(evt.parish_name || '')}</div>
+      <div>${parishLogo}${esc(evt.parish_name || '')}</div>
       ${addr ? `<div>${esc(addr)}</div>` : ''}
       <div><span class="event-badge badge-${evt.event_type}">${evt.event_type}</span></div>
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
@@ -184,6 +191,7 @@ function showEventDetail(id) {
     ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
     <div class="detail-actions">
       <a class="btn btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Get Directions</a>
+      ${websiteCta}
     </div>`;
 
   panel.classList.remove('hidden');

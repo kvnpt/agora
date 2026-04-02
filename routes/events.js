@@ -8,11 +8,18 @@ router.get('/', (req, res) => {
   const db = getDb();
   const { lat, lng, radius, type, jurisdiction, from, to, status } = req.query;
 
+  // De-duplicate: for each (parish, date, event_type), prefer non-schedule sources
   let query = `
-    SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address
-    FROM events e
-    JOIN parishes p ON e.parish_id = p.id
-    WHERE e.status = ?
+    SELECT * FROM (
+      SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address,
+        p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
+        ROW_NUMBER() OVER (
+          PARTITION BY e.parish_id, date(e.start_utc), e.event_type
+          ORDER BY CASE WHEN e.source_adapter = 'schedule' THEN 1 ELSE 0 END, e.updated_at DESC
+        ) as rn
+      FROM events e
+      JOIN parishes p ON e.parish_id = p.id
+      WHERE e.status = ?
   `;
   const params = [status || 'approved'];
 
@@ -36,9 +43,9 @@ router.get('/', (req, res) => {
     params.push(jurisdiction);
   }
 
-  query += ' ORDER BY e.start_utc ASC LIMIT 200';
+  query += ') WHERE rn = 1 ORDER BY start_utc ASC LIMIT 200';
 
-  let events = db.prepare(query).all(...params);
+  let events = db.prepare(query).all(...params).map(({ rn, ...rest }) => rest);
 
   // If lat/lng provided, compute distance and optionally filter by radius
   if (lat && lng) {

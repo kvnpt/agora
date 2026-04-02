@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { getDb } = require('./db');
 const { sessionMiddleware } = require('./auth');
 const { seed } = require('./seeds/parishes');
+const { generateEvents } = require('./schedule-generator');
 const registry = require('./adapters/registry');
 const scheduler = require('./scheduler');
 
@@ -24,6 +25,7 @@ const writeLimiter = rateLimit({
 
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/logos', express.static(path.join(__dirname, 'data', 'logos')));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -41,7 +43,14 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/parishes', require('./routes/parishes'));
 app.use('/api/adapters', require('./routes/adapters'));
 app.use('/api/submissions', writeLimiter, require('./routes/submissions'));
+app.use('/api/webhooks/whatsapp', require('./routes/webhook'));
+app.use('/api/admin', require('./routes/admin'));
 app.use('/auth', require('./routes/auth'));
+
+// Admin route
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
 
 // SPA fallback
 app.get('*', (req, res) => {
@@ -50,9 +59,10 @@ app.get('*', (req, res) => {
 
 // Startup
 function start() {
-  // Init DB + seed
+  // Init DB + seed + generate schedule events
   getDb();
   seed();
+  generateEvents();
 
   // Discover adapters + start scheduler
   registry.discover();
