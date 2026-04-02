@@ -23,6 +23,7 @@ function migrate(db) {
       CREATE TABLE IF NOT EXISTS parishes (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        full_name TEXT,
         jurisdiction TEXT NOT NULL CHECK(jurisdiction IN ('antiochian','greek','serbian','russian','romanian','coptic','other')),
         address TEXT,
         lat REAL NOT NULL,

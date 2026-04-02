@@ -88,7 +88,7 @@ router.patch('/parishes/:id', (req, res) => {
   const parish = db.prepare('SELECT * FROM parishes WHERE id = ?').get(id);
   if (!parish) return res.status(404).json({ error: 'Parish not found' });
 
-  const allowed = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng'];
+  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng'];
   const updates = [];
   const values = [];
   for (const key of allowed) {
