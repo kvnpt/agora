@@ -1,52 +1,69 @@
-const jurisdictions = [
-  { id: 'antiochian', label: 'Antiochian' },
-  { id: 'greek', label: 'Greek' },
-  { id: 'serbian', label: 'Serbian' },
-  { id: 'russian', label: 'Russian' },
-  { id: 'romanian', label: 'Romanian' },
-  { id: 'coptic', label: 'Coptic' }
-];
+const JURISDICTIONS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'coptic'];
 
 function initFilters(state) {
   // Jurisdiction chips
-  const chipsContainer = document.getElementById('jurisdiction-chips');
-  chipsContainer.innerHTML = jurisdictions.map(j =>
-    `<button class="chip" data-jurisdiction="${j.id}">${j.label}</button>`
+  const chipContainer = document.getElementById('jurisdiction-chips');
+  chipContainer.innerHTML = JURISDICTIONS.map(j =>
+    `<button class="jurisdiction-chip${state.filters.jurisdiction === j ? ' active' : ''}" data-jurisdiction="${j}">${capitalize(j)}</button>`
   ).join('');
 
-  chipsContainer.addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
+  chipContainer.addEventListener('click', e => {
+    const chip = e.target.closest('.jurisdiction-chip');
     if (!chip) return;
 
-    const jur = chip.dataset.jurisdiction;
-
-    // Toggle: if already active, deselect
-    if (state.filters.jurisdiction === jur) {
+    const j = chip.dataset.jurisdiction;
+    if (state.filters.jurisdiction === j) {
       state.filters.jurisdiction = null;
       chip.classList.remove('active');
     } else {
-      // Deselect all, select this one
-      chipsContainer.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chipContainer.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
+      state.filters.jurisdiction = j;
       chip.classList.add('active');
-      state.filters.jurisdiction = jur;
     }
-    window.agoraFetchEvents();
+
+    if (state.mode === 'services') {
+      window.agoraFetchSchedules();
+    } else {
+      window.agoraFetchEvents();
+    }
   });
 
-  // Event type select
+  // Type filter + distance slider (injected after mode bar)
+  const modeBar = document.querySelector('.mode-bar');
+  const filterControls = document.createElement('div');
+  filterControls.className = 'filter-controls';
+  filterControls.id = 'filter-controls';
+  filterControls.innerHTML = `
+    <select id="type-filter">
+      <option value="">All types</option>
+      <option value="liturgy">Liturgy</option>
+      <option value="vespers">Vespers</option>
+      <option value="feast">Feast</option>
+      <option value="festival">Festival</option>
+      <option value="youth">Youth</option>
+      <option value="talk">Talk</option>
+      <option value="fundraiser">Fundraiser</option>
+      <option value="other">Other</option>
+    </select>
+    <div class="distance-slider">
+      <label>Within <span id="distance-value">${state.filters.distance}</span> km</label>
+      <input type="range" id="distance-filter" min="1" max="100" value="${state.filters.distance}">
+    </div>
+  `;
+  modeBar.parentNode.insertBefore(filterControls, modeBar.nextSibling);
+
   document.getElementById('type-filter').addEventListener('change', e => {
     state.filters.type = e.target.value;
     window.agoraFetchEvents();
   });
 
-  // Distance slider
-  const slider = document.getElementById('distance-filter');
-  const label = document.getElementById('distance-value');
-  slider.addEventListener('input', e => {
-    label.textContent = e.target.value;
-    state.filters.distance = parseInt(e.target.value);
-  });
-  slider.addEventListener('change', () => {
+  const distSlider = document.getElementById('distance-filter');
+  const distLabel = document.getElementById('distance-value');
+  distSlider.addEventListener('input', () => { distLabel.textContent = distSlider.value; });
+  distSlider.addEventListener('change', () => {
+    state.filters.distance = parseInt(distSlider.value);
     window.agoraFetchEvents();
   });
 }
+
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }

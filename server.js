@@ -40,6 +40,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/events', require('./routes/events'));
+app.use('/api/schedules', require('./routes/schedules'));
 app.use('/api/parishes', require('./routes/parishes'));
 app.use('/api/adapters', require('./routes/adapters'));
 app.use('/api/submissions', writeLimiter, require('./routes/submissions'));

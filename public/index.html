@@ -3,58 +3,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agora — Orthodox Events Sydney</title>
+  <title>Orthodox Services & Events — Sydney</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <header>
-    <div class="header-content">
-      <h1>Agora</h1>
-      <p class="subtitle">Orthodox Events in Sydney</p>
-      <div class="user-area" id="user-area"></div>
-    </div>
-  </header>
+  <!-- Jurisdiction banner -->
+  <div class="jurisdiction-banner" id="jurisdiction-chips"></div>
 
-  <nav class="filters" id="filters">
-    <div class="filter-row">
-      <div class="jurisdiction-chips" id="jurisdiction-chips"></div>
-      <div class="event-type-select">
-        <select id="type-filter">
-          <option value="">All types</option>
-          <option value="liturgy">Liturgy</option>
-          <option value="vespers">Vespers</option>
-          <option value="feast">Feast</option>
-          <option value="festival">Festival</option>
-          <option value="youth">Youth</option>
-          <option value="talk">Talk</option>
-          <option value="fundraiser">Fundraiser</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <div class="distance-slider">
-        <label for="distance-filter">Within <span id="distance-value">50</span> km</label>
-        <input type="range" id="distance-filter" min="1" max="100" value="50">
-      </div>
-    </div>
-    <div class="view-toggle">
-      <button class="view-btn active" data-view="list" id="btn-list">List</button>
-      <button class="view-btn" data-view="map" id="btn-map">Map</button>
-    </div>
-  </nav>
+  <!-- Map (peek height, expandable) -->
+  <div class="map-container" id="map-container">
+    <div id="map"></div>
+    <button class="map-toggle" id="map-toggle" aria-label="Expand map"></button>
+  </div>
 
-  <main>
-    <div id="list-view" class="view active">
-      <div id="events-list" class="events-list"></div>
-    </div>
-    <div id="map-view" class="view">
-      <div id="map"></div>
-    </div>
-  </main>
+  <!-- Mode bar: Services button + Events pills -->
+  <div class="mode-bar">
+    <button class="services-btn" id="btn-services">Services</button>
+    <nav class="time-pills" id="time-pills">
+      <button class="pill active" data-range="today">Today</button>
+      <button class="pill" data-range="week">This week</button>
+      <button class="pill" data-range="month">This month</button>
+    </nav>
+  </div>
 
-  <div id="event-detail" class="event-detail-panel hidden">
+  <!-- Events view (default) -->
+  <div id="events-view" class="content-view active">
+    <div id="events-list" class="events-list"></div>
+  </div>
+
+  <!-- Services view -->
+  <div id="services-view" class="content-view">
+    <div id="services-list" class="services-list"></div>
+  </div>
+
+  <!-- Event detail panel -->
+  <div id="event-detail" class="detail-panel hidden">
     <button class="close-btn" id="close-detail">&times;</button>
     <div id="detail-content"></div>
+  </div>
+
+  <!-- Admin link (injected by JS if on Tailnet) -->
+  <div class="admin-float" id="admin-float" style="display:none;">
+    <a href="/admin">Admin</a>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
