@@ -4,212 +4,197 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agora Admin</title>
-  <link rel="stylesheet" href="/app.css">
   <style>
-    .admin-nav { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
-    .admin-nav button { flex: 1; padding: 0.5rem; border: none; background: var(--surface); cursor: pointer; font-size: 0.9rem; }
-    .admin-nav button.active { background: var(--primary); color: white; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { --bg: #fff; --surface: #fff; --text: #111; --muted: #888; --border: #ddd; --border-light: #eee; --radius: 3px; --accent: #111; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; background: #fafafa; color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 
-    .admin-section { display: none; }
-    .admin-section.active { display: block; }
+    /* Layout */
+    .admin-header { padding: 16px 20px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .admin-header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+    .admin-header a { font-size: 12px; color: var(--muted); text-decoration: none; }
+    .admin-header a:hover { color: var(--text); }
+    main { max-width: 680px; margin: 0 auto; padding: 16px; }
 
-    .review-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin-bottom: 0.75rem; }
-    .review-card.unassigned { border-left: 3px solid #e67e22; }
-    .review-header { display: flex; justify-content: space-between; align-items: start; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-    .review-title { font-weight: 600; font-size: 1rem; }
-    .review-meta { font-size: 0.8rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.25rem; }
-    .review-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
-    .review-parish-select { font-size: 0.85rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
-    .review-field { margin-top: 0.5rem; }
-    .review-field label { font-size: 0.75rem; color: var(--text-muted); display: block; }
-    .review-field input, .review-field select { width: 100%; padding: 0.375rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; }
+    /* Stats */
+    .stats { display: flex; gap: 8px; margin-bottom: 16px; }
+    .stat { flex: 1; background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 10px; text-align: center; }
+    .stat-val { font-size: 20px; font-weight: 700; }
+    .stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 
-    .btn-approve { background: #28a745; color: white; }
-    .btn-reject { background: #dc3545; color: white; }
-    .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8rem; }
+    /* Tabs */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
+    .tab { padding: 8px 14px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-    .form-group { display: flex; flex-direction: column; gap: 0.25rem; }
-    .form-group.full { grid-column: 1 / -1; }
-    .form-group label { font-size: 0.8rem; color: var(--text-muted); }
-    .form-group input, .form-group select { padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.9rem; }
+    .section { display: none; }
+    .section.active { display: block; }
 
-    .parish-list-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 0.5rem; }
-    .parish-list-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-    .parish-list-item .parish-info { flex: 1; }
-    .parish-list-item .parish-name { font-weight: 600; }
-    .parish-list-item .parish-detail { font-size: 0.8rem; color: var(--text-muted); }
-    .parish-edit { display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
-    .parish-edit.open { display: block; }
-    .parish-logo-preview { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
+    /* Cards */
+    .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+    .card.warn { border-left: 3px solid #e67e22; }
+    .card-title { font-weight: 600; font-size: 14px; }
+    .card-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-    .schedule-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .schedule-info { flex: 1; }
-    .schedule-title { font-weight: 600; font-size: 0.9rem; }
-    .schedule-detail { font-size: 0.8rem; color: var(--text-muted); }
-    .schedule-inactive { opacity: 0.5; }
+    /* Form elements */
+    .field { margin-top: 8px; }
+    .field label { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; }
+    .field input, .field select, .field textarea { width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; background: var(--bg); }
+    .field textarea { resize: vertical; min-height: 48px; }
+    .field-row { display: flex; gap: 8px; }
+    .field-row > .field { flex: 1; min-width: 0; }
 
-    .stats { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; text-align: center; flex: 1; min-width: 100px; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
-    .stat-label { font-size: 0.75rem; color: var(--text-muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid .full { grid-column: 1 / -1; }
+    @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
 
-    .toast { position: fixed; bottom: 1rem; right: 1rem; padding: 0.75rem 1.25rem; border-radius: var(--radius); color: white; font-size: 0.9rem; z-index: 2000; transition: opacity 0.3s; }
-    .toast-success { background: #28a745; }
-    .toast-error { background: #dc3545; }
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: var(--radius); cursor: pointer; border: 1px solid transparent; transition: opacity 0.15s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-approve { background: #22c55e; color: #fff; }
+    .btn-reject { background: #ef4444; color: #fff; }
+    .btn-outline { background: none; color: var(--text); border-color: var(--border); }
+    .btn-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 
-    @media (max-width: 640px) {
-      .form-grid { grid-template-columns: 1fr; }
-      .review-header { flex-direction: column; }
-    }
+    /* Badges */
+    .badge { display: inline-block; font-size: 9px; font-weight: 500; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; }
+    .badge-liturgy { background: #e8d5e8; color: #6b2d6b; }
+    .badge-prayer { background: #d5e0f0; color: #2d4a7a; }
+    .badge-feast { background: #f5ecd0; color: #7a6520; }
+    .badge-talk { background: #f0e8d5; color: #7a5a20; }
+    .badge-youth { background: #d0e8f5; color: #2d5a8a; }
+    .badge-social { background: #d5ead5; color: #2d6a2d; }
+    .badge-other { background: #f0f0f0; color: #555; }
+    .badge-approved { background: #dcfce7; color: #166534; }
+    .badge-review { background: #fef9c3; color: #854d0e; }
+    .badge-blocked { background: #fee2e2; color: #991b1b; }
+
+    /* Sender row */
+    .sender-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
+    .sender-phone { font-family: monospace; font-size: 12px; color: var(--muted); min-width: 110px; }
+    .sender-name-input { flex: 1; min-width: 100px; padding: 4px 6px; font-size: 12px; border: 1px solid var(--border-light); border-radius: var(--radius); }
+    .sender-status-select { padding: 4px 6px; font-size: 12px; border: 1px solid var(--border-light); border-radius: var(--radius); }
+    .sender-seen { font-size: 10px; color: var(--muted); }
+
+    /* Expandable */
+    .expandable { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); }
+    .expandable.open { display: block; }
+    .expand-trigger { cursor: pointer; }
+
+    /* Schedule card */
+    .sched-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sched-card.inactive { opacity: 0.4; }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 16px; right: 16px; padding: 8px 16px; border-radius: var(--radius); color: #fff; font-size: 13px; z-index: 2000; transition: opacity 0.3s; }
+    .toast-success { background: #22c55e; }
+    .toast-error { background: #ef4444; }
+
+    /* Empty */
+    .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 8px; }
   </style>
 </head>
 <body>
-  <header>
-    <div class="header-content">
-      <h1>Agora Admin</h1>
-      <p class="subtitle">Review & Manage</p>
-      <div class="user-area"><a href="/" style="color: var(--gold); text-decoration: none;">Back to site</a></div>
-    </div>
-  </header>
+  <div class="admin-header">
+    <h1>Agora Admin</h1>
+    <a href="/">Back to site</a>
+  </div>
 
   <main>
     <div class="stats" id="stats"></div>
 
-    <div class="admin-nav">
-      <button class="active" data-tab="review">Review Queue</button>
-      <button data-tab="parishes">Parishes</button>
-      <button data-tab="schedules">Schedules</button>
+    <div class="tabs">
+      <button class="tab active" data-tab="review">Review</button>
+      <button class="tab" data-tab="senders">Senders</button>
+      <button class="tab" data-tab="parishes">Parishes</button>
+      <button class="tab" data-tab="schedules">Schedules</button>
     </div>
 
-    <div id="section-review" class="admin-section active">
+    <div id="section-review" class="section active">
       <div id="review-list"></div>
     </div>
 
-    <div id="section-parishes" class="admin-section">
-      <h3 style="margin-bottom: 0.75rem;">Add Parish</h3>
-      <form id="parish-form">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Name</label>
-            <input name="name" required placeholder="St George, Redfern">
-          </div>
-          <div class="form-group">
-            <label>Jurisdiction</label>
+    <div id="section-senders" class="section">
+      <div id="senders-list"></div>
+    </div>
+
+    <div id="section-parishes" class="section">
+      <h3>Add Parish</h3>
+      <form id="parish-form" class="card">
+        <div class="grid">
+          <div class="field"><label>Nickname</label><input name="name" required placeholder="St Mary's, Mount Pritchard"></div>
+          <div class="field"><label>Full Name</label><input name="full_name" placeholder="St Mary's Antiochian Orthodox Church of the Dormition"></div>
+          <div class="field"><label>Jurisdiction</label>
             <select name="jurisdiction" required>
               <option value="antiochian">Antiochian</option>
               <option value="greek">Greek</option>
               <option value="serbian">Serbian</option>
               <option value="russian">Russian</option>
               <option value="romanian">Romanian</option>
-              <option value="coptic">Coptic</option>
+              <option value="macedonian">Macedonian</option>
               <option value="other">Other</option>
             </select>
           </div>
-          <div class="form-group full">
-            <label>Address</label>
-            <input name="address" placeholder="161 George St, Redfern NSW 2016">
-          </div>
-          <div class="form-group">
-            <label>Latitude</label>
-            <input name="lat" type="number" step="any" required placeholder="-33.8920">
-          </div>
-          <div class="form-group">
-            <label>Longitude</label>
-            <input name="lng" type="number" step="any" required placeholder="151.2050">
-          </div>
-          <div class="form-group">
-            <label>Website</label>
-            <input name="website" placeholder="https://...">
-          </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input name="email" type="email" placeholder="parish@example.com">
-          </div>
-          <div class="form-group">
-            <label>Phone</label>
-            <input name="phone" placeholder="02 1234 5678">
-          </div>
-          <div class="form-group">
-            <label>Languages</label>
-            <input name="languages" placeholder="English, Arabic">
-          </div>
+          <div class="field full"><label>Address</label><input name="address" placeholder="161 George St, Redfern NSW 2016"></div>
+          <div class="field"><label>Latitude</label><input name="lat" type="number" step="any" required placeholder="-33.8920"></div>
+          <div class="field"><label>Longitude</label><input name="lng" type="number" step="any" required placeholder="151.2050"></div>
+          <div class="field"><label>Website</label><input name="website" placeholder="https://..."></div>
+          <div class="field"><label>Email</label><input name="email" type="email" placeholder="parish@example.com"></div>
+          <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
+          <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
         </div>
-        <div style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+        <div class="btn-row">
           <button type="submit" class="btn btn-primary">Add Parish</button>
           <button type="button" class="btn btn-outline" id="geocode-btn">Geocode Address</button>
         </div>
       </form>
-      <h3 style="margin: 1.5rem 0 0.75rem;">Existing Parishes</h3>
+      <h3 style="margin-top: 20px;">Existing Parishes</h3>
       <div id="parish-list"></div>
     </div>
 
-    <div id="section-schedules" class="admin-section">
-      <h3 style="margin-bottom: 0.75rem;">Add Schedule</h3>
-      <form id="schedule-form">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Parish</label>
-            <select name="parish_id" required id="schedule-parish-select"></select>
-          </div>
-          <div class="form-group">
-            <label>Day of Week</label>
+    <div id="section-schedules" class="section">
+      <h3>Add Schedule</h3>
+      <form id="schedule-form" class="card">
+        <div class="grid">
+          <div class="field"><label>Parish</label><select name="parish_id" required id="schedule-parish-select"></select></div>
+          <div class="field"><label>Day</label>
             <select name="day_of_week" required>
-              <option value="0">Sunday</option>
-              <option value="1">Monday</option>
-              <option value="2">Tuesday</option>
-              <option value="3">Wednesday</option>
-              <option value="4">Thursday</option>
-              <option value="5">Friday</option>
-              <option value="6">Saturday</option>
+              <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+              <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Start Time (Sydney)</label>
-            <input name="start_time" type="time" required>
-          </div>
-          <div class="form-group">
-            <label>End Time (Sydney)</label>
-            <input name="end_time" type="time">
-          </div>
-          <div class="form-group">
-            <label>Title</label>
-            <input name="title" required placeholder="Sunday Divine Liturgy">
-          </div>
-          <div class="form-group">
-            <label>Event Type</label>
+          <div class="field"><label>Start (Sydney)</label><input name="start_time" type="time" required></div>
+          <div class="field"><label>End (Sydney)</label><input name="end_time" type="time"></div>
+          <div class="field"><label>Title</label><input name="title" required placeholder="Sunday Divine Liturgy"></div>
+          <div class="field"><label>Type</label>
             <select name="event_type">
-              <option value="liturgy">Liturgy</option>
-              <option value="vespers">Vespers</option>
-              <option value="feast">Feast</option>
-              <option value="matins">Matins</option>
-              <option value="other">Other</option>
+              <option value="liturgy">Liturgy</option><option value="prayer">Prayer</option><option value="feast">Feast</option>
+              <option value="talk">Talk</option><option value="youth">Youth</option><option value="social">Social</option><option value="other">Other</option>
             </select>
           </div>
         </div>
-        <div style="margin-top: 1rem;">
-          <button type="submit" class="btn btn-primary">Add Schedule</button>
-        </div>
+        <div class="btn-row"><button type="submit" class="btn btn-primary">Add Schedule</button></div>
       </form>
-      <h3 style="margin: 1.5rem 0 0.75rem;">Existing Schedules</h3>
+      <h3 style="margin-top: 20px;">Existing Schedules</h3>
       <div id="schedule-list"></div>
     </div>
   </main>
 
   <script>
     const TZ = 'Australia/Sydney';
-    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    let parishes = [];
-    let pendingEvents = [];
-    let schedules = [];
-
+    const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    let parishes = [], pendingEvents = [], schedules = [], senders = [];
     const headers = { 'Content-Type': 'application/json' };
 
-    // Tab switching
-    document.querySelectorAll('.admin-nav button').forEach(btn => {
+    // Tabs
+    document.querySelectorAll('.tab').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.admin-nav button').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('section-' + btn.dataset.tab).classList.add('active');
       });
@@ -224,35 +209,21 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadPendingEvents(), loadSchedules()]);
+      await Promise.all([loadParishes(), loadPendingEvents(), loadSchedules(), loadSenders()]);
       renderStats();
     }
 
-    async function loadParishes() {
-      const res = await fetch('/api/parishes');
-      parishes = await res.json();
-      renderParishList();
-      renderParishSelects();
-    }
-
-    async function loadPendingEvents() {
-      const res = await fetch('/api/admin/events/pending', { headers });
-      pendingEvents = await res.json();
-      renderReviewQueue();
-    }
-
-    async function loadSchedules() {
-      const res = await fetch('/api/admin/schedules', { headers });
-      schedules = await res.json();
-      renderScheduleList();
-    }
+    async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); renderParishList(); renderParishSelects(); }
+    async function loadPendingEvents() { pendingEvents = await (await fetch('/api/admin/events/pending', { headers })).json(); renderReviewQueue(); }
+    async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); renderScheduleList(); }
+    async function loadSenders() { senders = await (await fetch('/api/admin/senders', { headers })).json(); renderSenders(); }
 
     function renderStats() {
       document.getElementById('stats').innerHTML = `
-        <div class="stat-card"><div class="stat-value">${pendingEvents.length}</div><div class="stat-label">Pending Review</div></div>
-        <div class="stat-card"><div class="stat-value">${parishes.length}</div><div class="stat-label">Parishes</div></div>
-        <div class="stat-card"><div class="stat-value">${schedules.length}</div><div class="stat-label">Schedules</div></div>
-      `;
+        <div class="stat"><div class="stat-val">${pendingEvents.length}</div><div class="stat-lbl">Pending</div></div>
+        <div class="stat"><div class="stat-val">${parishes.length}</div><div class="stat-lbl">Parishes</div></div>
+        <div class="stat"><div class="stat-val">${schedules.length}</div><div class="stat-lbl">Schedules</div></div>
+        <div class="stat"><div class="stat-val">${senders.length}</div><div class="stat-lbl">Senders</div></div>`;
     }
 
     function renderParishSelects() {
@@ -261,270 +232,210 @@
       if (sel) sel.innerHTML = opts;
     }
 
-    // Review queue
+    // ── Time helpers ──
+    function utcToLocalInput(utcStr) {
+      if (!utcStr) return '';
+      const d = new Date(utcStr);
+      const local = new Date(d.toLocaleString('en-US', { timeZone: TZ }));
+      const pad = n => String(n).padStart(2, '0');
+      return `${local.getFullYear()}-${pad(local.getMonth()+1)}-${pad(local.getDate())}T${pad(local.getHours())}:${pad(local.getMinutes())}`;
+    }
+    function localInputToUtc(localStr) {
+      if (!localStr) return null;
+      const d = new Date(localStr + 'Z');
+      const year = d.getUTCFullYear();
+      function firstSunday(y, m) { const dt = new Date(Date.UTC(y, m, 1)); return 1 + (7 - dt.getUTCDay()) % 7; }
+      const dstStart = new Date(Date.UTC(year, 9, firstSunday(year, 9), 2, 0, 0));
+      const dstEnd = new Date(Date.UTC(year, 3, firstSunday(year, 3), 3, 0, 0));
+      const offset = (d >= dstEnd && d < dstStart) ? 10 : 11;
+      return new Date(d.getTime() - offset * 3600000).toISOString();
+    }
+
+    // ── Review Queue ──
     function renderReviewQueue() {
-      const container = document.getElementById('review-list');
-      if (!pendingEvents.length) {
-        container.innerHTML = '<div class="empty-state"><h3>No events pending review</h3></div>';
-        return;
-      }
-
-      container.innerHTML = pendingEvents.map(evt => {
+      const c = document.getElementById('review-list');
+      if (!pendingEvents.length) { c.innerHTML = '<div class="empty">No events pending review</div>'; return; }
+      const types = ['liturgy','prayer','feast','talk','youth','social','other'];
+      c.innerHTML = pendingEvents.map(evt => {
         const start = new Date(evt.start_utc);
-        const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(start);
-        const isUnassigned = evt.parish_id === '_unassigned';
-        const parishOpts = parishes.map(p =>
-          `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`
-        ).join('');
-
+        const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(start);
+        const isUn = evt.parish_id === '_unassigned';
+        const pOpts = parishes.map(p => `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
         return `
-          <div class="review-card ${isUnassigned ? 'unassigned' : ''}" data-id="${evt.id}">
-            <div class="review-header">
-              <div class="review-title">${esc(evt.title)}</div>
-              <span class="event-badge badge-${evt.event_type}">${evt.event_type}</span>
+          <div class="card ${isUn ? 'warn' : ''}" data-id="${evt.id}">
+            <div style="display:flex;justify-content:space-between;align-items:start;gap:6px;flex-wrap:wrap;">
+              <span class="card-title">${esc(evt.title)}</span>
+              <span class="badge badge-${evt.event_type}">${evt.event_type}</span>
             </div>
-            <div class="review-meta">
-              <span>${dateFmt}</span>
-              <span>Parish: ${esc(evt.parish_name || 'Unassigned')}</span>
-              <span>Source: ${esc(evt.source_adapter)}</span>
-              ${evt.description ? `<span>${esc(evt.description)}</span>` : ''}
+            <div class="card-meta">${dateFmt} &middot; ${esc(evt.source_adapter)}${evt.description ? ' &middot; ' + esc(evt.description) : ''}</div>
+            <div class="field"><label>Title</label><input class="re-title" value="${esc(evt.title)}"></div>
+            <div class="field"><label>Description</label><input class="re-desc" value="${esc(evt.description || '')}"></div>
+            <div class="field-row">
+              <div class="field"><label>Type</label><select class="re-type">${types.map(t => `<option value="${t}" ${evt.event_type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+              <div class="field"><label>Parish</label><select class="re-parish"><option value="_unassigned" ${isUn?'selected':''}>-- Unassigned --</option>${pOpts}</select></div>
             </div>
-            <div class="review-field">
-              <label>Assign Parish</label>
-              <select class="review-parish-select" data-id="${evt.id}">
-                <option value="_unassigned" ${isUnassigned ? 'selected' : ''}>-- Unassigned --</option>
-                ${parishOpts}
-              </select>
+            <div class="field-row">
+              <div class="field"><label>Start (Sydney)</label><input type="datetime-local" class="re-start" value="${utcToLocalInput(evt.start_utc)}"></div>
+              <div class="field"><label>End (Sydney)</label><input type="datetime-local" class="re-end" value="${utcToLocalInput(evt.end_utc)}"></div>
             </div>
-            <div class="review-actions">
-              <button class="btn btn-sm btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
-              <button class="btn btn-sm btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
+            <div class="btn-row">
+              <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
+              <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
             </div>
           </div>`;
       }).join('');
     }
 
     async function approveEvent(id) {
-      const card = document.querySelector(`.review-card[data-id="${id}"]`);
-      const parishSelect = card.querySelector('.review-parish-select');
-      const parishId = parishSelect.value;
-
-      const res = await fetch(`/api/admin/events/${id}`, {
-        method: 'PATCH', headers,
-        body: JSON.stringify({ status: 'approved', parish_id: parishId })
-      });
-      if (res.ok) { toast('Event approved'); loadAll(); }
-      else toast('Failed to approve', 'error');
+      const c = document.querySelector(`.card[data-id="${id}"]`);
+      const data = { status: 'approved', parish_id: c.querySelector('.re-parish').value, title: c.querySelector('.re-title').value,
+        description: c.querySelector('.re-desc').value || null, event_type: c.querySelector('.re-type').value,
+        start_utc: localInputToUtc(c.querySelector('.re-start').value), end_utc: localInputToUtc(c.querySelector('.re-end').value) };
+      const res = await fetch(`/api/admin/events/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
+      if (res.ok) { toast('Approved'); loadAll(); } else toast('Failed', 'error');
     }
-
     async function rejectEvent(id) {
-      const res = await fetch(`/api/admin/events/${id}`, {
-        method: 'PATCH', headers,
-        body: JSON.stringify({ status: 'rejected' })
-      });
-      if (res.ok) { toast('Event rejected'); loadAll(); }
-      else toast('Failed to reject', 'error');
+      const res = await fetch(`/api/admin/events/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'rejected' }) });
+      if (res.ok) { toast('Rejected'); loadAll(); } else toast('Failed', 'error');
     }
 
-    // Parish management
+    // ── Senders ──
+    function renderSenders() {
+      const c = document.getElementById('senders-list');
+      if (!senders.length) { c.innerHTML = '<div class="empty">No senders recorded yet</div>'; return; }
+      c.innerHTML = senders.map(s => {
+        const seen = s.last_seen_at ? new Intl.DateTimeFormat('en-AU', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(s.last_seen_at)) : '';
+        return `
+          <div class="sender-row" data-phone="${esc(s.phone)}">
+            <span class="sender-phone">+${esc(s.phone)}</span>
+            <input class="sender-name-input" value="${esc(s.name || '')}" placeholder="Name" data-field="name">
+            <select class="sender-status-select" data-field="status">
+              <option value="approved" ${s.status==='approved'?'selected':''}>Auto-approve</option>
+              <option value="review" ${s.status==='review'?'selected':''}>Review</option>
+              <option value="blocked" ${s.status==='blocked'?'selected':''}>Blocked</option>
+            </select>
+            <button class="btn btn-outline" onclick="saveSender('${esc(s.phone)}')">Save</button>
+            <span class="sender-seen">${seen}</span>
+          </div>`;
+      }).join('');
+    }
+
+    async function saveSender(phone) {
+      const row = document.querySelector(`.sender-row[data-phone="${phone}"]`);
+      const data = { name: row.querySelector('[data-field="name"]').value || null, status: row.querySelector('[data-field="status"]').value };
+      const res = await fetch(`/api/admin/senders/${phone}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
+      if (res.ok) { toast('Sender updated'); loadSenders(); } else toast('Failed', 'error');
+    }
+
+    // ── Parishes ──
     function renderParishList() {
       document.getElementById('parish-list').innerHTML = parishes.map(p => {
         const langs = (() => { try { return JSON.parse(p.languages || '[]').join(', '); } catch { return p.languages || ''; } })();
         return `
-        <div class="parish-list-item" id="parish-${esc(p.id)}">
-          <div class="parish-list-header" onclick="toggleParishEdit('${esc(p.id)}')">
-            <div class="parish-info">
-              <div class="parish-name">
-                ${p.logo_path ? `<img src="${esc(p.logo_path)}" class="parish-logo-preview" alt="">` : ''}
-                ${esc(p.name)}
-              </div>
-              <div class="parish-detail">${esc(p.jurisdiction)} | ${esc(p.address || 'No address')}${langs ? ' | ' + esc(langs) : ''}</div>
-            </div>
+        <div class="card expand-trigger" onclick="toggleExpand('pe-${esc(p.id)}')">
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${p.logo_path ? `<img src="${esc(p.logo_path)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border-light);" alt="">` : ''}
+            <div><div class="card-title">${esc(p.name)}</div><div class="card-meta">${esc(p.jurisdiction)} &middot; ${esc(p.address || 'No address')}${langs ? ' &middot; ' + esc(langs) : ''}</div></div>
           </div>
-          <div class="parish-edit" id="edit-${esc(p.id)}">
-            <div class="form-grid">
-              <div class="form-group full">
-                <label>Address</label>
-                <input value="${esc(p.address || '')}" data-field="address">
-              </div>
-              <div class="form-group">
-                <label>Website</label>
-                <input value="${esc(p.website || '')}" data-field="website">
-              </div>
-              <div class="form-group">
-                <label>Email</label>
-                <input value="${esc(p.email || '')}" data-field="email">
-              </div>
-              <div class="form-group">
-                <label>Phone</label>
-                <input value="${esc(p.phone || '')}" data-field="phone">
-              </div>
-              <div class="form-group">
-                <label>Acronym</label>
-                <input value="${esc(p.acronym || '')}" data-field="acronym" placeholder="e.g. SSMG">
-              </div>
-              <div class="form-group">
-                <label>Chant Style</label>
-                <input value="${esc(p.chant_style || '')}" data-field="chant_style" placeholder="e.g. Byzantine, Znamenny">
-              </div>
-              <div class="form-group">
-                <label>Languages</label>
-                <input value="${langs}" data-field="languages" placeholder="English, Arabic">
-              </div>
-              <div class="form-group">
-                <label>Logo</label>
-                <input type="file" accept="image/*" onchange="uploadLogo('${esc(p.id)}', this)">
-              </div>
+          <div class="expandable" id="pe-${esc(p.id)}" onclick="event.stopPropagation()">
+            <div class="grid">
+              <div class="field full"><label>Full Name</label><input value="${esc(p.full_name || '')}" data-field="full_name"></div>
+              <div class="field full"><label>Address</label><input value="${esc(p.address || '')}" data-field="address"></div>
+              <div class="field"><label>Website</label><input value="${esc(p.website || '')}" data-field="website"></div>
+              <div class="field"><label>Email</label><input value="${esc(p.email || '')}" data-field="email"></div>
+              <div class="field"><label>Phone</label><input value="${esc(p.phone || '')}" data-field="phone"></div>
+              <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" data-field="acronym"></div>
+              <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
+              <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
+              <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
+              <div class="field"><label>Logo</label><input type="file" accept="image/*" onchange="uploadLogo('${esc(p.id)}', this)"></div>
             </div>
-            <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
-              <button class="btn btn-sm btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
-              <button class="btn btn-sm btn-reject" onclick="deleteParish('${esc(p.id)}')">Delete</button>
+            <div class="btn-row">
+              <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
+              <button class="btn btn-reject" onclick="deleteParish('${esc(p.id)}')">Delete</button>
             </div>
           </div>
         </div>`;
       }).join('');
     }
 
-    function toggleParishEdit(id) {
-      const el = document.getElementById('edit-' + id);
-      el.classList.toggle('open');
-    }
+    function toggleExpand(id) { document.getElementById(id).classList.toggle('open'); }
 
     async function saveParish(id) {
-      const container = document.getElementById('edit-' + id);
+      const c = document.getElementById('pe-' + id);
       const data = {};
-      container.querySelectorAll('[data-field]').forEach(input => {
-        const val = input.value.trim();
-        const field = input.dataset.field;
-        if (field === 'languages') {
-          data[field] = JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean));
-        } else {
-          data[field] = val || null;
-        }
+      c.querySelectorAll('[data-field]').forEach(input => {
+        const val = input.value.trim(), field = input.dataset.field;
+        data[field] = field === 'languages' ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : (val || null);
       });
-
-      const res = await fetch(`/api/admin/parishes/${id}`, {
-        method: 'PATCH', headers,
-        body: JSON.stringify(data)
-      });
-      if (res.ok) { toast('Parish updated'); loadAll(); }
-      else { const err = await res.json(); toast(err.error || 'Failed', 'error'); }
+      const res = await fetch(`/api/admin/parishes/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
+      if (res.ok) { toast('Saved'); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
     }
 
     async function uploadLogo(id, input) {
-      const file = input.files[0];
-      if (!file) return;
-      const res = await fetch(`/api/admin/parishes/${id}/logo`, {
-        method: 'POST',
-        headers: { 'Content-Type': file.type },
-        body: file
-      });
-      if (res.ok) { toast('Logo uploaded'); loadAll(); }
-      else toast('Upload failed', 'error');
+      const file = input.files[0]; if (!file) return;
+      const res = await fetch(`/api/admin/parishes/${id}/logo`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
+      if (res.ok) { toast('Logo uploaded'); loadAll(); } else toast('Upload failed', 'error');
     }
 
     document.getElementById('parish-form').addEventListener('submit', async e => {
-      e.preventDefault();
-      const form = e.target;
-      const langsRaw = form.languages.value.trim();
-      const data = {
-        name: form.name.value.trim(),
-        jurisdiction: form.jurisdiction.value,
-        address: form.address.value.trim() || null,
-        lat: parseFloat(form.lat.value),
-        lng: parseFloat(form.lng.value),
-        website: form.website.value.trim() || null,
-        email: form.email.value.trim() || null,
-        phone: form.phone.value.trim() || null,
-        languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]'
-      };
-      const res = await fetch('/api/admin/parishes', {
-        method: 'POST', headers,
-        body: JSON.stringify(data)
-      });
-      if (res.ok) { toast('Parish added'); form.reset(); loadAll(); }
-      else { const err = await res.json(); toast(err.error || 'Failed', 'error'); }
+      e.preventDefault(); const f = e.target;
+      const langsRaw = f.languages.value.trim();
+      const data = { name: f.name.value.trim(), full_name: f.full_name.value.trim() || null, jurisdiction: f.jurisdiction.value,
+        address: f.address.value.trim() || null, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
+        website: f.website.value.trim() || null, email: f.email.value.trim() || null, phone: f.phone.value.trim() || null,
+        languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
+      const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
+      if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
     });
 
     async function deleteParish(id) {
       if (!confirm('Remove this parish?')) return;
       const res = await fetch(`/api/admin/parishes/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Parish removed'); loadAll(); }
-      else { const err = await res.json(); toast(err.error || 'Failed to remove', 'error'); }
+      if (res.ok) { toast('Removed'); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
     }
 
-    // Schedule management
+    // ── Schedules ──
     function renderScheduleList() {
-      const container = document.getElementById('schedule-list');
-      if (!schedules.length) {
-        container.innerHTML = '<div class="empty-state"><h3>No schedules configured</h3></div>';
-        return;
-      }
-
-      container.innerHTML = schedules.map(s => `
-        <div class="schedule-card ${s.active ? '' : 'schedule-inactive'}">
-          <div class="schedule-info">
-            <div class="schedule-title">${esc(s.title)}</div>
-            <div class="schedule-detail">
-              ${esc(s.parish_name)} | ${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} | ${esc(s.event_type)}
-              ${s.active ? '' : ' | INACTIVE'}
-            </div>
+      const c = document.getElementById('schedule-list');
+      if (!schedules.length) { c.innerHTML = '<div class="empty">No schedules configured</div>'; return; }
+      c.innerHTML = schedules.map(s => `
+        <div class="card sched-card ${s.active ? '' : 'inactive'}">
+          <div><div class="card-title">${esc(s.title)}</div><div class="card-meta">${esc(s.parish_name)} &middot; ${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} &middot; ${esc(s.event_type)}${s.active ? '' : ' &middot; INACTIVE'}</div></div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-outline" onclick="toggleSchedule(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'Disable' : 'Enable'}</button>
+            <button class="btn btn-reject" onclick="deleteSchedule(${s.id})">Delete</button>
           </div>
-          <div style="display: flex; gap: 0.25rem;">
-            <button class="btn btn-sm btn-outline" onclick="toggleSchedule(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'Disable' : 'Enable'}</button>
-            <button class="btn btn-sm btn-reject" onclick="deleteSchedule(${s.id})">Delete</button>
-          </div>
-        </div>
-      `).join('');
+        </div>`).join('');
     }
 
     document.getElementById('schedule-form').addEventListener('submit', async e => {
-      e.preventDefault();
-      const form = e.target;
-      const data = {
-        parish_id: form.parish_id.value,
-        day_of_week: parseInt(form.day_of_week.value),
-        start_time: form.start_time.value,
-        end_time: form.end_time.value || null,
-        title: form.title.value.trim(),
-        event_type: form.event_type.value
-      };
-      const res = await fetch('/api/admin/schedules', {
-        method: 'POST', headers,
-        body: JSON.stringify(data)
-      });
-      if (res.ok) { toast('Schedule added'); form.reset(); loadAll(); }
-      else { const err = await res.json(); toast(err.error || 'Failed', 'error'); }
+      e.preventDefault(); const f = e.target;
+      const data = { parish_id: f.parish_id.value, day_of_week: parseInt(f.day_of_week.value), start_time: f.start_time.value,
+        end_time: f.end_time.value || null, title: f.title.value.trim(), event_type: f.event_type.value };
+      const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
+      if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
     });
 
     async function toggleSchedule(id, active) {
-      const res = await fetch(`/api/admin/schedules/${id}`, {
-        method: 'PATCH', headers,
-        body: JSON.stringify({ active })
-      });
-      if (res.ok) { toast(active ? 'Schedule enabled' : 'Schedule disabled'); loadAll(); }
-      else toast('Failed', 'error');
+      const res = await fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ active }) });
+      if (res.ok) { toast(active ? 'Enabled' : 'Disabled'); loadAll(); } else toast('Failed', 'error');
     }
-
     async function deleteSchedule(id) {
-      if (!confirm('Delete this schedule? Associated generated events will also be removed.')) return;
+      if (!confirm('Delete this schedule?')) return;
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Schedule deleted'); loadAll(); }
-      else toast('Failed to delete', 'error');
+      if (res.ok) { toast('Deleted'); loadAll(); } else toast('Failed', 'error');
     }
 
-    // Geocode helper
+    // Geocode
     document.getElementById('geocode-btn').addEventListener('click', async () => {
       const addr = document.querySelector('[name="address"]').value;
-      if (!addr) return toast('Enter an address first', 'error');
+      if (!addr) return toast('Enter address first', 'error');
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`);
-        const results = await res.json();
-        if (results.length) {
-          document.querySelector('[name="lat"]').value = parseFloat(results[0].lat).toFixed(4);
-          document.querySelector('[name="lng"]').value = parseFloat(results[0].lon).toFixed(4);
-          toast('Geocoded');
-        } else toast('Address not found', 'error');
+        const r = await res.json();
+        if (r.length) { document.querySelector('[name="lat"]').value = parseFloat(r[0].lat).toFixed(4); document.querySelector('[name="lng"]').value = parseFloat(r[0].lon).toFixed(4); toast('Geocoded'); }
+        else toast('Not found', 'error');
       } catch { toast('Geocode failed', 'error'); }
     });
 

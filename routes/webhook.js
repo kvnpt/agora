@@ -10,6 +10,25 @@ const router = Router();
 const BATCH_WINDOW_MS = 10000; // 10 seconds
 const senderBuffers = new Map(); // sender -> { messages: [], timer: timeout }
 
+/**
+ * Get or create a sender record. New senders auto-approved by default.
+ * Returns { phone, name, status }
+ */
+function getOrCreateSender(phone) {
+  const db = getDb();
+  let sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
+  if (!sender) {
+    db.prepare(
+      "INSERT INTO senders (phone, status) VALUES (?, 'approved')"
+    ).run(phone);
+    sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
+    console.log(`[webhook] New sender registered: ${phone} (auto-approved)`);
+  } else {
+    db.prepare("UPDATE senders SET last_seen_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE phone = ?").run(phone);
+  }
+  return sender;
+}
+
 // GET /api/webhooks/whatsapp — Meta verification handshake
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -156,10 +175,13 @@ async function processBatch(sender, messages) {
       if (message.image.caption) texts.push(message.image.caption);
     } else if (msgType === 'document') {
       const media = await downloadMedia(message.document.id);
-      if (media.mimeType.startsWith('image/')) {
+      if (media.mimeType.startsWith('image/') || media.mimeType === 'application/pdf') {
         images.push(media.filepath);
+      } else {
+        console.log(`[webhook] Document type ${media.mimeType} not visually parseable, using caption/filename only`);
       }
       if (message.document.caption) texts.push(message.document.caption);
+      if (message.document.filename) texts.push(`Filename: ${message.document.filename}`);
     }
   }
 
@@ -173,18 +195,84 @@ async function processBatch(sender, messages) {
 
   try {
     const result = await posterAdapter.parseMessage({ images, texts });
-    const parishId = resolveParish(db, result.inferred_parish) || '_unassigned';
+    const senderRecord = getOrCreateSender(sender);
+    if (senderRecord.status === 'blocked') {
+      console.log(`[webhook] Sender ${sender} is blocked, skipping batch`);
+      db.prepare("UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), status = 'skipped', error_message = 'sender blocked' WHERE id = ?").run(runId);
+      return;
+    }
+    const eventStatus = senderRecord.status === 'approved' ? 'approved' : 'pending_review';
 
+    // Handle new parish creation
+    let parishId = resolveParish(db, result.inferred_parish) || '_unassigned';
+    if (!resolveParish(db, result.inferred_parish) && result.new_parish) {
+      const np = result.new_parish;
+      const newId = (np.jurisdiction || 'other') + '-' + (np.name || 'unknown').toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      const existing = db.prepare('SELECT id FROM parishes WHERE id = ?').get(newId);
+      if (!existing && np.name) {
+        // Geocode address or use Sydney CBD as default
+        const lat = -33.8688, lng = 151.2093;
+        db.prepare(`
+          INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, phone, languages)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(newId, np.name, np.full_name || null, np.jurisdiction || 'other',
+          np.address || null, lat, lng, np.website || null, np.phone || null,
+          np.languages ? JSON.stringify(np.languages) : '["English"]');
+        console.log(`[webhook] Created new parish: ${newId} (${np.name})`);
+        parishId = newId;
+      } else if (existing) {
+        parishId = newId;
+      }
+    }
+
+    // Handle parish updates
+    if (result.parish_updates && parishId !== '_unassigned') {
+      const pu = result.parish_updates;
+      const updates = [];
+      const vals = [];
+      if (pu.address) { updates.push('address = ?'); vals.push(pu.address); }
+      if (pu.website) { updates.push('website = ?'); vals.push(pu.website); }
+      if (pu.phone) { updates.push('phone = ?'); vals.push(pu.phone); }
+      if (pu.languages) { updates.push('languages = ?'); vals.push(JSON.stringify(pu.languages)); }
+      if (updates.length) {
+        vals.push(parishId);
+        db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...vals);
+        console.log(`[webhook] Updated parish ${parishId}: ${updates.map(u => u.split(' =')[0]).join(', ')}`);
+      }
+    }
+
+    // Handle schedules
+    let schedulesCreated = 0;
+    if (result.schedules && result.schedules.length && parishId !== '_unassigned') {
+      const insertSched = db.prepare(`
+        INSERT OR IGNORE INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const s of result.schedules) {
+        const r = insertSched.run(parishId, s.day_of_week, s.start_time,
+          s.end_time || null, s.title, s.event_type || 'liturgy',
+          s.languages ? JSON.stringify(s.languages) : null);
+        if (r.changes > 0) schedulesCreated++;
+      }
+      if (schedulesCreated) console.log(`[webhook] Created ${schedulesCreated} schedules for ${parishId}`);
+    }
+
+    // Use first poster image as the source poster for all events in batch
+    const posterPath = images.length > 0 ? '/posters/' + path.basename(images[0]) : null;
+
+    // Handle events
     const upsert = db.prepare(`
       INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
-        event_type, source_hash, confidence, status, lat, lng, location_override)
+        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path)
       SELECT @parish_id, 'whatsapp-webhook', @title, @description, @start_utc, @end_utc,
-        @event_type, @source_hash, 'ai-parsed', 'pending_review',
-        p.lat, p.lng, @location_override
+        @event_type, @source_hash, 'ai-parsed', @status,
+        p.lat, p.lng, @location_override, @languages, @poster_path
       FROM parishes p WHERE p.id = @parish_id
       ON CONFLICT(source_hash) DO UPDATE SET
         title = excluded.title, description = excluded.description,
         start_utc = excluded.start_utc, end_utc = excluded.end_utc,
+        poster_path = COALESCE(excluded.poster_path, events.poster_path),
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
@@ -199,7 +287,10 @@ async function processBatch(sender, messages) {
           end_utc: evt.end_utc,
           event_type: evt.event_type,
           source_hash: evt.source_hash,
-          location_override: evt.location_override
+          location_override: evt.location_override,
+          status: eventStatus,
+          languages: evt.languages ? JSON.stringify(evt.languages) : null,
+          poster_path: posterPath
         });
         if (r.changes > 0) eventsCreated++;
       }
@@ -211,7 +302,7 @@ async function processBatch(sender, messages) {
       status = 'success', events_found = ?, events_created = ? WHERE id = ?
     `).run(result.events.length, eventsCreated, runId);
 
-    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, parish=${parishId}`);
+    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, parish=${parishId}, status=${eventStatus}`);
 
   } catch (err) {
     db.prepare(`

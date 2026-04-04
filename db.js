@@ -134,6 +134,61 @@ function migrate(db) {
     `);
     db.pragma('user_version = 1');
   }
+
+  if (version < 2) {
+    db.exec(`ALTER TABLE parishes ADD COLUMN color TEXT`);
+    db.pragma('user_version = 2');
+  }
+
+  if (version < 3) {
+    // Replace coptic with macedonian in jurisdiction CHECK constraint
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      DROP TABLE IF EXISTS parishes_new;
+      CREATE TABLE parishes_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        full_name TEXT,
+        jurisdiction TEXT NOT NULL CHECK(jurisdiction IN ('antiochian','greek','serbian','russian','romanian','macedonian','other')),
+        address TEXT,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        website TEXT,
+        phone TEXT,
+        email TEXT,
+        logo_path TEXT,
+        acronym TEXT,
+        chant_style TEXT,
+        languages TEXT NOT NULL DEFAULT '["English"]',
+        color TEXT
+      );
+      INSERT INTO parishes_new SELECT * FROM parishes;
+      DROP TABLE parishes;
+      ALTER TABLE parishes_new RENAME TO parishes;
+    `);
+    db.pragma('foreign_keys = ON');
+    db.pragma('user_version = 3');
+  }
+
+  if (version < 4) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN languages TEXT`);
+    db.exec(`ALTER TABLE events ADD COLUMN languages TEXT`);
+    db.pragma('user_version = 4');
+  }
+
+  if (version < 5) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS senders (
+        phone TEXT PRIMARY KEY,
+        name TEXT,
+        status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('approved','review','blocked')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      ALTER TABLE events ADD COLUMN poster_path TEXT;
+    `);
+    db.pragma('user_version = 5');
+  }
 }
 
 module.exports = { getDb };

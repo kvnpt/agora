@@ -53,8 +53,8 @@ body {
 }
 .jurisdiction-chip:hover { color: var(--text-secondary); }
 .jurisdiction-chip.active {
-  color: var(--text);
-  border-bottom-color: var(--text);
+  color: var(--bg);
+  border-bottom-color: transparent;
 }
 
 /* ── Map ── */
@@ -74,32 +74,67 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 24px;
-  background: linear-gradient(transparent, rgba(255,255,255,0.9));
+  height: 28px;
+  background: linear-gradient(transparent, rgba(255,255,255,0.95));
   border: none;
   cursor: pointer;
   z-index: 401;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 8px;
 }
 .map-toggle::after {
   content: '';
   display: block;
-  width: 32px;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  margin: 0 auto;
-  position: relative;
-  top: 14px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 6px solid var(--text-secondary);
+  transition: transform 0.3s ease;
+}
+.map-container.expanded .map-toggle::after {
+  transform: rotate(180deg);
 }
 
 /* ── Mode bar ── */
 .mode-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-light);
 }
+
+.icon-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--text-secondary); }
+.icon-btn.active {
+  color: var(--bg);
+  background: var(--text);
+  border-color: var(--text);
+}
+.icon-btn img {
+  width: 18px;
+  height: 18px;
+  opacity: 0.5;
+}
+.icon-btn:hover img { opacity: 0.8; }
+.icon-btn.active img { opacity: 1; filter: invert(1); }
 
 .services-btn {
   flex: none;
@@ -145,11 +180,71 @@ body {
   border-color: var(--border);
 }
 
+/* ── Parish filter pills ── */
+.parish-filter-row {
+  display: none;
+  gap: 4px;
+  padding: 4px 12px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.parish-filter-row::-webkit-scrollbar { display: none; }
+.parish-filter-row.visible { display: flex; }
+
+.parish-pill {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.parish-pill:hover { color: var(--text-secondary); border-color: var(--border); }
+.parish-pill.active {
+  color: var(--bg);
+  border-color: transparent;
+}
+
+.location-pill {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.location-pill:hover { color: var(--text-secondary); border-color: var(--border); }
+.location-pill.active {
+  color: #1565c0;
+  border-color: #1565c0;
+  background: #e3f2fd;
+}
+.location-pill img {
+  width: 14px;
+  height: 14px;
+  opacity: 0.5;
+}
+.location-pill.active img { opacity: 1; }
+
 /* ── Content views ── */
 .content-view { display: none; }
 .content-view.active { display: block; }
 
-/* ── Section headers (Today: "Happening now", "Later today"; Week: date headers) ── */
+/* ── Section headers ── */
 .section-header {
   padding: 12px 14px 6px;
   font-size: 11px;
@@ -168,11 +263,19 @@ body {
   vertical-align: middle;
 }
 
-.day-header {
-  padding: 14px 14px 4px;
-  font-size: 13px;
+/* ── Services title (replaces time pills when in services mode) ── */
+.services-title {
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Centre the title within the time-pills flex container */
+.time-pills:has(.services-title) {
+  justify-content: center;
+  flex: 1;
 }
 
 /* ── Event cards ── */
@@ -193,14 +296,12 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .event-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .event-time {
   font-size: 13px;
@@ -211,43 +312,61 @@ body {
 .event-parish-row {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 .event-badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 2px;
-  margin-left: 6px;
+  margin-left: 4px;
   vertical-align: middle;
 }
-.badge-liturgy { background: #f0f0f0; color: #555; }
-.badge-vespers { background: #f0f0f0; color: #555; }
-.badge-feast { background: #f5f0e0; color: #7a6520; }
-.badge-festival { background: #e8f0e8; color: #3a6a3a; }
-.badge-youth { background: #e8eef5; color: #3a5a8a; }
-.badge-talk { background: #f0f0f0; color: #555; }
-.badge-fundraiser { background: #f0f0f0; color: #555; }
+.badge-liturgy { background: #e8d5e8; color: #6b2d6b; }
+.badge-prayer { background: #d5e0f0; color: #2d4a7a; }
+.badge-youth { background: #d0e8f5; color: #2d5a8a; }
+.badge-social { background: #d5ead5; color: #2d6a2d; }
+.badge-talk { background: #f0e8d5; color: #7a5a20; }
+.badge-feast { background: #f5ecd0; color: #7a6520; }
 .badge-other { background: #f0f0f0; color: #555; }
-.badge-matins { background: #f0f0f0; color: #555; }
+/* Legacy types still in DB — mapped to display types at render time */
+.badge-vespers { background: #d5e0f0; color: #2d4a7a; }
+.badge-matins { background: #f0e0d0; color: #7a4a20; }
+.badge-festival { background: #d5ead5; color: #2d6a2d; }
+.badge-fundraiser { background: #e0f0e0; color: #3a6a3a; }
 
-.event-distance {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  padding-left: 8px;
-  align-self: center;
+/* ── Parish acronym on event cards ── */
+.event-parish-acronym {
+  font-weight: 700;
+  margin-right: 4px;
+  opacity: 0.6;
+}
+
+/* ── Sunday cluster ── */
+.sunday-cluster {
+  border-left: 3px solid var(--border);
+  background: #fafafa;
+  margin: 4px 0;
+  padding-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+.sunday-cluster .section-header {
+  font-weight: 700;
 }
 
 /* ── Services view ── */
 .parish-schedule {
   padding: 14px;
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
 }
+.parish-schedule:hover { background: #fafafa; }
+.parish-schedule:active { background: #f5f5f5; }
 .parish-schedule-name {
   font-size: 15px;
   font-weight: 600;
@@ -285,7 +404,7 @@ body {
   width: 100%;
   max-width: 400px;
   background: var(--bg);
-  border-left: 1px solid var(--border);
+  border-left: 4px solid var(--border);
   z-index: 1000;
   overflow-y: auto;
   transform: translateX(100%);
@@ -297,20 +416,21 @@ body {
 .close-btn {
   position: absolute;
   top: 12px;
-  right: 14px;
+  left: 14px;
   background: none;
   border: none;
   font-size: 24px;
   color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
+  z-index: 1;
 }
 
 .detail-title {
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 12px;
-  padding-right: 30px;
+  padding-left: 30px;
 }
 .detail-meta {
   display: flex;
@@ -331,7 +451,8 @@ body {
   gap: 8px;
   flex-wrap: wrap;
 }
-.detail-actions a {
+.detail-actions a,
+.detail-actions button {
   display: inline-block;
   padding: 8px 16px;
   font-size: 13px;
@@ -339,16 +460,104 @@ body {
   text-decoration: none;
   border-radius: 4px;
   transition: opacity 0.15s;
+  cursor: pointer;
 }
-.detail-actions a:hover { opacity: 0.8; }
+.detail-actions a:hover,
+.detail-actions button:hover { opacity: 0.8; }
 .btn-primary {
   background: var(--text);
   color: var(--bg);
+  border: none;
 }
 .btn-outline {
   background: none;
   color: var(--text);
   border: 1px solid var(--border);
+}
+.btn-danger {
+  background: #dc3545;
+  color: #fff;
+  border: none;
+}
+.btn-save {
+  background: #28a745;
+  color: #fff;
+  border: none;
+}
+
+/* ── Admin edit form in detail panel ── */
+.detail-edit-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
+}
+.detail-edit-form .edit-row {
+  margin-bottom: 8px;
+}
+.detail-edit-form label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+.detail-edit-form input,
+.detail-edit-form textarea,
+.detail-edit-form select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+}
+.detail-edit-form textarea { resize: vertical; min-height: 60px; }
+
+/* ── Location-active distance indicators ── */
+.distance-blue { color: #2196f3; }
+.distance-near { color: #1565c0; font-weight: 600; }
+.distance-mid { color: #42a5f5; }
+.distance-far { color: #90caf9; }
+
+/* ── Nearby/Time sort toggle ── */
+.sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  float: right;
+}
+.sort-toggle button {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--border);
+  transition: all 0.15s;
+}
+.sort-toggle button.active {
+  color: var(--text);
+  font-weight: 700;
+  background: #f0f0f0;
+  border-color: var(--border);
+}
+.sort-toggle button:hover { color: var(--text-secondary); }
+.sort-toggle .sort-sep {
+  color: var(--border-light);
+  font-size: 10px;
+}
+.sort-toggle .sort-icon {
+  width: 12px;
+  height: 12px;
+  vertical-align: -2px;
+  margin-right: 2px;
 }
 
 /* ── Empty state ── */
@@ -365,6 +574,17 @@ body {
 .empty-state p {
   font-size: 12px;
 }
+.cta-link {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px 0;
+}
+.cta-link:hover { color: var(--text); }
 
 /* ── Admin float ── */
 .admin-float {
@@ -384,34 +604,6 @@ body {
 }
 .admin-float a:hover { color: var(--text); border-color: var(--text-secondary); }
 
-/* ── Filter controls (type + distance, events-only) ── */
-.filter-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 0 12px 8px;
-}
-.filter-controls.hidden { display: none; }
-.filter-controls select {
-  font-size: 12px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text-secondary);
-}
-.filter-controls .distance-slider {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.filter-controls .distance-slider input[type="range"] {
-  width: 80px;
-  accent-color: var(--text);
-}
-
 /* ── Backdrop for detail panel ── */
 .detail-backdrop {
   position: fixed;
@@ -420,9 +612,68 @@ body {
   z-index: 999;
 }
 
+/* ── Map text labels ── */
+.map-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-shadow: 1px 1px 2px rgba(255,255,255,0.9), -1px -1px 2px rgba(255,255,255,0.9),
+               0 1px 2px rgba(255,255,255,0.9), 0 -1px 2px rgba(255,255,255,0.9);
+  pointer-events: none;
+}
+.map-label-sub {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* ── Event poster in detail panel ── */
+.detail-poster {
+  margin-bottom: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+.detail-poster img {
+  width: 100%;
+  display: block;
+}
+
+/* ── Poster lightbox ── */
+.poster-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.poster-lightbox.hidden { display: none; }
+.poster-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.poster-lightbox-close {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #fff;
+  cursor: pointer;
+  z-index: 2001;
+}
+
 /* ── Responsive ── */
 @media (min-width: 640px) {
   .events-list, .services-list { max-width: 600px; margin: 0 auto; }
   .mode-bar { max-width: 600px; margin: 0 auto; padding: 10px 0; }
-  .filter-controls { max-width: 600px; margin: 0 auto; padding: 0 0 8px; }
+  .parish-filter-row { max-width: 600px; margin: 0 auto; }
 }

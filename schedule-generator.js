@@ -105,9 +105,16 @@ function generateEvents(weeksAhead = 4) {
 
   // Clean up old schedule-generated events (older than 7 days)
   const cutoff = new Date(now.getTime() - 7 * 86400000).toISOString();
-  const cleaned = db.prepare(`
+  let cleaned = db.prepare(`
     DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc < ?
   `).run(cutoff).changes;
+
+  // Clean up future events from disabled schedules
+  const disabledCleaned = db.prepare(`
+    DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc >= ?
+    AND schedule_id IN (SELECT id FROM schedules WHERE active = 0)
+  `).run(now.toISOString()).changes;
+  cleaned += disabledCleaned;
 
   console.log(`[schedule-gen] Generated ${generated} events, cleaned ${cleaned} old`);
   return { generated, cleaned };

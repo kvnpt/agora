@@ -12,7 +12,6 @@ function initMap(state) {
     maxZoom: 18
   }).addTo(map);
 
-  // User location
   L.circleMarker([state.userLat, state.userLng], {
     radius: 6,
     fillColor: '#4285f4',
@@ -21,9 +20,7 @@ function initMap(state) {
     weight: 2
   }).addTo(map).bindPopup('You are here');
 
-  // Zoom control bottom-right
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-
   setTimeout(() => map.invalidateSize(), 100);
 }
 
@@ -35,58 +32,173 @@ function updateMap(state) {
 
   const TZ = 'Australia/Sydney';
 
+  // Build set of active (filtered) parish IDs
+  const activeParishIds = new Set();
+
   if (state.mode === 'services') {
-    // Show parish locations from schedules
-    const byParish = {};
-    for (const s of state.schedules) {
-      if (!byParish[s.parish_id]) {
-        byParish[s.parish_id] = { lat: s.lat, lng: s.lng, name: s.parish_name, count: 0 };
-      }
-      byParish[s.parish_id].count++;
+    let scheds = state.schedules;
+    if (state.filters.parishIds) {
+      scheds = scheds.filter(s => state.filters.parishIds.has(s.parish_id));
     }
-
-    for (const [, data] of Object.entries(byParish)) {
-      if (!data.lat || !data.lng) continue;
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="background:#000;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.2);">${data.count}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
-      });
-      const marker = L.marker([data.lat, data.lng], { icon })
-        .bindPopup(`<strong>${escMap(data.name)}</strong>`)
-        .addTo(map);
-      markers.push(marker);
-    }
+    for (const s of scheds) activeParishIds.add(s.parish_id);
   } else {
-    // Show event locations grouped by parish
-    const byParish = {};
+    const filtered = applyFilters(state.events);
+    for (const evt of filtered) activeParishIds.add(evt.parish_id);
+  }
+
+  // All parishes in jurisdiction
+  const allParishes = state.parishes.filter(p => {
+    if (p.id === '_unassigned') return false;
+    if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+    if (!p.lat || !p.lng) return false;
+    return true;
+  });
+
+  // Event data for popups
+  const eventsByParish = {};
+  if (state.mode !== 'services') {
     for (const evt of state.events) {
-      if (!byParish[evt.parish_id]) {
-        byParish[evt.parish_id] = { lat: evt.lat, lng: evt.lng, name: evt.parish_name, events: [] };
+      if (!eventsByParish[evt.parish_id]) eventsByParish[evt.parish_id] = [];
+      eventsByParish[evt.parish_id].push(evt);
+    }
+  }
+
+  const locations = allParishes.map(p => ({
+    id: p.id,
+    lat: p.lat,
+    lng: p.lng,
+    name: p.name,
+    color: p.color || '#000',
+    website: p.website || '',
+    active: activeParishIds.has(p.id),
+    events: eventsByParish[p.id] || []
+  }));
+
+  addLabeledMarkers(locations, TZ);
+
+  // Fit map so markers appear in the visible strip of the map container
+  const active = locations.filter(l => l.active);
+  if (active.length) {
+    const bounds = L.latLngBounds(active.map(l => [l.lat, l.lng]));
+    bounds.pad(0.1);
+    const container = document.getElementById('map-container');
+    const visibleH = container.offsetHeight;  // 120px collapsed, 50vh expanded
+    const mapH = document.getElementById('map').offsetHeight;  // 100vh always
+    // Push content into the visible top strip: massive bottom padding
+    const bottomPad = Math.max(0, mapH - visibleH + 20);
+    map.fitBounds(bounds, {
+      paddingTopLeft: [30, 15],
+      paddingBottomRight: [30, bottomPad],
+      maxZoom: 14,
+      animate: true
+    });
+  }
+}
+
+function addLabeledMarkers(locations, TZ) {
+  if (!locations.length) return;
+
+  const labelMeta = [];
+
+  for (const loc of locations) {
+    const opacity = loc.active ? 1.0 : 0.25;
+
+    const dot = L.circleMarker([loc.lat, loc.lng], {
+      radius: loc.active ? 5 : 4,
+      fillColor: loc.color,
+      fillOpacity: opacity,
+      color: '#ffffff',
+      weight: 1.5,
+      opacity: opacity
+    });
+
+    if (loc.active) {
+      const dirLink = `<a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Directions</a>`;
+      const webLink = loc.website ? ` · <a href="${escMap(loc.website)}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Website</a>` : '';
+      if (loc.events.length) {
+        const evtList = loc.events.slice(0, 5).map(e => {
+          const t = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(e.start_utc));
+          return `<li><strong>${escMap(e.title)}</strong><br>${t}</li>`;
+        }).join('');
+        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><ul style="margin:6px 0;padding-left:1.1em;">${evtList}</ul>${dirLink}${webLink}</div>`);
+      } else {
+        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><div style="margin-top:6px;">${dirLink}${webLink}</div></div>`);
       }
-      byParish[evt.parish_id].events.push(evt);
     }
 
-    for (const [, data] of Object.entries(byParish)) {
-      if (!data.lat || !data.lng) continue;
-      const icon = L.divIcon({
+    dot.addTo(map);
+    markers.push(dot);
+
+    const parts = loc.name.split(',');
+    const line1 = parts[0].trim();
+    const line2 = parts.length > 1 ? parts[1].trim() : '';
+
+    labelMeta.push({ loc, line1, line2, opacity });
+  }
+
+  // Label collision detection
+  const sorted = [...labelMeta].sort((a, b) => a.loc.lng - b.loc.lng);
+  const medianLng = sorted.length ? sorted[Math.floor(sorted.length / 2)].loc.lng : 151.2;
+
+  for (const lm of labelMeta) {
+    lm.side = lm.loc.lng <= medianLng ? 'right' : 'left';
+    const pt = map.latLngToContainerPoint([lm.loc.lat, lm.loc.lng]);
+    lm.px = pt.x;
+    lm.py = pt.y;
+  }
+
+  const LABEL_W = 130;
+  const LABEL_H = 26;
+  const placed = [];
+
+  // Active labels get priority
+  labelMeta.sort((a, b) => (b.loc.active ? 1 : 0) - (a.loc.active ? 1 : 0));
+
+  for (const lm of labelMeta) {
+    const getBounds = (side) => {
+      const x = side === 'right' ? lm.px + 8 : lm.px - LABEL_W - 8;
+      return { x1: x, y1: lm.py - LABEL_H / 2, x2: x + LABEL_W, y2: lm.py + LABEL_H / 2 };
+    };
+
+    const overlaps = (bounds) => {
+      for (const p of placed) {
+        if (bounds.x1 < p.x2 && bounds.x2 > p.x1 && bounds.y1 < p.y2 && bounds.y2 > p.y1) return true;
+      }
+      return false;
+    };
+
+    let bounds = getBounds(lm.side);
+    if (overlaps(bounds)) {
+      lm.side = lm.side === 'right' ? 'left' : 'right';
+      bounds = getBounds(lm.side);
+      if (overlaps(bounds)) {
+        lm.hidden = true;
+        continue;
+      }
+    }
+
+    placed.push(bounds);
+    lm.hidden = false;
+  }
+
+  for (const lm of labelMeta) {
+    if (lm.hidden) continue;
+
+    const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
+    const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
+    const labelHtml = `<div class="map-label" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
+
+    const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
+    const label = L.marker([lm.loc.lat, lm.loc.lng], {
+      icon: L.divIcon({
         className: '',
-        html: `<div style="background:#000;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.2);">${data.events.length}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
-      });
-
-      const evtList = data.events.slice(0, 5).map(e => {
-        const t = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(e.start_utc));
-        return `<li><strong>${escMap(e.title)}</strong><br>${t}</li>`;
-      }).join('');
-
-      const popup = `<div style="max-width:200px;font-size:13px;"><strong>${escMap(data.name)}</strong><ul style="margin:6px 0;padding-left:1.1em;">${evtList}</ul><a href="https://www.google.com/maps/dir/?api=1&destination=${data.lat},${data.lng}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Directions</a></div>`;
-
-      const marker = L.marker([data.lat, data.lng], { icon }).bindPopup(popup).addTo(map);
-      markers.push(marker);
-    }
+        html: labelHtml,
+        iconSize: [LABEL_W, 30],
+        iconAnchor: [anchorX, 15]
+      }),
+      interactive: false
+    }).addTo(map);
+    markers.push(label);
   }
 }
 

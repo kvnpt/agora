@@ -26,6 +26,7 @@ const writeLimiter = rateLimit({
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/logos', express.static(path.join(__dirname, 'data', 'logos')));
+app.use('/posters', express.static(path.join(__dirname, 'data', 'posters')));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -61,9 +62,16 @@ app.get('*', (req, res) => {
 // Startup
 function start() {
   // Init DB + seed + generate schedule events
-  getDb();
+  const db = getDb();
   seed();
   generateEvents();
+
+  // Seed known senders
+  const seedSender = db.prepare("INSERT OR IGNORE INTO senders (phone, name, status) VALUES (?, ?, ?)");
+  seedSender.run('61493457176', 'Kevin', 'approved');
+  seedSender.run('61438342238', 'Kevin (alt)', 'approved');
+  seedSender.run('61466797561', null, 'approved');
+  seedSender.run('61433458666', null, 'approved');
 
   // Discover adapters + start scheduler
   registry.discover();

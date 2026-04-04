@@ -1,11 +1,19 @@
-const JURISDICTIONS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'coptic'];
+const JURISDICTIONS = [
+  { key: 'antiochian', label: 'Antiochian', color: '#1e3a5f' },
+  { key: 'greek', label: 'Greek', color: '#00508f' },
+  { key: 'serbian', label: 'Serbian', color: '#b22234' },
+  { key: 'russian', label: 'Russian', color: '#c8a951' },
+  { key: 'romanian', label: 'Romanian', color: '#002b7f' },
+  { key: 'macedonian', label: 'Macedonian', color: '#d20000' }
+];
 
 function initFilters(state) {
-  // Jurisdiction chips
   const chipContainer = document.getElementById('jurisdiction-chips');
   chipContainer.innerHTML = JURISDICTIONS.map(j =>
-    `<button class="jurisdiction-chip${state.filters.jurisdiction === j ? ' active' : ''}" data-jurisdiction="${j}">${capitalize(j)}</button>`
+    `<button class="jurisdiction-chip${state.filters.jurisdiction === j.key ? ' active' : ''}" data-jurisdiction="${j.key}" data-color="${j.color}">${j.label}</button>`
   ).join('');
+
+  applyChipColors(chipContainer);
 
   chipContainer.addEventListener('click', e => {
     const chip = e.target.closest('.jurisdiction-chip');
@@ -21,48 +29,45 @@ function initFilters(state) {
       chip.classList.add('active');
     }
 
+    applyChipColors(chipContainer);
+
+    // Reset parish filter when jurisdiction changes
+    state.filters.parishIds = null;
+    const parishRow = document.getElementById('parish-filter-row');
+    if (parishRow.classList.contains('visible')) {
+      if (typeof renderParishPills === 'function') renderParishPills();
+    }
+
     if (state.mode === 'services') {
       window.agoraFetchSchedules();
     } else {
       window.agoraFetchEvents();
     }
   });
+}
 
-  // Type filter + distance slider (injected after mode bar)
-  const modeBar = document.querySelector('.mode-bar');
-  const filterControls = document.createElement('div');
-  filterControls.className = 'filter-controls';
-  filterControls.id = 'filter-controls';
-  filterControls.innerHTML = `
-    <select id="type-filter">
-      <option value="">All types</option>
-      <option value="liturgy">Liturgy</option>
-      <option value="vespers">Vespers</option>
-      <option value="feast">Feast</option>
-      <option value="festival">Festival</option>
-      <option value="youth">Youth</option>
-      <option value="talk">Talk</option>
-      <option value="fundraiser">Fundraiser</option>
-      <option value="other">Other</option>
-    </select>
-    <div class="distance-slider">
-      <label>Within <span id="distance-value">${state.filters.distance}</span> km</label>
-      <input type="range" id="distance-filter" min="1" max="100" value="${state.filters.distance}">
-    </div>
-  `;
-  modeBar.parentNode.insertBefore(filterControls, modeBar.nextSibling);
-
-  document.getElementById('type-filter').addEventListener('change', e => {
-    state.filters.type = e.target.value;
-    window.agoraFetchEvents();
-  });
-
-  const distSlider = document.getElementById('distance-filter');
-  const distLabel = document.getElementById('distance-value');
-  distSlider.addEventListener('input', () => { distLabel.textContent = distSlider.value; });
-  distSlider.addEventListener('change', () => {
-    state.filters.distance = parseInt(distSlider.value);
-    window.agoraFetchEvents();
+function applyChipColors(container) {
+  const anyActive = container.querySelector('.jurisdiction-chip.active');
+  container.querySelectorAll('.jurisdiction-chip').forEach(chip => {
+    if (chip.classList.contains('active')) {
+      // Selected: full color fill
+      chip.style.background = chip.dataset.color;
+      chip.style.color = '#ffffff';
+      chip.style.borderBottomColor = 'transparent';
+      chip.style.opacity = '1';
+    } else if (!anyActive) {
+      // No filter active (all jurisdictions): colored underline
+      chip.style.background = '';
+      chip.style.color = chip.dataset.color;
+      chip.style.borderBottomColor = chip.dataset.color;
+      chip.style.opacity = '1';
+    } else {
+      // Another jurisdiction selected: dimmed
+      chip.style.background = '';
+      chip.style.color = '';
+      chip.style.borderBottomColor = '';
+      chip.style.opacity = '0.35';
+    }
   });
 }
 

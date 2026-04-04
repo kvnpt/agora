@@ -13,8 +13,9 @@ router.get('/', (req, res) => {
     SELECT * FROM (
       SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address,
         p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
+        p.acronym as parish_acronym, p.color as parish_color,
         ROW_NUMBER() OVER (
-          PARTITION BY e.parish_id, date(e.start_utc), e.event_type
+          PARTITION BY e.parish_id, e.start_utc
           ORDER BY CASE WHEN e.source_adapter = 'schedule' THEN 1 ELSE 0 END, e.updated_at DESC
         ) as rn
       FROM events e

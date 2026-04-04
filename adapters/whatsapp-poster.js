@@ -3,6 +3,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { localToUtc } = require('../schedule-generator');
 
 /**
  * WhatsApp Poster adapter — uses Claude Haiku vision to extract event
@@ -61,7 +62,8 @@ Return ONLY a JSON array of events. Each event object should have:
 - "date": string (ISO date, e.g. "2026-03-20")
 - "start_time": string (24h format, e.g. "09:00")
 - "end_time": string or null (24h format)
-- "event_type": one of: liturgy, vespers, feast, festival, youth, talk, fundraiser, other
+- "event_type": one of: liturgy, prayer, feast, talk, youth, social, other
+  NOTE: "Vesperal Liturgy" and any service containing "Liturgy" = liturgy. Vespers, Matins, Compline, Bridegroom, Holy Unction, Lamentations, Passion Gospels = prayer.
 - "location": string or null (if different from the parish)
 
 If you cannot extract event details, return an empty array [].
@@ -71,10 +73,9 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
       }]
     });
 
-    const text = response.content[0].text;
+    const text = response.content[0].text.replace(/```json\s*/g, '').replace(/```/g, '').trim();
     let events;
     try {
-      // Extract JSON from response (might be wrapped in markdown code blocks)
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       events = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
     } catch {
@@ -86,16 +87,11 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
     return events.map(evt => {
       const dateStr = evt.date || new Date().toISOString().split('T')[0];
       const startTime = evt.start_time || '09:00';
-      const startLocal = `${dateStr}T${startTime}:00`;
-
-      // Convert AEDT/AEST to UTC (approximate: subtract 11h for AEDT, 10h for AEST)
-      const startDate = new Date(startLocal + '+11:00'); // assume AEDT
-      const startUtc = startDate.toISOString();
+      const startUtc = localToUtc(dateStr, startTime);
 
       let endUtc = null;
       if (evt.end_time) {
-        const endDate = new Date(`${dateStr}T${evt.end_time}:00+11:00`);
-        endUtc = endDate.toISOString();
+        endUtc = localToUtc(dateStr, evt.end_time);
       }
 
       const hash = crypto.createHash('sha256')
@@ -167,38 +163,70 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
 
     content.push({
       type: 'text',
-      text: `You are extracting Orthodox Christian parish event details from WhatsApp messages forwarded from a parish group chat in Sydney, Australia.
+      text: `You are extracting Orthodox Christian parish information from WhatsApp messages forwarded from Sydney, Australia.
 
 ${imageCount > 0 ? `${imageCount} poster image(s) attached above.` : 'No images were attached.'}
 ${textCount > 0 ? `${textCount} text message(s) shown above.` : 'No text was provided.'}
 
-These messages were sent together by the same person. Text messages may provide context for the poster images (e.g. identifying the parish). Use ALL available context across images and text to extract events and identify the parish.
+These messages were sent together by the same person. Use ALL available context across images and text.
 
 KNOWN PARISHES:
 ${parishList}
 
 TASKS:
-1. Extract all events from the images and/or text.
-2. Infer which parish these events belong to based on any clues: parish name, logo, address, priest name, context text, or any other identifying information. Match against the known parishes list above. If you cannot confidently identify the parish, set inferred_parish to null.
+1. Identify which parish the message relates to. Match against the known parishes list above. If it's a NEW parish not in the list, populate new_parish.
+2. Extract any one-off EVENTS (dated services, feasts, social events, talks, etc).
+3. Extract any recurring SCHEDULES (weekly services like "Sunday Divine Liturgy 9:30am").
+4. Extract any parish info UPDATES (address, phone, website, languages).
 
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON (no markdown fences) in this exact format:
 {
-  "inferred_parish": "<parish id from the list above, or null if uncertain>",
+  "inferred_parish": "<parish id from list, or null>",
+  "new_parish": null or {
+    "name": "Short name, e.g. St George, Carlton",
+    "full_name": "Full official name",
+    "jurisdiction": "antiochian|greek|serbian|russian|romanian|macedonian|other",
+    "address": "Full street address",
+    "website": "url or null",
+    "phone": "phone or null",
+    "languages": ["English", "Slavonic"]
+  },
   "events": [
     {
       "title": "Event Name",
-      "description": "Details",
+      "description": "Details or null",
       "date": "2026-03-20",
       "start_time": "09:00",
-      "end_time": "11:00",
-      "event_type": "liturgy|vespers|feast|festival|youth|talk|fundraiser|other",
-      "location": "venue if different from parish, or null"
+      "end_time": "11:00 or null",
+      "event_type": "liturgy|prayer|feast|talk|youth|social|other",
+      "location": "venue if different from parish, or null",
+      "languages": ["English"]
     }
-  ]
+  ],
+  "schedules": [
+    {
+      "day_of_week": 0,
+      "start_time": "09:30",
+      "end_time": "12:00 or null",
+      "title": "Sunday Divine Liturgy",
+      "event_type": "liturgy|prayer|feast|talk|youth|social|other",
+      "languages": ["English", "Arabic"]
+    }
+  ],
+  "parish_updates": null or {
+    "address": "new address or null",
+    "website": "new url or null",
+    "phone": "new phone or null",
+    "languages": ["English", "Arabic"]
+  }
 }
 
-If you cannot extract any events, return: {"inferred_parish": null, "events": []}
-Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not specify a year, assume the nearest future occurrence of that date. Assume timezone is Australia/Sydney (AEDT/AEST).`
+IMPORTANT type rules: "Vesperal Liturgy" and any service with "Liturgy" = liturgy. Vespers, Matins, Compline, Bridegroom, Holy Unction, Lamentations, Passion Gospels = prayer.
+day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday.
+Only include schedules if the message describes RECURRING weekly services, not one-off events.
+Only include parish_updates if the message explicitly provides new/changed parish contact info.
+If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}
+Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not specify a year, assume the nearest future occurrence. Timezone: Australia/Sydney (AEDT/AEST).`
     });
 
     const response = await client.messages.create({
@@ -207,7 +235,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not 
       messages: [{ role: 'user', content }]
     });
 
-    const responseText = response.content[0].text;
+    const responseText = response.content[0].text.replace(/```json\s*/g, '').replace(/```/g, '').trim();
     let parsed;
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -221,12 +249,11 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not 
     const events = (parsed.events || []).map(evt => {
       const dateStr = evt.date || new Date().toISOString().split('T')[0];
       const startTime = evt.start_time || '09:00';
-      const startDate = new Date(`${dateStr}T${startTime}:00+11:00`);
-      const startUtc = startDate.toISOString();
+      const startUtc = localToUtc(dateStr, startTime);
 
       let endUtc = null;
       if (evt.end_time) {
-        endUtc = new Date(`${dateStr}T${evt.end_time}:00+11:00`).toISOString();
+        endUtc = localToUtc(dateStr, evt.end_time);
       }
 
       const hash = crypto.createHash('sha256')
@@ -248,7 +275,10 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not 
 
     return {
       events,
-      inferred_parish: parsed.inferred_parish || null
+      inferred_parish: parsed.inferred_parish || null,
+      schedules: parsed.schedules || [],
+      parish_updates: parsed.parish_updates || null,
+      new_parish: parsed.new_parish || null
     };
   }
 

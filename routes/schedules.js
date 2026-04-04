@@ -11,7 +11,8 @@ router.get('/', (req, res) => {
   let query = `
     SELECT s.*, p.name as parish_name, p.full_name, p.jurisdiction,
       p.address as parish_address, p.lat, p.lng,
-      p.website as parish_website, p.logo_path as parish_logo, p.languages
+      p.website as parish_website, p.logo_path as parish_logo, p.languages,
+      p.acronym as parish_acronym, p.color as parish_color
     FROM schedules s
     JOIN parishes p ON s.parish_id = p.id
     WHERE s.active = 1 AND p.id != '_unassigned'
