@@ -341,6 +341,9 @@
           <div class="expandable" id="pe-${esc(p.id)}" onclick="event.stopPropagation()">
             <div class="grid">
               <div class="field full"><label>Full Name</label><input value="${esc(p.full_name || '')}" data-field="full_name"></div>
+              <div class="field"><label>Jurisdiction</label>
+                <select data-field="jurisdiction">${['antiochian','greek','serbian','russian','romanian','macedonian','other'].map(j => `<option value="${j}" ${p.jurisdiction===j?'selected':''}>${j}</option>`).join('')}</select>
+              </div>
               <div class="field full"><label>Address</label><input value="${esc(p.address || '')}" data-field="address"></div>
               <div class="field"><label>Website</label><input value="${esc(p.website || '')}" data-field="website"></div>
               <div class="field"><label>Email</label><input value="${esc(p.email || '')}" data-field="email"></div>
@@ -391,9 +394,26 @@
     });
 
     async function deleteParish(id) {
-      if (!confirm('Remove this parish?')) return;
+      // First try — if events exist, the API returns the count
       const res = await fetch(`/api/admin/parishes/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Removed'); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
+      if (res.ok) { toast('Removed'); loadAll(); return; }
+      const err = await res.json();
+      if (!err.event_count) { toast(err.error || 'Failed', 'error'); return; }
+
+      const choice = prompt(
+        `This parish has ${err.event_count} events.\n\nType a parish name to transfer events to it, or type DELETE to remove all events and the parish:`
+      );
+      if (!choice) return;
+
+      if (choice.trim() === 'DELETE') {
+        const r2 = await fetch(`/api/admin/parishes/${id}?delete_events=1`, { method: 'DELETE', headers });
+        if (r2.ok) { toast('Parish and events deleted'); loadAll(); } else toast('Failed', 'error');
+      } else {
+        const target = parishes.find(p => p.name.toLowerCase() === choice.trim().toLowerCase() || p.id === choice.trim());
+        if (!target) { toast('Parish not found — use exact name or ID', 'error'); return; }
+        const r2 = await fetch(`/api/admin/parishes/${id}?transfer_to=${encodeURIComponent(target.id)}`, { method: 'DELETE', headers });
+        if (r2.ok) { toast(`Events transferred to ${target.name}, parish deleted`); loadAll(); } else { const e2 = await r2.json(); toast(e2.error || 'Failed', 'error'); }
+      }
     }
 
     // ── Schedules ──

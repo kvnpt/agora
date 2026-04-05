@@ -18,7 +18,7 @@ const state = {
   filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false },
   subdomainJurisdiction: null,
   locationActive: false,
-  todaySort: 'time'  // 'time' | 'nearby'
+  eventsSort: 'time'  // 'time' | 'nearby'
 };
 
 // ── Init ──
@@ -122,9 +122,9 @@ function requestGeolocation(callback) {
 async function fetchEvents() {
   const params = new URLSearchParams({
     lat: state.userLat,
-    lng: state.userLng,
-    radius: state.filters.distance
+    lng: state.userLng
   });
+  if (state.locationActive) params.set('radius', state.filters.distance);
   if (state.filters.type) params.set('type', state.filters.type);
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
 
@@ -430,38 +430,65 @@ function renderEvents() {
   bindEventCards(container);
 }
 
+// Split events into Morning (<14:00 local) and Evening (>=14:00 local) sub-groups
+function splitMorningEvening(events) {
+  const morning = [], evening = [];
+  for (const e of events) {
+    const h = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date(e.start_utc)));
+    (h < 14 ? morning : evening).push(e);
+  }
+  return { morning, evening };
+}
+
+function sortEvents(arr) {
+  if (state.eventsSort === 'nearby' && state.locationActive) {
+    return [...arr].sort((a, b) => (a.distance_km || 999) - (b.distance_km || 999));
+  }
+  return [...arr].sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+}
+
+function buildSortToggle() {
+  const locIcon = `<img class="sort-icon" src="https://api.iconify.design/typcn:location-arrow.svg" alt="">`;
+  return `<span class="sort-toggle">` +
+    `<button class="sort-nearby ${state.eventsSort === 'nearby' ? 'active' : ''}" data-sort="nearby">${locIcon}Nearby</button>` +
+    `<span class="sort-sep">|</span>` +
+    `<button class="sort-time ${state.eventsSort === 'time' ? 'active' : ''}" data-sort="time">Time</button>` +
+    `</span>`;
+}
+
+function renderSubDaySections(events, html) {
+  const { morning, evening } = splitMorningEvening(events);
+  if (morning.length) {
+    html += `<div class="sub-day-header">Morning</div>`;
+    html += sortEvents(morning).map(renderEventCard).join('');
+  }
+  if (evening.length) {
+    html += `<div class="sub-day-header">Evening</div>`;
+    html += sortEvents(evening).map(renderEventCard).join('');
+  }
+  return html;
+}
+
 function renderToday(container, events) {
   const now = new Date();
-  let happeningNow = events.filter(e => {
+  const happeningNow = events.filter(e => {
     const start = new Date(e.start_utc);
     const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
     return start <= now && end >= now;
   });
-  let later = events.filter(e => new Date(e.start_utc) > now);
+  const later = events.filter(e => new Date(e.start_utc) > now);
 
-  // Sort by distance if nearby mode is active
-  if (state.todaySort === 'nearby' && state.locationActive) {
-    const sortByDist = arr => arr.sort((a, b) => (a.distance_km || 999) - (b.distance_km || 999));
-    happeningNow = sortByDist([...happeningNow]);
-    later = sortByDist([...later]);
-  }
-
-  const locIcon = `<img class="sort-icon" src="https://api.iconify.design/typcn:location-arrow.svg" alt="">`;
-  const sortToggle = `<span class="sort-toggle">` +
-    `<button class="sort-nearby ${state.todaySort === 'nearby' ? 'active' : ''}" data-sort="nearby">${locIcon}Nearby</button>` +
-    `<span class="sort-sep">|</span>` +
-    `<button class="sort-time ${state.todaySort === 'time' ? 'active' : ''}" data-sort="time">Time</button>` +
-    `</span>`;
+  const sortToggle = buildSortToggle();
 
   let html = '';
   if (happeningNow.length) {
     html += `<div class="section-header"><span class="now-dot"></span>Happening now${sortToggle}</div>`;
-    html += happeningNow.map(renderEventCard).join('');
+    html += sortEvents(happeningNow).map(renderEventCard).join('');
   }
   if (later.length) {
     const laterToggle = happeningNow.length ? '' : sortToggle;
     html += `<div class="section-header">Later today${laterToggle}</div>`;
-    html += later.map(renderEventCard).join('');
+    html = renderSubDaySections(later, html);
   }
   if (!happeningNow.length && !later.length) {
     html = '<div class="empty-state"><h3>Nothing on today</h3><p><button class="cta-link" id="cta-month">See upcoming days &rarr;</button></p></div>';
@@ -478,19 +505,22 @@ function renderToday(container, events) {
     });
   }
 
-  // Bind sort toggle clicks
+  bindSortToggle(container);
+}
+
+function bindSortToggle(container) {
   container.querySelectorAll('.sort-toggle button').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const sort = btn.dataset.sort;
       if (sort === 'nearby' && !state.locationActive) {
         requestGeolocation(() => {
-          state.todaySort = 'nearby';
+          state.eventsSort = 'nearby';
           renderEvents();
         });
         return;
       }
-      state.todaySort = sort;
+      state.eventsSort = sort;
       renderEvents();
     });
   });
@@ -503,28 +533,33 @@ function renderMonth(container, events) {
 
   // Get jurisdiction color for Sunday styling
   const jColor = getJurisdictionColor();
+  const sortToggle = buildSortToggle();
 
   let html = '';
+  let first = true;
   for (const [dateKey, evts] of groups) {
     const d = parseLocalDate(evts[0].start_utc);
-    // Full day name for next 7 days, abbreviated after
     const weekdayStyle = d < sevenDaysOut ? 'long' : 'short';
     const dayFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: weekdayStyle, day: 'numeric', month: 'short' }).format(d);
 
-    // Check if this is a Sunday
     const dayOfWeek = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
     const isSunday = dayOfWeek === 'Sunday';
+
+    if (!first) html += `<hr class="day-divider">`;
 
     if (isSunday) {
       html += `<div class="sunday-cluster" style="border-left-color:${jColor}; background: ${jColor}08;">`;
     }
-    html += `<div class="section-header">${dayFmt}</div>`;
-    html += evts.map(renderEventCard).join('');
+    const toggle = first ? sortToggle : '';
+    html += `<div class="section-header">${dayFmt}${toggle}</div>`;
+    first = false;
+    html = renderSubDaySections(evts, html);
     if (isSunday) {
       html += `</div>`;
     }
   }
   container.innerHTML = html;
+  bindSortToggle(container);
 }
 
 function getJurisdictionColor() {
@@ -613,14 +648,31 @@ function renderServices() {
       byDay.get(item.day_of_week).push(item);
     }
 
+    const types = ['liturgy','prayer','feast','talk','youth','social','other'];
     for (const [day, scheds] of byDay) {
       html += `<div class="schedule-day">${DAYS[day]}</div>`;
       for (const s of scheds) {
         const t = formatTime12(s.start_time);
         const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
         const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
-        const editBtn = state.isAdmin ? `<button class="schedule-lang-edit" data-schedule-id="${s.id}" data-langs="${esc(langs.join(', '))}" title="Edit language">✎</button>` : '';
+        const editBtn = state.isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
         html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${editBtn}</div>`;
+        if (state.isAdmin) {
+          html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
+            <div class="schedule-edit-grid">
+              <input data-f="title" value="${esc(s.title)}" placeholder="Title">
+              <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
+              <input data-f="start_time" type="time" value="${esc(s.start_time)}">
+              <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
+              <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
+              <input data-f="languages" value="${esc(langs.join(', '))}" placeholder="Languages">
+            </div>
+            <div style="display:flex;gap:4px;margin-top:4px;">
+              <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
+              <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
+            </div>
+          </div>`;
+        }
       }
     }
     html += '</div>';
@@ -635,20 +687,41 @@ function renderServices() {
     });
   });
 
-  // Admin: inline language edit on schedules
-  container.querySelectorAll('.schedule-lang-edit').forEach(btn => {
+  // Admin: toggle edit form
+  container.querySelectorAll('.schedule-edit-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const id = btn.dataset.scheduleId;
-      const current = btn.dataset.langs;
-      const val = prompt('Languages (comma-separated):', current);
-      if (val === null) return;
-      const langs = val.trim() ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
-      fetch(`/api/admin/schedules/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ languages: langs })
-      }).then(r => { if (r.ok) fetchSchedules(); });
+      const form = document.getElementById('sef-' + btn.dataset.sid);
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+  });
+
+  // Admin: save schedule
+  container.querySelectorAll('.schedule-save-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.sid;
+      const form = document.getElementById('sef-' + id);
+      const data = {};
+      form.querySelectorAll('[data-f]').forEach(input => {
+        const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
+        const field = input.dataset.f;
+        if (field === 'languages') data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
+        else if (field === 'day_of_week') data[field] = parseInt(val);
+        else data[field] = val || null;
+      });
+      fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+        .then(r => { if (r.ok) fetchSchedules(); });
+    });
+  });
+
+  // Admin: delete schedule
+  container.querySelectorAll('.schedule-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm('Delete this schedule?')) return;
+      fetch(`/api/admin/schedules/${btn.dataset.sid}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
+        .then(r => { if (r.ok) fetchSchedules(); });
     });
   });
 }

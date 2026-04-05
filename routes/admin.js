@@ -109,7 +109,7 @@ router.patch('/parishes/:id', (req, res) => {
   const parish = db.prepare('SELECT * FROM parishes WHERE id = ?').get(id);
   if (!parish) return res.status(404).json({ error: 'Parish not found' });
 
-  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color'];
+  const allowed = ['name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color'];
   const updates = [];
   const values = [];
   for (const key of allowed) {
@@ -129,9 +129,12 @@ router.patch('/parishes/:id', (req, res) => {
 });
 
 // DELETE /api/admin/parishes/:id — remove a parish
+// Query params: ?transfer_to=<parish_id> to move events, or ?delete_events=1 to delete them
 router.delete('/parishes/:id', (req, res) => {
   const db = getDb();
   const id = req.params.id;
+  const transferTo = req.query.transfer_to;
+  const deleteEvents = req.query.delete_events === '1';
 
   if (id === '_unassigned') return res.status(400).json({ error: 'Cannot delete sentinel parish' });
 
@@ -139,8 +142,17 @@ router.delete('/parishes/:id', (req, res) => {
   if (!parish) return res.status(404).json({ error: 'Parish not found' });
 
   const eventCount = db.prepare('SELECT COUNT(*) as n FROM events WHERE parish_id = ?').get(id).n;
-  if (eventCount > 0) {
-    return res.status(400).json({ error: `Cannot delete: ${eventCount} events reference this parish` });
+  if (eventCount > 0 && !transferTo && !deleteEvents) {
+    return res.status(400).json({ error: `${eventCount} events reference this parish`, event_count: eventCount });
+  }
+
+  if (transferTo) {
+    const target = db.prepare('SELECT id FROM parishes WHERE id = ?').get(transferTo);
+    if (!target) return res.status(400).json({ error: 'Transfer target parish not found' });
+    db.prepare('UPDATE events SET parish_id = ? WHERE parish_id = ?').run(transferTo, id);
+    db.prepare('UPDATE schedules SET parish_id = ? WHERE parish_id = ?').run(transferTo, id);
+  } else if (deleteEvents) {
+    db.prepare('DELETE FROM events WHERE parish_id = ?').run(id);
   }
 
   db.prepare('DELETE FROM schedules WHERE parish_id = ?').run(id);

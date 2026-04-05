@@ -130,11 +130,11 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
     const { getDb } = require('../db');
     const db = getDb();
     const parishes = db.prepare(
-      "SELECT id, name, jurisdiction, address FROM parishes WHERE id != '_unassigned'"
+      "SELECT id, name, acronym, jurisdiction, address FROM parishes WHERE id != '_unassigned'"
     ).all();
 
     const parishList = parishes.map(p =>
-      `- "${p.name}" (id: ${p.id}, ${p.jurisdiction}, ${p.address})`
+      `- "${p.name}"${p.acronym ? ` [${p.acronym}]` : ''} (id: ${p.id}, ${p.jurisdiction}, ${p.address})`
     ).join('\n');
 
     // Build message content array
