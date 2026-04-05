@@ -39,19 +39,20 @@ class WhatsAppPosterAdapter extends BaseAdapter {
       '.jpeg': 'image/jpeg',
       '.png': 'image/png',
       '.gif': 'image/gif',
-      '.webp': 'image/webp'
+      '.webp': 'image/webp',
+      '.pdf': 'application/pdf'
     }[ext] || 'image/jpeg';
+    const isPdf = mediaType === 'application/pdf';
 
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [{
         role: 'user',
         content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: base64 }
-          },
+          isPdf
+            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+            : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
           {
             type: 'text',
             text: `Extract event details from this poster image. The event is from an Orthodox Christian parish in Sydney, Australia.
@@ -145,13 +146,20 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
       const ext = path.extname(imagePath).toLowerCase();
       const mediaType = {
         '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-        '.gif': 'image/gif', '.webp': 'image/webp'
+        '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf'
       }[ext] || 'image/jpeg';
 
-      content.push({
-        type: 'image',
-        source: { type: 'base64', media_type: mediaType, data: base64 }
-      });
+      if (mediaType === 'application/pdf') {
+        content.push({
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: base64 }
+        });
+      } else {
+        content.push({
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: base64 }
+        });
+      }
     }
 
     for (const text of texts) {

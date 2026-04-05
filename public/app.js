@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   disablePageZoom();
   loadCachedLocation();
   await Promise.all([fetchParishes(), checkAdmin()]);
+  applyParishSlug();
   initFilters(state);
   initModeBar();
   initTimePills();
@@ -56,7 +57,7 @@ function disablePageZoom() {
   }, { passive: false });
 }
 
-// ── Subdomain detection ──
+// ── Subdomain + path parish detection ──
 function detectSubdomain() {
   const host = window.location.hostname;
   const match = host.match(/^(antiochian|greek|serbian|russian|romanian|macedonian)\.orthodoxy\.au$/);
@@ -64,6 +65,28 @@ function detectSubdomain() {
     state.subdomainJurisdiction = match[1];
     state.filters.jurisdiction = match[1];
   }
+  // Store path slug for parish soft-bind (applied after parishes load)
+  const slug = decodeURIComponent(window.location.pathname.replace(/^\/+/, '').replace(/\/+$/, '')).toLowerCase();
+  if (slug) state._parishSlug = slug;
+}
+
+// Apply parish slug filter after parishes are loaded
+function applyParishSlug() {
+  if (!state._parishSlug) return;
+  const slug = state._parishSlug;
+  const match = state.parishes.find(p => {
+    if (p.id === '_unassigned') return false;
+    const acronym = (p.acronym || '').toLowerCase();
+    return acronym && acronym.replace(/\s+/g, '') === slug.replace(/\s+/g, '');
+  });
+  if (match) {
+    state.filters.parishIds = new Set([match.id]);
+    // Also set jurisdiction if not already set
+    if (!state.filters.jurisdiction) {
+      state.filters.jurisdiction = match.jurisdiction;
+    }
+  }
+  delete state._parishSlug;
 }
 
 // ── Geolocation ──
