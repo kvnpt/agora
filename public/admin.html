@@ -176,6 +176,7 @@
               <option value="talk">Talk</option><option value="youth">Youth</option><option value="social">Social</option><option value="other">Other</option>
             </select>
           </div>
+          <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic, Greek"></div>
         </div>
         <div class="btn-row"><button type="submit" class="btn btn-primary">Add Schedule</button></div>
       </form>
@@ -399,23 +400,64 @@
     function renderScheduleList() {
       const c = document.getElementById('schedule-list');
       if (!schedules.length) { c.innerHTML = '<div class="empty">No schedules configured</div>'; return; }
+      const types = ['liturgy','prayer','feast','talk','youth','social','other'];
+      const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
       c.innerHTML = schedules.map(s => `
-        <div class="card sched-card ${s.active ? '' : 'inactive'}">
-          <div><div class="card-title">${esc(s.title)}</div><div class="card-meta">${esc(s.parish_name)} &middot; ${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} &middot; ${esc(s.event_type)}${s.active ? '' : ' &middot; INACTIVE'}</div></div>
-          <div style="display:flex;gap:4px;">
-            <button class="btn btn-outline" onclick="toggleSchedule(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'Disable' : 'Enable'}</button>
-            <button class="btn btn-reject" onclick="deleteSchedule(${s.id})">Delete</button>
+        <div class="card expand-trigger ${s.active ? '' : 'inactive'}" onclick="toggleExpand('se-${s.id}')">
+          <div class="sched-card">
+            <div><div class="card-title">${esc(s.title)}</div><div class="card-meta">${esc(s.parish_name)} &middot; ${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} &middot; ${esc(s.event_type)}${s.languages ? ' &middot; ' + esc(parseLangs(s.languages)) : ''}${s.active ? '' : ' &middot; INACTIVE'}</div></div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-outline" onclick="event.stopPropagation();toggleSchedule(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'Disable' : 'Enable'}</button>
+              <button class="btn btn-reject" onclick="event.stopPropagation();deleteSchedule(${s.id})">Delete</button>
+            </div>
+          </div>
+          <div class="expandable" id="se-${s.id}" onclick="event.stopPropagation()">
+            <div class="grid">
+              <div class="field"><label>Title</label><input value="${esc(s.title)}" data-field="title"></div>
+              <div class="field"><label>Day</label>
+                <select data-field="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
+              </div>
+              <div class="field"><label>Start</label><input type="time" value="${esc(s.start_time)}" data-field="start_time"></div>
+              <div class="field"><label>End</label><input type="time" value="${esc(s.end_time || '')}" data-field="end_time"></div>
+              <div class="field"><label>Type</label>
+                <select data-field="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
+              </div>
+              <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages"></div>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" onclick="saveSchedule(${s.id})">Save</button>
+            </div>
           </div>
         </div>`).join('');
     }
 
     document.getElementById('schedule-form').addEventListener('submit', async e => {
       e.preventDefault(); const f = e.target;
+      const langsRaw = f.languages.value.trim();
       const data = { parish_id: f.parish_id.value, day_of_week: parseInt(f.day_of_week.value), start_time: f.start_time.value,
-        end_time: f.end_time.value || null, title: f.title.value.trim(), event_type: f.event_type.value };
+        end_time: f.end_time.value || null, title: f.title.value.trim(), event_type: f.event_type.value,
+        languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim()).filter(Boolean)) : null };
       const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
     });
+
+    async function saveSchedule(id) {
+      const c = document.getElementById('se-' + id);
+      const data = {};
+      c.querySelectorAll('[data-field]').forEach(input => {
+        const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
+        const field = input.dataset.field;
+        if (field === 'languages') {
+          data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
+        } else if (field === 'day_of_week') {
+          data[field] = parseInt(val);
+        } else {
+          data[field] = val || null;
+        }
+      });
+      const res = await fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
+      if (res.ok) { toast('Schedule saved'); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
+    }
 
     async function toggleSchedule(id, active) {
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ active }) });

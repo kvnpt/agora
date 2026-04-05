@@ -147,17 +147,18 @@ function addLabeledMarkers(locations, TZ) {
     lm.py = pt.y;
   }
 
-  const LABEL_W = 130;
-  const LABEL_H = 26;
+  const LABEL_W = 120;
+  const LABEL_H = 22;
   const placed = [];
 
   // Active labels get priority
   labelMeta.sort((a, b) => (b.loc.active ? 1 : 0) - (a.loc.active ? 1 : 0));
 
   for (const lm of labelMeta) {
-    const getBounds = (side) => {
+    const getBounds = (side, offsetY = 0) => {
       const x = side === 'right' ? lm.px + 8 : lm.px - LABEL_W - 8;
-      return { x1: x, y1: lm.py - LABEL_H / 2, x2: x + LABEL_W, y2: lm.py + LABEL_H / 2 };
+      const y = lm.py + offsetY;
+      return { x1: x, y1: y - LABEL_H / 2, x2: x + LABEL_W, y2: y + LABEL_H / 2, offsetY };
     };
 
     const overlaps = (bounds) => {
@@ -167,14 +168,28 @@ function addLabeledMarkers(locations, TZ) {
       return false;
     };
 
-    let bounds = getBounds(lm.side);
-    if (overlaps(bounds)) {
-      lm.side = lm.side === 'right' ? 'left' : 'right';
-      bounds = getBounds(lm.side);
-      if (overlaps(bounds)) {
-        lm.hidden = true;
-        continue;
+    // Try: preferred side, then opposite, then vertical nudges on both sides
+    let bounds = null;
+    let found = false;
+    const sides = [lm.side, lm.side === 'right' ? 'left' : 'right'];
+    const offsets = [0, -LABEL_H, LABEL_H, -LABEL_H * 2, LABEL_H * 2];
+
+    for (const side of sides) {
+      for (const offsetY of offsets) {
+        bounds = getBounds(side, offsetY);
+        if (!overlaps(bounds)) {
+          lm.side = side;
+          lm.offsetY = offsetY;
+          found = true;
+          break;
+        }
       }
+      if (found) break;
+    }
+
+    if (!found) {
+      lm.hidden = true;
+      continue;
     }
 
     placed.push(bounds);
@@ -189,12 +204,13 @@ function addLabeledMarkers(locations, TZ) {
     const labelHtml = `<div class="map-label" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
 
     const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
+    const anchorY = 15 - (lm.offsetY || 0);
     const label = L.marker([lm.loc.lat, lm.loc.lng], {
       icon: L.divIcon({
         className: '',
         html: labelHtml,
         iconSize: [LABEL_W, 30],
-        iconAnchor: [anchorX, 15]
+        iconAnchor: [anchorX, anchorY]
       }),
       interactive: false
     }).addTo(map);

@@ -15,7 +15,7 @@ const state = {
   userLng: 151.2093,
   mode: 'events',
   timeRange: 'today',
-  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false },
+  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false },
   subdomainJurisdiction: null,
   locationActive: false,
   todaySort: 'time'  // 'time' | 'nearby'
@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMapToggle();
   initParishFilter();
   initSocialFilter();
+  initEnglishFilter();
   await fetchEvents();
   initMap(state);
   updateMap(state);
@@ -203,6 +204,10 @@ function showView(name) {
 
 // ── Parish filter ──
 function initParishFilter() {
+  const parishRow = document.getElementById('parish-filter-row');
+  if (state.filters.jurisdiction) {
+    parishRow.classList.add('visible');
+  }
   renderParishPills();
 }
 
@@ -214,12 +219,19 @@ function renderParishPills() {
     return true;
   });
 
-  // Sort by distance when location is active
   if (state.locationActive) {
+    // Sort by distance when location is active
     relevant = relevant.map(p => ({
       ...p,
       _dist: haversineKm(state.userLat, state.userLng, p.lat, p.lng)
     })).sort((a, b) => a._dist - b._dist);
+  } else {
+    // Sort alphabetically by acronym/name
+    relevant = relevant.sort((a, b) => {
+      const aName = a.acronym || a.name.split(',')[0];
+      const bName = b.acronym || b.name.split(',')[0];
+      return aName.localeCompare(bName);
+    });
   }
 
   const allActive = state.filters.parishIds === null;
@@ -302,6 +314,16 @@ function initSocialFilter() {
   });
 }
 
+// ── English filter ──
+function initEnglishFilter() {
+  const btn = document.getElementById('btn-english');
+  btn.addEventListener('click', () => {
+    state.filters.englishOnly = !state.filters.englishOnly;
+    btn.classList.toggle('active', state.filters.englishOnly);
+    renderCurrentView();
+  });
+}
+
 // ── Haversine distance ──
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -330,6 +352,12 @@ function applyFilters(events) {
   if (state.filters.socialOnly) {
     // Social = youth, social, talk, other, festival, fundraiser (everything NOT liturgical)
     filtered = filtered.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
+  }
+  if (state.filters.englishOnly) {
+    filtered = filtered.filter(e => {
+      const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
+      return langs && langs.some(l => /english/i.test(l));
+    });
   }
   return filtered;
 }
@@ -531,6 +559,12 @@ function renderServices() {
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));
   }
+  if (state.filters.englishOnly) {
+    schedules = schedules.filter(s => {
+      const langs = parseLangs(s.languages) || parseLangs(s.parish_languages);
+      return langs && langs.some(l => /english/i.test(l));
+    });
+  }
 
   if (!schedules.length) {
     container.innerHTML = '<div class="empty-state"><h3>No services listed</h3></div>';
@@ -560,7 +594,10 @@ function renderServices() {
       html += `<div class="schedule-day">${DAYS[day]}</div>`;
       for (const s of scheds) {
         const t = formatTime12(s.start_time);
-        html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span></div>`;
+        const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
+        const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
+        const editBtn = state.isAdmin ? `<button class="schedule-lang-edit" data-schedule-id="${s.id}" data-langs="${esc(langs.join(', '))}" title="Edit language">✎</button>` : '';
+        html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${editBtn}</div>`;
       }
     }
     html += '</div>';
@@ -572,6 +609,23 @@ function renderServices() {
   container.querySelectorAll('.parish-schedule').forEach(card => {
     card.addEventListener('click', () => {
       showParishDetail(card.dataset.parishId);
+    });
+  });
+
+  // Admin: inline language edit on schedules
+  container.querySelectorAll('.schedule-lang-edit').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.scheduleId;
+      const current = btn.dataset.langs;
+      const val = prompt('Languages (comma-separated):', current);
+      if (val === null) return;
+      const langs = val.trim() ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
+      fetch(`/api/admin/schedules/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ languages: langs })
+      }).then(r => { if (r.ok) fetchSchedules(); });
     });
   });
 }
@@ -633,7 +687,7 @@ function showEventDetail(id) {
   }
 
   const posterHtml = evt.poster_path
-    ? `<div class="detail-poster" id="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
+    ? `<a class="detail-poster" href="${esc(evt.poster_path)}" target="_blank" rel="noopener"><img src="${esc(evt.poster_path)}" alt="Event poster"></a>`
     : '';
 
   content.innerHTML = `
@@ -653,16 +707,6 @@ function showEventDetail(id) {
       ${adminActions}
     </div>
     ${editForm}`;
-
-  // Poster lightbox
-  const posterEl = content.querySelector('#detail-poster');
-  if (posterEl) {
-    posterEl.addEventListener('click', () => {
-      const lb = document.getElementById('poster-lightbox');
-      document.getElementById('poster-lightbox-img').src = evt.poster_path;
-      lb.classList.remove('hidden');
-    });
-  }
 
   // Set parish color accent on the panel
   panel.style.borderLeftColor = evt.parish_color || 'var(--border)';
@@ -771,14 +815,6 @@ function closeDetail() {
 
 document.getElementById('close-detail').addEventListener('click', closeDetail);
 
-// Poster lightbox close
-document.getElementById('poster-lightbox-close').addEventListener('click', () => {
-  document.getElementById('poster-lightbox').classList.add('hidden');
-});
-document.getElementById('poster-lightbox').addEventListener('click', e => {
-  if (e.target === e.currentTarget) document.getElementById('poster-lightbox').classList.add('hidden');
-});
-
 // ── Helpers ──
 function groupByDay(events) {
   const groups = new Map();
@@ -817,6 +853,11 @@ function localInputToUtc(localStr) {
   const dstEnd = new Date(Date.UTC(year, 3, firstSunday(year, 3), 3, 0, 0));
   const offset = (d >= dstEnd && d < dstStart) ? 10 : 11;
   return new Date(d.getTime() - offset * 3600000).toISOString();
+}
+
+function parseLangs(val) {
+  if (!val) return null;
+  try { const arr = JSON.parse(val); return arr.length ? arr : null; } catch { return null; }
 }
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }

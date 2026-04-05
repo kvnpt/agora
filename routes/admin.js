@@ -5,7 +5,8 @@ const fs = require('fs');
 
 const router = Router();
 
-// Auth is handled by Caddy forward_auth to keycard — only Tailnet user "paul" reaches here
+// Auth is handled by Caddy forward_auth to keycard — only Tailnet users reach /api/admin/*
+// Do NOT add Express-level auth middleware here; it would block the keycard flow.
 
 // GET /api/admin/ping — lightweight check for admin access
 router.get('/ping', (req, res) => res.json({ ok: true }));
@@ -164,7 +165,7 @@ router.get('/schedules', (req, res) => {
 // POST /api/admin/schedules — create a schedule
 router.post('/schedules', (req, res) => {
   const db = getDb();
-  const { parish_id, day_of_week, start_time, end_time, title, event_type } = req.body;
+  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages } = req.body;
 
   if (!parish_id || day_of_week == null || !start_time || !title) {
     return res.status(400).json({ error: 'parish_id, day_of_week, start_time, and title are required' });
@@ -174,9 +175,9 @@ router.post('/schedules', (req, res) => {
   if (!parish) return res.status(400).json({ error: 'Invalid parish_id' });
 
   const result = db.prepare(`
-    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy');
+    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null);
 
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(schedule);

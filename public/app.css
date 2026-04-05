@@ -135,6 +135,11 @@ body {
 }
 .icon-btn:hover img { opacity: 0.8; }
 .icon-btn.active img { opacity: 1; filter: invert(1); }
+.text-icon-btn {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 
 .services-btn {
   flex: none;
@@ -394,6 +399,22 @@ body {
 .schedule-item-time {
   color: var(--text-muted);
 }
+.schedule-item-lang {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+.schedule-lang-edit {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 2px;
+  opacity: 0.5;
+}
+.schedule-lang-edit:hover { opacity: 1; }
 
 /* ── Detail panel ── */
 .detail-panel {
@@ -630,8 +651,8 @@ body {
 
 /* ── Event poster in detail panel ── */
 .detail-poster {
+  display: block;
   margin-bottom: 16px;
-  cursor: pointer;
   border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--border-light);
@@ -641,35 +662,6 @@ body {
   display: block;
 }
 
-/* ── Poster lightbox ── */
-.poster-lightbox {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.92);
-  z-index: 2000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-.poster-lightbox.hidden { display: none; }
-.poster-lightbox img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 4px;
-}
-.poster-lightbox-close {
-  position: absolute;
-  top: 12px;
-  left: 14px;
-  background: none;
-  border: none;
-  font-size: 28px;
-  color: #fff;
-  cursor: pointer;
-  z-index: 2001;
-}
 
 /* ── Responsive ── */
 @media (min-width: 640px) {

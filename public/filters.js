@@ -9,7 +9,15 @@ const JURISDICTIONS = [
 
 function initFilters(state) {
   const chipContainer = document.getElementById('jurisdiction-chips');
-  chipContainer.innerHTML = JURISDICTIONS.map(j =>
+  // Put subdomain jurisdiction first if accessed from a jurisdiction subdomain
+  let ordered = JURISDICTIONS;
+  if (state.subdomainJurisdiction) {
+    ordered = [
+      ...JURISDICTIONS.filter(j => j.key === state.subdomainJurisdiction),
+      ...JURISDICTIONS.filter(j => j.key !== state.subdomainJurisdiction)
+    ];
+  }
+  chipContainer.innerHTML = ordered.map(j =>
     `<button class="jurisdiction-chip${state.filters.jurisdiction === j.key ? ' active' : ''}" data-jurisdiction="${j.key}" data-color="${j.color}">${j.label}</button>`
   ).join('');
 
@@ -34,8 +42,11 @@ function initFilters(state) {
     // Reset parish filter when jurisdiction changes
     state.filters.parishIds = null;
     const parishRow = document.getElementById('parish-filter-row');
-    if (parishRow.classList.contains('visible')) {
+    if (state.filters.jurisdiction) {
+      parishRow.classList.add('visible');
       if (typeof renderParishPills === 'function') renderParishPills();
+    } else {
+      parishRow.classList.remove('visible');
     }
 
     if (state.mode === 'services') {

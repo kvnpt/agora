@@ -25,14 +25,15 @@
     <button class="icon-btn" id="btn-social" title="Social events only">
       <img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="Social">
     </button>
+    <button class="icon-btn text-icon-btn" id="btn-english" title="English services only">EN</button>
     <nav class="time-pills" id="time-pills">
       <button class="pill active" data-range="today">Today</button>
       <button class="pill" data-range="month">This month</button>
     </nav>
   </div>
 
-  <!-- Parish filter pills (visible by default) -->
-  <div class="parish-filter-row visible" id="parish-filter-row"></div>
+  <!-- Parish filter pills (shown when a jurisdiction is selected) -->
+  <div class="parish-filter-row" id="parish-filter-row"></div>
 
   <!-- Events view (default) -->
   <div id="events-view" class="content-view active">
@@ -48,12 +49,6 @@
   <div id="event-detail" class="detail-panel hidden">
     <button class="close-btn" id="close-detail">&times;</button>
     <div id="detail-content"></div>
-  </div>
-
-  <!-- Poster lightbox -->
-  <div id="poster-lightbox" class="poster-lightbox hidden">
-    <button class="poster-lightbox-close" id="poster-lightbox-close">&times;</button>
-    <img id="poster-lightbox-img" src="" alt="Event poster">
   </div>
 
   <!-- Admin link (injected by JS if on Tailnet) -->
