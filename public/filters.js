@@ -49,6 +49,8 @@ function initFilters(state) {
       parishRow.classList.remove('visible');
     }
 
+    if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
+
     if (state.mode === 'services') {
       window.agoraFetchSchedules();
     } else {

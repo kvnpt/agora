@@ -2,6 +2,16 @@ const TZ = 'Australia/Sydney';
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const LITURGICAL_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
 
+// Archdiocese events page URLs
+const ARCHDIOCESE_EVENTS = {
+  antiochian: 'https://www.antiochian.org.au/events/list/',
+  greek:      'https://greekorthodox.org.au/news/',
+  serbian:    'https://soc.org.au/news/',
+  russian:    'https://rocor.org.au/?cat=2',
+  romanian:   null,
+  macedonian: null
+};
+
 // Display-time type mapping: legacy DB types → display label
 const TYPE_DISPLAY = { vespers: 'prayer', matins: 'prayer', festival: 'social', fundraiser: 'social' };
 
@@ -25,6 +35,7 @@ const state = {
 document.addEventListener('DOMContentLoaded', async () => {
   detectSubdomain();
   disablePageZoom();
+  disablePullToRefresh();
   loadCachedLocation();
   await Promise.all([fetchParishes(), checkAdmin()]);
   applyParishSlug();
@@ -33,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTimePills();
   initMapToggle();
   initParishFilter();
+  updateArchdioceseEventsBanner();
   initSocialFilter();
   initEnglishFilter();
   await fetchEvents();
@@ -54,6 +66,22 @@ function disablePageZoom() {
     const now = Date.now();
     if (now - lastTap < 300) e.preventDefault();
     lastTap = now;
+  }, { passive: false });
+}
+
+// ── Disable pull-to-refresh (iOS Safari ignores overscroll-behavior) ──
+function disablePullToRefresh() {
+  let touchStartY = 0;
+  document.addEventListener('touchstart', e => {
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    const y = e.touches[0].clientY;
+    // Pulling down while already at the top of the page
+    if (y > touchStartY && document.scrollingElement.scrollTop <= 0) {
+      if (e.cancelable) e.preventDefault();
+    }
   }, { passive: false });
 }
 
@@ -209,6 +237,7 @@ function initModeBar() {
       initTimePills();
       showView('events');
       fetchEvents();
+      updateArchdioceseEventsBanner();
     } else {
       state.mode = 'services';
       servicesBtn.classList.add('active');
@@ -216,6 +245,7 @@ function initModeBar() {
       timePills.innerHTML = '<span class="services-title">Service Times</span>';
       showView('services');
       fetchSchedules();
+      updateArchdioceseEventsBanner();
     }
   });
 }
@@ -223,6 +253,22 @@ function initModeBar() {
 function showView(name) {
   document.querySelectorAll('.content-view').forEach(v => v.classList.remove('active'));
   document.getElementById(`${name}-view`).classList.add('active');
+}
+
+// ── Archdiocese events banner ──
+function updateArchdioceseEventsBanner() {
+  const banner = document.getElementById('archdiocese-events-banner');
+  const j = state.filters.jurisdiction;
+  const url = j && ARCHDIOCESE_EVENTS[j];
+  const parishRow = document.getElementById('parish-filter-row');
+  const pillsVisible = parishRow.classList.contains('visible');
+
+  if (state.mode === 'services' && pillsVisible && url) {
+    banner.href = url;
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
 }
 
 // ── Parish filter ──
@@ -399,16 +445,74 @@ function initTimePills() {
 // ── Map toggle ──
 function initMapToggle() {
   const container = document.getElementById('map-container');
-  const toggle = document.getElementById('map-toggle');
-  toggle.addEventListener('click', () => {
-    container.classList.toggle('expanded');
+  const handle = document.querySelector('.map-grab-handle');
+  const modeBar = document.getElementById('mode-bar');
+  const MIN_H = 120, MAX_H = window.innerHeight * 0.65;
+  let dragging = false, startY = 0, startH = 0;
+
+  function engage(y) {
+    dragging = true;
+    pending = false;
+    startY = y;
+    startH = container.offsetHeight;
+    container.style.transition = 'none';
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+  }
+
+  // Grab handle: engage immediately
+  function onHandleStart(e) {
+    if (e.cancelable) e.preventDefault();
+    engage(e.touches ? e.touches[0].clientY : e.clientY);
+  }
+
+  // Mode bar: only drag from empty space, not buttons
+  function onModeBarStart(e) {
+    if (e.target.closest('button, a, .pill')) return;
+    if (e.cancelable) e.preventDefault();
+    engage(e.touches ? e.touches[0].clientY : e.clientY);
+  }
+
+  function onMove(e) {
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+
+    if (!dragging) return;
+    if (e.cancelable) e.preventDefault();
+    const newH = Math.min(MAX_H, Math.max(MIN_H, startH + (y - startY)));
+    container.style.height = newH + 'px';
+  }
+
+  function onEnd() {
+    if (!dragging) return;
+    dragging = false;
+    container.style.transition = '';
+    document.body.style.userSelect = '';
+    document.body.style.webkitUserSelect = '';
+    const h = container.offsetHeight;
+    const mid = (MIN_H + MAX_H) / 2;
+    if (h < mid) {
+      container.style.height = MIN_H + 'px';
+      container.classList.remove('expanded');
+    } else {
+      container.style.height = '';
+      container.classList.add('expanded');
+    }
     setTimeout(() => {
       if (window.agoraMap) {
         window.agoraMap.invalidateSize();
         updateMap(state);
       }
     }, 350);
-  });
+  }
+
+  handle.addEventListener('mousedown', onHandleStart);
+  handle.addEventListener('touchstart', onHandleStart, { passive: false });
+  modeBar.addEventListener('mousedown', onModeBarStart);
+  modeBar.addEventListener('touchstart', onModeBarStart, { passive: false });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mouseup', onEnd);
+  document.addEventListener('touchend', onEnd);
 }
 
 // ── Render Events ──
@@ -655,8 +759,9 @@ function renderServices() {
         const t = formatTime12(s.start_time);
         const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
         const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
+        const womLabel = s.week_of_month ? `<span class="schedule-item-wom">${esc(s.week_of_month)} ${DAYS[day]}</span>` : '';
         const editBtn = state.isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
-        html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${editBtn}</div>`;
+        html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
         if (state.isAdmin) {
           html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
             <div class="schedule-edit-grid">
@@ -666,6 +771,10 @@ function renderServices() {
               <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
               <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
               <input data-f="languages" value="${esc(langs.join(', '))}" placeholder="Languages">
+              <select data-f="week_of_month">
+                <option value="" ${!s.week_of_month?'selected':''}>Every week</option>
+                ${['first','second','third','fourth','last'].map(w => `<option value="${w}" ${s.week_of_month===w?'selected':''}>${w}</option>`).join('')}
+              </select>
             </div>
             <div style="display:flex;gap:4px;margin-top:4px;">
               <button class="schedule-save-btn" data-sid="${s.id}">Save</button>

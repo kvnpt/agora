@@ -177,19 +177,24 @@ router.get('/schedules', (req, res) => {
 // POST /api/admin/schedules — create a schedule
 router.post('/schedules', (req, res) => {
   const db = getDb();
-  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages } = req.body;
+  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month } = req.body;
 
   if (!parish_id || day_of_week == null || !start_time || !title) {
     return res.status(400).json({ error: 'parish_id, day_of_week, start_time, and title are required' });
+  }
+
+  const validWeeks = [null, 'first', 'second', 'third', 'fourth', 'last'];
+  if (week_of_month && !validWeeks.includes(week_of_month)) {
+    return res.status(400).json({ error: 'week_of_month must be first, second, third, fourth, or last' });
   }
 
   const parish = db.prepare('SELECT id FROM parishes WHERE id = ?').get(parish_id);
   if (!parish) return res.status(400).json({ error: 'Invalid parish_id' });
 
   const result = db.prepare(`
-    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null);
+    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null);
 
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(schedule);
@@ -201,7 +206,7 @@ router.patch('/schedules/:id', (req, res) => {
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
-  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages'];
+  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month'];
   const updates = [];
   const values = [];
   for (const key of allowed) {

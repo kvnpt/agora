@@ -14,11 +14,12 @@
   <!-- Map (peek height, expandable) -->
   <div class="map-container" id="map-container">
     <div id="map"></div>
-    <button class="map-toggle" id="map-toggle" aria-label="Expand map"></button>
+    <div class="map-fade"></div>
   </div>
 
-  <!-- Mode bar: icon buttons + Events pills -->
-  <div class="mode-bar">
+  <!-- Mode bar: drag handle + icon buttons + Events pills -->
+  <div class="mode-bar" id="mode-bar">
+    <div class="map-grab-handle"></div>
     <button class="icon-btn" id="btn-services" title="Services">
       <img src="https://api.iconify.design/ph:church.svg" alt="Services">
     </button>
@@ -34,6 +35,12 @@
 
   <!-- Parish filter pills (shown when a jurisdiction is selected) -->
   <div class="parish-filter-row" id="parish-filter-row"></div>
+
+  <!-- Archdiocese events banner (shown in services mode when jurisdiction selected) -->
+  <a class="archdiocese-events-banner" id="archdiocese-events-banner" href="#" target="_blank" rel="noopener">
+    <span class="archdiocese-events-label">Archdiocese Events</span>
+    <img src="https://api.iconify.design/mingcute:external-link-line.svg" alt="" class="archdiocese-events-icon">
+  </a>
 
   <!-- Events view (default) -->
   <div id="events-view" class="content-view active">

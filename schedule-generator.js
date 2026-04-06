@@ -38,6 +38,30 @@ function localToUtc(dateStr, timeStr) {
 }
 
 /**
+ * Check if a date (YYYY-MM-DD) matches a week_of_month qualifier.
+ * 'first' = 1st occurrence of that weekday in the month (day 1-7)
+ * 'second' = 2nd (day 8-14), 'third' = 3rd (day 15-21), 'fourth' = 4th (day 22-28)
+ * 'last' = last occurrence (no same weekday exists later in the month)
+ */
+function matchesWeekOfMonth(dateStr, qualifier) {
+  if (!qualifier) return true; // null = every week
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const dayOfMonth = d.getUTCDate();
+
+  if (qualifier === 'first') return dayOfMonth <= 7;
+  if (qualifier === 'second') return dayOfMonth >= 8 && dayOfMonth <= 14;
+  if (qualifier === 'third') return dayOfMonth >= 15 && dayOfMonth <= 21;
+  if (qualifier === 'fourth') return dayOfMonth >= 22 && dayOfMonth <= 28;
+  if (qualifier === 'last') {
+    // Last occurrence: adding 7 days would go into next month
+    const nextWeek = new Date(d);
+    nextWeek.setUTCDate(dayOfMonth + 7);
+    return nextWeek.getUTCMonth() !== d.getUTCMonth();
+  }
+  return true;
+}
+
+/**
  * Generate event instances from recurring schedules for the next N weeks.
  */
 function generateEvents(weeksAhead = 4) {
@@ -83,6 +107,10 @@ function generateEvents(weeksAhead = 4) {
         target.setUTCDate(target.getUTCDate() + daysAhead);
 
         const dateStr = target.toISOString().split('T')[0];
+
+        // Skip if this date doesn't match the week_of_month qualifier
+        if (!matchesWeekOfMonth(dateStr, schedule.week_of_month)) continue;
+
         const startUtc = localToUtc(dateStr, schedule.start_time);
         const endUtc = schedule.end_time ? localToUtc(dateStr, schedule.end_time) : null;
         const sourceHash = `schedule-${schedule.id}-${dateStr}`;
@@ -105,6 +133,22 @@ function generateEvents(weeksAhead = 4) {
   });
   tx();
 
+  // Clean up future events that no longer match their schedule's week_of_month
+  const womSchedules = db.prepare(`SELECT id, week_of_month, day_of_week FROM schedules WHERE week_of_month IS NOT NULL AND active = 1`).all();
+  const delMismatch = db.prepare(`DELETE FROM events WHERE schedule_id = ? AND source_adapter = 'schedule' AND source_hash = ?`);
+  let womCleaned = 0;
+  for (const ws of womSchedules) {
+    const futureEvents = db.prepare(`SELECT id, source_hash, start_utc FROM events WHERE schedule_id = ? AND source_adapter = 'schedule' AND start_utc >= ?`).all(ws.id, now.toISOString());
+    for (const evt of futureEvents) {
+      const dateStr = evt.start_utc.split('T')[0];
+      if (!matchesWeekOfMonth(dateStr, ws.week_of_month)) {
+        delMismatch.run(ws.id, evt.source_hash);
+        womCleaned++;
+      }
+    }
+  }
+  if (womCleaned) console.log(`[schedule-gen] Cleaned ${womCleaned} events not matching week_of_month`);
+
   // Clean up old schedule-generated events (older than 7 days)
   const cutoff = new Date(now.getTime() - 7 * 86400000).toISOString();
   let cleaned = db.prepare(`
@@ -122,4 +166,4 @@ function generateEvents(weeksAhead = 4) {
   return { generated, cleaned };
 }
 
-module.exports = { generateEvents, localToUtc, sydneyOffset };
+module.exports = { generateEvents, localToUtc, sydneyOffset, matchesWeekOfMonth };

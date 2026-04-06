@@ -189,6 +189,11 @@ function migrate(db) {
     `);
     db.pragma('user_version = 5');
   }
+
+  if (version < 6) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN week_of_month TEXT CHECK(week_of_month IN ('first','second','third','fourth','last'))`);
+    db.pragma('user_version = 6');
+  }
 }
 
 module.exports = { getDb };

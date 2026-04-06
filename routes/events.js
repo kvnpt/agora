@@ -8,18 +8,25 @@ router.get('/', (req, res) => {
   const db = getDb();
   const { lat, lng, radius, type, jurisdiction, from, to, status } = req.query;
 
-  // De-duplicate: for each (parish, date, event_type), prefer non-schedule sources
+  // De-duplicate: for each (parish, time, title), prefer:
+  //   1. Schedule with week_of_month (more specific override) over generic weekly
+  //   2. Non-schedule adapter over schedule-generated
+  //   3. Most recently updated
   let query = `
     SELECT * FROM (
       SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address,
         p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
         p.acronym as parish_acronym, p.color as parish_color,
         ROW_NUMBER() OVER (
-          PARTITION BY e.parish_id, e.start_utc
-          ORDER BY CASE WHEN e.source_adapter = 'schedule' THEN 1 ELSE 0 END, e.updated_at DESC
+          PARTITION BY e.parish_id, e.start_utc, e.title
+          ORDER BY
+            CASE WHEN s.week_of_month IS NOT NULL THEN 0 ELSE 1 END,
+            CASE WHEN e.source_adapter = 'schedule' THEN 1 ELSE 0 END,
+            e.updated_at DESC
         ) as rn
       FROM events e
       JOIN parishes p ON e.parish_id = p.id
+      LEFT JOIN schedules s ON e.schedule_id = s.id
       WHERE e.status = ?
   `;
   const params = [status || 'approved'];
