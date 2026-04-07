@@ -936,6 +936,7 @@ function showEventDetail(id) {
         <div class="edit-row"><label>Parish</label>
           <select id="edit-parish-${evt.id}">${parishOpts}</select>
         </div>
+        <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
         <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
         <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
         <div style="margin-top:8px;display:flex;gap:8px;">
@@ -1037,11 +1038,14 @@ window.toggleEditEvent = function(id) {
 window.saveEvent = async function(id) {
   const startVal = document.getElementById(`edit-start-${id}`).value;
   const endVal = document.getElementById(`edit-end-${id}`).value;
+  const langsRaw = document.getElementById(`edit-langs-${id}`).value;
+  const langsArr = langsRaw ? langsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
   const data = {
     title: document.getElementById(`edit-title-${id}`).value,
     description: document.getElementById(`edit-desc-${id}`).value || null,
     event_type: document.getElementById(`edit-type-${id}`).value,
     parish_id: document.getElementById(`edit-parish-${id}`).value,
+    languages: langsArr.length ? JSON.stringify(langsArr) : null,
     start_utc: startVal ? localInputToUtc(startVal) : undefined,
     end_utc: endVal ? localInputToUtc(endVal) : null
   };
