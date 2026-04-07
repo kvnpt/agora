@@ -73,20 +73,27 @@ function disablePageZoom() {
 // ── Disable pull-to-refresh (iOS Safari ignores overscroll-behavior) ──
 function disablePullToRefresh() {
   let touchStartY = 0;
+  let touchStartX = 0;
   document.addEventListener('touchstart', e => {
     touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
   }, { passive: true });
 
   document.addEventListener('touchmove', e => {
     const y = e.touches[0].clientY;
-    const pullingDown = y > touchStartY;
+    const x = e.touches[0].clientX;
+    const dy = y - touchStartY;
+    const dx = x - touchStartX;
 
-    // Only block if pulling down AND the document is at the top.
-    // But don't block if the touch is inside a scrollable child that has
-    // scroll room — that element should handle its own scroll.
+    // Only block vertical pull-down gestures. If the gesture is primarily
+    // horizontal (pill row swipe etc.) leave it alone entirely.
+    if (Math.abs(dx) > Math.abs(dy)) return;
+
+    const pullingDown = dy > 0;
     if (pullingDown && document.scrollingElement.scrollTop <= 0) {
+      // Don't block if inside a scrollable panel that still has scroll room
       const scrollable = e.target.closest('.detail-panel, .events-view, .month-view');
-      if (scrollable && scrollable.scrollTop > 0) return; // let the inner scroll handle it
+      if (scrollable && scrollable.scrollTop > 0) return;
       if (e.cancelable) e.preventDefault();
     }
   }, { passive: false });
@@ -155,11 +162,14 @@ function requestGeolocation(callback) {
       state.userLng = pos.coords.longitude;
       localStorage.setItem('agora_location', JSON.stringify({ lat: state.userLat, lng: state.userLng }));
       state.locationActive = true;
-      if (callback) callback();
-      else {
-        renderParishPills();
-        renderCurrentView();
-      }
+      // Always re-fetch events with fresh coords so distance_km is current
+      fetchEvents().then(() => {
+        if (callback) callback();
+        else {
+          renderParishPills();
+          renderCurrentView();
+        }
+      });
     },
     () => { alert('Location access denied. Enable it in your browser settings.'); },
     { timeout: 8000, maximumAge: 300000 }
