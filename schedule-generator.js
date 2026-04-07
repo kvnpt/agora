@@ -43,15 +43,16 @@ function localToUtc(dateStr, timeStr) {
 function matchesOneWeek(dateStr, qualifier) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const dayOfMonth = d.getUTCDate();
+  const nextWeek = new Date(d);
+  nextWeek.setUTCDate(dayOfMonth + 7);
+  const hasNextWeek = nextWeek.getUTCMonth() === d.getUTCMonth();
+
   if (qualifier === 'first')  return dayOfMonth <= 7;
   if (qualifier === 'second') return dayOfMonth >= 8  && dayOfMonth <= 14;
   if (qualifier === 'third')  return dayOfMonth >= 15 && dayOfMonth <= 21;
-  if (qualifier === 'fourth') return dayOfMonth >= 22 && dayOfMonth <= 28;
-  if (qualifier === 'last') {
-    const nextWeek = new Date(d);
-    nextWeek.setUTCDate(dayOfMonth + 7);
-    return nextWeek.getUTCMonth() !== d.getUTCMonth();
-  }
+  // 'fourth' = 4th occurrence only when a 5th exists — never overlaps with 'last'
+  if (qualifier === 'fourth') return dayOfMonth >= 22 && dayOfMonth <= 28 && hasNextWeek;
+  if (qualifier === 'last')   return !hasNextWeek;
   return false;
 }
 
