@@ -1119,7 +1119,8 @@ function initPosterZoom(img) {
   let tx = 0, ty = 0;          // current translate
   let zooming = false;          // two-finger pinch active
   let panning = false;          // one-finger pan active
-  let startDist = 0, startScale = 1;
+  let startDist = 0, startScale = 1, startTx = 0, startTy = 0;
+  let focalX = 0, focalY = 0;
   let panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
   const EXIT_THRESHOLD = 1.25;
 
@@ -1153,6 +1154,14 @@ function initPosterZoom(img) {
       panning = false;
       startDist = dist(e.touches);
       startScale = scale;
+      startTx = tx;
+      startTy = ty;
+      // Focal point: pinch midpoint relative to image center in screen px
+      const rect = img.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      focalX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - cx;
+      focalY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - cy;
       e.preventDefault();
     } else if (e.touches.length === 1 && scale > 1) {
       panning = true;
@@ -1168,11 +1177,14 @@ function initPosterZoom(img) {
     if (zooming && e.touches.length === 2) {
       e.preventDefault();
       const newScale = Math.max(1, Math.min(5, startScale * (dist(e.touches) / startDist)));
+      const ratio = newScale / startScale;
+      // Shift translate so the focal point stays pinned on screen
+      const rawTx = focalX + (startTx - focalX) * ratio;
+      const rawTy = focalY + (startTy - focalY) * ratio;
       scale = newScale;
-      // Re-clamp translate for new scale
       const m = maxTranslate();
-      tx = clamp(tx, m.x);
-      ty = clamp(ty, m.y);
+      tx = clamp(rawTx, m.x);
+      ty = clamp(rawTy, m.y);
       applyTransform();
     } else if (panning && e.touches.length === 1) {
       e.preventDefault();
