@@ -27,7 +27,8 @@ const state = {
   timeRange: 'today',
   filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false },
   subdomainJurisdiction: null,
-  locationActive: false,
+  locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
+  nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
   eventsSort: 'time'  // 'time' | 'nearby'
 };
 
@@ -325,8 +326,8 @@ function renderParishPills() {
     return true;
   });
 
-  if (state.locationActive) {
-    // Sort by distance when location is active
+  if (state.nearPillActive) {
+    // Sort by distance when Near pill is active
     relevant = relevant.map(p => ({
       ...p,
       _dist: haversineKm(state.userLat, state.userLng, p.lat, p.lng)
@@ -343,13 +344,13 @@ function renderParishPills() {
   const allActive = state.filters.parishIds === null;
 
   // Location pill as leftmost item
-  let html = `<button class="location-pill ${state.locationActive ? 'active' : ''}" id="btn-location-pill">` +
+  let html = `<button class="location-pill ${state.nearPillActive ? 'active' : ''}" id="btn-location-pill">` +
     `<img src="https://api.iconify.design/typcn:location-arrow.svg" alt="Location">` +
-    `${state.locationActive ? 'On' : 'Near'}</button>`;
+    `${state.nearPillActive ? 'On' : 'Near'}</button>`;
 
   for (const p of relevant) {
     const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
-    const distLabel = state.locationActive && p._dist != null ? `\u00B7${Math.round(p._dist)}km` : '';
+    const distLabel = state.nearPillActive && p._dist != null ? `\u00B7${Math.round(p._dist)}km` : '';
     const label = distLabel ? `${acronym}${distLabel}` : acronym;
     const isSelected = state.filters.parishIds && state.filters.parishIds.has(p.id);
     const isUnselected = state.filters.parishIds && !state.filters.parishIds.has(p.id);
@@ -370,14 +371,21 @@ function renderParishPills() {
   }
   row.innerHTML = html;
 
-  // Bind location pill
+  // Bind location pill — toggles parish sort independently from Nearby events sort
   document.getElementById('btn-location-pill').addEventListener('click', () => {
-    if (state.locationActive) {
-      state.locationActive = false;
+    if (state.nearPillActive) {
+      state.nearPillActive = false;
       renderParishPills();
-      renderCurrentView();
+    } else if (state.locationActive) {
+      // Already have coords, just activate pill sort
+      state.nearPillActive = true;
+      renderParishPills();
     } else {
-      requestGeolocation();
+      // Need to fetch location first
+      requestGeolocation(() => {
+        state.nearPillActive = true;
+        renderParishPills();
+      });
     }
   });
 }
