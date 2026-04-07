@@ -730,6 +730,17 @@ function renderEventCard(evt) {
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
   const badge = `<span class="event-badge ${badgeCss}">${displayType}</span>`;
 
+  // LIVE badge: show from 15min before start until 1hr after end (or 1hr after start if no end)
+  let liveBadge = '';
+  if (evt.parish_live_url) {
+    const now = Date.now();
+    const start = new Date(evt.start_utc).getTime();
+    const end = evt.end_utc ? new Date(evt.end_utc).getTime() : start + 3600000;
+    if (now >= start - 900000 && now <= end + 3600000) {
+      liveBadge = `<span class="event-badge badge-live"><span class="live-dot"></span>LIVE</span>`;
+    }
+  }
+
   // Distance with blue colouring when location active
   let distHtml = '';
   if (evt.distance_km != null) {
@@ -748,7 +759,7 @@ function renderEventCard(evt) {
           <span class="event-title">${esc(evt.title)}</span>
           <span class="event-time">${time}</span>
         </div>
-        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}</div>
+        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${liveBadge}</div>
       </div>
     </div>`;
 }
@@ -912,6 +923,17 @@ function showEventDetail(id) {
   const lng = evt.lng || 0;
   const websiteCta = evt.parish_website ? `<a class="btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
 
+  // Watch Live button: show within the live window (15min before → 1hr after end)
+  let watchLiveCta = '';
+  if (evt.parish_live_url) {
+    const now = Date.now();
+    const start = new Date(evt.start_utc).getTime();
+    const end = evt.end_utc ? new Date(evt.end_utc).getTime() : start + 3600000;
+    if (now >= start - 900000 && now <= end + 3600000) {
+      watchLiveCta = `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`;
+    }
+  }
+
   let adminActions = '';
   if (state.isAdmin) {
     adminActions = `
@@ -964,6 +986,7 @@ function showEventDetail(id) {
     ${posterHtml}
     <div class="detail-actions">
       <a class="btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Directions</a>
+      ${watchLiveCta}
       ${websiteCta}
       ${adminActions}
     </div>

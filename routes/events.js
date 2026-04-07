@@ -16,7 +16,7 @@ router.get('/', (req, res) => {
     SELECT * FROM (
       SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address,
         p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
-        p.acronym as parish_acronym, p.color as parish_color,
+        p.acronym as parish_acronym, p.color as parish_color, p.live_url as parish_live_url,
         ROW_NUMBER() OVER (
           PARTITION BY e.parish_id, e.start_utc, e.title
           ORDER BY
@@ -86,7 +86,8 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const db = getDb();
   const event = db.prepare(`
-    SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address
+    SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address,
+      p.live_url as parish_live_url
     FROM events e
     JOIN parishes p ON e.parish_id = p.id
     WHERE e.id = ?

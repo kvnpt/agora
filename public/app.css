@@ -391,6 +391,29 @@ input, select, textarea {
 .badge-feast { background: #f5ecd0; color: #7a6520; }
 .badge-other { background: #f0f0f0; color: #555; }
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
+.badge-live { background: #fee2e2; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px; }
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.btn-watch-live {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-watch-live .live-dot { background: #fff; }
 /* Legacy types still in DB — mapped to display types at render time */
 .badge-vespers { background: #d5e0f0; color: #2d4a7a; }
 .badge-matins { background: #f0e0d0; color: #7a4a20; }

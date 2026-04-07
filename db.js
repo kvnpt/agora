@@ -231,6 +231,11 @@ function migrate(db) {
     `);
     db.pragma('user_version = 8');
   }
+
+  if (version < 9) {
+    db.exec(`ALTER TABLE parishes ADD COLUMN live_url TEXT`);
+    db.pragma('user_version = 9');
+  }
 }
 
 module.exports = { getDb };
