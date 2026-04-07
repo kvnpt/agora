@@ -79,8 +79,14 @@ function disablePullToRefresh() {
 
   document.addEventListener('touchmove', e => {
     const y = e.touches[0].clientY;
-    // Pulling down while already at the top of the page
-    if (y > touchStartY && document.scrollingElement.scrollTop <= 0) {
+    const pullingDown = y > touchStartY;
+
+    // Only block if pulling down AND the document is at the top.
+    // But don't block if the touch is inside a scrollable child that has
+    // scroll room — that element should handle its own scroll.
+    if (pullingDown && document.scrollingElement.scrollTop <= 0) {
+      const scrollable = e.target.closest('.detail-panel, .events-view, .month-view');
+      if (scrollable && scrollable.scrollTop > 0) return; // let the inner scroll handle it
       if (e.cancelable) e.preventDefault();
     }
   }, { passive: false });
