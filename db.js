@@ -194,6 +194,31 @@ function migrate(db) {
     db.exec(`ALTER TABLE schedules ADD COLUMN week_of_month TEXT CHECK(week_of_month IN ('first','second','third','fourth','last'))`);
     db.pragma('user_version = 6');
   }
+
+  if (version < 7) {
+    // Remove CHECK constraint from week_of_month to support comma-separated values like 'first,third'
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      CREATE TABLE schedules_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parish_id TEXT NOT NULL REFERENCES parishes(id),
+        day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
+        start_time TEXT NOT NULL,
+        end_time TEXT,
+        title TEXT NOT NULL,
+        event_type TEXT NOT NULL DEFAULT 'liturgy',
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        languages TEXT,
+        week_of_month TEXT
+      );
+      INSERT INTO schedules_new SELECT * FROM schedules;
+      DROP TABLE schedules;
+      ALTER TABLE schedules_new RENAME TO schedules;
+    `);
+    db.pragma('foreign_keys = ON');
+    db.pragma('user_version = 7');
+  }
 }
 
 module.exports = { getDb };

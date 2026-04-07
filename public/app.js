@@ -759,10 +759,11 @@ function renderServices() {
         const t = formatTime12(s.start_time);
         const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
         const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
-        const womLabel = s.week_of_month ? `<span class="schedule-item-wom">${esc(s.week_of_month)} ${DAYS[day]}</span>` : '';
+        const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
         const editBtn = state.isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
         html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
         if (state.isAdmin) {
+          const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
           html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
             <div class="schedule-edit-grid">
               <input data-f="title" value="${esc(s.title)}" placeholder="Title">
@@ -771,10 +772,12 @@ function renderServices() {
               <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
               <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
               <input data-f="languages" value="${esc(langs.join(', '))}" placeholder="Languages">
-              <select data-f="week_of_month">
-                <option value="" ${!s.week_of_month?'selected':''}>Every week</option>
-                ${['first','second','third','fourth','last'].map(w => `<option value="${w}" ${s.week_of_month===w?'selected':''}>${w}</option>`).join('')}
-              </select>
+            </div>
+            <div class="wom-checkboxes" data-f="week_of_month">
+              <span class="wom-label">Weeks:</span>
+              ${['first','second','third','fourth','last'].map(w =>
+                `<label class="wom-check"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
+              ).join('')}
             </div>
             <div style="display:flex;gap:4px;margin-top:4px;">
               <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
@@ -813,11 +816,16 @@ function renderServices() {
       const form = document.getElementById('sef-' + id);
       const data = {};
       form.querySelectorAll('[data-f]').forEach(input => {
-        const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
         const field = input.dataset.f;
-        if (field === 'languages') data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
-        else if (field === 'day_of_week') data[field] = parseInt(val);
-        else data[field] = val || null;
+        if (field === 'week_of_month') {
+          const checked = [...input.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+          data[field] = checked.length ? checked.join(',') : null;
+        } else {
+          const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
+          if (field === 'languages') data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
+          else if (field === 'day_of_week') data[field] = parseInt(val);
+          else data[field] = val || null;
+        }
       });
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
         .then(r => { if (r.ok) fetchSchedules(); });
@@ -1071,6 +1079,14 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = str || '';
   return div.innerHTML;
+}
+
+// Returns a readable schedule-item label for week_of_month, e.g. "1st, 3rd Sunday"
+function womDisplayLabel(qualifier, dayName) {
+  if (!qualifier) return '';
+  const map = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
+  const parts = qualifier.split(',').map(q => map[q.trim()] || q.trim()).join(', ');
+  return `<span class="schedule-item-wom">${esc(parts)} ${esc(dayName)}</span>`;
 }
 
 // Expose for filters/map

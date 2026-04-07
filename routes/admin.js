@@ -183,9 +183,12 @@ router.post('/schedules', (req, res) => {
     return res.status(400).json({ error: 'parish_id, day_of_week, start_time, and title are required' });
   }
 
-  const validWeeks = [null, 'first', 'second', 'third', 'fourth', 'last'];
-  if (week_of_month && !validWeeks.includes(week_of_month)) {
-    return res.status(400).json({ error: 'week_of_month must be first, second, third, fourth, or last' });
+  const VALID_WEEKS = new Set(['first', 'second', 'third', 'fourth', 'last']);
+  if (week_of_month) {
+    const parts = week_of_month.split(',').map(s => s.trim());
+    if (parts.some(p => !VALID_WEEKS.has(p))) {
+      return res.status(400).json({ error: 'week_of_month values must be: first, second, third, fourth, last' });
+    }
   }
 
   const parish = db.prepare('SELECT id FROM parishes WHERE id = ?').get(parish_id);

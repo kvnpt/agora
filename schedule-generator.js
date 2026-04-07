@@ -38,27 +38,41 @@ function localToUtc(dateStr, timeStr) {
 }
 
 /**
- * Check if a date (YYYY-MM-DD) matches a week_of_month qualifier.
- * 'first' = 1st occurrence of that weekday in the month (day 1-7)
- * 'second' = 2nd (day 8-14), 'third' = 3rd (day 15-21), 'fourth' = 4th (day 22-28)
- * 'last' = last occurrence (no same weekday exists later in the month)
+ * Check if a date (YYYY-MM-DD) matches a single week qualifier.
  */
-function matchesWeekOfMonth(dateStr, qualifier) {
-  if (!qualifier) return true; // null = every week
+function matchesOneWeek(dateStr, qualifier) {
   const d = new Date(dateStr + 'T00:00:00Z');
   const dayOfMonth = d.getUTCDate();
-
-  if (qualifier === 'first') return dayOfMonth <= 7;
-  if (qualifier === 'second') return dayOfMonth >= 8 && dayOfMonth <= 14;
-  if (qualifier === 'third') return dayOfMonth >= 15 && dayOfMonth <= 21;
+  if (qualifier === 'first')  return dayOfMonth <= 7;
+  if (qualifier === 'second') return dayOfMonth >= 8  && dayOfMonth <= 14;
+  if (qualifier === 'third')  return dayOfMonth >= 15 && dayOfMonth <= 21;
   if (qualifier === 'fourth') return dayOfMonth >= 22 && dayOfMonth <= 28;
   if (qualifier === 'last') {
-    // Last occurrence: adding 7 days would go into next month
     const nextWeek = new Date(d);
     nextWeek.setUTCDate(dayOfMonth + 7);
     return nextWeek.getUTCMonth() !== d.getUTCMonth();
   }
-  return true;
+  return false;
+}
+
+/**
+ * Check if a date matches a week_of_month value.
+ * Supports comma-separated values e.g. 'first,third' or 'second,fourth,last'.
+ * null = every week.
+ */
+function matchesWeekOfMonth(dateStr, qualifier) {
+  if (!qualifier) return true;
+  return qualifier.split(',').some(q => matchesOneWeek(dateStr, q.trim()));
+}
+
+/**
+ * Convert a week_of_month value to a short human-readable label.
+ * e.g. 'first,third' → '1st, 3rd'
+ */
+function weekOfMonthLabel(qualifier) {
+  if (!qualifier) return null;
+  const map = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
+  return qualifier.split(',').map(q => map[q.trim()] || q.trim()).join(', ');
 }
 
 /**
@@ -166,4 +180,4 @@ function generateEvents(weeksAhead = 4) {
   return { generated, cleaned };
 }
 
-module.exports = { generateEvents, localToUtc, sydneyOffset, matchesWeekOfMonth };
+module.exports = { generateEvents, localToUtc, sydneyOffset, matchesWeekOfMonth, weekOfMonthLabel };

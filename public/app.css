@@ -491,6 +491,27 @@ input, select, textarea {
   border-radius: 3px;
   font-family: inherit;
 }
+.wom-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.wom-label {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.wom-check {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  font-size: 11px !important;
+}
+.wom-check input { width: auto; font-size: 11px !important; }
+
 .schedule-save-btn, .schedule-del-btn {
   padding: 3px 10px;
   font-size: 11px;
