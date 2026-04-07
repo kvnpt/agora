@@ -44,10 +44,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTimePills();
   initMapToggle();
   initParishFilter();
-  updateArchdioceseEventsBanner();
   initSocialFilter();
   initEnglishFilter();
-  await fetchEvents();
+  applyStartMode();
+  updateArchdioceseEventsBanner();
   initMap(state);
   updateMap(state);
 });
@@ -85,7 +85,7 @@ function disablePullToRefresh() {
   }, { passive: false });
 }
 
-// ── Subdomain + path parish detection ──
+// ── Subdomain + path detection ──
 function detectSubdomain() {
   const host = window.location.hostname;
   const match = host.match(/^(antiochian|greek|serbian|russian|romanian|macedonian)\.orthodoxy\.au$/);
@@ -93,9 +93,22 @@ function detectSubdomain() {
     state.subdomainJurisdiction = match[1];
     state.filters.jurisdiction = match[1];
   }
-  // Store path slug for parish soft-bind (applied after parishes load)
-  const slug = decodeURIComponent(window.location.pathname.replace(/^\/+/, '').replace(/\/+$/, '')).toLowerCase();
-  if (slug) state._parishSlug = slug;
+
+  // Parse path segments: /services, /en, /services/en, /services/<acronym>, /<acronym>
+  const parts = decodeURIComponent(window.location.pathname)
+    .toLowerCase().split('/').map(s => s.trim()).filter(Boolean);
+
+  for (let i = 0; i < parts.length; i++) {
+    const seg = parts[i];
+    if (seg === 'services') {
+      state._startMode = 'services';
+    } else if (seg === 'en') {
+      state.filters.englishOnly = true;
+    } else {
+      // Treat as parish acronym (applied after parishes load)
+      state._parishSlug = seg;
+    }
+  }
 }
 
 // Apply parish slug filter after parishes are loaded
@@ -253,6 +266,30 @@ function initModeBar() {
 function showView(name) {
   document.querySelectorAll('.content-view').forEach(v => v.classList.remove('active'));
   document.getElementById(`${name}-view`).classList.add('active');
+}
+
+// ── Apply URL-driven start state (mode, EN filter) ──
+function applyStartMode() {
+  const servicesBtn = document.getElementById('btn-services');
+  const socialBtn = document.getElementById('btn-social');
+  const timePills = document.getElementById('time-pills');
+  const englishBtn = document.getElementById('btn-english');
+
+  if (state.filters.englishOnly) {
+    englishBtn.classList.add('active');
+  }
+
+  if (state._startMode === 'services') {
+    state.mode = 'services';
+    servicesBtn.classList.add('active');
+    socialBtn.style.display = 'none';
+    timePills.innerHTML = '<span class="services-title">Service Times</span>';
+    showView('services');
+    fetchSchedules();
+  } else {
+    fetchEvents();
+  }
+  delete state._startMode;
 }
 
 // ── Archdiocese events banner ──
