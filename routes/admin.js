@@ -96,6 +96,12 @@ router.post('/parishes', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]');
 
+  // Seed a generic inactive schedule so the parish appears in the schedules list
+  db.prepare(`
+    INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, active)
+    VALUES (?, 0, '09:00', 'Divine Liturgy', 'liturgy', 0)
+  `).run(id);
+
   const parish = db.prepare('SELECT * FROM parishes WHERE id = ?').get(id);
   res.status(201).json(parish);
 });

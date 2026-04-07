@@ -219,6 +219,18 @@ function migrate(db) {
     db.pragma('foreign_keys = ON');
     db.pragma('user_version = 7');
   }
+
+  if (version < 8) {
+    // Backfill: any parish with no schedules gets one generic inactive schedule
+    db.exec(`
+      INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, active)
+      SELECT p.id, 0, '09:00', 'Divine Liturgy', 'liturgy', 0
+      FROM parishes p
+      WHERE p.id != '_unassigned'
+        AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.parish_id = p.id);
+    `);
+    db.pragma('user_version = 8');
+  }
 }
 
 module.exports = { getDb };

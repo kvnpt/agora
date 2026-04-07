@@ -19,10 +19,10 @@ function getOrCreateSender(phone) {
   let sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
   if (!sender) {
     db.prepare(
-      "INSERT INTO senders (phone, status) VALUES (?, 'approved')"
+      "INSERT INTO senders (phone, status) VALUES (?, 'pending_review')"
     ).run(phone);
     sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
-    console.log(`[webhook] New sender registered: ${phone} (auto-approved)`);
+    console.log(`[webhook] New sender registered: ${phone} (pending review)`);
   } else {
     db.prepare("UPDATE senders SET last_seen_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE phone = ?").run(phone);
   }
