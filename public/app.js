@@ -726,6 +726,8 @@ function renderEventCard(evt) {
   // Display-time type mapping
   const displayType = TYPE_DISPLAY[evt.event_type] || evt.event_type;
   const badgeCss = `badge-${evt.event_type}`; // keep original CSS class for colors
+  const langs = evt.languages ? JSON.parse(evt.languages) : [];
+  const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
   const badge = `<span class="event-badge ${badgeCss}">${displayType}</span>`;
 
   // Distance with blue colouring when location active
@@ -746,7 +748,7 @@ function renderEventCard(evt) {
           <span class="event-title">${esc(evt.title)}</span>
           <span class="event-time">${time}</span>
         </div>
-        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}</div>
+        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}</div>
       </div>
     </div>`;
 }

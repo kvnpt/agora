@@ -390,6 +390,7 @@ input, select, textarea {
 .badge-talk { background: #f0e8d5; color: #7a5a20; }
 .badge-feast { background: #f5ecd0; color: #7a6520; }
 .badge-other { background: #f0f0f0; color: #555; }
+.badge-bilingual { background: #e0f0e8; color: #1a6640; }
 /* Legacy types still in DB — mapped to display types at render time */
 .badge-vespers { background: #d5e0f0; color: #2d4a7a; }
 .badge-matins { background: #f0e0d0; color: #7a4a20; }
