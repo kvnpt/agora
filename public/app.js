@@ -986,7 +986,7 @@ function showEventDetail(id) {
   }
 
   const posterHtml = evt.poster_path
-    ? `<a class="detail-poster" href="${esc(evt.poster_path)}" target="_blank" rel="noopener"><img src="${esc(evt.poster_path)}" alt="Event poster"></a>`
+    ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
   content.innerHTML = `
@@ -1010,6 +1010,10 @@ function showEventDetail(id) {
 
   // Set parish color accent on the panel
   panel.style.borderLeftColor = evt.parish_color || 'var(--border)';
+
+  // Attach pinch-to-zoom on poster if present
+  const posterEl = content.querySelector('.detail-poster img');
+  if (posterEl) initPosterZoom(posterEl);
 
   panel.classList.remove('hidden');
   if (!document.querySelector('.detail-backdrop')) {
@@ -1109,6 +1113,51 @@ window.deleteEvent = async function(id) {
     fetchEvents();
   }
 };
+
+function initPosterZoom(img) {
+  let scale = 1;
+  let zooming = false;
+  let startDist = 0;
+  let startScale = 1;
+  const EXIT_THRESHOLD = 1.25; // snap back if pinched below this scale
+
+  function dist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  img.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      zooming = true;
+      startDist = dist(e.touches);
+      startScale = scale;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  img.addEventListener('touchmove', e => {
+    if (!zooming || e.touches.length !== 2) return;
+    e.preventDefault();
+    const newScale = Math.max(1, Math.min(5, startScale * (dist(e.touches) / startDist)));
+    scale = newScale;
+    img.style.transition = 'none';
+    img.style.transform = `scale(${scale})`;
+  }, { passive: false });
+
+  img.addEventListener('touchend', e => {
+    if (!zooming) return;
+    if (e.touches.length < 2) {
+      zooming = false;
+      if (scale < EXIT_THRESHOLD) {
+        // Zoomed out enough — snap back to normal
+        scale = 1;
+        img.style.transition = 'transform 0.25s ease';
+        img.style.transform = 'scale(1)';
+      }
+    }
+  });
+}
 
 function closeDetail() {
   document.getElementById('event-detail').classList.add('hidden');
