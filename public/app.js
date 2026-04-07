@@ -5,11 +5,11 @@ const LITURGICAL_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
 // Archdiocese events page URLs
 const ARCHDIOCESE_EVENTS = {
   antiochian: 'https://www.antiochian.org.au/events/list/',
-  greek:      'https://greekorthodox.org.au/news/',
+  greek:      'https://greekorthodox.org.au/',
   serbian:    'https://soc.org.au/news/',
   russian:    'https://rocor.org.au/?cat=2',
-  romanian:   null,
-  macedonian: null
+  romanian:   'https://www.psmb.com.au/en',
+  macedonian: 'https://macedonianorthodoxdiocese.org.au/en'
 };
 
 // Display-time type mapping: legacy DB types → display label
