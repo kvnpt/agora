@@ -1116,10 +1116,12 @@ window.deleteEvent = async function(id) {
 
 function initPosterZoom(img) {
   let scale = 1;
-  let zooming = false;
-  let startDist = 0;
-  let startScale = 1;
-  const EXIT_THRESHOLD = 1.25; // snap back if pinched below this scale
+  let tx = 0, ty = 0;          // current translate
+  let zooming = false;          // two-finger pinch active
+  let panning = false;          // one-finger pan active
+  let startDist = 0, startScale = 1;
+  let panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
+  const EXIT_THRESHOLD = 1.25;
 
   function dist(touches) {
     const dx = touches[0].clientX - touches[1].clientX;
@@ -1127,34 +1129,67 @@ function initPosterZoom(img) {
     return Math.hypot(dx, dy);
   }
 
+  function clamp(val, max) { return Math.min(max, Math.max(-max, val)); }
+
+  function maxTranslate() {
+    // How far the image can move before an edge comes into view
+    const w = img.offsetWidth, h = img.offsetHeight;
+    return { x: w * (scale - 1) / 2, y: h * (scale - 1) / 2 };
+  }
+
+  function applyTransform(transition = false) {
+    img.style.transition = transition ? 'transform 0.25s ease' : 'none';
+    img.style.transform = `scale(${scale}) translate(${tx / scale}px, ${ty / scale}px)`;
+  }
+
+  function snapBack() {
+    scale = 1; tx = 0; ty = 0;
+    applyTransform(true);
+  }
+
   img.addEventListener('touchstart', e => {
     if (e.touches.length === 2) {
       zooming = true;
+      panning = false;
       startDist = dist(e.touches);
       startScale = scale;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && scale > 1) {
+      panning = true;
+      panStartX = e.touches[0].clientX;
+      panStartY = e.touches[0].clientY;
+      panStartTx = tx;
+      panStartTy = ty;
       e.preventDefault();
     }
   }, { passive: false });
 
   img.addEventListener('touchmove', e => {
-    if (!zooming || e.touches.length !== 2) return;
-    e.preventDefault();
-    const newScale = Math.max(1, Math.min(5, startScale * (dist(e.touches) / startDist)));
-    scale = newScale;
-    img.style.transition = 'none';
-    img.style.transform = `scale(${scale})`;
+    if (zooming && e.touches.length === 2) {
+      e.preventDefault();
+      const newScale = Math.max(1, Math.min(5, startScale * (dist(e.touches) / startDist)));
+      scale = newScale;
+      // Re-clamp translate for new scale
+      const m = maxTranslate();
+      tx = clamp(tx, m.x);
+      ty = clamp(ty, m.y);
+      applyTransform();
+    } else if (panning && e.touches.length === 1) {
+      e.preventDefault();
+      const m = maxTranslate();
+      tx = clamp(panStartTx + (e.touches[0].clientX - panStartX), m.x);
+      ty = clamp(panStartTy + (e.touches[0].clientY - panStartY), m.y);
+      applyTransform();
+    }
   }, { passive: false });
 
   img.addEventListener('touchend', e => {
-    if (!zooming) return;
-    if (e.touches.length < 2) {
+    if (zooming && e.touches.length < 2) {
       zooming = false;
-      if (scale < EXIT_THRESHOLD) {
-        // Zoomed out enough — snap back to normal
-        scale = 1;
-        img.style.transition = 'transform 0.25s ease';
-        img.style.transform = 'scale(1)';
-      }
+      if (scale < EXIT_THRESHOLD) snapBack();
+    }
+    if (panning && e.touches.length === 0) {
+      panning = false;
     }
   });
 }
