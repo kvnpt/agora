@@ -391,7 +391,8 @@ input, select, textarea {
 .badge-feast { background: #f5ecd0; color: #7a6520; }
 .badge-other { background: #f0f0f0; color: #555; }
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
-.badge-live { background: #fee2e2; color: #b91c1c; display: inline-flex; align-items: center; gap: 4px; }
+.badge-live { background: #ef4444; color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+.badge-live .live-dot { background: #fff; }
 .live-dot {
   display: inline-block;
   width: 6px;
