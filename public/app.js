@@ -1156,12 +1156,14 @@ function initPosterZoom(img) {
       startScale = scale;
       startTx = tx;
       startTy = ty;
-      // Focal point: pinch midpoint relative to image center in screen px
+      // Focal point: pinch midpoint relative to the image's *layout* centre.
+      // getBoundingClientRect() reflects the current transform (including tx/ty),
+      // so we subtract startTx/startTy to recover the untransformed centre.
       const rect = img.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      focalX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - cx;
-      focalY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - cy;
+      const layoutCx = rect.left + rect.width / 2 - tx;
+      const layoutCy = rect.top + rect.height / 2 - ty;
+      focalX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - layoutCx;
+      focalY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - layoutCy;
       e.preventDefault();
     } else if (e.touches.length === 1 && scale > 1) {
       panning = true;
