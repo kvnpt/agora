@@ -393,6 +393,7 @@ input, select, textarea {
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
 .badge-live { background: #ef4444; color: #fff; display: inline-flex; align-items: center; gap: 4px; }
 .badge-live .live-dot { background: #fff; }
+.badge-live-soon { background: #fee2e2; color: #b91c1c; }
 .live-dot {
   display: inline-block;
   width: 6px;

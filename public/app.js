@@ -51,6 +51,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateArchdioceseEventsBanner();
   initMap(state);
   updateMap(state);
+
+  // Re-render event cards every minute to keep LIVE countdowns current
+  setInterval(() => {
+    if (state.timeRange === 'today' && state.events.some(e => e.parish_live_url)) {
+      renderEvents();
+    }
+  }, 60000);
 });
 
 // ── Disable pinch/double-tap zoom on everything except the map ──
@@ -746,14 +753,22 @@ function renderEventCard(evt) {
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
   const badge = `<span class="event-badge ${badgeCss}">${displayType}</span>`;
 
-  // LIVE badge: show from 15min before start until 1hr after end (or 1hr after start if no end)
+  // LIVE badge
   let liveBadge = '';
   if (evt.parish_live_url) {
-    const now = Date.now();
-    const start = new Date(evt.start_utc).getTime();
-    const end = evt.end_utc ? new Date(evt.end_utc).getTime() : start + 3600000;
-    if (now >= start - 900000 && now <= end + 3600000) {
-      liveBadge = `<span class="event-badge badge-live"><span class="live-dot"></span>LIVE</span>`;
+    if (state.timeRange === 'today') {
+      const now = Date.now();
+      const evtStart = new Date(evt.start_utc).getTime();
+      const evtEnd = evt.end_utc ? new Date(evt.end_utc).getTime() : evtStart + 3600000;
+      if (now >= evtStart - 900000 && now <= evtEnd + 3600000) {
+        liveBadge = `<span class="event-badge badge-live"><span class="live-dot"></span>LIVE</span>`;
+      } else if (now < evtStart - 900000) {
+        const mins = Math.round((evtStart - now) / 60000);
+        const label = mins >= 60 ? `LIVE IN ${Math.round(mins / 60)}H` : `LIVE IN ${mins}M`;
+        liveBadge = `<span class="event-badge badge-live-soon">${label}</span>`;
+      }
+    } else {
+      liveBadge = `<span class="event-badge badge-live-soon">LIVE AVAIL</span>`;
     }
   }
 
@@ -939,16 +954,9 @@ function showEventDetail(id) {
   const lng = evt.lng || 0;
   const websiteCta = evt.parish_website ? `<a class="btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
 
-  // Watch Live button: show within the live window (15min before → 1hr after end)
-  let watchLiveCta = '';
-  if (evt.parish_live_url) {
-    const now = Date.now();
-    const start = new Date(evt.start_utc).getTime();
-    const end = evt.end_utc ? new Date(evt.end_utc).getTime() : start + 3600000;
-    if (now >= start - 900000 && now <= end + 3600000) {
-      watchLiveCta = `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`;
-    }
-  }
+  const watchLiveCta = evt.parish_live_url
+    ? `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`
+    : '';
 
   let adminActions = '';
   if (state.isAdmin) {
