@@ -727,7 +727,7 @@ function renderMonth(container, events) {
       html += `</div>`;
     }
   }
-  html += `<div class="list-footer"><button class="list-footer-btn" id="cta-services">View more services</button></div>`;
+  html += `<div class="list-footer"><button class="list-footer-btn" id="cta-services">View regular schedules</button></div>`;
   container.innerHTML = html;
 
   container.querySelector('#cta-services').addEventListener('click', () => {
