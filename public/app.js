@@ -783,14 +783,17 @@ function renderEventCard(evt) {
     distHtml = ` · <span class="${distClass}">${evt.distance_km} km</span>`;
   }
 
+  const isCancelled = evt.status === 'cancelled';
+  const cancelledBadge = isCancelled ? `<span class="event-badge badge-cancelled">CANCELLED</span>` : '';
+
   return `
-    <div class="event-card" data-id="${evt.id}">
+    <div class="event-card${isCancelled ? ' event-cancelled' : ''}" data-id="${evt.id}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-title">${esc(evt.title)}</span>
           <span class="event-time">${time}</span>
         </div>
-        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${liveBadge}</div>
+        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${liveBadge}${cancelledBadge}</div>
       </div>
     </div>`;
 }
@@ -960,7 +963,11 @@ function showEventDetail(id) {
 
   let adminActions = '';
   if (state.isAdmin) {
+    const isCancelled = evt.status === 'cancelled';
+    const isHidden = evt.status === 'hidden';
     adminActions = `
+      <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${evt.id},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
+      <button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>
       <button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>
       <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>`;
   }
@@ -1106,6 +1113,18 @@ window.saveEvent = async function(id) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
+  });
+  if (res.ok) {
+    closeDetail();
+    fetchEvents();
+  }
+};
+
+window.setEventStatus = async function(id, status) {
+  const res = await fetch(`/api/admin/events/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
   });
   if (res.ok) {
     closeDetail();

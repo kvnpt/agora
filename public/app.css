@@ -346,6 +346,8 @@ input, select, textarea {
 }
 .event-card:hover { background: #fafafa; }
 .event-card:active { background: #f5f5f5; }
+.event-card.event-cancelled { opacity: 0.5; }
+.event-card.event-cancelled .event-title { text-decoration: line-through; }
 
 .event-content { flex: 1; min-width: 0; }
 
@@ -390,6 +392,7 @@ input, select, textarea {
 .badge-talk { background: #f0e8d5; color: #7a5a20; }
 .badge-feast { background: #f5ecd0; color: #7a6520; }
 .badge-other { background: #f0f0f0; color: #555; }
+.badge-cancelled { background: #f0f0f0; color: #888; }
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
 .badge-live { background: #ef4444; color: #fff; display: inline-flex; align-items: center; gap: 4px; }
 .badge-live .live-dot { background: #fff; }
@@ -633,6 +636,8 @@ input, select, textarea {
   color: #fff;
   border: none;
 }
+.btn-cancel-event { color: #b91c1c; border-color: #fca5a5; }
+.btn-hide-event { color: #6b7280; border-color: #d1d5db; }
 .btn-save {
   background: #28a745;
   color: #fff;

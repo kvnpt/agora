@@ -33,7 +33,7 @@ router.patch('/events/:id', (req, res) => {
 
   const { status, parish_id, title, description, start_utc, end_utc, event_type, languages } = req.body;
 
-  if (status && !['approved', 'rejected', 'pending_review'].includes(status)) {
+  if (status && !['approved', 'rejected', 'pending_review', 'cancelled', 'hidden'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 

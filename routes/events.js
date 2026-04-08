@@ -27,9 +27,18 @@ router.get('/', (req, res) => {
       FROM events e
       JOIN parishes p ON e.parish_id = p.id
       LEFT JOIN schedules s ON e.schedule_id = s.id
-      WHERE e.status = ?
+      WHERE 1=1
   `;
-  const params = [status || 'approved'];
+  const params = [];
+
+  // When an explicit status filter is passed (e.g. admin review), match exactly.
+  // Otherwise show approved + cancelled (hidden is always suppressed from public view).
+  if (status) {
+    query += ' AND e.status = ?';
+    params.push(status);
+  } else {
+    query += " AND e.status IN ('approved', 'cancelled')";
+  }
 
   // Only future events by default
   const fromDate = from || new Date().toISOString();
