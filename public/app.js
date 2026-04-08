@@ -663,9 +663,9 @@ function renderToday(container, events) {
     html = renderSubDaySections(later, html);
   }
   if (!happeningNow.length && !later.length) {
-    html = '<div class="empty-state"><h3>Nothing on today</h3></div>';
+    html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on today</h3></div>';
   }
-  html += `<div class="list-footer"><button class="list-footer-btn" id="cta-month">View more</button></div>`;
+  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-month">View more</button></div>`;
   container.innerHTML = html;
 
   container.querySelector('#cta-month').addEventListener('click', () => {
@@ -727,7 +727,7 @@ function renderMonth(container, events) {
       html += `</div>`;
     }
   }
-  html += `<div class="list-footer"><button class="list-footer-btn" id="cta-services">View regular schedules</button></div>`;
+  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-services">View regular schedules</button></div>`;
   container.innerHTML = html;
 
   container.querySelector('#cta-services').addEventListener('click', () => {
@@ -887,8 +887,8 @@ function renderServices() {
 
   const archUrl = ARCHDIOCESE_EVENTS[state.filters.jurisdiction];
   const archFooter = archUrl
-    ? `<div class="list-footer"><a class="list-footer-arch-link" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(state.filters.jurisdiction || ''))} Archdiocese website &rarr;</a></div>`
-    : `<div class="list-footer"></div>`;
+    ? `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><a class="list-footer-arch-link" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(state.filters.jurisdiction || ''))} Archdiocese</a></div>`
+    : `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
   html += archFooter;
   container.innerHTML = html;
 

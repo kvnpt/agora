@@ -724,13 +724,21 @@ input, select, textarea {
 
 /* ── Empty state ── */
 .empty-state {
-  padding: 40px 20px;
+  padding: 48px 20px 32px;
   text-align: center;
   color: var(--text-muted);
 }
+.empty-ornament {
+  display: block;
+  font-size: 11px;
+  color: var(--border);
+  letter-spacing: 6px;
+  margin-bottom: 14px;
+}
 .empty-state h3 {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
+  letter-spacing: 0.03em;
   margin-bottom: 4px;
 }
 .empty-state p {
@@ -749,35 +757,83 @@ input, select, textarea {
 
 /* ── List footer (view-more + archdiocese link) ── */
 .list-footer {
-  padding: 24px 16px;
+  position: relative;
+  padding: 28px 16px 32px;
   min-height: 40vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
+  gap: 20px;
+  /* Very subtle warm fade downward */
+  background: linear-gradient(to bottom, #fff 0%, #faf9f7 100%);
+}
+/* Soft fade from list into footer */
+.list-footer::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  left: 0; right: 0;
+  height: 20px;
+  background: linear-gradient(to bottom, transparent, #fff);
+  pointer-events: none;
+}
+.list-footer-ornament {
+  font-size: 9px;
+  color: var(--border);
+  letter-spacing: 8px;
+  padding-left: 8px; /* optically centre the letter-spaced dots */
+  user-select: none;
 }
 .list-footer-btn {
-  background: none;
+  background: #fff;
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 10px 24px;
-  border-radius: 20px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 11px 28px;
+  border-radius: 24px;
   cursor: pointer;
   min-height: 44px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 0 transparent;
+  transition: box-shadow 0.15s, border-color 0.15s;
 }
-.list-footer-btn:active { background: var(--border-light); }
+.list-footer-btn:hover {
+  border-color: #bbb;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.09);
+}
+.list-footer-btn:active {
+  background: var(--border-light);
+  box-shadow: none;
+}
 .list-footer-arch-link {
-  display: inline-block;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   color: var(--text-secondary);
   text-decoration: none;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 2px;
+  text-transform: uppercase;
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  padding: 10px 20px;
+  min-height: 44px;
+  background: #fff;
+  transition: border-color 0.15s, color 0.15s;
 }
-.list-footer-arch-link:hover { color: var(--text); }
+.list-footer-arch-link::after {
+  content: '→';
+  font-size: 14px;
+  opacity: 0.5;
+}
+.list-footer-arch-link:hover {
+  color: var(--text);
+  border-color: #bbb;
+}
 .cta-link:hover { color: var(--text); }
 
 /* ── Admin float ── */
