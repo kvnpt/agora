@@ -746,6 +746,38 @@ input, select, textarea {
   text-decoration: underline;
   padding: 4px 0;
 }
+
+/* ── List footer (view-more + archdiocese link) ── */
+.list-footer {
+  padding: 24px 16px;
+  min-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+.list-footer-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 24px;
+  border-radius: 20px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.list-footer-btn:active { background: var(--border-light); }
+.list-footer-arch-link {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+.list-footer-arch-link:hover { color: var(--text); }
 .cta-link:hover { color: var(--text); }
 
 /* ── Admin float ── */

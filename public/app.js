@@ -663,19 +663,16 @@ function renderToday(container, events) {
     html = renderSubDaySections(later, html);
   }
   if (!happeningNow.length && !later.length) {
-    html = '<div class="empty-state"><h3>Nothing on today</h3><p><button class="cta-link" id="cta-month">See upcoming days &rarr;</button></p></div>';
+    html = '<div class="empty-state"><h3>Nothing on today</h3></div>';
   }
+  html += `<div class="list-footer"><button class="list-footer-btn" id="cta-month">View more</button></div>`;
   container.innerHTML = html;
 
-  // Bind CTA to switch to month view
-  const ctaMonth = container.querySelector('#cta-month');
-  if (ctaMonth) {
-    ctaMonth.addEventListener('click', () => {
-      state.timeRange = 'month';
-      document.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.range === 'month'));
-      fetchEvents();
-    });
-  }
+  container.querySelector('#cta-month').addEventListener('click', () => {
+    state.timeRange = 'month';
+    document.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.range === 'month'));
+    fetchEvents();
+  });
 
   bindSortToggle(container);
 }
@@ -730,7 +727,13 @@ function renderMonth(container, events) {
       html += `</div>`;
     }
   }
+  html += `<div class="list-footer"><button class="list-footer-btn" id="cta-services">View more services</button></div>`;
   container.innerHTML = html;
+
+  container.querySelector('#cta-services').addEventListener('click', () => {
+    document.getElementById('btn-services').click();
+  });
+
   bindSortToggle(container);
 }
 
@@ -882,6 +885,11 @@ function renderServices() {
     html += '</div>';
   }
 
+  const archUrl = ARCHDIOCESE_EVENTS[state.filters.jurisdiction];
+  const archFooter = archUrl
+    ? `<div class="list-footer"><a class="list-footer-arch-link" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(state.filters.jurisdiction || ''))} Archdiocese website &rarr;</a></div>`
+    : `<div class="list-footer"></div>`;
+  html += archFooter;
   container.innerHTML = html;
 
   // Make service cards clickable
