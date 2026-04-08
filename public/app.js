@@ -32,6 +32,10 @@ const state = {
   eventsSort: 'time'  // 'time' | 'nearby'
 };
 
+// History flags — track whether we pushed a state entry so we know whether to call history.back()
+let detailHistoryPushed = false;
+let posterHistoryPushed = false;
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
   detectSubdomain();
@@ -58,6 +62,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderEvents();
     }
   }, 60000);
+
+  // Browser back button closes detail panel or fullscreen poster
+  window.addEventListener('popstate', () => {
+    const fsEl = document.getElementById('poster-fullscreen');
+    const panelEl = document.getElementById('event-detail');
+    if (fsEl && !fsEl.classList.contains('hidden')) {
+      posterHistoryPushed = false;
+      closePosterFullscreenDOM();
+    } else if (panelEl && !panelEl.classList.contains('hidden')) {
+      detailHistoryPushed = false;
+      closeDetailDOM();
+    }
+  });
 });
 
 // ── Disable pinch/double-tap zoom on everything except the map ──
@@ -1035,9 +1052,16 @@ function showEventDetail(id) {
   panel.style.borderLeftColor = evt.parish_color || 'var(--border)';
 
   // Attach pinch-to-zoom on poster if present
+  // Tap poster to open fullscreen; pinch also triggers fullscreen via initPosterZoom
+  const posterContainer = content.querySelector('.detail-poster');
   const posterEl = content.querySelector('.detail-poster img');
-  if (posterEl) initPosterZoom(posterEl);
+  if (posterEl) {
+    initPosterZoom(posterEl);
+    posterContainer.addEventListener('click', () => openPosterFullscreen(posterEl.src));
+  }
 
+  history.pushState({ detail: true }, '');
+  detailHistoryPushed = true;
   panel.classList.remove('hidden');
   if (!document.querySelector('.detail-backdrop')) {
     const backdrop = document.createElement('div');
@@ -1089,6 +1113,8 @@ function showParishDetail(parishId) {
     </div>`;
 
   panel.style.borderLeftColor = parish.color || 'var(--border)';
+  history.pushState({ detail: true }, '');
+  detailHistoryPushed = true;
   panel.classList.remove('hidden');
   if (!document.querySelector('.detail-backdrop')) {
     const backdrop = document.createElement('div');
@@ -1243,13 +1269,104 @@ function initPosterZoom(img) {
   });
 }
 
-function closeDetail() {
+function closeDetailDOM() {
   document.getElementById('event-detail').classList.add('hidden');
   const backdrop = document.querySelector('.detail-backdrop');
   if (backdrop) backdrop.remove();
 }
 
+function closeDetail() {
+  closeDetailDOM();
+  if (detailHistoryPushed) {
+    detailHistoryPushed = false;
+    history.back();
+  }
+}
+
 document.getElementById('close-detail').addEventListener('click', closeDetail);
+
+// ── Fullscreen poster lightbox ──
+function openPosterFullscreen(src) {
+  const el = document.getElementById('poster-fullscreen');
+  const img = document.getElementById('poster-fullscreen-img');
+  img.src = src;
+  el.classList.remove('hidden');
+  // Trigger open animation on next frame
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => el.classList.add('open'));
+  });
+  history.pushState({ poster: true }, '');
+  posterHistoryPushed = true;
+  initPosterZoom(img);
+  initPosterSwipeDismiss(el, img);
+}
+
+function closePosterFullscreenDOM() {
+  const el = document.getElementById('poster-fullscreen');
+  el.classList.remove('open');
+  // Wait for transition then hide
+  el.addEventListener('transitionend', () => el.classList.add('hidden'), { once: true });
+}
+
+function closePosterFullscreen() {
+  closePosterFullscreenDOM();
+  if (posterHistoryPushed) {
+    posterHistoryPushed = false;
+    history.back();
+  }
+}
+
+function initPosterSwipeDismiss(overlay, img) {
+  let startY = 0, currentDY = 0, dragging = false;
+
+  // Only handle swipe when not zoomed in
+  overlay.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    // Check if img is zoomed (has a non-identity transform)
+    const t = img.style.transform;
+    if (t && t !== 'none' && !t.includes('scale(1)') && t !== '') {
+      const m = t.match(/scale\(([^)]+)\)/);
+      if (m && parseFloat(m[1]) > 1.05) return; // zoomed in — don't drag dismiss
+    }
+    startY = e.touches[0].clientY;
+    currentDY = 0;
+    dragging = true;
+  }, { passive: true });
+
+  overlay.addEventListener('touchmove', e => {
+    if (!dragging || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy < 0) return; // don't allow upward drag
+    currentDY = dy;
+    overlay.style.transition = 'none';
+    overlay.style.transform = `translateY(${dy}px) scale(${1 - dy * 0.0003})`;
+    const alpha = Math.max(0, 0.96 * (1 - dy / 280));
+    overlay.style.background = `rgba(0,0,0,${alpha})`;
+  }, { passive: true });
+
+  overlay.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    if (currentDY > 80) {
+      // Dismiss
+      overlay.style.transition = 'transform 0.28s cubic-bezier(0.4,0,1,1), opacity 0.28s ease, background 0.28s ease';
+      overlay.style.transform = `translateY(100vh)`;
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        overlay.style.transform = '';
+        overlay.style.opacity = '';
+        overlay.style.background = '';
+        overlay.style.transition = '';
+        closePosterFullscreen();
+      }, 280);
+    } else {
+      // Spring back
+      overlay.style.transition = 'transform 0.35s cubic-bezier(0.2,0,0,1), background 0.35s ease';
+      overlay.style.transform = '';
+      overlay.style.background = '';
+    }
+  });
+}
 
 // ── Helpers ──
 function groupByDay(events) {

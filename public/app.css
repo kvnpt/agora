@@ -890,9 +890,40 @@ input, select, textarea {
   width: 100%;
   display: block;
   transform-origin: center center;
+  /* No touch-action:none here — lets single-finger scroll the panel when not zoomed */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: zoom-in;
+}
+
+/* ── Fullscreen poster lightbox ── */
+.poster-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0,0,0,0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.2,0,0,1);
+}
+.poster-fullscreen.open {
+  opacity: 1;
+  transform: scale(1);
+}
+.poster-fullscreen.hidden {
+  display: none;
+}
+.poster-fullscreen img {
+  max-width: 100%;
+  max-height: 100vh;
+  object-fit: contain;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  transform-origin: center center;
 }
 
 
