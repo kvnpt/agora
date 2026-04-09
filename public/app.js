@@ -986,6 +986,12 @@ function showEventDetail(id) {
     ? `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`
     : '';
 
+  // Service book button: Antiochian events only, Holy Week through end of Sunday (Agape Vespers)
+  const holyWeekEnd = new Date('2026-04-13T14:00:00Z'); // midnight Monday AEST
+  const serviceBookCta = (evt.jurisdiction === 'antiochian' && new Date() <= holyWeekEnd)
+    ? `<a class="btn-service-book" href="https://www.antiochian.org.au/holy-week-service-books" target="_blank" rel="noopener"><img src="https://api.iconify.design/ph:book-open.svg" alt="" class="btn-service-book-icon">Service Book</a>`
+    : '';
+
   let adminActions = '';
   if (state.isAdmin) {
     const isCancelled = evt.status === 'cancelled';
@@ -1042,6 +1048,7 @@ function showEventDetail(id) {
     <div class="detail-actions">
       <a class="btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Directions</a>
       ${watchLiveCta}
+      ${serviceBookCta}
       ${websiteCta}
       ${adminActions}
     </div>
