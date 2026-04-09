@@ -169,8 +169,9 @@
     </div>
 
     <div id="section-parishes" class="section">
-      <h3>Add Parish</h3>
-      <form id="parish-form" class="card">
+      <h3 class="expand-trigger" onclick="toggleExpand('add-parish-form')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Add Parish <span id="add-parish-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
+      <div id="add-parish-form" class="expandable">
+      <form id="parish-form" class="card" style="margin-top:8px;">
         <div class="grid">
           <div class="field"><label>Nickname</label><input name="name" required placeholder="St Mary's, Mount Pritchard"></div>
           <div class="field"><label>Full Name</label><input name="full_name" placeholder="St Mary's Antiochian Orthodox Church of the Dormition"></div>
@@ -198,13 +199,15 @@
           <button type="button" class="btn btn-outline" id="geocode-btn">Geocode Address</button>
         </div>
       </form>
+      </div>
       <h3 style="margin-top: 20px;">Existing Parishes</h3>
       <div id="parish-list"></div>
     </div>
 
     <div id="section-schedules" class="section">
-      <h3>Add Schedule</h3>
-      <form id="schedule-form" class="card">
+      <h3 class="expand-trigger" onclick="toggleExpand('add-schedule-form')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Add Schedule <span id="add-schedule-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
+      <div id="add-schedule-form" class="expandable">
+      <form id="schedule-form" class="card" style="margin-top:8px;">
         <div class="grid">
           <div class="field"><label>Parish</label><select name="parish_id" required id="schedule-parish-select"></select></div>
           <div class="field"><label>Day</label>
@@ -226,6 +229,7 @@
         </div>
         <div class="btn-row"><button type="submit" class="btn btn-primary">Add Schedule</button></div>
       </form>
+      </div>
       <h3 style="margin-top: 20px;">Existing Schedules</h3>
       <div id="schedule-list"></div>
     </div>
@@ -580,7 +584,12 @@
       }).join('');
     }
 
-    function toggleExpand(id) { document.getElementById(id).classList.toggle('open'); }
+    function toggleExpand(id) {
+      document.getElementById(id).classList.toggle('open');
+      const chevronMap = { 'add-parish-form': 'add-parish-chevron', 'add-schedule-form': 'add-schedule-chevron' };
+      const chevron = document.getElementById(chevronMap[id]);
+      if (chevron) chevron.style.transform = document.getElementById(id).classList.contains('open') ? 'rotate(90deg)' : '';
+    }
 
     async function saveParish(id) {
       const c = document.getElementById('pe-' + id);
