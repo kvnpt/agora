@@ -565,10 +565,13 @@
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
+              <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
+              <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
               <div class="field"><label>Logo</label><input type="file" accept="image/*" onchange="uploadLogo('${esc(p.id)}', this)"></div>
             </div>
             <div class="btn-row">
               <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
+              <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')">Geocode Address</button>
               <button class="btn btn-reject" onclick="deleteParish('${esc(p.id)}')">Delete</button>
             </div>
           </div>
@@ -745,7 +748,23 @@
       if (res.ok) { toast('Deleted'); loadAll(); } else toast('Failed', 'error');
     }
 
-    // Geocode
+    async function geocodeParish(id) {
+      const c = document.getElementById('pe-' + id);
+      const addr = c.querySelector('[data-field="address"]').value.trim();
+      if (!addr) return toast('Enter an address first', 'error');
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`);
+        const r = await res.json();
+        if (!r.length) return toast('Address not found', 'error');
+        const lat = parseFloat(r[0].lat).toFixed(6);
+        const lng = parseFloat(r[0].lon).toFixed(6);
+        c.querySelector('[data-field="lat"]').value = lat;
+        c.querySelector('[data-field="lng"]').value = lng;
+        toast(`Geocoded: ${lat}, ${lng}`);
+      } catch { toast('Geocode failed', 'error'); }
+    }
+
+    // Geocode (add parish form)
     document.getElementById('geocode-btn').addEventListener('click', async () => {
       const addr = document.querySelector('[name="address"]').value;
       if (!addr) return toast('Enter address first', 'error');
