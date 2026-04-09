@@ -299,8 +299,9 @@ async function processBatch(sender, messages) {
 
     db.prepare(`
       UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-      status = 'success', events_found = ?, events_created = ? WHERE id = ?
-    `).run(result.events.length, eventsCreated, runId);
+      status = 'success', events_found = ?, events_created = ?,
+      input_texts = ?, claude_response = ? WHERE id = ?
+    `).run(result.events.length, eventsCreated, JSON.stringify(texts), result.rawResponse || null, runId);
 
     console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, parish=${parishId}, status=${eventStatus}`);
 

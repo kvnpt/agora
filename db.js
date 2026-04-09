@@ -236,6 +236,12 @@ function migrate(db) {
     db.exec(`ALTER TABLE parishes ADD COLUMN live_url TEXT`);
     db.pragma('user_version = 9');
   }
+
+  if (version < 10) {
+    db.exec(`ALTER TABLE adapter_runs ADD COLUMN input_texts TEXT`);
+    db.exec(`ALTER TABLE adapter_runs ADD COLUMN claude_response TEXT`);
+    db.pragma('user_version = 10');
+  }
 }
 
 module.exports = { getDb };

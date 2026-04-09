@@ -286,7 +286,8 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not 
       inferred_parish: parsed.inferred_parish || null,
       schedules: parsed.schedules || [],
       parish_updates: parsed.parish_updates || null,
-      new_parish: parsed.new_parish || null
+      new_parish: parsed.new_parish || null,
+      rawResponse: response.content[0].text
     };
   }
 
