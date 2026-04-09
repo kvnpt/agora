@@ -419,7 +419,7 @@ input, select, textarea {
   gap: 6px;
 }
 .btn-watch-live .live-dot { background: #fff; }
-.btn-service-book {
+.detail-actions .btn-service-book {
   background: #1e3a5f;
   color: #fff;
   border: none;
@@ -432,6 +432,7 @@ input, select, textarea {
   height: 15px;
   filter: invert(1);
   flex-shrink: 0;
+  display: block;
 }
 /* Legacy types still in DB — mapped to display types at render time */
 .badge-vespers { background: #d5e0f0; color: #2d4a7a; }
