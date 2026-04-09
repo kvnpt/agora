@@ -23,8 +23,14 @@ const writeLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later' }
 });
 
-// Static files
-app.use(express.static(path.join(__dirname, 'public')));
+// Static files — no-cache on JS/CSS so browsers always revalidate after deploys
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 app.use('/logos', express.static(path.join(__dirname, 'data', 'logos')));
 app.use('/posters', express.static(path.join(__dirname, 'data', 'posters')));
 
