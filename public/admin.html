@@ -553,6 +553,7 @@
           </div>
           <div class="expandable" id="pe-${esc(p.id)}" onclick="event.stopPropagation()">
             <div class="grid">
+              <div class="field full"><label>Nickname</label><input value="${esc(p.name || '')}" data-field="name"></div>
               <div class="field full"><label>Full Name</label><input value="${esc(p.full_name || '')}" data-field="full_name"></div>
               <div class="field"><label>Jurisdiction</label>
                 <select data-field="jurisdiction">${['antiochian','greek','serbian','russian','romanian','macedonian','other'].map(j => `<option value="${j}" ${p.jurisdiction===j?'selected':''}>${j}</option>`).join('')}</select>
