@@ -19,10 +19,10 @@ function getOrCreateSender(phone) {
   let sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
   if (!sender) {
     db.prepare(
-      "INSERT INTO senders (phone, status) VALUES (?, 'pending_review')"
+      "INSERT INTO senders (phone, status) VALUES (?, 'review')"
     ).run(phone);
     sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
-    console.log(`[webhook] New sender registered: ${phone} (pending review)`);
+    console.log(`[webhook] New sender registered: ${phone} (review)`);
   } else {
     db.prepare("UPDATE senders SET last_seen_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE phone = ?").run(phone);
   }
@@ -233,7 +233,7 @@ async function processBatch(sender, messages) {
         // Apply directly
         const updates = [];
         const vals = [];
-        const puFields = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+        const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
         for (const f of puFields) {
           if (pu[f]) { updates.push(`${f} = ?`); vals.push(pu[f]); }
         }
@@ -246,7 +246,7 @@ async function processBatch(sender, messages) {
       } else {
         // Buffer for admin review
         const proposed = {};
-        const puFields = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+        const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
         for (const f of puFields) { if (pu[f]) proposed[f] = pu[f]; }
         if (pu.languages) proposed.languages = pu.languages;
         if (Object.keys(proposed).length) {

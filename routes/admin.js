@@ -362,7 +362,7 @@ router.post('/parish-updates/:id/approve', (req, res) => {
   let changes;
   try { changes = JSON.parse(pu.proposed_changes); } catch { return res.status(400).json({ error: 'Invalid proposed_changes JSON' }); }
 
-  const allowed = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
   const updates = [];
   const values = [];
   for (const f of allowed) {

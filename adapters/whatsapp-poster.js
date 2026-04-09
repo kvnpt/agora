@@ -202,6 +202,7 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
     "phone": "phone or null",
     "acronym": "SNP or null",
     "chant_style": "Byzantine|Western|Mixed or null",
+    "live_url": "livestream url or null",
     "languages": ["English", "Slavonic"]
   },
   "events": [
@@ -229,6 +230,7 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
   ],
   "parish_updates": null or {
     "name": "updated short name or null",
+    "full_name": "updated full official name or null",
     "address": "new address or null",
     "website": "new url or null",
     "email": "new email or null",
