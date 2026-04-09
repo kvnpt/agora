@@ -15,11 +15,12 @@ router.get('/ping', (req, res) => res.json({ ok: true }));
 router.get('/events/pending', (req, res) => {
   const db = getDb();
   const events = db.prepare(`
-    SELECT e.*, p.name as parish_name, p.address as parish_address
+    SELECT e.*, p.name as parish_name, p.address as parish_address, ar.input_texts
     FROM events e
     JOIN parishes p ON e.parish_id = p.id
+    LEFT JOIN adapter_runs ar ON e.source_run_id = ar.id
     WHERE e.status = 'pending_review'
-    ORDER BY e.created_at DESC
+    ORDER BY e.start_utc ASC
     LIMIT 200
   `).all();
   res.json(events);
@@ -300,6 +301,91 @@ router.patch('/senders/:phone', (req, res) => {
   values.push(phone);
   db.prepare(`UPDATE senders SET ${updates.join(', ')} WHERE phone = ?`).run(...values);
   res.json(db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone));
+});
+
+// GET /api/admin/schedules/pending — schedules awaiting review
+router.get('/schedules/pending', (req, res) => {
+  const db = getDb();
+  const schedules = db.prepare(`
+    SELECT s.*, p.name as parish_name, ar.input_texts
+    FROM schedules s
+    JOIN parishes p ON s.parish_id = p.id
+    LEFT JOIN adapter_runs ar ON s.source_run_id = ar.id
+    WHERE s.status = 'pending_review'
+    ORDER BY s.created_at ASC
+  `).all();
+  res.json(schedules);
+});
+
+// POST /api/admin/schedules/:id/approve
+router.post('/schedules/:id/approve', (req, res) => {
+  const db = getDb();
+  const s = db.prepare('SELECT id FROM schedules WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Schedule not found' });
+  db.prepare("UPDATE schedules SET status = 'approved', active = 1 WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
+});
+
+// POST /api/admin/schedules/:id/reject
+router.post('/schedules/:id/reject', (req, res) => {
+  const db = getDb();
+  const s = db.prepare('SELECT id FROM schedules WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Schedule not found' });
+  db.prepare("UPDATE schedules SET status = 'rejected', active = 0 WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
+});
+
+// GET /api/admin/parish-updates — pending parish change proposals
+router.get('/parish-updates', (req, res) => {
+  const db = getDb();
+  const updates = db.prepare(`
+    SELECT pu.*, p.name as parish_name, p.address as parish_address,
+           p.website as parish_website, p.email as parish_email,
+           p.phone as parish_phone, p.acronym as parish_acronym,
+           p.chant_style as parish_chant_style, p.languages as parish_languages,
+           ar.input_texts
+    FROM pending_parish_updates pu
+    JOIN parishes p ON pu.parish_id = p.id
+    LEFT JOIN adapter_runs ar ON pu.source_run_id = ar.id
+    WHERE pu.status = 'pending'
+    ORDER BY pu.created_at ASC
+  `).all();
+  res.json(updates);
+});
+
+// POST /api/admin/parish-updates/:id/approve — apply proposed changes to parish
+router.post('/parish-updates/:id/approve', (req, res) => {
+  const db = getDb();
+  const pu = db.prepare('SELECT * FROM pending_parish_updates WHERE id = ?').get(req.params.id);
+  if (!pu) return res.status(404).json({ error: 'Not found' });
+
+  let changes;
+  try { changes = JSON.parse(pu.proposed_changes); } catch { return res.status(400).json({ error: 'Invalid proposed_changes JSON' }); }
+
+  const allowed = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+  const updates = [];
+  const values = [];
+  for (const f of allowed) {
+    if (changes[f] != null) { updates.push(`${f} = ?`); values.push(changes[f]); }
+  }
+  if (changes.languages) { updates.push('languages = ?'); values.push(JSON.stringify(changes.languages)); }
+
+  if (updates.length) {
+    values.push(pu.parish_id);
+    db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  }
+
+  db.prepare("UPDATE pending_parish_updates SET status = 'approved', reviewed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
+});
+
+// POST /api/admin/parish-updates/:id/reject
+router.post('/parish-updates/:id/reject', (req, res) => {
+  const db = getDb();
+  const pu = db.prepare('SELECT id FROM pending_parish_updates WHERE id = ?').get(req.params.id);
+  if (!pu) return res.status(404).json({ error: 'Not found' });
+  db.prepare("UPDATE pending_parish_updates SET status = 'rejected', reviewed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(req.params.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;

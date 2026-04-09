@@ -37,6 +37,23 @@ docker run -p 3000:3000 -v /opt/agora/data:/app/data --env-file /home/ubuntu/.en
 
 Container `agora` on `homelab` Docker network. Caddy proxies `agora.orthodoxy.au` to `agora:3000`.
 
+| Branch push | Deploys to | URL |
+|-------------|-----------|-----|
+| `git push origin dev` | `agora-dev` container, port 3002 | `http://100.64.0.2:3002` (Tailscale only) |
+| `git push origin main` | `agora` container, port 3000 | `https://agora.orthodoxy.au` |
+
+To merge dev → production:
+```bash
+git checkout main
+git merge dev
+git push origin main   # webhook auto-deploys
+```
+
+## Email
+
+To email rendered markdown: `render-md /path/to/file.md email "Subject"`
+Sends styled HTML to mail@kevinpaul.au via the mailserver container. No config needed.
+
 ## Env Vars
 
 - `ANTHROPIC_API_KEY` — for Claude Vision poster parsing

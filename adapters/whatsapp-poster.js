@@ -191,12 +191,17 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
 {
   "inferred_parish": "<parish id from list, or null>",
   "new_parish": null or {
-    "name": "Short name, e.g. St George, Carlton",
-    "full_name": "Full official name",
+    "name": "Short name e.g. St George Carlton",
+    "full_name": "Full official name or null",
     "jurisdiction": "antiochian|greek|serbian|russian|romanian|macedonian|other",
-    "address": "Full street address",
+    "address": "Full street address or null",
+    "lat": -33.8688 or null,
+    "lng": 151.2093 or null,
     "website": "url or null",
+    "email": "email or null",
     "phone": "phone or null",
+    "acronym": "SNP or null",
+    "chant_style": "Byzantine|Western|Mixed or null",
     "languages": ["English", "Slavonic"]
   },
   "events": [
@@ -207,7 +212,7 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "start_time": "09:00",
       "end_time": "11:00 or null",
       "event_type": "liturgy|prayer|feast|talk|youth|social|other",
-      "location": "venue if different from parish, or null",
+      "location": "venue if different from parish address, or null",
       "languages": ["English"]
     }
   ],
@@ -218,19 +223,26 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "end_time": "12:00 or null",
       "title": "Sunday Divine Liturgy",
       "event_type": "liturgy|prayer|feast|talk|youth|social|other",
-      "languages": ["English", "Arabic"]
+      "languages": ["English", "Arabic"],
+      "week_of_month": "first,third or null (null means every week; comma-separated values from: first second third fourth last)"
     }
   ],
   "parish_updates": null or {
+    "name": "updated short name or null",
     "address": "new address or null",
     "website": "new url or null",
+    "email": "new email or null",
     "phone": "new phone or null",
+    "acronym": "abbreviation or null",
+    "chant_style": "Byzantine|Western|Mixed or null",
+    "live_url": "livestream url or null",
     "languages": ["English", "Arabic"]
   }
 }
 
 IMPORTANT type rules: "Vesperal Liturgy" and any service with "Liturgy" = liturgy. Vespers, Matins, Compline, Bridegroom, Holy Unction, Lamentations, Passion Gospels = prayer.
 day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday.
+week_of_month: only set if the schedule explicitly specifies which week(s) of the month (e.g. "first Sunday", "last Saturday"). Null means every week.
 Only include schedules if the message describes RECURRING weekly services, not one-off events.
 Only include parish_updates if the message explicitly provides new/changed parish contact info.
 If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}

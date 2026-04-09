@@ -242,6 +242,25 @@ function migrate(db) {
     db.exec(`ALTER TABLE adapter_runs ADD COLUMN claude_response TEXT`);
     db.pragma('user_version = 10');
   }
+
+  if (version < 11) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'`);
+    db.exec(`ALTER TABLE schedules ADD COLUMN source_run_id INTEGER REFERENCES adapter_runs(id)`);
+    db.exec(`ALTER TABLE events ADD COLUMN source_run_id INTEGER REFERENCES adapter_runs(id)`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_parish_updates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parish_id TEXT NOT NULL REFERENCES parishes(id),
+        proposed_changes TEXT NOT NULL,
+        sender_phone TEXT,
+        source_run_id INTEGER REFERENCES adapter_runs(id),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        reviewed_at TEXT
+      )
+    `);
+    db.pragma('user_version = 11');
+  }
 }
 
 module.exports = { getDb };

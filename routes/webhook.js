@@ -226,36 +226,54 @@ async function processBatch(sender, messages) {
       }
     }
 
-    // Handle parish updates
+    // Handle parish updates — buffer for review if sender is not auto-approved
     if (result.parish_updates && parishId !== '_unassigned') {
       const pu = result.parish_updates;
-      const updates = [];
-      const vals = [];
-      if (pu.address) { updates.push('address = ?'); vals.push(pu.address); }
-      if (pu.website) { updates.push('website = ?'); vals.push(pu.website); }
-      if (pu.phone) { updates.push('phone = ?'); vals.push(pu.phone); }
-      if (pu.languages) { updates.push('languages = ?'); vals.push(JSON.stringify(pu.languages)); }
-      if (updates.length) {
-        vals.push(parishId);
-        db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...vals);
-        console.log(`[webhook] Updated parish ${parishId}: ${updates.map(u => u.split(' =')[0]).join(', ')}`);
+      if (senderRecord.status === 'approved') {
+        // Apply directly
+        const updates = [];
+        const vals = [];
+        const puFields = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+        for (const f of puFields) {
+          if (pu[f]) { updates.push(`${f} = ?`); vals.push(pu[f]); }
+        }
+        if (pu.languages) { updates.push('languages = ?'); vals.push(JSON.stringify(pu.languages)); }
+        if (updates.length) {
+          vals.push(parishId);
+          db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...vals);
+          console.log(`[webhook] Updated parish ${parishId}: ${updates.map(u => u.split(' =')[0]).join(', ')}`);
+        }
+      } else {
+        // Buffer for admin review
+        const proposed = {};
+        const puFields = ['name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+        for (const f of puFields) { if (pu[f]) proposed[f] = pu[f]; }
+        if (pu.languages) proposed.languages = pu.languages;
+        if (Object.keys(proposed).length) {
+          db.prepare(`INSERT INTO pending_parish_updates (parish_id, proposed_changes, sender_phone, source_run_id)
+                      VALUES (?, ?, ?, ?)`).run(parishId, JSON.stringify(proposed), sender, runId);
+          console.log(`[webhook] Queued parish update for review: ${parishId}`);
+        }
       }
     }
 
-    // Handle schedules
+    // Handle schedules — respect sender status
     let schedulesCreated = 0;
     if (result.schedules && result.schedules.length && parishId !== '_unassigned') {
+      const schedStatus = senderRecord.status === 'approved' ? 'approved' : 'pending_review';
+      const schedActive = schedStatus === 'approved' ? 1 : 0;
       const insertSched = db.prepare(`
-        INSERT OR IGNORE INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, active, status, source_run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const s of result.schedules) {
         const r = insertSched.run(parishId, s.day_of_week, s.start_time,
           s.end_time || null, s.title, s.event_type || 'liturgy',
-          s.languages ? JSON.stringify(s.languages) : null);
+          s.languages ? JSON.stringify(s.languages) : null,
+          s.week_of_month || null, schedActive, schedStatus, runId);
         if (r.changes > 0) schedulesCreated++;
       }
-      if (schedulesCreated) console.log(`[webhook] Created ${schedulesCreated} schedules for ${parishId}`);
+      if (schedulesCreated) console.log(`[webhook] Created ${schedulesCreated} schedules for ${parishId} (status=${schedStatus})`);
     }
 
     // Use first poster image as the source poster for all events in batch
@@ -264,10 +282,10 @@ async function processBatch(sender, messages) {
     // Handle events
     const upsert = db.prepare(`
       INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
-        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path)
+        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path, source_run_id)
       SELECT @parish_id, 'whatsapp-webhook', @title, @description, @start_utc, @end_utc,
         @event_type, @source_hash, 'ai-parsed', @status,
-        p.lat, p.lng, @location_override, @languages, @poster_path
+        p.lat, p.lng, @location_override, @languages, @poster_path, @source_run_id
       FROM parishes p WHERE p.id = @parish_id
       ON CONFLICT(source_hash) DO UPDATE SET
         title = excluded.title, description = excluded.description,
@@ -290,7 +308,8 @@ async function processBatch(sender, messages) {
           location_override: evt.location_override,
           status: eventStatus,
           languages: evt.languages ? JSON.stringify(evt.languages) : null,
-          poster_path: posterPath
+          poster_path: posterPath,
+          source_run_id: runId
         });
         if (r.changes > 0) eventsCreated++;
       }
