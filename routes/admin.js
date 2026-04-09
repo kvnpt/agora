@@ -388,4 +388,28 @@ router.post('/parish-updates/:id/reject', (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/admin/dropped — WhatsApp runs that produced nothing (no events, schedules, or parish updates)
+router.get('/dropped', (req, res) => {
+  const db = getDb();
+  const runs = db.prepare(`
+    SELECT * FROM adapter_runs
+    WHERE adapter_id = 'whatsapp-webhook'
+      AND status = 'success'
+      AND events_found = 0
+      AND input_texts IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.source_run_id = adapter_runs.id)
+      AND NOT EXISTS (SELECT 1 FROM pending_parish_updates ppu WHERE ppu.source_run_id = adapter_runs.id)
+    ORDER BY started_at DESC
+    LIMIT 50
+  `).all();
+  res.json(runs);
+});
+
+// DELETE /api/admin/dropped/:id — remove a dropped run record
+router.delete('/dropped/:id', (req, res) => {
+  const db = getDb();
+  db.prepare("DELETE FROM adapter_runs WHERE id = ? AND adapter_id = 'whatsapp-webhook'").run(req.params.id);
+  res.json({ ok: true });
+});
+
 module.exports = router;

@@ -115,6 +115,8 @@
     .diff-row { display: flex; gap: 8px; margin-top: 4px; font-size: 12px; }
     .diff-old { color: #ef4444; text-decoration: line-through; flex: 1; min-width: 0; }
     .diff-new { color: #22c55e; flex: 1; min-width: 0; }
+    .raw-response { display: none; margin-top: 8px; padding: 8px; background: #f4f4f4; border-radius: 2px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; color: #333; }
+    .raw-response.open { display: block; }
   </style>
 </head>
 <body>
@@ -155,6 +157,10 @@
       <div class="review-section">
         <div class="review-section-header">Parish Changes <span id="review-parishes-count"></span></div>
         <div id="review-parishes-list"></div>
+      </div>
+      <div class="review-section">
+        <div class="review-section-header">Dropped <span id="review-dropped-count"></span></div>
+        <div id="review-dropped-list"></div>
       </div>
     </div>
 
@@ -228,7 +234,7 @@
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], schedules = [], senders = [];
+    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], droppedRuns = [], schedules = [], senders = [];
     let activeJurisdiction = '';
     const headers = { 'Content-Type': 'application/json' };
 
@@ -257,7 +263,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadSchedules(), loadSenders()]);
+      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadDroppedRuns(), loadSchedules(), loadSenders()]);
       renderAll();
     }
 
@@ -266,6 +272,7 @@
       renderReviewQueue();
       renderPendingSchedules();
       renderPendingParishUpdates();
+      renderDropped();
       renderParishList();
       renderScheduleList();
       renderSenders();
@@ -276,6 +283,7 @@
     async function loadPendingEvents() { pendingEvents = await (await fetch('/api/admin/events/pending', { headers })).json(); }
     async function loadPendingSchedules() { pendingSchedules = await (await fetch('/api/admin/schedules/pending', { headers })).json(); }
     async function loadPendingParishUpdates() { pendingParishUpdates = await (await fetch('/api/admin/parish-updates', { headers })).json(); }
+    async function loadDroppedRuns() { droppedRuns = await (await fetch('/api/admin/dropped', { headers })).json(); }
     async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); }
     async function loadSenders() { senders = await (await fetch('/api/admin/senders', { headers })).json(); }
 
@@ -297,7 +305,7 @@
 
     function renderStats() {
       const evtCount = filteredEvents().length;
-      const totalReview = evtCount + pendingSchedules.length + pendingParishUpdates.length;
+      const totalReview = evtCount + pendingSchedules.length + pendingParishUpdates.length + droppedRuns.length;
       document.getElementById('count-review').textContent = totalReview;
       document.getElementById('count-parishes').textContent = filteredParishes().length;
       document.getElementById('count-schedules').textContent = filteredSchedules().length;
@@ -308,6 +316,8 @@
       if (sc) sc.textContent = pendingSchedules.length ? `(${pendingSchedules.length})` : '';
       const pc = document.getElementById('review-parishes-count');
       if (pc) pc.textContent = pendingParishUpdates.length ? `(${pendingParishUpdates.length})` : '';
+      const dc = document.getElementById('review-dropped-count');
+      if (dc) dc.textContent = droppedRuns.length ? `(${droppedRuns.length})` : '';
     }
 
     function renderParishSelects() {
@@ -468,6 +478,36 @@
     async function rejectParishUpdate(id) {
       const res = await fetch(`/api/admin/parish-updates/${id}/reject`, { method: 'POST', headers });
       if (res.ok) { toast('Dismissed'); loadAll(); } else toast('Failed', 'error');
+    }
+
+    // ── Dropped Runs ──
+    function renderDropped() {
+      const c = document.getElementById('review-dropped-list');
+      if (!droppedRuns.length) { c.innerHTML = '<div class="empty">No dropped inputs</div>'; return; }
+      c.innerHTML = droppedRuns.map(r => {
+        const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(r.started_at));
+        const inputTexts = (() => { try { return JSON.parse(r.input_texts || '[]'); } catch { return []; } })();
+        const msgText = inputTexts.filter(Boolean).join(' · ');
+        return `
+          <div class="card" data-run-id="${r.id}">
+            <div class="card-meta">${dateFmt}</div>
+            ${msgText ? `<div class="source-msg" style="max-height:none;">${esc(msgText)}</div>` : ''}
+            <div class="btn-row">
+              <button class="btn btn-outline" onclick="toggleRaw(${r.id})">View raw</button>
+              <button class="btn btn-reject" onclick="deleteDropped(${r.id})">Delete</button>
+            </div>
+            <div class="raw-response" id="raw-${r.id}">${esc(r.claude_response || '(no response logged)')}</div>
+          </div>`;
+      }).join('');
+    }
+
+    function toggleRaw(id) {
+      document.getElementById('raw-' + id).classList.toggle('open');
+    }
+
+    async function deleteDropped(id) {
+      const res = await fetch(`/api/admin/dropped/${id}`, { method: 'DELETE', headers });
+      if (res.ok) { toast('Deleted'); loadAll(); } else toast('Failed', 'error');
     }
 
     // ── Senders ──
