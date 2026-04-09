@@ -244,7 +244,7 @@ IMPORTANT type rules: "Vesperal Liturgy" and any service with "Liturgy" = liturg
 day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday.
 week_of_month: only set if the schedule explicitly specifies which week(s) of the month (e.g. "first Sunday", "last Saturday"). Null means every week.
 Only include schedules if the message describes RECURRING weekly services, not one-off events.
-Only include parish_updates if the message explicitly provides new/changed parish contact info.
+Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
 If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}
 Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not specify a year, assume the nearest future occurrence. Timezone: Australia/Sydney (AEDT/AEST).`
     });
