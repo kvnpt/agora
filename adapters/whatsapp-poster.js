@@ -225,7 +225,8 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "title": "Sunday Divine Liturgy",
       "event_type": "liturgy|prayer|feast|talk|youth|social|other",
       "languages": ["English", "Arabic"],
-      "week_of_month": "first,third or null (null means every week; comma-separated values from: first second third fourth last)"
+      "week_of_month": "first,third or null (null means every week; comma-separated values from: first second third fourth last)",
+      "concurrent": false
     }
   ],
   "parish_updates": null or {
@@ -246,6 +247,7 @@ IMPORTANT type rules: "Vesperal Liturgy" and any service with "Liturgy" = liturg
 day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday.
 week_of_month: only set if the schedule explicitly specifies which week(s) of the month (e.g. "first Sunday", "last Saturday"). Null means every week.
 Only include schedules if the message describes RECURRING weekly services, not one-off events.
+concurrent: true if this service runs simultaneously alongside another service at the same parish at the same time (e.g. English and Arabic liturgies in separate rooms at the same hour). False otherwise.
 Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
 If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}
 Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not specify a year, assume the nearest future occurrence. Timezone: Australia/Sydney (AEDT/AEST).`

@@ -263,14 +263,14 @@ async function processBatch(sender, messages) {
       const schedStatus = senderRecord.status === 'approved' ? 'approved' : 'pending_review';
       const schedActive = schedStatus === 'approved' ? 1 : 0;
       const insertSched = db.prepare(`
-        INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, active, status, source_run_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, concurrent, active, status, source_run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const s of result.schedules) {
         const r = insertSched.run(parishId, s.day_of_week, s.start_time,
           s.end_time || null, s.title, s.event_type || 'liturgy',
           s.languages ? JSON.stringify(s.languages) : null,
-          s.week_of_month || null, schedActive, schedStatus, runId);
+          s.week_of_month || null, s.concurrent ? 1 : 0, schedActive, schedStatus, runId);
         if (r.changes > 0) schedulesCreated++;
       }
       if (schedulesCreated) console.log(`[webhook] Created ${schedulesCreated} schedules for ${parishId} (status=${schedStatus})`);
