@@ -1039,13 +1039,13 @@ function showEventDetail(id) {
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
     </div>
     ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
-    ${posterHtml}
     <div class="detail-actions">
       <a class="btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Directions</a>
       ${watchLiveCta}
       ${websiteCta}
       ${adminActions}
     </div>
+    ${posterHtml}
     ${editForm}`;
 
   // Set parish color accent on the panel
