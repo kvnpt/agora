@@ -880,15 +880,16 @@ input, select, textarea {
 
 /* ── Event poster in detail panel ── */
 .detail-poster {
-  display: block;
-  margin-bottom: 16px;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid var(--border-light);
+  display: flex;
+  justify-content: center;
+  margin: 20px 0 24px;
 }
 .detail-poster img {
-  width: 100%;
+  width: 40%;
   display: block;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
   transform-origin: center center;
   /* No touch-action:none here — lets single-finger scroll the panel when not zoomed */
   user-select: none;
