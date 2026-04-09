@@ -261,6 +261,11 @@ function migrate(db) {
     `);
     db.pragma('user_version = 11');
   }
+
+  if (version < 12) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN concurrent INTEGER NOT NULL DEFAULT 0`);
+    db.pragma('user_version = 12');
+  }
 }
 
 module.exports = { getDb };

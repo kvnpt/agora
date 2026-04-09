@@ -18,7 +18,11 @@ router.get('/', (req, res) => {
         p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
         p.acronym as parish_acronym, p.color as parish_color, p.live_url as parish_live_url,
         ROW_NUMBER() OVER (
-          PARTITION BY e.parish_id, e.start_utc, e.title
+          PARTITION BY
+            CASE WHEN COALESCE(s.concurrent, 0) = 1
+                 THEN CAST(e.id AS TEXT)
+                 ELSE e.parish_id || '||' || e.start_utc || '||' || e.title
+            END
           ORDER BY
             CASE WHEN s.week_of_month IS NOT NULL THEN 0 ELSE 1 END,
             CASE WHEN e.source_adapter = 'schedule' THEN 1 ELSE 0 END,

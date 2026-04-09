@@ -217,7 +217,7 @@ router.patch('/schedules/:id', (req, res) => {
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
-  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month'];
+  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month', 'concurrent'];
   const updates = [];
   const values = [];
   for (const key of allowed) {

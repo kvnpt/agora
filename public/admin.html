@@ -691,6 +691,12 @@
                     ).join('')}
                   </div>
                 </div>
+                <div class="field" style="margin-top:8px;">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
+                    <input type="checkbox" data-field="concurrent" ${s.concurrent ? 'checked' : ''}>
+                    Concurrent — show alongside other services at the same time
+                  </label>
+                </div>
                 <div class="btn-row">
                   <button class="btn btn-primary" onclick="saveSchedule(${s.id})">Save</button>
                 </div>
@@ -735,6 +741,8 @@
         if (field === 'week_of_month') {
           const checked = [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
           data[field] = checked.length ? checked.join(',') : null;
+        } else if (field === 'concurrent') {
+          data[field] = el.checked ? 1 : 0;
         } else if (el.tagName === 'DIV') {
           return; // skip wrapper divs without data-f
         } else {
