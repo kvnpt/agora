@@ -1043,6 +1043,7 @@ function showEventDetail(id) {
       <div>${esc(evt.parish_name)}</div>
       ${addr ? `<div>${esc(addr)}</div>` : ''}
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
+      ${evt.languages ? `<div>${(() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })()}</div>` : ''}
     </div>
     ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
     <div class="detail-actions">
