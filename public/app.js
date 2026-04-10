@@ -1152,10 +1152,11 @@ function showEventDetail(id) {
   }
 
   const addr = evt.location_override || evt.parish_address || '';
-  // Prefer parish coords (always current) over event coords (may be stale from insert time)
+  // If event has a location override, use event's own coords (custom venue).
+  // Otherwise use parish coords (always current — event coords may be stale).
   const parish = state.parishes.find(p => p.id === evt.parish_id);
-  const lat = (parish && parish.lat) || evt.lat || 0;
-  const lng = (parish && parish.lng) || evt.lng || 0;
+  const lat = evt.location_override ? (evt.lat || (parish && parish.lat) || 0) : ((parish && parish.lat) || evt.lat || 0);
+  const lng = evt.location_override ? (evt.lng || (parish && parish.lng) || 0) : ((parish && parish.lng) || evt.lng || 0);
   const websiteCta = evt.parish_website ? `<a class="btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
 
   const watchLiveCta = evt.parish_live_url
