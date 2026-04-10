@@ -1215,15 +1215,19 @@ function showEventDetail(id) {
   // Parish info section (all values escaped via esc() helper)
   let parishInfoHtml = '';
   if (parish) {
-    const pAddr = parish.address || '';
-    const pPhone = parish.phone ? `<div>${esc(parish.phone)}</div>` : '';
+    const pAddr = parish.address
+      ? `<div><a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(parish.address)}" target="_blank" rel="noopener" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.address)}</a></div>`
+      : '';
+    const pPhone = parish.phone
+      ? `<div><a href="tel:${esc(parish.phone.replace(/\s+/g, ''))}" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.phone)}</a></div>`
+      : '';
     const pEmail = parish.email ? `<div>${esc(parish.email)}</div>` : '';
     const pJurisdiction = parish.jurisdiction ? `<div>${esc(capitalize(parish.jurisdiction))} Orthodox</div>` : '';
     parishInfoHtml = `
       <div class="detail-parish-info">
         <div style="font-weight:600;color:var(--text);">${esc(parish.name)}</div>
         ${pJurisdiction}
-        ${pAddr ? `<div>${esc(pAddr)}</div>` : ''}
+        ${pAddr}
         ${pPhone}
         ${pEmail}
       </div>`;
