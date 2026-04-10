@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db');
+const { geocode } = require('../geocode');
 
 const router = Router();
 
@@ -211,7 +212,7 @@ async function processBatch(sender, messages) {
         .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
       const existing = db.prepare('SELECT id FROM parishes WHERE id = ?').get(newId);
       if (!existing && np.name) {
-        // Geocode address or use Sydney CBD as default
+        // Default to Sydney CBD; geocode async if address provided
         const lat = -33.8688, lng = 151.2093;
         db.prepare(`
           INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, phone, languages)
@@ -220,6 +221,14 @@ async function processBatch(sender, messages) {
           np.address || null, lat, lng, np.website || null, np.phone || null,
           np.languages ? JSON.stringify(np.languages) : '["English"]');
         console.log(`[webhook] Created new parish: ${newId} (${np.name})`);
+        if (np.address) {
+          geocode(np.address).then(coords => {
+            if (coords) {
+              db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, newId);
+              console.log(`[webhook] Geocoded new parish ${newId}: ${coords.lat}, ${coords.lng}`);
+            }
+          });
+        }
         parishId = newId;
       } else if (existing) {
         parishId = newId;
@@ -242,6 +251,15 @@ async function processBatch(sender, messages) {
           vals.push(parishId);
           db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...vals);
           console.log(`[webhook] Updated parish ${parishId}: ${updates.map(u => u.split(' =')[0]).join(', ')}`);
+          // Auto-geocode if address was updated
+          if (pu.address) {
+            geocode(pu.address).then(coords => {
+              if (coords) {
+                db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, parishId);
+                console.log(`[webhook] Geocoded parish ${parishId}: ${coords.lat}, ${coords.lng}`);
+              }
+            });
+          }
         }
       } else {
         // Buffer for admin review

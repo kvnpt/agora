@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { getDb } = require('../db');
+const { geocode } = require('../geocode');
 const path = require('path');
 const fs = require('fs');
 
@@ -32,7 +33,7 @@ router.patch('/events/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const { status, parish_id, title, description, start_utc, end_utc, event_type, languages } = req.body;
+  const { status, parish_id, title, description, start_utc, end_utc, event_type, languages, location_override } = req.body;
 
   if (status && !['approved', 'rejected', 'pending_review', 'cancelled', 'hidden'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
@@ -48,6 +49,7 @@ router.patch('/events/:id', (req, res) => {
   if (end_utc !== undefined) { updates.push('end_utc = ?'); values.push(end_utc || null); }
   if (event_type) { updates.push('event_type = ?'); values.push(event_type); }
   if (languages !== undefined) { updates.push('languages = ?'); values.push(languages || null); }
+  if (location_override !== undefined) { updates.push('location_override = ?'); values.push(location_override || null); }
 
   if (parish_id && parish_id !== event.parish_id) {
     const parish = db.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').get(parish_id);
@@ -61,6 +63,22 @@ router.patch('/events/:id', (req, res) => {
   updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
   values.push(req.params.id);
   db.prepare(`UPDATE events SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  // Auto-geocode if location_override changed
+  if (location_override) {
+    geocode(location_override).then(coords => {
+      if (coords) {
+        db.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, req.params.id);
+        console.log(`[admin] Geocoded event ${req.params.id}: ${coords.lat}, ${coords.lng}`);
+      }
+    });
+  } else if (location_override === '') {
+    // Cleared override — reset to parish coords
+    const parish = db.prepare('SELECT lat, lng FROM parishes WHERE id = ?').get(event.parish_id);
+    if (parish) {
+      db.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?').run(parish.lat, parish.lng, req.params.id);
+    }
+  }
 
   const updated = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   res.json(updated);
@@ -131,6 +149,16 @@ router.patch('/parishes/:id', (req, res) => {
 
   values.push(id);
   db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  // Auto-geocode if address changed and lat/lng weren't explicitly provided
+  if (req.body.address && req.body.lat === undefined) {
+    geocode(req.body.address).then(coords => {
+      if (coords) {
+        db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, id);
+        console.log(`[admin] Geocoded parish ${id}: ${coords.lat}, ${coords.lng}`);
+      }
+    });
+  }
 
   const updated = db.prepare('SELECT * FROM parishes WHERE id = ?').get(id);
   res.json(updated);
