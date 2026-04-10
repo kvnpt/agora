@@ -14,8 +14,11 @@ router.get('/', (req, res) => {
   //   3. Most recently updated
   let query = `
     SELECT * FROM (
-      SELECT e.*,
-        COALESCE(e.lat, p.lat) as lat, COALESCE(e.lng, p.lng) as lng,
+      SELECT e.id, e.parish_id, e.source_adapter, e.schedule_id, e.title, e.description,
+        e.start_utc, e.end_utc, e.location_override, e.event_type, e.source_url,
+        e.source_hash, e.confidence, e.status, e.created_at, e.updated_at,
+        e.languages, e.poster_path, e.source_run_id,
+        COALESCE(NULLIF(e.lat, 0), p.lat) as lat, COALESCE(NULLIF(e.lng, 0), p.lng) as lng,
         p.name as parish_name, p.jurisdiction, p.address as parish_address,
         p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
         p.acronym as parish_acronym, p.color as parish_color, p.live_url as parish_live_url,
@@ -77,8 +80,8 @@ router.get('/', (req, res) => {
     const maxRadius = radius ? parseFloat(radius) : Infinity;
 
     events = events.map(e => {
-      const eLat = e.lat || 0;
-      const eLng = e.lng || 0;
+      const eLat = e.lat || -33.8688;
+      const eLng = e.lng || 151.2093;
       const distance = haversine(userLat, userLng, eLat, eLng);
       return { ...e, distance_km: Math.round(distance * 10) / 10 };
     }).filter(e => e.distance_km <= maxRadius);
