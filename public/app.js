@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFilters(state);
   initModeBar();
   initTimePills();
-  initMapToggle();
+  initBottomSheet();
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
@@ -109,14 +109,16 @@ function disablePullToRefresh() {
     const dy = y - touchStartY;
     const dx = x - touchStartX;
 
-    // Only block vertical pull-down gestures. If the gesture is primarily
-    // horizontal (pill row swipe etc.) leave it alone entirely.
+    // Only block vertical pull-down gestures
     if (Math.abs(dx) > Math.abs(dy)) return;
 
     const pullingDown = dy > 0;
-    if (pullingDown && document.scrollingElement.scrollTop <= 0) {
-      // Don't block if inside a scrollable panel that still has scroll room
-      const scrollable = e.target.closest('.detail-panel, .events-view, .month-view');
+    // With the bottom-sheet layout, document itself doesn't scroll.
+    // Block pull-to-refresh when nothing is scrolled.
+    const sheetScroll = document.getElementById('sheet-scroll');
+    const scrollTop = sheetScroll ? sheetScroll.scrollTop : document.scrollingElement.scrollTop;
+    if (pullingDown && scrollTop <= 0) {
+      const scrollable = e.target.closest('.detail-panel');
       if (scrollable && scrollable.scrollTop > 0) return;
       if (e.cancelable) e.preventDefault();
     }
@@ -527,77 +529,222 @@ function initTimePills() {
   });
 }
 
-// ── Map toggle ──
-function initMapToggle() {
-  const container = document.getElementById('map-container');
+// ── Bottom sheet ──
+function initBottomSheet() {
+  const sheet = document.getElementById('bottom-sheet');
   const handle = document.querySelector('.map-grab-handle');
   const modeBar = document.getElementById('mode-bar');
-  const MIN_H = 120, MAX_H = window.innerHeight * 0.65;
-  let dragging = false, startY = 0, startH = 0;
+  const scroll = document.getElementById('sheet-scroll');
 
-  function engage(y) {
+  // Snap points (translateY values — lower = sheet higher on screen)
+  const SAFE_TOP = 44;  // leave room for jurisdiction banner
+  let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
+  let currentY;
+
+  function computeSnaps() {
+    SNAP_FULL = SAFE_TOP;
+    SNAP_HALF = Math.round(window.innerHeight * 0.5);
+    SNAP_PEEK = window.innerHeight - 140;
+  }
+  computeSnaps();
+  currentY = SNAP_HALF;
+  sheet.style.transform = `translateY(${currentY}px)`;
+
+  // Expose for map.js padding calculation
+  window.agoraSheetY = () => currentY;
+
+  // Recalculate on resize/orientation change
+  window.addEventListener('resize', () => {
+    computeSnaps();
+    currentY = nearestSnap(currentY, 0);
+    sheet.style.transform = `translateY(${currentY}px)`;
+  });
+
+  // ── Snap logic ──
+  const SNAPS = () => [SNAP_FULL, SNAP_HALF, SNAP_PEEK];
+
+  function nearestSnap(y, velocity) {
+    const snaps = SNAPS();
+    // Velocity-based flick: if fast enough, go one snap in that direction
+    if (Math.abs(velocity) > 400) {
+      // Sort snaps ascending (full is smallest Y)
+      const sorted = [...snaps].sort((a, b) => a - b);
+      const closestIdx = sorted.reduce((best, s, i) =>
+        Math.abs(s - y) < Math.abs(sorted[best] - y) ? i : best, 0);
+      if (velocity < 0) {
+        // Swiping up → smaller Y → go up one snap
+        return sorted[Math.max(0, closestIdx - 1)];
+      } else {
+        // Swiping down → larger Y → go down one snap
+        return sorted[Math.min(sorted.length - 1, closestIdx + 1)];
+      }
+    }
+    // Otherwise nearest by distance
+    return snaps.reduce((best, s) => Math.abs(s - y) < Math.abs(best - y) ? s : best);
+  }
+
+  function snapTo(y) {
+    currentY = y;
+    window.agoraSheetY = () => currentY;
+    sheet.classList.remove('dragging');
+    sheet.classList.add('snapping');
+    sheet.style.transform = `translateY(${y}px)`;
+    const onDone = () => {
+      sheet.classList.remove('snapping');
+      if (window.agoraMap) window.agoraMap.invalidateSize();
+    };
+    sheet.addEventListener('transitionend', onDone, { once: true });
+    // Fallback if transitionend doesn't fire
+    setTimeout(onDone, 400);
+  }
+
+  // ── Velocity tracking ──
+  let velSamples = [];  // [{y, t}]
+  function trackVelocity(y) {
+    const now = Date.now();
+    velSamples.push({ y, t: now });
+    // Keep last 5 samples
+    if (velSamples.length > 5) velSamples.shift();
+  }
+  function getVelocity() {
+    if (velSamples.length < 2) return 0;
+    const first = velSamples[0];
+    const last = velSamples[velSamples.length - 1];
+    const dt = (last.t - first.t) / 1000;
+    return dt > 0 ? (last.y - first.y) / dt : 0;
+  }
+
+  // ── Drag state ──
+  let dragging = false, startY = 0, sheetStartY = 0;
+
+  function engageDrag(y) {
     dragging = true;
-    pending = false;
     startY = y;
-    startH = container.offsetHeight;
-    container.style.transition = 'none';
+    sheetStartY = currentY;
+    velSamples = [];
+    sheet.classList.add('dragging');
+    sheet.classList.remove('snapping');
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
   }
 
-  // Grab handle: engage immediately
-  function onHandleStart(e) {
-    if (e.cancelable) e.preventDefault();
-    engage(e.touches ? e.touches[0].clientY : e.clientY);
+  function moveDrag(y) {
+    const dy = y - startY;
+    let newY = sheetStartY + dy;
+    // Rubber-band past limits
+    if (newY < SNAP_FULL) {
+      const over = SNAP_FULL - newY;
+      newY = SNAP_FULL - over * 0.3;
+    } else if (newY > SNAP_PEEK) {
+      const over = newY - SNAP_PEEK;
+      newY = SNAP_PEEK + over * 0.3;
+    }
+    currentY = newY;
+    sheet.style.transform = `translateY(${newY}px)`;
+    trackVelocity(y);
   }
 
-  // Mode bar: only drag from empty space, not buttons
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    document.body.style.webkitUserSelect = '';
+    const velocity = getVelocity();
+    const target = nearestSnap(currentY, velocity);
+    snapTo(target);
+  }
+
+  // ── Handle + mode bar drag (always drags sheet) ──
+  function onHandleStart(e) {
+    if (e.cancelable) e.preventDefault();
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    engageDrag(y);
+  }
+
   function onModeBarStart(e) {
     if (e.target.closest('button, a, .pill')) return;
     if (e.cancelable) e.preventDefault();
-    engage(e.touches ? e.touches[0].clientY : e.clientY);
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    engageDrag(y);
   }
 
-  function onMove(e) {
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
-
+  function onDocMove(e) {
     if (!dragging) return;
     if (e.cancelable) e.preventDefault();
-    const newH = Math.min(MAX_H, Math.max(MIN_H, startH + (y - startY)));
-    container.style.height = newH + 'px';
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    moveDrag(y);
   }
 
-  function onEnd() {
-    if (!dragging) return;
-    dragging = false;
-    container.style.transition = '';
-    document.body.style.userSelect = '';
-    document.body.style.webkitUserSelect = '';
-    const h = container.offsetHeight;
-    const mid = (MIN_H + MAX_H) / 2;
-    if (h < mid) {
-      container.style.height = MIN_H + 'px';
-      container.classList.remove('expanded');
-    } else {
-      container.style.height = '';
-      container.classList.add('expanded');
-    }
-    setTimeout(() => {
-      if (window.agoraMap) {
-        window.agoraMap.invalidateSize();
-        updateMap(state);
-      }
-    }, 350);
+  function onDocEnd() {
+    if (dragging) endDrag();
   }
 
   handle.addEventListener('mousedown', onHandleStart);
   handle.addEventListener('touchstart', onHandleStart, { passive: false });
   modeBar.addEventListener('mousedown', onModeBarStart);
   modeBar.addEventListener('touchstart', onModeBarStart, { passive: false });
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('touchmove', onMove, { passive: false });
-  document.addEventListener('mouseup', onEnd);
-  document.addEventListener('touchend', onEnd);
+  document.addEventListener('mousemove', onDocMove);
+  document.addEventListener('touchmove', onDocMove, { passive: false });
+  document.addEventListener('mouseup', onDocEnd);
+  document.addEventListener('touchend', onDocEnd);
+
+  // ── Scroll-to-drag handoff (Phase 3) ──
+  // When list is at scrollTop===0 and user swipes down, transition to sheet drag
+  const DEAD_ZONE = 8;
+  let scrollState = 'idle'; // idle | deciding | scrolling | dragging
+  let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0;
+
+  scroll.addEventListener('touchstart', e => {
+    scrollStartY = e.touches[0].clientY;
+    scrollStartX = e.touches[0].clientX;
+    scrollStartTop = scroll.scrollTop;
+    scrollState = 'deciding';
+  }, { passive: true });
+
+  scroll.addEventListener('touchmove', e => {
+    if (scrollState === 'scrolling') return; // let native scroll handle it
+    if (scrollState === 'idle') return;
+
+    const y = e.touches[0].clientY;
+    const x = e.touches[0].clientX;
+    const dy = y - scrollStartY;
+    const dx = x - scrollStartX;
+
+    if (scrollState === 'deciding') {
+      // Wait for dead zone
+      if (Math.abs(dy) < DEAD_ZONE && Math.abs(dx) < DEAD_ZONE) return;
+
+      // Horizontal gesture — let it scroll (pill rows etc)
+      if (Math.abs(dx) > Math.abs(dy)) {
+        scrollState = 'scrolling';
+        return;
+      }
+
+      // Swiping down at the top of the list → drag the sheet
+      if (scrollStartTop <= 0 && dy > 0) {
+        scrollState = 'dragging';
+        engageDrag(y);
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
+      // Otherwise normal scroll
+      scrollState = 'scrolling';
+      return;
+    }
+
+    if (scrollState === 'dragging') {
+      if (e.cancelable) e.preventDefault();
+      moveDrag(y);
+    }
+  }, { passive: false });
+
+  scroll.addEventListener('touchend', () => {
+    if (scrollState === 'dragging') {
+      endDrag();
+    }
+    scrollState = 'idle';
+  }, { passive: true });
 }
 
 // ── Render Events ──

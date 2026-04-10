@@ -77,19 +77,19 @@ function updateMap(state) {
 
   addLabeledMarkers(locations, TZ);
 
-  // Fit map so markers appear in the visible strip of the map container
+  // Fit map so markers appear in the visible area above the bottom sheet
   const active = locations.filter(l => l.active);
   if (active.length) {
     const bounds = L.latLngBounds(active.map(l => [l.lat, l.lng]));
     bounds.pad(0.1);
-    const container = document.getElementById('map-container');
-    const visibleH = container.offsetHeight;  // 120px collapsed, 50vh expanded
-    const mapH = document.getElementById('map').offsetHeight;  // 100vh always
-    // Push content into the visible top strip: massive bottom padding
-    const bottomPad = Math.max(0, mapH - visibleH + 20);
+    // Sheet covers from its Y position down to the bottom of the viewport
+    const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
+    const sheetHeight = window.innerHeight - sheetY;
+    // Jurisdiction banner at top (~36px)
+    const topPad = 50;
     map.fitBounds(bounds, {
-      paddingTopLeft: [30, 15],
-      paddingBottomRight: [30, bottomPad],
+      paddingTopLeft: [30, topPad],
+      paddingBottomRight: [30, sheetHeight + 20],
       maxZoom: 14,
       animate: true
     });

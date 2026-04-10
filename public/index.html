@@ -11,45 +11,51 @@
   <!-- Jurisdiction banner -->
   <div class="jurisdiction-banner" id="jurisdiction-chips"></div>
 
-  <!-- Map (peek height, expandable) -->
+  <!-- Map (full-screen background) -->
   <div class="map-container" id="map-container">
     <div id="map"></div>
-    <div class="map-fade"></div>
   </div>
 
-  <!-- Mode bar: drag handle + icon buttons + Events pills -->
-  <div class="mode-bar" id="mode-bar">
+  <!-- Bottom sheet overlay -->
+  <div id="bottom-sheet">
     <div class="map-grab-handle"></div>
-    <button class="icon-btn" id="btn-services" title="Services">
-      <img src="https://api.iconify.design/ph:church.svg" alt="Services">
-    </button>
-    <button class="icon-btn" id="btn-social" title="Social events only">
-      <img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="Social">
-    </button>
-    <button class="icon-btn text-icon-btn" id="btn-english" title="English services only">EN</button>
-    <nav class="time-pills" id="time-pills">
-      <button class="pill active" data-range="today">Today</button>
-      <button class="pill" data-range="month">This month</button>
-    </nav>
-  </div>
 
-  <!-- Parish filter pills (shown when a jurisdiction is selected) -->
-  <div class="parish-filter-row" id="parish-filter-row"></div>
+    <!-- Mode bar: icon buttons + Events pills -->
+    <div class="mode-bar" id="mode-bar">
+      <button class="icon-btn" id="btn-services" title="Services">
+        <img src="https://api.iconify.design/ph:church.svg" alt="Services">
+      </button>
+      <button class="icon-btn" id="btn-social" title="Social events only">
+        <img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="Social">
+      </button>
+      <button class="icon-btn text-icon-btn" id="btn-english" title="English services only">EN</button>
+      <nav class="time-pills" id="time-pills">
+        <button class="pill active" data-range="today">Today</button>
+        <button class="pill" data-range="month">This month</button>
+      </nav>
+    </div>
 
-  <!-- Archdiocese events banner (shown in services mode when jurisdiction selected) -->
-  <a class="archdiocese-events-banner" id="archdiocese-events-banner" href="#" target="_blank" rel="noopener">
-    <span class="archdiocese-events-label">Archdiocese Events</span>
-    <img src="https://api.iconify.design/mingcute:external-link-line.svg" alt="" class="archdiocese-events-icon">
-  </a>
+    <!-- Parish filter pills (shown when a jurisdiction is selected) -->
+    <div class="parish-filter-row" id="parish-filter-row"></div>
 
-  <!-- Events view (default) -->
-  <div id="events-view" class="content-view active">
-    <div id="events-list" class="events-list"></div>
-  </div>
+    <!-- Archdiocese events banner (shown in services mode when jurisdiction selected) -->
+    <a class="archdiocese-events-banner" id="archdiocese-events-banner" href="#" target="_blank" rel="noopener">
+      <span class="archdiocese-events-label">Archdiocese Events</span>
+      <img src="https://api.iconify.design/mingcute:external-link-line.svg" alt="" class="archdiocese-events-icon">
+    </a>
 
-  <!-- Services view -->
-  <div id="services-view" class="content-view">
-    <div id="services-list" class="services-list"></div>
+    <!-- Scrollable content area -->
+    <div id="sheet-scroll">
+      <!-- Events view (default) -->
+      <div id="events-view" class="content-view active">
+        <div id="events-list" class="events-list"></div>
+      </div>
+
+      <!-- Services view -->
+      <div id="services-view" class="content-view">
+        <div id="services-list" class="services-list"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Event detail panel -->
