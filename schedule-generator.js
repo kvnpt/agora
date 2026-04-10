@@ -101,6 +101,8 @@ function generateEvents(weeksAhead = 4) {
       title = excluded.title,
       start_utc = excluded.start_utc,
       end_utc = excluded.end_utc,
+      lat = excluded.lat,
+      lng = excluded.lng,
       languages = excluded.languages,
       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
   `);
