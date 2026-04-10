@@ -537,12 +537,12 @@ function initBottomSheet() {
   const scroll = document.getElementById('sheet-scroll');
 
   // Snap points (translateY values — lower = sheet higher on screen)
-  const SAFE_TOP = 44;  // leave room for jurisdiction banner
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
   let currentY;
 
   function computeSnaps() {
-    SNAP_FULL = SAFE_TOP;
+    // Full: leave jurisdiction banner (~36px) + a strip of visible map
+    SNAP_FULL = Math.round(window.innerHeight * 0.15);
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
     SNAP_PEEK = window.innerHeight - 140;
   }
@@ -552,6 +552,9 @@ function initBottomSheet() {
 
   // Expose for map.js padding calculation
   window.agoraSheetY = () => currentY;
+
+  // Lock scroll initially (sheet starts at half, not full)
+  scroll.style.overflowY = 'hidden';
 
   // Recalculate on resize/orientation change
   window.addEventListener('resize', () => {
@@ -583,14 +586,27 @@ function initBottomSheet() {
     return snaps.reduce((best, s) => Math.abs(s - y) < Math.abs(best - y) ? s : best);
   }
 
+  function isAtFull() {
+    return Math.abs(currentY - SNAP_FULL) < 5;
+  }
+
+  function updateScrollLock() {
+    // Only allow list scrolling when sheet is fully expanded
+    scroll.style.overflowY = isAtFull() ? 'auto' : 'hidden';
+  }
+
   function snapTo(y) {
     currentY = y;
     window.agoraSheetY = () => currentY;
     sheet.classList.remove('dragging');
     sheet.classList.add('snapping');
     sheet.style.transform = `translateY(${y}px)`;
+    // Reset scroll position when leaving full snap
+    if (!isAtFull()) scroll.scrollTop = 0;
+    updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
+      updateScrollLock();
       if (window.agoraMap) window.agoraMap.invalidateSize();
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
@@ -688,8 +704,9 @@ function initBottomSheet() {
   document.addEventListener('mouseup', onDocEnd);
   document.addEventListener('touchend', onDocEnd);
 
-  // ── Scroll-to-drag handoff (Phase 3) ──
-  // When list is at scrollTop===0 and user swipes down, transition to sheet drag
+  // ── Scroll area touch handling ──
+  // When sheet is NOT at full: all vertical touches drag the sheet (scroll is locked)
+  // When sheet IS at full: scroll normally, but at scrollTop===0 swiping down drags sheet
   const DEAD_ZONE = 8;
   let scrollState = 'idle'; // idle | deciding | scrolling | dragging
   let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0;
@@ -702,7 +719,7 @@ function initBottomSheet() {
   }, { passive: true });
 
   scroll.addEventListener('touchmove', e => {
-    if (scrollState === 'scrolling') return; // let native scroll handle it
+    if (scrollState === 'scrolling') return;
     if (scrollState === 'idle') return;
 
     const y = e.touches[0].clientY;
@@ -711,16 +728,23 @@ function initBottomSheet() {
     const dx = x - scrollStartX;
 
     if (scrollState === 'deciding') {
-      // Wait for dead zone
       if (Math.abs(dy) < DEAD_ZONE && Math.abs(dx) < DEAD_ZONE) return;
 
-      // Horizontal gesture — let it scroll (pill rows etc)
+      // Horizontal gesture — let it through (pill rows etc)
       if (Math.abs(dx) > Math.abs(dy)) {
         scrollState = 'scrolling';
         return;
       }
 
-      // Swiping down at the top of the list → drag the sheet
+      // Not at full → always drag the sheet (scroll is locked via overflow:hidden)
+      if (!isAtFull()) {
+        scrollState = 'dragging';
+        engageDrag(y);
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
+      // At full: swiping down at scrollTop===0 → drag sheet down
       if (scrollStartTop <= 0 && dy > 0) {
         scrollState = 'dragging';
         engageDrag(y);
@@ -728,7 +752,7 @@ function initBottomSheet() {
         return;
       }
 
-      // Otherwise normal scroll
+      // At full, scrolling content normally
       scrollState = 'scrolling';
       return;
     }
