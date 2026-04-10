@@ -91,7 +91,8 @@ function updateMap(state) {
       paddingTopLeft: [30, topPad],
       paddingBottomRight: [30, sheetHeight + 20],
       maxZoom: 14,
-      animate: true
+      animate: true,
+      duration: 0.4
     });
   }
 }
@@ -192,6 +193,25 @@ function addLabeledMarkers(locations, TZ) {
     }).addTo(map);
     markers.push(label);
   }
+}
+
+// Reframe map to fit current markers without rebuilding them (smooth animation)
+function reframeMap() {
+  if (!map) return;
+  const active = markers.filter(m => m.options && m.options.interactive);
+  if (!active.length) return;
+  const bounds = L.latLngBounds(active.map(m => m.getLatLng()));
+  bounds.pad(0.1);
+  const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
+  const sheetHeight = window.innerHeight - sheetY;
+  const topPad = 50;
+  map.fitBounds(bounds, {
+    paddingTopLeft: [30, topPad],
+    paddingBottomRight: [30, sheetHeight + 20],
+    maxZoom: 14,
+    animate: true,
+    duration: 0.4
+  });
 }
 
 function escMap(str) {

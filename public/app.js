@@ -609,7 +609,7 @@ function initBottomSheet() {
       updateScrollLock();
       if (window.agoraMap) {
         window.agoraMap.invalidateSize();
-        updateMap(state);
+        reframeMap();
       }
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
