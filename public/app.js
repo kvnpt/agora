@@ -1216,7 +1216,7 @@ function showEventDetail(id) {
   let parishInfoHtml = '';
   if (parish) {
     const pAddr = parish.address
-      ? `<div><a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(parish.address)}" target="_blank" rel="noopener" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.address)}</a></div>`
+      ? `<div><a href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.address)}</a></div>`
       : '';
     const pPhone = parish.phone
       ? `<div><a href="tel:${esc(parish.phone.replace(/\s+/g, ''))}" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.phone)}</a></div>`
