@@ -100,7 +100,7 @@ input, select, textarea {
   transform: translateY(50vh);
 }
 #bottom-sheet.snapping {
-  transition: transform 0.45s cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1);
 }
 #bottom-sheet.dragging {
   transition: none;
