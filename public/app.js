@@ -607,7 +607,10 @@ function initBottomSheet() {
     const onDone = () => {
       sheet.classList.remove('snapping');
       updateScrollLock();
-      if (window.agoraMap) window.agoraMap.invalidateSize();
+      if (window.agoraMap) {
+        window.agoraMap.invalidateSize();
+        updateMap(state);
+      }
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
     // Fallback if transitionend doesn't fire
