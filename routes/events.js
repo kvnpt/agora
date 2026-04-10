@@ -14,9 +14,7 @@ router.get('/', (req, res) => {
   //   3. Most recently updated
   let query = `
     SELECT * FROM (
-      SELECT e.*,
-        COALESCE(e.lat, p.lat) as lat, COALESCE(e.lng, p.lng) as lng,
-        p.name as parish_name, p.jurisdiction, p.address as parish_address,
+      SELECT e.*, p.name as parish_name, p.jurisdiction, p.address as parish_address,
         p.website as parish_website, p.logo_path as parish_logo, p.languages as parish_languages,
         p.acronym as parish_acronym, p.color as parish_color, p.live_url as parish_live_url,
         ROW_NUMBER() OVER (
