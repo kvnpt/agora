@@ -1152,8 +1152,9 @@ function showEventDetail(id) {
   }
 
   const addr = evt.location_override || evt.parish_address || '';
-  const lat = evt.lat || 0;
-  const lng = evt.lng || 0;
+  const parish = state.parishes.find(p => p.id === evt.parish_id);
+  const lat = evt.lat || (parish && parish.lat) || 0;
+  const lng = evt.lng || (parish && parish.lng) || 0;
   const websiteCta = evt.parish_website ? `<a class="btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
 
   const watchLiveCta = evt.parish_live_url
