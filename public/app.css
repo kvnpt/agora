@@ -612,6 +612,39 @@ input, select, textarea {
   padding: 20px;
 }
 .detail-panel:not(.hidden) { transform: translateX(0); }
+.detail-panel.dragging { transition: none; }
+
+/* Grab handle on left edge */
+.detail-grab-handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  z-index: 1;
+}
+.detail-grab-handle::after {
+  content: '';
+  width: 3px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+/* Parish info section in event detail */
+.detail-parish-info {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
 
 .close-btn {
   position: absolute;

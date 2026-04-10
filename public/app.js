@@ -1212,6 +1212,23 @@ function showEventDetail(id) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
+  // Parish info section (all values escaped via esc() helper)
+  let parishInfoHtml = '';
+  if (parish) {
+    const pAddr = parish.address || '';
+    const pPhone = parish.phone ? `<div>${esc(parish.phone)}</div>` : '';
+    const pEmail = parish.email ? `<div>${esc(parish.email)}</div>` : '';
+    const pJurisdiction = parish.jurisdiction ? `<div>${esc(capitalize(parish.jurisdiction))} Orthodox</div>` : '';
+    parishInfoHtml = `
+      <div class="detail-parish-info">
+        <div style="font-weight:600;color:var(--text);">${esc(parish.name)}</div>
+        ${pJurisdiction}
+        ${pAddr ? `<div>${esc(pAddr)}</div>` : ''}
+        ${pPhone}
+        ${pEmail}
+      </div>`;
+  }
+
   content.innerHTML = `
     <h2 class="detail-title">${esc(evt.title)}</h2>
     <div class="detail-meta">
@@ -1231,6 +1248,7 @@ function showEventDetail(id) {
       ${adminActions}
     </div>
     ${posterHtml}
+    ${parishInfoHtml}
     ${editForm}`;
 
   // Set parish color accent on the panel
@@ -1469,6 +1487,76 @@ function closeDetail() {
 }
 
 document.getElementById('close-detail').addEventListener('click', closeDetail);
+
+// ── Detail panel swipe-to-dismiss ──
+(function initDetailSwipeDismiss() {
+  const panel = document.getElementById('event-detail');
+  let startX = 0, startY = 0, dx = 0, swiping = false, decided = false;
+
+  panel.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    dx = 0;
+    swiping = false;
+    decided = false;
+  }, { passive: true });
+
+  panel.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1) return;
+    const cx = e.touches[0].clientX;
+    const cy = e.touches[0].clientY;
+    const rawDx = cx - startX;
+    const rawDy = cy - startY;
+
+    if (!decided) {
+      if (Math.abs(rawDx) < 8 && Math.abs(rawDy) < 8) return;
+      // Vertical gesture → scroll, don't swipe
+      if (Math.abs(rawDy) > Math.abs(rawDx)) { decided = true; return; }
+      // Only right swipe dismisses
+      if (rawDx < 0) { decided = true; return; }
+      swiping = true;
+      decided = true;
+      panel.classList.add('dragging');
+    }
+
+    if (!swiping) return;
+    if (e.cancelable) e.preventDefault();
+    dx = Math.max(0, rawDx);
+    panel.style.transform = `translateX(${dx}px)`;
+    const backdrop = document.querySelector('.detail-backdrop');
+    if (backdrop) backdrop.style.opacity = Math.max(0, 1 - dx / 300);
+  }, { passive: false });
+
+  panel.addEventListener('touchend', () => {
+    if (!swiping) return;
+    swiping = false;
+    decided = false;
+    panel.classList.remove('dragging');
+
+    if (dx > 80) {
+      // Dismiss
+      panel.style.transition = 'transform 0.25s cubic-bezier(0.4,0,1,1)';
+      panel.style.transform = 'translateX(100%)';
+      const backdrop = document.querySelector('.detail-backdrop');
+      if (backdrop) backdrop.style.transition = 'opacity 0.25s ease';
+      if (backdrop) backdrop.style.opacity = '0';
+      setTimeout(() => {
+        panel.style.transition = '';
+        panel.style.transform = '';
+        if (backdrop) { backdrop.style.transition = ''; backdrop.style.opacity = ''; }
+        closeDetail();
+      }, 250);
+    } else {
+      // Spring back
+      panel.style.transition = 'transform 0.3s cubic-bezier(0.2,0,0,1)';
+      panel.style.transform = 'translateX(0)';
+      const backdrop = document.querySelector('.detail-backdrop');
+      if (backdrop) { backdrop.style.transition = 'opacity 0.3s ease'; backdrop.style.opacity = ''; }
+      setTimeout(() => { panel.style.transition = ''; }, 300);
+    }
+  }, { passive: true });
+})();
 
 // ── Fullscreen poster lightbox ──
 function openPosterFullscreen(src) {
