@@ -4,7 +4,7 @@ let markers = [];
 function initMap(state) {
   if (map) return;
 
-  map = L.map('map', { zoomControl: false }).setView([state.userLat, state.userLng], 11);
+  map = L.map('map', { zoomControl: false, zoomSnap: 0 }).setView([state.userLat, state.userLng], 11);
   window.agoraMap = map;
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -12,12 +12,13 @@ function initMap(state) {
     maxZoom: 18
   }).addTo(map);
 
-  L.circleMarker([state.userLat, state.userLng], {
-    radius: 6,
-    fillColor: '#4285f4',
-    fillOpacity: 0.9,
-    color: 'white',
-    weight: 2
+  L.marker([state.userLat, state.userLng], {
+    icon: L.divIcon({
+      className: '',
+      html: '<div style="width:12px;height:12px;border-radius:50%;background:#4285f4;border:2px solid white;box-sizing:border-box;"></div>',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6]
+    })
   }).addTo(map).bindPopup('You are here');
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -103,13 +104,15 @@ function addLabeledMarkers(locations, TZ) {
   for (const loc of locations) {
     const opacity = loc.active ? 1.0 : 0.25;
 
-    const dot = L.circleMarker([loc.lat, loc.lng], {
-      radius: loc.active ? 5 : 4,
-      fillColor: loc.color,
-      fillOpacity: opacity,
-      color: '#ffffff',
-      weight: 1.5,
-      opacity: opacity
+    const size = loc.active ? 10 : 8;
+    const dot = L.marker([loc.lat, loc.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:1.5px solid white;box-sizing:border-box;opacity:${opacity};"></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      }),
+      interactive: loc.active
     });
 
     if (loc.active) {
