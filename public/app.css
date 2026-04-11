@@ -946,7 +946,6 @@ input, select, textarea {
   white-space: nowrap;
   text-shadow: 1px 1px 2px rgba(255,255,255,0.9), -1px -1px 2px rgba(255,255,255,0.9),
                0 1px 2px rgba(255,255,255,0.9), 0 -1px 2px rgba(255,255,255,0.9);
-  pointer-events: none;
 }
 .map-label-sub {
   font-size: 10px;

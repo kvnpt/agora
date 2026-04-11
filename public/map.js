@@ -106,12 +106,13 @@ function addLabeledMarkers(locations, TZ) {
     const opacity = loc.active ? 1.0 : 0.25;
 
     const size = loc.active ? 10 : 8;
+    const hitSize = loc.active ? 36 : 20;
     const dot = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({
         className: '',
-        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:1.5px solid white;box-sizing:border-box;opacity:${opacity};"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2]
+        html: `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;"><div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:1.5px solid white;box-sizing:border-box;opacity:${opacity};"></div></div>`,
+        iconSize: [hitSize, hitSize],
+        iconAnchor: [hitSize / 2, hitSize / 2]
       }),
       interactive: loc.active
     });
@@ -137,7 +138,7 @@ function addLabeledMarkers(locations, TZ) {
     const line1 = parts[0].trim();
     const line2 = parts.length > 1 ? parts[1].trim() : '';
 
-    labelMeta.push({ loc, line1, line2, opacity });
+    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot });
   }
 
   // Label collision detection
@@ -189,8 +190,11 @@ function addLabeledMarkers(locations, TZ) {
         iconSize: [LABEL_W, 30],
         iconAnchor: [anchorX, 15]
       }),
-      interactive: false
+      interactive: lm.loc.active
     }).addTo(map);
+    if (lm.loc.active && lm.dotMarker) {
+      label.on('click', () => lm.dotMarker.openPopup());
+    }
     markers.push(label);
   }
 }
