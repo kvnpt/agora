@@ -214,7 +214,8 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "end_time": "11:00 or null",
       "event_type": "liturgy|prayer|feast|talk|youth|social|other",
       "location": "venue if different from parish address, or null",
-      "languages": ["English"]
+      "languages": ["English"],
+      "hide_live": false
     }
   ],
   "schedules": [
@@ -248,6 +249,7 @@ day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday.
 week_of_month: only set if the schedule explicitly specifies which week(s) of the month (e.g. "first Sunday", "last Saturday"). Null means every week.
 Only include schedules if the message describes RECURRING weekly services, not one-off events.
 concurrent: true if this service runs simultaneously alongside another service at the same parish at the same time (e.g. English and Arabic liturgies in separate rooms at the same hour). False otherwise.
+hide_live: true if the message indicates the event will NOT be livestreamed (e.g. "no livestream", "in-person only", "not streamed"). Also true for events at external venues (retreats, camps, outings). False by default — only set true when there's a clear signal it won't be streamed.
 Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
 If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}
 Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not specify a year, assume the nearest future occurrence. Timezone: Australia/Sydney (AEDT/AEST).`
@@ -293,7 +295,8 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not 
         location_override: evt.location || null,
         source_hash: hash,
         confidence: 'ai-parsed',
-        status: 'pending_review'
+        status: 'pending_review',
+        hide_live: evt.hide_live || false
       };
     });
 

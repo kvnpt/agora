@@ -300,15 +300,16 @@ async function processBatch(sender, messages) {
     // Handle events
     const upsert = db.prepare(`
       INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
-        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path, source_run_id)
+        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path, source_run_id, hide_live)
       SELECT @parish_id, 'whatsapp-webhook', @title, @description, @start_utc, @end_utc,
         @event_type, @source_hash, 'ai-parsed', @status,
-        p.lat, p.lng, @location_override, @languages, @poster_path, @source_run_id
+        p.lat, p.lng, @location_override, @languages, @poster_path, @source_run_id, @hide_live
       FROM parishes p WHERE p.id = @parish_id
       ON CONFLICT(source_hash) DO UPDATE SET
         title = excluded.title, description = excluded.description,
         start_utc = excluded.start_utc, end_utc = excluded.end_utc,
         poster_path = COALESCE(excluded.poster_path, events.poster_path),
+        hide_live = excluded.hide_live,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
@@ -327,7 +328,8 @@ async function processBatch(sender, messages) {
           status: eventStatus,
           languages: evt.languages ? JSON.stringify(evt.languages) : null,
           poster_path: posterPath,
-          source_run_id: runId
+          source_run_id: runId,
+          hide_live: evt.hide_live ? 1 : 0
         });
         if (r.changes > 0) eventsCreated++;
       }
