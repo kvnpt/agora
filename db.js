@@ -266,6 +266,11 @@ function migrate(db) {
     db.exec(`ALTER TABLE schedules ADD COLUMN concurrent INTEGER NOT NULL DEFAULT 0`);
     db.pragma('user_version = 12');
   }
+
+  if (version < 13) {
+    db.exec(`ALTER TABLE events ADD COLUMN hide_live INTEGER NOT NULL DEFAULT 0`);
+    db.pragma('user_version = 13');
+  }
 }
 
 module.exports = { getDb };

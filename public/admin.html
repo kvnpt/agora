@@ -387,6 +387,11 @@
               <div class="field"><label>Start (Sydney)</label><input type="datetime-local" class="re-start" value="${utcToLocalInput(evt.start_utc)}"></div>
               <div class="field"><label>End (Sydney)</label><input type="datetime-local" class="re-end" value="${utcToLocalInput(evt.end_utc)}"></div>
             </div>
+            <div class="field-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" class="re-hide-live" ${evt.hide_live ? 'checked' : ''}> Hide live badge
+              </label>
+            </div>
             <div class="btn-row">
               <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
               <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
@@ -399,7 +404,8 @@
       const c = document.querySelector(`.card[data-id="${id}"]`);
       const data = { status: 'approved', parish_id: c.querySelector('.re-parish').value, title: c.querySelector('.re-title').value,
         description: c.querySelector('.re-desc').value || null, event_type: c.querySelector('.re-type').value,
-        start_utc: localInputToUtc(c.querySelector('.re-start').value), end_utc: localInputToUtc(c.querySelector('.re-end').value) };
+        start_utc: localInputToUtc(c.querySelector('.re-start').value), end_utc: localInputToUtc(c.querySelector('.re-end').value),
+        hide_live: c.querySelector('.re-hide-live').checked };
       const res = await fetch(`/api/admin/events/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Approved'); loadAll(); } else toast('Failed', 'error');
     }

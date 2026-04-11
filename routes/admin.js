@@ -33,7 +33,7 @@ router.patch('/events/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const { status, parish_id, title, description, start_utc, end_utc, event_type, languages, location_override } = req.body;
+  const { status, parish_id, title, description, start_utc, end_utc, event_type, languages, location_override, hide_live } = req.body;
 
   if (status && !['approved', 'rejected', 'pending_review', 'cancelled', 'hidden'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
@@ -50,6 +50,7 @@ router.patch('/events/:id', (req, res) => {
   if (event_type) { updates.push('event_type = ?'); values.push(event_type); }
   if (languages !== undefined) { updates.push('languages = ?'); values.push(languages || null); }
   if (location_override !== undefined) { updates.push('location_override = ?'); values.push(location_override || null); }
+  if (hide_live !== undefined) { updates.push('hide_live = ?'); values.push(hide_live ? 1 : 0); }
 
   if (parish_id && parish_id !== event.parish_id) {
     const parish = db.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').get(parish_id);

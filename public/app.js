@@ -949,7 +949,7 @@ function renderEventCard(evt) {
 
   // LIVE badge
   let liveBadge = '';
-  if (evt.parish_live_url) {
+  if (evt.parish_live_url && !evt.hide_live) {
     if (state.timeRange === 'today') {
       const now = Date.now();
       const evtStart = new Date(evt.start_utc).getTime();
@@ -1159,7 +1159,7 @@ function showEventDetail(id) {
   const lng = evt.location_override ? (evt.lng || (parish && parish.lng) || 0) : ((parish && parish.lng) || evt.lng || 0);
   const websiteCta = evt.parish_website ? `<a class="btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
 
-  const watchLiveCta = evt.parish_live_url
+  const watchLiveCta = (evt.parish_live_url && !evt.hide_live)
     ? `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`
     : '';
 
