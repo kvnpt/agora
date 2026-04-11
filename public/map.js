@@ -117,6 +117,7 @@ function addLabeledMarkers(locations, TZ) {
       interactive: loc.active
     });
 
+    let popupHtml = '';
     if (loc.active) {
       const dirLink = `<a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Directions</a>`;
       const webLink = loc.website ? ` · <a href="${escMap(loc.website)}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Website</a>` : '';
@@ -125,10 +126,11 @@ function addLabeledMarkers(locations, TZ) {
           const t = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(e.start_utc));
           return `<li><strong>${escMap(e.title)}</strong><br>${t}</li>`;
         }).join('');
-        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><ul style="margin:6px 0;padding-left:1.1em;">${evtList}</ul>${dirLink}${webLink}</div>`);
+        popupHtml = `<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><ul style="margin:6px 0;padding-left:1.1em;">${evtList}</ul>${dirLink}${webLink}</div>`;
       } else {
-        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><div style="margin-top:6px;">${dirLink}${webLink}</div></div>`);
+        popupHtml = `<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><div style="margin-top:6px;">${dirLink}${webLink}</div></div>`;
       }
+      dot.bindPopup(popupHtml);
     }
 
     dot.addTo(map);
@@ -138,7 +140,7 @@ function addLabeledMarkers(locations, TZ) {
     const line1 = parts[0].trim();
     const line2 = parts.length > 1 ? parts[1].trim() : '';
 
-    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot });
+    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot, popupHtml });
   }
 
   // Label collision detection
@@ -186,15 +188,25 @@ function addLabeledMarkers(locations, TZ) {
     const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
     const label = L.marker([lm.loc.lat, lm.loc.lng], {
       icon: L.divIcon({
-        className: lm.loc.active ? 'leaflet-interactive' : '',
+        className: '',
         html: labelHtml,
         iconSize: [LABEL_W, 30],
         iconAnchor: [anchorX, 15]
       }),
-      interactive: lm.loc.active
+      interactive: false
     }).addTo(map);
-    if (lm.loc.active && lm.dotMarker) {
-      label.on('click', () => lm.dotMarker.openPopup());
+
+    // Native DOM click — Leaflet's interactive system unreliable for divIcon labels
+    if (lm.loc.active && lm.popupHtml) {
+      const el = label.getElement();
+      if (el) {
+        el.style.pointerEvents = 'auto';
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          lm.dotMarker.openPopup();
+        });
+      }
     }
     markers.push(label);
   }
