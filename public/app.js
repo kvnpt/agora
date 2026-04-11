@@ -1202,6 +1202,7 @@ function showEventDetail(id) {
         <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
         <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
         <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
+        ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
         <div style="margin-top:8px;display:flex;gap:8px;">
           <button class="btn-save" onclick="saveEvent(${evt.id})">Save</button>
         </div>
@@ -1341,6 +1342,7 @@ window.saveEvent = async function(id) {
   const endVal = document.getElementById(`edit-end-${id}`).value;
   const langsRaw = document.getElementById(`edit-langs-${id}`).value;
   const langsArr = langsRaw ? langsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const hideLiveEl = document.getElementById(`edit-hide-live-${id}`);
   const data = {
     title: document.getElementById(`edit-title-${id}`).value,
     description: document.getElementById(`edit-desc-${id}`).value || null,
@@ -1350,6 +1352,7 @@ window.saveEvent = async function(id) {
     start_utc: startVal ? localInputToUtc(startVal) : undefined,
     end_utc: endVal ? localInputToUtc(endVal) : null
   };
+  if (hideLiveEl) data.hide_live = hideLiveEl.checked;
   const res = await fetch(`/api/admin/events/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
