@@ -180,12 +180,13 @@ function addLabeledMarkers(locations, TZ) {
   for (const lm of labelMeta) {
     const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
     const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
-    const labelHtml = `<div class="map-label" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
+    const pointerStyle = lm.loc.active ? 'pointer-events:auto;cursor:pointer;' : 'pointer-events:none;';
+    const labelHtml = `<div class="map-label" style="color:${lm.loc.color};opacity:${lm.opacity};${align}${pointerStyle}">${escMap(lm.line1)}${line2Html}</div>`;
 
     const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
     const label = L.marker([lm.loc.lat, lm.loc.lng], {
       icon: L.divIcon({
-        className: '',
+        className: lm.loc.active ? 'leaflet-interactive' : '',
         html: labelHtml,
         iconSize: [LABEL_W, 30],
         iconAnchor: [anchorX, 15]
