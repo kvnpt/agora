@@ -114,7 +114,8 @@ function addLabeledMarkers(locations, TZ) {
         iconSize: [hitSize, hitSize],
         iconAnchor: [hitSize / 2, hitSize / 2]
       }),
-      interactive: loc.active
+      interactive: loc.active,
+      bubblingMouseEvents: true
     });
 
     if (loc.active) {
@@ -190,7 +191,8 @@ function addLabeledMarkers(locations, TZ) {
         iconSize: [LABEL_W, 30],
         iconAnchor: [anchorX, 15]
       }),
-      interactive: lm.loc.active
+      interactive: lm.loc.active,
+      bubblingMouseEvents: true
     }).addTo(map);
     if (lm.loc.active && lm.dotMarker) {
       label.on('click', () => lm.dotMarker.openPopup());
