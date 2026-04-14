@@ -345,6 +345,9 @@ async function processBatch(sender, messages) {
     let eventsCreated = 0;
     const tx = db.transaction(() => {
       for (const evt of result.events) {
+        const hash = crypto.createHash('sha256')
+          .update(`wa-webhook-${parishId}-${evt.date_str}-${evt.title}`)
+          .digest('hex');
         const r = upsert.run({
           parish_id: parishId,
           title: evt.title,
@@ -352,7 +355,7 @@ async function processBatch(sender, messages) {
           start_utc: evt.start_utc,
           end_utc: evt.end_utc,
           event_type: evt.event_type,
-          source_hash: evt.source_hash,
+          source_hash: hash,
           location_override: evt.location_override,
           status: eventStatus,
           languages: evt.languages ? JSON.stringify(evt.languages) : null,

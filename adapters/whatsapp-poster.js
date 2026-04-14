@@ -280,7 +280,9 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       return { events: [], inferred_parish: null };
     }
 
-    // Convert events to internal format
+    // Convert events to internal format. source_hash is computed by the
+    // caller once the parish is resolved — without a parish salt, common
+    // titles like "Presanctified Liturgy" collide across parishes.
     const events = (parsed.events || []).map(evt => {
       const dateStr = evt.date || new Date().toISOString().split('T')[0];
       const startTime = evt.start_time || '09:00';
@@ -291,10 +293,6 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
         endUtc = localToUtc(dateStr, evt.end_time);
       }
 
-      const hash = crypto.createHash('sha256')
-        .update(`wa-webhook-${dateStr}-${evt.title}`)
-        .digest('hex');
-
       return {
         title: evt.title,
         description: evt.description || null,
@@ -302,7 +300,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
         end_utc: endUtc,
         event_type: evt.event_type || 'other',
         location_override: evt.location || null,
-        source_hash: hash,
+        date_str: dateStr,
         confidence: 'ai-parsed',
         status: 'pending_review',
         hide_live: evt.hide_live || false
