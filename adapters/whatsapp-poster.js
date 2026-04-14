@@ -253,7 +253,15 @@ hide_live: true if the message indicates the event will NOT be livestreamed (e.g
 Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
 CLEARING FIELDS: if the message indicates a parish stopped doing something or removed information — e.g. "we no longer livestream", "stream has been discontinued", "website closed", "phone disconnected" — set that field to null in parish_updates. Explicit null means "clear this field in the database". Only include fields that the message actually mentions; do not set unrelated fields to null.
 If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}
-Today's date is ${new Date().toISOString().split('T')[0]}. If a poster does not specify a year, assume the nearest future occurrence. Timezone: Australia/Sydney (AEDT/AEST).`
+
+DATE EXTRACTION RULES (read carefully — past posters have been misread by +14 days):
+- If the poster has a header/title naming a month and year (e.g. "HOLY WEEK SERVICES - APRIL 2026", "MARCH 2026 PROGRAM"), those ARE the authoritative month and year for every row. Do NOT shift to a future occurrence.
+- If a tabular poster has a leftmost numeric column, treat those numbers as DAY-OF-MONTH (not row indices), even when values are non-contiguous (e.g. 1, 2, 3, 5, 6 — gaps are normal, the 4th simply isn't listed). Combine with the header month/year.
+- The day-of-week column is a CROSS-CHECK, not the primary date source. If the day-of-week implied by the numeric date column disagrees with the written day-of-week, trust the numeric column + header month/year and note the mismatch in description.
+- Only fall back to "nearest future occurrence" when the poster has day-of-week labels ALONE with no month/year header and no day-of-month column.
+- After extracting, sanity-check: every event date must fall within the header month (± one week into adjacent months for spillover). If any date falls outside, re-read the poster.
+
+Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/Sydney (AEDT/AEST).`
     });
 
     const response = await client.messages.create({
