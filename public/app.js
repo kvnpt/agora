@@ -239,15 +239,23 @@ async function fetchEvents() {
     state.events = [];
   }
 
-  // One-shot: if initial load lands on empty Today, auto-swap to Month
+  // One-shot on initial load: empty Today → Month; empty Month → Services mode
   if (state._initialLoad) {
-    state._initialLoad = false;
-    if (state.timeRange === 'today' && !applyFilters(state.events).length) {
-      state.timeRange = 'month';
-      document.querySelectorAll('.pill').forEach(b =>
-        b.classList.toggle('active', b.dataset.range === 'month'));
-      return fetchEvents();
+    const filteredNow = applyFilters(state.events);
+    if (!filteredNow.length) {
+      if (state.timeRange === 'today') {
+        state.timeRange = 'month';
+        document.querySelectorAll('.pill').forEach(b =>
+          b.classList.toggle('active', b.dataset.range === 'month'));
+        return fetchEvents();
+      }
+      if (state.timeRange === 'month') {
+        state._initialLoad = false;
+        document.getElementById('btn-services').click();
+        return;
+      }
     }
+    state._initialLoad = false;
   }
 
   renderEvents();
@@ -1025,9 +1033,9 @@ function renderServices() {
     });
   }
 
+  let html = '';
   if (!schedules.length) {
-    container.innerHTML = '<div class="empty-state"><h3>No services listed</h3></div>';
-    return;
+    html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>No services listed</h3></div>';
   }
 
   const byParish = new Map();
@@ -1036,7 +1044,6 @@ function renderServices() {
     byParish.get(s.parish_id).items.push(s);
   }
 
-  let html = '';
   for (const [pid, { info, items }] of byParish) {
     const pColor = info.parish_color || '#000';
     html += `<div class="parish-schedule" data-parish-id="${esc(pid)}" style="border-left: 3px solid ${pColor};">`;
@@ -1085,6 +1092,13 @@ function renderServices() {
       }
     }
     html += '</div>';
+  }
+
+  const singleParishId = state.filters.parishIds && state.filters.parishIds.size === 1
+    ? [...state.filters.parishIds][0] : null;
+  const singleParish = singleParishId ? state.parishes.find(p => p.id === singleParishId) : null;
+  if (singleParish && singleParish.website) {
+    html += `<div class="list-footer"><a class="list-footer-btn" href="${esc(singleParish.website)}" target="_blank" rel="noopener">View Parish Website</a></div>`;
   }
 
   const archUrl = ARCHDIOCESE_EVENTS[state.filters.jurisdiction];
