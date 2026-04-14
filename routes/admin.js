@@ -425,6 +425,49 @@ router.post('/parish-updates/:id/reject', (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/admin/cancellations — pending cancellation proposals from WhatsApp
+router.get('/cancellations', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT pc.*, e.title as event_title, e.start_utc as event_start_utc,
+           e.event_type as event_type, e.parish_id as parish_id,
+           e.status as event_status, p.name as parish_name, ar.input_texts
+    FROM pending_cancellations pc
+    JOIN events e ON pc.event_id = e.id
+    JOIN parishes p ON e.parish_id = p.id
+    LEFT JOIN adapter_runs ar ON pc.source_run_id = ar.id
+    WHERE pc.status = 'pending'
+    ORDER BY pc.created_at ASC
+  `).all();
+  res.json(rows);
+});
+
+// POST /api/admin/cancellations/:id/approve — flip the target event to cancelled
+router.post('/cancellations/:id/approve', (req, res) => {
+  const db = getDb();
+  const pc = db.prepare('SELECT * FROM pending_cancellations WHERE id = ?').get(req.params.id);
+  if (!pc) return res.status(404).json({ error: 'Not found' });
+  if (pc.status !== 'pending') return res.status(400).json({ error: 'Already reviewed' });
+  const event = db.prepare('SELECT id FROM events WHERE id = ?').get(pc.event_id);
+  if (!event) return res.status(404).json({ error: 'Target event no longer exists' });
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE events SET status = 'cancelled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(pc.event_id);
+    db.prepare(`UPDATE pending_cancellations SET status = 'approved', reviewed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(req.params.id);
+  });
+  tx();
+  res.json({ ok: true });
+});
+
+// POST /api/admin/cancellations/:id/reject
+router.post('/cancellations/:id/reject', (req, res) => {
+  const db = getDb();
+  const pc = db.prepare('SELECT id, status FROM pending_cancellations WHERE id = ?').get(req.params.id);
+  if (!pc) return res.status(404).json({ error: 'Not found' });
+  if (pc.status !== 'pending') return res.status(400).json({ error: 'Already reviewed' });
+  db.prepare(`UPDATE pending_cancellations SET status = 'rejected', reviewed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(req.params.id);
+  res.json({ ok: true });
+});
+
 // GET /api/admin/dropped — WhatsApp runs that produced nothing (no events, schedules, or parish updates)
 router.get('/dropped', (req, res) => {
   const db = getDb();
@@ -436,6 +479,7 @@ router.get('/dropped', (req, res) => {
       AND input_texts IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.source_run_id = adapter_runs.id)
       AND NOT EXISTS (SELECT 1 FROM pending_parish_updates ppu WHERE ppu.source_run_id = adapter_runs.id)
+      AND NOT EXISTS (SELECT 1 FROM pending_cancellations pc WHERE pc.source_run_id = adapter_runs.id)
     ORDER BY started_at DESC
     LIMIT 50
   `).all();

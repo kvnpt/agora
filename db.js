@@ -1,7 +1,9 @@
 const Database = require('better-sqlite3');
-const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'data', 'agora.db');
+const DB_PATH = process.env.AGORA_DB_PATH;
+if (!DB_PATH) {
+  throw new Error('AGORA_DB_PATH env var is required (e.g. /app/data/agora.db). Refusing to fall back to a relative path.');
+}
 
 let db;
 
@@ -270,6 +272,23 @@ function migrate(db) {
   if (version < 13) {
     db.exec(`ALTER TABLE events ADD COLUMN hide_live INTEGER NOT NULL DEFAULT 0`);
     db.pragma('user_version = 13');
+  }
+
+  if (version < 14) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_cancellations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        reason TEXT,
+        sender_phone TEXT,
+        source_run_id INTEGER REFERENCES adapter_runs(id),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        reviewed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_cancellations_status ON pending_cancellations(status);
+    `);
+    db.pragma('user_version = 14');
   }
 }
 

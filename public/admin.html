@@ -159,6 +159,10 @@
         <div id="review-parishes-list"></div>
       </div>
       <div class="review-section">
+        <div class="review-section-header">Cancellations <span id="review-cancellations-count"></span></div>
+        <div id="review-cancellations-list"></div>
+      </div>
+      <div class="review-section">
         <div class="review-section-header">Dropped <span id="review-dropped-count"></span></div>
         <div id="review-dropped-list"></div>
       </div>
@@ -239,7 +243,7 @@
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], droppedRuns = [], schedules = [], senders = [];
+    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], pendingCancellations = [], droppedRuns = [], schedules = [], senders = [];
     let activeJurisdiction = '';
     const headers = { 'Content-Type': 'application/json' };
 
@@ -268,7 +272,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadDroppedRuns(), loadSchedules(), loadSenders()]);
+      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadPendingCancellations(), loadDroppedRuns(), loadSchedules(), loadSenders()]);
       renderAll();
     }
 
@@ -277,6 +281,7 @@
       renderReviewQueue();
       renderPendingSchedules();
       renderPendingParishUpdates();
+      renderPendingCancellations();
       renderDropped();
       renderParishList();
       renderScheduleList();
@@ -288,6 +293,7 @@
     async function loadPendingEvents() { pendingEvents = await (await fetch('/api/admin/events/pending', { headers })).json(); }
     async function loadPendingSchedules() { pendingSchedules = await (await fetch('/api/admin/schedules/pending', { headers })).json(); }
     async function loadPendingParishUpdates() { pendingParishUpdates = await (await fetch('/api/admin/parish-updates', { headers })).json(); }
+    async function loadPendingCancellations() { pendingCancellations = await (await fetch('/api/admin/cancellations', { headers })).json(); }
     async function loadDroppedRuns() { droppedRuns = await (await fetch('/api/admin/dropped', { headers })).json(); }
     async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); }
     async function loadSenders() { senders = await (await fetch('/api/admin/senders', { headers })).json(); }
@@ -310,7 +316,7 @@
 
     function renderStats() {
       const evtCount = filteredEvents().length;
-      const totalReview = evtCount + pendingSchedules.length + pendingParishUpdates.length + droppedRuns.length;
+      const totalReview = evtCount + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
       document.getElementById('count-review').textContent = totalReview;
       document.getElementById('count-parishes').textContent = filteredParishes().length;
       document.getElementById('count-schedules').textContent = filteredSchedules().length;
@@ -321,6 +327,8 @@
       if (sc) sc.textContent = pendingSchedules.length ? `(${pendingSchedules.length})` : '';
       const pc = document.getElementById('review-parishes-count');
       if (pc) pc.textContent = pendingParishUpdates.length ? `(${pendingParishUpdates.length})` : '';
+      const cc = document.getElementById('review-cancellations-count');
+      if (cc) cc.textContent = pendingCancellations.length ? `(${pendingCancellations.length})` : '';
       const dc = document.getElementById('review-dropped-count');
       if (dc) dc.textContent = droppedRuns.length ? `(${droppedRuns.length})` : '';
     }
@@ -489,6 +497,39 @@
     }
     async function rejectParishUpdate(id) {
       const res = await fetch(`/api/admin/parish-updates/${id}/reject`, { method: 'POST', headers });
+      if (res.ok) { toast('Dismissed'); loadAll(); } else toast('Failed', 'error');
+    }
+
+    // ── Pending Cancellations ──
+    function renderPendingCancellations() {
+      const c = document.getElementById('review-cancellations-list');
+      if (!pendingCancellations.length) { c.innerHTML = '<div class="empty">No cancellations pending review</div>'; return; }
+      c.innerHTML = pendingCancellations.map(pc => {
+        const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(pc.event_start_utc));
+        const inputTexts = (() => { try { return JSON.parse(pc.input_texts || '[]'); } catch { return []; } })();
+        const msgText = inputTexts.filter(Boolean).join(' · ');
+        const alreadyCancelled = pc.event_status === 'cancelled';
+        return `
+          <div class="card" data-pc-id="${pc.id}">
+            <div class="card-title">Cancel: ${esc(pc.event_title)}</div>
+            <div class="card-meta">${esc(pc.parish_name)} · ${esc(when)} · ${esc(pc.event_type)}${alreadyCancelled ? ' · already cancelled' : ''}</div>
+            <div class="card-meta">From +${esc(pc.sender_phone || '?')}</div>
+            ${pc.reason ? `<div class="source-msg">Reason: ${esc(pc.reason)}</div>` : ''}
+            ${msgText ? `<div class="source-msg">${esc(msgText)}</div>` : ''}
+            <div class="btn-row">
+              <button class="btn btn-approve" onclick="approveCancellation(${pc.id})">Cancel event</button>
+              <button class="btn btn-reject" onclick="rejectCancellation(${pc.id})">Dismiss</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function approveCancellation(id) {
+      const res = await fetch(`/api/admin/cancellations/${id}/approve`, { method: 'POST', headers });
+      if (res.ok) { toast('Event cancelled'); loadAll(); } else toast('Failed', 'error');
+    }
+    async function rejectCancellation(id) {
+      const res = await fetch(`/api/admin/cancellations/${id}/reject`, { method: 'POST', headers });
       if (res.ok) { toast('Dismissed'); loadAll(); } else toast('Failed', 'error');
     }
 
@@ -807,7 +848,7 @@
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
     loadAll().then(() => {
-      lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + droppedRuns.length;
+      lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
     });
 
     // ── Live-update: poll review endpoints; refresh when counts grow ──
@@ -823,13 +864,14 @@
     async function pollReview() {
       if (document.visibilityState !== 'visible') return;
       try {
-        const [ev, sc, pu, dr] = await Promise.all([
+        const [ev, sc, pu, pcl, dr] = await Promise.all([
           fetch('/api/admin/events/pending', { headers }).then(r => r.json()),
           fetch('/api/admin/schedules/pending', { headers }).then(r => r.json()),
           fetch('/api/admin/parish-updates', { headers }).then(r => r.json()),
+          fetch('/api/admin/cancellations', { headers }).then(r => r.json()),
           fetch('/api/admin/dropped', { headers }).then(r => r.json()),
         ]);
-        const total = ev.length + sc.length + pu.length + dr.length;
+        const total = ev.length + sc.length + pu.length + pcl.length + dr.length;
         if (lastReviewTotal < 0) { lastReviewTotal = total; return; }
         if (total > lastReviewTotal) {
           const delta = total - lastReviewTotal;
@@ -838,7 +880,7 @@
             pendingAutoRefresh = true;
             toast(`${delta} new review item${delta > 1 ? 's' : ''} — finishing edit first`);
           } else {
-            pendingEvents = ev; pendingSchedules = sc; pendingParishUpdates = pu; droppedRuns = dr;
+            pendingEvents = ev; pendingSchedules = sc; pendingParishUpdates = pu; pendingCancellations = pcl; droppedRuns = dr;
             renderAll();
             toast(`${delta} new review item${delta > 1 ? 's' : ''}`);
           }

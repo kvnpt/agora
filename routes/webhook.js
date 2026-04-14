@@ -195,7 +195,18 @@ async function processBatch(sender, messages) {
   const runId = runRecord.lastInsertRowid;
 
   try {
-    const result = await posterAdapter.parseMessage({ images, texts });
+    // Fetch upcoming events across all parishes so Claude can target a
+    // specific event when the message announces a cancellation (otherwise
+    // the model invents a new "CANCELLED" row that never dedupes).
+    const upcomingEvents = db.prepare(`
+      SELECT id, parish_id, title, start_utc, event_type
+      FROM events
+      WHERE status IN ('approved','pending_review')
+        AND start_utc BETWEEN datetime('now','-1 day') AND datetime('now','+14 days')
+      ORDER BY parish_id, start_utc
+    `).all();
+
+    const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents });
     const senderRecord = getOrCreateSender(sender);
     if (senderRecord.status === 'blocked') {
       console.log(`[webhook] Sender ${sender} is blocked, skipping batch`);
@@ -306,6 +317,44 @@ async function processBatch(sender, messages) {
       if (schedulesCreated) console.log(`[webhook] Created ${schedulesCreated} schedules for ${parishId} (status=${schedStatus})`);
     }
 
+    // Handle cancellations. For approved senders, flip the matched event
+    // to status='cancelled' directly. For others, queue a pending_cancellation
+    // row that the admin review UI surfaces inline with other review items.
+    let cancellationsApplied = 0;
+    let cancellationsQueued = 0;
+    if (result.cancellations && result.cancellations.length && parishId !== '_unassigned') {
+      for (const c of result.cancellations) {
+        const eventId = Number(c.event_id);
+        if (!Number.isInteger(eventId) || eventId <= 0) continue;
+        const target = db.prepare('SELECT id, parish_id, status FROM events WHERE id = ?').get(eventId);
+        if (!target) {
+          console.warn(`[webhook] Cancellation references unknown event id=${eventId}, skipping`);
+          continue;
+        }
+        if (target.parish_id !== parishId) {
+          console.warn(`[webhook] Cancellation event id=${eventId} belongs to ${target.parish_id}, not inferred parish ${parishId}, skipping`);
+          continue;
+        }
+        if (target.status === 'cancelled') continue; // already cancelled
+        if (senderRecord.status === 'approved') {
+          db.prepare(`UPDATE events SET status = 'cancelled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(eventId);
+          cancellationsApplied++;
+          console.log(`[webhook] Cancelled event ${eventId} (${target.parish_id}) from approved sender ${sender}`);
+        } else {
+          // Avoid duplicate pending rows for the same event
+          const existing = db.prepare(`SELECT id FROM pending_cancellations WHERE event_id = ? AND status = 'pending'`).get(eventId);
+          if (!existing) {
+            db.prepare(`INSERT INTO pending_cancellations (event_id, reason, sender_phone, source_run_id) VALUES (?, ?, ?, ?)`)
+              .run(eventId, c.reason || null, sender, runId);
+            cancellationsQueued++;
+          }
+        }
+      }
+      if (cancellationsApplied || cancellationsQueued) {
+        console.log(`[webhook] Cancellations: ${cancellationsApplied} applied, ${cancellationsQueued} queued for review`);
+      }
+    }
+
     // Use first poster image as the source poster for all events in batch
     const posterPath = images.length > 0 ? '/posters/' + path.basename(images[0]) : null;
 
@@ -357,7 +406,7 @@ async function processBatch(sender, messages) {
       input_texts = ?, claude_response = ? WHERE id = ?
     `).run(result.events.length, eventsCreated, JSON.stringify(texts), result.rawResponse || null, runId);
 
-    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, parish=${parishId}, status=${eventStatus}`);
+    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}`);
 
   } catch (err) {
     db.prepare(`

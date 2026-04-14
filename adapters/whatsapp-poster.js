@@ -120,7 +120,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
    * @param {string[]} opts.texts - Text messages and captions
    * @returns {{ events: Array, inferred_parish: string|null }}
    */
-  async parseMessage({ images = [], texts = [] }) {
+  async parseMessage({ images = [], texts = [], upcomingEvents = [] }) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
 
@@ -136,6 +136,27 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
     const parishList = parishes.map(p =>
       `- "${p.name}"${p.acronym ? ` [${p.acronym}]` : ''} (id: ${p.id}, ${p.jurisdiction}, ${p.address})`
     ).join('\n');
+
+    // Group upcoming events by parish for the prompt. Claude needs these to
+    // target a specific event when a message announces a cancellation, rather
+    // than inventing a new "CANCELLED" event row.
+    const eventsByParish = new Map();
+    for (const e of upcomingEvents) {
+      if (!eventsByParish.has(e.parish_id)) eventsByParish.set(e.parish_id, []);
+      eventsByParish.get(e.parish_id).push(e);
+    }
+    const upcomingList = upcomingEvents.length
+      ? [...eventsByParish.entries()].map(([pid, evts]) => {
+          const lines = evts.map(e => {
+            const localDate = new Date(e.start_utc).toLocaleString('en-AU', {
+              timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit',
+              day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+            });
+            return `    - id=${e.id} ${localDate} ${e.event_type}: ${e.title}`;
+          }).join('\n');
+          return `  ${pid}:\n${lines}`;
+        }).join('\n')
+      : '  (none)';
 
     // Build message content array
     const content = [];
@@ -181,11 +202,15 @@ These messages were sent together by the same person. Use ALL available context 
 KNOWN PARISHES:
 ${parishList}
 
+UPCOMING EVENTS (next 14 days, Sydney local time, grouped by parish id):
+${upcomingList}
+
 TASKS:
 1. Identify which parish the message relates to. Match against the known parishes list above. If it's a NEW parish not in the list, populate new_parish.
 2. Extract any one-off EVENTS (dated services, feasts, social events, talks, etc).
 3. Extract any recurring SCHEDULES (weekly services like "Sunday Divine Liturgy 9:30am").
 4. Extract any parish info UPDATES (address, phone, website, languages).
+5. Detect CANCELLATIONS of upcoming events listed above. If the message announces that a specific upcoming service is cancelled, not happening, postponed, or moved (e.g. "no Liturgy tonight", "Vespers cancelled this week", "no mid-week Liturgy"), emit a cancellations[] entry referencing the exact id of the matching upcoming event. Do NOT also emit a duplicate row in events[] for the same service — either cancel it OR create it, never both.
 
 Return ONLY valid JSON (no markdown fences) in this exact format:
 {
@@ -230,6 +255,12 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "concurrent": false
     }
   ],
+  "cancellations": [
+    {
+      "event_id": 12345,
+      "reason": "Short quote from the message, e.g. 'no mid-week Liturgy tonight'"
+    }
+  ],
   "parish_updates": null or {
     "name": "updated short name or null",
     "full_name": "updated full official name or null",
@@ -252,7 +283,8 @@ concurrent: true if this service runs simultaneously alongside another service a
 hide_live: true if the message indicates the event will NOT be livestreamed (e.g. "no livestream", "in-person only", "not streamed"). Also true for events at external venues (retreats, camps, outings). False by default — only set true when there's a clear signal it won't be streamed.
 Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
 CLEARING FIELDS: if the message indicates a parish stopped doing something or removed information — e.g. "we no longer livestream", "stream has been discontinued", "website closed", "phone disconnected" — set that field to null in parish_updates. Explicit null means "clear this field in the database". Only include fields that the message actually mentions; do not set unrelated fields to null.
-If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "parish_updates": null, "new_parish": null}
+Only pick an event_id from the UPCOMING EVENTS list above. Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
+If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "new_parish": null}
 
 DATE EXTRACTION RULES (read carefully — past posters have been misread by +14 days):
 - If the poster has a header/title naming a month and year (e.g. "HOLY WEEK SERVICES - APRIL 2026", "MARCH 2026 PROGRAM"), those ARE the authoritative month and year for every row. Do NOT shift to a future occurrence.
@@ -311,6 +343,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       events,
       inferred_parish: parsed.inferred_parish || null,
       schedules: parsed.schedules || [],
+      cancellations: Array.isArray(parsed.cancellations) ? parsed.cancellations : [],
       parish_updates: parsed.parish_updates || null,
       new_parish: parsed.new_parish || null,
       rawResponse: response.content[0].text
