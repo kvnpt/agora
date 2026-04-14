@@ -104,23 +104,6 @@ function bufferMessage(message) {
 }
 
 async function downloadMedia(mediaId) {
-  // Replay escape hatch: "local:<filename>" points at an already-downloaded
-  // poster in data/posters/. Dev-only (guarded by env var) so the prod
-  // webhook stays limited to real Meta media IDs.
-  if (typeof mediaId === 'string' && mediaId.startsWith('local:')) {
-    if (process.env.AGORA_WEBHOOK_ALLOW_LOCAL_MEDIA !== '1') {
-      throw new Error('local: media IDs are not allowed in this environment');
-    }
-    const requested = mediaId.slice('local:'.length);
-    const filename = path.basename(requested); // strip any path traversal
-    if (!filename || filename.startsWith('.')) throw new Error('invalid local media filename');
-    const filepath = path.join(__dirname, '..', 'data', 'posters', filename);
-    if (!fs.existsSync(filepath)) throw new Error(`local media not found: ${filename}`);
-    const ext = path.extname(filename).toLowerCase();
-    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.pdf': 'application/pdf' };
-    return { filepath, filename, mimeType: mimeMap[ext] || 'image/jpeg' };
-  }
-
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   if (!token) throw new Error('WHATSAPP_ACCESS_TOKEN not set');
 
