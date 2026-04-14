@@ -97,7 +97,7 @@ router.delete('/events/:id', (req, res) => {
 // POST /api/admin/parishes — create a new parish
 router.post('/parishes', (req, res) => {
   const db = getDb();
-  const { name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages } = req.body;
+  const { name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url } = req.body;
 
   if (!name || !jurisdiction || lat == null || lng == null) {
     return res.status(400).json({ error: 'name, jurisdiction, lat, and lng are required' });
@@ -113,9 +113,9 @@ router.post('/parishes', (req, res) => {
   if (existing) return res.status(409).json({ error: 'Parish already exists', id });
 
   db.prepare(`
-    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]');
+    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]', live_url || null);
 
   // Seed a generic inactive schedule so the parish appears in the schedules list
   db.prepare(`
@@ -372,6 +372,7 @@ router.get('/parish-updates', (req, res) => {
            p.website as parish_website, p.email as parish_email,
            p.phone as parish_phone, p.acronym as parish_acronym,
            p.chant_style as parish_chant_style, p.languages as parish_languages,
+           p.live_url as parish_live_url, p.full_name as parish_full_name,
            ar.input_texts
     FROM pending_parish_updates pu
     JOIN parishes p ON pu.parish_id = p.id
@@ -395,9 +396,16 @@ router.post('/parish-updates/:id/approve', (req, res) => {
   const updates = [];
   const values = [];
   for (const f of allowed) {
-    if (changes[f] != null) { updates.push(`${f} = ?`); values.push(changes[f]); }
+    if (f in changes) {
+      const v = changes[f];
+      updates.push(`${f} = ?`);
+      values.push(v === '' ? null : v);
+    }
   }
-  if (changes.languages) { updates.push('languages = ?'); values.push(JSON.stringify(changes.languages)); }
+  if ('languages' in changes) {
+    updates.push('languages = ?');
+    values.push(changes.languages ? JSON.stringify(changes.languages) : null);
+  }
 
   if (updates.length) {
     values.push(pu.parish_id);

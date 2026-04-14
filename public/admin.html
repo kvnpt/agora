@@ -193,6 +193,7 @@
           <div class="field"><label>Email</label><input name="email" type="email" placeholder="parish@example.com"></div>
           <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
           <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
+          <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
         </div>
         <div class="btn-row">
           <button type="submit" class="btn btn-primary">Add Parish</button>
@@ -452,16 +453,17 @@
       c.innerHTML = pendingParishUpdates.map(pu => {
         let changes;
         try { changes = JSON.parse(pu.proposed_changes); } catch { changes = {}; }
-        const fieldLabels = { name: 'Name', address: 'Address', website: 'Website', email: 'Email', phone: 'Phone', acronym: 'Acronym', chant_style: 'Chant Style', live_url: 'Live URL', languages: 'Languages' };
+        const fieldLabels = { name: 'Name', full_name: 'Full Name', address: 'Address', website: 'Website', email: 'Email', phone: 'Phone', acronym: 'Acronym', chant_style: 'Chant Style', live_url: 'Live URL', languages: 'Languages' };
         const currentValues = {
-          name: pu.parish_name, address: pu.parish_address, website: pu.parish_website,
+          name: pu.parish_name, full_name: pu.parish_full_name, address: pu.parish_address, website: pu.parish_website,
           email: pu.parish_email, phone: pu.parish_phone, acronym: pu.parish_acronym,
-          chant_style: pu.parish_chant_style, languages: parseLangs(pu.parish_languages)
+          chant_style: pu.parish_chant_style, live_url: pu.parish_live_url,
+          languages: parseLangs(pu.parish_languages)
         };
         const diffRows = Object.entries(changes).map(([k, v]) => {
           const label = fieldLabels[k] || k;
           const oldVal = k === 'languages' ? parseLangs(pu.parish_languages) : (currentValues[k] || '—');
-          const newVal = Array.isArray(v) ? v.join(', ') : v;
+          const newVal = v == null || v === '' ? '(cleared)' : (Array.isArray(v) ? v.join(', ') : v);
           return `<div><div style="font-size:11px;color:var(--muted);font-weight:500;">${esc(label)}</div>
             <div class="diff-row"><span class="diff-old">${esc(String(oldVal))}</span><span class="diff-new">${esc(String(newVal))}</span></div></div>`;
         }).join('');
@@ -575,6 +577,7 @@
               <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" data-field="acronym"></div>
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
+              <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
               <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
               <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
               <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
@@ -620,6 +623,7 @@
       const data = { name: f.name.value.trim(), full_name: f.full_name.value.trim() || null, jurisdiction: f.jurisdiction.value,
         address: f.address.value.trim() || null, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         website: f.website.value.trim() || null, email: f.email.value.trim() || null, phone: f.phone.value.trim() || null,
+        live_url: f.live_url.value.trim() || null,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }

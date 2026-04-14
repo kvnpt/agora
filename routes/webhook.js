@@ -244,9 +244,16 @@ async function processBatch(sender, messages) {
         const vals = [];
         const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
         for (const f of puFields) {
-          if (pu[f]) { updates.push(`${f} = ?`); vals.push(pu[f]); }
+          if (f in pu) {
+            const v = pu[f];
+            updates.push(`${f} = ?`);
+            vals.push(v === '' || v == null ? null : v);
+          }
         }
-        if (pu.languages) { updates.push('languages = ?'); vals.push(JSON.stringify(pu.languages)); }
+        if ('languages' in pu) {
+          updates.push('languages = ?');
+          vals.push(pu.languages ? JSON.stringify(pu.languages) : null);
+        }
         if (updates.length) {
           vals.push(parishId);
           db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...vals);
@@ -265,8 +272,13 @@ async function processBatch(sender, messages) {
         // Buffer for admin review
         const proposed = {};
         const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
-        for (const f of puFields) { if (pu[f]) proposed[f] = pu[f]; }
-        if (pu.languages) proposed.languages = pu.languages;
+        for (const f of puFields) {
+          if (f in pu) {
+            const v = pu[f];
+            proposed[f] = (v === '' || v == null) ? null : v;
+          }
+        }
+        if ('languages' in pu) proposed.languages = pu.languages || null;
         if (Object.keys(proposed).length) {
           db.prepare(`INSERT INTO pending_parish_updates (parish_id, proposed_changes, sender_phone, source_run_id)
                       VALUES (?, ?, ?, ?)`).run(parishId, JSON.stringify(proposed), sender, runId);
