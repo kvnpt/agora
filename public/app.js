@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
+  state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
   initMap(state);
@@ -237,6 +238,18 @@ async function fetchEvents() {
   } catch {
     state.events = [];
   }
+
+  // One-shot: if initial load lands on empty Today, auto-swap to Month
+  if (state._initialLoad) {
+    state._initialLoad = false;
+    if (state.timeRange === 'today' && !applyFilters(state.events).length) {
+      state.timeRange = 'month';
+      document.querySelectorAll('.pill').forEach(b =>
+        b.classList.toggle('active', b.dataset.range === 'month'));
+      return fetchEvents();
+    }
+  }
+
   renderEvents();
   updateMap(state);
 }
@@ -779,11 +792,6 @@ function renderEvents() {
   const container = document.getElementById('events-list');
   const filtered = applyFilters(state.events);
 
-  if (!filtered.length) {
-    container.innerHTML = '<div class="empty-state"><h3>No events found</h3><p>Try a different time range or adjust filters.</p></div>';
-    return;
-  }
-
   if (state.timeRange === 'today') {
     renderToday(container, filtered);
   } else {
@@ -896,6 +904,9 @@ function renderMonth(container, events) {
   const sortToggle = buildSortToggle();
 
   let html = '';
+  if (!events.length) {
+    html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on this month</h3></div>';
+  }
   let first = true;
   for (const [dateKey, evts] of groups) {
     const d = parseLocalDate(evts[0].start_utc);
