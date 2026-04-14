@@ -806,7 +806,59 @@
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
-    loadAll();
+    loadAll().then(() => {
+      lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + droppedRuns.length;
+    });
+
+    // ── Live-update: poll review endpoints; refresh when counts grow ──
+    let lastReviewTotal = -1;
+    let pendingAutoRefresh = false;
+
+    function reviewHasFocusedInput() {
+      const a = document.activeElement;
+      return a && document.getElementById('section-review').contains(a)
+        && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT');
+    }
+
+    async function pollReview() {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const [ev, sc, pu, dr] = await Promise.all([
+          fetch('/api/admin/events/pending', { headers }).then(r => r.json()),
+          fetch('/api/admin/schedules/pending', { headers }).then(r => r.json()),
+          fetch('/api/admin/parish-updates', { headers }).then(r => r.json()),
+          fetch('/api/admin/dropped', { headers }).then(r => r.json()),
+        ]);
+        const total = ev.length + sc.length + pu.length + dr.length;
+        if (lastReviewTotal < 0) { lastReviewTotal = total; return; }
+        if (total > lastReviewTotal) {
+          const delta = total - lastReviewTotal;
+          lastReviewTotal = total;
+          if (reviewHasFocusedInput()) {
+            pendingAutoRefresh = true;
+            toast(`${delta} new review item${delta > 1 ? 's' : ''} — finishing edit first`);
+          } else {
+            pendingEvents = ev; pendingSchedules = sc; pendingParishUpdates = pu; droppedRuns = dr;
+            renderAll();
+            toast(`${delta} new review item${delta > 1 ? 's' : ''}`);
+          }
+        } else if (total !== lastReviewTotal) {
+          lastReviewTotal = total;
+        }
+      } catch {}
+    }
+
+    setInterval(pollReview, 8000);
+
+    // When a review-section input loses focus, apply any deferred refresh
+    document.getElementById('section-review').addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (pendingAutoRefresh && !reviewHasFocusedInput()) {
+          pendingAutoRefresh = false;
+          loadAll();
+        }
+      }, 0);
+    });
   </script>
 </body>
 </html>
