@@ -1,15 +1,36 @@
 services:
   agora:
     build: .
+    image: agora:latest
     container_name: agora
     restart: unless-stopped
     env_file:
       - /home/ubuntu/.env
+    environment:
+      AGORA_DB_PATH: /app/data/agora.db
     volumes:
       - /opt/agora/data:/app/data
     networks:
       homelab:
-        ipv4_address: 172.18.0.11
+        ipv4_address: 172.18.0.2
+
+  agora-dev:
+    profiles: [dev]
+    build: .
+    image: agora:dev
+    container_name: agora-dev
+    restart: unless-stopped
+    env_file:
+      - /home/ubuntu/.env
+    environment:
+      AGORA_DB_PATH: /app/data/agora.db
+    ports:
+      - "3002:3000"
+    volumes:
+      - /opt/agora/data-dev:/app/data
+    networks:
+      homelab:
+        ipv4_address: 172.18.0.3
 
 networks:
   homelab:
