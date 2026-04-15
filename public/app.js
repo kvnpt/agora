@@ -816,25 +816,17 @@ function initBottomSheet() {
 
     if (scrollState === 'dragging') {
       if (e.cancelable) e.preventDefault();
-      // Rubber-band past SNAP_FULL for OVERSHOOT_COMMIT pixels of finger
-      // travel before handing off to list scroll. This gives the "bounce"
-      // feel even when the list is technically scrollable (e.g. month view
-      // where section headers push borderline content past clientHeight).
-      // Short lists skip the handoff entirely via listScrollable.
-      const OVERSHOOT_COMMIT = 60;
+      // Would this move push the sheet past SNAP_FULL? Hand off the same
+      // gesture to list scroll — but only if the list is actually
+      // scrollable. On short lists fall through to moveDrag so the sheet
+      // rubber-bands past full and bounces back on release.
       const projectedY = sheetStartY + (y - startY);
       const listScrollable = scroll.scrollHeight > scroll.clientHeight;
-      if (projectedY < SNAP_FULL - OVERSHOOT_COMMIT && listScrollable) {
-        // Animate sheet from its rubber-banded position back to SNAP_FULL
-        // while scroll takes over — smooth bounce-into-scroll handoff.
-        sheet.classList.remove('dragging');
-        sheet.classList.add('snapping');
+      if (projectedY < SNAP_FULL && listScrollable) {
         currentY = SNAP_FULL;
         window.agoraSheetY = () => currentY;
         sheet.style.transform = `translateY(${SNAP_FULL}px)`;
-        const onSnapDone = () => sheet.classList.remove('snapping');
-        sheet.addEventListener('transitionend', onSnapDone, { once: true });
-        setTimeout(onSnapDone, 400);
+        sheet.classList.remove('dragging');
         dragging = false;
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
