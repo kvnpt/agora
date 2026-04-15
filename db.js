@@ -290,6 +290,16 @@ function migrate(db) {
     `);
     db.pragma('user_version = 14');
   }
+
+  if (version < 15) {
+    db.exec(`ALTER TABLE schedules ADD COLUMN hide_live INTEGER NOT NULL DEFAULT 0`);
+    db.pragma('user_version = 15');
+  }
+
+  if (version < 16) {
+    db.exec(`ALTER TABLE events ADD COLUMN parish_scoped INTEGER NOT NULL DEFAULT 0`);
+    db.pragma('user_version = 16');
+  }
 }
 
 module.exports = { getDb };

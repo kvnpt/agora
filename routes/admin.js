@@ -33,7 +33,7 @@ router.patch('/events/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const { status, parish_id, title, description, start_utc, end_utc, event_type, languages, location_override, hide_live } = req.body;
+  const { status, parish_id, title, description, start_utc, end_utc, event_type, languages, location_override, hide_live, parish_scoped } = req.body;
 
   if (status && !['approved', 'rejected', 'pending_review', 'cancelled', 'hidden'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
@@ -51,6 +51,7 @@ router.patch('/events/:id', (req, res) => {
   if (languages !== undefined) { updates.push('languages = ?'); values.push(languages || null); }
   if (location_override !== undefined) { updates.push('location_override = ?'); values.push(location_override || null); }
   if (hide_live !== undefined) { updates.push('hide_live = ?'); values.push(hide_live ? 1 : 0); }
+  if (parish_scoped !== undefined) { updates.push('parish_scoped = ?'); values.push(parish_scoped ? 1 : 0); }
 
   if (parish_id && parish_id !== event.parish_id) {
     const parish = db.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').get(parish_id);
@@ -214,7 +215,7 @@ router.get('/schedules', (req, res) => {
 // POST /api/admin/schedules — create a schedule
 router.post('/schedules', (req, res) => {
   const db = getDb();
-  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month } = req.body;
+  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, hide_live } = req.body;
 
   if (!parish_id || day_of_week == null || !start_time || !title) {
     return res.status(400).json({ error: 'parish_id, day_of_week, start_time, and title are required' });
@@ -232,9 +233,9 @@ router.post('/schedules', (req, res) => {
   if (!parish) return res.status(400).json({ error: 'Invalid parish_id' });
 
   const result = db.prepare(`
-    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null);
+    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, hide_live)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null, hide_live ? 1 : 0);
 
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(schedule);
@@ -246,7 +247,7 @@ router.patch('/schedules/:id', (req, res) => {
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
-  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month', 'concurrent'];
+  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month', 'concurrent', 'hide_live'];
   const updates = [];
   const values = [];
   for (const key of allowed) {

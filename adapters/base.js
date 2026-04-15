@@ -51,14 +51,16 @@ class BaseAdapter {
       eventsFound = events.length;
 
       const upsert = db.prepare(`
-        INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc, location_override, lat, lng, event_type, source_url, source_hash, confidence, status)
-        VALUES (@parish_id, @source_adapter, @title, @description, @start_utc, @end_utc, @location_override, @lat, @lng, @event_type, @source_url, @source_hash, @confidence, @status)
+        INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc, location_override, lat, lng, event_type, source_url, source_hash, confidence, status, hide_live, parish_scoped)
+        VALUES (@parish_id, @source_adapter, @title, @description, @start_utc, @end_utc, @location_override, @lat, @lng, @event_type, @source_url, @source_hash, @confidence, @status, @hide_live, @parish_scoped)
         ON CONFLICT(source_hash) DO UPDATE SET
           title = excluded.title,
           description = excluded.description,
           start_utc = excluded.start_utc,
           end_utc = excluded.end_utc,
           event_type = excluded.event_type,
+          hide_live = excluded.hide_live,
+          parish_scoped = excluded.parish_scoped,
           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
       `);
 
@@ -80,7 +82,9 @@ class BaseAdapter {
             source_url: evt.source_url || null,
             source_hash: evt.source_hash || null,
             confidence: evt.confidence || this._defaultConfidence(),
-            status: evt.status || this._defaultStatus()
+            status: evt.status || this._defaultStatus(),
+            hide_live: evt.hide_live ? 1 : 0,
+            parish_scoped: evt.parish_scoped ? 1 : 0
           });
           if (result.changes > 0) {
             eventsCreated++;

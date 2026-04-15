@@ -240,7 +240,8 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "event_type": "liturgy|prayer|feast|talk|youth|social|other",
       "location": "venue if different from parish address, or null",
       "languages": ["English"],
-      "hide_live": false
+      "hide_live": false,
+      "parish_scoped": false
     }
   ],
   "schedules": [
@@ -252,7 +253,8 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
       "event_type": "liturgy|prayer|feast|talk|youth|social|other",
       "languages": ["English", "Arabic"],
       "week_of_month": "first,third or null (null means every week; comma-separated values from: first second third fourth last)",
-      "concurrent": false
+      "concurrent": false,
+      "hide_live": false
     }
   ],
   "cancellations": [
@@ -280,7 +282,8 @@ day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday.
 week_of_month: only set if the schedule explicitly specifies which week(s) of the month (e.g. "first Sunday", "last Saturday"). Null means every week.
 Only include schedules if the message describes RECURRING weekly services, not one-off events.
 concurrent: true if this service runs simultaneously alongside another service at the same parish at the same time (e.g. English and Arabic liturgies in separate rooms at the same hour). False otherwise.
-hide_live: true if the message indicates the event will NOT be livestreamed (e.g. "no livestream", "in-person only", "not streamed"). Also true for events at external venues (retreats, camps, outings). False by default — only set true when there's a clear signal it won't be streamed.
+hide_live: true if the message indicates the event will NOT be livestreamed (e.g. "no livestream", "in-person only", "not streamed"). Also true for events at external venues (retreats, camps, outings), and for private/non-service entries like Confession, Setup, Prayer Ministry. False by default — only set true when there's a clear signal it won't be streamed. For schedules: set true for any weekly recurring item that will never be streamed (e.g. Confession slots).
+parish_scoped: true for internal/operational entries that should only surface when a user has filtered the feed to this parish alone (e.g. "SETUP", "Pack-down", "Cleaning roster"). False by default. These are things the parish wants tracked but not broadcast to the general public feed.
 Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
 CLEARING FIELDS: if the message indicates a parish stopped doing something or removed information — e.g. "we no longer livestream", "stream has been discontinued", "website closed", "phone disconnected" — set that field to null in parish_updates. Explicit null means "clear this field in the database". Only include fields that the message actually mentions; do not set unrelated fields to null.
 Only pick an event_id from the UPCOMING EVENTS list above. Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
@@ -335,7 +338,8 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
         date_str: dateStr,
         confidence: 'ai-parsed',
         status: 'pending_review',
-        hide_live: evt.hide_live || false
+        hide_live: evt.hide_live || false,
+        parish_scoped: evt.parish_scoped || false
       };
     });
 

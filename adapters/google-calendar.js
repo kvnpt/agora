@@ -50,19 +50,32 @@ class GoogleCalendarAdapter extends BaseAdapter {
     return items.map(item => {
       const start = item.start?.dateTime || item.start?.date;
       const end = item.end?.dateTime || item.end?.date;
+      const title = item.summary || 'Untitled Event';
 
       return {
-        title: item.summary || 'Untitled Event',
+        title,
         description: item.description || null,
         start_utc: new Date(start).toISOString(),
         end_utc: end ? new Date(end).toISOString() : null,
-        event_type: this._guessEventType(item.summary || ''),
+        event_type: this._guessEventType(title),
         source_url: item.htmlLink || null,
         source_hash: crypto.createHash('sha256').update(`gcal-${this.calendarId}-${item.id}`).digest('hex'),
         location_override: item.location || null,
-        confidence: 'api'
+        confidence: 'api',
+        hide_live: this._shouldHideLive(title),
+        parish_scoped: this._isParishScoped(title)
       };
     });
+  }
+
+  _shouldHideLive(title) {
+    // Services that are never livestreamed at any parish
+    return /confession|setup|prayer ministry|retreat|camp/i.test(title);
+  }
+
+  _isParishScoped(title) {
+    // Operational/internal entries that should only surface when the user has filtered to this parish
+    return /^\s*setup\s*$/i.test(title);
   }
 
   _guessEventType(title) {

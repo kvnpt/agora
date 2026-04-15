@@ -523,6 +523,14 @@ function renderCurrentView() {
 // ── Apply client-side filters ──
 function applyFilters(events) {
   let filtered = events;
+  // Parish-scoped events: only visible when the user has filtered to exactly
+  // one parish AND that parish is the event's parish. Operational entries
+  // like "SETUP" live here so the parish can track them without cluttering
+  // the public feed.
+  const singleParishFilter = state.filters.parishIds && state.filters.parishIds.size === 1
+    ? [...state.filters.parishIds][0]
+    : null;
+  filtered = filtered.filter(e => !e.parish_scoped || e.parish_id === singleParishFilter);
   if (state.filters.parishIds) {
     filtered = filtered.filter(e => state.filters.parishIds.has(e.parish_id));
   }
@@ -1159,6 +1167,7 @@ function renderServices() {
                 `<label class="wom-check"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
               ).join('')}
             </div>
+            <label class="wom-check" style="margin-top:4px;display:inline-flex;"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> Never show live badge</label>
             <div style="display:flex;gap:4px;margin-top:4px;">
               <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
               <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
@@ -1212,6 +1221,8 @@ function renderServices() {
         if (field === 'week_of_month') {
           const checked = [...input.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
           data[field] = checked.length ? checked.join(',') : null;
+        } else if (field === 'hide_live') {
+          data[field] = input.checked ? 1 : 0;
         } else {
           const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
           if (field === 'languages') data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
@@ -1304,6 +1315,7 @@ function showEventDetail(id) {
         <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
         <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
         ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
+        <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
         <div style="margin-top:8px;display:flex;gap:8px;">
           <button class="btn-save" onclick="saveEvent(${evt.id})">Save</button>
         </div>
@@ -1454,6 +1466,8 @@ window.saveEvent = async function(id) {
     end_utc: endVal ? localInputToUtc(endVal) : null
   };
   if (hideLiveEl) data.hide_live = hideLiveEl.checked;
+  const parishScopedEl = document.getElementById(`edit-parish-scoped-${id}`);
+  if (parishScopedEl) data.parish_scoped = parishScopedEl.checked;
   const res = await fetch(`/api/admin/events/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

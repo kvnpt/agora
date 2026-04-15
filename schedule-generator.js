@@ -95,8 +95,8 @@ function generateEvents(weeksAhead = 4) {
   }
 
   const upsert = db.prepare(`
-    INSERT INTO events (parish_id, source_adapter, schedule_id, title, start_utc, end_utc, event_type, source_hash, confidence, status, lat, lng, languages)
-    VALUES (@parish_id, 'schedule', @schedule_id, @title, @start_utc, @end_utc, @event_type, @source_hash, 'schedule', 'approved', @lat, @lng, @languages)
+    INSERT INTO events (parish_id, source_adapter, schedule_id, title, start_utc, end_utc, event_type, source_hash, confidence, status, lat, lng, languages, hide_live)
+    VALUES (@parish_id, 'schedule', @schedule_id, @title, @start_utc, @end_utc, @event_type, @source_hash, 'schedule', 'approved', @lat, @lng, @languages, @hide_live)
     ON CONFLICT(source_hash) DO UPDATE SET
       title = excluded.title,
       start_utc = excluded.start_utc,
@@ -104,6 +104,7 @@ function generateEvents(weeksAhead = 4) {
       lat = excluded.lat,
       lng = excluded.lng,
       languages = excluded.languages,
+      hide_live = excluded.hide_live,
       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
   `);
 
@@ -142,7 +143,8 @@ function generateEvents(weeksAhead = 4) {
           source_hash: sourceHash,
           lat: schedule.lat,
           lng: schedule.lng,
-          languages: schedule.languages || null
+          languages: schedule.languages || null,
+          hide_live: schedule.hide_live ? 1 : 0
         });
         generated++;
       }
