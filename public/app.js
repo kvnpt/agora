@@ -562,8 +562,9 @@ function initBottomSheet() {
   let currentY;
 
   function computeSnaps() {
-    // Full: leave jurisdiction banner (~36px) + a strip of visible map
-    SNAP_FULL = Math.round(window.innerHeight * 0.15);
+    // Full leaves ~22% of viewport for map + banner, so list usually
+    // overflows and the drag→scroll handoff can engage.
+    SNAP_FULL = Math.round(window.innerHeight * 0.22);
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
     SNAP_PEEK = window.innerHeight - 140;
   }
@@ -734,22 +735,37 @@ function initBottomSheet() {
   const DEAD_ZONE = 8;
   let scrollState = 'idle'; // idle | deciding | scrolling | dragging | scrolling-active
   let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0;
+  let scrollLastY = 0;
 
   scroll.addEventListener('touchstart', e => {
     scrollStartY = e.touches[0].clientY;
     scrollStartX = e.touches[0].clientX;
     scrollStartTop = scroll.scrollTop;
+    scrollLastY = e.touches[0].clientY;
     scrollState = 'deciding';
   }, { passive: true });
 
   scroll.addEventListener('touchmove', e => {
-    if (scrollState === 'scrolling') return;
     if (scrollState === 'idle') return;
 
     const y = e.touches[0].clientY;
     const x = e.touches[0].clientX;
     const dy = y - scrollStartY;
     const dx = x - scrollStartX;
+
+    if (scrollState === 'scrolling') {
+      // Mid-gesture handoff: native scroll hit the top of the list and the
+      // finger is still pulling down → take over and drag the sheet.
+      if (isAtFull() && scroll.scrollTop <= 0 && y > scrollLastY) {
+        scrollState = 'dragging';
+        engageDrag(y);
+        if (e.cancelable) e.preventDefault();
+        scrollLastY = y;
+        return;
+      }
+      scrollLastY = y;
+      return;
+    }
 
     if (scrollState === 'deciding') {
       if (Math.abs(dy) < DEAD_ZONE && Math.abs(dx) < DEAD_ZONE) return;
