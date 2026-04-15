@@ -791,6 +791,16 @@ function initBottomSheet() {
         return;
       }
 
+      // At full but list isn't scrollable → any vertical drag goes to the
+      // sheet so swiping up rubber-bands past full and swiping down drags
+      // the sheet away from full.
+      if (scroll.scrollHeight <= scroll.clientHeight) {
+        scrollState = 'dragging';
+        engageDrag(y);
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
       // At full: swiping down at scrollTop===0 → drag sheet down
       if (scrollStartTop <= 0 && dy > 0) {
         scrollState = 'dragging';
