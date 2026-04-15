@@ -67,13 +67,12 @@ class GoogleCalendarAdapter extends BaseAdapter {
 
   _guessEventType(title) {
     const t = title.toLowerCase();
-    if (/liturgy|divine liturgy|θεία λειτουργία/i.test(t)) return 'liturgy';
-    if (/vespers|εσπερινός/i.test(t)) return 'vespers';
-    if (/feast|nameday/i.test(t)) return 'feast';
-    if (/festival|paniyiri|fete/i.test(t)) return 'festival';
-    if (/youth|young|teens/i.test(t)) return 'youth';
-    if (/talk|lecture|class|study/i.test(t)) return 'talk';
-    if (/fundrais|dinner|gala|charity/i.test(t)) return 'fundraiser';
+    if (/liturgy|θεία λειτουργία/.test(t)) return 'liturgy';
+    if (/vespers|εσπερινός|matins|orthros|compline|bridegroom|holy unction|lamentations|passion gospels/.test(t)) return 'prayer';
+    if (/feast|nameday/.test(t)) return 'feast';
+    if (/youth|young|teens/.test(t)) return 'youth';
+    if (/talk|lecture|class|study/.test(t)) return 'talk';
+    if (/festival|paniyiri|fete|fundrais|dinner|gala|charity/.test(t)) return 'social';
     return 'other';
   }
 
