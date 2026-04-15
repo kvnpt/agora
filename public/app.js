@@ -732,7 +732,7 @@ function initBottomSheet() {
   // When sheet is NOT at full: all vertical touches drag the sheet (scroll is locked)
   // When sheet IS at full: scroll normally, but at scrollTop===0 swiping down drags sheet
   const DEAD_ZONE = 8;
-  let scrollState = 'idle'; // idle | deciding | scrolling | dragging
+  let scrollState = 'idle'; // idle | deciding | scrolling | dragging | scrolling-active
   let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0;
 
   scroll.addEventListener('touchstart', e => {
@@ -783,7 +783,42 @@ function initBottomSheet() {
 
     if (scrollState === 'dragging') {
       if (e.cancelable) e.preventDefault();
+      // Would this move push the sheet past SNAP_FULL? Hand off the same
+      // gesture to list scroll instead of rubber-banding at the top.
+      const projectedY = sheetStartY + (y - startY);
+      if (projectedY < SNAP_FULL) {
+        currentY = SNAP_FULL;
+        window.agoraSheetY = () => currentY;
+        sheet.style.transform = `translateY(${SNAP_FULL}px)`;
+        sheet.classList.remove('dragging');
+        dragging = false;
+        document.body.style.userSelect = '';
+        document.body.style.webkitUserSelect = '';
+        scroll.style.overflowY = 'auto';
+        // yc = finger-y at which the sheet reached SNAP_FULL. From here on,
+        // scrollStartY/scrollStartTop mean list-scroll baseline, not drag.
+        const yc = startY - sheetStartY + SNAP_FULL;
+        scrollStartY = yc;
+        scrollStartTop = 0;
+        scroll.scrollTop = yc - y;
+        scrollState = 'scrolling-active';
+        return;
+      }
       moveDrag(y);
+      return;
+    }
+
+    if (scrollState === 'scrolling-active') {
+      if (e.cancelable) e.preventDefault();
+      const newScrollTop = scrollStartTop - dy;
+      if (newScrollTop < 0) {
+        // Finger back below handoff point → resume dragging the sheet.
+        scroll.scrollTop = 0;
+        scrollState = 'dragging';
+        engageDrag(y);
+        return;
+      }
+      scroll.scrollTop = newScrollTop;
     }
   }, { passive: false });
 
