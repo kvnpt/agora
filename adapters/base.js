@@ -51,8 +51,8 @@ class BaseAdapter {
       eventsFound = events.length;
 
       const upsert = db.prepare(`
-        INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc, recurrence, location_override, lat, lng, event_type, source_url, source_hash, confidence, status)
-        VALUES (@parish_id, @source_adapter, @title, @description, @start_utc, @end_utc, @recurrence, @location_override, @lat, @lng, @event_type, @source_url, @source_hash, @confidence, @status)
+        INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc, location_override, lat, lng, event_type, source_url, source_hash, confidence, status)
+        VALUES (@parish_id, @source_adapter, @title, @description, @start_utc, @end_utc, @location_override, @lat, @lng, @event_type, @source_url, @source_hash, @confidence, @status)
         ON CONFLICT(source_hash) DO UPDATE SET
           title = excluded.title,
           description = excluded.description,
@@ -73,7 +73,6 @@ class BaseAdapter {
             description: evt.description || null,
             start_utc: evt.start_utc,
             end_utc: evt.end_utc || null,
-            recurrence: evt.recurrence || null,
             location_override: evt.location_override || null,
             lat: evt.lat || parish?.lat || null,
             lng: evt.lng || parish?.lng || null,
