@@ -561,19 +561,24 @@ function initBottomSheet() {
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
   let currentY;
 
+  // Must match .sheet-spacer flex-basis in app.css. Sheet extends this many
+  // pixels past the visible viewport bottom at rest; the extra space is the
+  // .sheet-spacer child, which fills the gap exposed when rubber-band past
+  // SNAP_FULL visually lifts the sheet.
+  const SHEET_SPACER_PX = 200;
+
   function computeSnaps() {
     // Full leaves ~22% of viewport for map + banner, so list usually
     // overflows and the drag→scroll handoff can engage.
     SNAP_FULL = Math.round(window.innerHeight * 0.22);
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
     SNAP_PEEK = window.innerHeight - 140;
-    // Sheet intrinsic height = visible viewport minus SNAP_FULL so at the
-    // fully-expanded snap the sheet bottom lands on the visible viewport
-    // bottom (not clipped by the iOS address bar). sheet-scroll's
-    // clientHeight then matches the visible list area, which means any
-    // list-footer buttons past the visible area trigger real overflow and
-    // become scrollable.
-    sheet.style.height = `${window.innerHeight - SNAP_FULL}px`;
+    // Sheet total height = visible list area (innerHeight - SNAP_FULL) plus
+    // the offscreen spacer. At SNAP_FULL, sheet bottom sits SHEET_SPACER_PX
+    // below the visible viewport bottom. sheet-scroll keeps its original
+    // clientHeight because the spacer takes a fixed flex-basis, so the
+    // iOS address-bar overflow fix stays intact.
+    sheet.style.height = `${window.innerHeight - SNAP_FULL + SHEET_SPACER_PX}px`;
   }
   computeSnaps();
   currentY = SNAP_HALF;

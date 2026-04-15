@@ -117,6 +117,14 @@ input, select, textarea {
   min-height: 0;
 }
 
+/* Buffer below sheet-scroll — lives offscreen at rest (sheet extends below
+   viewport bottom by SHEET_SPACER_PX in app.js), becomes visible when
+   rubber-band past SNAP_FULL lifts the sheet, so the user never sees the
+   map behind it. flex-basis must match SHEET_SPACER_PX in app.js. */
+.sheet-spacer {
+  flex: 0 0 200px;
+}
+
 /* ── Grab handle (top of sheet) ── */
 .map-grab-handle {
   flex: none;
