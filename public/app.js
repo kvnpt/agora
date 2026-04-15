@@ -567,6 +567,13 @@ function initBottomSheet() {
     SNAP_FULL = Math.round(window.innerHeight * 0.22);
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
     SNAP_PEEK = window.innerHeight - 140;
+    // Sheet intrinsic height = visible viewport minus SNAP_FULL so at the
+    // fully-expanded snap the sheet bottom lands on the visible viewport
+    // bottom (not clipped by the iOS address bar). sheet-scroll's
+    // clientHeight then matches the visible list area, which means any
+    // list-footer buttons past the visible area trigger real overflow and
+    // become scrollable.
+    sheet.style.height = `${window.innerHeight - SNAP_FULL}px`;
   }
   computeSnaps();
   currentY = SNAP_HALF;
@@ -800,9 +807,12 @@ function initBottomSheet() {
     if (scrollState === 'dragging') {
       if (e.cancelable) e.preventDefault();
       // Would this move push the sheet past SNAP_FULL? Hand off the same
-      // gesture to list scroll instead of rubber-banding at the top.
+      // gesture to list scroll — but only if the list is actually
+      // scrollable. On short lists fall through to moveDrag so the sheet
+      // rubber-bands past full and bounces back on release.
       const projectedY = sheetStartY + (y - startY);
-      if (projectedY < SNAP_FULL) {
+      const listScrollable = scroll.scrollHeight > scroll.clientHeight;
+      if (projectedY < SNAP_FULL && listScrollable) {
         currentY = SNAP_FULL;
         window.agoraSheetY = () => currentY;
         sheet.style.transform = `translateY(${SNAP_FULL}px)`;
