@@ -1014,6 +1014,59 @@ input, select, textarea {
 }
 
 
+/* ── Show-all parishes FAB ── */
+#show-all-fab {
+  position: fixed;
+  top: 60px;
+  right: 12px;
+  z-index: 900;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary, #222);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--border, #d0d0d0);
+  border-radius: 18px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+#show-all-fab img {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+#show-all-fab.show-juris {
+  background: #fff7e6;
+  border-color: #e0a000;
+  color: #7a5200;
+}
+#show-all-fab.show-all {
+  background: #e6f3ff;
+  border-color: #1e73be;
+  color: #0b3d73;
+}
+body.map-expanded #show-all-fab { display: inline-flex; }
+
+/* Map popup "All events" button */
+.leaflet-popup-content .popup-all-events {
+  display: inline-block;
+  margin: 6px 0 2px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: #1e73be;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.leaflet-popup-content .popup-all-events:hover { background: #155a95; }
+
 /* ── Responsive ── */
 @media (min-width: 640px) {
   #bottom-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }

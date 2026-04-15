@@ -47,13 +47,21 @@ function updateMap(state) {
     for (const evt of filtered) activeParishIds.add(evt.parish_id);
   }
 
-  // All parishes in jurisdiction
+  // "Show all" override: 'juris' reveals all parishes in current jurisdiction
+  // at full opacity; 'all' reveals every parish everywhere.
+  const showAll = state.filters.showAllParishes; // null | 'juris' | 'all'
+
+  // All parishes in jurisdiction (or everywhere when showAll === 'all')
   const allParishes = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
-    if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+    if (showAll !== 'all' && state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
     if (!p.lat || !p.lng) return false;
     return true;
   });
+
+  if (showAll) {
+    for (const p of allParishes) activeParishIds.add(p.id);
+  }
 
   // Event data for popups
   const eventsByParish = {};
@@ -121,14 +129,15 @@ function addLabeledMarkers(locations, TZ) {
     if (loc.active) {
       const dirLink = `<a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Directions</a>`;
       const webLink = loc.website ? ` · <a href="${escMap(loc.website)}" target="_blank" rel="noopener" style="font-size:12px;color:#000;">Website</a>` : '';
+      const allBtn = `<button type="button" class="popup-all-events" onclick="window.agoraFilterParish('${loc.id.replace(/'/g, "\\'")}')">All events</button>`;
       if (loc.events.length) {
         const evtList = loc.events.slice(0, 5).map(e => {
           const t = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(e.start_utc));
           return `<li><strong>${escMap(e.title)}</strong><br>${t}</li>`;
         }).join('');
-        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><ul style="margin:6px 0;padding-left:1.1em;">${evtList}</ul>${dirLink}${webLink}</div>`);
+        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><ul style="margin:6px 0;padding-left:1.1em;">${evtList}</ul>${allBtn}<div style="margin-top:6px;">${dirLink}${webLink}</div></div>`);
       } else {
-        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong><div style="margin-top:6px;">${dirLink}${webLink}</div></div>`);
+        dot.bindPopup(`<div style="max-width:200px;font-size:13px;"><strong>${escMap(loc.name)}</strong>${allBtn}<div style="margin-top:6px;">${dirLink}${webLink}</div></div>`);
       }
     }
 

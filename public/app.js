@@ -25,7 +25,7 @@ const state = {
   userLng: 151.2093,
   mode: 'events',
   timeRange: 'today',
-  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false },
+  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false, showAllParishes: null },
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
+  initShowAllFab();
   state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
@@ -501,6 +502,39 @@ function initEnglishFilter() {
   });
 }
 
+// ── Show-all parishes FAB ──
+// Cycle: off → 'juris' (all parishes in selected jurisdiction) →
+// 'all' (every parish everywhere) → off.
+function initShowAllFab() {
+  const fab = document.getElementById('show-all-fab');
+  const label = document.getElementById('show-all-fab-label');
+  if (!fab) return;
+  function sync() {
+    const mode = state.filters.showAllParishes;
+    fab.classList.toggle('show-juris', mode === 'juris');
+    fab.classList.toggle('show-all', mode === 'all');
+    if (!mode) label.textContent = 'Show all';
+    else if (mode === 'juris') label.textContent = 'All in jurisdiction';
+    else label.textContent = 'All jurisdictions';
+  }
+  fab.addEventListener('click', () => {
+    const cur = state.filters.showAllParishes;
+    const hasJuris = !!state.filters.jurisdiction;
+    // Skip 'juris' stage if no jurisdiction selected — it would be identical
+    // to the default view. Cycle straight off → 'all' → off.
+    let next;
+    if (!hasJuris) {
+      next = cur === 'all' ? null : 'all';
+    } else if (cur === null) next = 'juris';
+    else if (cur === 'juris') next = 'all';
+    else next = null;
+    state.filters.showAllParishes = next;
+    sync();
+    renderCurrentView();
+  });
+  sync();
+}
+
 // ── Haversine distance ──
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -519,6 +553,15 @@ function renderCurrentView() {
   }
   updateMap(state);
 }
+
+// Called from map popup "All events" button — activates parish filter
+// for that parish and re-renders everything.
+window.agoraFilterParish = function(pid) {
+  state.filters.parishIds = new Set([pid]);
+  if (window.agoraMap) window.agoraMap.closePopup();
+  if (typeof renderParishPills === 'function') renderParishPills();
+  renderCurrentView();
+};
 
 // ── Apply client-side filters ──
 function applyFilters(events) {
@@ -591,6 +634,7 @@ function initBottomSheet() {
   computeSnaps();
   currentY = SNAP_HALF;
   sheet.style.transform = `translateY(${currentY}px)`;
+  document.body.classList.add('map-expanded');
 
   // Expose for map.js padding calculation
   window.agoraSheetY = () => currentY;
@@ -645,6 +689,8 @@ function initBottomSheet() {
     sheet.style.transform = `translateY(${y}px)`;
     // Reset scroll position when leaving full snap
     if (!isAtFull()) scroll.scrollTop = 0;
+    // Map is "expanded" (primary view) when sheet is not at full height.
+    document.body.classList.toggle('map-expanded', y >= SNAP_HALF - 5);
     updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
@@ -722,14 +768,34 @@ function initBottomSheet() {
     engageDrag(y);
   }
 
+  // Mode bar: defer drag decision so taps on buttons still fire as clicks,
+  // but vertical drags started on a button still drag the sheet.
+  let modeBarPending = false;
+  let modeBarPendingY = 0;
+  let modeBarSwallowClick = false;
+  const MODE_BAR_DRAG_THRESHOLD = 8;
+
   function onModeBarStart(e) {
-    if (e.target.closest('button, a, .pill')) return;
-    if (e.cancelable) e.preventDefault();
+    const onInteractive = e.target.closest('button, a, .pill');
     const y = e.touches ? e.touches[0].clientY : e.clientY;
+    if (onInteractive) {
+      modeBarPending = true;
+      modeBarPendingY = y;
+      return;
+    }
+    if (e.cancelable) e.preventDefault();
     engageDrag(y);
   }
 
   function onDocMove(e) {
+    if (modeBarPending) {
+      const y = e.touches ? e.touches[0].clientY : e.clientY;
+      if (Math.abs(y - modeBarPendingY) > MODE_BAR_DRAG_THRESHOLD) {
+        modeBarPending = false;
+        modeBarSwallowClick = true;
+        engageDrag(modeBarPendingY);
+      }
+    }
     if (!dragging) return;
     if (e.cancelable) e.preventDefault();
     const y = e.touches ? e.touches[0].clientY : e.clientY;
@@ -737,8 +803,18 @@ function initBottomSheet() {
   }
 
   function onDocEnd() {
+    modeBarPending = false;
     if (dragging) endDrag();
   }
+
+  // Cancel the synthetic click when a mode-bar drag was engaged from a button.
+  modeBar.addEventListener('click', e => {
+    if (modeBarSwallowClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      modeBarSwallowClick = false;
+    }
+  }, true);
 
   handle.addEventListener('mousedown', onHandleStart);
   handle.addEventListener('touchstart', onHandleStart, { passive: false });
