@@ -1132,7 +1132,7 @@ function buildSortToggle() {
   const active = state.eventsSort === 'nearby' && state.locationActive;
   const locIcon = `<img class="sort-icon" src="${active ? '/tabler-location-filled.svg' : '/tabler-location.svg'}" alt="">`;
   return `<span class="sort-toggle">` +
-    `<button class="sort-nearby ${active ? 'active' : ''}" data-sort="toggle">${locIcon}Nearby</button>` +
+    `<button class="sort-nearby ${active ? 'active' : ''}" data-sort="toggle">Nearby${locIcon}</button>` +
     `</span>`;
 }
 
