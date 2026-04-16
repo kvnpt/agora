@@ -63,6 +63,12 @@ function updateMap(state) {
     for (const p of allParishes) activeParishIds.add(p.id);
   }
 
+  // Parish filter active → always mark filtered parishes as active
+  // so they appear full-opacity and map zooms to them even with no events.
+  if (state.filters.parishIds) {
+    for (const pid of state.filters.parishIds) activeParishIds.add(pid);
+  }
+
   // Event data for popups
   const eventsByParish = {};
   if (state.mode !== 'services') {
