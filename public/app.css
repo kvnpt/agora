@@ -1017,7 +1017,6 @@ input, select, textarea {
 /* ── Show-all parishes FAB ── */
 #show-all-fab {
   position: fixed;
-  bottom: 160px;
   right: 12px;
   z-index: 900;
   display: none;

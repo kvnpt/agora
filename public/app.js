@@ -638,6 +638,7 @@ function initBottomSheet() {
   currentY = SNAP_HALF;
   sheet.style.transform = `translateY(${currentY}px)`;
   document.body.classList.add('map-expanded');
+  if (fab) fab.style.top = (currentY - 48) + 'px';
 
   // Expose for map.js padding calculation
   window.agoraSheetY = () => currentY;
@@ -697,7 +698,10 @@ function initBottomSheet() {
     updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
-      if (fab) fab.classList.remove('fading');
+      if (fab) {
+        fab.style.top = (currentY - 48) + 'px';
+        fab.classList.remove('fading');
+      }
       updateScrollLock();
       if (window.agoraMap) {
         window.agoraMap.invalidateSize();
