@@ -1062,14 +1062,14 @@ function renderToday(container, events) {
       html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on today</h3></div>';
     }
   }
+  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-month">View more</button></div>`;
   if (earlier.length) {
     html += `<div class="earlier-today-section">`;
-    html += `<button class="earlier-today-toggle" id="earlier-toggle"><span class="earlier-chevron">›</span> Earlier today <span class="earlier-count">${earlier.length}</span></button>`;
-    html += `<div class="earlier-today-list" id="earlier-list" hidden>`;
+    html += `<div class="section-header earlier-today-header">Earlier today</div>`;
+    html += `<div class="earlier-today-list">`;
     html += sortEvents(earlier).map(renderEventCard).join('');
     html += `</div></div>`;
   }
-  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-month">View more</button></div>`;
   container.innerHTML = html;
 
   container.querySelector('#cta-month').addEventListener('click', () => {
@@ -1077,16 +1077,6 @@ function renderToday(container, events) {
     document.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.range === 'month'));
     fetchEvents();
   });
-
-  const earlierToggle = container.querySelector('#earlier-toggle');
-  if (earlierToggle) {
-    earlierToggle.addEventListener('click', () => {
-      const list = container.querySelector('#earlier-list');
-      const open = !list.hidden;
-      list.hidden = open;
-      earlierToggle.classList.toggle('open', !open);
-    });
-  }
 
   bindSortToggle(container);
 }
