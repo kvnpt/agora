@@ -52,7 +52,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
-  initShowAllFab();
+  initResetFab();
+  initLocationFab();
   state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
@@ -519,37 +520,70 @@ function initEnglishFilter() {
   });
 }
 
-// ── Show-all parishes FAB ──
-// Cycle: off → 'juris' (all parishes in selected jurisdiction) →
-// 'all' (every parish everywhere) → off.
-function initShowAllFab() {
-  const fab = document.getElementById('show-all-fab');
-  const label = document.getElementById('show-all-fab-label');
-  if (!fab) return;
-  function sync() {
-    const mode = state.filters.showAllParishes;
-    fab.classList.toggle('show-juris', mode === 'juris');
-    fab.classList.toggle('show-all', mode === 'all');
-    if (!mode) label.textContent = 'Show all';
-    else if (mode === 'juris') label.textContent = 'All in jurisdiction';
-    else label.textContent = 'All jurisdictions';
-  }
-  fab.addEventListener('click', () => {
-    const cur = state.filters.showAllParishes;
-    const hasJuris = !!state.filters.jurisdiction;
-    let next;
-    if (!hasJuris) {
-      next = cur === 'all' ? null : 'all';
-    } else if (cur === null) next = 'juris';
-    else if (cur === 'juris') next = 'all';
-    else next = null;
-    state.filters.showAllParishes = next;
-    sync();
-    renderCurrentView();
-  });
-  sync();
+// ── Reset FAB (top center) ──
+function hasActiveFilters() {
+  return state.filters.jurisdiction || state.filters.parishIds ||
+    state.filters.socialOnly || state.filters.englishOnly || state.parishFocus;
+}
 
-  window.agoraSyncShowAllFab = sync;
+function syncResetFab() {
+  const fab = document.getElementById('reset-fab');
+  if (fab) fab.classList.toggle('visible', hasActiveFilters());
+}
+
+function initResetFab() {
+  const fab = document.getElementById('reset-fab');
+  if (!fab) return;
+  fab.addEventListener('click', () => {
+    state.filters.jurisdiction = null;
+    state.filters.parishIds = null;
+    state.filters.socialOnly = false;
+    state.filters.englishOnly = false;
+    state.filters.showAllParishes = null;
+    if (state.parishFocus) {
+      state.parishFocus = null;
+      removeParishCardHeader();
+    }
+    document.getElementById('btn-social').classList.remove('active');
+    document.getElementById('btn-english').classList.remove('active');
+    document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
+    if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
+    const parishRow = document.getElementById('parish-filter-row');
+    parishRow.classList.remove('visible');
+    syncResetFab();
+    renderParishPills();
+    if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
+    if (state.mode === 'services') window.agoraFetchSchedules();
+    else window.agoraFetchEvents();
+  });
+  syncResetFab();
+}
+
+// ── Location FAB (bottom right) ──
+function initLocationFab() {
+  const fab = document.getElementById('location-fab');
+  if (!fab) return;
+
+  function syncLocationState() {
+    fab.classList.toggle('active', state.locationActive);
+  }
+
+  fab.addEventListener('click', () => {
+    requestGeolocation(() => {
+      syncLocationState();
+      state.nearPillActive = true;
+      renderParishPills();
+      renderCurrentView();
+      // Center map on user + show nearest parish
+      if (window.agoraMap) {
+        const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
+        const mapH = sheetY;
+        window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.4 });
+      }
+    });
+  });
+
+  syncLocationState();
 }
 
 // ── Haversine distance ──
@@ -569,6 +603,7 @@ function renderCurrentView() {
     renderEvents();
   }
   updateMap(state);
+  syncResetFab();
 }
 
 // ── Parish focus card ──
@@ -702,7 +737,7 @@ function initBottomSheet() {
   const handle = document.querySelector('.map-grab-handle');
   const modeBar = document.getElementById('mode-bar');
   const scroll = document.getElementById('sheet-scroll');
-  const fab = document.getElementById('show-all-fab');
+  const fab = document.getElementById('location-fab');
 
   // Snap points (translateY values — lower = sheet higher on screen)
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;

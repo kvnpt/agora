@@ -39,10 +39,14 @@ function initFilters(state) {
 
     applyChipColors(chipContainer);
 
-    // Reset parish + show-all filters when jurisdiction changes
+    // Reset parish filter + parish focus when jurisdiction changes
     state.filters.parishIds = null;
     state.filters.showAllParishes = null;
-    if (window.agoraSyncShowAllFab) window.agoraSyncShowAllFab();
+    if (state.parishFocus) {
+      state.parishFocus = null;
+      if (typeof removeParishCardHeader === 'function') removeParishCardHeader();
+    }
+    if (typeof syncResetFab === 'function') syncResetFab();
     const parishRow = document.getElementById('parish-filter-row');
     if (state.filters.jurisdiction) {
       parishRow.classList.add('visible');

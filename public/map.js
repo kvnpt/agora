@@ -47,24 +47,14 @@ function updateMap(state) {
     for (const evt of filtered) activeParishIds.add(evt.parish_id);
   }
 
-  // "Show all" override: 'juris' reveals all parishes in current jurisdiction
-  // at full opacity; 'all' reveals every parish everywhere.
-  const showAll = state.filters.showAllParishes; // null | 'juris' | 'all'
-
-  // All parishes in jurisdiction (or everywhere when showAll === 'all')
   const allParishes = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
-    if (showAll !== 'all' && state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+    if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
     if (!p.lat || !p.lng) return false;
     return true;
   });
 
-  if (showAll) {
-    for (const p of allParishes) activeParishIds.add(p.id);
-  }
-
-  // Parish filter active → always mark filtered parishes as active
-  // so they appear full-opacity and map zooms to them even with no events.
+  // Parish filter → those parishes always active (full opacity + zoom target)
   if (state.filters.parishIds) {
     for (const pid of state.filters.parishIds) activeParishIds.add(pid);
   }
@@ -92,9 +82,8 @@ function updateMap(state) {
   addLabeledMarkers(locations, TZ);
 
   // Fit map so markers appear in the visible area above the bottom sheet.
-  // Skip reframe when show-all FAB is active — just reveal markers in place.
   const active = locations.filter(l => l.active);
-  if (active.length && !showAll) {
+  if (active.length) {
     const bounds = L.latLngBounds(active.map(l => [l.lat, l.lng]));
     bounds.pad(0.1);
     // Sheet covers from its Y position down to the bottom of the viewport
