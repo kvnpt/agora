@@ -417,8 +417,9 @@ function renderParishPills() {
   const allActive = state.filters.parishIds === null;
 
   // Location pill as leftmost item
+  const locSrc = state.nearPillActive ? '/tabler-location-filled.svg' : '/tabler-location.svg';
   let html = `<button class="location-pill ${state.nearPillActive ? 'active' : ''}" id="btn-location-pill">` +
-    `<img src="https://api.iconify.design/typcn:location-arrow.svg" alt="Location">` +
+    `<img src="${locSrc}" alt="Location">` +
     `${state.nearPillActive ? 'On' : 'Near'}</button>`;
 
   for (const p of relevant) {
@@ -1128,11 +1129,10 @@ function sortEvents(arr) {
 }
 
 function buildSortToggle() {
-  const locIcon = `<img class="sort-icon" src="https://api.iconify.design/typcn:location-arrow.svg" alt="">`;
+  const active = state.eventsSort === 'nearby' && state.locationActive;
+  const locIcon = `<img class="sort-icon" src="${active ? '/tabler-location-filled.svg' : '/tabler-location.svg'}" alt="">`;
   return `<span class="sort-toggle">` +
-    `<button class="sort-nearby ${state.eventsSort === 'nearby' ? 'active' : ''}" data-sort="nearby">${locIcon}Nearby</button>` +
-    `<span class="sort-sep">|</span>` +
-    `<button class="sort-time ${state.eventsSort === 'time' ? 'active' : ''}" data-sort="time">Time</button>` +
+    `<button class="sort-nearby ${active ? 'active' : ''}" data-sort="toggle">${locIcon}Nearby</button>` +
     `</span>`;
 }
 
@@ -1205,15 +1205,20 @@ function bindSortToggle(container) {
   container.querySelectorAll('.sort-toggle button').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const sort = btn.dataset.sort;
-      if (sort === 'nearby' && !state.locationActive) {
+      // Single toggle: Nearby ↔ Time
+      if (state.eventsSort === 'nearby' && state.locationActive) {
+        state.eventsSort = 'time';
+        renderEvents();
+        return;
+      }
+      if (!state.locationActive) {
         requestGeolocation(() => {
           state.eventsSort = 'nearby';
           renderEvents();
         });
         return;
       }
-      state.eventsSort = sort;
+      state.eventsSort = 'nearby';
       renderEvents();
     });
   });
