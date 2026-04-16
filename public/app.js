@@ -610,6 +610,7 @@ function initBottomSheet() {
   const handle = document.querySelector('.map-grab-handle');
   const modeBar = document.getElementById('mode-bar');
   const scroll = document.getElementById('sheet-scroll');
+  const fab = document.getElementById('show-all-fab');
 
   // Snap points (translateY values — lower = sheet higher on screen)
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
@@ -731,8 +732,6 @@ function initBottomSheet() {
 
   // ── Drag state ──
   let dragging = false, startY = 0, sheetStartY = 0;
-
-  const fab = document.getElementById('show-all-fab');
 
   function engageDrag(y) {
     dragging = true;
