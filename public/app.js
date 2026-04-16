@@ -29,7 +29,8 @@ const state = {
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
-  eventsSort: 'time'  // 'time' | 'nearby'
+  eventsSort: 'time',  // 'time' | 'nearby'
+  parishFocus: null  // parish ID when focused, null when browsing
 };
 
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
@@ -470,18 +471,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const pid = pill.dataset.parish;
 
     if (state.filters.parishIds === null) {
-      // All were active, selecting one turns off all others
       state.filters.parishIds = new Set([pid]);
     } else if (state.filters.parishIds.has(pid)) {
-      // Deselecting
       state.filters.parishIds.delete(pid);
       if (state.filters.parishIds.size === 0) {
-        // Last one deselected — re-activate all
         state.filters.parishIds = null;
       }
     } else {
-      // Adding another parish
       state.filters.parishIds.add(pid);
+    }
+
+    // Sync parish focus with pill selection
+    if (state.filters.parishIds && state.filters.parishIds.size === 1) {
+      const focusId = [...state.filters.parishIds][0];
+      const parish = state.parishes.find(p => p.id === focusId);
+      if (parish) {
+        state.parishFocus = focusId;
+        renderParishCardHeader(parish);
+      }
+    } else if (state.parishFocus) {
+      state.parishFocus = null;
+      removeParishCardHeader();
     }
 
     renderParishPills();
@@ -561,17 +571,92 @@ function renderCurrentView() {
   updateMap(state);
 }
 
-// Called from map popup "All events" button — activates parish filter
-// for that parish and re-renders everything.
-window.agoraFilterParish = function(pid) {
+// ── Parish focus card ──
+window.showParishCard = function(pid) {
+  if (state.parishFocus === pid) {
+    clearParishFocus();
+    return;
+  }
+  const parish = state.parishes.find(p => p.id === pid);
+  if (!parish) return;
+
+  state.parishFocus = pid;
   state.filters.parishIds = new Set([pid]);
   if (window.agoraMap) window.agoraMap.closePopup();
-  if (typeof renderParishPills === 'function') renderParishPills();
+
+  renderParishCardHeader(parish);
+  renderParishPills();
   renderCurrentView();
+
   if (window.agoraSnapTo && window.agoraSnapHalf) {
     window.agoraSnapTo(window.agoraSnapHalf());
   }
+
+  // Pan map to focused parish
+  if (window.agoraMap) {
+    const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
+    const targetY = sheetY / 2;
+    const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
+    const offset = [0, point.y - targetY];
+    window.agoraMap.panBy(offset, { animate: true, duration: 0.3 });
+  }
 };
+
+function clearParishFocus() {
+  if (!state.parishFocus) return;
+  state.parishFocus = null;
+  state.filters.parishIds = null;
+  removeParishCardHeader();
+  renderParishPills();
+  renderCurrentView();
+}
+
+function renderParishCardHeader(parish) {
+  const scroll = document.getElementById('sheet-scroll');
+  let card = document.getElementById('parish-card-header');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'parish-card-header';
+    card.className = 'parish-card-header';
+    scroll.insertBefore(card, scroll.firstChild);
+  }
+
+  const initial = (parish.name || '?')[0].toUpperCase();
+  const color = parish.color || '#666';
+  const juris = capitalize(parish.jurisdiction || '');
+  let distHtml = '';
+  if (state.locationActive && parish.lat && parish.lng) {
+    const km = haversineKm(state.userLat, state.userLng, parish.lat, parish.lng);
+    distHtml = `<span class="parish-card-sep">&middot;</span><span>${km.toFixed(1)} km</span>`;
+  }
+  const addr = parish.address || '';
+  const addrHtml = addr
+    ? `<a class="parish-card-address" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">${esc(addr)}</a>`
+    : '';
+  const dirBtn = `<a class="parish-card-btn" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`;
+  const webBtn = parish.website
+    ? `<a class="parish-card-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
+    : '';
+
+  card.innerHTML = `
+    <div class="parish-card-top">
+      <div class="parish-card-avatar" style="background:${color}">${esc(initial)}</div>
+      <div class="parish-card-info">
+        <div class="parish-card-name">${esc(parish.name)}</div>
+        <div class="parish-card-meta">${esc(juris)} Orthodox${distHtml}</div>
+      </div>
+      <button class="parish-card-close" type="button">&times;</button>
+    </div>
+    ${addrHtml ? `<div class="parish-card-addr-row">${addrHtml}</div>` : ''}
+    <div class="parish-card-actions">${dirBtn}${webBtn}</div>`;
+
+  card.querySelector('.parish-card-close').addEventListener('click', clearParishFocus);
+}
+
+function removeParishCardHeader() {
+  const card = document.getElementById('parish-card-header');
+  if (card) card.remove();
+}
 
 // ── Apply client-side filters ──
 function applyFilters(events) {

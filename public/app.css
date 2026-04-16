@@ -1073,29 +1073,87 @@ input, select, textarea {
 }
 body.map-expanded #show-all-fab { display: inline-flex; }
 
-/* Map popup links row */
-.leaflet-popup-content .popup-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  align-items: center;
-  margin-top: 6px;
-  font-size: 12px;
+/* ── Parish card header ── */
+.parish-card-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface, #fff);
 }
-.leaflet-popup-content .popup-links a,
-.leaflet-popup-content .popup-links button {
-  font: inherit;
+.parish-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.parish-card-avatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+}
+.parish-card-info { flex: 1; min-width: 0; }
+.parish-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+.parish-card-meta {
   font-size: 12px;
-  color: #1e73be;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.parish-card-sep { margin: 0 4px; }
+.parish-card-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--text-muted);
   background: none;
   border: none;
-  padding: 0;
+  border-radius: 50%;
   cursor: pointer;
+}
+.parish-card-close:hover { background: var(--border-light); }
+.parish-card-addr-row {
+  margin-top: 6px;
+  padding-left: 46px;
+}
+.parish-card-address {
+  font-size: 12px;
+  color: var(--text-secondary);
   text-decoration: none;
 }
-.leaflet-popup-content .popup-links a:hover,
-.leaflet-popup-content .popup-links button:hover { text-decoration: underline; }
-.leaflet-popup-content .popup-links .sep { color: #999; }
+.parish-card-address:hover { text-decoration: underline; }
+.parish-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-left: 46px;
+}
+.parish-card-btn {
+  display: inline-block;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.parish-card-btn:hover { background: var(--border-light); }
 
 /* ── Responsive ── */
 @media (min-width: 640px) {
