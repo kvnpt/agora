@@ -91,9 +91,10 @@ function updateMap(state) {
 
   addLabeledMarkers(locations, TZ);
 
-  // Fit map so markers appear in the visible area above the bottom sheet
+  // Fit map so markers appear in the visible area above the bottom sheet.
+  // Skip reframe when show-all FAB is active — just reveal markers in place.
   const active = locations.filter(l => l.active);
-  if (active.length) {
+  if (active.length && !showAll) {
     const bounds = L.latLngBounds(active.map(l => [l.lat, l.lng]));
     bounds.pad(0.1);
     // Sheet covers from its Y position down to the bottom of the viewport
