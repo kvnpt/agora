@@ -1269,6 +1269,21 @@ function renderMonth(container, events) {
   bindSortToggle(container);
 }
 
+function formatEventTime(date) {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true
+  }).formatToParts(date);
+  let hour = '', minute = '', mer = '';
+  for (const p of parts) {
+    if (p.type === 'hour') hour = p.value;
+    else if (p.type === 'minute') minute = p.value;
+    else if (p.type === 'dayPeriod') mer = p.value;
+  }
+  const minHtml = minute === '00' ? '' : `<span class="t-min">:${minute}</span>`;
+  const merHtml = mer ? `<span class="t-mer">${mer.replace(/\s/g, '').toLowerCase()}</span>` : '';
+  return `${hour}${minHtml}${merHtml}`;
+}
+
 function getJurisdictionColor() {
   const j = state.filters.jurisdiction;
   const map = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
@@ -1277,7 +1292,7 @@ function getJurisdictionColor() {
 
 function renderEventCard(evt) {
   const start = new Date(evt.start_utc);
-  const time = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(start);
+  const time = formatEventTime(start);
   const acronymColor = evt.parish_color || '#000';
   const acronym = evt.parish_acronym ? `<span class="event-parish-acronym" style="color:${esc(acronymColor)}">${esc(evt.parish_acronym)}</span>` : '';
 
