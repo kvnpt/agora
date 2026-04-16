@@ -395,12 +395,13 @@ input, select, textarea {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  flex-wrap: wrap;
 }
 .event-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
+  flex: 1;
+  min-width: 0;
 }
 .event-time {
   font-size: 14px;
