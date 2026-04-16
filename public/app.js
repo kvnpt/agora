@@ -1037,6 +1037,11 @@ function renderToday(container, events) {
     return start <= now && end >= now;
   });
   const later = events.filter(e => new Date(e.start_utc) > now);
+  const earlier = events.filter(e => {
+    const start = new Date(e.start_utc);
+    const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
+    return end < now && start <= now;
+  }).filter(e => !happeningNow.includes(e));
 
   const sortToggle = buildSortToggle();
 
@@ -1051,7 +1056,18 @@ function renderToday(container, events) {
     html = renderSubDaySections(later, html);
   }
   if (!happeningNow.length && !later.length) {
-    html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on today</h3></div>';
+    if (earlier.length) {
+      html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing left today</h3></div>';
+    } else {
+      html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on today</h3></div>';
+    }
+  }
+  if (earlier.length) {
+    html += `<div class="earlier-today-section">`;
+    html += `<button class="earlier-today-toggle" id="earlier-toggle"><span class="earlier-chevron">›</span> Earlier today <span class="earlier-count">${earlier.length}</span></button>`;
+    html += `<div class="earlier-today-list" id="earlier-list" hidden>`;
+    html += sortEvents(earlier).map(renderEventCard).join('');
+    html += `</div></div>`;
   }
   html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-month">View more</button></div>`;
   container.innerHTML = html;
@@ -1061,6 +1077,16 @@ function renderToday(container, events) {
     document.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.range === 'month'));
     fetchEvents();
   });
+
+  const earlierToggle = container.querySelector('#earlier-toggle');
+  if (earlierToggle) {
+    earlierToggle.addEventListener('click', () => {
+      const list = container.querySelector('#earlier-list');
+      const open = !list.hidden;
+      list.hidden = open;
+      earlierToggle.classList.toggle('open', !open);
+    });
+  }
 
   bindSortToggle(container);
 }

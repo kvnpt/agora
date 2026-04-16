@@ -831,6 +831,40 @@ input, select, textarea {
 .empty-state p {
   font-size: 12px;
 }
+/* ── Earlier today section ── */
+.earlier-today-section {
+  border-top: 1px solid var(--border-light);
+  margin-top: 4px;
+}
+.earlier-today-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.earlier-chevron {
+  display: inline-block;
+  transition: transform 0.2s;
+}
+.earlier-today-toggle.open .earlier-chevron { transform: rotate(90deg); }
+.earlier-count {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.earlier-today-list .event-card { opacity: 0.55; }
+
 .cta-link {
   background: none;
   border: none;
