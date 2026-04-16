@@ -394,30 +394,27 @@ input, select, textarea {
 .event-title-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .event-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
-  flex: 1;
-  min-width: 0;
 }
 .event-time {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
-  margin-left: 8px;
-  flex-shrink: 0;
 }
 .event-time .t-min,
 .event-time .t-mer {
   font-size: 0.72em;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   letter-spacing: 0.04em;
 }
 .event-time .t-mer {

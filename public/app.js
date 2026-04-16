@@ -1340,8 +1340,8 @@ function renderEventCard(evt) {
     <div class="event-card${isCancelled ? ' event-cancelled' : ''}" data-id="${evt.id}">
       <div class="event-content">
         <div class="event-title-row">
-          <span class="event-title">${esc(evt.title)}</span>
           <span class="event-time">${time}</span>
+          <span class="event-title">${esc(evt.title)}</span>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${liveBadge}${cancelledBadge}</div>
       </div>
