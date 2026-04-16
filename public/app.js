@@ -520,8 +520,6 @@ function initShowAllFab() {
   fab.addEventListener('click', () => {
     const cur = state.filters.showAllParishes;
     const hasJuris = !!state.filters.jurisdiction;
-    // Skip 'juris' stage if no jurisdiction selected — it would be identical
-    // to the default view. Cycle straight off → 'all' → off.
     let next;
     if (!hasJuris) {
       next = cur === 'all' ? null : 'all';
@@ -533,6 +531,8 @@ function initShowAllFab() {
     renderCurrentView();
   });
   sync();
+
+  window.agoraSyncShowAllFab = sync;
 }
 
 // ── Haversine distance ──
@@ -561,6 +561,9 @@ window.agoraFilterParish = function(pid) {
   if (window.agoraMap) window.agoraMap.closePopup();
   if (typeof renderParishPills === 'function') renderParishPills();
   renderCurrentView();
+  if (window.agoraSnapTo && window.agoraSnapHalf) {
+    window.agoraSnapTo(window.agoraSnapHalf());
+  }
 };
 
 // ── Apply client-side filters ──
@@ -694,6 +697,7 @@ function initBottomSheet() {
     updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
+      if (fab) fab.classList.remove('fading');
       updateScrollLock();
       if (window.agoraMap) {
         window.agoraMap.invalidateSize();
@@ -724,6 +728,8 @@ function initBottomSheet() {
   // ── Drag state ──
   let dragging = false, startY = 0, sheetStartY = 0;
 
+  const fab = document.getElementById('show-all-fab');
+
   function engageDrag(y) {
     dragging = true;
     startY = y;
@@ -733,6 +739,7 @@ function initBottomSheet() {
     sheet.classList.remove('snapping');
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
+    if (fab) fab.classList.add('fading');
   }
 
   function moveDrag(y) {
@@ -953,6 +960,10 @@ function initBottomSheet() {
     }
     scrollState = 'idle';
   }, { passive: true });
+
+  // Expose snapTo for external callers (map popup "All events" button)
+  window.agoraSnapTo = snapTo;
+  window.agoraSnapHalf = () => SNAP_HALF;
 }
 
 // ── Render Events ──

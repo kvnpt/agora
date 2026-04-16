@@ -39,8 +39,10 @@ function initFilters(state) {
 
     applyChipColors(chipContainer);
 
-    // Reset parish filter when jurisdiction changes
+    // Reset parish + show-all filters when jurisdiction changes
     state.filters.parishIds = null;
+    state.filters.showAllParishes = null;
+    if (window.agoraSyncShowAllFab) window.agoraSyncShowAllFab();
     const parishRow = document.getElementById('parish-filter-row');
     if (state.filters.jurisdiction) {
       parishRow.classList.add('visible');

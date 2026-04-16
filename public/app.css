@@ -1017,7 +1017,7 @@ input, select, textarea {
 /* ── Show-all parishes FAB ── */
 #show-all-fab {
   position: fixed;
-  top: 60px;
+  bottom: 160px;
   right: 12px;
   z-index: 900;
   display: none;
@@ -1033,7 +1033,10 @@ input, select, textarea {
   border-radius: 18px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.2s ease;
 }
+#show-all-fab.fading { opacity: 0; pointer-events: none; }
 #show-all-fab img {
   width: 16px;
   height: 16px;
@@ -1051,21 +1054,29 @@ input, select, textarea {
 }
 body.map-expanded #show-all-fab { display: inline-flex; }
 
-/* Map popup "All events" button */
-.leaflet-popup-content .popup-all-events {
-  display: inline-block;
-  margin: 6px 0 2px;
-  padding: 4px 10px;
+/* Map popup links row */
+.leaflet-popup-content .popup-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.leaflet-popup-content .popup-links a,
+.leaflet-popup-content .popup-links button {
   font: inherit;
   font-size: 12px;
-  font-weight: 500;
-  color: #fff;
-  background: #1e73be;
+  color: #1e73be;
+  background: none;
   border: none;
-  border-radius: 12px;
+  padding: 0;
   cursor: pointer;
+  text-decoration: none;
 }
-.leaflet-popup-content .popup-all-events:hover { background: #155a95; }
+.leaflet-popup-content .popup-links a:hover,
+.leaflet-popup-content .popup-links button:hover { text-decoration: underline; }
+.leaflet-popup-content .popup-links .sep { color: #999; }
 
 /* ── Responsive ── */
 @media (min-width: 640px) {
