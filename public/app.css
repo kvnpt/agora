@@ -400,20 +400,24 @@ input, select, textarea {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
+  flex: 1;
+  min-width: 0;
 }
 .event-time {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-secondary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+  margin-left: 8px;
+  flex-shrink: 0;
 }
 .event-time .t-min,
 .event-time .t-mer {
-  font-size: 0.65em;
+  font-size: 0.72em;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   letter-spacing: 0.04em;
 }
 .event-time .t-mer {
