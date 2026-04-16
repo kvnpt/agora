@@ -392,16 +392,12 @@ input, select, textarea {
 .event-content { flex: 1; min-width: 0; }
 
 .event-title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  line-height: 1.4;
 }
 .event-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
-  flex: 1;
-  min-width: 0;
 }
 .event-time {
   font-size: 14px;
@@ -410,6 +406,7 @@ input, select, textarea {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+  margin-right: 5px;
 }
 .event-time .t-min,
 .event-time .t-mer {
