@@ -242,7 +242,14 @@ async function fetchEvents() {
 
   // One-shot on initial load: empty Today → Month; empty Month → Services mode
   if (state._initialLoad) {
-    const filteredNow = applyFilters(state.events);
+    let filteredNow = applyFilters(state.events);
+    if (state.timeRange === 'today') {
+      const now = new Date();
+      filteredNow = filteredNow.filter(e => {
+        const end = e.end_utc ? new Date(e.end_utc) : new Date(new Date(e.start_utc).getTime() + 3600000);
+        return end >= now || new Date(e.start_utc) > now;
+      });
+    }
     if (!filteredNow.length) {
       if (state.timeRange === 'today') {
         state.timeRange = 'month';
