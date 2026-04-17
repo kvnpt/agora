@@ -177,11 +177,16 @@ input, select, textarea {
   display: flex;
   gap: 4px;
   flex: 1;
-  justify-content: center;
+  justify-content: flex-end;
+  align-items: center;
 }
-.mode-bar-right {
-  flex: none;
-  width: 44px; /* balances filters-btn so time-pills sits true centre */
+/* Today sits at the true horizontal centre of the mode bar (viewport
+   centre), This month stays flush-right via the flex container. */
+.time-pills .today-pill {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, calc(-50% - 2px));
 }
 
 /* ── Filters button (collapses services/social/english) ── */
@@ -210,18 +215,24 @@ input, select, textarea {
 }
 .filters-btn-content { display: inline-flex; align-items: center; gap: 4px; }
 .filters-btn-content img { width: 16px; height: 16px; opacity: 0.8; }
+.filters-btn-hamburger { font-size: 14px; line-height: 1; }
+.filters-btn-label { font-size: 12px; font-weight: 500; letter-spacing: 0.02em; }
 .filters-btn-content .fm-en-badge {
+  opacity: 1;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 1px 5px;
-  border: 1px solid currentColor;
+  border: 1px solid var(--text);
   border-radius: 4px;
   line-height: 1;
+  color: var(--text);
+  background: transparent;
 }
 .filters-btn-content .fm-en-badge.strict {
-  background: currentColor;
+  background: var(--text);
   color: var(--bg);
+  border-color: var(--text);
 }
 
 /* ── Filters dropdown menu ── */
@@ -229,13 +240,19 @@ input, select, textarea {
   position: absolute;
   top: 40px;
   left: 12px;
-  min-width: 200px;
+  /* Fixed width so toggling english labels doesn't resize the menu. */
+  width: 240px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
   padding: 4px;
   z-index: 600;
+}
+.filters-menu-sep {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 10px;
 }
 .filters-menu.hidden { display: none; }
 .filters-menu-item {
@@ -260,18 +277,11 @@ input, select, textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.65;
 }
 .filters-menu-item .fm-label {
   flex: 1;
   font-size: 13px;
   color: var(--text);
-}
-.filters-menu-item .fm-en-hint {
-  margin-left: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 400;
 }
 .filters-menu-item .fm-check {
   flex: none;
@@ -296,22 +306,15 @@ input, select, textarea {
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }
-.filters-menu-item.active .fm-icon { opacity: 1; }
 .fm-en-badge {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 1px 4px;
-  border: 1px solid var(--text-secondary);
+  border: 1px solid var(--text);
   border-radius: 4px;
-  color: var(--text-secondary);
-  line-height: 1;
-  opacity: 0.65;
-}
-.filters-menu-item.fm-english.active .fm-en-badge {
-  opacity: 1;
   color: var(--text);
-  border-color: var(--text);
+  line-height: 1;
 }
 .filters-menu-item.fm-english.strict .fm-en-badge {
   background: var(--text);

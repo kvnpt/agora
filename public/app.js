@@ -325,8 +325,8 @@ function initModeBar() {
       servicesBtn.classList.remove('active');
       if (state.timeRange === 'week') state.timeRange = 'today';
       timePills.innerHTML = `
-        <button class="pill ${state.timeRange === 'today' ? 'active' : ''}" data-range="today">Today</button>
-        <button class="pill ${state.timeRange === 'month' ? 'active' : ''}" data-range="month">This month</button>`;
+        <button class="pill today-pill ${state.timeRange === 'today' ? 'active' : ''}" data-range="today">Today</button>
+        <button class="pill month-pill ${state.timeRange === 'month' ? 'active' : ''}" data-range="month">This month</button>`;
       initTimePills();
       showView('events');
       fetchEvents();
@@ -334,6 +334,11 @@ function initModeBar() {
     } else {
       state.mode = 'services';
       servicesBtn.classList.add('active');
+      // Mutex: turning services on turns social off.
+      if (state.filters.socialOnly) {
+        state.filters.socialOnly = false;
+        document.getElementById('btn-social').classList.remove('active');
+      }
       timePills.innerHTML = '<span class="services-title">Service Times</span>';
       showView('services');
       fetchSchedules();
@@ -509,8 +514,14 @@ document.addEventListener('DOMContentLoaded', () => {
 function initSocialFilter() {
   const btn = document.getElementById('btn-social');
   btn.addEventListener('click', () => {
-    state.filters.socialOnly = !state.filters.socialOnly;
-    btn.classList.toggle('active', state.filters.socialOnly);
+    const willActivate = !state.filters.socialOnly;
+    state.filters.socialOnly = willActivate;
+    btn.classList.toggle('active', willActivate);
+    // Mutex: turning social on while in services mode exits services mode.
+    if (willActivate && state.mode === 'services') {
+      document.getElementById('btn-services').click();
+      return; // services-click handles render + syncFiltersButton
+    }
     renderCurrentView();
     syncFiltersButton();
   });
@@ -541,9 +552,11 @@ function syncEnglishButton() {
   if (!btn) return;
   btn.classList.toggle('active', state.filters.englishOnly);
   btn.classList.toggle('strict', state.filters.englishStrict);
-  const hint = btn.querySelector('.fm-en-hint');
-  if (hint) {
-    hint.textContent = state.filters.englishStrict ? ' — strict' : (state.filters.englishOnly ? ' — with bilingual' : '');
+  const label = btn.querySelector('.fm-label');
+  if (label) {
+    if (state.filters.englishStrict) label.textContent = 'English-only';
+    else if (state.filters.englishOnly) label.textContent = 'English with bilingual';
+    else label.textContent = 'English';
   }
 }
 
@@ -587,7 +600,7 @@ function syncFiltersButton() {
     content.innerHTML = parts.join('');
   } else {
     btn.classList.remove('has-active');
-    content.innerHTML = '☰';
+    content.innerHTML = '<span class="filters-btn-hamburger">☰</span><span class="filters-btn-label">Filters</span>';
   }
 }
 
@@ -620,8 +633,8 @@ function initResetFab() {
     const enBtn = document.getElementById('btn-english');
     enBtn.classList.remove('active');
     enBtn.classList.remove('strict');
-    const enHint = enBtn.querySelector('.fm-en-hint');
-    if (enHint) enHint.textContent = '';
+    const enLabel = enBtn.querySelector('.fm-label');
+    if (enLabel) enLabel.textContent = 'English';
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
     const parishRow = document.getElementById('parish-filter-row');

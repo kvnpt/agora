@@ -28,16 +28,15 @@
   <div id="bottom-sheet">
     <div class="map-grab-handle"></div>
 
-    <!-- Mode bar: filters menu + centred time pills -->
+    <!-- Mode bar: filters menu + time pills (today centred, this month right) -->
     <div class="mode-bar" id="mode-bar">
       <button class="filters-btn" id="btn-filters" type="button" aria-haspopup="menu" aria-expanded="false">
-        <span class="filters-btn-content">☰</span>
+        <span class="filters-btn-content"><span class="filters-btn-hamburger">☰</span><span class="filters-btn-label">Filters</span></span>
       </button>
       <nav class="time-pills" id="time-pills">
-        <button class="pill active" data-range="today">Today</button>
-        <button class="pill" data-range="month">This month</button>
+        <button class="pill today-pill active" data-range="today">Today</button>
+        <button class="pill month-pill" data-range="month">This month</button>
       </nav>
-      <div class="mode-bar-right" aria-hidden="true"></div>
 
       <!-- Dropdown menu, anchored under filters-btn -->
       <div class="filters-menu hidden" id="filters-menu" role="menu">
@@ -46,14 +45,16 @@
           <span class="fm-label">Service times</span>
           <span class="fm-check" aria-hidden="true"></span>
         </button>
+        <div class="filters-menu-sep" aria-hidden="true"></div>
         <button class="filters-menu-item" id="btn-social" role="menuitemcheckbox">
           <img class="fm-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
           <span class="fm-label">Social events</span>
           <span class="fm-check" aria-hidden="true"></span>
         </button>
+        <div class="filters-menu-sep" aria-hidden="true"></div>
         <button class="filters-menu-item fm-english" id="btn-english" role="menuitemcheckbox">
           <span class="fm-icon fm-en-badge">EN</span>
-          <span class="fm-label">English<span class="fm-en-hint"></span></span>
+          <span class="fm-label">English</span>
           <span class="fm-check" aria-hidden="true"></span>
         </button>
       </div>
