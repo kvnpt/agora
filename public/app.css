@@ -977,19 +977,8 @@ input, select, textarea {
 /* ── Earlier today section ── */
 .earlier-today-section {
   position: relative;
-  margin-top: -36px;
+  margin-top: 16px;
   opacity: 0.55;
-}
-.earlier-today-section::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.35) 100%);
-  pointer-events: none;
-  z-index: 1;
 }
 .earlier-today-header {
   color: var(--text-muted);
@@ -1016,23 +1005,12 @@ input, select, textarea {
   align-items: center;
   justify-content: flex-start;
   gap: 20px;
-  /* Very subtle warm fade downward */
-  background: linear-gradient(to bottom, #fff 0%, #faf9f7 100%);
+  background: #fff;
 }
 /* Tighter footer when 'Earlier today' follows — collapses the big gap. */
 .list-footer:has(+ .earlier-today-section) {
   min-height: 0;
   padding-bottom: 16px;
-}
-/* Soft fade from list into footer */
-.list-footer::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: 0; right: 0;
-  height: 20px;
-  background: linear-gradient(to bottom, transparent, #fff);
-  pointer-events: none;
 }
 .list-footer-ornament {
   font-size: 9px;
@@ -1042,7 +1020,7 @@ input, select, textarea {
   user-select: none;
 }
 .list-footer-btn {
-  background: #fff;
+  background: linear-gradient(to bottom, #ffffff 0%, #eceae5 100%);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 12px;
@@ -1053,16 +1031,16 @@ input, select, textarea {
   border-radius: 24px;
   cursor: pointer;
   min-height: 44px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 0 transparent;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+  transition: box-shadow 0.15s, border-color 0.15s, background 0.15s;
 }
 .list-footer-btn:hover {
   border-color: #bbb;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.09);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.8);
 }
 .list-footer-btn:active {
-  background: var(--border-light);
-  box-shadow: none;
+  background: linear-gradient(to bottom, #eceae5 0%, #e0ddd7 100%);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
 }
 .list-footer-arch-link {
   display: inline-flex;
