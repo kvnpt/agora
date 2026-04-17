@@ -177,7 +177,7 @@ function applyParishSlug() {
 // Recenter map on user location — used by location FAB, Near pill, Nearby sort
 function centerMapOnUser() {
   if (!window.agoraMap || state.userLat == null || state.userLng == null) return;
-  window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.4 });
+  window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.9 });
 }
 
 // ── Geolocation ──
@@ -560,8 +560,8 @@ function initResetFab() {
     syncResetFab();
     renderParishPills();
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
-    if (state.mode === 'services') window.agoraFetchSchedules({ fit: true });
-    else window.agoraFetchEvents({ fit: true });
+    if (state.mode === 'services') window.agoraFetchSchedules();
+    else window.agoraFetchEvents();
   });
   syncResetFab();
 }
@@ -627,6 +627,15 @@ window.showParishCard = function(pid) {
 
   if (window.agoraSnapTo && window.agoraSnapHalf) {
     window.agoraSnapTo(window.agoraSnapHalf());
+  }
+
+  // Pan to centre the parish in the visible map area — zoom preserved.
+  if (window.agoraMap) {
+    const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
+    const targetY = sheetY / 2;
+    const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
+    const offset = [0, point.y - targetY];
+    window.agoraMap.panBy(offset, { animate: true, duration: 0.9 });
   }
 };
 

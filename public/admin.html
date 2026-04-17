@@ -39,7 +39,7 @@
     /* Form elements */
     .field { margin-top: 8px; }
     .field label { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; }
-    .field input, .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; background: var(--bg); }
+    .field input:not([type=checkbox]):not([type=radio]), .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; background: var(--bg); }
     .field textarea { resize: vertical; min-height: 48px; }
     .field-row { display: flex; gap: 8px; }
     .field-row > .field { flex: 1; min-width: 0; }
@@ -310,7 +310,7 @@
     }
     function filteredSchedules() {
       if (!activeJurisdiction) return schedules;
-      return schedules.filter(s => s.jurisdiction === activeJurisdiction);
+      return schedules.filter(s => s.parish_jurisdiction === activeJurisdiction);
     }
     function filteredEvents() {
       if (!activeJurisdiction) return pendingEvents;

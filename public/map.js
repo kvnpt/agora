@@ -96,7 +96,7 @@ function updateMap(state, opts = {}) {
         paddingBottomRight: [30, sheetHeight + 20],
         maxZoom: 14,
         animate: true,
-        duration: 0.4
+        duration: 0.9
       });
     }
   }
@@ -215,7 +215,7 @@ function reframeMap() {
     paddingBottomRight: [30, sheetHeight + 20],
     maxZoom: 14,
     animate: true,
-    duration: 0.4
+    duration: 0.9
   });
 }
 

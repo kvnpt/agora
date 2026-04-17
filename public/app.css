@@ -765,7 +765,7 @@ input, select, textarea {
   letter-spacing: 0.03em;
   margin-bottom: 2px;
 }
-.detail-edit-form input,
+.detail-edit-form input:not([type=checkbox]):not([type=radio]),
 .detail-edit-form textarea,
 .detail-edit-form select {
   width: 100%;

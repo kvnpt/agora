@@ -204,7 +204,7 @@ router.delete('/parishes/:id', (req, res) => {
 router.get('/schedules', (req, res) => {
   const db = getDb();
   const schedules = db.prepare(`
-    SELECT s.*, p.name as parish_name
+    SELECT s.*, p.name as parish_name, p.jurisdiction as parish_jurisdiction
     FROM schedules s
     JOIN parishes p ON s.parish_id = p.id
     ORDER BY s.parish_id, s.day_of_week, s.start_time
