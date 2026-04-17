@@ -25,7 +25,7 @@ function initMap(state) {
   setTimeout(() => map.invalidateSize(), 100);
 }
 
-function updateMap(state) {
+function updateMap(state, opts = {}) {
   if (!map) return;
 
   markers.forEach(m => map.removeLayer(m));
@@ -81,23 +81,24 @@ function updateMap(state) {
 
   addLabeledMarkers(locations, TZ);
 
-  // Fit map so markers appear in the visible area above the bottom sheet.
-  const active = locations.filter(l => l.active);
-  if (active.length) {
-    const bounds = L.latLngBounds(active.map(l => [l.lat, l.lng]));
-    bounds.pad(0.1);
-    // Sheet covers from its Y position down to the bottom of the viewport
-    const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
-    const sheetHeight = window.innerHeight - sheetY;
-    // Jurisdiction banner at top (~36px)
-    const topPad = 50;
-    map.fitBounds(bounds, {
-      paddingTopLeft: [30, topPad],
-      paddingBottomRight: [30, sheetHeight + 20],
-      maxZoom: 14,
-      animate: true,
-      duration: 0.4
-    });
+  // Fit only when caller opts in — otherwise markers refresh without
+  // disturbing the user's current map view.
+  if (opts.fit) {
+    const active = locations.filter(l => l.active);
+    if (active.length) {
+      const bounds = L.latLngBounds(active.map(l => [l.lat, l.lng]));
+      bounds.pad(0.1);
+      const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
+      const sheetHeight = window.innerHeight - sheetY;
+      const topPad = 50;
+      map.fitBounds(bounds, {
+        paddingTopLeft: [30, topPad],
+        paddingBottomRight: [30, sheetHeight + 20],
+        maxZoom: 14,
+        animate: true,
+        duration: 0.4
+      });
+    }
   }
 }
 

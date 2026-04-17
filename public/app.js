@@ -174,6 +174,12 @@ function applyParishSlug() {
   delete state._parishSlug;
 }
 
+// Recenter map on user location — used by location FAB, Near pill, Nearby sort
+function centerMapOnUser() {
+  if (!window.agoraMap || state.userLat == null || state.userLng == null) return;
+  window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.4 });
+}
+
 // ── Geolocation ──
 function loadCachedLocation() {
   const cached = localStorage.getItem('agora_location');
@@ -207,7 +213,7 @@ function requestGeolocation(callback) {
 }
 
 // ── API ──
-async function fetchEvents() {
+async function fetchEvents(opts = {}) {
   const params = new URLSearchParams({
     lat: state.userLat,
     lng: state.userLng
@@ -257,7 +263,7 @@ async function fetchEvents() {
         state.timeRange = 'month';
         document.querySelectorAll('.pill').forEach(b =>
           b.classList.toggle('active', b.dataset.range === 'month'));
-        return fetchEvents();
+        return fetchEvents(opts);
       }
       if (state.timeRange === 'month') {
         state._initialLoad = false;
@@ -269,10 +275,10 @@ async function fetchEvents() {
   }
 
   renderEvents();
-  updateMap(state);
+  updateMap(state, { fit: !!opts.fit });
 }
 
-async function fetchSchedules() {
+async function fetchSchedules(opts = {}) {
   const params = new URLSearchParams();
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
   try {
@@ -282,7 +288,7 @@ async function fetchSchedules() {
     state.schedules = [];
   }
   renderServices();
-  updateMap(state);
+  updateMap(state, { fit: !!opts.fit });
 }
 
 async function fetchParishes() {
@@ -359,9 +365,9 @@ function applyStartMode() {
     socialBtn.style.display = 'none';
     timePills.innerHTML = '<span class="services-title">Service Times</span>';
     showView('services');
-    fetchSchedules();
+    fetchSchedules({ fit: true });
   } else {
-    fetchEvents();
+    fetchEvents({ fit: true });
   }
   delete state._startMode;
 }
@@ -451,14 +457,14 @@ function renderParishPills() {
       state.nearPillActive = false;
       renderParishPills();
     } else if (state.locationActive) {
-      // Already have coords, just activate pill sort
       state.nearPillActive = true;
       renderParishPills();
+      centerMapOnUser();
     } else {
-      // Need to fetch location first
       requestGeolocation(() => {
         state.nearPillActive = true;
         renderParishPills();
+        centerMapOnUser();
       });
     }
   });
@@ -497,7 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderParishPills();
-    renderCurrentView();
+    renderCurrentView({ fit: true });
   });
 });
 
@@ -554,8 +560,8 @@ function initResetFab() {
     syncResetFab();
     renderParishPills();
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
-    if (state.mode === 'services') window.agoraFetchSchedules();
-    else window.agoraFetchEvents();
+    if (state.mode === 'services') window.agoraFetchSchedules({ fit: true });
+    else window.agoraFetchEvents({ fit: true });
   });
   syncResetFab();
 }
@@ -575,12 +581,7 @@ function initLocationFab() {
       state.nearPillActive = true;
       renderParishPills();
       renderCurrentView();
-      // Center map on user + show nearest parish
-      if (window.agoraMap) {
-        const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
-        const mapH = sheetY;
-        window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.4 });
-      }
+      centerMapOnUser();
     });
   });
 
@@ -597,13 +598,13 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 }
 
 // ── Render without server calls — purely client-side ──
-function renderCurrentView() {
+function renderCurrentView(opts = {}) {
   if (state.mode === 'services') {
     renderServices();
   } else {
     renderEvents();
   }
-  updateMap(state);
+  updateMap(state, { fit: !!opts.fit });
   syncResetFab();
 }
 
@@ -626,15 +627,6 @@ window.showParishCard = function(pid) {
 
   if (window.agoraSnapTo && window.agoraSnapHalf) {
     window.agoraSnapTo(window.agoraSnapHalf());
-  }
-
-  // Pan map to focused parish
-  if (window.agoraMap) {
-    const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
-    const targetY = sheetY / 2;
-    const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
-    const offset = [0, point.y - targetY];
-    window.agoraMap.panBy(offset, { animate: true, duration: 0.3 });
   }
 };
 
@@ -834,7 +826,6 @@ function initBottomSheet() {
       updateScrollLock();
       if (window.agoraMap) {
         window.agoraMap.invalidateSize();
-        if (!isAtFull()) reframeMap();
       }
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
@@ -1215,11 +1206,13 @@ function bindSortToggle(container) {
         requestGeolocation(() => {
           state.eventsSort = 'nearby';
           renderEvents();
+          centerMapOnUser();
         });
         return;
       }
       state.eventsSort = 'nearby';
       renderEvents();
+      centerMapOnUser();
     });
   });
 }
