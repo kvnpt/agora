@@ -485,10 +485,16 @@ input, select, textarea {
   color: var(--text-muted);
 }
 
-/* Centre the title within the time-pills flex container */
+/* Centre the title at the true middle of the mode bar (viewport centre),
+   regardless of filters-btn width. */
 .time-pills:has(.services-title) {
-  justify-content: center;
-  flex: 1;
+  position: static;
+}
+.services-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, calc(-50% - 2px));
 }
 
 /* ── Event cards ── */
