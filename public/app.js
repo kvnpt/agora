@@ -36,6 +36,8 @@ const state = {
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
 let detailHistoryPushed = false;
 let posterHistoryPushed = false;
+// Guard: prevents syncURL() from writing while popstate is reading URL into state.
+let _reconciling = false;
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
@@ -69,17 +71,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }, 60000);
 
-  // Browser back button closes detail panel or fullscreen poster
+  // Browser back button: poster first, then legacy parish-detail modal (flag-based,
+  // not URL-backed), then reconcile state from the current URL. Every URL-backed
+  // mutator pushes a history entry so back walks the full filter/mode history.
   window.addEventListener('popstate', () => {
     const fsEl = document.getElementById('poster-fullscreen');
-    const panelEl = document.getElementById('event-detail');
     if (fsEl && !fsEl.classList.contains('hidden')) {
       posterHistoryPushed = false;
       closePosterFullscreenDOM();
-    } else if (panelEl && !panelEl.classList.contains('hidden')) {
-      detailHistoryPushed = false;
-      closeDetailDOM();
+      return;
     }
+    if (detailHistoryPushed) {
+      detailHistoryPushed = false;
+      const panelEl = document.getElementById('event-detail');
+      if (panelEl && !panelEl.classList.contains('hidden') && !state._openEventId) {
+        closeDetailDOM();
+        return;
+      }
+    }
+    reconcileStateFromUrl();
   });
 });
 
@@ -215,12 +225,16 @@ function applyParishSlugs() {
 // Back-compat shim
 function applyParishSlug() { return applyParishSlugs(); }
 
-// Write current filter/mode/detail state back to the URL via replaceState.
-// Called from every mutator so refresh/share reproduces the view exactly.
-// Order of segments is canonical (not required by parser) for aesthetics.
-function syncURL() {
+// Write current filter/mode/detail state back to the URL. Defaults to
+// pushState so every mutator creates a history entry (back button walks
+// through filter changes). Pass { replace: true } for initial canonicalization
+// and for repair writes that shouldn't create entries.
+function syncURL(opts = {}) {
   // Guard: only run when state exists (init sequence may call before filters set)
   if (!state || !state.filters) return;
+  // During popstate reconciliation we're reading the URL into state, not the
+  // reverse — writing would fight the history stack and risk loops.
+  if (_reconciling) return;
   const segs = [];
 
   if (state.filters.socialOnly) segs.push('social');
@@ -249,11 +263,115 @@ function syncURL() {
 
   const path = '/' + segs.join('/');
   const target = path + window.location.search + window.location.hash;
-  if (target !== window.location.pathname + window.location.search + window.location.hash) {
-    try { history.replaceState({}, '', target); } catch {}
-  }
+  // Dedupe — skip writes when URL already matches (avoids redundant history entries
+  // when callers chain mutators that converge on the same URL).
+  if (target === window.location.pathname + window.location.search + window.location.hash) return;
+  try {
+    if (opts.replace) history.replaceState({}, '', target);
+    else history.pushState({ url: target }, '', target);
+  } catch {}
 }
 window.agoraSyncURL = syncURL;
+
+// Re-read the URL and bring app state + UI into agreement. Called from popstate
+// so every back-navigation (filter change, parish focus, mode toggle, event open,
+// etc.) lands on the expected prior view. Inverse of syncURL.
+async function reconcileStateFromUrl() {
+  _reconciling = true;
+  try {
+    // 1) Reset URL-driven state (preserve location, time range, sort — not in URL)
+    state.filters.jurisdiction = null;
+    state.filters.parishIds = null;
+    state.filters.multiParish = false;
+    state.filters.socialOnly = false;
+    state.filters.englishOnly = false;
+    state.filters.englishStrict = false;
+    state.filters.showAllParishes = null;
+    state.parishFocus = null;
+    const prevOpenId = state._openEventId || null;
+    const prevMode = state.mode;
+    delete state._openEventId;
+    delete state._startMode;
+    delete state._parishSlugs;
+
+    // 2) Re-parse URL into state
+    detectUrlState();
+    applyParishSlugs();
+    const targetMode = state._startMode === 'services' ? 'services' : 'events';
+    delete state._startMode;
+
+    // 3) Sync mode (services ↔ events view + time pills + active class)
+    const servicesBtn = document.getElementById('btn-services');
+    const timePills = document.getElementById('time-pills');
+    if (targetMode !== prevMode) {
+      state.mode = targetMode;
+      if (targetMode === 'services') {
+        servicesBtn.classList.add('active');
+        timePills.innerHTML = '<span class="services-title">Service Times</span>';
+        showView('services');
+      } else {
+        servicesBtn.classList.remove('active');
+        if (state.timeRange === 'week') state.timeRange = 'today';
+        timePills.innerHTML = `
+          <button class="pill today-pill ${state.timeRange === 'today' ? 'active' : ''}" data-range="today">Today</button>
+          <button class="pill month-pill ${state.timeRange === 'month' ? 'active' : ''}" data-range="month">This month</button>`;
+        initTimePills();
+        showView('events');
+      }
+    }
+
+    // 4) Jurisdiction chips
+    const chipContainer = document.getElementById('jurisdiction-chips');
+    if (chipContainer) {
+      chipContainer.querySelectorAll('.jurisdiction-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.jurisdiction === state.filters.jurisdiction);
+      });
+      if (typeof applyChipColors === 'function') applyChipColors(chipContainer);
+    }
+
+    // 5) Parish row + pills + focus header
+    const parishRow = document.getElementById('parish-filter-row');
+    if (parishRow) parishRow.classList.toggle('visible', !!state.filters.jurisdiction);
+    if (typeof renderParishPills === 'function') renderParishPills();
+    if (state.parishFocus) {
+      const parish = state.parishes.find(p => p.id === state.parishFocus);
+      if (parish) renderParishCardHeader(parish);
+      else removeParishCardHeader();
+    } else {
+      removeParishCardHeader();
+    }
+
+    // 6) Filter menu items + derived UI
+    const socialBtn = document.getElementById('btn-social');
+    if (socialBtn) socialBtn.classList.toggle('active', !!state.filters.socialOnly);
+    if (typeof syncEnglishButton === 'function') syncEnglishButton();
+    if (typeof syncMultiParishButton === 'function') syncMultiParishButton();
+    if (typeof syncFiltersButton === 'function') syncFiltersButton();
+    if (typeof syncResetFab === 'function') syncResetFab();
+    if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
+
+    // 7) Detail panel: open if URL has a new ID; close if URL dropped the ID
+    const panelEl = document.getElementById('event-detail');
+    const panelOpen = panelEl && !panelEl.classList.contains('hidden');
+    const nextOpenId = state._openEventId || null;
+
+    // 8) Refetch data (URL filter change → different result set)
+    if (state.mode === 'services') window.agoraFetchSchedules();
+    else window.agoraFetchEvents();
+
+    if (nextOpenId && nextOpenId !== prevOpenId) {
+      // Show the requested event. showEventDetail will re-set state._openEventId
+      // and call syncURL — guarded by _reconciling, which we keep true through
+      // the await so the URL stays exactly what the user navigated back to.
+      delete state._openEventId;
+      await openEventFromUrl(nextOpenId);
+    } else if (!nextOpenId && panelOpen) {
+      closeDetailDOM();
+    }
+  } finally {
+    _reconciling = false;
+  }
+}
 
 // Recenter map on user location — used by location FAB, Near pill, Nearby sort
 function centerMapOnUser() {
@@ -460,11 +578,17 @@ async function applyStartMode() {
   syncFiltersButton();
 
   if (state._openEventId) {
-    await openEventFromUrl(state._openEventId);
+    // Split the history entry so the back button can close the detail:
+    //   replace current entry with URL-minus-ID, then showEventDetail pushes
+    //   URL-with-ID. Back → URL-minus-ID → reconciler closes detail.
+    const pendingId = state._openEventId;
     delete state._openEventId;
+    syncURL({ replace: true });
+    await openEventFromUrl(pendingId);
+  } else if (typeof syncURL === 'function') {
+    syncURL({ replace: true });
   }
-
-  if (typeof syncURL === 'function') syncURL();
+  state._initialLoad = false;
 }
 
 // Event permalink loader — fills parish focus + jurisdiction from the event
@@ -1968,8 +2092,6 @@ function showEventDetail(id) {
   }
 
   state._openEventId = evt.id;
-  history.pushState({ detail: true }, '');
-  detailHistoryPushed = true;
   syncURL();
   panel.classList.remove('hidden');
   if (!document.querySelector('.detail-backdrop')) {
@@ -2186,18 +2308,24 @@ function closeDetailDOM() {
   document.getElementById('event-detail').classList.add('hidden');
   const backdrop = document.querySelector('.detail-backdrop');
   if (backdrop) backdrop.remove();
-  if (state._openEventId) {
-    delete state._openEventId;
-    syncURL();
-  }
+  delete state._openEventId;
 }
 
+// Close from UI — always walk history back. popstate handler reconciles state/URL.
+// Event-detail is now a URL-backed state: URL carries the event ID, history.back
+// drops the ID, reconcileStateFromUrl observes the change and closes the panel.
 function closeDetail() {
-  closeDetailDOM();
   if (detailHistoryPushed) {
+    // Legacy parish-detail modal path
     detailHistoryPushed = false;
     history.back();
+    return;
   }
+  if (state._openEventId) {
+    history.back();
+    return;
+  }
+  closeDetailDOM();
 }
 
 document.getElementById('close-detail').addEventListener('click', closeDetail);
