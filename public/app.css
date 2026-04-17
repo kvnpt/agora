@@ -189,23 +189,24 @@ input, select, textarea {
   transform: translate(-50%, calc(-50% - 2px));
 }
 
-/* ── Filters button (collapses services/social/english) ── */
+/* ── Filters button (collapses services/social/english) ──
+   Sized to match the Today/This month pills: same padding, radius,
+   font-size, and line height. */
 .filters-btn {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 44px;
-  height: 32px;
-  padding: 0 10px;
+  padding: 6px 12px;
   color: var(--text-secondary);
   background: none;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
   transition: all 0.15s;
 }
 .filters-btn:hover { color: var(--text); border-color: var(--text-secondary); }
@@ -214,8 +215,8 @@ input, select, textarea {
   border-color: var(--text-secondary);
 }
 .filters-btn-content { display: inline-flex; align-items: center; gap: 4px; }
-.filters-btn-content img { width: 16px; height: 16px; opacity: 0.8; }
-.filters-btn-hamburger { font-size: 14px; line-height: 1; }
+.filters-btn-content img { width: 14px; height: 14px; opacity: 0.8; }
+.filters-btn-hamburger { font-size: 13px; line-height: 1; }
 .filters-btn-label { font-size: 12px; font-weight: 500; letter-spacing: 0.02em; }
 .filters-btn-content .fm-en-badge {
   opacity: 1;

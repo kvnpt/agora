@@ -565,17 +565,18 @@ function initFiltersMenu() {
   const btn = document.getElementById('btn-filters');
   const menu = document.getElementById('filters-menu');
   if (!btn || !menu) return;
-  btn.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = menu.classList.toggle('hidden');
-    btn.setAttribute('aria-expanded', String(!open));
+  btn.addEventListener('click', () => {
+    const nowHidden = menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', String(!nowHidden));
   });
-  menu.addEventListener('click', e => e.stopPropagation());
-  document.addEventListener('click', () => {
-    if (!menu.classList.contains('hidden')) {
-      menu.classList.add('hidden');
-      btn.setAttribute('aria-expanded', 'false');
-    }
+  // Pointerdown fires reliably on mobile taps (click sometimes doesn't on
+  // non-interactive targets on iOS). Close whenever pointer lands outside
+  // the menu and trigger button.
+  document.addEventListener('pointerdown', e => {
+    if (menu.classList.contains('hidden')) return;
+    if (menu.contains(e.target) || btn.contains(e.target)) return;
+    menu.classList.add('hidden');
+    btn.setAttribute('aria-expanded', 'false');
   });
   syncFiltersButton();
 }
