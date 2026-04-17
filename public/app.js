@@ -320,6 +320,10 @@ function initModeBar() {
   const timePills = document.getElementById('time-pills');
 
   servicesBtn.addEventListener('click', () => {
+    const menu = document.getElementById('filters-menu');
+    if (menu) menu.classList.add('hidden');
+    const fb = document.getElementById('btn-filters');
+    if (fb) fb.setAttribute('aria-expanded', 'false');
     if (state.mode === 'services') {
       state.mode = 'events';
       servicesBtn.classList.remove('active');
@@ -426,10 +430,9 @@ function renderParishPills() {
   const allActive = state.filters.parishIds === null;
 
   // Location pill as leftmost item
-  const locSrc = state.nearPillActive ? '/tabler-location-filled.svg' : '/tabler-location.svg';
   let html = `<button class="location-pill ${state.nearPillActive ? 'active' : ''}" id="btn-location-pill">` +
-    `<img src="${locSrc}" alt="Location">` +
-    `${state.nearPillActive ? 'On' : 'Near'}</button>`;
+    `<img src="/tabler-location-filled.svg" alt="Location">` +
+    `Sort</button>`;
 
   for (const p of relevant) {
     const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
@@ -514,6 +517,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function initSocialFilter() {
   const btn = document.getElementById('btn-social');
   btn.addEventListener('click', () => {
+    const menu = document.getElementById('filters-menu');
+    if (menu) menu.classList.add('hidden');
+    const fb = document.getElementById('btn-filters');
+    if (fb) fb.setAttribute('aria-expanded', 'false');
     const willActivate = !state.filters.socialOnly;
     state.filters.socialOnly = willActivate;
     btn.classList.toggle('active', willActivate);
@@ -588,9 +595,10 @@ function syncFiltersButton() {
   const parts = [];
   if (state.mode === 'services') {
     parts.push(`<img src="https://api.iconify.design/ph:church.svg" alt="">`);
-  }
-  if (state.filters.socialOnly) {
+    parts.push(`<span class="filters-btn-label">Schedules</span>`);
+  } else if (state.filters.socialOnly) {
     parts.push(`<img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">`);
+    parts.push(`<span class="filters-btn-label">Socials</span>`);
   }
   if (state.filters.englishOnly) {
     const strict = state.filters.englishStrict ? ' strict' : '';
@@ -1227,9 +1235,9 @@ function sortEvents(arr) {
 
 function buildSortToggle() {
   const active = state.eventsSort === 'nearby' && state.locationActive;
-  const locIcon = `<img class="sort-icon" src="${active ? '/tabler-location-filled.svg' : '/tabler-location.svg'}" alt="">`;
+  const locIcon = `<img class="sort-icon" src="/tabler-location-filled.svg" alt="">`;
   return `<span class="sort-toggle">` +
-    `<button class="sort-nearby ${active ? 'active' : ''}" data-sort="toggle">Nearby${locIcon}</button>` +
+    `<button class="sort-nearby ${active ? 'active' : ''}" data-sort="toggle">${locIcon}Sort</button>` +
     `</span>`;
 }
 
