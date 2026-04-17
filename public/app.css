@@ -153,40 +153,6 @@ input, select, textarea {
   border-bottom: 1px solid var(--border-light);
 }
 
-.icon-btn {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  color: var(--text-secondary);
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.icon-btn:hover { color: var(--text); border-color: var(--text-secondary); }
-.icon-btn.active {
-  color: var(--bg);
-  background: var(--text);
-  border-color: var(--text);
-}
-.icon-btn img {
-  width: 18px;
-  height: 18px;
-  opacity: 0.5;
-}
-.icon-btn:hover img { opacity: 0.8; }
-.icon-btn.active img { opacity: 1; filter: invert(1); }
-.text-icon-btn {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
 .services-btn {
   flex: none;
   padding: 6px 12px;
@@ -211,7 +177,145 @@ input, select, textarea {
   display: flex;
   gap: 4px;
   flex: 1;
-  justify-content: flex-end;
+  justify-content: center;
+}
+.mode-bar-right {
+  flex: none;
+  width: 44px; /* balances filters-btn so time-pills sits true centre */
+}
+
+/* ── Filters button (collapses services/social/english) ── */
+.filters-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+.filters-btn:hover { color: var(--text); border-color: var(--text-secondary); }
+.filters-btn.has-active {
+  color: var(--text);
+  border-color: var(--text-secondary);
+}
+.filters-btn-content { display: inline-flex; align-items: center; gap: 4px; }
+.filters-btn-content img { width: 16px; height: 16px; opacity: 0.8; }
+.filters-btn-content .fm-en-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  line-height: 1;
+}
+.filters-btn-content .fm-en-badge.strict {
+  background: currentColor;
+  color: var(--bg);
+}
+
+/* ── Filters dropdown menu ── */
+.filters-menu {
+  position: absolute;
+  top: 40px;
+  left: 12px;
+  min-width: 200px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  padding: 4px;
+  z-index: 600;
+}
+.filters-menu.hidden { display: none; }
+.filters-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.filters-menu-item:hover { background: var(--border-light); }
+.filters-menu-item .fm-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.65;
+}
+.filters-menu-item .fm-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+}
+.filters-menu-item .fm-en-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.filters-menu-item .fm-check {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  position: relative;
+}
+.filters-menu-item.active .fm-check {
+  background: var(--text);
+  border-color: var(--text);
+}
+.filters-menu-item.active .fm-check::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+.filters-menu-item.active .fm-icon { opacity: 1; }
+.fm-en-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 4px;
+  border: 1px solid var(--text-secondary);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  line-height: 1;
+  opacity: 0.65;
+}
+.filters-menu-item.fm-english.active .fm-en-badge {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--text);
+}
+.filters-menu-item.fm-english.strict .fm-en-badge {
+  background: var(--text);
+  color: var(--bg);
 }
 
 .pill {
@@ -852,6 +956,11 @@ input, select, textarea {
 }
 .empty-state p {
   font-size: 12px;
+}
+/* Pull View more closer when nothing is on today. */
+.empty-state + .list-footer {
+  padding-top: 4px;
+  min-height: 0;
 }
 /* ── Earlier today section ── */
 .earlier-today-section {

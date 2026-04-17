@@ -23,6 +23,11 @@ function initMap(state) {
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   setTimeout(() => map.invalidateSize(), 100);
+
+  // Tap blank map area clears any active parish focus.
+  map.on('click', () => {
+    if (window.agoraClearParishFocus) window.agoraClearParishFocus();
+  });
 }
 
 function updateMap(state, opts = {}) {
@@ -124,7 +129,7 @@ function addLabeledMarkers(locations, TZ) {
         iconAnchor: [hitSize / 2, hitSize / 2]
       }),
       interactive: true,
-      bubblingMouseEvents: true,
+      bubblingMouseEvents: false,
       zIndexOffset: loc.active ? 1000 : 0
     });
 
@@ -192,7 +197,7 @@ function addLabeledMarkers(locations, TZ) {
         iconAnchor: [anchorX, 15]
       }),
       interactive: true,
-      bubblingMouseEvents: true,
+      bubblingMouseEvents: false,
       zIndexOffset: lm.loc.active ? 1000 : 0
     }).addTo(map);
     label.on('click', () => {

@@ -25,7 +25,7 @@ const state = {
   userLng: 151.2093,
   mode: 'events',
   timeRange: 'today',
-  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false, showAllParishes: null },
+  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null },
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
+  initFiltersMenu();
   initResetFab();
   initLocationFab();
   state._initialLoad = true;
@@ -316,14 +317,12 @@ async function checkAdmin() {
 // ── Mode bar ──
 function initModeBar() {
   const servicesBtn = document.getElementById('btn-services');
-  const socialBtn = document.getElementById('btn-social');
   const timePills = document.getElementById('time-pills');
 
   servicesBtn.addEventListener('click', () => {
     if (state.mode === 'services') {
       state.mode = 'events';
       servicesBtn.classList.remove('active');
-      socialBtn.style.display = '';
       if (state.timeRange === 'week') state.timeRange = 'today';
       timePills.innerHTML = `
         <button class="pill ${state.timeRange === 'today' ? 'active' : ''}" data-range="today">Today</button>
@@ -335,12 +334,12 @@ function initModeBar() {
     } else {
       state.mode = 'services';
       servicesBtn.classList.add('active');
-      socialBtn.style.display = 'none';
       timePills.innerHTML = '<span class="services-title">Service Times</span>';
       showView('services');
       fetchSchedules();
       updateArchdioceseEventsBanner();
     }
+    if (typeof syncFiltersButton === 'function') syncFiltersButton();
   });
 }
 
@@ -352,18 +351,15 @@ function showView(name) {
 // ── Apply URL-driven start state (mode, EN filter) ──
 function applyStartMode() {
   const servicesBtn = document.getElementById('btn-services');
-  const socialBtn = document.getElementById('btn-social');
   const timePills = document.getElementById('time-pills');
-  const englishBtn = document.getElementById('btn-english');
 
   if (state.filters.englishOnly) {
-    englishBtn.classList.add('active');
+    syncEnglishButton();
   }
 
   if (state._startMode === 'services') {
     state.mode = 'services';
     servicesBtn.classList.add('active');
-    socialBtn.style.display = 'none';
     timePills.innerHTML = '<span class="services-title">Service Times</span>';
     showView('services');
     fetchSchedules({ fit: true });
@@ -371,6 +367,7 @@ function applyStartMode() {
     fetchEvents({ fit: true });
   }
   delete state._startMode;
+  syncFiltersButton();
 }
 
 // ── Archdiocese events banner ──
@@ -515,17 +512,83 @@ function initSocialFilter() {
     state.filters.socialOnly = !state.filters.socialOnly;
     btn.classList.toggle('active', state.filters.socialOnly);
     renderCurrentView();
+    syncFiltersButton();
   });
 }
 
-// ── English filter ──
+// ── English filter (tri-state: off → any-english → strict → off) ──
 function initEnglishFilter() {
   const btn = document.getElementById('btn-english');
   btn.addEventListener('click', () => {
-    state.filters.englishOnly = !state.filters.englishOnly;
-    btn.classList.toggle('active', state.filters.englishOnly);
+    if (!state.filters.englishOnly) {
+      state.filters.englishOnly = true;
+      state.filters.englishStrict = false;
+    } else if (!state.filters.englishStrict) {
+      state.filters.englishStrict = true;
+    } else {
+      state.filters.englishOnly = false;
+      state.filters.englishStrict = false;
+    }
+    syncEnglishButton();
     renderCurrentView();
+    syncFiltersButton();
   });
+  syncEnglishButton();
+}
+
+function syncEnglishButton() {
+  const btn = document.getElementById('btn-english');
+  if (!btn) return;
+  btn.classList.toggle('active', state.filters.englishOnly);
+  btn.classList.toggle('strict', state.filters.englishStrict);
+  const hint = btn.querySelector('.fm-en-hint');
+  if (hint) {
+    hint.textContent = state.filters.englishStrict ? ' — strict' : (state.filters.englishOnly ? ' — with bilingual' : '');
+  }
+}
+
+// ── Filters menu dropdown ──
+function initFiltersMenu() {
+  const btn = document.getElementById('btn-filters');
+  const menu = document.getElementById('filters-menu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', String(!open));
+  });
+  menu.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => {
+    if (!menu.classList.contains('hidden')) {
+      menu.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  syncFiltersButton();
+}
+
+function syncFiltersButton() {
+  const btn = document.getElementById('btn-filters');
+  if (!btn) return;
+  const content = btn.querySelector('.filters-btn-content');
+  const parts = [];
+  if (state.mode === 'services') {
+    parts.push(`<img src="https://api.iconify.design/ph:church.svg" alt="">`);
+  }
+  if (state.filters.socialOnly) {
+    parts.push(`<img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">`);
+  }
+  if (state.filters.englishOnly) {
+    const strict = state.filters.englishStrict ? ' strict' : '';
+    parts.push(`<span class="fm-en-badge${strict}">EN</span>`);
+  }
+  if (parts.length) {
+    btn.classList.add('has-active');
+    content.innerHTML = parts.join('');
+  } else {
+    btn.classList.remove('has-active');
+    content.innerHTML = '☰';
+  }
 }
 
 // ── Reset FAB (top center) ──
@@ -547,13 +610,18 @@ function initResetFab() {
     state.filters.parishIds = null;
     state.filters.socialOnly = false;
     state.filters.englishOnly = false;
+    state.filters.englishStrict = false;
     state.filters.showAllParishes = null;
     if (state.parishFocus) {
       state.parishFocus = null;
       removeParishCardHeader();
     }
     document.getElementById('btn-social').classList.remove('active');
-    document.getElementById('btn-english').classList.remove('active');
+    const enBtn = document.getElementById('btn-english');
+    enBtn.classList.remove('active');
+    enBtn.classList.remove('strict');
+    const enHint = enBtn.querySelector('.fm-en-hint');
+    if (enHint) enHint.textContent = '';
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
     const parishRow = document.getElementById('parish-filter-row');
@@ -561,6 +629,7 @@ function initResetFab() {
     syncResetFab();
     renderParishPills();
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
+    if (typeof syncFiltersButton === 'function') syncFiltersButton();
     if (state.mode === 'services') window.agoraFetchSchedules();
     else window.agoraFetchEvents();
   });
@@ -650,6 +719,7 @@ function clearParishFocus() {
   renderParishPills();
   renderCurrentView();
 }
+window.agoraClearParishFocus = clearParishFocus;
 
 function renderParishCardHeader(parish) {
   const scroll = document.getElementById('sheet-scroll');
@@ -727,7 +797,9 @@ function applyFilters(events) {
   if (state.filters.englishOnly) {
     filtered = filtered.filter(e => {
       const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
-      return langs && langs.some(l => /english/i.test(l));
+      if (!langs) return false;
+      if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
+      return langs.some(l => /english/i.test(l));
     });
   }
   return filtered;
@@ -1387,7 +1459,9 @@ function renderServices() {
   if (state.filters.englishOnly) {
     schedules = schedules.filter(s => {
       const langs = parseLangs(s.languages) || parseLangs(s.parish_languages);
-      return langs && langs.some(l => /english/i.test(l));
+      if (!langs) return false;
+      if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
+      return langs.some(l => /english/i.test(l));
     });
   }
 
