@@ -107,11 +107,15 @@ function addLabeledMarkers(locations, TZ) {
 
   const labelMeta = [];
 
-  for (const loc of locations) {
+  // Sort: inactive first so active dots/labels render above (higher z-index
+   // = tap priority when hit targets overlap).
+  const sortedLocs = [...locations].sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
+
+  for (const loc of sortedLocs) {
     const opacity = loc.active ? 1.0 : 0.25;
 
     const size = loc.active ? 10 : 8;
-    const hitSize = loc.active ? 36 : 20;
+    const hitSize = loc.active ? 36 : 24;
     const dot = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({
         className: '',
@@ -119,15 +123,14 @@ function addLabeledMarkers(locations, TZ) {
         iconSize: [hitSize, hitSize],
         iconAnchor: [hitSize / 2, hitSize / 2]
       }),
-      interactive: loc.active,
-      bubblingMouseEvents: true
+      interactive: true,
+      bubblingMouseEvents: true,
+      zIndexOffset: loc.active ? 1000 : 0
     });
 
-    if (loc.active) {
-      dot.on('click', () => {
-        if (window.showParishCard) window.showParishCard(loc.id);
-      });
-    }
+    dot.on('click', () => {
+      if (window.showParishCard) window.showParishCard(loc.id);
+    });
 
     dot.addTo(map);
     markers.push(dot);
@@ -188,14 +191,13 @@ function addLabeledMarkers(locations, TZ) {
         iconSize: [LABEL_W, 30],
         iconAnchor: [anchorX, 15]
       }),
-      interactive: lm.loc.active,
-      bubblingMouseEvents: true
+      interactive: true,
+      bubblingMouseEvents: true,
+      zIndexOffset: lm.loc.active ? 1000 : 0
     }).addTo(map);
-    if (lm.loc.active) {
-      label.on('click', () => {
-        if (window.showParishCard) window.showParishCard(lm.loc.id);
-      });
-    }
+    label.on('click', () => {
+      if (window.showParishCard) window.showParishCard(lm.loc.id);
+    });
     markers.push(label);
   }
 }
@@ -203,7 +205,7 @@ function addLabeledMarkers(locations, TZ) {
 // Reframe map to fit current markers without rebuilding them (smooth animation)
 function reframeMap() {
   if (!map) return;
-  const active = markers.filter(m => m.options && m.options.interactive);
+  const active = markers.filter(m => m.options && m.options.zIndexOffset >= 1000);
   if (!active.length) return;
   const bounds = L.latLngBounds(active.map(m => m.getLatLng()));
   bounds.pad(0.1);

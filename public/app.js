@@ -238,7 +238,8 @@ async function fetchEvents(opts = {}) {
     params.set('to', new Date(endLocal.getTime() - offsetMs).toISOString());
   } else {
     params.set('from', now.toISOString());
-    params.set('to', new Date(Date.UTC(parseInt(y), parseInt(m), 0, 23, 59, 59)).toISOString());
+    // Next 4 weeks — crosses month boundary; renderMonth injects month header.
+    params.set('to', new Date(now.getTime() + 28 * 86400000).toISOString());
   }
 
   try {
@@ -633,8 +634,10 @@ window.showParishCard = function(pid) {
   if (window.agoraMap) {
     const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
     const targetY = sheetY / 2;
+    const mapEl = window.agoraMap.getContainer();
+    const targetX = mapEl.clientWidth / 2;
     const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
-    const offset = [0, point.y - targetY];
+    const offset = [point.x - targetX, point.y - targetY];
     window.agoraMap.panBy(offset, { animate: true, duration: 0.9 });
   }
 };
@@ -676,18 +679,26 @@ function renderParishCardHeader(parish) {
     : '';
 
   card.innerHTML = `
-    <div class="parish-card-top">
+    <div class="parish-card-top" role="button" tabindex="0" title="View service times">
       <div class="parish-card-avatar" style="background:${color}">${esc(initial)}</div>
       <div class="parish-card-info">
         <div class="parish-card-name">${esc(parish.name)}</div>
         <div class="parish-card-meta">${esc(juris)} Orthodox${distHtml}</div>
       </div>
+      <span class="parish-card-chevron" aria-hidden="true">›</span>
       <button class="parish-card-close" type="button">&times;</button>
     </div>
     ${addrHtml ? `<div class="parish-card-addr-row">${addrHtml}</div>` : ''}
     <div class="parish-card-actions">${dirBtn}${webBtn}</div>`;
 
-  card.querySelector('.parish-card-close').addEventListener('click', clearParishFocus);
+  const closeBtn = card.querySelector('.parish-card-close');
+  closeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    clearParishFocus();
+  });
+  card.querySelector('.parish-card-top').addEventListener('click', () => {
+    if (state.mode !== 'services') document.getElementById('btn-services').click();
+  });
 }
 
 function removeParishCardHeader() {
@@ -1240,6 +1251,7 @@ function renderMonth(container, events) {
     html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on this month</h3></div>';
   }
   let first = true;
+  let prevMonthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
   for (const [dateKey, evts] of groups) {
     const d = parseLocalDate(evts[0].start_utc);
     const weekdayStyle = d < sevenDaysOut ? 'long' : 'short';
@@ -1247,6 +1259,13 @@ function renderMonth(container, events) {
 
     const dayOfWeek = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
     const isSunday = dayOfWeek === 'Sunday';
+
+    const monthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
+    if (monthKey !== prevMonthKey) {
+      const monthLabel = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'long', year: 'numeric' }).format(d);
+      html += `<div class="month-header">${monthLabel}</div>`;
+      prevMonthKey = monthKey;
+    }
 
     if (!first) html += `<hr class="day-divider">`;
 

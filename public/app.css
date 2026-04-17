@@ -349,6 +349,15 @@ input, select, textarea {
   border-top: 1px solid var(--border-light);
   margin: 8px 0 0;
 }
+.month-header {
+  padding: 28px 14px 12px;
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  border-top: 1px solid var(--border-light);
+  margin-top: 16px;
+}
 .section-header .now-dot {
   display: inline-block;
   width: 6px;
@@ -847,7 +856,8 @@ input, select, textarea {
 /* ── Earlier today section ── */
 .earlier-today-section {
   position: relative;
-  margin-top: 4px;
+  margin-top: -36px;
+  opacity: 0.55;
 }
 .earlier-today-section::before {
   content: '';
@@ -856,7 +866,7 @@ input, select, textarea {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.55) 100%);
+  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.35) 100%);
   pointer-events: none;
   z-index: 1;
 }
@@ -887,6 +897,11 @@ input, select, textarea {
   gap: 20px;
   /* Very subtle warm fade downward */
   background: linear-gradient(to bottom, #fff 0%, #faf9f7 100%);
+}
+/* Tighter footer when 'Earlier today' follows — collapses the big gap. */
+.list-footer:has(+ .earlier-today-section) {
+  min-height: 0;
+  padding-bottom: 16px;
 }
 /* Soft fade from list into footer */
 .list-footer::before {
@@ -1113,6 +1128,20 @@ body.map-expanded #location-fab { display: flex; }
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px;
+  margin: -4px;
+  transition: background 0.15s;
+}
+.parish-card-top:hover { background: var(--border-light); }
+.parish-card-chevron {
+  align-self: center;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-muted);
+  margin-left: 4px;
+  transform: translateY(-1px);
 }
 .parish-card-avatar {
   flex: none;
