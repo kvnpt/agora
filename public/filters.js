@@ -62,6 +62,7 @@ function initFilters(state) {
     } else {
       window.agoraFetchEvents();
     }
+    if (typeof window.agoraSyncURL === 'function') window.agoraSyncURL();
   });
 }
 

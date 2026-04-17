@@ -25,7 +25,7 @@ const state = {
   userLng: 151.2093,
   mode: 'events',
   timeRange: 'today',
-  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null },
+  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
@@ -39,12 +39,12 @@ let posterHistoryPushed = false;
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
-  detectSubdomain();
+  detectUrlState();
   disablePageZoom();
   disablePullToRefresh();
   loadCachedLocation();
   await Promise.all([fetchParishes(), checkAdmin()]);
-  applyParishSlug();
+  applyParishSlugs();
   initFilters(state);
   initModeBar();
   initTimePills();
@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSocialFilter();
   initEnglishFilter();
   initFiltersMenu();
+  initMultiParishToggle();
   initResetFab();
   initLocationFab();
   state._initialLoad = true;
@@ -130,50 +131,129 @@ function disablePullToRefresh() {
   }, { passive: false });
 }
 
-// ── Subdomain + path detection ──
-function detectSubdomain() {
+// ── URL state detection (subdomain soft-fallback + path parser) ──
+const JURISDICTION_KEYS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
+
+function detectUrlState() {
+  // Subdomain fallback — honoured while <juris>.orthodoxy.au redirects roll out
   const host = window.location.hostname;
-  const match = host.match(/^(antiochian|greek|serbian|russian|romanian|macedonian)\.orthodoxy\.au$/);
-  if (match) {
-    state.subdomainJurisdiction = match[1];
-    state.filters.jurisdiction = match[1];
+  const subMatch = host.match(/^(antiochian|greek|serbian|russian|romanian|macedonian)\.orthodoxy\.au$/);
+  if (subMatch) {
+    state.subdomainJurisdiction = subMatch[1];
+    state.filters.jurisdiction = subMatch[1];
   }
 
-  // Parse path segments: /services, /en, /services/en, /services/<acronym>, /<acronym>
   const parts = decodeURIComponent(window.location.pathname)
     .toLowerCase().split('/').map(s => s.trim()).filter(Boolean);
 
-  for (let i = 0; i < parts.length; i++) {
-    const seg = parts[i];
-    if (seg === 'services') {
+  for (const seg of parts) {
+    if (JURISDICTION_KEYS.includes(seg)) {
+      state.filters.jurisdiction = seg;
+    } else if (seg === 'social') {
+      state.filters.socialOnly = true;
+    } else if (seg === 'services') {
       state._startMode = 'services';
     } else if (seg === 'en') {
       state.filters.englishOnly = true;
+      state.filters.englishStrict = true;
+    } else if (seg === 'bilingual') {
+      state.filters.englishOnly = true;
+      state.filters.englishStrict = false;
+    } else if (/^\d+$/.test(seg)) {
+      state._openEventId = parseInt(seg, 10);
+    } else if (seg.includes('+')) {
+      state._parishSlugs = seg.split('+').map(s => s.trim()).filter(Boolean);
     } else {
-      // Treat as parish acronym (applied after parishes load)
-      state._parishSlug = seg;
+      state._parishSlugs = [seg];
     }
+  }
+
+  // social + services are mutex — services wins
+  if (state._startMode === 'services' && state.filters.socialOnly) {
+    state.filters.socialOnly = false;
   }
 }
 
-// Apply parish slug filter after parishes are loaded
-function applyParishSlug() {
-  if (!state._parishSlug) return;
-  const slug = state._parishSlug;
-  const match = state.parishes.find(p => {
-    if (p.id === '_unassigned') return false;
-    const acronym = (p.acronym || '').toLowerCase();
-    return acronym && acronym.replace(/\s+/g, '') === slug.replace(/\s+/g, '');
-  });
-  if (match) {
-    state.filters.parishIds = new Set([match.id]);
-    // Also set jurisdiction if not already set
-    if (!state.filters.jurisdiction) {
-      state.filters.jurisdiction = match.jurisdiction;
-    }
+// Back-compat shim — older call sites may still reference detectSubdomain
+function detectSubdomain() { return detectUrlState(); }
+
+// Resolve parish slugs (single or plus-joined) to parish IDs after parishes load.
+// Sets parishIds, derives jurisdiction if absent, renders focus header for
+// single match, enables multiParish for multiple matches.
+function applyParishSlugs() {
+  if (!state._parishSlugs || !state._parishSlugs.length) return;
+  const slugs = state._parishSlugs;
+  const norm = s => (s || '').toLowerCase().replace(/\s+/g, '');
+  const resolved = [];
+  for (const slug of slugs) {
+    const match = state.parishes.find(p => {
+      if (p.id === '_unassigned') return false;
+      return p.acronym && norm(p.acronym) === norm(slug);
+    });
+    if (match) resolved.push(match);
+    else console.warn('applyParishSlugs: no parish for slug', slug);
   }
-  delete state._parishSlug;
+  if (!resolved.length) {
+    delete state._parishSlugs;
+    return;
+  }
+  state.filters.parishIds = new Set(resolved.map(p => p.id));
+  if (!state.filters.jurisdiction) {
+    state.filters.jurisdiction = resolved[0].jurisdiction;
+  }
+  if (resolved.length === 1) {
+    state.parishFocus = resolved[0].id;
+    // header render deferred until DOM ready (#sheet-scroll exists); init sequence
+    // calls this after DOMContentLoaded so renderParishCardHeader is safe to invoke.
+    if (typeof renderParishCardHeader === 'function') renderParishCardHeader(resolved[0]);
+  } else {
+    state.filters.multiParish = true;
+  }
+  delete state._parishSlugs;
 }
+
+// Back-compat shim
+function applyParishSlug() { return applyParishSlugs(); }
+
+// Write current filter/mode/detail state back to the URL via replaceState.
+// Called from every mutator so refresh/share reproduces the view exactly.
+// Order of segments is canonical (not required by parser) for aesthetics.
+function syncURL() {
+  // Guard: only run when state exists (init sequence may call before filters set)
+  if (!state || !state.filters) return;
+  const segs = [];
+
+  if (state.filters.socialOnly) segs.push('social');
+
+  // If on a jurisdiction subdomain, omit the segment to avoid /antiochian/antiochian
+  if (state.filters.jurisdiction && state.filters.jurisdiction !== state.subdomainJurisdiction) {
+    segs.push(state.filters.jurisdiction);
+  }
+
+  if (state.filters.parishIds && state.filters.parishIds.size) {
+    const acrs = [...state.filters.parishIds].map(pid => {
+      const p = state.parishes.find(x => x.id === pid);
+      return p && p.acronym ? p.acronym.toLowerCase().replace(/\s+/g, '') : null;
+    }).filter(Boolean);
+    if (acrs.length === 1) segs.push(acrs[0]);
+    else if (acrs.length > 1) segs.push(acrs.join('+'));
+  }
+
+  if (state.mode === 'services') segs.push('services');
+
+  if (state.filters.englishOnly) {
+    segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
+  }
+
+  if (state._openEventId) segs.push(String(state._openEventId));
+
+  const path = '/' + segs.join('/');
+  const target = path + window.location.search + window.location.hash;
+  if (target !== window.location.pathname + window.location.search + window.location.hash) {
+    try { history.replaceState({}, '', target); } catch {}
+  }
+}
+window.agoraSyncURL = syncURL;
 
 // Recenter map on user location — used by location FAB, Near pill, Nearby sort
 function centerMapOnUser() {
@@ -349,6 +429,7 @@ function initModeBar() {
       updateArchdioceseEventsBanner();
     }
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
+    syncURL();
   });
 }
 
@@ -358,7 +439,7 @@ function showView(name) {
 }
 
 // ── Apply URL-driven start state (mode, EN filter) ──
-function applyStartMode() {
+async function applyStartMode() {
   const servicesBtn = document.getElementById('btn-services');
   const timePills = document.getElementById('time-pills');
 
@@ -371,12 +452,56 @@ function applyStartMode() {
     servicesBtn.classList.add('active');
     timePills.innerHTML = '<span class="services-title">Service Times</span>';
     showView('services');
-    fetchSchedules({ fit: true });
+    await fetchSchedules({ fit: true });
   } else {
-    fetchEvents({ fit: true });
+    await fetchEvents({ fit: true });
   }
   delete state._startMode;
   syncFiltersButton();
+
+  if (state._openEventId) {
+    await openEventFromUrl(state._openEventId);
+    delete state._openEventId;
+  }
+
+  if (typeof syncURL === 'function') syncURL();
+}
+
+// Event permalink loader — fills parish focus + jurisdiction from the event
+// when URL didn't specify them, then opens detail panel. Falls back to a
+// direct /api/events/:id fetch for events outside the current time window.
+async function openEventFromUrl(id) {
+  let evt = state.events.find(e => e.id === id);
+  if (!evt) {
+    try {
+      const res = await fetch(`/api/events/${id}`);
+      if (res.ok) evt = await res.json();
+    } catch {}
+  }
+  if (!evt) return;
+
+  if (!state.filters.parishIds && evt.parish_id) {
+    state.filters.parishIds = new Set([evt.parish_id]);
+    state.parishFocus = evt.parish_id;
+    const parish = state.parishes.find(p => p.id === evt.parish_id);
+    if (parish) {
+      if (!state.filters.jurisdiction) state.filters.jurisdiction = parish.jurisdiction;
+      renderParishCardHeader(parish);
+      const chipContainer = document.getElementById('jurisdiction-chips');
+      if (chipContainer) {
+        chipContainer.querySelectorAll('.jurisdiction-chip').forEach(c => {
+          c.classList.toggle('active', c.dataset.jurisdiction === parish.jurisdiction);
+        });
+        if (typeof applyChipColors === 'function') applyChipColors(chipContainer);
+      }
+      const parishRow = document.getElementById('parish-filter-row');
+      if (parishRow) parishRow.classList.add('visible');
+      if (typeof renderParishPills === 'function') renderParishPills();
+    }
+    renderCurrentView();
+  }
+
+  showEventDetail(id);
 }
 
 // ── Archdiocese events banner ──
@@ -455,7 +580,11 @@ function renderParishPills() {
     const activeClass = (allActive || isSelected) ? 'active' : '';
     html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${esc(label)}</button>`;
   }
+  if (state.filters.multiParish) {
+    html += `<button class="parish-row-exit" id="parish-row-exit" type="button" aria-label="Exit multi-parish mode">&times;</button>`;
+  }
   row.innerHTML = html;
+  row.classList.toggle('multi-parish', !!state.filters.multiParish);
 
   // Bind location pill — toggles parish sort independently from Nearby events sort
   document.getElementById('btn-location-pill').addEventListener('click', () => {
@@ -478,21 +607,47 @@ function renderParishPills() {
 
 // Use event delegation on the row (set up once)
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('parish-filter-row').addEventListener('click', e => {
+  const row = document.getElementById('parish-filter-row');
+
+  // Sticky exit-X — fires even though it sits inside the row
+  row.addEventListener('click', e => {
+    const exit = e.target.closest('#parish-row-exit');
+    if (!exit) return;
+    e.stopPropagation();
+    exitMultiParish();
+  });
+
+  row.addEventListener('click', e => {
     const pill = e.target.closest('.parish-pill');
     if (!pill) return;
 
     const pid = pill.dataset.parish;
+    const multi = !!state.filters.multiParish;
 
-    if (state.filters.parishIds === null) {
-      state.filters.parishIds = new Set([pid]);
-    } else if (state.filters.parishIds.has(pid)) {
-      state.filters.parishIds.delete(pid);
-      if (state.filters.parishIds.size === 0) {
+    if (!multi) {
+      // Single-parish default: tapping focused pill clears focus,
+      // tapping any other pill replaces focus with that parish.
+      if (state.filters.parishIds && state.filters.parishIds.has(pid) && state.filters.parishIds.size === 1) {
         state.filters.parishIds = null;
+      } else {
+        state.filters.parishIds = new Set([pid]);
       }
     } else {
-      state.filters.parishIds.add(pid);
+      // Multi-parish: toggle add/remove
+      if (state.filters.parishIds === null) {
+        state.filters.parishIds = new Set([pid]);
+      } else if (state.filters.parishIds.has(pid)) {
+        state.filters.parishIds.delete(pid);
+        if (state.filters.parishIds.size === 0) state.filters.parishIds = null;
+      } else {
+        state.filters.parishIds.add(pid);
+      }
+      // Auto-exit multi-parish when selection collapses to one — keeps the
+      // single-pill-is-parish-focus invariant clean.
+      if (state.filters.parishIds && state.filters.parishIds.size <= 1) {
+        state.filters.multiParish = false;
+        syncMultiParishButton();
+      }
     }
 
     // Sync parish focus with pill selection
@@ -510,8 +665,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderParishPills();
     renderCurrentView({ fit: true });
+    syncURL();
   });
 });
+
+// ── Multi-parish toggle ──
+function initMultiParishToggle() {
+  const btn = document.getElementById('btn-multi-parish');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    state.filters.multiParish = !state.filters.multiParish;
+    // Leaving multi-parish with >1 selected: narrow to the first
+    if (!state.filters.multiParish && state.filters.parishIds && state.filters.parishIds.size > 1) {
+      const first = [...state.filters.parishIds][0];
+      state.filters.parishIds = new Set([first]);
+      state.parishFocus = first;
+      const parish = state.parishes.find(p => p.id === first);
+      if (parish) renderParishCardHeader(parish);
+    }
+    syncMultiParishButton();
+    renderParishPills();
+    renderCurrentView();
+    syncURL();
+  });
+  syncMultiParishButton();
+}
+
+function syncMultiParishButton() {
+  const btn = document.getElementById('btn-multi-parish');
+  if (!btn) return;
+  btn.classList.toggle('active', !!state.filters.multiParish);
+}
+
+function exitMultiParish() {
+  state.filters.multiParish = false;
+  if (state.filters.parishIds && state.filters.parishIds.size > 1) {
+    const first = [...state.filters.parishIds][0];
+    state.filters.parishIds = new Set([first]);
+    state.parishFocus = first;
+    const parish = state.parishes.find(p => p.id === first);
+    if (parish) renderParishCardHeader(parish);
+  }
+  syncMultiParishButton();
+  renderParishPills();
+  renderCurrentView();
+  syncURL();
+}
 
 // ── Social filter ──
 function initSocialFilter() {
@@ -527,10 +726,11 @@ function initSocialFilter() {
     // Mutex: turning social on while in services mode exits services mode.
     if (willActivate && state.mode === 'services') {
       document.getElementById('btn-services').click();
-      return; // services-click handles render + syncFiltersButton
+      return; // services-click handles render + syncFiltersButton + syncURL
     }
     renderCurrentView();
     syncFiltersButton();
+    syncURL();
   });
 }
 
@@ -550,6 +750,7 @@ function initEnglishFilter() {
     syncEnglishButton();
     renderCurrentView();
     syncFiltersButton();
+    syncURL();
   });
   syncEnglishButton();
 }
@@ -634,6 +835,7 @@ function initResetFab() {
     state.filters.englishOnly = false;
     state.filters.englishStrict = false;
     state.filters.showAllParishes = null;
+    state.filters.multiParish = false;
     if (state.parishFocus) {
       state.parishFocus = null;
       removeParishCardHeader();
@@ -654,6 +856,7 @@ function initResetFab() {
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
     if (state.mode === 'services') window.agoraFetchSchedules();
     else window.agoraFetchEvents();
+    syncURL();
   });
   syncResetFab();
 }
@@ -711,11 +914,16 @@ window.showParishCard = function(pid) {
 
   state.parishFocus = pid;
   state.filters.parishIds = new Set([pid]);
+  state.filters.multiParish = false;
+  if (!state.filters.jurisdiction && parish.jurisdiction) {
+    state.filters.jurisdiction = parish.jurisdiction;
+  }
   if (window.agoraMap) window.agoraMap.closePopup();
 
   renderParishCardHeader(parish);
   renderParishPills();
   renderCurrentView();
+  syncURL();
 
   if (window.agoraSnapTo && window.agoraSnapHalf) {
     window.agoraSnapTo(window.agoraSnapHalf());
@@ -737,9 +945,11 @@ function clearParishFocus() {
   if (!state.parishFocus) return;
   state.parishFocus = null;
   state.filters.parishIds = null;
+  state.filters.multiParish = false;
   removeParishCardHeader();
   renderParishPills();
   renderCurrentView();
+  syncURL();
 }
 window.agoraClearParishFocus = clearParishFocus;
 
@@ -1563,10 +1773,16 @@ function renderServices() {
   html += archFooter;
   container.innerHTML = html;
 
-  // Make service cards clickable
+  // Tap a parish's schedule block → focus that parish (summons header + adds
+  // acronym to URL). In single-parish mode we're already focused, so a second
+  // tap is a no-op.
   container.querySelectorAll('.parish-schedule').forEach(card => {
-    card.addEventListener('click', () => {
-      showParishDetail(card.dataset.parishId);
+    card.addEventListener('click', e => {
+      // Don't hijack admin edit buttons inside the card
+      if (e.target.closest('.schedule-edit-btn, .schedule-save-btn, .schedule-del-btn, .schedule-edit-form')) return;
+      const pid = card.dataset.parishId;
+      if (state.parishFocus === pid) return;
+      window.showParishCard(pid);
     });
   });
 
@@ -1751,8 +1967,10 @@ function showEventDetail(id) {
     posterContainer.addEventListener('click', () => openPosterFullscreen(posterEl.src));
   }
 
+  state._openEventId = evt.id;
   history.pushState({ detail: true }, '');
   detailHistoryPushed = true;
+  syncURL();
   panel.classList.remove('hidden');
   if (!document.querySelector('.detail-backdrop')) {
     const backdrop = document.createElement('div');
@@ -1968,6 +2186,10 @@ function closeDetailDOM() {
   document.getElementById('event-detail').classList.add('hidden');
   const backdrop = document.querySelector('.detail-backdrop');
   if (backdrop) backdrop.remove();
+  if (state._openEventId) {
+    delete state._openEventId;
+    syncURL();
+  }
 }
 
 function closeDetail() {
