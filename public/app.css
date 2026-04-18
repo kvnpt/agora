@@ -491,6 +491,17 @@ input, select, textarea {
 
 .event-content { flex: 1; min-width: 0; }
 
+.event-card-poster {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  margin-left: 12px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
 .event-title-row {
   line-height: 1.4;
 }
