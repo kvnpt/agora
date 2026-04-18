@@ -173,16 +173,85 @@ input, select, textarea {
   border-color: var(--text);
 }
 
-.time-pills {
-  display: flex;
-  gap: 4px;
-  flex: 1;
-  justify-content: flex-end;
+/* ── Mode-bar URL display (centre) ── */
+.mode-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 0.15s;
 }
+.mode-url:hover { color: var(--text); border-color: var(--border); }
+.mode-url.copied {
+  color: #1565c0;
+  border-color: #1565c0;
+  background: #e3f2fd;
+}
+.mode-url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mode-url-copy {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  filter: brightness(0) saturate(100%) invert(50%);
+}
+.mode-url:hover .mode-url-copy { opacity: 1; }
+.mode-url.copied .mode-url-copy {
+  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
+  opacity: 1;
+}
+
+/* ── Mode-bar sort button (right) ── */
+.mode-sort {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mode-sort:hover { color: var(--text); border-color: var(--text-secondary); }
+.mode-sort.active {
+  color: #1565c0;
+  background: #e3f2fd;
+  border-color: #1565c0;
+}
+.mode-sort-icon {
+  width: 14px;
+  height: 14px;
+  filter: brightness(0) saturate(100%) invert(50%);
+}
+.mode-sort.active .mode-sort-icon {
+  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
+}
+
 /* ── Filters button (collapses services/social/english) ──
-   Sized to match the Today/This month pills: same padding, radius,
-   font-size, and line height. */
+   Sized to match the mode-bar siblings. */
 .filters-btn {
   flex: none;
   display: inline-flex;
@@ -343,27 +412,6 @@ input, select, textarea {
 .parish-filter-row::-webkit-scrollbar { display: none; }
 .parish-filter-row.visible { display: flex; }
 
-/* Sticky exit-X in multi-parish mode — pinned to right edge while pills scroll under */
-.parish-row-exit {
-  position: sticky;
-  right: 0;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  margin-left: auto;
-  font-size: 18px;
-  line-height: 22px;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  cursor: pointer;
-  z-index: 2;
-  box-shadow: -6px 0 8px -4px var(--bg);
-}
-.parish-row-exit:hover { background: var(--bg-hover, #f5f5f5); }
-
 /* ── Archdiocese events banner ── */
 .archdiocese-events-banner {
   flex: none;
@@ -490,32 +538,11 @@ input, select, textarea {
   vertical-align: middle;
 }
 
-/* ── Services title (replaces time pills when in services mode) ── */
-.services-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* Centre the title at the true middle of the mode bar (viewport centre),
-   regardless of filters-btn width. */
-.time-pills:has(.services-title) {
-  position: static;
-}
-.services-title {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, calc(-50% - 2px));
-}
-
 /* ── Event cards ── */
 .event-card {
   display: flex;
   align-items: flex-start;
-  padding: 12px 14px;
+  padding: 18px 14px;
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   transition: background 0.1s;
@@ -640,10 +667,14 @@ input, select, textarea {
 .event-card.expanded {
   display: block;
   background: #fafafa;
-  padding-bottom: 14px;
-  box-shadow: none;
+  padding: 18px 14px 20px;
+  margin: 10px 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
   cursor: default;
-  border-left: 3px solid var(--border);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  border-left: 4px solid var(--parish-accent, var(--text-secondary));
+  border-radius: 0 6px 6px 0;
 }
 .event-card.expanded:hover,
 .event-card.expanded:active { background: #fafafa; }
@@ -993,45 +1024,6 @@ input, select, textarea {
 .distance-near { color: #1565c0; font-weight: 600; }
 .distance-mid { color: #42a5f5; }
 .distance-far { color: #90caf9; }
-
-/* ── Nearby/Time sort toggle ── */
-.sort-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  float: right;
-}
-.sort-toggle button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: var(--bg, #fff);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  transition: all 0.15s;
-}
-.sort-toggle button.active {
-  color: #1565c0;
-  background: #e3f2fd;
-  border-color: #1565c0;
-}
-.sort-toggle button:hover { color: var(--text); }
-.sort-toggle .sort-icon {
-  width: 12px;
-  height: 12px;
-  filter: brightness(0) saturate(100%) invert(50%);
-}
-.sort-toggle button.active .sort-icon {
-  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
-}
 
 /* ── Empty state ── */
 .empty-state {

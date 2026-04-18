@@ -47,13 +47,8 @@ function initFilters(state) {
       if (typeof removeParishCardHeader === 'function') removeParishCardHeader();
     }
     if (typeof syncResetFab === 'function') syncResetFab();
-    const parishRow = document.getElementById('parish-filter-row');
-    if (state.filters.jurisdiction) {
-      parishRow.classList.add('visible');
-      if (typeof renderParishPills === 'function') renderParishPills();
-    } else {
-      parishRow.classList.remove('visible');
-    }
+    if (typeof window.agoraSyncParishRowVisibility === 'function') window.agoraSyncParishRowVisibility();
+    if (typeof renderParishPills === 'function') renderParishPills();
 
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
 

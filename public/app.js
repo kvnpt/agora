@@ -38,8 +38,19 @@ let posterHistoryPushed = false;
 // Guard: prevents syncURL() from writing while popstate is reading URL into state.
 let _reconciling = false;
 
+function loadMultiParishPref() {
+  try { return localStorage.getItem('agoraParishPicker') === '1'; } catch { return false; }
+}
+function saveMultiParishPref(on) {
+  try {
+    if (on) localStorage.setItem('agoraParishPicker', '1');
+    else localStorage.removeItem('agoraParishPicker');
+  } catch {}
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
+  state.filters.multiParish = loadMultiParishPref();
   detectUrlState();
   disablePageZoom();
   disablePullToRefresh();
@@ -57,6 +68,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMultiParishToggle();
   initResetFab();
   initLocationFab();
+  initModeSort();
+  initModeUrl();
   state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
@@ -272,6 +285,7 @@ function syncURL(opts = {}) {
     if (opts.replace) history.replaceState({}, '', target);
     else history.pushState({ url: target }, '', target);
   } catch {}
+  if (typeof updateModeUrl === 'function') updateModeUrl();
 }
 window.agoraSyncURL = syncURL;
 
@@ -284,7 +298,7 @@ async function reconcileStateFromUrl() {
     // 1) Reset URL-driven state (preserve location, time range, sort — not in URL)
     state.filters.jurisdiction = null;
     state.filters.parishIds = null;
-    state.filters.multiParish = false;
+    state.filters.multiParish = loadMultiParishPref();
     state.filters.socialOnly = false;
     state.filters.englishOnly = false;
     state.filters.englishStrict = false;
@@ -328,8 +342,7 @@ async function reconcileStateFromUrl() {
     }
 
     // 5) Parish row + pills + focus header
-    const parishRow = document.getElementById('parish-filter-row');
-    if (parishRow) parishRow.classList.toggle('visible', !!state.filters.jurisdiction);
+    if (typeof syncParishRowVisibility === 'function') syncParishRowVisibility();
     if (typeof renderParishPills === 'function') renderParishPills();
     if (state.parishFocus) {
       const parish = state.parishes.find(p => p.id === state.parishFocus);
@@ -602,8 +615,7 @@ async function openEventFromUrl(id) {
         });
         if (typeof applyChipColors === 'function') applyChipColors(chipContainer);
       }
-      const parishRow = document.getElementById('parish-filter-row');
-      if (parishRow) parishRow.classList.add('visible');
+      if (typeof syncParishRowVisibility === 'function') syncParishRowVisibility();
       if (typeof renderParishPills === 'function') renderParishPills();
     }
     renderCurrentView();
@@ -630,10 +642,7 @@ function updateArchdioceseEventsBanner() {
 
 // ── Parish filter ──
 function initParishFilter() {
-  const parishRow = document.getElementById('parish-filter-row');
-  if (state.filters.jurisdiction) {
-    parishRow.classList.add('visible');
-  }
+  syncParishRowVisibility();
   renderParishPills();
 }
 
@@ -688,9 +697,6 @@ function renderParishPills() {
     const activeClass = (allActive || isSelected) ? 'active' : '';
     html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${esc(label)}</button>`;
   }
-  if (state.filters.multiParish) {
-    html += `<button class="parish-row-exit" id="parish-row-exit" type="button" aria-label="Exit multi-parish mode">&times;</button>`;
-  }
   row.innerHTML = html;
   row.classList.toggle('multi-parish', !!state.filters.multiParish);
 
@@ -717,14 +723,6 @@ function renderParishPills() {
 document.addEventListener('DOMContentLoaded', () => {
   const row = document.getElementById('parish-filter-row');
 
-  // Sticky exit-X — fires even though it sits inside the row
-  row.addEventListener('click', e => {
-    const exit = e.target.closest('#parish-row-exit');
-    if (!exit) return;
-    e.stopPropagation();
-    exitMultiParish();
-  });
-
   row.addEventListener('click', e => {
     const pill = e.target.closest('.parish-pill');
     if (!pill) return;
@@ -741,7 +739,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.filters.parishIds = new Set([pid]);
       }
     } else {
-      // Multi-parish: toggle add/remove
+      // Picker mode: pure toggle. No auto-collapse, no focus header — all
+      // selections stay plural so the user can keep building the set.
       if (state.filters.parishIds === null) {
         state.filters.parishIds = new Set([pid]);
       } else if (state.filters.parishIds.has(pid)) {
@@ -750,21 +749,20 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         state.filters.parishIds.add(pid);
       }
-      // Auto-exit multi-parish when selection collapses to one — keeps the
-      // single-pill-is-parish-focus invariant clean.
-      if (state.filters.parishIds && state.filters.parishIds.size <= 1) {
-        state.filters.multiParish = false;
-        syncMultiParishButton();
-      }
     }
 
-    // Sync parish focus with pill selection
-    if (state.filters.parishIds && state.filters.parishIds.size === 1) {
-      const focusId = [...state.filters.parishIds][0];
-      const parish = state.parishes.find(p => p.id === focusId);
-      if (parish) {
-        state.parishFocus = focusId;
-        renderParishCardHeader(parish);
+    if (!multi) {
+      // Sync parish focus with single-pill selection (non-picker only)
+      if (state.filters.parishIds && state.filters.parishIds.size === 1) {
+        const focusId = [...state.filters.parishIds][0];
+        const parish = state.parishes.find(p => p.id === focusId);
+        if (parish) {
+          state.parishFocus = focusId;
+          renderParishCardHeader(parish);
+        }
+      } else if (state.parishFocus) {
+        state.parishFocus = null;
+        removeParishCardHeader();
       }
     } else if (state.parishFocus) {
       state.parishFocus = null;
@@ -783,21 +781,33 @@ function initMultiParishToggle() {
   if (!btn) return;
   btn.addEventListener('click', () => {
     state.filters.multiParish = !state.filters.multiParish;
-    // Leaving multi-parish with >1 selected: narrow to the first
-    if (!state.filters.multiParish && state.filters.parishIds && state.filters.parishIds.size > 1) {
-      const first = [...state.filters.parishIds][0];
-      state.filters.parishIds = new Set([first]);
-      state.parishFocus = first;
-      const parish = state.parishes.find(p => p.id === first);
-      if (parish) renderParishCardHeader(parish);
+    saveMultiParishPref(state.filters.multiParish);
+    if (state.filters.multiParish) {
+      // Entering picker mode: drop any single-parish focus so pills start clean.
+      state.filters.parishIds = null;
+      if (state.parishFocus) {
+        state.parishFocus = null;
+        removeParishCardHeader();
+      }
     }
     syncMultiParishButton();
+    syncParishRowVisibility();
     renderParishPills();
     renderCurrentView();
     syncURL();
+    if (state.mode === 'services') window.agoraFetchSchedules();
+    else window.agoraFetchEvents();
   });
   syncMultiParishButton();
 }
+
+function syncParishRowVisibility() {
+  const row = document.getElementById('parish-filter-row');
+  if (!row) return;
+  const shown = !!state.filters.jurisdiction || !!state.filters.multiParish;
+  row.classList.toggle('visible', shown);
+}
+window.agoraSyncParishRowVisibility = syncParishRowVisibility;
 
 function syncMultiParishButton() {
   const btn = document.getElementById('btn-multi-parish');
@@ -807,6 +817,7 @@ function syncMultiParishButton() {
 
 function exitMultiParish() {
   state.filters.multiParish = false;
+  saveMultiParishPref(false);
   if (state.filters.parishIds && state.filters.parishIds.size > 1) {
     const first = [...state.filters.parishIds][0];
     state.filters.parishIds = new Set([first]);
@@ -815,6 +826,7 @@ function exitMultiParish() {
     if (parish) renderParishCardHeader(parish);
   }
   syncMultiParishButton();
+  syncParishRowVisibility();
   renderParishPills();
   renderCurrentView();
   syncURL();
@@ -902,30 +914,31 @@ function syncFiltersButton() {
   if (!btn) return;
   const content = btn.querySelector('.filters-btn-content');
   const parts = [];
+  let label;
   if (state.mode === 'services') {
     parts.push(`<img src="https://api.iconify.design/ph:church.svg" alt="">`);
-    parts.push(`<span class="filters-btn-label">Schedules</span>`);
+    label = 'Schedules';
   } else if (state.filters.socialOnly) {
     parts.push(`<img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">`);
-    parts.push(`<span class="filters-btn-label">Socials</span>`);
+    label = 'Socials';
+  } else {
+    label = 'Events';
   }
   if (state.filters.englishOnly) {
     const strict = state.filters.englishStrict ? ' strict' : '';
     parts.push(`<span class="fm-en-badge${strict}">EN</span>`);
   }
-  if (parts.length) {
-    btn.classList.add('has-active');
-    content.innerHTML = parts.join('');
-  } else {
-    btn.classList.remove('has-active');
-    content.innerHTML = '<span class="filters-btn-hamburger">☰</span><span class="filters-btn-label">Filters</span>';
-  }
+  parts.push(`<span class="filters-btn-label">${label}</span>`);
+  // Always prominent — the button is a mode indicator, not just a menu toggle.
+  btn.classList.add('has-active');
+  content.innerHTML = parts.join('');
 }
 
 // ── Reset FAB (top center) ──
 function hasActiveFilters() {
   return state.filters.jurisdiction || state.filters.parishIds ||
-    state.filters.socialOnly || state.filters.englishOnly || state.parishFocus;
+    state.filters.socialOnly || state.filters.englishOnly || state.parishFocus ||
+    state.filters.multiParish;
 }
 
 function syncResetFab() {
@@ -944,6 +957,7 @@ function initResetFab() {
     state.filters.englishStrict = false;
     state.filters.showAllParishes = null;
     state.filters.multiParish = false;
+    saveMultiParishPref(false);
     if (state.parishFocus) {
       state.parishFocus = null;
       removeParishCardHeader();
@@ -956,8 +970,8 @@ function initResetFab() {
     if (enLabel) enLabel.textContent = 'English';
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
-    const parishRow = document.getElementById('parish-filter-row');
-    parishRow.classList.remove('visible');
+    syncParishRowVisibility();
+    syncMultiParishButton();
     syncResetFab();
     renderParishPills();
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
@@ -1950,13 +1964,76 @@ function sortEvents(arr) {
   return [...arr].sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
 }
 
-function buildSortToggle() {
-  const active = state.eventsSort === 'nearby' && state.locationActive;
-  const locIcon = `<img class="sort-icon" src="/tabler-location-filled.svg" alt="">`;
-  return `<span class="sort-toggle">` +
-    `<button class="sort-nearby ${active ? 'active' : ''}" data-sort="toggle">${locIcon}Sort</button>` +
-    `</span>`;
+// Mode-bar sort button — toggles state.eventsSort between 'time' and 'nearby'.
+// Active style + filled icon both reflect the same state; outline icon
+// (`/tabler-location.svg`) when inactive.
+function initModeSort() {
+  const btn = document.getElementById('mode-sort');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const active = state.eventsSort === 'nearby' && state.locationActive;
+    if (active) {
+      state.eventsSort = 'time';
+      syncModeSort();
+      renderCurrentView();
+      return;
+    }
+    if (!state.locationActive) {
+      requestGeolocation(() => {
+        state.eventsSort = 'nearby';
+        syncModeSort();
+        renderCurrentView();
+        centerMapOnUser();
+      });
+      return;
+    }
+    state.eventsSort = 'nearby';
+    syncModeSort();
+    renderCurrentView();
+    centerMapOnUser();
+  });
+  syncModeSort();
 }
+
+function syncModeSort() {
+  const btn = document.getElementById('mode-sort');
+  if (!btn) return;
+  const active = state.eventsSort === 'nearby' && state.locationActive;
+  btn.classList.toggle('active', active);
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  const icon = btn.querySelector('.mode-sort-icon');
+  if (icon) icon.src = active ? '/tabler-location-filled.svg' : '/tabler-location.svg';
+}
+
+// ── Mode-bar URL display + copy ──
+function initModeUrl() {
+  const btn = document.getElementById('mode-url');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(location.href);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = location.href;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch {}
+      document.body.removeChild(ta);
+    }
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 1400);
+  });
+  updateModeUrl();
+}
+
+function updateModeUrl() {
+  const el = document.getElementById('mode-url-text');
+  if (!el) return;
+  const host = location.host.replace(/^www\./, '');
+  const path = location.pathname === '/' ? '' : location.pathname;
+  el.textContent = host + path;
+}
+window.agoraUpdateModeUrl = updateModeUrl;
 
 function renderSubDaySections(events, html) {
   const { morning, evening } = splitMorningEvening(events);
@@ -1995,7 +2072,6 @@ function renderStream(container, events) {
     }
   }
 
-  const sortToggle = buildSortToggle();
   const hasToday = happeningNow.length || laterToday.length;
   let html = '';
 
@@ -2011,20 +2087,18 @@ function renderStream(container, events) {
   }
 
   if (happeningNow.length) {
-    html += `<div class="section-header"><span class="now-dot"></span>Happening now${sortToggle}</div>`;
+    html += `<div class="section-header"><span class="now-dot"></span>Happening now</div>`;
     html += sortEvents(happeningNow).map(renderEventCard).join('');
   }
   if (laterToday.length) {
-    const laterToggle = happeningNow.length ? '' : sortToggle;
-    html += `<div class="section-header">Later today${laterToggle}</div>`;
+    html += `<div class="section-header">Later today</div>`;
     html = renderSubDaySections(laterToday, html);
   }
 
   // Month seam + day groups. Always emit the seam when future events exist so
   // later async updates slot into a stable position (no scroll jump).
   if (future.length) {
-    const seamToggle = hasToday ? '' : sortToggle;
-    html += `<div class="section-header month-seam">Later this month${seamToggle}</div>`;
+    html += `<div class="section-header month-seam">Later this month</div>`;
     html += renderFutureDays(future);
   } else if (!hasToday) {
     html += '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing upcoming</h3></div>';
@@ -2047,8 +2121,6 @@ function renderStream(container, events) {
       list.hidden = open;
     });
   }
-
-  bindSortToggle(container);
 }
 
 // Day-grouped render for future events (tomorrow → end of 28-day window).
@@ -2083,31 +2155,6 @@ function renderFutureDays(events) {
     if (isSunday) html += `</div>`;
   }
   return html;
-}
-
-function bindSortToggle(container) {
-  container.querySelectorAll('.sort-toggle button').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      // Single toggle: Nearby ↔ Time
-      if (state.eventsSort === 'nearby' && state.locationActive) {
-        state.eventsSort = 'time';
-        renderEvents();
-        return;
-      }
-      if (!state.locationActive) {
-        requestGeolocation(() => {
-          state.eventsSort = 'nearby';
-          renderEvents();
-          centerMapOnUser();
-        });
-        return;
-      }
-      state.eventsSort = 'nearby';
-      renderEvents();
-      centerMapOnUser();
-    });
-  });
 }
 
 function formatEventTime(date) {
@@ -2225,7 +2272,22 @@ function renderServices() {
     byParish.get(s.parish_id).items.push(s);
   }
 
-  for (const [pid, { info, items }] of byParish) {
+  // Sort parish groups: distance when Nearby sort active, else alpha by name.
+  const nearby = state.eventsSort === 'nearby' && state.locationActive;
+  const parishGroups = [...byParish.entries()].map(([pid, grp]) => {
+    const parish = state.parishes.find(p => p.id === pid);
+    const dist = nearby && parish && parish.lat && parish.lng
+      ? haversineKm(state.userLat, state.userLng, parish.lat, parish.lng)
+      : Infinity;
+    return { pid, grp, dist, name: grp.info.parish_name || '' };
+  });
+  if (nearby) {
+    parishGroups.sort((a, b) => a.dist - b.dist);
+  } else {
+    parishGroups.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  for (const { pid, grp: { info, items } } of parishGroups) {
     const pColor = info.parish_color || '#000';
     html += `<div class="parish-schedule" data-parish-id="${esc(pid)}" style="border-left: 3px solid ${pColor};">`;
     html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
