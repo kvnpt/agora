@@ -25,7 +25,7 @@ const state = {
   userLng: 151.2093,
   mode: 'events',
   timeRange: 'today',
-  filters: { jurisdiction: null, type: '', distance: 50, parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
+  filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
@@ -417,7 +417,6 @@ async function fetchEvents(opts = {}) {
     lat: state.userLat,
     lng: state.userLng
   });
-  if (state.locationActive) params.set('radius', state.filters.distance);
   if (state.filters.type) params.set('type', state.filters.type);
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
 
