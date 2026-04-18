@@ -491,15 +491,18 @@ input, select, textarea {
 
 .event-content { flex: 1; min-width: 0; }
 
+.event-card.has-poster {
+  flex-direction: column;
+  align-items: stretch;
+}
 .event-card-poster {
-  width: 72px;
-  height: 72px;
-  object-fit: cover;
+  width: 40%;
+  height: auto;
+  display: block;
+  margin: 14px auto 4px;
   border-radius: 6px;
   border: 1px solid var(--border-light);
-  margin-left: 12px;
-  flex-shrink: 0;
-  align-self: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
 }
 
 .event-title-row {

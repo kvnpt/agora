@@ -2216,12 +2216,13 @@ function renderEventCard(evt) {
   const isCancelled = evt.status === 'cancelled';
   const cancelledBadge = isCancelled ? `<span class="event-badge badge-cancelled">CANCELLED</span>` : '';
 
-  const posterThumb = (state.filters.socialOnly && evt.poster_path)
+  const hasPoster = !!(state.filters.socialOnly && evt.poster_path);
+  const posterImg = hasPoster
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
   return `
-    <div class="event-card${isCancelled ? ' event-cancelled' : ''}" data-id="${evt.id}">
+    <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-time">${time}</span>
@@ -2229,7 +2230,7 @@ function renderEventCard(evt) {
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${liveBadge}${cancelledBadge}</div>
       </div>
-      ${posterThumb}
+      ${posterImg}
     </div>`;
 }
 
