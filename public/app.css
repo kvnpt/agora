@@ -1165,23 +1165,8 @@ input, select, textarea {
 }
 .cta-link:hover { color: var(--text); }
 
-/* ── Admin float ── */
-.admin-float {
-  position: fixed;
-  bottom: 12px;
-  right: 12px;
-  z-index: 550;
-}
-.admin-float a {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-decoration: none;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg);
-}
-.admin-float a:hover { color: var(--text); border-color: var(--text-secondary); }
+a.filters-menu-item { text-decoration: none; }
+.filters-menu-item[hidden], .filters-menu-sep[hidden] { display: none; }
 
 /* ── Backdrop for detail panel ── */
 .detail-backdrop {

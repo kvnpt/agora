@@ -61,6 +61,11 @@
           <span class="fm-label">Multi-parish</span>
           <span class="fm-check" aria-hidden="true"></span>
         </button>
+        <div class="filters-menu-sep fm-admin-sep" aria-hidden="true" hidden></div>
+        <a class="filters-menu-item fm-admin" id="btn-admin" href="/admin" role="menuitem" hidden>
+          <img class="fm-icon" src="https://api.iconify.design/ph:shield-check.svg" alt="">
+          <span class="fm-label">Admin</span>
+        </a>
       </div>
     </div>
 
@@ -110,11 +115,6 @@
   <!-- Fullscreen poster lightbox -->
   <div id="poster-fullscreen" class="poster-fullscreen hidden">
     <img id="poster-fullscreen-img" src="" alt="Event poster">
-  </div>
-
-  <!-- Admin link (injected by JS if on Tailnet) -->
-  <div class="admin-float" id="admin-float" style="display:none;">
-    <a href="/admin">Admin</a>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

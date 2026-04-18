@@ -515,7 +515,8 @@ async function checkAdmin() {
     state.isAdmin = false;
   }
   if (state.isAdmin) {
-    document.getElementById('admin-float').style.display = '';
+    document.getElementById('btn-admin').hidden = false;
+    document.querySelector('.fm-admin-sep').hidden = false;
   }
 }
 
