@@ -1780,17 +1780,10 @@ function initParishSheet() {
     sheet.classList.remove('snapping');
     sheet.style.transform = `translateY(${SNAP_HIDDEN}px)`;
     void sheet.offsetHeight; // force reflow
-    snapTo(SNAP_HALF);
+    // Open at full so the parish card is fully visible and natively
+    // scrollable from the first gesture. Drag down to peek the map.
+    snapTo(SNAP_FULL);
     if (window.agoraMainHide) window.agoraMainHide();
-    // Centre parish in visible map area (above the sheet)
-    if (window.agoraMap && parish.lat != null && parish.lng != null) {
-      const mapEl = window.agoraMap.getContainer();
-      const targetX = mapEl.clientWidth / 2;
-      const targetY = SNAP_HALF / 2;
-      const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
-      const offset = [point.x - targetX, point.y - targetY];
-      window.agoraMap.panBy(offset, { animate: true, duration: 0.9 });
-    }
   }
 
   function close() {
