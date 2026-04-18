@@ -717,23 +717,6 @@ input, select, textarea {
 .event-parish-header-chevron {
   color: var(--text-muted);
   font-size: 18px;
-  transition: transform 0.2s ease;
-}
-.event-parish-header.schedule-open .event-parish-header-chevron {
-  transform: rotate(90deg);
-}
-.event-parish-schedule {
-  padding: 8px 12px 12px;
-  background: #fafafa;
-  border: 1px solid var(--border-light);
-  border-top: none;
-  border-radius: 0 0 var(--radius) var(--radius);
-  margin-top: -1px;
-}
-.event-parish-schedule[hidden] { display: none; }
-.event-parish-schedule-empty {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 /* ── Sunday cluster ── */
@@ -1422,6 +1405,165 @@ body.map-expanded #location-fab { display: flex; }
   cursor: pointer;
 }
 .parish-card-btn:hover { background: var(--border-light); }
+
+/* ── Parish sheet (secondary sheet opened from event drawer) ── */
+.parish-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 78dvh;
+  z-index: 800;
+  background: var(--bg);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  transform: translateY(100vh);
+}
+.parish-sheet.hidden { display: none; }
+.parish-sheet.snapping { transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1); }
+.parish-sheet.dragging { transition: none; }
+
+.parish-sheet-grab-handle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0 6px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.parish-sheet-grab-handle::after {
+  content: '';
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.parish-sheet-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 10px;
+  z-index: 2;
+}
+.parish-sheet-close:hover { color: var(--text); }
+
+.parish-sheet-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+  min-height: 0;
+}
+
+/* Parish sheet content */
+.ps-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 20px 14px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.ps-avatar {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+.ps-header-info { flex: 1; min-width: 0; }
+.ps-name {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+}
+.ps-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ps-meta-sep { margin: 0 4px; }
+
+.ps-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.ps-section:last-child { border-bottom: none; }
+.ps-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.ps-address {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  display: block;
+  margin-bottom: 10px;
+}
+.ps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ps-btn {
+  display: inline-block;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ps-btn:hover { background: var(--border-light); }
+.ps-btn-primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.ps-schedule-day {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+.ps-schedule-day:first-child { margin-top: 0; }
+.ps-schedule-item {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+.ps-schedule-item-time { color: var(--text-muted); }
+.ps-empty { font-size: 13px; color: var(--text-muted); }
+
+.ps-events-list .event-card { cursor: pointer; }
+
+@media (min-width: 640px) {
+  .parish-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }
+}
 
 /* ── Responsive ── */
 @media (min-width: 640px) {

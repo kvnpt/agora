@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initModeBar();
   initTimePills();
   initBottomSheet();
+  initParishSheet();
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
@@ -1545,6 +1546,371 @@ function initBottomSheet() {
   // Expose snapTo for external callers (map popup "All events" button)
   window.agoraSnapTo = snapTo;
   window.agoraSnapHalf = () => SNAP_HALF;
+
+  // Hide/restore for parish sheet overlay — stash current Y, snap offscreen,
+  // snap back when overlay closes.
+  let _stashedY = null;
+  window.agoraMainHide = () => {
+    if (_stashedY != null) return;
+    _stashedY = currentY;
+    snapTo(window.innerHeight);
+  };
+  window.agoraMainRestore = () => {
+    if (_stashedY == null) return;
+    const y = _stashedY;
+    _stashedY = null;
+    snapTo(y);
+  };
+}
+
+// ── Parish sheet (secondary, opened from event drawer parish header) ──
+let _parishSheetAPI = null;
+
+function initParishSheet() {
+  const sheet = document.getElementById('parish-sheet');
+  const handle = sheet.querySelector('.parish-sheet-grab-handle');
+  const closeBtn = document.getElementById('parish-sheet-close');
+  const scroll = document.getElementById('parish-sheet-scroll');
+
+  let SNAP_FULL, SNAP_HALF, SNAP_PEEK, SNAP_HIDDEN;
+  let currentY;
+  let dragging = false, startY = 0, sheetStartY = 0;
+  let velSamples = [];
+
+  function computeSnaps() {
+    SNAP_FULL = 0;
+    SNAP_HALF = Math.round(window.innerHeight * 0.5);
+    SNAP_PEEK = window.innerHeight - 180;
+    SNAP_HIDDEN = window.innerHeight;
+    sheet.style.height = `${window.innerHeight}px`;
+  }
+  computeSnaps();
+  currentY = SNAP_HIDDEN;
+  sheet.style.transform = `translateY(${currentY}px)`;
+
+  window.addEventListener('resize', () => {
+    computeSnaps();
+    if (currentY !== SNAP_HIDDEN && !sheet.classList.contains('hidden')) {
+      currentY = nearestSnap(currentY, 0);
+      sheet.style.transform = `translateY(${currentY}px)`;
+    }
+  });
+
+  function nearestSnap(y, velocity) {
+    const snaps = [SNAP_FULL, SNAP_HALF, SNAP_PEEK];
+    if (Math.abs(velocity) > 400) {
+      const sorted = [...snaps].sort((a, b) => a - b);
+      const closestIdx = sorted.reduce((best, s, i) =>
+        Math.abs(s - y) < Math.abs(sorted[best] - y) ? i : best, 0);
+      if (velocity < 0) return sorted[Math.max(0, closestIdx - 1)];
+      return sorted[Math.min(sorted.length - 1, closestIdx + 1)];
+    }
+    return snaps.reduce((best, s) => Math.abs(s - y) < Math.abs(best - y) ? s : best);
+  }
+
+  function isAtFull() { return Math.abs(currentY - SNAP_FULL) < 5; }
+
+  function updateScrollLock() {
+    scroll.style.overflowY = isAtFull() ? 'auto' : 'hidden';
+  }
+
+  function snapTo(y, onDone) {
+    currentY = y;
+    sheet.classList.remove('dragging');
+    sheet.classList.add('snapping');
+    sheet.style.transform = `translateY(${y}px)`;
+    if (!isAtFull()) scroll.scrollTop = 0;
+    updateScrollLock();
+    let settled = false;
+    const handler = () => {
+      if (settled) return;
+      settled = true;
+      sheet.classList.remove('snapping');
+      updateScrollLock();
+      if (onDone) onDone();
+    };
+    sheet.addEventListener('transitionend', handler, { once: true });
+    setTimeout(handler, 400);
+  }
+
+  function trackVelocity(y) {
+    velSamples.push({ y, t: Date.now() });
+    if (velSamples.length > 5) velSamples.shift();
+  }
+  function getVelocity() {
+    if (velSamples.length < 2) return 0;
+    const first = velSamples[0];
+    const last = velSamples[velSamples.length - 1];
+    const dt = (last.t - first.t) / 1000;
+    return dt > 0 ? (last.y - first.y) / dt : 0;
+  }
+
+  function engageDrag(y) {
+    dragging = true;
+    startY = y;
+    sheetStartY = currentY;
+    velSamples = [];
+    sheet.classList.add('dragging');
+    sheet.classList.remove('snapping');
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+  }
+
+  function moveDrag(y) {
+    const dy = y - startY;
+    let newY = sheetStartY + dy;
+    if (newY < SNAP_FULL) {
+      const over = SNAP_FULL - newY;
+      newY = SNAP_FULL - over * 0.3;
+    }
+    if (newY > SNAP_HIDDEN) newY = SNAP_HIDDEN;
+    currentY = newY;
+    sheet.style.transform = `translateY(${newY}px)`;
+    trackVelocity(y);
+  }
+
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    document.body.style.webkitUserSelect = '';
+    const velocity = getVelocity();
+    // Dismiss if dragged well past peek, or fast-flicked down past half
+    const dismissThreshold = SNAP_PEEK + 60;
+    if (currentY > dismissThreshold || (velocity > 600 && currentY > SNAP_HALF)) {
+      close();
+      return;
+    }
+    snapTo(nearestSnap(currentY, velocity));
+  }
+
+  function onHandleStart(e) {
+    if (e.cancelable) e.preventDefault();
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    engageDrag(y);
+  }
+  function onDocMove(e) {
+    if (!dragging) return;
+    if (e.cancelable) e.preventDefault();
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    moveDrag(y);
+  }
+  function onDocEnd() { if (dragging) endDrag(); }
+
+  handle.addEventListener('mousedown', onHandleStart);
+  handle.addEventListener('touchstart', onHandleStart, { passive: false });
+  document.addEventListener('mousemove', onDocMove);
+  document.addEventListener('touchmove', onDocMove, { passive: false });
+  document.addEventListener('mouseup', onDocEnd);
+  document.addEventListener('touchend', onDocEnd);
+
+  // Scroll-area drag handoff — mirror of main sheet.
+  const DEAD_ZONE = 8;
+  let scrollState = 'idle';
+  let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0, scrollLastY = 0;
+
+  scroll.addEventListener('touchstart', e => {
+    scrollStartY = e.touches[0].clientY;
+    scrollStartX = e.touches[0].clientX;
+    scrollStartTop = scroll.scrollTop;
+    scrollLastY = e.touches[0].clientY;
+    scrollState = 'deciding';
+  }, { passive: true });
+
+  scroll.addEventListener('touchmove', e => {
+    if (scrollState === 'idle') return;
+    const y = e.touches[0].clientY;
+    const x = e.touches[0].clientX;
+    const dy = y - scrollStartY;
+    const dx = x - scrollStartX;
+
+    if (scrollState === 'scrolling') {
+      if (isAtFull() && scroll.scrollTop <= 0 && y > scrollLastY) {
+        scrollState = 'dragging';
+        engageDrag(y);
+        if (e.cancelable) e.preventDefault();
+      }
+      scrollLastY = y;
+      return;
+    }
+
+    if (scrollState === 'deciding') {
+      if (Math.abs(dy) < DEAD_ZONE && Math.abs(dx) < DEAD_ZONE) return;
+      if (Math.abs(dx) > Math.abs(dy)) { scrollState = 'scrolling'; return; }
+      if (!isAtFull() || scroll.scrollHeight <= scroll.clientHeight ||
+          (scrollStartTop <= 0 && dy > 0)) {
+        scrollState = 'dragging';
+        engageDrag(y);
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+      scrollState = 'scrolling';
+      return;
+    }
+
+    if (scrollState === 'dragging') {
+      if (e.cancelable) e.preventDefault();
+      moveDrag(y);
+    }
+  }, { passive: false });
+
+  scroll.addEventListener('touchend', () => {
+    if (scrollState === 'dragging') endDrag();
+    scrollState = 'idle';
+  }, { passive: true });
+
+  closeBtn.addEventListener('click', () => close());
+
+  function open(parishId) {
+    const parish = state.parishes.find(p => p.id === parishId);
+    if (!parish) return;
+    renderParishSheetContent(parishId);
+    sheet.classList.remove('hidden');
+    sheet.setAttribute('aria-hidden', 'false');
+    // Ensure we start at SNAP_HIDDEN, then force layout so transition fires.
+    currentY = SNAP_HIDDEN;
+    sheet.classList.remove('snapping');
+    sheet.style.transform = `translateY(${SNAP_HIDDEN}px)`;
+    void sheet.offsetHeight; // force reflow
+    snapTo(SNAP_HALF);
+    if (window.agoraMainHide) window.agoraMainHide();
+    // Centre parish in visible map area (above the sheet)
+    if (window.agoraMap && parish.lat != null && parish.lng != null) {
+      const mapEl = window.agoraMap.getContainer();
+      const targetX = mapEl.clientWidth / 2;
+      const targetY = SNAP_HALF / 2;
+      const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
+      const offset = [point.x - targetX, point.y - targetY];
+      window.agoraMap.panBy(offset, { animate: true, duration: 0.9 });
+    }
+  }
+
+  function close() {
+    snapTo(SNAP_HIDDEN, () => {
+      sheet.classList.add('hidden');
+      sheet.setAttribute('aria-hidden', 'true');
+    });
+    if (window.agoraMainRestore) window.agoraMainRestore();
+  }
+
+  _parishSheetAPI = { open, close };
+}
+
+function openParishSheet(parishId) {
+  if (_parishSheetAPI) _parishSheetAPI.open(parishId);
+}
+function closeParishSheet() {
+  if (_parishSheetAPI) _parishSheetAPI.close();
+}
+
+function renderParishSheetContent(parishId) {
+  const parish = state.parishes.find(p => p.id === parishId);
+  if (!parish) return;
+
+  const contentEl = document.getElementById('parish-sheet-content');
+  const initial = (parish.name || '?')[0].toUpperCase();
+  const color = parish.color || '#666';
+  const juris = capitalize(parish.jurisdiction || '');
+  let distHtml = '';
+  if (state.locationActive && parish.lat && parish.lng) {
+    const km = haversineKm(state.userLat, state.userLng, parish.lat, parish.lng);
+    distHtml = `<span class="ps-meta-sep">·</span>${km.toFixed(1)} km`;
+  }
+
+  const addrHtml = parish.address
+    ? `<a class="ps-address" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">${esc(parish.address)}</a>`
+    : '';
+
+  const dirBtn = parish.lat && parish.lng
+    ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
+    : '';
+  const webBtn = parish.website
+    ? `<a class="ps-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
+    : '';
+  const phoneBtn = parish.phone
+    ? `<a class="ps-btn" href="tel:${esc(parish.phone)}">Call</a>`
+    : '';
+  const watchBtn = parish.live_url
+    ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
+    : '';
+
+  // Schedules for this parish (grouped by day)
+  const scheds = (state.schedules || []).filter(s => s.parish_id === parishId);
+  let schedHtml;
+  if (!scheds.length) {
+    schedHtml = '<div class="ps-empty">No regular schedule listed.</div>';
+  } else {
+    const byDay = new Map();
+    for (const s of scheds) {
+      if (!byDay.has(s.day_of_week)) byDay.set(s.day_of_week, []);
+      byDay.get(s.day_of_week).push(s);
+    }
+    schedHtml = [...byDay.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([day, items]) => {
+        let out = `<div class="ps-schedule-day">${DAYS[day]}</div>`;
+        for (const s of items) {
+          const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
+          out += `<div class="ps-schedule-item">${esc(s.title)} <span class="ps-schedule-item-time">— ${formatTime12(s.start_time)}</span> ${womLabel}</div>`;
+        }
+        return out;
+      }).join('');
+  }
+
+  // Upcoming events for this parish (from already-loaded state.events)
+  const now = Date.now();
+  const parishEvents = (state.events || [])
+    .filter(e => e.parish_id === parishId && new Date(e.start_utc).getTime() >= now)
+    .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+  const eventsHtml = parishEvents.length
+    ? parishEvents.map(renderEventCard).join('')
+    : '<div class="ps-empty">No upcoming events in current view.</div>';
+
+  contentEl.innerHTML = `
+    <div class="ps-header">
+      <div class="ps-avatar" style="background:${esc(color)}">${esc(initial)}</div>
+      <div class="ps-header-info">
+        <div class="ps-name">${esc(parish.name)}</div>
+        <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
+      </div>
+    </div>
+    <div class="ps-section">
+      <div class="ps-section-title">Contact</div>
+      ${addrHtml}
+      <div class="ps-actions">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
+    </div>
+    <div class="ps-section">
+      <div class="ps-section-title">Schedule</div>
+      ${schedHtml}
+    </div>
+    <div class="ps-section">
+      <div class="ps-section-title">Upcoming events</div>
+      <div class="ps-events-list">${eventsHtml}</div>
+    </div>`;
+
+  // Event cards in parish sheet: close sheet, then open event in main list
+  contentEl.querySelectorAll('.ps-events-list .event-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = parseInt(card.dataset.id);
+      closeParishSheet();
+      // Let the sheet animate closed before expanding the card in main list
+      setTimeout(() => showEventDetail(id), 380);
+    });
+  });
+
+  // Lazy-fetch schedules if not loaded — re-render when they arrive
+  if (!state.schedules || !state.schedules.length) {
+    fetch('/api/schedules')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        state.schedules = data || [];
+        const sheetEl = document.getElementById('parish-sheet');
+        if (sheetEl && !sheetEl.classList.contains('hidden')) {
+          renderParishSheetContent(parishId);
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 // ── Render Events ──
@@ -2104,8 +2470,8 @@ function renderEventDrawerHTML(evt) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
-  // Parish header — tappable, replaces the old .detail-parish-info block so
-  // the drawer has one parish cue, not two. Expanding toggles inline schedule.
+  // Parish header — tappable, opens the parish sheet (schedules, details,
+  // filtered events). Replaces the old inline schedule-toggle.
   let parishHeaderHtml = '';
   if (parish) {
     const initial = (parish.name || '?')[0].toUpperCase();
@@ -2116,11 +2482,10 @@ function renderEventDrawerHTML(evt) {
         <div class="event-parish-header-avatar" style="background:${esc(color)}">${esc(initial)}</div>
         <div class="event-parish-header-info">
           <div class="event-parish-header-name">${esc(parish.name)}</div>
-          <div class="event-parish-header-meta">${esc(juris)} Orthodox · Tap for schedule</div>
+          <div class="event-parish-header-meta">${esc(juris)} Orthodox · Tap for parish</div>
         </div>
         <span class="event-parish-header-chevron" aria-hidden="true">›</span>
-      </div>
-      <div class="event-parish-schedule" hidden></div>`;
+      </div>`;
   }
 
   return `
@@ -2154,9 +2519,11 @@ function wireEventDrawer(drawer, evt) {
   if (closeBtn) closeBtn.addEventListener('click', closeDetail);
 
   const header = drawer.querySelector('.event-parish-header');
-  const schedBox = drawer.querySelector('.event-parish-schedule');
-  if (header && schedBox) {
-    header.addEventListener('click', () => toggleDrawerSchedule(header, schedBox));
+  if (header) {
+    header.addEventListener('click', () => {
+      const pid = header.dataset.parishId;
+      if (pid) openParishSheet(pid);
+    });
   }
 
   const posterContainer = drawer.querySelector('.detail-poster');
@@ -2165,48 +2532,6 @@ function wireEventDrawer(drawer, evt) {
     initPosterZoom(posterEl);
     posterContainer.addEventListener('click', () => openPosterFullscreen(posterEl.src));
   }
-}
-
-function toggleDrawerSchedule(header, schedBox) {
-  if (header.classList.contains('schedule-open')) {
-    header.classList.remove('schedule-open');
-    schedBox.hidden = true;
-    schedBox.innerHTML = '';
-    return;
-  }
-  const parishId = header.dataset.parishId;
-  const renderInto = () => { schedBox.innerHTML = renderParishScheduleInlineHTML(parishId); };
-  renderInto();
-  schedBox.hidden = false;
-  header.classList.add('schedule-open');
-  // Events mode doesn't fetch /api/schedules on boot, so the first toggle
-  // kicks it off, then re-renders when it lands.
-  if (!state.schedules || !state.schedules.length) {
-    fetch('/api/schedules')
-      .then(r => r.ok ? r.json() : [])
-      .then(data => { state.schedules = data || []; if (!schedBox.hidden) renderInto(); })
-      .catch(() => {});
-  }
-}
-
-function renderParishScheduleInlineHTML(parishId) {
-  const scheds = (state.schedules || []).filter(s => s.parish_id === parishId);
-  if (!scheds.length) {
-    return '<div class="event-parish-schedule-empty">No regular schedule listed.</div>';
-  }
-  const byDay = new Map();
-  for (const s of scheds) {
-    if (!byDay.has(s.day_of_week)) byDay.set(s.day_of_week, []);
-    byDay.get(s.day_of_week).push(s);
-  }
-  let html = '';
-  for (const [day, items] of byDay) {
-    html += `<div class="schedule-day">${DAYS[day]}</div>`;
-    for (const s of items) {
-      html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${formatTime12(s.start_time)}</span></div>`;
-    }
-  }
-  return html;
 }
 
 // ── Parish detail (from services view) ──
