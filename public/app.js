@@ -316,18 +316,15 @@ async function reconcileStateFromUrl() {
     const targetMode = state._startMode === 'services' ? 'services' : 'events';
     delete state._startMode;
 
-    // 3) Sync mode (services ↔ events view + time pills + active class)
+    // 3) Sync mode (services ↔ events view + active class)
     const servicesBtn = document.getElementById('btn-services');
-    const timePills = document.getElementById('time-pills');
     if (targetMode !== prevMode) {
       state.mode = targetMode;
       if (targetMode === 'services') {
         servicesBtn.classList.add('active');
-        timePills.innerHTML = '<span class="services-title">Service Times</span>';
         showView('services');
       } else {
         servicesBtn.classList.remove('active');
-        timePills.innerHTML = '';
         showView('events');
       }
     }
@@ -511,7 +508,6 @@ async function checkAdmin() {
 // ── Mode bar ──
 function initModeBar() {
   const servicesBtn = document.getElementById('btn-services');
-  const timePills = document.getElementById('time-pills');
 
   servicesBtn.addEventListener('click', () => {
     const menu = document.getElementById('filters-menu');
@@ -521,7 +517,6 @@ function initModeBar() {
     if (state.mode === 'services') {
       state.mode = 'events';
       servicesBtn.classList.remove('active');
-      timePills.innerHTML = '';
       showView('events');
       fetchEvents();
       updateArchdioceseEventsBanner();
@@ -533,7 +528,6 @@ function initModeBar() {
         state.filters.socialOnly = false;
         document.getElementById('btn-social').classList.remove('active');
       }
-      timePills.innerHTML = '<span class="services-title">Service Times</span>';
       showView('services');
       fetchSchedules();
       updateArchdioceseEventsBanner();
@@ -551,7 +545,6 @@ function showView(name) {
 // ── Apply URL-driven start state (mode, EN filter) ──
 async function applyStartMode() {
   const servicesBtn = document.getElementById('btn-services');
-  const timePills = document.getElementById('time-pills');
 
   if (state.filters.englishOnly) {
     syncEnglishButton();
@@ -560,7 +553,6 @@ async function applyStartMode() {
   if (state._startMode === 'services') {
     state.mode = 'services';
     servicesBtn.classList.add('active');
-    timePills.innerHTML = '<span class="services-title">Service Times</span>';
     showView('services');
     await fetchSchedules({ fit: true });
   } else {
@@ -922,6 +914,7 @@ function syncFiltersButton() {
     parts.push(`<img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">`);
     label = 'Socials';
   } else {
+    parts.push(`<span class="filters-btn-hamburger">☰</span>`);
     label = 'Events';
   }
   if (state.filters.englishOnly) {
