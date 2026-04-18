@@ -206,7 +206,7 @@ UPCOMING EVENTS (next 14 days, Sydney local time, grouped by parish id):
 ${upcomingList}
 
 TASKS:
-1. Identify which parish the message relates to. Match against the known parishes list above. If it's a NEW parish not in the list, populate new_parish.
+1. Identify which parish the message relates to. Match by DISTINCTIVE TOKENS in the known list — words like "Monastery", "Cathedral", jurisdiction, or suburb. Human messages paraphrase parish names (e.g. "St George monastery" for "Holy Monastery of St George, Yellow Rock") — when one row's distinctive tokens uniquely align, match it. Only emit new_parish when NO existing row plausibly matches on name + tokens. When unsure between match and create, PREFER MATCH.
 2. Extract any one-off EVENTS (dated services, feasts, social events, talks, etc).
 3. Extract any recurring SCHEDULES (weekly services like "Sunday Divine Liturgy 9:30am").
 4. Extract any parish info UPDATES (address, phone, website, languages).
