@@ -1719,7 +1719,45 @@ function initParishSheet() {
 
     if (scrollState === 'dragging') {
       if (e.cancelable) e.preventDefault();
+      // Mid-gesture handoff: drag hit SNAP_FULL with more finger-travel to
+      // give, and the list is scrollable → hand off to native scroll so one
+      // swipe can go half → full → deep into upcoming events.
+      const projectedY = sheetStartY + (y - startY);
+      const listScrollable = scroll.scrollHeight > scroll.clientHeight;
+      if (projectedY < SNAP_FULL && listScrollable) {
+        currentY = SNAP_FULL;
+        sheet.style.transform = `translateY(${SNAP_FULL}px)`;
+        sheet.classList.remove('dragging');
+        dragging = false;
+        document.body.style.userSelect = '';
+        document.body.style.webkitUserSelect = '';
+        scroll.style.overflowY = 'auto';
+        if (fab && window.agoraParishSheetVisible) {
+          fab.style.top = (SNAP_FULL - 52) + 'px';
+          fab.classList.remove('fading');
+        }
+        const yc = startY - sheetStartY + SNAP_FULL;
+        scrollStartY = yc;
+        scrollStartTop = 0;
+        scroll.scrollTop = yc - y;
+        scrollState = 'scrolling-active';
+        return;
+      }
       moveDrag(y);
+      return;
+    }
+
+    if (scrollState === 'scrolling-active') {
+      if (e.cancelable) e.preventDefault();
+      const newScrollTop = scrollStartTop - dy;
+      if (newScrollTop < 0) {
+        // Finger came back below the handoff point → resume dragging sheet.
+        scroll.scrollTop = 0;
+        scrollState = 'dragging';
+        engageDrag(y);
+        return;
+      }
+      scroll.scrollTop = newScrollTop;
     }
   }, { passive: false });
 
@@ -1845,10 +1883,6 @@ function renderParishSheetContent(parishId, opts = {}) {
       .filter(e => e.parish_id === parishId && new Date(e.start_utc).getTime() >= nowMs)
       .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
   }
-  const eventsHtml = parishEvents.length
-    ? parishEvents.map(renderEventCard).join('')
-    : '<div class="ps-empty">No upcoming events this month.</div>';
-
   const archUrl = ARCHDIOCESE_EVENTS[parish.jurisdiction];
   const archBtnHtml = archUrl
     ? `<a class="ps-btn ps-arch-btn" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(parish.jurisdiction))} Archdiocese Events</a>`
@@ -1870,18 +1904,31 @@ function renderParishSheetContent(parishId, opts = {}) {
     ${schedSectionHtml}
     <div class="ps-section">
       <div class="ps-section-title">Upcoming events</div>
-      <div class="ps-events-list">${eventsHtml}</div>
+      <div class="ps-events-list"></div>
       ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}
     </div>`;
 
-  // Event cards in parish sheet: close sheet, then open event in main list
-  contentEl.querySelectorAll('.ps-events-list .event-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const id = parseInt(card.dataset.id);
-      closeParishSheet();
-      setTimeout(() => showEventDetail(id), 380);
+  // Upcoming events: use the main-sheet stream renderer (day headers, Sunday
+  // clusters, month seam) against the parish-filtered slice. Rebind clicks to
+  // close parish sheet → show event detail in main list.
+  const streamEl = contentEl.querySelector('.ps-events-list');
+  if (streamEl) {
+    if (parishEvents.length) {
+      renderStream(streamEl, parishEvents);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'ps-empty';
+      empty.textContent = 'No upcoming events this month.';
+      streamEl.replaceChildren(empty);
+    }
+    streamEl.querySelectorAll('.event-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = parseInt(card.dataset.id);
+        closeParishSheet();
+        setTimeout(() => showEventDetail(id), 380);
+      });
     });
-  });
+  }
 
   // Lazy-fetch schedules when they haven't been loaded yet
   if (!state.schedules || !state.schedules.length) {
