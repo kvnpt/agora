@@ -1202,9 +1202,9 @@ function initBottomSheet() {
   const SHEET_SPACER_PX = 200;
 
   function computeSnaps() {
-    // Full leaves ~22% of viewport for map + banner, so list usually
-    // overflows and the drag→scroll handoff can engage.
-    SNAP_FULL = Math.round(window.innerHeight * 0.22);
+    // Full covers entire viewport (including jurisdiction banner).
+    // Sheet z-index > banner z-index so it overlays cleanly.
+    SNAP_FULL = 0;
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
     SNAP_PEEK = window.innerHeight - 140;
     // Sheet total height = visible list area (innerHeight - SNAP_FULL) plus
