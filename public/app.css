@@ -504,6 +504,7 @@ input, select, textarea {
   border: 1px solid var(--border-light);
   box-shadow: 0 2px 12px rgba(0,0,0,0.10);
 }
+.event-card.expanded .event-card-poster { display: none; }
 
 .event-title-row {
   line-height: 1.4;
