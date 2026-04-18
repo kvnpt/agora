@@ -64,11 +64,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMap(state);
   updateMap(state);
 
-  // Re-render event cards every minute to keep LIVE countdowns current
+  // Re-render event cards every minute to keep LIVE countdowns current.
+  // Skip when a drawer is open: re-render rebuilds the list HTML and would
+  // wipe the user's in-drawer state (e.g. schedule toggled open).
   setInterval(() => {
-    if (state.timeRange === 'today' && state.events.some(e => e.parish_live_url)) {
-      renderEvents();
-    }
+    if (state.timeRange !== 'today') return;
+    if (!state.events.some(e => e.parish_live_url)) return;
+    if (document.querySelector('.event-card.expanded')) return;
+    renderEvents();
   }, 60000);
 
   // Browser back button: poster first, then legacy parish-detail modal (flag-based,
@@ -350,9 +353,13 @@ async function reconcileStateFromUrl() {
     if (typeof syncResetFab === 'function') syncResetFab();
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
 
-    // 7) Detail panel: open if URL has a new ID; close if URL dropped the ID
+    // 7) Detail: open if URL has a new ID; close if URL dropped the ID.
+    // "Open" now means either the inline card drawer is expanded, or (legacy)
+    // the parish-detail modal is showing.
     const panelEl = document.getElementById('event-detail');
-    const panelOpen = panelEl && !panelEl.classList.contains('hidden');
+    const modalOpen = panelEl && !panelEl.classList.contains('hidden');
+    const inlineOpen = !!document.querySelector('.event-card.expanded');
+    const panelOpen = modalOpen || inlineOpen;
     const nextOpenId = state._openEventId || null;
 
     // 8) Refetch data (URL filter change → different result set)
@@ -600,6 +607,11 @@ async function openEventFromUrl(id) {
       const res = await fetch(`/api/events/${id}`);
       if (res.ok) evt = await res.json();
     } catch {}
+    // Inline expander needs the event to be in state.events so the card is
+    // rendered and can host the drawer. Add out-of-window events eagerly here.
+    if (evt && !state.events.some(e => e.id === evt.id)) {
+      state.events = [...state.events, evt];
+    }
   }
   if (!evt) return;
 
@@ -1547,6 +1559,11 @@ function renderEvents() {
   }
 
   bindEventCards(container);
+
+  // Re-expand the open event (list HTML was rebuilt — drawer must be re-injected).
+  if (state._openEventId) {
+    expandEventCard(state._openEventId);
+  }
 }
 
 // Split events into Morning (<14:00 local) and Evening (>=14:00 local) sub-groups
@@ -1956,12 +1973,64 @@ function renderServices() {
 }
 
 // ── Event detail ──
+// Tap from event list (or permalink). Toggles expansion — clicking the already-
+// open card's summary collapses it; any other id switches.
 function showEventDetail(id) {
+  const curr = document.querySelector('.event-card.expanded');
+  if (curr && parseInt(curr.dataset.id) === id) {
+    closeDetail();
+    return;
+  }
+  expandEventCard(id);
+}
+
+function expandEventCard(id) {
   const evt = state.events.find(e => e.id === id);
   if (!evt) return;
 
-  const panel = document.getElementById('event-detail');
-  const content = document.getElementById('detail-content');
+  // Collapse any other expanded card first.
+  const curr = document.querySelector('.event-card.expanded');
+  if (curr && parseInt(curr.dataset.id) !== id) {
+    collapseEventCardDOM();
+  }
+
+  const card = document.querySelector(`.event-card[data-id="${id}"]`);
+  if (!card) return;
+
+  if (!card.classList.contains('expanded')) {
+    const drawer = document.createElement('div');
+    drawer.className = 'event-card-drawer';
+    drawer.innerHTML = renderEventDrawerHTML(evt);
+    card.appendChild(drawer);
+    card.classList.add('expanded');
+    card.style.borderLeftColor = evt.parish_color || 'var(--border)';
+    wireEventDrawer(drawer, evt);
+  }
+
+  state._openEventId = id;
+  syncURL();
+
+  requestAnimationFrame(() => {
+    const scroller = document.getElementById('sheet-scroll');
+    if (!scroller) return;
+    const cardRect = card.getBoundingClientRect();
+    const scrollRect = scroller.getBoundingClientRect();
+    if (cardRect.top < scrollRect.top) {
+      scroller.scrollTop += (cardRect.top - scrollRect.top);
+    }
+  });
+}
+
+function collapseEventCardDOM() {
+  const card = document.querySelector('.event-card.expanded');
+  if (!card) return;
+  card.classList.remove('expanded');
+  card.style.borderLeftColor = '';
+  const drawer = card.querySelector('.event-card-drawer');
+  if (drawer) drawer.remove();
+}
+
+function renderEventDrawerHTML(evt) {
   const start = new Date(evt.start_utc);
 
   const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(start);
@@ -2035,33 +2104,30 @@ function showEventDetail(id) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
-  // Parish info section (all values escaped via esc() helper)
-  let parishInfoHtml = '';
+  // Parish header — tappable, replaces the old .detail-parish-info block so
+  // the drawer has one parish cue, not two. Expanding toggles inline schedule.
+  let parishHeaderHtml = '';
   if (parish) {
-    const pAddr = parish.address
-      ? `<div><a href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.address)}</a></div>`
-      : '';
-    const pPhone = parish.phone
-      ? `<div><a href="tel:${esc(parish.phone.replace(/\s+/g, ''))}" style="color:var(--text-muted);text-decoration:underline;">${esc(parish.phone)}</a></div>`
-      : '';
-    const pEmail = parish.email ? `<div>${esc(parish.email)}</div>` : '';
-    const pJurisdiction = parish.jurisdiction ? `<div>${esc(capitalize(parish.jurisdiction))} Orthodox</div>` : '';
-    parishInfoHtml = `
-      <div class="detail-parish-info">
-        <div style="font-weight:600;color:var(--text);">${esc(parish.name)}</div>
-        ${pJurisdiction}
-        ${pAddr}
-        ${pPhone}
-        ${pEmail}
-      </div>`;
+    const initial = (parish.name || '?')[0].toUpperCase();
+    const color = parish.color || '#666';
+    const juris = capitalize(parish.jurisdiction || '');
+    parishHeaderHtml = `
+      <div class="event-parish-header" data-parish-id="${esc(parish.id)}" role="button" tabindex="0">
+        <div class="event-parish-header-avatar" style="background:${esc(color)}">${esc(initial)}</div>
+        <div class="event-parish-header-info">
+          <div class="event-parish-header-name">${esc(parish.name)}</div>
+          <div class="event-parish-header-meta">${esc(juris)} Orthodox · Tap for schedule</div>
+        </div>
+        <span class="event-parish-header-chevron" aria-hidden="true">›</span>
+      </div>
+      <div class="event-parish-schedule" hidden></div>`;
   }
 
-  content.innerHTML = `
-    <h2 class="detail-title">${esc(evt.title)}</h2>
-    <div class="detail-meta">
+  return `
+    <button class="event-card-close" type="button" aria-label="Close">&times;</button>
+    <div class="event-drawer-meta">
       <div>${dateFmt}</div>
       <div>${timeFmt}${endStr}</div>
-      <div>${esc(evt.parish_name)}</div>
       ${addr ? `<div>${esc(addr)}</div>` : ''}
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
       ${evt.languages ? `<div>${(() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })()}</div>` : ''}
@@ -2075,30 +2141,72 @@ function showEventDetail(id) {
       ${adminActions}
     </div>
     ${posterHtml}
-    ${parishInfoHtml}
+    ${parishHeaderHtml}
     ${editForm}`;
+}
 
-  // Set parish color accent on the panel
-  panel.style.borderLeftColor = evt.parish_color || 'var(--border)';
+function wireEventDrawer(drawer, evt) {
+  // Stop clicks inside the drawer from bubbling up to the .event-card click
+  // handler (which would otherwise treat them as a toggle request).
+  drawer.addEventListener('click', e => e.stopPropagation());
 
-  // Attach pinch-to-zoom on poster if present
-  // Tap poster to open fullscreen; pinch also triggers fullscreen via initPosterZoom
-  const posterContainer = content.querySelector('.detail-poster');
-  const posterEl = content.querySelector('.detail-poster img');
+  const closeBtn = drawer.querySelector('.event-card-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+
+  const header = drawer.querySelector('.event-parish-header');
+  const schedBox = drawer.querySelector('.event-parish-schedule');
+  if (header && schedBox) {
+    header.addEventListener('click', () => toggleDrawerSchedule(header, schedBox));
+  }
+
+  const posterContainer = drawer.querySelector('.detail-poster');
+  const posterEl = drawer.querySelector('.detail-poster img');
   if (posterEl) {
     initPosterZoom(posterEl);
     posterContainer.addEventListener('click', () => openPosterFullscreen(posterEl.src));
   }
+}
 
-  state._openEventId = evt.id;
-  syncURL();
-  panel.classList.remove('hidden');
-  if (!document.querySelector('.detail-backdrop')) {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'detail-backdrop';
-    backdrop.addEventListener('click', closeDetail);
-    document.body.appendChild(backdrop);
+function toggleDrawerSchedule(header, schedBox) {
+  if (header.classList.contains('schedule-open')) {
+    header.classList.remove('schedule-open');
+    schedBox.hidden = true;
+    schedBox.innerHTML = '';
+    return;
   }
+  const parishId = header.dataset.parishId;
+  const renderInto = () => { schedBox.innerHTML = renderParishScheduleInlineHTML(parishId); };
+  renderInto();
+  schedBox.hidden = false;
+  header.classList.add('schedule-open');
+  // Events mode doesn't fetch /api/schedules on boot, so the first toggle
+  // kicks it off, then re-renders when it lands.
+  if (!state.schedules || !state.schedules.length) {
+    fetch('/api/schedules')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { state.schedules = data || []; if (!schedBox.hidden) renderInto(); })
+      .catch(() => {});
+  }
+}
+
+function renderParishScheduleInlineHTML(parishId) {
+  const scheds = (state.schedules || []).filter(s => s.parish_id === parishId);
+  if (!scheds.length) {
+    return '<div class="event-parish-schedule-empty">No regular schedule listed.</div>';
+  }
+  const byDay = new Map();
+  for (const s of scheds) {
+    if (!byDay.has(s.day_of_week)) byDay.set(s.day_of_week, []);
+    byDay.get(s.day_of_week).push(s);
+  }
+  let html = '';
+  for (const [day, items] of byDay) {
+    html += `<div class="schedule-day">${DAYS[day]}</div>`;
+    for (const s of items) {
+      html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${formatTime12(s.start_time)}</span></div>`;
+    }
+  }
+  return html;
 }
 
 // ── Parish detail (from services view) ──
@@ -2304,9 +2412,15 @@ function initPosterZoom(img) {
 }
 
 function closeDetailDOM() {
-  document.getElementById('event-detail').classList.add('hidden');
-  const backdrop = document.querySelector('.detail-backdrop');
-  if (backdrop) backdrop.remove();
+  // Legacy modal path (parish detail still uses #event-detail + backdrop).
+  const panel = document.getElementById('event-detail');
+  if (panel && !panel.classList.contains('hidden')) {
+    panel.classList.add('hidden');
+    const backdrop = document.querySelector('.detail-backdrop');
+    if (backdrop) backdrop.remove();
+  }
+  // Inline drawer path (event detail lives inside the expanded card).
+  collapseEventCardDOM();
   delete state._openEventId;
 }
 

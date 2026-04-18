@@ -645,6 +645,97 @@ input, select, textarea {
   opacity: 0.6;
 }
 
+/* ── Inline event-card drawer (expanded detail) ── */
+.event-card.expanded {
+  display: block;
+  background: #fafafa;
+  padding-bottom: 14px;
+  box-shadow: none;
+  cursor: default;
+  border-left: 3px solid var(--border);
+}
+.event-card.expanded:hover,
+.event-card.expanded:active { background: #fafafa; }
+
+.event-card-drawer {
+  position: relative;
+  padding: 10px 2px 4px;
+  animation: drawer-in 0.18s ease-out;
+}
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.event-card-close {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+}
+.event-drawer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-right: 28px;
+}
+.event-parish-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-top: 14px;
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.event-parish-header:active { background: #f5f5f5; }
+.event-parish-header-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.event-parish-header-info { flex: 1; min-width: 0; }
+.event-parish-header-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.event-parish-header-meta { font-size: 11px; color: var(--text-muted); }
+.event-parish-header-chevron {
+  color: var(--text-muted);
+  font-size: 18px;
+  transition: transform 0.2s ease;
+}
+.event-parish-header.schedule-open .event-parish-header-chevron {
+  transform: rotate(90deg);
+}
+.event-parish-schedule {
+  padding: 8px 12px 12px;
+  background: #fafafa;
+  border: 1px solid var(--border-light);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  margin-top: -1px;
+}
+.event-parish-schedule[hidden] { display: none; }
+.event-parish-schedule-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ── Sunday cluster ── */
 .sunday-cluster {
   border-left: 3px solid var(--border);
