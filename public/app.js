@@ -1279,7 +1279,8 @@ function initBottomSheet() {
     updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
-      if (fab) {
+      // Parish sheet takes ownership of the FAB while main sheet is hidden.
+      if (fab && !window.agoraParishSheetVisible) {
         fab.style.top = (currentY - 52) + 'px';
         fab.classList.remove('fading');
       }
@@ -1571,6 +1572,7 @@ function initParishSheet() {
   const handle = sheet.querySelector('.parish-sheet-grab-handle');
   const closeBtn = document.getElementById('parish-sheet-close');
   const scroll = document.getElementById('parish-sheet-scroll');
+  const fab = document.getElementById('location-fab');
 
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK, SNAP_HIDDEN;
   let currentY;
@@ -1627,6 +1629,12 @@ function initParishSheet() {
       settled = true;
       sheet.classList.remove('snapping');
       updateScrollLock();
+      // Follow parish sheet with the location FAB — except while dismissed
+      // (onDone takes care of those cleanup cases).
+      if (fab && window.agoraParishSheetVisible) {
+        fab.style.top = (currentY - 52) + 'px';
+        fab.classList.remove('fading');
+      }
       if (onDone) onDone();
     };
     sheet.addEventListener('transitionend', handler, { once: true });
@@ -1654,6 +1662,7 @@ function initParishSheet() {
     sheet.classList.remove('snapping');
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
+    if (fab) fab.classList.add('fading');
   }
 
   function moveDrag(y) {
@@ -1767,6 +1776,7 @@ function initParishSheet() {
     renderParishSheetContent(parishId);
     sheet.classList.remove('hidden');
     sheet.setAttribute('aria-hidden', 'false');
+    window.agoraParishSheetVisible = true;
     // Ensure we start at SNAP_HIDDEN, then force layout so transition fires.
     currentY = SNAP_HIDDEN;
     sheet.classList.remove('snapping');
@@ -1786,6 +1796,8 @@ function initParishSheet() {
   }
 
   function close() {
+    // Release FAB ownership so main sheet's pending/next snapTo repositions it.
+    window.agoraParishSheetVisible = false;
     snapTo(SNAP_HIDDEN, () => {
       sheet.classList.add('hidden');
       sheet.setAttribute('aria-hidden', 'true');
@@ -1802,8 +1814,10 @@ function openParishSheet(parishId) {
 function closeParishSheet() {
   if (_parishSheetAPI) _parishSheetAPI.close();
 }
+window.openParishSheet = openParishSheet;
+window.closeParishSheet = closeParishSheet;
 
-function renderParishSheetContent(parishId) {
+function renderParishSheetContent(parishId, opts = {}) {
   const parish = state.parishes.find(p => p.id === parishId);
   if (!parish) return;
 
@@ -1834,18 +1848,16 @@ function renderParishSheetContent(parishId) {
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
     : '';
 
-  // Schedules for this parish (grouped by day)
+  // Schedule section — drop entirely when there's nothing to show.
   const scheds = (state.schedules || []).filter(s => s.parish_id === parishId);
-  let schedHtml;
-  if (!scheds.length) {
-    schedHtml = '<div class="ps-empty">No regular schedule listed.</div>';
-  } else {
+  let schedSectionHtml = '';
+  if (scheds.length) {
     const byDay = new Map();
     for (const s of scheds) {
       if (!byDay.has(s.day_of_week)) byDay.set(s.day_of_week, []);
       byDay.get(s.day_of_week).push(s);
     }
-    schedHtml = [...byDay.entries()]
+    const schedHtml = [...byDay.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([day, items]) => {
         let out = `<div class="ps-schedule-day">${DAYS[day]}</div>`;
@@ -1855,16 +1867,32 @@ function renderParishSheetContent(parishId) {
         }
         return out;
       }).join('');
+    schedSectionHtml = `
+      <div class="ps-section">
+        <div class="ps-section-title">Schedule</div>
+        ${schedHtml}
+      </div>`;
   }
 
-  // Upcoming events for this parish (from already-loaded state.events)
-  const now = Date.now();
-  const parishEvents = (state.events || [])
-    .filter(e => e.parish_id === parishId && new Date(e.start_utc).getTime() >= now)
-    .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+  // Upcoming events through end of month. Prefer the async-fetched list when
+  // available; otherwise fall back to state.events so the sheet paints instantly.
+  const nowMs = Date.now();
+  let parishEvents;
+  if (opts.parishEvents) {
+    parishEvents = opts.parishEvents;
+  } else {
+    parishEvents = (state.events || [])
+      .filter(e => e.parish_id === parishId && new Date(e.start_utc).getTime() >= nowMs)
+      .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+  }
   const eventsHtml = parishEvents.length
     ? parishEvents.map(renderEventCard).join('')
-    : '<div class="ps-empty">No upcoming events in current view.</div>';
+    : '<div class="ps-empty">No upcoming events this month.</div>';
+
+  const archUrl = ARCHDIOCESE_EVENTS[parish.jurisdiction];
+  const archBtnHtml = archUrl
+    ? `<a class="ps-btn ps-arch-btn" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(parish.jurisdiction))} Archdiocese Events</a>`
+    : '';
 
   contentEl.innerHTML = `
     <div class="ps-header">
@@ -1879,13 +1907,11 @@ function renderParishSheetContent(parishId) {
       ${addrHtml}
       <div class="ps-actions">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
     </div>
-    <div class="ps-section">
-      <div class="ps-section-title">Schedule</div>
-      ${schedHtml}
-    </div>
+    ${schedSectionHtml}
     <div class="ps-section">
       <div class="ps-section-title">Upcoming events</div>
       <div class="ps-events-list">${eventsHtml}</div>
+      ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}
     </div>`;
 
   // Event cards in parish sheet: close sheet, then open event in main list
@@ -1893,12 +1919,11 @@ function renderParishSheetContent(parishId) {
     card.addEventListener('click', () => {
       const id = parseInt(card.dataset.id);
       closeParishSheet();
-      // Let the sheet animate closed before expanding the card in main list
       setTimeout(() => showEventDetail(id), 380);
     });
   });
 
-  // Lazy-fetch schedules if not loaded — re-render when they arrive
+  // Lazy-fetch schedules when they haven't been loaded yet
   if (!state.schedules || !state.schedules.length) {
     fetch('/api/schedules')
       .then(r => r.ok ? r.json() : [])
@@ -1906,7 +1931,28 @@ function renderParishSheetContent(parishId) {
         state.schedules = data || [];
         const sheetEl = document.getElementById('parish-sheet');
         if (sheetEl && !sheetEl.classList.contains('hidden')) {
-          renderParishSheetContent(parishId);
+          renderParishSheetContent(parishId, opts);
+        }
+      })
+      .catch(() => {});
+  }
+
+  // Async: fetch month-worth of events for this parish and re-render with the
+  // richer list. Skip if caller already provided parishEvents.
+  if (!opts.parishEvents) {
+    const endOfMonth = (() => {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    })();
+    fetch(`/api/events?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(endOfMonth)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(events => {
+        const filtered = (events || [])
+          .filter(e => e.parish_id === parishId)
+          .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+        const sheetEl = document.getElementById('parish-sheet');
+        if (sheetEl && !sheetEl.classList.contains('hidden')) {
+          renderParishSheetContent(parishId, { parishEvents: filtered });
         }
       })
       .catch(() => {});

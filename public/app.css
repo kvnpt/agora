@@ -1262,7 +1262,7 @@ input, select, textarea {
   top: 44px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 900;
+  z-index: 600;
   display: none;
   padding: 7px 16px;
   font: inherit;
@@ -1284,7 +1284,7 @@ body.map-expanded #reset-fab.visible { display: block; opacity: 1; }
 #location-fab {
   position: fixed;
   right: 16px;
-  z-index: 900;
+  z-index: 600;
   display: none;
   align-items: center;
   justify-content: center;
@@ -1560,6 +1560,17 @@ body.map-expanded #location-fab { display: flex; }
 .ps-empty { font-size: 13px; color: var(--text-muted); }
 
 .ps-events-list .event-card { cursor: pointer; }
+.ps-arch-row {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-light);
+  text-align: center;
+}
+.ps-arch-btn {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+}
 
 @media (min-width: 640px) {
   .parish-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }

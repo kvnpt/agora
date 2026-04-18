@@ -134,7 +134,7 @@ function addLabeledMarkers(locations, TZ) {
     });
 
     dot.on('click', () => {
-      if (window.showParishCard) window.showParishCard(loc.id);
+      if (window.openParishSheet) window.openParishSheet(loc.id);
     });
 
     dot.addTo(map);
@@ -201,7 +201,7 @@ function addLabeledMarkers(locations, TZ) {
       zIndexOffset: lm.loc.active ? 1000 : 0
     }).addTo(map);
     label.on('click', () => {
-      if (window.showParishCard) window.showParishCard(lm.loc.id);
+      if (window.openParishSheet) window.openParishSheet(lm.loc.id);
     });
     markers.push(label);
   }
