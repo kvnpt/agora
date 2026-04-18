@@ -217,39 +217,6 @@ input, select, textarea {
   opacity: 1;
 }
 
-/* ── Mode-bar sort button (right) ── */
-.mode-sort {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.mode-sort:hover { color: var(--text); border-color: var(--text-secondary); }
-.mode-sort.active {
-  color: #1565c0;
-  background: #e3f2fd;
-  border-color: #1565c0;
-}
-.mode-sort-icon {
-  width: 14px;
-  height: 14px;
-  filter: brightness(0) saturate(100%) invert(50%);
-}
-.mode-sort.active .mode-sort-icon {
-  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
-}
-
 /* ── Filters button (collapses services/social/english) ──
    Sized to match the mode-bar siblings. */
 .filters-btn {
@@ -459,37 +426,6 @@ input, select, textarea {
 .parish-pill.active {
   color: var(--bg);
   border-color: transparent;
-}
-
-.location-pill {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-.location-pill:hover { color: var(--text-secondary); border-color: var(--border); }
-.location-pill.active {
-  color: #1565c0;
-  border-color: #1565c0;
-  background: #e3f2fd;
-}
-.location-pill img {
-  width: 14px;
-  height: 14px;
-  filter: brightness(0) saturate(100%) invert(55%);
-}
-.location-pill.active img {
-  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
 }
 
 /* ── Content views ── */

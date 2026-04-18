@@ -68,7 +68,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMultiParishToggle();
   initResetFab();
   initLocationFab();
-  initModeSort();
   initModeUrl();
   state._initialLoad = true;
   applyStartMode();
@@ -663,10 +662,7 @@ function renderParishPills() {
 
   const allActive = state.filters.parishIds === null;
 
-  // Location pill as leftmost item
-  let html = `<button class="location-pill ${state.nearPillActive ? 'active' : ''}" id="btn-location-pill">` +
-    `<img src="/tabler-location-filled.svg" alt="Location">` +
-    `Sort</button>`;
+  let html = '';
 
   for (const p of relevant) {
     const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
@@ -691,24 +687,6 @@ function renderParishPills() {
   }
   row.innerHTML = html;
   row.classList.toggle('multi-parish', !!state.filters.multiParish);
-
-  // Bind location pill — toggles parish sort independently from Nearby events sort
-  document.getElementById('btn-location-pill').addEventListener('click', () => {
-    if (state.nearPillActive) {
-      state.nearPillActive = false;
-      renderParishPills();
-    } else if (state.locationActive) {
-      state.nearPillActive = true;
-      renderParishPills();
-      centerMapOnUser();
-    } else {
-      requestGeolocation(() => {
-        state.nearPillActive = true;
-        renderParishPills();
-        centerMapOnUser();
-      });
-    }
-  });
 }
 
 // Use event delegation on the row (set up once)
@@ -977,18 +955,32 @@ function initResetFab() {
 }
 
 // ── Location FAB (bottom right) ──
+// Single toggle: sorts events by distance + sorts parish pills by distance
+// + centers map on user. Icon swaps outline ↔ filled with state.
 function initLocationFab() {
   const fab = document.getElementById('location-fab');
   if (!fab) return;
 
   function syncLocationState() {
     fab.classList.toggle('active', state.locationActive);
+    const img = fab.querySelector('img');
+    if (img) img.src = state.locationActive ? '/tabler-location-filled.svg' : '/tabler-location.svg';
   }
 
   fab.addEventListener('click', () => {
-    requestGeolocation(() => {
+    if (state.locationActive) {
+      state.locationActive = false;
+      state.nearPillActive = false;
+      state.eventsSort = 'time';
       syncLocationState();
+      renderParishPills();
+      renderCurrentView();
+      return;
+    }
+    requestGeolocation(() => {
       state.nearPillActive = true;
+      state.eventsSort = 'nearby';
+      syncLocationState();
       renderParishPills();
       renderCurrentView();
       centerMapOnUser();
@@ -1955,47 +1947,6 @@ function sortEvents(arr) {
     return [...arr].sort((a, b) => (a.distance_km || 999) - (b.distance_km || 999));
   }
   return [...arr].sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
-}
-
-// Mode-bar sort button — toggles state.eventsSort between 'time' and 'nearby'.
-// Active style + filled icon both reflect the same state; outline icon
-// (`/tabler-location.svg`) when inactive.
-function initModeSort() {
-  const btn = document.getElementById('mode-sort');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    const active = state.eventsSort === 'nearby' && state.locationActive;
-    if (active) {
-      state.eventsSort = 'time';
-      syncModeSort();
-      renderCurrentView();
-      return;
-    }
-    if (!state.locationActive) {
-      requestGeolocation(() => {
-        state.eventsSort = 'nearby';
-        syncModeSort();
-        renderCurrentView();
-        centerMapOnUser();
-      });
-      return;
-    }
-    state.eventsSort = 'nearby';
-    syncModeSort();
-    renderCurrentView();
-    centerMapOnUser();
-  });
-  syncModeSort();
-}
-
-function syncModeSort() {
-  const btn = document.getElementById('mode-sort');
-  if (!btn) return;
-  const active = state.eventsSort === 'nearby' && state.locationActive;
-  btn.classList.toggle('active', active);
-  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  const icon = btn.querySelector('.mode-sort-icon');
-  if (icon) icon.src = active ? '/tabler-location-filled.svg' : '/tabler-location.svg';
 }
 
 // ── Mode-bar URL display + copy ──
