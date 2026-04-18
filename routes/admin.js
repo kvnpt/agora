@@ -393,19 +393,26 @@ router.post('/parish-updates/:id/approve', (req, res) => {
   let changes;
   try { changes = JSON.parse(pu.proposed_changes); } catch { return res.status(400).json({ error: 'Invalid proposed_changes JSON' }); }
 
-  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+  // Accept new shape { sets, clears } or legacy flat blob (pre-split rows).
+  // Legacy blobs mixed nulls-as-clears, but those nulls were Claude over-
+  // emission not intent — strip them on apply to match the new model.
+  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url', 'languages'];
+  const isNewShape = changes && typeof changes === 'object' && (changes.sets || changes.clears);
+  const rawSets = isNewShape ? (changes.sets || {}) : (changes || {});
+  const rawClears = isNewShape ? (Array.isArray(changes.clears) ? changes.clears : []) : [];
+
   const updates = [];
   const values = [];
   for (const f of allowed) {
-    if (f in changes) {
-      const v = changes[f];
+    if (f in rawSets && rawSets[f] != null && rawSets[f] !== '') {
       updates.push(`${f} = ?`);
-      values.push(v === '' ? null : v);
+      values.push(f === 'languages' ? JSON.stringify(rawSets[f]) : rawSets[f]);
     }
   }
-  if ('languages' in changes) {
-    updates.push('languages = ?');
-    values.push(changes.languages ? JSON.stringify(changes.languages) : null);
+  for (const f of rawClears) {
+    if (typeof f === 'string' && allowed.includes(f) && !(f in rawSets)) {
+      updates.push(`${f} = NULL`);
+    }
   }
 
   if (updates.length) {

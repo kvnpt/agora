@@ -267,17 +267,10 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
     }
   ],
   "parish_updates": null or {
-    "name": "updated short name or null",
-    "full_name": "updated full official name or null",
-    "address": "new address or null",
-    "website": "new url or null",
-    "email": "new email or null",
-    "phone": "new phone or null",
-    "acronym": "abbreviation or null",
-    "chant_style": "Byzantine|Western|Mixed or null",
-    "live_url": "livestream url or null",
-    "languages": ["English", "Arabic"]
-  }
+    "website": "https://example.org",
+    "phone": "0411 222 333"
+  },
+  "parish_clears": []
 }
 
 IMPORTANT type rules: "Vesperal Liturgy" and any service with "Liturgy" = liturgy. Vespers, Matins, Compline, Bridegroom, Holy Unction, Lamentations, Passion Gospels = prayer.
@@ -287,10 +280,10 @@ Only include schedules if the message describes RECURRING weekly services, not o
 concurrent: true if this service runs simultaneously alongside another service at the same parish at the same time (e.g. English and Arabic liturgies in separate rooms at the same hour). False otherwise.
 hide_live: true if the message indicates the event will NOT be livestreamed (e.g. "no livestream", "in-person only", "not streamed"). Also true for events at external venues (retreats, camps, outings), and for private/non-service entries like Confession, Setup, Prayer Ministry. False by default — only set true when there's a clear signal it won't be streamed. For schedules: set true for any weekly recurring item that will never be streamed (e.g. Confession slots).
 parish_scoped: true for internal/operational entries that should only surface when a user has filtered the feed to this parish alone (e.g. "SETUP", "Pack-down", "Cleaning roster"). False by default. These are things the parish wants tracked but not broadcast to the general public feed.
-Only include parish_updates if the message explicitly provides new/changed parish information (name, address, contact details, acronym, chant style, languages, live stream URL, etc).
-CLEARING FIELDS: if the message indicates a parish stopped doing something or removed information — e.g. "we no longer livestream", "stream has been discontinued", "website closed", "phone disconnected" — set that field to null in parish_updates. Explicit null means "clear this field in the database". Only include fields that the message actually mentions; do not set unrelated fields to null.
+parish_updates: include ONLY keys for fields the message is setting to a new non-null value (name, address, contact details, acronym, chant style, languages, live stream URL, etc). OMIT keys entirely for fields the message does not mention. NEVER emit null inside parish_updates — null is not a meaningful value here.
+parish_clears: an array of field names. Include a field name here ONLY when the message explicitly states the parish no longer has that attribute — e.g. "we no longer livestream" → "live_url"; "stream has been discontinued" → "live_url"; "phone disconnected" → "phone"; "website closed" → "website". Valid field names: name, full_name, address, website, email, phone, acronym, chant_style, live_url, languages. Empty [] when no removal is requested. DO NOT add a field here just because the message didn't mention it — silence is not a removal.
 Only pick an event_id from the UPCOMING EVENTS list above. Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
-If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "new_parish": null}
+If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "parish_clears": [], "new_parish": null}
 
 DATE EXTRACTION RULES (read carefully — past posters have been misread by +14 days):
 - If the poster has a header/title naming a month and year (e.g. "HOLY WEEK SERVICES - APRIL 2026", "MARCH 2026 PROGRAM"), those ARE the authoritative month and year for every row. Do NOT shift to a future occurrence.
@@ -352,6 +345,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       schedules: parsed.schedules || [],
       cancellations: Array.isArray(parsed.cancellations) ? parsed.cancellations : [],
       parish_updates: parsed.parish_updates || null,
+      parish_clears: Array.isArray(parsed.parish_clears) ? parsed.parish_clears : [],
       new_parish: parsed.new_parish || null,
       rawResponse: response.content[0].text
     };

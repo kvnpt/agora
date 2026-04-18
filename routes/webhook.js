@@ -246,54 +246,54 @@ async function processBatch(sender, messages) {
       }
     }
 
-    // Handle parish updates — buffer for review if sender is not auto-approved
-    if (result.parish_updates && parishId !== '_unassigned') {
-      const pu = result.parish_updates;
-      if (senderRecord.status === 'approved') {
-        // Apply directly
-        const updates = [];
-        const vals = [];
-        const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
-        for (const f of puFields) {
-          if (f in pu) {
-            const v = pu[f];
-            updates.push(`${f} = ?`);
-            vals.push(v === '' || v == null ? null : v);
+    // Handle parish updates + clears — additive by default, explicit-clear
+    // via a separate allow-list so null in parish_updates can never be
+    // destructive (prior bug: Claude emitted null for unmentioned fields,
+    // which wiped every legitimate field on the row when approved).
+    if (parishId !== '_unassigned') {
+      const pu = result.parish_updates || {};
+      const rawClears = Array.isArray(result.parish_clears) ? result.parish_clears : [];
+      const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
+      const allFields = new Set([...puFields, 'languages']);
+
+      // Sets: drop nulls/empties defensively regardless of what the prompt said.
+      const sets = {};
+      for (const f of puFields) {
+        if (f in pu && pu[f] != null && pu[f] !== '') sets[f] = pu[f];
+      }
+      if ('languages' in pu && Array.isArray(pu.languages) && pu.languages.length) {
+        sets.languages = pu.languages;
+      }
+
+      // Clears: whitelisted field names only; dedupe; drop any that collide
+      // with a set in the same payload (a set wins — can't set and clear same field).
+      const clears = [...new Set(rawClears)]
+        .filter(f => typeof f === 'string' && allFields.has(f) && !(f in sets));
+
+      if (Object.keys(sets).length || clears.length) {
+        if (senderRecord.status === 'approved') {
+          const frags = [];
+          const vals = [];
+          for (const [f, v] of Object.entries(sets)) {
+            frags.push(`${f} = ?`);
+            vals.push(f === 'languages' ? JSON.stringify(v) : v);
           }
-        }
-        if ('languages' in pu) {
-          updates.push('languages = ?');
-          vals.push(pu.languages ? JSON.stringify(pu.languages) : null);
-        }
-        if (updates.length) {
+          for (const f of clears) frags.push(`${f} = NULL`);
           vals.push(parishId);
-          db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...vals);
-          console.log(`[webhook] Updated parish ${parishId}: ${updates.map(u => u.split(' =')[0]).join(', ')}`);
-          // Auto-geocode if address was updated
-          if (pu.address) {
-            geocode(pu.address).then(coords => {
+          db.prepare(`UPDATE parishes SET ${frags.join(', ')} WHERE id = ?`).run(...vals);
+          console.log(`[webhook] Updated parish ${parishId}: sets=[${Object.keys(sets).join(',')}] clears=[${clears.join(',')}]`);
+          if (sets.address) {
+            geocode(sets.address).then(coords => {
               if (coords) {
                 db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, parishId);
                 console.log(`[webhook] Geocoded parish ${parishId}: ${coords.lat}, ${coords.lng}`);
               }
             });
           }
-        }
-      } else {
-        // Buffer for admin review
-        const proposed = {};
-        const puFields = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url'];
-        for (const f of puFields) {
-          if (f in pu) {
-            const v = pu[f];
-            proposed[f] = (v === '' || v == null) ? null : v;
-          }
-        }
-        if ('languages' in pu) proposed.languages = pu.languages || null;
-        if (Object.keys(proposed).length) {
+        } else {
           db.prepare(`INSERT INTO pending_parish_updates (parish_id, proposed_changes, sender_phone, source_run_id)
-                      VALUES (?, ?, ?, ?)`).run(parishId, JSON.stringify(proposed), sender, runId);
-          console.log(`[webhook] Queued parish update for review: ${parishId}`);
+                      VALUES (?, ?, ?, ?)`).run(parishId, JSON.stringify({ sets, clears }), sender, runId);
+          console.log(`[webhook] Queued parish update for review: ${parishId} sets=[${Object.keys(sets).join(',')}] clears=[${clears.join(',')}]`);
         }
       }
     }

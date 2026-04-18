@@ -478,13 +478,27 @@
           chant_style: pu.parish_chant_style, live_url: pu.parish_live_url,
           languages: parseLangs(pu.parish_languages)
         };
-        const diffRows = Object.entries(changes).map(([k, v]) => {
+        // New shape: { sets, clears }. Legacy flat blob: treat as sets only and
+        // silently drop null entries (matches apply-path so preview == effect).
+        const isNewShape = changes && typeof changes === 'object' && (changes.sets || changes.clears);
+        const setsObj = isNewShape ? (changes.sets || {}) : (changes || {});
+        const clearsArr = isNewShape ? (Array.isArray(changes.clears) ? changes.clears : []) : [];
+        const setRows = Object.entries(setsObj)
+          .filter(([, v]) => v != null && v !== '')
+          .map(([k, v]) => {
+            const label = fieldLabels[k] || k;
+            const oldVal = k === 'languages' ? parseLangs(pu.parish_languages) : (currentValues[k] || '—');
+            const newVal = Array.isArray(v) ? v.join(', ') : v;
+            return `<div><div style="font-size:11px;color:var(--muted);font-weight:500;">${esc(label)}</div>
+              <div class="diff-row"><span class="diff-old">${esc(String(oldVal))}</span><span class="diff-new">${esc(String(newVal))}</span></div></div>`;
+          }).join('');
+        const clearRows = clearsArr.map(k => {
           const label = fieldLabels[k] || k;
           const oldVal = k === 'languages' ? parseLangs(pu.parish_languages) : (currentValues[k] || '—');
-          const newVal = v == null || v === '' ? '(cleared)' : (Array.isArray(v) ? v.join(', ') : v);
           return `<div><div style="font-size:11px;color:var(--muted);font-weight:500;">${esc(label)}</div>
-            <div class="diff-row"><span class="diff-old">${esc(String(oldVal))}</span><span class="diff-new">${esc(String(newVal))}</span></div></div>`;
+            <div class="diff-row"><span class="diff-old">${esc(String(oldVal))}</span><span class="diff-new">(cleared)</span></div></div>`;
         }).join('');
+        const diffRows = setRows + clearRows;
         const inputTexts = (() => { try { return JSON.parse(pu.input_texts || '[]'); } catch { return []; } })();
         const msgText = inputTexts.filter(Boolean).join(' · ');
         return `
