@@ -2311,9 +2311,10 @@ function closeDetailDOM() {
   delete state._openEventId;
 }
 
-// Close from UI — always walk history back. popstate handler reconciles state/URL.
-// Event-detail is now a URL-backed state: URL carries the event ID, history.back
-// drops the ID, reconcileStateFromUrl observes the change and closes the panel.
+// Close from UI — clears state._openEventId and pushes the URL without the ID.
+// Filters/mode are untouched so nothing else needs to re-sync. Browser back
+// while detail is open still goes through the popstate reconciler (URL already
+// reverted by the browser), which detects the missing ID and closes the panel.
 function closeDetail() {
   if (detailHistoryPushed) {
     // Legacy parish-detail modal path
@@ -2321,11 +2322,8 @@ function closeDetail() {
     history.back();
     return;
   }
-  if (state._openEventId) {
-    history.back();
-    return;
-  }
   closeDetailDOM();
+  syncURL();
 }
 
 document.getElementById('close-detail').addEventListener('click', closeDetail);
