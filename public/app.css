@@ -180,15 +180,6 @@ input, select, textarea {
   justify-content: flex-end;
   align-items: center;
 }
-/* Today sits at the true horizontal centre of the mode bar (viewport
-   centre), This month stays flush-right via the flex container. */
-.time-pills .today-pill {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, calc(-50% - 2px));
-}
-
 /* ── Filters button (collapses services/social/english) ──
    Sized to match the Today/This month pills: same padding, radius,
    font-size, and line height. */
@@ -1069,14 +1060,43 @@ input, select, textarea {
   padding-top: 4px;
   min-height: 0;
 }
-/* ── Earlier today section ── */
-.earlier-today-section {
-  position: relative;
-  margin-top: 16px;
-  opacity: 0.55;
-}
-.earlier-today-header {
+/* ── Earlier today (collapsed chip at top of stream) ── */
+.earlier-today-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: #fafafa;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
   color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.earlier-today-chip:hover { background: #f5f5f5; }
+.earlier-today-chip-chevron {
+  display: inline-block;
+  transition: transform 0.15s;
+  font-size: 10px;
+}
+.earlier-today-chip.expanded .earlier-today-chip-chevron {
+  transform: rotate(180deg);
+}
+.earlier-today-chip + .earlier-today-list {
+  opacity: 0.6;
+}
+
+/* ── Month seam: divider between Today phase buckets and future days ── */
+.section-header.month-seam {
+  margin-top: 8px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-light);
+  padding-top: 14px;
 }
 
 .cta-link {
@@ -1101,11 +1121,6 @@ input, select, textarea {
   justify-content: flex-start;
   gap: 20px;
   background: #fff;
-}
-/* Tighter footer when 'Earlier today' follows — collapses the big gap. */
-.list-footer:has(+ .earlier-today-section) {
-  min-height: 0;
-  padding-bottom: 16px;
 }
 .list-footer-ornament {
   font-size: 9px;

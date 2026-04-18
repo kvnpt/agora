@@ -24,7 +24,6 @@ const state = {
   userLat: -33.8688,
   userLng: 151.2093,
   mode: 'events',
-  timeRange: 'today',
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
@@ -49,7 +48,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyParishSlugs();
   initFilters(state);
   initModeBar();
-  initTimePills();
   initBottomSheet();
   initParishSheet();
   initParishFilter();
@@ -69,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Skip when a drawer is open: re-render rebuilds the list HTML and would
   // wipe the user's in-drawer state (e.g. schedule toggled open).
   setInterval(() => {
-    if (state.timeRange !== 'today') return;
+    if (state.mode !== 'events') return;
     if (!state.events.some(e => e.parish_live_url)) return;
     if (document.querySelector('.event-card.expanded')) return;
     renderEvents();
@@ -315,11 +313,7 @@ async function reconcileStateFromUrl() {
         showView('services');
       } else {
         servicesBtn.classList.remove('active');
-        if (state.timeRange === 'week') state.timeRange = 'today';
-        timePills.innerHTML = `
-          <button class="pill today-pill ${state.timeRange === 'today' ? 'active' : ''}" data-range="today">Today</button>
-          <button class="pill month-pill ${state.timeRange === 'month' ? 'active' : ''}" data-range="month">This month</button>`;
-        initTimePills();
+        timePills.innerHTML = '';
         showView('events');
       }
     }
@@ -429,24 +423,18 @@ async function fetchEvents(opts = {}) {
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
 
   const now = new Date();
+  // Include events from start of today (Sydney local) through 28 days out —
+  // stream renders Today phase buckets at top, followed by day-grouped future.
   const sydneyDate = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
   const [d, m, y] = sydneyDate.split('/');
   const todayStr = `${y}-${m}-${d}`;
-
-  if (state.timeRange === 'today') {
-    const startLocal = new Date(`${todayStr}T00:00:00`);
-    const endLocal = new Date(`${todayStr}T23:59:59`);
-    const testDate = new Date(`${todayStr}T12:00:00Z`);
-    const sydneyStr = testDate.toLocaleString('en-US', { timeZone: TZ });
-    const sydneyParsed = new Date(sydneyStr);
-    const offsetMs = sydneyParsed.getTime() - testDate.getTime();
-    params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
-    params.set('to', new Date(endLocal.getTime() - offsetMs).toISOString());
-  } else {
-    params.set('from', now.toISOString());
-    // Next 4 weeks — crosses month boundary; renderMonth injects month header.
-    params.set('to', new Date(now.getTime() + 28 * 86400000).toISOString());
-  }
+  const startLocal = new Date(`${todayStr}T00:00:00`);
+  const testDate = new Date(`${todayStr}T12:00:00Z`);
+  const sydneyStr = testDate.toLocaleString('en-US', { timeZone: TZ });
+  const sydneyParsed = new Date(sydneyStr);
+  const offsetMs = sydneyParsed.getTime() - testDate.getTime();
+  params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
+  params.set('to', new Date(now.getTime() + 28 * 86400000).toISOString());
 
   try {
     const res = await fetch(`/api/events?${params}`);
@@ -455,30 +443,17 @@ async function fetchEvents(opts = {}) {
     state.events = [];
   }
 
-  // One-shot on initial load: empty Today → Month; empty Month → Services mode
+  // Initial load: empty 28-day window → fall through to Services mode.
   if (state._initialLoad) {
-    let filteredNow = applyFilters(state.events);
-    if (state.timeRange === 'today') {
-      const now = new Date();
-      filteredNow = filteredNow.filter(e => {
-        const end = e.end_utc ? new Date(e.end_utc) : new Date(new Date(e.start_utc).getTime() + 3600000);
-        return end >= now || new Date(e.start_utc) > now;
-      });
-    }
-    if (!filteredNow.length) {
-      if (state.timeRange === 'today') {
-        state.timeRange = 'month';
-        document.querySelectorAll('.pill').forEach(b =>
-          b.classList.toggle('active', b.dataset.range === 'month'));
-        return fetchEvents(opts);
-      }
-      if (state.timeRange === 'month') {
-        state._initialLoad = false;
-        document.getElementById('btn-services').click();
-        return;
-      }
-    }
+    const filteredNow = applyFilters(state.events).filter(e => {
+      const end = e.end_utc ? new Date(e.end_utc) : new Date(new Date(e.start_utc).getTime() + 3600000);
+      return end >= now || new Date(e.start_utc) > now;
+    });
     state._initialLoad = false;
+    if (!filteredNow.length) {
+      document.getElementById('btn-services').click();
+      return;
+    }
   }
 
   renderEvents();
@@ -533,11 +508,7 @@ function initModeBar() {
     if (state.mode === 'services') {
       state.mode = 'events';
       servicesBtn.classList.remove('active');
-      if (state.timeRange === 'week') state.timeRange = 'today';
-      timePills.innerHTML = `
-        <button class="pill today-pill ${state.timeRange === 'today' ? 'active' : ''}" data-range="today">Today</button>
-        <button class="pill month-pill ${state.timeRange === 'month' ? 'active' : ''}" data-range="month">This month</button>`;
-      initTimePills();
+      timePills.innerHTML = '';
       showView('events');
       fetchEvents();
       updateArchdioceseEventsBanner();
@@ -1172,17 +1143,6 @@ function applyFilters(events) {
     });
   }
   return filtered;
-}
-
-// ── Time pills ──
-function initTimePills() {
-  document.querySelectorAll('.pill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.timeRange = btn.dataset.range;
-      document.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b === btn));
-      fetchEvents();
-    });
-  });
 }
 
 // ── Bottom sheet ──
@@ -1964,13 +1924,7 @@ function renderParishSheetContent(parishId, opts = {}) {
 function renderEvents() {
   const container = document.getElementById('events-list');
   const filtered = applyFilters(state.events);
-
-  if (state.timeRange === 'today') {
-    renderToday(container, filtered);
-  } else {
-    renderMonth(container, filtered);
-  }
-
+  renderStream(container, filtered);
   bindEventCards(container);
 
   // Re-expand the open event (list HTML was rebuilt — drawer must be re-injected).
@@ -2017,56 +1971,118 @@ function renderSubDaySections(events, html) {
   return html;
 }
 
-function renderToday(container, events) {
+// Single continuous stream: optional Earlier-today chip, then Today phase
+// buckets (Happening now / Later today), then day-grouped events through the
+// rest of the 28-day window. Sort toggle reorders within morning/evening
+// sub-groups across the whole stream.
+function renderStream(container, events) {
   const now = new Date();
-  const happeningNow = events.filter(e => {
+  const TZ_LOCAL = TZ;
+  const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const dayKey = (iso) => new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+
+  const happeningNow = [], laterToday = [], earlierToday = [], future = [];
+  for (const e of events) {
     const start = new Date(e.start_utc);
     const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
-    return start <= now && end >= now;
-  });
-  const later = events.filter(e => new Date(e.start_utc) > now);
-  const earlier = events.filter(e => {
-    const start = new Date(e.start_utc);
-    const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
-    return end < now && start <= now;
-  }).filter(e => !happeningNow.includes(e));
+    const isToday = dayKey(e.start_utc) === todayKey;
+    if (isToday) {
+      if (start <= now && end >= now) happeningNow.push(e);
+      else if (start > now) laterToday.push(e);
+      else earlierToday.push(e);
+    } else {
+      future.push(e);
+    }
+  }
 
   const sortToggle = buildSortToggle();
-
+  const hasToday = happeningNow.length || laterToday.length;
   let html = '';
+
+  // Earlier-today chip — collapsed by default; expands inline on tap.
+  if (earlierToday.length) {
+    html += `<button class="earlier-today-chip" id="earlier-today-chip" type="button" aria-expanded="false">`;
+    html += `<span class="earlier-today-chip-label">${earlierToday.length} earlier today</span>`;
+    html += `<span class="earlier-today-chip-chevron">▾</span>`;
+    html += `</button>`;
+    html += `<div class="earlier-today-list" id="earlier-today-list" hidden>`;
+    html += sortEvents(earlierToday).map(renderEventCard).join('');
+    html += `</div>`;
+  }
+
   if (happeningNow.length) {
     html += `<div class="section-header"><span class="now-dot"></span>Happening now${sortToggle}</div>`;
     html += sortEvents(happeningNow).map(renderEventCard).join('');
   }
-  if (later.length) {
+  if (laterToday.length) {
     const laterToggle = happeningNow.length ? '' : sortToggle;
     html += `<div class="section-header">Later today${laterToggle}</div>`;
-    html = renderSubDaySections(later, html);
+    html = renderSubDaySections(laterToday, html);
   }
-  if (!happeningNow.length && !later.length) {
-    if (earlier.length) {
-      html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing left today</h3></div>';
-    } else {
-      html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on today</h3></div>';
-    }
+
+  // Month seam + day groups. Always emit the seam when future events exist so
+  // later async updates slot into a stable position (no scroll jump).
+  if (future.length) {
+    const seamToggle = hasToday ? '' : sortToggle;
+    html += `<div class="section-header month-seam">Later this month${seamToggle}</div>`;
+    html += renderFutureDays(future);
+  } else if (!hasToday) {
+    html += '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing upcoming</h3></div>';
   }
-  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-month">View more</button></div>`;
-  if (earlier.length) {
-    html += `<div class="earlier-today-section">`;
-    html += `<div class="section-header earlier-today-header">Earlier today</div>`;
-    html += `<div class="earlier-today-list">`;
-    html += sortEvents(earlier).map(renderEventCard).join('');
-    html += `</div></div>`;
-  }
+
+  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-services">View regular schedules</button></div>`;
+
   container.innerHTML = html;
 
-  container.querySelector('#cta-month').addEventListener('click', () => {
-    state.timeRange = 'month';
-    document.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.range === 'month'));
-    fetchEvents();
-  });
+  const svcBtn = container.querySelector('#cta-services');
+  if (svcBtn) svcBtn.addEventListener('click', () => document.getElementById('btn-services').click());
+
+  const chip = container.querySelector('#earlier-today-chip');
+  if (chip) {
+    chip.addEventListener('click', () => {
+      const list = container.querySelector('#earlier-today-list');
+      const open = chip.getAttribute('aria-expanded') === 'true';
+      chip.setAttribute('aria-expanded', open ? 'false' : 'true');
+      chip.classList.toggle('expanded', !open);
+      list.hidden = open;
+    });
+  }
 
   bindSortToggle(container);
+}
+
+// Day-grouped render for future events (tomorrow → end of 28-day window).
+function renderFutureDays(events) {
+  const groups = groupByDay(events);
+  const now = new Date();
+  const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
+  const jColor = getJurisdictionColor();
+
+  let html = '';
+  let first = true;
+  let prevMonthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
+  for (const [, evts] of groups) {
+    const d = parseLocalDate(evts[0].start_utc);
+    const weekdayStyle = d < sevenDaysOut ? 'long' : 'short';
+    const dayFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: weekdayStyle, day: 'numeric', month: 'short' }).format(d);
+    const dayOfWeek = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
+    const isSunday = dayOfWeek === 'Sunday';
+
+    const monthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
+    if (monthKey !== prevMonthKey) {
+      const monthLabel = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'long', year: 'numeric' }).format(d);
+      html += `<div class="month-header">${monthLabel}</div>`;
+      prevMonthKey = monthKey;
+    }
+
+    if (!first) html += `<hr class="day-divider">`;
+    if (isSunday) html += `<div class="sunday-cluster" style="border-left-color:${jColor}; background: ${jColor}08;">`;
+    html += `<div class="section-header">${dayFmt}</div>`;
+    first = false;
+    html = renderSubDaySections(evts, html);
+    if (isSunday) html += `</div>`;
+  }
+  return html;
 }
 
 function bindSortToggle(container) {
@@ -2092,59 +2108,6 @@ function bindSortToggle(container) {
       centerMapOnUser();
     });
   });
-}
-
-function renderMonth(container, events) {
-  const groups = groupByDay(events);
-  const now = new Date();
-  const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
-
-  // Get jurisdiction color for Sunday styling
-  const jColor = getJurisdictionColor();
-  const sortToggle = buildSortToggle();
-
-  let html = '';
-  if (!events.length) {
-    html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing on this month</h3></div>';
-  }
-  let first = true;
-  let prevMonthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
-  for (const [dateKey, evts] of groups) {
-    const d = parseLocalDate(evts[0].start_utc);
-    const weekdayStyle = d < sevenDaysOut ? 'long' : 'short';
-    const dayFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: weekdayStyle, day: 'numeric', month: 'short' }).format(d);
-
-    const dayOfWeek = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
-    const isSunday = dayOfWeek === 'Sunday';
-
-    const monthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
-    if (monthKey !== prevMonthKey) {
-      const monthLabel = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'long', year: 'numeric' }).format(d);
-      html += `<div class="month-header">${monthLabel}</div>`;
-      prevMonthKey = monthKey;
-    }
-
-    if (!first) html += `<hr class="day-divider">`;
-
-    if (isSunday) {
-      html += `<div class="sunday-cluster" style="border-left-color:${jColor}; background: ${jColor}08;">`;
-    }
-    const toggle = first ? sortToggle : '';
-    html += `<div class="section-header">${dayFmt}${toggle}</div>`;
-    first = false;
-    html = renderSubDaySections(evts, html);
-    if (isSunday) {
-      html += `</div>`;
-    }
-  }
-  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-services">View regular schedules</button></div>`;
-  container.innerHTML = html;
-
-  container.querySelector('#cta-services').addEventListener('click', () => {
-    document.getElementById('btn-services').click();
-  });
-
-  bindSortToggle(container);
 }
 
 function formatEventTime(date) {
@@ -2181,20 +2144,21 @@ function renderEventCard(evt) {
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
   const badge = `<span class="event-badge ${badgeCss}">${displayType}</span>`;
 
-  // LIVE badge
+  // LIVE badge — in-progress / imminent today gets live/countdown, future days
+  // get the generic LIVE AVAIL tag (no per-minute countdown).
   let liveBadge = '';
   if (evt.parish_live_url && !evt.hide_live) {
-    if (state.timeRange === 'today') {
-      const now = Date.now();
-      const evtStart = new Date(evt.start_utc).getTime();
-      const evtEnd = evt.end_utc ? new Date(evt.end_utc).getTime() : evtStart + 3600000;
-      if (now >= evtStart - 900000 && now <= evtEnd + 3600000) {
-        liveBadge = `<span class="event-badge badge-live"><span class="live-dot"></span>LIVE</span>`;
-      } else if (now < evtStart - 900000) {
-        const mins = Math.round((evtStart - now) / 60000);
-        const label = mins >= 60 ? `LIVE IN ${Math.round(mins / 60)}H` : `LIVE IN ${mins}M`;
-        liveBadge = `<span class="event-badge badge-live-soon">${label}</span>`;
-      }
+    const now = Date.now();
+    const evtStart = new Date(evt.start_utc).getTime();
+    const evtEnd = evt.end_utc ? new Date(evt.end_utc).getTime() : evtStart + 3600000;
+    const sameDay = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) ===
+                    new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(evt.start_utc));
+    if (sameDay && now >= evtStart - 900000 && now <= evtEnd + 3600000) {
+      liveBadge = `<span class="event-badge badge-live"><span class="live-dot"></span>LIVE</span>`;
+    } else if (sameDay && now < evtStart - 900000) {
+      const mins = Math.round((evtStart - now) / 60000);
+      const label = mins >= 60 ? `LIVE IN ${Math.round(mins / 60)}H` : `LIVE IN ${mins}M`;
+      liveBadge = `<span class="event-badge badge-live-soon">${label}</span>`;
     } else {
       liveBadge = `<span class="event-badge badge-live-soon">LIVE AVAIL</span>`;
     }
