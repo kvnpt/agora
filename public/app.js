@@ -263,7 +263,14 @@ function syncURL(opts = {}) {
     segs.push(state.filters.jurisdiction);
   }
 
-  if (state.filters.parishIds && state.filters.parishIds.size) {
+  // Parish: when the parish sheet is open, its focus wins over the main-list
+  // parishIds filter so closing an event inside the sheet lands the URL on
+  // /<acronym> rather than whatever the list happened to be filtered to.
+  const psfId = state.parishSheetFocus;
+  const psfParish = psfId ? state.parishes.find(x => x.id === psfId) : null;
+  if (psfParish && psfParish.acronym) {
+    segs.push(psfParish.acronym.toLowerCase().replace(/\s+/g, ''));
+  } else if (state.filters.parishIds && state.filters.parishIds.size) {
     const acrs = [...state.filters.parishIds].map(pid => {
       const p = state.parishes.find(x => x.id === pid);
       return p && p.acronym ? p.acronym.toLowerCase().replace(/\s+/g, '') : null;
@@ -383,13 +390,21 @@ async function reconcileStateFromUrl() {
       delete state._openEventId;
       await openEventFromUrl(nextOpenId);
     } else if (!nextOpenId && panelOpen) {
-      // If the expanded card lives in the parish sheet, closing the sheet
-      // collapses it and clears _openEventId in one move. Otherwise fall
-      // back to the main-list collapse path.
-      const parishSheetHasOpenCard = !!document.querySelector(
+      // Three close cases. Priority order matters:
+      //   1. Pinned event in parish sheet + URL still has the same parish →
+      //      drop just the event, keep the sheet (re-render without focus).
+      //   2. Any expanded card in parish sheet (incl. stream items, or URL
+      //      no longer references the parish) → close the sheet entirely.
+      //   3. Otherwise the expanded card is in the main list → collapse it.
+      const pinnedOpen = !!document.querySelector('.ps-pinned-event .event-card.expanded');
+      const parishSheetOpenCard = !!document.querySelector(
         '#parish-sheet-scroll .event-card.expanded'
       );
-      if (parishSheetHasOpenCard && typeof closeParishSheet === 'function') {
+      const psfInUrl = state.parishSheetFocus && state.filters.parishIds
+        && state.filters.parishIds.has(state.parishSheetFocus);
+      if (pinnedOpen && psfInUrl && typeof renderParishSheetContent === 'function') {
+        renderParishSheetContent(state.parishSheetFocus, {});
+      } else if (parishSheetOpenCard && typeof closeParishSheet === 'function') {
         closeParishSheet();
       } else {
         closeDetailDOM();
@@ -1855,10 +1870,12 @@ function initParishSheet() {
   function close() {
     // Release FAB ownership so main sheet's pending/next snapTo repositions it.
     window.agoraParishSheetVisible = false;
-    // Keep state._openEventId + URL on close. The event is still shareable and
-    // a reload of the URL re-opens the parish sheet with the event focused.
-    // Restore normal marker styling.
+    // Keep state._openEventId so the URL remains shareable for the event.
+    // Drop parishSheetFocus (it drove the /<acronym> URL segment while the
+    // sheet was open) and resync so the URL no longer advertises a view that
+    // has been torn down.
     state.parishSheetFocus = null;
+    syncURL();
     if (typeof updateMap === 'function') updateMap(state);
     snapTo(SNAP_HIDDEN, () => {
       sheet.classList.add('hidden');
@@ -1938,14 +1955,14 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   // Upcoming events across the main-list 28-day window. Prefer the
   // async-fetched list when available; otherwise fall back to state.events
-  // so the sheet paints instantly.
-  const nowMs = Date.now();
+  // so the sheet paints instantly. No start-after-now filter here — that
+  // would drop "happening now" events (start < now, end > now).
   let parishEvents;
   if (opts.parishEvents) {
     parishEvents = opts.parishEvents;
   } else {
     parishEvents = (state.events || [])
-      .filter(e => e.parish_id === parishId && new Date(e.start_utc).getTime() >= nowMs)
+      .filter(e => e.parish_id === parishId)
       .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
   }
   const archUrl = ARCHDIOCESE_EVENTS[parish.jurisdiction];
@@ -2094,12 +2111,22 @@ function renderParishSheetContent(parishId, opts = {}) {
   }
 
   // Async: fetch the same 28-day window as the main list so the parish
-  // sheet doesn't fall short of future events mid-week. Skip if caller
-  // already provided parishEvents.
+  // sheet doesn't fall short of future events mid-week. Lower bound is
+  // start-of-today-Sydney (matches fetchEvents) so currently-underway
+  // events still come back. Skip if caller already provided parishEvents.
   if (!opts.parishEvents) {
     const now = new Date();
+    const sydneyDate = new Intl.DateTimeFormat('en-AU', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(now);
+    const [d, m, y] = sydneyDate.split('/');
+    const startLocal = new Date(`${y}-${m}-${d}T00:00:00`);
+    const testDate = new Date(`${y}-${m}-${d}T12:00:00Z`);
+    const sydneyStr = testDate.toLocaleString('en-US', { timeZone: TZ });
+    const offsetMs = new Date(sydneyStr).getTime() - testDate.getTime();
+    const from = new Date(startLocal.getTime() - offsetMs).toISOString();
     const to = new Date(now.getTime() + 28 * 86400000).toISOString();
-    fetch(`/api/events?from=${encodeURIComponent(now.toISOString())}&to=${encodeURIComponent(to)}`)
+    fetch(`/api/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
       .then(r => r.ok ? r.json() : [])
       .then(events => {
         const filtered = (events || [])
@@ -2992,6 +3019,17 @@ function closeDetail() {
     // Legacy parish-detail modal path
     detailHistoryPushed = false;
     history.back();
+    return;
+  }
+  // Pinned parish-sheet drawer: tearing down the event should leave the
+  // parish sheet on its default state — no pinned slot, event back in
+  // the events stream below, URL at /<acronym>.
+  const pinned = document.querySelector('.ps-pinned-event .event-card.expanded');
+  if (pinned && state.parishSheetFocus && typeof renderParishSheetContent === 'function') {
+    const pid = state.parishSheetFocus;
+    delete state._openEventId;
+    syncURL();
+    renderParishSheetContent(pid, {});
     return;
   }
   closeDetailDOM();
