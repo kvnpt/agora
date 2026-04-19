@@ -290,6 +290,7 @@ function syncURL(opts = {}) {
     else history.pushState({ url: target }, '', target);
   } catch {}
   if (typeof updateModeUrl === 'function') updateModeUrl();
+  if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
 }
 window.agoraSyncURL = syncURL;
 
@@ -608,13 +609,9 @@ async function openEventFromUrl(id) {
   if (!evt) return;
 
   if (evt.parish_id) {
-    openParishSheet(evt.parish_id);
-    // Wait a tick for renderParishSheetContent to paint the card list, then
-    // expand the target card scoped to the parish sheet.
-    requestAnimationFrame(() => {
-      const scope = document.getElementById('parish-sheet-scroll');
-      if (scope) expandEventCard(id, { scope });
-    });
+    openParishSheet(evt.parish_id, { focusEventId: evt.id });
+    // renderParishSheetContent already pins + expands the focused event on
+    // its own requestAnimationFrame. No extra expandEventCard needed here.
   } else {
     // Event with no parish — fall back to main-list inline expand.
     showEventDetail(id);
@@ -1790,7 +1787,7 @@ function initParishSheet() {
 
   closeBtn.addEventListener('click', () => close());
 
-  function open(parishId) {
+  function open(parishId, openOpts = {}) {
     const parish = state.parishes.find(p => p.id === parishId);
     if (!parish) return;
     // If a different parish is being opened and _openEventId belongs to a
@@ -1802,7 +1799,7 @@ function initParishSheet() {
         syncURL();
       }
     }
-    renderParishSheetContent(parishId);
+    renderParishSheetContent(parishId, openOpts);
     // Map highlight: dim other markers, enlarge focused dot + label.
     state.parishSheetFocus = parishId;
     if (typeof updateMap === 'function') updateMap(state);
@@ -1858,11 +1855,8 @@ function initParishSheet() {
   function close() {
     // Release FAB ownership so main sheet's pending/next snapTo repositions it.
     window.agoraParishSheetVisible = false;
-    // Dropping the sheet drops any inline-expanded event with it.
-    if (state._openEventId) {
-      delete state._openEventId;
-      syncURL();
-    }
+    // Keep state._openEventId + URL on close. The event is still shareable and
+    // a reload of the URL re-opens the parish sheet with the event focused.
     // Restore normal marker styling.
     state.parishSheetFocus = null;
     if (typeof updateMap === 'function') updateMap(state);
@@ -1876,8 +1870,8 @@ function initParishSheet() {
   _parishSheetAPI = { open, close };
 }
 
-function openParishSheet(parishId) {
-  if (_parishSheetAPI) _parishSheetAPI.open(parishId);
+function openParishSheet(parishId, opts = {}) {
+  if (_parishSheetAPI) _parishSheetAPI.open(parishId, opts);
 }
 function closeParishSheet() {
   if (_parishSheetAPI) _parishSheetAPI.close();
@@ -1942,8 +1936,9 @@ function renderParishSheetContent(parishId, opts = {}) {
       </div>`;
   }
 
-  // Upcoming events through end of month. Prefer the async-fetched list when
-  // available; otherwise fall back to state.events so the sheet paints instantly.
+  // Upcoming events across the main-list 28-day window. Prefer the
+  // async-fetched list when available; otherwise fall back to state.events
+  // so the sheet paints instantly.
   const nowMs = Date.now();
   let parishEvents;
   if (opts.parishEvents) {
@@ -1958,14 +1953,29 @@ function renderParishSheetContent(parishId, opts = {}) {
     ? `<a class="ps-btn ps-arch-btn" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(parish.jurisdiction))} Archdiocese Events</a>`
     : '';
 
+  // Focused event hoist: when deep-linked via URL, pin the target event right
+  // under the parish header so it's the first thing the user sees.
+  const focusEventId = opts.focusEventId ?? state._openEventId ?? null;
+  const focusedEvent = focusEventId
+    ? parishEvents.find(e => e.id === focusEventId)
+    : null;
+  const streamEvents = focusedEvent
+    ? parishEvents.filter(e => e.id !== focusedEvent.id)
+    : parishEvents;
+
   contentEl.innerHTML = `
     <div class="ps-header">
       <div class="ps-avatar" style="background:${esc(color)}">${esc(initial)}</div>
       <div class="ps-header-info">
         <div class="ps-name">${esc(parish.name)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
+        <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
+          <span class="ps-url-text" id="ps-url-text"></span>
+          <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+        </button>
       </div>
     </div>
+    ${focusedEvent ? '<div class="ps-pinned-event" id="ps-pinned-event"></div>' : ''}
     <div class="ps-section">
       <div class="ps-section-title">Contact</div>
       ${addrHtml}
@@ -1975,18 +1985,63 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-events-list"></div>
     ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}`;
 
+  // Render the pinned focused event (single card; expanded on next frame).
+  if (focusedEvent) {
+    const pinned = contentEl.querySelector('#ps-pinned-event');
+    if (pinned) {
+      pinned.innerHTML = renderEventCard(focusedEvent);
+      const pinnedCard = pinned.querySelector('.event-card');
+      if (pinnedCard) {
+        pinnedCard.addEventListener('click', () => {
+          const scope = document.getElementById('parish-sheet-scroll');
+          const alreadyOpen = pinnedCard.classList.contains('expanded');
+          if (alreadyOpen) {
+            collapseEventCardDOM({ scope });
+            delete state._openEventId;
+            syncURL();
+          } else {
+            expandEventCard(focusedEvent.id, { scope });
+          }
+        });
+      }
+    }
+  }
+
+  // Wire URL button (copy) + paint current location.
+  const urlBtn = contentEl.querySelector('#ps-url');
+  if (urlBtn) {
+    urlBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(location.href);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = location.href;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch {}
+        document.body.removeChild(ta);
+      }
+      urlBtn.classList.add('copied');
+      setTimeout(() => urlBtn.classList.remove('copied'), 1400);
+    });
+  }
+  if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
+
   // Upcoming events: use the main-sheet stream renderer (day headers, Sunday
-  // clusters, month seam) against the parish-filtered slice. Card taps expand
-  // inline within the parish sheet — parish "holds" its events.
+  // clusters, month seam) against the parish-filtered slice minus any pinned
+  // focused event. Card taps expand inline within the parish sheet —
+  // parish "holds" its events.
   const streamEl = contentEl.querySelector('.ps-events-list');
   if (streamEl) {
-    if (parishEvents.length) {
-      renderStream(streamEl, parishEvents);
-    } else {
+    if (streamEvents.length) {
+      renderStream(streamEl, streamEvents);
+    } else if (!focusedEvent) {
       const empty = document.createElement('div');
       empty.className = 'ps-empty';
-      empty.textContent = 'No upcoming events this month.';
+      empty.textContent = 'No other upcoming events.';
       streamEl.replaceChildren(empty);
+    } else {
+      streamEl.replaceChildren();
     }
     // Parish now "holds" its events — tapping a card expands inline within
     // the parish sheet (toggle if tapping the already-open card).
@@ -2006,11 +2061,20 @@ function renderParishSheetContent(parishId, opts = {}) {
     });
 
     // Re-expand the open event when parish sheet re-renders (async schedule /
-    // events fetches trigger a full rebuild of the card list).
-    if (state._openEventId) {
-      const stillPresent = (parishEvents || []).some(e => e.id === state._openEventId);
-      if (stillPresent) {
-        requestAnimationFrame(() => expandEventCard(state._openEventId, { scope: streamEl.closest('#parish-sheet-scroll') }));
+    // events fetches trigger a full rebuild). Cover both the pinned hoist
+    // slot and the unpinned stream. A fresh deep-link via opts.focusEventId
+    // also seeds _openEventId so the initial render expands the pinned card.
+    // Only re-expand if _openEventId matches — respects user collapse between
+    // renders (don't re-open what they just closed).
+    const scopeEl = document.getElementById('parish-sheet-scroll');
+    if (opts.focusEventId && !state._openEventId) {
+      state._openEventId = opts.focusEventId;
+    }
+    if (state._openEventId && scopeEl) {
+      const inPinned = focusedEvent && focusedEvent.id === state._openEventId;
+      const inStream = (streamEvents || []).some(e => e.id === state._openEventId);
+      if (inPinned || inStream) {
+        requestAnimationFrame(() => expandEventCard(state._openEventId, { scope: scopeEl }));
       }
     }
   }
@@ -2029,14 +2093,13 @@ function renderParishSheetContent(parishId, opts = {}) {
       .catch(() => {});
   }
 
-  // Async: fetch month-worth of events for this parish and re-render with the
-  // richer list. Skip if caller already provided parishEvents.
+  // Async: fetch the same 28-day window as the main list so the parish
+  // sheet doesn't fall short of future events mid-week. Skip if caller
+  // already provided parishEvents.
   if (!opts.parishEvents) {
-    const endOfMonth = (() => {
-      const d = new Date();
-      return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString();
-    })();
-    fetch(`/api/events?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(endOfMonth)}`)
+    const now = new Date();
+    const to = new Date(now.getTime() + 28 * 86400000).toISOString();
+    fetch(`/api/events?from=${encodeURIComponent(now.toISOString())}&to=${encodeURIComponent(to)}`)
       .then(r => r.ok ? r.json() : [])
       .then(events => {
         const filtered = (events || [])
@@ -2044,7 +2107,7 @@ function renderParishSheetContent(parishId, opts = {}) {
           .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
         const sheetEl = document.getElementById('parish-sheet');
         if (sheetEl && !sheetEl.classList.contains('hidden')) {
-          renderParishSheetContent(parishId, { parishEvents: filtered });
+          renderParishSheetContent(parishId, { ...opts, parishEvents: filtered });
         }
       })
       .catch(() => {});
@@ -2110,6 +2173,16 @@ function updateModeUrl() {
   el.textContent = host + path;
 }
 window.agoraUpdateModeUrl = updateModeUrl;
+
+// Mirror of updateModeUrl for the parish-sheet header URL chip. Kept as a
+// separate function so the sheet can repaint without the mode-bar in scope.
+function updateParishSheetUrl() {
+  const el = document.getElementById('ps-url-text');
+  if (!el) return;
+  const host = location.host.replace(/^www\./, '');
+  const path = location.pathname === '/' ? '' : location.pathname;
+  el.textContent = host + path;
+}
 
 function renderSubDaySections(events, html) {
   const { morning, evening } = splitMorningEvening(events);
@@ -2520,9 +2593,10 @@ function expandEventCard(id, opts = {}) {
   if (!card) return;
 
   if (!card.classList.contains('expanded')) {
+    const inParishSheet = !!(root && root.id === 'parish-sheet-scroll');
     const drawer = document.createElement('div');
     drawer.className = 'event-card-drawer';
-    drawer.innerHTML = renderEventDrawerHTML(evt);
+    drawer.innerHTML = renderEventDrawerHTML(evt, { suppressParishHeader: inParishSheet });
     card.appendChild(drawer);
     card.classList.add('expanded');
     card.style.borderLeftColor = evt.parish_color || 'var(--border)';
@@ -2554,7 +2628,7 @@ function collapseEventCardDOM(opts = {}) {
   if (drawer) drawer.remove();
 }
 
-function renderEventDrawerHTML(evt) {
+function renderEventDrawerHTML(evt, opts = {}) {
   const start = new Date(evt.start_utc);
 
   const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(start);
@@ -2630,8 +2704,10 @@ function renderEventDrawerHTML(evt) {
 
   // Parish header — tappable, opens the parish sheet (schedules, details,
   // filtered events). Replaces the old inline schedule-toggle.
+  // Suppressed when the drawer is rendered inside the parish sheet itself:
+  // the user is already on that parish, so the nav affordance is noise.
   let parishHeaderHtml = '';
-  if (parish) {
+  if (parish && !opts.suppressParishHeader) {
     const initial = (parish.name || '?')[0].toUpperCase();
     const color = parish.color || '#666';
     const juris = capitalize(parish.jurisdiction || '');

@@ -1465,6 +1465,56 @@ body.map-expanded #location-fab { display: flex; }
 }
 .ps-meta-sep { margin: 0 4px; }
 
+/* Parish-sheet URL chip (mirrors .mode-url — click to copy). */
+.ps-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  max-width: 100%;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ps-url:hover { color: var(--text); border-color: var(--border); }
+.ps-url.copied {
+  color: #1565c0;
+  border-color: #1565c0;
+  background: #e3f2fd;
+}
+.ps-url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ps-url-copy {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  filter: brightness(0) saturate(100%) invert(50%);
+}
+.ps-url:hover .ps-url-copy { opacity: 1; }
+.ps-url.copied .ps-url-copy {
+  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
+  opacity: 1;
+}
+
+/* Pinned focused event — hoisted above Contact section when deep-linked. */
+.ps-pinned-event {
+  border-bottom: 1px solid var(--border-light);
+  background: #fff;
+}
+.ps-pinned-event .event-card { border-bottom: none; }
+
 .ps-section {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border-light);
