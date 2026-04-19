@@ -591,6 +591,11 @@ function initModeBar() {
     if (menu) menu.classList.add('hidden');
     const fb = document.getElementById('btn-filters');
     if (fb) fb.setAttribute('aria-expanded', 'false');
+    // Entering services mode makes the currently-open event irrelevant —
+    // close the drawer so the URL chip drops the event id on sync below.
+    if (state.mode !== 'services' && state._openEventId) {
+      closeDetailDOM();
+    }
     if (state.mode === 'services') {
       state.mode = 'events';
       servicesBtn.classList.remove('active');
@@ -963,13 +968,24 @@ function initFiltersMenu() {
   });
   // Pointerdown fires reliably on mobile taps (click sometimes doesn't on
   // non-interactive targets on iOS). Close whenever pointer lands outside
-  // the menu and trigger button.
+  // the menu and trigger button. Capture phase + stopPropagation + a short
+  // click-swallow window so the outside tap dismisses the menu without also
+  // firing the thing it landed on (marker, card, etc.).
+  let swallowClickUntil = 0;
   document.addEventListener('pointerdown', e => {
     if (menu.classList.contains('hidden')) return;
     if (menu.contains(e.target) || btn.contains(e.target)) return;
     menu.classList.add('hidden');
     btn.setAttribute('aria-expanded', 'false');
-  });
+    swallowClickUntil = performance.now() + 500;
+    e.stopPropagation();
+  }, true);
+  document.addEventListener('click', e => {
+    if (performance.now() > swallowClickUntil) return;
+    swallowClickUntil = 0;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
   syncFiltersButton();
 }
 
