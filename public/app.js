@@ -144,14 +144,19 @@ function disablePullToRefresh() {
 
     const pullingDown = dy > 0;
     // With the bottom-sheet layout, document itself doesn't scroll.
-    // Block pull-to-refresh when nothing is scrolled.
-    const sheetScroll = document.getElementById('sheet-scroll');
-    const scrollTop = sheetScroll ? sheetScroll.scrollTop : document.scrollingElement.scrollTop;
-    if (pullingDown && scrollTop <= 0) {
-      const scrollable = e.target.closest('.detail-panel');
-      if (scrollable && scrollable.scrollTop > 0) return;
-      if (e.cancelable) e.preventDefault();
+    // Block pull-to-refresh only when the scroll ancestor under the finger is
+    // at its top. Reading a hardcoded sheet element would falsely block
+    // downward scroll inside other scrollable regions (parish sheet, drawer).
+    if (!pullingDown) return;
+    const scrollable = e.target.closest(
+      '#parish-sheet-scroll, .detail-panel, #sheet-scroll'
+    );
+    if (scrollable && scrollable.scrollTop > 0) return;
+    if (!scrollable) {
+      const sheetScroll = document.getElementById('sheet-scroll');
+      if (sheetScroll && sheetScroll.scrollTop > 0) return;
     }
+    if (e.cancelable) e.preventDefault();
   }, { passive: false });
 }
 
