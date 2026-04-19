@@ -2263,8 +2263,10 @@ function renderStream(container, events) {
   }
 
   if (happeningNow.length) {
+    html += `<div class="happening-now-section">`;
     html += `<div class="section-header"><span class="now-dot"></span>Happening now</div>`;
     html += sortEvents(happeningNow).map(renderEventCard).join('');
+    html += `</div>`;
   }
   if (laterToday.length) {
     html += `<div class="section-header">Later today</div>`;
@@ -2280,12 +2282,9 @@ function renderStream(container, events) {
     html += '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing upcoming</h3></div>';
   }
 
-  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div><button class="list-footer-btn" id="cta-services">View regular schedules</button></div>`;
+  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
 
   container.innerHTML = html;
-
-  const svcBtn = container.querySelector('#cta-services');
-  if (svcBtn) svcBtn.addEventListener('click', () => document.getElementById('btn-services').click());
 
   const chip = container.querySelector('#earlier-today-chip');
   if (chip) {
