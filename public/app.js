@@ -285,7 +285,13 @@ function syncURL(opts = {}) {
     segs.push(state.filters.jurisdiction);
   }
 
-  if (state.mode === 'services') segs.push('services');
+  // /services/<parish> is idempotent with /<parish> — both surface the same
+  // parish view. When the parish sheet is open we prefer the shorter /<parish>
+  // and keep state.mode = 'services' in memory so closing the sheet returns
+  // the user to the services list (URL rebuilds to /services at that point).
+  // In-session browser-back still works because history's previous entry was
+  // /services before the sheet opened.
+  if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
   else if (state.filters.socialOnly) segs.push('social');
 
   // Parish: when the parish sheet is open, its focus wins over the main-list
@@ -382,6 +388,16 @@ async function reconcileStateFromUrl() {
       else removeParishCardHeader();
     } else {
       removeParishCardHeader();
+    }
+
+    // 5b) Parish sheet: close if back-navigation landed on a URL that no
+    // longer references the open parish. /services/<parish> now writes as
+    // /<parish> while the sheet is open, so the previous history entry is
+    // typically /services — back press lands here with parishIds empty and
+    // parishSheetFocus still set; close to match the URL.
+    if (state.parishSheetFocus) {
+      const inUrl = state.filters.parishIds && state.filters.parishIds.has(state.parishSheetFocus);
+      if (!inUrl && typeof closeParishSheet === 'function') closeParishSheet();
     }
 
     // 6) Filter menu items + derived UI
@@ -1102,9 +1118,16 @@ function hasActiveFilters() {
     state.filters.multiParish;
 }
 
+// "Show all" FAB clears two things only: jurisdiction chip + current parish
+// selection (while staying in multi-parish mode). It's visible whenever either
+// is set — social/English/focus toggles don't count.
+function hasResettableScope() {
+  return !!(state.filters.jurisdiction || (state.filters.parishIds && state.filters.parishIds.size));
+}
+
 function syncResetFab() {
   const fab = document.getElementById('reset-fab');
-  if (fab) fab.classList.toggle('visible', hasActiveFilters());
+  if (fab) fab.classList.toggle('visible', hasResettableScope());
 }
 
 function initResetFab() {
@@ -1113,26 +1136,14 @@ function initResetFab() {
   fab.addEventListener('click', () => {
     state.filters.jurisdiction = null;
     state.filters.parishIds = null;
-    state.filters.socialOnly = false;
-    state.filters.englishOnly = false;
-    state.filters.englishStrict = false;
     state.filters.showAllParishes = null;
-    state.filters.multiParish = false;
-    saveMultiParishPref(false);
     if (state.parishFocus) {
       state.parishFocus = null;
       removeParishCardHeader();
     }
-    document.getElementById('btn-social').classList.remove('active');
-    const enBtn = document.getElementById('btn-english');
-    enBtn.classList.remove('active');
-    enBtn.classList.remove('strict');
-    const enLabel = enBtn.querySelector('.fm-label');
-    if (enLabel) enLabel.textContent = 'English';
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
     syncParishRowVisibility();
-    syncMultiParishButton();
     syncResetFab();
     renderParishPills();
     if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
@@ -1178,6 +1189,22 @@ function initLocationFab() {
   });
 
   syncLocationState();
+}
+
+// ── Fit parish title to 2-line clamp ──
+// CSS sets the max font-size; we step down until the element stops overflowing
+// its clamped height. Leaves font-size untouched when already fits.
+function fitParishName(el) {
+  el.style.fontSize = '';
+  const style = getComputedStyle(el);
+  let size = parseFloat(style.fontSize);
+  const MIN = 12;
+  // scrollHeight > clientHeight means the 2-line clamp is ellipsizing.
+  let guard = 0;
+  while (el.scrollHeight > el.clientHeight + 1 && size > MIN && guard++ < 20) {
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
 }
 
 // ── Haversine distance ──
@@ -2076,7 +2103,11 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (!parish) return;
 
   const contentEl = document.getElementById('parish-sheet-content');
-  const initial = (parish.name || '?')[0].toUpperCase();
+  // Prefer full canonical title ("St. Kassiani Antiochian Orthodox Church")
+  // over the short nickname used on pills/cards ("St. Kassiani"). Long names
+  // are shrunk to fit two lines by fitParishName() after insertion.
+  const displayName = parish.full_name || parish.name || '';
+  const initial = (displayName || '?')[0].toUpperCase();
   const color = parish.color || '#666';
   const juris = capitalize(parish.jurisdiction || '');
   let distHtml = '';
@@ -2147,7 +2178,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-header">
       <div class="ps-avatar" style="background:${esc(color)};--parish-glow:${esc(hexToRgba(color, 0.45))}">${esc(initial)}</div>
       <div class="ps-header-info">
-        <div class="ps-name">${esc(parish.name)}</div>
+        <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
       </div>
       <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
@@ -2185,6 +2216,12 @@ function renderParishSheetContent(parishId, opts = {}) {
       }
     }
   }
+
+  // Spotify-style "physical squish": start at max font, shrink 1px at a time
+  // until the title fits within its 2-line clamp (clientHeight). Line-clamp
+  // keeps clientHeight fixed; scrollHeight reports true content height.
+  const nameEl = contentEl.querySelector('.ps-name');
+  if (nameEl) fitParishName(nameEl);
 
   // Wire URL button (copy) + paint current location.
   const urlBtn = contentEl.querySelector('#ps-url');
@@ -2860,10 +2897,21 @@ function renderServices() {
     for (const { pid, grp: { info, items } } of pgs) {
       const pColor = info.parish_color || jColor;
       const initial = (info.parish_name || '?')[0].toUpperCase();
+      // Distance chip: same intensity tiers as event list (near ≤5, mid ≤15, far).
+      let distHtml = '';
+      if (state.locationActive) {
+        const parish = state.parishes.find(p => p.id === pid);
+        if (parish && parish.lat && parish.lng) {
+          const km = haversineKm(state.userLat, state.userLng, parish.lat, parish.lng);
+          const cls = km <= 5 ? 'distance-near' : km <= 15 ? 'distance-mid' : 'distance-far';
+          distHtml = `<span class="parish-schedule-dist ${cls}">${km.toFixed(1)} km</span>`;
+        }
+      }
       html += `<div class="parish-schedule" data-parish-id="${esc(pid)}">`;
       html += `<div class="parish-schedule-head">`;
       html += `<div class="parish-schedule-avatar" style="background:${esc(pColor)}">${esc(initial)}</div>`;
       html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
+      html += distHtml;
       html += `</div>`;
       html += renderScheduleDaysHTML(items, { isAdmin: state.isAdmin });
       html += '</div>';

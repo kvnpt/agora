@@ -865,6 +865,12 @@ input, select, textarea {
   font-weight: 600;
   color: var(--text);
 }
+.parish-schedule-dist {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .schedule-day {
   font-size: 13px;
   font-weight: 600;
@@ -1618,15 +1624,18 @@ body.map-expanded #location-fab { display: flex; }
   justify-content: center;
 }
 .ps-name {
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
   color: var(--text);
-  /* Squish gracefully when bumping against the URL chip / close-X. */
+  /* Spotify-style squish: up to 2 lines, JS shrinks font-size if still overflowing. */
   letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   min-width: 0;
 }
 .ps-meta {
