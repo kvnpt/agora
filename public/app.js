@@ -890,8 +890,8 @@ function initSocialFilter() {
     const willActivate = !state.filters.socialOnly;
     state.filters.socialOnly = willActivate;
     btn.classList.toggle('active', willActivate);
-    // Activating social narrows the feed — currently-open event likely irrelevant.
-    if (willActivate && state._openEventId) {
+    // Toggling social (in or out) makes the currently-open event likely irrelevant.
+    if (state._openEventId) {
       closeDetailDOM();
     }
     // Mutex: turning social on while in services mode exits services mode.
