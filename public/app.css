@@ -478,13 +478,23 @@ input, select, textarea {
   text-transform: uppercase;
   color: #777;
 }
-/* Day wrapper — each day of events is its own subtle box. */
+/* Day wrapper — each day of events is its own subtle box with a thin green
+   neumorphic glow that bleeds up from the bottom edge. */
 .day-box {
+  position: relative;
   margin: 10px;
   border: 1px solid var(--border-light);
   background: #fafafa;
   border-radius: 8px;
   overflow: hidden;
+}
+.day-box::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 20px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0));
 }
 .day-box .event-card { background: transparent; }
 .day-box .event-card:not(.expanded):last-child { border-bottom: none; }
@@ -513,13 +523,22 @@ input, select, textarea {
   vertical-align: middle;
 }
 
-/* ── Happening-now: green-tinted box around the section ── */
+/* ── Happening-now: same shape as a day-box, with a stronger green bottom glow
+       and a green border outline, but no flat background tint. ── */
 .happening-now-section {
+  position: relative;
   margin: 10px;
   border: 1px solid rgba(34, 197, 94, 0.4);
-  background: rgba(34, 197, 94, 0.06);
   border-radius: 8px;
   overflow: hidden;
+}
+.happening-now-section::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 22px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(34, 197, 94, 0.32), rgba(34, 197, 94, 0));
 }
 .happening-now-section .event-card { background: transparent; }
 .happening-now-section .event-card:not(.expanded):last-child { border-bottom: none; }
@@ -533,13 +552,24 @@ input, select, textarea {
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   transition: background 0.1s;
-  box-shadow: inset 0 -6px 8px -8px rgba(0, 0, 0, 0.14);
 }
+/* Expanded card: no margin (padding matches inactive cards), no border (it
+   inherits the day-box's rounded corners via overflow clip), no radius of
+   its own. Green glow bleeds up from the bottom edge — same vocabulary as
+   happening-now / day-box. */
 .event-card.expanded {
-  border: 1px solid;
-  border-radius: 8px;
-  margin: 10px;
+  margin: 0;
+  border: none;
+  border-radius: 0;
   box-shadow: none;
+}
+.event-card.expanded::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 20px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(34, 197, 94, 0.28), rgba(34, 197, 94, 0));
 }
 .event-card.expanded .event-title-row { padding-right: 28px; }
 .event-card:hover { background: #fafafa; }
