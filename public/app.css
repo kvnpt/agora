@@ -478,24 +478,36 @@ input, select, textarea {
   text-transform: uppercase;
   color: #777;
 }
-/* Day wrapper — each day of events is its own subtle box with a thin green
-   neumorphic glow that bleeds up from the bottom edge. */
+/* Day wrapper — hairline outline plus a heavier foot-stroke that follows
+   the bottom-corner radius. The border itself curves around the corners,
+   so giving just `border-bottom` more thickness produces a thickened
+   bottom edge that tapers neatly into each rounded corner. */
 .day-box {
   position: relative;
   margin: 10px;
   border: 1px solid var(--border);
+  border-bottom-width: 4px;
   border-radius: 8px;
   overflow: hidden;
 }
-.day-box::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 28px;
-  pointer-events: none;
-  background: radial-gradient(120% 100% at 50% 100%, rgba(0, 0, 0, 0.09), transparent 75%);
-}
 .day-box .event-card { background: transparent; }
+
+/* Day header flourish — hairlines flanking the centered label so each day
+   feels like the opening of a small manuscript section. */
+.day-box .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+.day-box .section-header::before,
+.day-box .section-header::after {
+  content: '';
+  flex: 0 1 48px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border) 50%, transparent);
+}
 /* Clear line between morning and evening sub-groups inside a day box. */
 .sub-day-divider {
   border: none;
