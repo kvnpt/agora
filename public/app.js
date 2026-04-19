@@ -3518,9 +3518,11 @@ function parseLocalDate(utcStr) { return new Date(utcStr); }
 
 function formatTime12(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
-  const ampm = h >= 12 ? 'pm' : 'am';
+  const ampm = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 || 12;
-  return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  const mm = String(m).padStart(2, '0');
+  // Always :00 minutes + small-caps AM/PM marker consumed by CSS.
+  return `${h12}:${mm}<span class="ampm">${ampm}</span>`;
 }
 
 function utcToLocalInput(utcStr) {

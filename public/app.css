@@ -880,10 +880,18 @@ input, select, textarea {
 }
 .schedule-item-title { color: var(--text-secondary); }
 .schedule-item-time {
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 500;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   margin-left: 4px;
+}
+.schedule-item-time .ampm {
+  font-size: 0.75em;
+  font-weight: 600;
+  font-variant: all-small-caps;
+  letter-spacing: 0.06em;
+  margin-left: 2px;
+  color: var(--text-muted);
 }
 .schedule-item-lang {
   font-size: 10.5px;
@@ -1581,7 +1589,7 @@ body.map-expanded #location-fab { display: flex; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px 14px 16px;
+  padding: 10px 12px 34px 16px; /* extra bottom for absolute URL chip */
   background: var(--surface);
   border-bottom: 1px solid var(--border-light);
 }
@@ -1633,15 +1641,18 @@ body.map-expanded #location-fab { display: flex; }
 .ps-meta-sep { margin: 0 4px; }
 
 /* Parish-sheet URL chip — mirrors .mode-url vocabulary: strong weight, full
-   color, whole-URL hot-glow on change, softer COPIED feedback. */
+   color, whole-URL hot-glow on change, softer COPIED feedback.
+   Absolute-positioned at the bottom-right of the header so the title can
+   span the full header width above. */
 .ps-url {
-  flex: none;
-  align-self: center;
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  max-width: calc(100% - 72px);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 46%;
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: none;
   border: none;
   color: var(--text);
