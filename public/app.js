@@ -277,12 +277,16 @@ function syncURL(opts = {}) {
   if (_reconciling) return;
   const segs = [];
 
-  if (state.filters.socialOnly) segs.push('social');
+  // Order: jurisdiction → services|social → parish → language → eventId.
+  // detectUrlState is order-agnostic; order here is purely for readability.
 
   // If on a jurisdiction subdomain, omit the segment to avoid /antiochian/antiochian
   if (state.filters.jurisdiction && state.filters.jurisdiction !== state.subdomainJurisdiction) {
     segs.push(state.filters.jurisdiction);
   }
+
+  if (state.mode === 'services') segs.push('services');
+  else if (state.filters.socialOnly) segs.push('social');
 
   // Parish: when the parish sheet is open, its focus wins over the main-list
   // parishIds filter so closing an event inside the sheet lands the URL on
@@ -299,8 +303,6 @@ function syncURL(opts = {}) {
     if (acrs.length === 1) segs.push(acrs[0]);
     else if (acrs.length > 1) segs.push(acrs.join('+'));
   }
-
-  if (state.mode === 'services') segs.push('services');
 
   if (state.filters.englishOnly) {
     segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
@@ -558,7 +560,31 @@ async function checkAdmin() {
 
 // ── Mode bar ──
 function initModeBar() {
+  const eventsBtn = document.getElementById('btn-events');
   const servicesBtn = document.getElementById('btn-services');
+
+  if (eventsBtn) {
+    eventsBtn.addEventListener('click', () => {
+      const menu = document.getElementById('filters-menu');
+      if (menu) menu.classList.add('hidden');
+      const fb = document.getElementById('btn-filters');
+      if (fb) fb.setAttribute('aria-expanded', 'false');
+      // Events is the default mode — clicking exits services and/or socialOnly.
+      const wasServices = state.mode === 'services';
+      const wasSocial = !!state.filters.socialOnly;
+      state.mode = 'events';
+      servicesBtn.classList.remove('active');
+      if (wasSocial) {
+        state.filters.socialOnly = false;
+        document.getElementById('btn-social').classList.remove('active');
+      }
+      showView('events');
+      if (wasServices || wasSocial || !state.events.length) fetchEvents();
+      updateArchdioceseEventsBanner();
+      if (typeof syncFiltersButton === 'function') syncFiltersButton();
+      syncURL();
+    });
+  }
 
   servicesBtn.addEventListener('click', () => {
     const menu = document.getElementById('filters-menu');
@@ -820,8 +846,8 @@ function initMultiParishToggle() {
 function syncParishRowVisibility() {
   const row = document.getElementById('parish-filter-row');
   if (!row) return;
-  const shown = !!state.filters.jurisdiction || !!state.filters.multiParish;
-  row.classList.toggle('visible', shown);
+  // Parish picker is an explicit mode now — no auto-open on jurisdiction chip.
+  row.classList.toggle('visible', !!state.filters.multiParish);
 }
 window.agoraSyncParishRowVisibility = syncParishRowVisibility;
 
@@ -910,6 +936,10 @@ function initFiltersMenu() {
   const menu = document.getElementById('filters-menu');
   if (!btn || !menu) return;
   btn.addEventListener('click', () => {
+    const willOpen = menu.classList.contains('hidden');
+    // Decide flip direction BEFORE showing so the expand-from-button
+    // animation uses the right transform-origin from frame zero.
+    if (willOpen) positionFiltersMenu(btn, menu);
     const nowHidden = menu.classList.toggle('hidden');
     btn.setAttribute('aria-expanded', String(!nowHidden));
   });
@@ -923,6 +953,31 @@ function initFiltersMenu() {
     btn.setAttribute('aria-expanded', 'false');
   });
   syncFiltersButton();
+}
+
+// Anchor the filters menu to the trigger button. When the sheet sits at peek
+// height (button near the bottom of the viewport), flip the menu upward so
+// it doesn't fall off the edge. Uses the actual measured space rather than
+// a state flag so it Just Works across snap points.
+function positionFiltersMenu(btn, menu) {
+  const r = btn.getBoundingClientRect();
+  // .filters-menu is positioned absolute inside .mode-bar (position:relative),
+  // so measure against that parent. Works whether the menu is visible or not.
+  const parent = menu.parentElement;
+  const parentR = parent ? parent.getBoundingClientRect() : { top: 0, left: 0 };
+  const leftInParent = r.left - parentR.left;
+  menu.style.left = `${Math.max(4, leftInParent)}px`;
+  // Menu height is ~260px with 6 items. Budget a bit more so the flip kicks
+  // in even when the keyboard or notches eat viewport.
+  const approxMenuH = 280;
+  const spaceBelow = window.innerHeight - r.bottom;
+  const flipUp = spaceBelow < approxMenuH + 16;
+  menu.classList.toggle('flip-up', flipUp);
+  if (flipUp) {
+    menu.style.top = `${r.top - parentR.top - approxMenuH - 6}px`;
+  } else {
+    menu.style.top = `${r.bottom - parentR.top + 6}px`;
+  }
 }
 
 function syncFiltersButton() {
@@ -941,14 +996,27 @@ function syncFiltersButton() {
     parts.push(`<span class="filters-btn-hamburger">☰</span>`);
     label = 'Events';
   }
+  parts.push(`<span class="filters-btn-label">${label}</span>`);
   if (state.filters.englishOnly) {
     const strict = state.filters.englishStrict ? ' strict' : '';
     parts.push(`<span class="fm-en-badge${strict}">EN</span>`);
   }
-  parts.push(`<span class="filters-btn-label">${label}</span>`);
   // Always prominent — the button is a mode indicator, not just a menu toggle.
   btn.classList.add('has-active');
   content.innerHTML = parts.join('');
+
+  // Mirror the radio state on the dropdown's mode items so the menu reflects
+  // which view is live without tick marks. Style carries the signal.
+  const isEvents = state.mode !== 'services' && !state.filters.socialOnly;
+  const isServices = state.mode === 'services';
+  const isSocial = state.mode !== 'services' && !!state.filters.socialOnly;
+  const setActive = (id, on) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', on);
+  };
+  setActive('btn-events', isEvents);
+  setActive('btn-services', isServices);
+  setActive('btn-social', isSocial);
 }
 
 // ── Reset FAB (top center) ──
@@ -1845,6 +1913,9 @@ function initParishSheet() {
     renderParishSheetContent(parishId, openOpts);
     // Map highlight: dim other markers, enlarge focused dot + label.
     state.parishSheetFocus = parishId;
+    // URL carries /<acronym> while the parish sheet is open so the address
+    // bar reflects the current surface and tapping copy yields a deep link.
+    syncURL();
     if (typeof updateMap === 'function') updateMap(state);
     sheet.classList.remove('hidden');
     sheet.setAttribute('aria-hidden', 'false');
@@ -1999,7 +2070,7 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   contentEl.innerHTML = `
     <div class="ps-header">
-      <div class="ps-avatar" style="background:${esc(color)}">${esc(initial)}</div>
+      <div class="ps-avatar" style="background:${esc(color)};--parish-glow:${esc(hexToRgba(color, 0.45))}">${esc(initial)}</div>
       <div class="ps-header-info">
         <div class="ps-name">${esc(parish.name)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
@@ -2013,7 +2084,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-section">
       <div class="ps-section-title">Contact</div>
       ${addrHtml}
-      <div class="ps-actions">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
     </div>
     ${schedSectionHtml}
     <div class="ps-events-list"></div>
@@ -2223,7 +2294,7 @@ function showCopiedFeedback(btn) {
     el.innerHTML = saved;
     el._copiedTimer = null;
     updateModeUrl();
-  }, 1200);
+  }, 900);
 }
 
 function updateModeUrl() {
@@ -2234,23 +2305,41 @@ function updateModeUrl() {
   const host = location.host.replace(/^www\./, '');
   const segs = location.pathname.split('/').filter(Boolean);
   const hasPrev = !!el.dataset.prevSegs;
-  const prev = hasPrev ? JSON.parse(el.dataset.prevSegs) : [];
-  el.dataset.prevSegs = JSON.stringify(segs);
+  const prevKey = hasPrev ? el.dataset.prevSegs : '';
+  const nextKey = JSON.stringify(segs);
+  const urlChanged = hasPrev && prevKey !== nextKey;
+  el.dataset.prevSegs = nextKey;
+
+  // Pick the glow tint from the rightmost parish segment if any, else a
+  // neutral accent. The whole URL hot-glows in this color on change.
+  let tint = '#1565c0';
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const p = findParishByAcronym(decodeURIComponent(segs[i]));
+    if (p && p.color) { tint = p.color; break; }
+  }
 
   let html = `<span class="mode-url-host">${esc(host)}</span>`;
   for (const seg of segs) {
     const decoded = decodeURIComponent(seg);
     const parish = findParishByAcronym(decoded);
-    const isNew = hasPrev && !prev.includes(seg);
-    const newCls = isNew ? ' mode-url-seg-new' : '';
     if (parish) {
       const color = parish.color || '#888';
-      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg mode-url-parish${newCls}" style="color:${esc(color)}">${esc(decoded.toUpperCase())}</span>`;
+      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg mode-url-parish" style="color:${esc(color)}">${esc(decoded.toUpperCase())}</span>`;
     } else {
-      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg${newCls}">${esc(decoded)}</span>`;
+      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg">${esc(decoded)}</span>`;
     }
   }
   el.innerHTML = html;
+
+  // Hot-glow the whole URL (not just a single segment) whenever the URL
+  // changes. Restarts the CSS animation by yanking and re-adding the class.
+  if (urlChanged) {
+    el.style.setProperty('--url-glow', hexToRgba(tint, 0.55));
+    el.classList.remove('mode-url-flash');
+    // Force reflow so the animation restarts even on rapid updates.
+    void el.offsetWidth;
+    el.classList.add('mode-url-flash');
+  }
 }
 
 function findParishByAcronym(seg) {
@@ -2519,7 +2608,7 @@ function renderScheduleDaysHTML(items, opts = {}) {
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
       const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
-      html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
+      html += `<div class="schedule-item"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${womLabel}${editBtn}</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
         html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
@@ -2652,9 +2741,12 @@ function renderServices() {
     html += `<div class="section-header jurisdiction-header">${esc(jLabel)}</div>`;
     for (const { pid, grp: { info, items } } of pgs) {
       const pColor = info.parish_color || jColor;
-      const glow = hexToRgba(pColor, 0.28);
-      html += `<div class="parish-schedule" data-parish-id="${esc(pid)}" style="--accent-glow:${esc(glow)}">`;
+      const initial = (info.parish_name || '?')[0].toUpperCase();
+      html += `<div class="parish-schedule" data-parish-id="${esc(pid)}">`;
+      html += `<div class="parish-schedule-head">`;
+      html += `<div class="parish-schedule-avatar" style="background:${esc(pColor)}">${esc(initial)}</div>`;
       html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
+      html += `</div>`;
       html += renderScheduleDaysHTML(items, { isAdmin: state.isAdmin });
       html += '</div>';
     }

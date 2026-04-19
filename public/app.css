@@ -184,13 +184,22 @@ input, select, textarea {
   padding: 6px 10px;
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
+  /* Share-worthy chip: no tap-highlight box (especially while dragging the
+     modal bar, which would otherwise flash the native touch outline). */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
+  outline: none;
 }
-.mode-url:hover { color: var(--text); }
+.mode-url:focus,
+.mode-url:focus-visible,
+.mode-url:active { outline: none; box-shadow: none; }
 .mode-url-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,47 +212,40 @@ input, select, textarea {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
-  opacity: 0.6;
-  filter: brightness(0) saturate(100%) invert(50%);
+  opacity: 0.75;
+  filter: brightness(0) saturate(100%) invert(20%);
 }
 .mode-url:hover .mode-url-copy { opacity: 1; }
 
-/* URL segment animation: a newly-added segment flashes in the accent colour
-   (parish color for parish acronyms, else a neutral accent) and fades back to
-   the normal muted text color. */
-.mode-url-sep { opacity: 0.5; margin: 0 1px; }
-.mode-url-seg { transition: color 600ms ease-out, text-shadow 600ms ease-out; }
-.mode-url-parish { font-weight: 700; }
-.mode-url-seg-new {
-  animation: url-seg-flash 900ms ease-out;
+.mode-url-sep { opacity: 0.45; margin: 0 1px; font-weight: 500; }
+.mode-url-seg { color: var(--text); }
+.mode-url-parish { font-weight: 800; letter-spacing: 0.02em; }
+
+/* Whole-URL hot-glow on change. The tint (`--url-glow`) is set inline by
+   updateModeUrl from the active parish color, or a neutral accent. */
+.mode-url-flash {
+  animation: url-flash 900ms ease-out;
 }
-@keyframes url-seg-flash {
-  0%   { color: #1565c0; text-shadow: 0 0 6px rgba(21, 101, 192, 0.45); }
-  60%  { color: #1565c0; text-shadow: 0 0 2px rgba(21, 101, 192, 0.15); }
-  100% { /* settles to the declared color on the element */ text-shadow: none; }
-}
-.mode-url-parish.mode-url-seg-new {
-  animation: url-parish-flash 900ms ease-out;
-}
-@keyframes url-parish-flash {
-  0%   { filter: brightness(1.4) saturate(1.3); text-shadow: 0 0 8px currentColor; }
-  60%  { filter: brightness(1.1); text-shadow: 0 0 2px currentColor; }
-  100% { filter: none; text-shadow: none; }
+@keyframes url-flash {
+  0%   { text-shadow: 0 0 10px var(--url-glow, rgba(21, 101, 192, 0.55)),
+                        0 0 3px var(--url-glow, rgba(21, 101, 192, 0.55)); }
+  60%  { text-shadow: 0 0 3px var(--url-glow, rgba(21, 101, 192, 0.25)); }
+  100% { text-shadow: none; }
 }
 
-/* COPIED feedback — in-place of the URL text, warm fade back. */
+/* COPIED feedback — quieter, softer, quick in/out. */
 .mode-url-copied-msg {
   display: inline-block;
   color: #16a34a;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  animation: url-copied-glow 1200ms ease-out;
+  letter-spacing: 0.08em;
+  animation: url-copied-soft 900ms ease-out;
 }
-@keyframes url-copied-glow {
-  0%   { opacity: 0; transform: translateY(3px) scale(0.96); text-shadow: 0 0 10px rgba(22, 163, 74, 0.6); }
-  18%  { opacity: 1; transform: translateY(0) scale(1); text-shadow: 0 0 10px rgba(22, 163, 74, 0.6); }
-  70%  { opacity: 1; text-shadow: 0 0 2px rgba(22, 163, 74, 0.2); }
-  100% { opacity: 0.4; text-shadow: none; }
+@keyframes url-copied-soft {
+  0%   { opacity: 0; transform: translateY(1px); }
+  25%  { opacity: 1; transform: translateY(0); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ── Filters button (collapses services/social/english) ──
@@ -292,7 +294,10 @@ input, select, textarea {
   border-color: var(--text);
 }
 
-/* ── Filters dropdown menu ── */
+/* ── Filters dropdown menu ──
+   Anchored to the filters button by JS; `transform-origin` matches so the
+   menu visually expands from the button. When there isn't room below
+   (sheet at peek), JS adds .flip-up and we invert the anchor. */
 .filters-menu {
   position: absolute;
   top: 40px;
@@ -305,6 +310,20 @@ input, select, textarea {
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
   padding: 4px;
   z-index: 600;
+  transform-origin: top left;
+  animation: filters-menu-expand 140ms ease-out;
+}
+.filters-menu.flip-up {
+  transform-origin: bottom left;
+  animation: filters-menu-expand-up 140ms ease-out;
+}
+@keyframes filters-menu-expand {
+  0%   { opacity: 0; transform: scale(0.88) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes filters-menu-expand-up {
+  0%   { opacity: 0; transform: scale(0.88) translateY(4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 .filters-menu-sep {
   height: 1px;
@@ -340,28 +359,18 @@ input, select, textarea {
   font-size: 13px;
   color: var(--text);
 }
-.filters-menu-item .fm-check {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1.5px solid var(--border);
-  position: relative;
+/* Active menu item: no tick, styling carries the signal. Soft tinted
+   background + filled icon + weighted label read clearly at a glance. */
+.filters-menu-item.active {
+  background: var(--border-light);
 }
-.filters-menu-item.active .fm-check {
-  background: var(--text);
-  border-color: var(--text);
+.filters-menu-item.active .fm-label {
+  font-weight: 600;
+  color: var(--text);
 }
-.filters-menu-item.active .fm-check::after {
-  content: '';
-  position: absolute;
-  left: 3px;
-  top: 0px;
-  width: 4px;
-  height: 8px;
-  border: solid var(--bg);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
+.filters-menu-item.active .fm-icon {
+  filter: none;
+  opacity: 1;
 }
 .fm-en-badge {
   font-size: 10px;
@@ -811,56 +820,88 @@ input, select, textarea {
   background: linear-gradient(to right, transparent, var(--juris-color, var(--border)) 50%, transparent);
 }
 
-/* Parish schedule card inside a jurisdiction box — flush with box edges,
-   parish-colored radial glow at the bottom (same vocabulary as a focused
-   event card). --accent-glow is set inline per parish. */
+/* Parish schedule card inside a jurisdiction box — avatar + name header,
+   then day rows. No glow: the parish avatar carries the identity. */
 .parish-schedule {
   position: relative;
-  padding: 14px 14px 18px;
+  padding: 14px 14px 16px;
   cursor: pointer;
 }
 .parish-schedule + .parish-schedule {
   border-top: 1px solid var(--border-light);
 }
-.parish-schedule::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 24px;
-  pointer-events: none;
-  background: radial-gradient(120% 100% at 50% 100%, var(--accent-glow, rgba(136, 136, 136, 0.28)), transparent 75%);
+.parish-schedule-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.parish-schedule-avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
 }
 .parish-schedule-name {
+  flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
 }
 .schedule-day {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  margin-top: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 12px;
 }
 .schedule-item {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  margin-top: 4px;
   padding-left: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.schedule-item-title {
+  font-weight: 500;
+  color: var(--text);
 }
 .schedule-item-time {
-  color: var(--text-muted);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 .schedule-item-lang {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.4;
+  margin-left: 0;
 }
 .schedule-item-wom {
-  font-size: 9px;
-  font-style: italic;
-  color: var(--text-muted);
-  margin-left: 4px;
-  opacity: 0.7;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 0;
+  opacity: 1;
 }
 .schedule-edit-btn {
   background: none;
@@ -1562,6 +1603,12 @@ body.map-expanded #location-fab { display: flex; }
   justify-content: center;
   font-weight: 700;
   font-size: 18px;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    0 0 0 3px rgba(255, 255, 255, 0.6),
+    0 0 14px 2px var(--parish-glow, rgba(0, 0, 0, 0.18)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.2);
 }
 .ps-header-info { flex: 1; min-width: 0; }
 .ps-name {
@@ -1661,19 +1708,27 @@ body.map-expanded #location-fab { display: flex; }
   display: inline-block;
   padding: 7px 14px;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
+  font-weight: 600;
+  color: var(--parish-color, var(--text));
   background: #fff;
-  border: 1px solid var(--border);
+  border: 1px solid var(--parish-color, var(--border));
   border-radius: 16px;
   text-decoration: none;
   cursor: pointer;
 }
-.ps-btn:hover { background: var(--border-light); }
+.ps-btn:hover {
+  background: var(--parish-color, var(--text));
+  color: #fff;
+}
 .ps-btn-primary {
-  background: var(--text);
-  color: var(--bg);
-  border-color: var(--text);
+  background: var(--parish-color, var(--text));
+  color: #fff;
+  border-color: var(--parish-color, var(--text));
+}
+.ps-btn-primary:hover {
+  filter: brightness(1.1);
+  background: var(--parish-color, var(--text));
+  color: #fff;
 }
 
 .ps-empty { font-size: 13px; color: var(--text-muted); }
