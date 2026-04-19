@@ -277,7 +277,6 @@ input, select, textarea {
 }
 .filters-btn-content { display: inline-flex; align-items: center; gap: 4px; }
 .filters-btn-content img { width: 14px; height: 14px; opacity: 0.8; }
-.filters-btn-hamburger { font-size: 13px; line-height: 1; }
 .filters-btn-label { font-size: 12px; font-weight: 500; letter-spacing: 0.02em; }
 .filters-btn-content .fm-en-badge {
   opacity: 1;

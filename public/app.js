@@ -973,67 +973,58 @@ function initFiltersMenu() {
   syncFiltersButton();
 }
 
-// Anchor the filters menu to the trigger button. When the sheet sits at peek
-// height (button near the bottom of the viewport), flip the menu upward so
-// it doesn't fall off the edge. Uses the actual measured space rather than
-// a state flag so it Just Works across snap points.
-// Position the filters menu so that the currently-active item aligns with
-// the trigger button's vertical center. The menu border-radius matches the
-// button, and JS sets --btn-inset-* so the menu's hidden clip-path equals
-// the button's bounds — the menu visually "grows" out of the button on open.
-//
-// In peek mode (not enough space below), the menu flips upward AND the
-// item order inverts (via column-reverse) so the visual-to-mode mapping
-// stays consistent: the active item still sits where the button was.
+// Reorder menu so the active mode button lands first; everything else keeps
+// DOM order. Default fallback order is Events → Schedules → Socials.
+// In flip-up (peek) the menu flex-reverses, so the "first" item appears
+// visually last — adjacent to the button below. Either way the active item
+// sits next to the trigger.
+function setFiltersMenuOrder(menu) {
+  const activeModeId = ['btn-events', 'btn-services', 'btn-social']
+    .find(id => document.getElementById(id)?.classList.contains('active'));
+  let n = 1;
+  for (const child of menu.children) {
+    child.style.order = (child.id && child.id === activeModeId) ? '0' : String(n++);
+  }
+}
+
+// Position the menu so the trigger button's edge abuts the menu (active
+// item ends up adjacent to the button). Menu border-radius matches the
+// button's, and --btn-inset-* defines the collapsed clip-path so the menu
+// visually "grows" out of the button via clip-path interpolation.
 function positionFiltersMenu(btn, menu) {
   const r = btn.getBoundingClientRect();
   const parent = menu.parentElement;
   const parentR = parent.getBoundingClientRect();
 
-  // Decide flip direction BEFORE measuring so column-reverse is applied.
   const spaceBelow = window.innerHeight - r.bottom;
   const flipUp = spaceBelow < 280;
   menu.classList.toggle('flip-up', flipUp);
 
-  // Provisionally place the menu so layout settles; we'll shift it afterward
-  // to align the active item with the button.
-  menu.style.left = `${r.left - parentR.left}px`;
-  menu.style.top = `${r.top - parentR.top}px`;
-  // Force layout for accurate offsetTop readings below.
-  void menu.offsetWidth;
+  setFiltersMenuOrder(menu);
 
-  const activeItem = menu.querySelector('.filters-menu-item.active:not([hidden])');
+  const menuLeft = r.left - parentR.left;
+  menu.style.left = `${menuLeft}px`;
+  menu.style.top = '0px';
+  // Force layout so offsetHeight reflects the reordered menu.
+  void menu.offsetWidth;
   const menuH = menu.offsetHeight;
   const menuW = menu.offsetWidth;
 
-  let menuTop;
-  if (activeItem) {
-    const activeRect = activeItem.getBoundingClientRect();
-    const menuRect = menu.getBoundingClientRect();
-    const activeCenterInViewport = activeRect.top + activeRect.height / 2;
-    const btnCenterY = r.top + r.height / 2;
-    const deltaY = btnCenterY - activeCenterInViewport;
-    menuTop = (menuRect.top - parentR.top) + deltaY;
-  } else {
-    menuTop = (flipUp ? r.top - menuH - 6 : r.bottom + 6) - parentR.top;
-  }
+  // Active item is first (flip-up: last visually = bottom) → align the
+  // relevant menu edge with the matching button edge.
+  let menuTop = flipUp
+    ? (r.bottom - parentR.top) - menuH
+    : (r.top - parentR.top);
 
-  // Clamp so the menu stays within the viewport.
-  const minTopInViewport = 8;
-  const maxTopInViewport = window.innerHeight - menuH - 8;
+  // Clamp into viewport.
   const menuTopViewport = menuTop + parentR.top;
-  if (menuTopViewport < minTopInViewport) {
-    menuTop += (minTopInViewport - menuTopViewport);
-  } else if (menuTopViewport > maxTopInViewport) {
-    menuTop += (maxTopInViewport - menuTopViewport);
+  if (menuTopViewport < 8) {
+    menuTop += (8 - menuTopViewport);
+  } else if (menuTopViewport + menuH > window.innerHeight - 8) {
+    menuTop += (window.innerHeight - 8 - menuH - menuTopViewport);
   }
-
   menu.style.top = `${menuTop}px`;
-  const menuLeft = r.left - parentR.left;
-  menu.style.left = `${menuLeft}px`;
 
-  // Compute button insets relative to final menu position for the collapsed
-  // clip-path. These define the "zero state" the menu animates *out of*.
   const btnTopInMenu = r.top - parentR.top - menuTop;
   const btnLeftInMenu = r.left - parentR.left - menuLeft;
   const btnBottomInMenu = menuH - btnTopInMenu - r.height;
@@ -1058,7 +1049,7 @@ function syncFiltersButton() {
     parts.push(`<img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">`);
     label = 'Socials';
   } else {
-    parts.push(`<span class="filters-btn-hamburger">☰</span>`);
+    parts.push(`<img src="https://api.iconify.design/ph:list.svg" alt="">`);
     label = 'Events';
   }
   parts.push(`<span class="filters-btn-label">${label}</span>`);
