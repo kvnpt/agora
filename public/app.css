@@ -492,9 +492,9 @@ input, select, textarea {
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 20px;
+  height: 10px;
   pointer-events: none;
-  background: linear-gradient(to top, rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0));
 }
 .day-box .event-card { background: transparent; }
 .day-box .event-card:not(.expanded):last-child { border-bottom: none; }
@@ -536,7 +536,7 @@ input, select, textarea {
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 22px;
+  height: 11px;
   pointer-events: none;
   background: linear-gradient(to top, rgba(34, 197, 94, 0.32), rgba(34, 197, 94, 0));
 }
@@ -567,9 +567,9 @@ input, select, textarea {
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 20px;
+  height: 10px;
   pointer-events: none;
-  background: linear-gradient(to top, rgba(34, 197, 94, 0.28), rgba(34, 197, 94, 0));
+  background: linear-gradient(to top, var(--accent-glow, rgba(136, 136, 136, 0.28)), transparent);
 }
 .event-card.expanded .event-title-row { padding-right: 28px; }
 .event-card:hover { background: #fafafa; }
@@ -720,7 +720,7 @@ input, select, textarea {
 
 .event-card-drawer {
   position: relative;
-  padding: 10px 2px 4px;
+  padding: 10px 0 4px;
   animation: drawer-in 0.18s ease-out;
 }
 @keyframes drawer-in {

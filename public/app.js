@@ -2383,6 +2383,20 @@ function getJurisdictionColor() {
   return map[j] || '#888888';
 }
 
+// Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
+// parish-colored glow on an expanded event card (injected as a CSS var so the
+// ::after pseudo can pick it up).
+function hexToRgba(hex, alpha) {
+  if (!hex || typeof hex !== 'string') return `rgba(136, 136, 136, ${alpha})`;
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  if (h.length !== 6) return `rgba(136, 136, 136, ${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function renderEventCard(evt) {
   const start = new Date(evt.start_utc);
   const time = formatEventTime(start);
@@ -2671,6 +2685,8 @@ function expandEventCard(id, opts = {}) {
       closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeDetail(); });
     }
     card.classList.add('expanded');
+    const accent = evt.parish_color || '#888888';
+    card.style.setProperty('--accent-glow', hexToRgba(accent, 0.28));
     wireEventDrawer(drawer, evt);
   }
 
@@ -2698,6 +2714,7 @@ function collapseEventCardDOM(opts = {}) {
   // closes.
   root.querySelectorAll('.event-card.expanded').forEach(card => {
     card.classList.remove('expanded');
+    card.style.removeProperty('--accent-glow');
     const drawer = card.querySelector('.event-card-drawer');
     if (drawer) drawer.remove();
     const closeBtn = card.querySelector('.event-card-close');
