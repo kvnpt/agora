@@ -1514,19 +1514,28 @@ function initBottomSheet() {
   window.agoraSnapTo = snapTo;
   window.agoraSnapHalf = () => SNAP_HALF;
 
-  // Hide/restore for parish sheet overlay — stash current Y, snap offscreen,
-  // snap back when overlay closes.
+  // Hide/restore for parish sheet overlay — stash current Y and scrollTop,
+  // snap offscreen, restore both when overlay closes. snapTo itself resets
+  // scrollTop when leaving full, so capture + rewrite it around the snap.
   let _stashedY = null;
+  let _stashedScroll = 0;
   window.agoraMainHide = () => {
     if (_stashedY != null) return;
     _stashedY = currentY;
+    _stashedScroll = scroll.scrollTop;
     snapTo(window.innerHeight);
   };
   window.agoraMainRestore = () => {
     if (_stashedY == null) return;
     const y = _stashedY;
+    const s = _stashedScroll;
     _stashedY = null;
     snapTo(y);
+    // snapTo zeroes scrollTop when not at full. Put the user back where they
+    // were — after snapTo flips overflow to auto (at full) or keeps it
+    // hidden (at half). Either way, writing scrollTop on the next frame
+    // beats the snapTo reset.
+    requestAnimationFrame(() => { scroll.scrollTop = s; });
   };
 }
 
