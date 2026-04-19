@@ -108,6 +108,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ── Disable pinch/double-tap zoom on everything except the map ──
+// The double-tap guard only fires for two STATIC taps within 300ms. A scroll
+// gesture also ends in touchend, so blindly tracking every touchend as "last
+// tap" caused the post-scroll click to be preventDefault-swallowed — taps
+// felt dead for ~300ms after any list swipe. Fix: ignore touches that moved
+// beyond a small threshold (i.e. scrolls/drags).
 function disablePageZoom() {
   document.addEventListener('touchstart', e => {
     if (e.touches.length > 1 && !e.target.closest('#map')) {
@@ -115,9 +120,25 @@ function disablePageZoom() {
     }
   }, { passive: false });
 
+  let startX = 0, startY = 0, moved = false;
+  document.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      moved = false;
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (moved || !e.touches[0]) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
+  }, { passive: true });
+
   let lastTap = 0;
   document.addEventListener('touchend', e => {
     if (e.target.closest('#map')) return;
+    if (moved) return;  // scroll/drag — neither records as a tap nor blocks the next one
     const now = Date.now();
     if (now - lastTap < 300) e.preventDefault();
     lastTap = now;
@@ -778,6 +799,13 @@ function initMultiParishToggle() {
         removeParishCardHeader();
       }
     }
+    // Dismiss the filters dropdown — the parish picker is a mode switch,
+    // not an in-menu toggle, so keeping the menu open hides the pills that
+    // just appeared below it.
+    const menu = document.getElementById('filters-menu');
+    const filtersBtn = document.getElementById('btn-filters');
+    if (menu) menu.classList.add('hidden');
+    if (filtersBtn) filtersBtn.setAttribute('aria-expanded', 'false');
     syncMultiParishButton();
     syncParishRowVisibility();
     renderParishPills();
@@ -1995,10 +2023,6 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (focusedEvent) {
     const pinned = contentEl.querySelector('#ps-pinned-event');
     if (pinned) {
-      // Box the pinned event in the parish's color — soft tinted bg + stronger
-      // border of the same hue. CSS pulls both from --parish-box-color.
-      pinned.style.setProperty('--parish-box-color', color);
-      pinned.style.setProperty('--parish-box-tint', hexToRgba(color, 0.08));
       pinned.innerHTML = renderEventCard(focusedEvent);
       const pinnedCard = pinned.querySelector('.event-card');
       if (pinnedCard) {

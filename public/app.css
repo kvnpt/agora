@@ -561,8 +561,6 @@ input, select, textarea {
   background: radial-gradient(120% 100% at 50% 100%, var(--accent-glow, rgba(136, 136, 136, 0.32)), transparent 75%);
 }
 .event-card.expanded .event-title-row { padding-right: 28px; }
-.event-card:hover { background: #fafafa; }
-.event-card:active { background: #f5f5f5; }
 .event-card.event-cancelled { opacity: 0.5; }
 .event-card.event-cancelled .event-title { text-decoration: line-through; }
 
@@ -705,8 +703,6 @@ input, select, textarea {
   background: transparent;
   cursor: default;
 }
-.event-card.expanded:hover,
-.event-card.expanded:active { background: transparent; }
 
 .event-card-drawer {
   position: relative;
@@ -1582,12 +1578,13 @@ body.map-expanded #location-fab { display: flex; }
   opacity: 1;
 }
 
-/* Pinned focused event — hoisted above Contact section when deep-linked.
-   Boxed in the parish's color (vars set inline by renderParishSheetContent). */
+/* Pinned focused event — same day-box-style frame as the main stream so
+   focused events feel consistent across surfaces. The inner expanded card
+   supplies its own parish-colored radial glow via --accent-glow. */
 .ps-pinned-event {
+  position: relative;
   margin: 10px;
-  border: 2px solid var(--parish-box-color, var(--border));
-  background: var(--parish-box-tint, #fff);
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
 }
