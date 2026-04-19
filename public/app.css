@@ -478,10 +478,21 @@ input, select, textarea {
   text-transform: uppercase;
   color: #777;
 }
-.day-divider {
+/* Day wrapper — each day of events is its own subtle box. */
+.day-box {
+  margin: 10px;
+  border: 1px solid var(--border-light);
+  background: #fafafa;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.day-box .event-card { background: transparent; }
+.day-box .event-card:not(.expanded):last-child { border-bottom: none; }
+/* Clear line between morning and evening sub-groups inside a day box. */
+.sub-day-divider {
   border: none;
   border-top: 1px solid var(--border-light);
-  margin: 8px 0 0;
+  margin: 6px 0;
 }
 .month-header {
   padding: 28px 14px 12px;
@@ -527,7 +538,7 @@ input, select, textarea {
 .event-card.expanded {
   border: 1px solid;
   border-radius: 8px;
-  margin: 6px 8px;
+  margin: 10px;
   box-shadow: none;
 }
 .event-card.expanded .event-title-row { padding-right: 28px; }
@@ -739,22 +750,16 @@ input, select, textarea {
   font-size: 18px;
 }
 
-/* ── Sunday cluster ── */
-.sunday-cluster {
-  border-left: 3px solid var(--border);
-  background: #fafafa;
-  margin: 4px 0;
-  padding-left: 0;
-  border-radius: 0 4px 4px 0;
-}
-.sunday-cluster .section-header {
-  font-weight: 700;
-}
+/* Sundays emphasise their day header inside the day-box. */
+.day-box.day-box-sunday .section-header { font-weight: 700; }
 
 /* ── Services view ── */
 .parish-schedule {
+  margin: 10px;
   padding: 14px;
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border-light);
+  background: #fff;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -1605,20 +1610,6 @@ body.map-expanded #location-fab { display: flex; }
   border-color: var(--text);
 }
 
-.ps-schedule-day {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  margin-top: 8px;
-  margin-bottom: 2px;
-}
-.ps-schedule-day:first-child { margin-top: 0; }
-.ps-schedule-item {
-  font-size: 13px;
-  color: var(--text-secondary);
-  padding: 2px 0;
-}
-.ps-schedule-item-time { color: var(--text-muted); }
 .ps-empty { font-size: 13px; color: var(--text-muted); }
 
 .ps-events-list { border-top: 1px solid var(--border-light); }

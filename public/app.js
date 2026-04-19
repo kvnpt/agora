@@ -1927,29 +1927,18 @@ function renderParishSheetContent(parishId, opts = {}) {
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
     : '';
 
-  // Schedule section — drop entirely when there's nothing to show.
-  const scheds = (state.schedules || []).filter(s => s.parish_id === parishId);
+  // Schedule section — drop entirely when there's nothing to show. Uses the
+  // same renderer as the main services list so the two views stay visually
+  // identical and share admin edit affordances.
+  const scheds = (state.schedules || [])
+    .filter(s => s.parish_id === parishId)
+    .sort((a, b) => a.day_of_week - b.day_of_week);
   let schedSectionHtml = '';
   if (scheds.length) {
-    const byDay = new Map();
-    for (const s of scheds) {
-      if (!byDay.has(s.day_of_week)) byDay.set(s.day_of_week, []);
-      byDay.get(s.day_of_week).push(s);
-    }
-    const schedHtml = [...byDay.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([day, items]) => {
-        let out = `<div class="ps-schedule-day">${DAYS[day]}</div>`;
-        for (const s of items) {
-          const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
-          out += `<div class="ps-schedule-item">${esc(s.title)} <span class="ps-schedule-item-time">— ${formatTime12(s.start_time)}</span> ${womLabel}</div>`;
-        }
-        return out;
-      }).join('');
     schedSectionHtml = `
       <div class="ps-section">
         <div class="ps-section-title">Schedule</div>
-        ${schedHtml}
+        ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
       </div>`;
   }
 
@@ -2043,6 +2032,10 @@ function renderParishSheetContent(parishId, opts = {}) {
     });
   }
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
+
+  // Schedule section shares the services-list markup — wire admin edit
+  // handlers if the admin is viewing.
+  if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
 
   // Upcoming events: use the main-sheet stream renderer (day headers, Sunday
   // clusters, month seam) against the parish-filtered slice minus any pinned
@@ -2256,6 +2249,7 @@ function renderSubDaySections(events, html) {
     html += sortEvents(morning).map(renderEventCard).join('');
   }
   if (evening.length) {
+    if (morning.length) html += `<hr class="sub-day-divider">`;
     html += `<div class="sub-day-header">Evening</div>`;
     html += sortEvents(evening).map(renderEventCard).join('');
   }
@@ -2307,8 +2301,10 @@ function renderStream(container, events) {
     html += `</div>`;
   }
   if (laterToday.length) {
+    html += `<div class="day-box">`;
     html += `<div class="section-header">Later today</div>`;
     html = renderSubDaySections(laterToday, html);
+    html += `</div>`;
   }
 
   // Month seam + day groups. Always emit the seam when future events exist so
@@ -2341,10 +2337,8 @@ function renderFutureDays(events) {
   const groups = groupByDay(events);
   const now = new Date();
   const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
-  const jColor = getJurisdictionColor();
 
   let html = '';
-  let first = true;
   let prevMonthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
   for (const [, evts] of groups) {
     const d = parseLocalDate(evts[0].start_utc);
@@ -2360,12 +2354,10 @@ function renderFutureDays(events) {
       prevMonthKey = monthKey;
     }
 
-    if (!first) html += `<hr class="day-divider">`;
-    if (isSunday) html += `<div class="sunday-cluster" style="border-left-color:${jColor}; background: ${jColor}08;">`;
+    html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}">`;
     html += `<div class="section-header">${dayFmt}</div>`;
-    first = false;
     html = renderSubDaySections(evts, html);
-    if (isSunday) html += `</div>`;
+    html += `</div>`;
   }
   return html;
 }
@@ -2389,6 +2381,19 @@ function getJurisdictionColor() {
   const j = state.filters.jurisdiction;
   const map = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
   return map[j] || '#888888';
+}
+
+// Convert a #RRGGBB / #RGB hex color to an rgba() string with the given alpha.
+// Used to tint the expanded-event box with its parish accent color.
+function hexToRgba(hex, alpha) {
+  if (!hex || typeof hex !== 'string') return `rgba(136, 136, 136, ${alpha})`;
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  if (h.length !== 6) return `rgba(136, 136, 136, ${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function renderEventCard(evt) {
@@ -2465,6 +2470,101 @@ function bindEventCards(container) {
 }
 
 // ── Render Services ──
+// Render a parish's schedule as day-grouped items. Used by the main services
+// list AND the parish-sheet Schedule section so both surfaces look identical,
+// including language chips, WOM labels, and admin edit affordances.
+function renderScheduleDaysHTML(items, opts = {}) {
+  const isAdmin = !!opts.isAdmin;
+  const byDay = new Map();
+  for (const item of items) {
+    if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
+    byDay.get(item.day_of_week).push(item);
+  }
+  const types = ['liturgy','prayer','feast','talk','youth','social','other'];
+  let html = '';
+  for (const [day, scheds] of byDay) {
+    html += `<div class="schedule-day">${DAYS[day]}</div>`;
+    for (const s of scheds) {
+      const t = formatTime12(s.start_time);
+      const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
+      const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
+      const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
+      const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
+      html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
+      if (isAdmin) {
+        const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
+        html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
+          <div class="schedule-edit-grid">
+            <input data-f="title" value="${esc(s.title)}" placeholder="Title">
+            <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
+            <input data-f="start_time" type="time" value="${esc(s.start_time)}">
+            <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
+            <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
+            <input data-f="languages" value="${esc(langs.join(', '))}" placeholder="Languages">
+          </div>
+          <div class="wom-checkboxes" data-f="week_of_month">
+            <span class="wom-label">Weeks:</span>
+            ${['first','second','third','fourth','last'].map(w =>
+              `<label class="wom-check"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
+            ).join('')}
+          </div>
+          <label class="wom-check" style="margin-top:4px;display:inline-flex;"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> Never show live badge</label>
+          <div style="display:flex;gap:4px;margin-top:4px;">
+            <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
+            <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
+          </div>
+        </div>`;
+      }
+    }
+  }
+  return html;
+}
+
+// Bind toggle/save/delete handlers for every admin schedule-edit affordance
+// under `container`. Idempotent: tied to elements, not global state.
+function wireScheduleAdminHandlers(container) {
+  container.querySelectorAll('.schedule-edit-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const form = document.getElementById('sef-' + btn.dataset.sid);
+      if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+  });
+  container.querySelectorAll('.schedule-save-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.sid;
+      const form = document.getElementById('sef-' + id);
+      if (!form) return;
+      const data = {};
+      form.querySelectorAll('[data-f]').forEach(input => {
+        const field = input.dataset.f;
+        if (field === 'week_of_month') {
+          const checked = [...input.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+          data[field] = checked.length ? checked.join(',') : null;
+        } else if (field === 'hide_live') {
+          data[field] = input.checked ? 1 : 0;
+        } else {
+          const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
+          if (field === 'languages') data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
+          else if (field === 'day_of_week') data[field] = parseInt(val);
+          else data[field] = val || null;
+        }
+      });
+      fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+        .then(r => { if (r.ok) fetchSchedules(); });
+    });
+  });
+  container.querySelectorAll('.schedule-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm('Delete this schedule?')) return;
+      fetch(`/api/admin/schedules/${btn.dataset.sid}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
+        .then(r => { if (r.ok) fetchSchedules(); });
+    });
+  });
+}
+
 function renderServices() {
   const container = document.getElementById('services-list');
   let schedules = state.schedules;
@@ -2507,53 +2607,10 @@ function renderServices() {
   }
 
   for (const { pid, grp: { info, items } } of parishGroups) {
-    const pColor = info.parish_color || '#000';
-    html += `<div class="parish-schedule" data-parish-id="${esc(pid)}" style="border-left: 3px solid ${pColor};">`;
+    html += `<div class="parish-schedule" data-parish-id="${esc(pid)}">`;
     html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
     html += `<div class="parish-schedule-jurisdiction">${esc(capitalize(info.jurisdiction))} Orthodox</div>`;
-
-    const byDay = new Map();
-    for (const item of items) {
-      if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
-      byDay.get(item.day_of_week).push(item);
-    }
-
-    const types = ['liturgy','prayer','feast','talk','youth','social','other'];
-    for (const [day, scheds] of byDay) {
-      html += `<div class="schedule-day">${DAYS[day]}</div>`;
-      for (const s of scheds) {
-        const t = formatTime12(s.start_time);
-        const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
-        const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
-        const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
-        const editBtn = state.isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
-        html += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
-        if (state.isAdmin) {
-          const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
-          html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
-            <div class="schedule-edit-grid">
-              <input data-f="title" value="${esc(s.title)}" placeholder="Title">
-              <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
-              <input data-f="start_time" type="time" value="${esc(s.start_time)}">
-              <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
-              <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
-              <input data-f="languages" value="${esc(langs.join(', '))}" placeholder="Languages">
-            </div>
-            <div class="wom-checkboxes" data-f="week_of_month">
-              <span class="wom-label">Weeks:</span>
-              ${['first','second','third','fourth','last'].map(w =>
-                `<label class="wom-check"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
-              ).join('')}
-            </div>
-            <label class="wom-check" style="margin-top:4px;display:inline-flex;"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> Never show live badge</label>
-            <div style="display:flex;gap:4px;margin-top:4px;">
-              <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
-              <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
-            </div>
-          </div>`;
-        }
-      }
-    }
+    html += renderScheduleDaysHTML(items, { isAdmin: state.isAdmin });
     html += '</div>';
   }
 
@@ -2584,50 +2641,7 @@ function renderServices() {
     });
   });
 
-  // Admin: toggle edit form
-  container.querySelectorAll('.schedule-edit-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const form = document.getElementById('sef-' + btn.dataset.sid);
-      form.style.display = form.style.display === 'none' ? 'block' : 'none';
-    });
-  });
-
-  // Admin: save schedule
-  container.querySelectorAll('.schedule-save-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const id = btn.dataset.sid;
-      const form = document.getElementById('sef-' + id);
-      const data = {};
-      form.querySelectorAll('[data-f]').forEach(input => {
-        const field = input.dataset.f;
-        if (field === 'week_of_month') {
-          const checked = [...input.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
-          data[field] = checked.length ? checked.join(',') : null;
-        } else if (field === 'hide_live') {
-          data[field] = input.checked ? 1 : 0;
-        } else {
-          const val = input.tagName === 'SELECT' ? input.value : input.value.trim();
-          if (field === 'languages') data[field] = val ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : null;
-          else if (field === 'day_of_week') data[field] = parseInt(val);
-          else data[field] = val || null;
-        }
-      });
-      fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-        .then(r => { if (r.ok) fetchSchedules(); });
-    });
-  });
-
-  // Admin: delete schedule
-  container.querySelectorAll('.schedule-del-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      if (!confirm('Delete this schedule?')) return;
-      fetch(`/api/admin/schedules/${btn.dataset.sid}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
-        .then(r => { if (r.ok) fetchSchedules(); });
-    });
-  });
+  wireScheduleAdminHandlers(container);
 }
 
 // ── Event detail ──
@@ -2670,7 +2684,9 @@ function expandEventCard(id, opts = {}) {
       closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeDetail(); });
     }
     card.classList.add('expanded');
-    card.style.borderColor = evt.parish_color || 'var(--border)';
+    const accent = evt.parish_color || '#888888';
+    card.style.borderColor = hexToRgba(accent, 0.4);
+    card.style.backgroundColor = hexToRgba(accent, 0.06);
     wireEventDrawer(drawer, evt);
   }
 
@@ -2699,6 +2715,7 @@ function collapseEventCardDOM(opts = {}) {
   root.querySelectorAll('.event-card.expanded').forEach(card => {
     card.classList.remove('expanded');
     card.style.borderColor = '';
+    card.style.backgroundColor = '';
     const drawer = card.querySelector('.event-card-drawer');
     if (drawer) drawer.remove();
     const closeBtn = card.querySelector('.event-card-close');
