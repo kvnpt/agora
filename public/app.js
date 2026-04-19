@@ -1995,6 +1995,10 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (focusedEvent) {
     const pinned = contentEl.querySelector('#ps-pinned-event');
     if (pinned) {
+      // Box the pinned event in the parish's color — soft tinted bg + stronger
+      // border of the same hue. CSS pulls both from --parish-box-color.
+      pinned.style.setProperty('--parish-box-color', color);
+      pinned.style.setProperty('--parish-box-tint', hexToRgba(color, 0.08));
       pinned.innerHTML = renderEventCard(focusedEvent);
       const pinnedCard = pinned.querySelector('.event-card');
       if (pinnedCard) {
