@@ -2,6 +2,9 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  /* Suppress the grey tap-highlight box iOS/Android paint on every
+     interactive element — we draw our own active/hover states. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 :root {
@@ -295,42 +298,50 @@ input, select, textarea {
 }
 
 /* ── Filters dropdown menu ──
-   Anchored to the filters button by JS; `transform-origin` matches so the
-   menu visually expands from the button. When there isn't room below
-   (sheet at peek), JS adds .flip-up and we invert the anchor. */
+   "Grows" out of the filters button: menu starts with a clip-path matching
+   the button's bounds and animates to its full rectangle. Border radius
+   matches the button so the shape morphs without visible seams.
+   In peek mode, JS adds .flip-up (column-reverse) so the menu's items
+   invert and the active item still lines up with the button. */
 .filters-menu {
   position: absolute;
   top: 40px;
   left: 12px;
-  /* Fixed width so toggling english labels doesn't resize the menu. */
   width: 240px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-  padding: 4px;
+  border-radius: 14px; /* matches .filters-btn */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 6px;
   z-index: 600;
-  transform-origin: top left;
-  animation: filters-menu-expand 140ms ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  opacity: 1;
+  clip-path: inset(0 round 14px);
+  transition:
+    clip-path 220ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 140ms ease-out,
+    box-shadow 220ms ease-out;
 }
-.filters-menu.flip-up {
-  transform-origin: bottom left;
-  animation: filters-menu-expand-up 140ms ease-out;
-}
-@keyframes filters-menu-expand {
-  0%   { opacity: 0; transform: scale(0.88) translateY(-4px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
-}
-@keyframes filters-menu-expand-up {
-  0%   { opacity: 0; transform: scale(0.88) translateY(4px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
+.filters-menu.flip-up { flex-direction: column-reverse; }
+.filters-menu.hidden {
+  opacity: 0;
+  box-shadow: none;
+  pointer-events: none;
+  clip-path: inset(
+    var(--btn-inset-top, 0px)
+    var(--btn-inset-right, 100%)
+    var(--btn-inset-bottom, 100%)
+    var(--btn-inset-left, 0px)
+    round 14px
+  );
 }
 .filters-menu-sep {
   height: 1px;
   background: var(--border-light);
   margin: 4px 10px;
 }
-.filters-menu.hidden { display: none; }
 .filters-menu-item {
   display: flex;
   align-items: center;
@@ -858,50 +869,32 @@ input, select, textarea {
 .schedule-day {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  margin-top: 12px;
+  color: var(--text);
+  margin-top: 10px;
 }
 .schedule-item {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text);
-  margin-top: 4px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  margin-top: 3px;
   padding-left: 2px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
 }
-.schedule-item-title {
-  font-weight: 500;
-  color: var(--text);
-}
+.schedule-item-title { color: var(--text-secondary); }
 .schedule-item-time {
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  margin-left: 4px;
 }
 .schedule-item-lang {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  font-weight: 600;
   color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  line-height: 1.4;
-  margin-left: 0;
+  margin-left: 6px;
 }
 .schedule-item-wom {
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-left: 0;
-  opacity: 1;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-left: 4px;
 }
 .schedule-edit-btn {
   background: none;
@@ -1559,16 +1552,16 @@ body.map-expanded #location-fab { display: flex; }
 }
 .parish-sheet-close {
   position: absolute;
-  top: 8px;
-  right: 10px;
+  top: 2px;
+  right: 6px;
   background: none;
   border: none;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px 10px;
-  z-index: 2;
+  padding: 4px 8px;
+  z-index: 3;
 }
 .parish-sheet-close:hover { color: var(--text); }
 
@@ -1588,7 +1581,7 @@ body.map-expanded #location-fab { display: flex; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 20px 14px 16px;
+  padding: 10px 12px 14px 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border-light);
 }
@@ -1610,61 +1603,88 @@ body.map-expanded #location-fab { display: flex; }
     inset 0 1px 0 rgba(255, 255, 255, 0.25),
     inset 0 -1px 2px rgba(0, 0, 0, 0.2);
 }
-.ps-header-info { flex: 1; min-width: 0; }
+.ps-header-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .ps-name {
   font-size: 17px;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.2;
   color: var(--text);
+  /* Squish gracefully when bumping against the URL chip / close-X. */
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .ps-meta {
   margin-top: 2px;
   font-size: 12px;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ps-meta-sep { margin: 0 4px; }
 
-/* Parish-sheet URL chip (mirrors .mode-url — click to copy). */
+/* Parish-sheet URL chip — mirrors .mode-url vocabulary: strong weight, full
+   color, whole-URL hot-glow on change, softer COPIED feedback. */
 .ps-url {
+  flex: none;
+  align-self: center;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
-  max-width: 100%;
-  padding: 3px 8px;
+  max-width: 46%;
+  padding: 6px 10px;
   background: none;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  color: var(--text-secondary);
+  border: none;
+  color: var(--text);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: all 0.15s;
+  user-select: none;
+  touch-action: manipulation;
+  outline: none;
 }
-.ps-url:hover { color: var(--text); border-color: var(--border); }
-.ps-url.copied {
-  color: #1565c0;
-  border-color: #1565c0;
-  background: #e3f2fd;
-}
+.ps-url:focus,
+.ps-url:focus-visible,
+.ps-url:active { outline: none; box-shadow: none; }
 .ps-url-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
 }
 .ps-url-copy {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
-  opacity: 0.6;
-  filter: brightness(0) saturate(100%) invert(50%);
+  opacity: 0.75;
+  filter: brightness(0) saturate(100%) invert(20%);
 }
 .ps-url:hover .ps-url-copy { opacity: 1; }
-.ps-url.copied .ps-url-copy {
-  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
-  opacity: 1;
+
+.ps-url-sep { opacity: 0.45; margin: 0 1px; font-weight: 500; }
+.ps-url-seg { color: var(--text); }
+.ps-url-parish { font-weight: 800; letter-spacing: 0.02em; }
+
+.ps-url-flash { animation: url-flash 900ms ease-out; }
+
+.ps-url-copied-msg {
+  display: inline-block;
+  color: #16a34a;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  animation: url-copied-soft 900ms ease-out;
 }
 
 /* Pinned focused event — same day-box-style frame as the main stream so
@@ -1705,14 +1725,16 @@ body.map-expanded #location-fab { display: flex; }
   gap: 8px;
 }
 .ps-btn {
-  display: inline-block;
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 16px;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
   color: var(--parish-color, var(--text));
   background: #fff;
   border: 1px solid var(--parish-color, var(--border));
-  border-radius: 16px;
+  border-radius: 999px;
   text-decoration: none;
   cursor: pointer;
 }

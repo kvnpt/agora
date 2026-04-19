@@ -937,11 +937,29 @@ function initFiltersMenu() {
   if (!btn || !menu) return;
   btn.addEventListener('click', () => {
     const willOpen = menu.classList.contains('hidden');
-    // Decide flip direction BEFORE showing so the expand-from-button
-    // animation uses the right transform-origin from frame zero.
-    if (willOpen) positionFiltersMenu(btn, menu);
-    const nowHidden = menu.classList.toggle('hidden');
-    btn.setAttribute('aria-expanded', String(!nowHidden));
+    if (willOpen) {
+      // Compute button insets within the menu and active-item alignment so
+      // the menu literally "grows" out of the button's bounds via clip-path.
+      // .filters-menu.hidden uses visibility-based hiding (not display:none)
+      // so measurements work even while closed.
+      positionFiltersMenu(btn, menu);
+      // Seed the "from" state inline so the transition has a concrete start,
+      // independent of custom-property propagation timing.
+      const it = getComputedStyle(menu).getPropertyValue('--btn-inset-top').trim();
+      const ir = getComputedStyle(menu).getPropertyValue('--btn-inset-right').trim();
+      const ib = getComputedStyle(menu).getPropertyValue('--btn-inset-bottom').trim();
+      const il = getComputedStyle(menu).getPropertyValue('--btn-inset-left').trim();
+      menu.style.clipPath = `inset(${it} ${ir} ${ib} ${il} round 14px)`;
+      menu.style.opacity = '0';
+      menu.classList.remove('hidden');
+      void menu.offsetWidth; // commit start state
+      menu.style.clipPath = '';
+      menu.style.opacity = '';
+      btn.setAttribute('aria-expanded', 'true');
+    } else {
+      menu.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
   });
   // Pointerdown fires reliably on mobile taps (click sometimes doesn't on
   // non-interactive targets on iOS). Close whenever pointer lands outside
@@ -959,25 +977,72 @@ function initFiltersMenu() {
 // height (button near the bottom of the viewport), flip the menu upward so
 // it doesn't fall off the edge. Uses the actual measured space rather than
 // a state flag so it Just Works across snap points.
+// Position the filters menu so that the currently-active item aligns with
+// the trigger button's vertical center. The menu border-radius matches the
+// button, and JS sets --btn-inset-* so the menu's hidden clip-path equals
+// the button's bounds — the menu visually "grows" out of the button on open.
+//
+// In peek mode (not enough space below), the menu flips upward AND the
+// item order inverts (via column-reverse) so the visual-to-mode mapping
+// stays consistent: the active item still sits where the button was.
 function positionFiltersMenu(btn, menu) {
   const r = btn.getBoundingClientRect();
-  // .filters-menu is positioned absolute inside .mode-bar (position:relative),
-  // so measure against that parent. Works whether the menu is visible or not.
   const parent = menu.parentElement;
-  const parentR = parent ? parent.getBoundingClientRect() : { top: 0, left: 0 };
-  const leftInParent = r.left - parentR.left;
-  menu.style.left = `${Math.max(4, leftInParent)}px`;
-  // Menu height is ~260px with 6 items. Budget a bit more so the flip kicks
-  // in even when the keyboard or notches eat viewport.
-  const approxMenuH = 280;
+  const parentR = parent.getBoundingClientRect();
+
+  // Decide flip direction BEFORE measuring so column-reverse is applied.
   const spaceBelow = window.innerHeight - r.bottom;
-  const flipUp = spaceBelow < approxMenuH + 16;
+  const flipUp = spaceBelow < 280;
   menu.classList.toggle('flip-up', flipUp);
-  if (flipUp) {
-    menu.style.top = `${r.top - parentR.top - approxMenuH - 6}px`;
+
+  // Provisionally place the menu so layout settles; we'll shift it afterward
+  // to align the active item with the button.
+  menu.style.left = `${r.left - parentR.left}px`;
+  menu.style.top = `${r.top - parentR.top}px`;
+  // Force layout for accurate offsetTop readings below.
+  void menu.offsetWidth;
+
+  const activeItem = menu.querySelector('.filters-menu-item.active:not([hidden])');
+  const menuH = menu.offsetHeight;
+  const menuW = menu.offsetWidth;
+
+  let menuTop;
+  if (activeItem) {
+    const activeRect = activeItem.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const activeCenterInViewport = activeRect.top + activeRect.height / 2;
+    const btnCenterY = r.top + r.height / 2;
+    const deltaY = btnCenterY - activeCenterInViewport;
+    menuTop = (menuRect.top - parentR.top) + deltaY;
   } else {
-    menu.style.top = `${r.bottom - parentR.top + 6}px`;
+    menuTop = (flipUp ? r.top - menuH - 6 : r.bottom + 6) - parentR.top;
   }
+
+  // Clamp so the menu stays within the viewport.
+  const minTopInViewport = 8;
+  const maxTopInViewport = window.innerHeight - menuH - 8;
+  const menuTopViewport = menuTop + parentR.top;
+  if (menuTopViewport < minTopInViewport) {
+    menuTop += (minTopInViewport - menuTopViewport);
+  } else if (menuTopViewport > maxTopInViewport) {
+    menuTop += (maxTopInViewport - menuTopViewport);
+  }
+
+  menu.style.top = `${menuTop}px`;
+  const menuLeft = r.left - parentR.left;
+  menu.style.left = `${menuLeft}px`;
+
+  // Compute button insets relative to final menu position for the collapsed
+  // clip-path. These define the "zero state" the menu animates *out of*.
+  const btnTopInMenu = r.top - parentR.top - menuTop;
+  const btnLeftInMenu = r.left - parentR.left - menuLeft;
+  const btnBottomInMenu = menuH - btnTopInMenu - r.height;
+  const btnRightInMenu = menuW - btnLeftInMenu - r.width;
+
+  menu.style.setProperty('--btn-inset-top', `${btnTopInMenu}px`);
+  menu.style.setProperty('--btn-inset-right', `${btnRightInMenu}px`);
+  menu.style.setProperty('--btn-inset-bottom', `${btnBottomInMenu}px`);
+  menu.style.setProperty('--btn-inset-left', `${btnLeftInMenu}px`);
 }
 
 function syncFiltersButton() {
@@ -2036,7 +2101,6 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (scheds.length) {
     schedSectionHtml = `
       <div class="ps-section">
-        <div class="ps-section-title">Schedule</div>
         ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
       </div>`;
   }
@@ -2074,15 +2138,14 @@ function renderParishSheetContent(parishId, opts = {}) {
       <div class="ps-header-info">
         <div class="ps-name">${esc(parish.name)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
-        <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
-          <span class="ps-url-text" id="ps-url-text"></span>
-          <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
-        </button>
       </div>
+      <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
+        <span class="ps-url-text" id="ps-url-text"></span>
+        <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+      </button>
     </div>
     ${focusedEvent ? '<div class="ps-pinned-event" id="ps-pinned-event"></div>' : ''}
     <div class="ps-section">
-      <div class="ps-section-title">Contact</div>
       ${addrHtml}
       <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
     </div>
@@ -2126,8 +2189,7 @@ function renderParishSheetContent(parishId, opts = {}) {
         try { document.execCommand('copy'); } catch {}
         document.body.removeChild(ta);
       }
-      urlBtn.classList.add('copied');
-      setTimeout(() => urlBtn.classList.remove('copied'), 1400);
+      showPsUrlCopied(urlBtn);
     });
   }
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
@@ -2349,14 +2411,60 @@ function findParishByAcronym(seg) {
 }
 window.agoraUpdateModeUrl = updateModeUrl;
 
-// Mirror of updateModeUrl for the parish-sheet header URL chip. Kept as a
-// separate function so the sheet can repaint without the mode-bar in scope.
+// Mirror of updateModeUrl for the parish-sheet header URL chip. Same
+// vocabulary: per-segment render, parish-colored bold acronym, whole-URL
+// hot-glow on change. Kept as a separate function so the sheet can repaint
+// without the mode-bar in scope.
 function updateParishSheetUrl() {
   const el = document.getElementById('ps-url-text');
   if (!el) return;
+  if (el._copiedTimer) return;
   const host = location.host.replace(/^www\./, '');
-  const path = location.pathname === '/' ? '' : location.pathname;
-  el.textContent = host + path;
+  const segs = location.pathname.split('/').filter(Boolean);
+  const hasPrev = !!el.dataset.prevSegs;
+  const prevKey = hasPrev ? el.dataset.prevSegs : '';
+  const nextKey = JSON.stringify(segs);
+  const urlChanged = hasPrev && prevKey !== nextKey;
+  el.dataset.prevSegs = nextKey;
+
+  let tint = '#1565c0';
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const p = findParishByAcronym(decodeURIComponent(segs[i]));
+    if (p && p.color) { tint = p.color; break; }
+  }
+
+  let html = `<span class="ps-url-host">${esc(host)}</span>`;
+  for (const seg of segs) {
+    const decoded = decodeURIComponent(seg);
+    const parish = findParishByAcronym(decoded);
+    if (parish) {
+      const color = parish.color || '#888';
+      html += `<span class="ps-url-sep">/</span><span class="ps-url-seg ps-url-parish" style="color:${esc(color)}">${esc(decoded.toUpperCase())}</span>`;
+    } else {
+      html += `<span class="ps-url-sep">/</span><span class="ps-url-seg">${esc(decoded)}</span>`;
+    }
+  }
+  el.innerHTML = html;
+
+  if (urlChanged) {
+    el.style.setProperty('--url-glow', hexToRgba(tint, 0.55));
+    el.classList.remove('ps-url-flash');
+    void el.offsetWidth;
+    el.classList.add('ps-url-flash');
+  }
+}
+
+function showPsUrlCopied(btn) {
+  const el = btn.querySelector('.ps-url-text');
+  if (!el) return;
+  if (el._copiedTimer) clearTimeout(el._copiedTimer);
+  const saved = el.innerHTML;
+  el.innerHTML = `<span class="ps-url-copied-msg">COPIED</span>`;
+  el._copiedTimer = setTimeout(() => {
+    el.innerHTML = saved;
+    el._copiedTimer = null;
+    updateParishSheetUrl();
+  }, 900);
 }
 
 function renderSubDaySections(events, html) {
@@ -2427,7 +2535,6 @@ function renderStream(container, events) {
   // Month seam + day groups. Always emit the seam when future events exist so
   // later async updates slot into a stable position (no scroll jump).
   if (future.length) {
-    html += `<div class="section-header month-seam">Later this month</div>`;
     html += renderFutureDays(future);
   } else if (!hasToday) {
     html += '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing upcoming</h3></div>';
@@ -2608,7 +2715,7 @@ function renderScheduleDaysHTML(items, opts = {}) {
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
       const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
-      html += `<div class="schedule-item"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${womLabel}${editBtn}</div>`;
+      html += `<div class="schedule-item"><span class="schedule-item-title">${esc(s.title)}</span> <span class="schedule-item-time">${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
         html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
