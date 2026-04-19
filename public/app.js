@@ -2405,10 +2405,10 @@ function formatEventTime(date) {
   return `${hour}${minHtml}${merHtml}`;
 }
 
-function getJurisdictionColor() {
-  const j = state.filters.jurisdiction;
+function getJurisdictionColor(j) {
+  const key = j || state.filters.jurisdiction;
   const map = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
-  return map[j] || '#888888';
+  return map[key] || '#888888';
 }
 
 // Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
@@ -2635,11 +2635,29 @@ function renderServices() {
     parishGroups.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  for (const { pid, grp: { info, items } } of parishGroups) {
-    html += `<div class="parish-schedule" data-parish-id="${esc(pid)}">`;
-    html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
-    html += `<div class="parish-schedule-jurisdiction">${esc(capitalize(info.jurisdiction))} Orthodox</div>`;
-    html += renderScheduleDaysHTML(items, { isAdmin: state.isAdmin });
+  // Group parish schedules into jurisdiction boxes so each jurisdiction
+  // gets its own framed section (matching the day-box treatment in the
+  // events view). Jurisdictions are sorted by their first parish's position
+  // in the already-sorted parishGroups list — preserves nearby/alpha order.
+  const byJuris = new Map();
+  for (const pg of parishGroups) {
+    const j = (pg.grp.info.jurisdiction || 'other').toLowerCase();
+    if (!byJuris.has(j)) byJuris.set(j, []);
+    byJuris.get(j).push(pg);
+  }
+  for (const [juris, pgs] of byJuris) {
+    const jColor = getJurisdictionColor(juris);
+    const jLabel = capitalize(juris) + ' Orthodox';
+    html += `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">`;
+    html += `<div class="section-header jurisdiction-header">${esc(jLabel)}</div>`;
+    for (const { pid, grp: { info, items } } of pgs) {
+      const pColor = info.parish_color || jColor;
+      const glow = hexToRgba(pColor, 0.28);
+      html += `<div class="parish-schedule" data-parish-id="${esc(pid)}" style="--accent-glow:${esc(glow)}">`;
+      html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
+      html += renderScheduleDaysHTML(items, { isAdmin: state.isAdmin });
+      html += '</div>';
+    }
     html += '</div>';
   }
 
@@ -2657,16 +2675,15 @@ function renderServices() {
   html += archFooter;
   container.innerHTML = html;
 
-  // Tap a parish's schedule block → focus that parish (summons header + adds
-  // acronym to URL). In single-parish mode we're already focused, so a second
-  // tap is a no-op.
+  // Tap a parish's schedule block → open the parish sheet overlay (now that
+  // the sheet is a first-class surface, schedule taps should land there
+  // directly rather than just setting a header focus on the main list).
   container.querySelectorAll('.parish-schedule').forEach(card => {
     card.addEventListener('click', e => {
       // Don't hijack admin edit buttons inside the card
       if (e.target.closest('.schedule-edit-btn, .schedule-save-btn, .schedule-del-btn, .schedule-edit-form')) return;
       const pid = card.dataset.parishId;
-      if (state.parishFocus === pid) return;
-      window.showParishCard(pid);
+      if (typeof window.openParishSheet === 'function') window.openParishSheet(pid);
     });
   });
 
