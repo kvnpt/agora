@@ -2434,7 +2434,7 @@ function updateModeUrl() {
     const parish = findParishByAcronym(decoded);
     if (parish) {
       const color = parish.color || '#888';
-      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg mode-url-parish" style="color:${esc(color)}">${esc(decoded.toUpperCase())}</span>`;
+      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg mode-url-parish" style="color:${esc(color)}">${esc(decoded.toLowerCase())}</span>`;
     } else {
       html += `<span class="mode-url-sep">/</span><span class="mode-url-seg">${esc(decoded)}</span>`;
     }
@@ -2487,7 +2487,7 @@ function updateParishSheetUrl() {
     const parish = findParishByAcronym(decoded);
     if (parish) {
       const color = parish.color || '#888';
-      html += `<span class="ps-url-sep">/</span><span class="ps-url-seg ps-url-parish" style="color:${esc(color)}">${esc(decoded.toUpperCase())}</span>`;
+      html += `<span class="ps-url-sep">/</span><span class="ps-url-seg ps-url-parish" style="color:${esc(color)}">${esc(decoded.toLowerCase())}</span>`;
     } else {
       html += `<span class="ps-url-sep">/</span><span class="ps-url-seg">${esc(decoded)}</span>`;
     }
