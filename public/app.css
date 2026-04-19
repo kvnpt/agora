@@ -173,36 +173,31 @@ input, select, textarea {
   border-color: var(--text);
 }
 
-/* ── Mode-bar URL display (centre) ── */
+/* ── Mode-bar URL display (right-aligned) ── */
 .mode-url {
   flex: 1 1 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 6px;
   padding: 6px 10px;
   background: none;
-  border: 1px solid transparent;
-  border-radius: 14px;
+  border: none;
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: all 0.15s;
 }
-.mode-url:hover { color: var(--text); border-color: var(--border); }
-.mode-url.copied {
-  color: #1565c0;
-  border-color: #1565c0;
-  background: #e3f2fd;
-}
+.mode-url:hover { color: var(--text); }
 .mode-url-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
 }
 .mode-url-copy {
   width: 12px;
@@ -212,9 +207,43 @@ input, select, textarea {
   filter: brightness(0) saturate(100%) invert(50%);
 }
 .mode-url:hover .mode-url-copy { opacity: 1; }
-.mode-url.copied .mode-url-copy {
-  filter: brightness(0) saturate(100%) invert(28%) sepia(97%) saturate(1200%) hue-rotate(199deg);
-  opacity: 1;
+
+/* URL segment animation: a newly-added segment flashes in the accent colour
+   (parish color for parish acronyms, else a neutral accent) and fades back to
+   the normal muted text color. */
+.mode-url-sep { opacity: 0.5; margin: 0 1px; }
+.mode-url-seg { transition: color 600ms ease-out, text-shadow 600ms ease-out; }
+.mode-url-parish { font-weight: 700; }
+.mode-url-seg-new {
+  animation: url-seg-flash 900ms ease-out;
+}
+@keyframes url-seg-flash {
+  0%   { color: #1565c0; text-shadow: 0 0 6px rgba(21, 101, 192, 0.45); }
+  60%  { color: #1565c0; text-shadow: 0 0 2px rgba(21, 101, 192, 0.15); }
+  100% { /* settles to the declared color on the element */ text-shadow: none; }
+}
+.mode-url-parish.mode-url-seg-new {
+  animation: url-parish-flash 900ms ease-out;
+}
+@keyframes url-parish-flash {
+  0%   { filter: brightness(1.4) saturate(1.3); text-shadow: 0 0 8px currentColor; }
+  60%  { filter: brightness(1.1); text-shadow: 0 0 2px currentColor; }
+  100% { filter: none; text-shadow: none; }
+}
+
+/* COPIED feedback — in-place of the URL text, warm fade back. */
+.mode-url-copied-msg {
+  display: inline-block;
+  color: #16a34a;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  animation: url-copied-glow 1200ms ease-out;
+}
+@keyframes url-copied-glow {
+  0%   { opacity: 0; transform: translateY(3px) scale(0.96); text-shadow: 0 0 10px rgba(22, 163, 74, 0.6); }
+  18%  { opacity: 1; transform: translateY(0) scale(1); text-shadow: 0 0 10px rgba(22, 163, 74, 0.6); }
+  70%  { opacity: 1; text-shadow: 0 0 2px rgba(22, 163, 74, 0.2); }
+  100% { opacity: 0.4; text-shadow: none; }
 }
 
 /* ── Filters button (collapses services/social/english) ──
@@ -482,10 +511,11 @@ input, select, textarea {
   overflow: hidden;
 }
 .happening-now-section .event-card { background: transparent; }
-.happening-now-section .event-card:last-child { border-bottom: none; }
+.happening-now-section .event-card:not(.expanded):last-child { border-bottom: none; }
 
 /* ── Event cards ── */
 .event-card {
+  position: relative;
   display: flex;
   align-items: flex-start;
   padding: 18px 14px;
@@ -494,14 +524,17 @@ input, select, textarea {
   transition: background 0.1s;
   box-shadow: inset 0 -6px 8px -8px rgba(0, 0, 0, 0.14);
 }
+.event-card.expanded {
+  border: 1px solid;
+  border-radius: 8px;
+  margin: 6px 8px;
+  box-shadow: none;
+}
+.event-card.expanded .event-title-row { padding-right: 28px; }
 .event-card:hover { background: #fafafa; }
 .event-card:active { background: #f5f5f5; }
 .event-card.event-cancelled { opacity: 0.5; }
 .event-card.event-cancelled .event-title { text-decoration: line-through; }
-
-/* When any event is expanded, dim other cards' titles for focus. */
-.event-title { transition: opacity 0.15s; }
-body:has(.event-card.expanded) .event-card:not(.expanded) .event-title { opacity: 0.45; }
 
 .event-content { flex: 1; min-width: 0; }
 
@@ -655,8 +688,8 @@ body:has(.event-card.expanded) .event-card:not(.expanded) .event-title { opacity
 }
 .event-card-close {
   position: absolute;
-  top: -2px;
-  right: 0;
+  top: 13px;
+  right: 6px;
   background: none;
   border: none;
   font-size: 22px;
@@ -664,6 +697,7 @@ body:has(.event-card.expanded) .event-card:not(.expanded) .event-title { opacity
   cursor: pointer;
   line-height: 1;
   padding: 4px 8px;
+  z-index: 1;
 }
 .event-drawer-meta {
   display: flex;
@@ -672,7 +706,6 @@ body:has(.event-card.expanded) .event-card:not(.expanded) .event-title { opacity
   font-size: 13px;
   color: var(--text-secondary);
   margin-bottom: 12px;
-  padding-right: 28px;
 }
 .event-parish-header {
   display: flex;
@@ -1525,17 +1558,8 @@ body.map-expanded #location-fab { display: flex; }
 }
 
 /* Pinned focused event — hoisted above Contact section when deep-linked. */
-.ps-pinned-event {
-  margin: 10px;
-  border: 1px solid rgba(124, 58, 237, 0.35);
-  background: rgba(124, 58, 237, 0.05);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.ps-pinned-event .event-card {
-  border-bottom: none;
-  background: transparent;
-}
+.ps-pinned-event { background: #fff; }
+.ps-pinned-event .event-card { border-bottom: 1px solid var(--border-light); }
 
 .ps-section {
   padding: 14px 16px;

@@ -2186,18 +2186,56 @@ function initModeUrl() {
       try { document.execCommand('copy'); } catch {}
       document.body.removeChild(ta);
     }
-    btn.classList.add('copied');
-    setTimeout(() => btn.classList.remove('copied'), 1400);
+    showCopiedFeedback(btn);
   });
   updateModeUrl();
+}
+
+// Briefly swaps the URL text with a glowing 'COPIED' message, then restores.
+function showCopiedFeedback(btn) {
+  const el = btn.querySelector('.mode-url-text');
+  if (!el) return;
+  if (el._copiedTimer) { clearTimeout(el._copiedTimer); }
+  const saved = el.innerHTML;
+  el.innerHTML = `<span class="mode-url-copied-msg">COPIED</span>`;
+  el._copiedTimer = setTimeout(() => {
+    el.innerHTML = saved;
+    el._copiedTimer = null;
+    updateModeUrl();
+  }, 1200);
 }
 
 function updateModeUrl() {
   const el = document.getElementById('mode-url-text');
   if (!el) return;
+  // Skip while COPIED feedback is on screen — it'll re-render when timer fires.
+  if (el._copiedTimer) return;
   const host = location.host.replace(/^www\./, '');
-  const path = location.pathname === '/' ? '' : location.pathname;
-  el.textContent = host + path;
+  const segs = location.pathname.split('/').filter(Boolean);
+  const hasPrev = !!el.dataset.prevSegs;
+  const prev = hasPrev ? JSON.parse(el.dataset.prevSegs) : [];
+  el.dataset.prevSegs = JSON.stringify(segs);
+
+  let html = `<span class="mode-url-host">${esc(host)}</span>`;
+  for (const seg of segs) {
+    const decoded = decodeURIComponent(seg);
+    const parish = findParishByAcronym(decoded);
+    const isNew = hasPrev && !prev.includes(seg);
+    const newCls = isNew ? ' mode-url-seg-new' : '';
+    if (parish) {
+      const color = parish.color || '#888';
+      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg mode-url-parish${newCls}" style="color:${esc(color)}">${esc(decoded.toUpperCase())}</span>`;
+    } else {
+      html += `<span class="mode-url-sep">/</span><span class="mode-url-seg${newCls}">${esc(decoded)}</span>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+function findParishByAcronym(seg) {
+  if (!seg || !state || !state.parishes) return null;
+  const key = seg.toLowerCase().replace(/\s+/g, '');
+  return state.parishes.find(p => p.acronym && p.acronym.toLowerCase().replace(/\s+/g, '') === key) || null;
 }
 window.agoraUpdateModeUrl = updateModeUrl;
 
@@ -2624,8 +2662,15 @@ function expandEventCard(id, opts = {}) {
     drawer.className = 'event-card-drawer';
     drawer.innerHTML = renderEventDrawerHTML(evt, { suppressParishHeader: inParishSheet });
     card.appendChild(drawer);
+    // Close button lives at card level (not drawer) so it aligns with the
+    // event title row's Y axis rather than floating above the drawer.
+    const closeBtn = drawer.querySelector('.event-card-close');
+    if (closeBtn) {
+      card.appendChild(closeBtn);
+      closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeDetail(); });
+    }
     card.classList.add('expanded');
-    card.style.borderLeftColor = evt.parish_color || 'var(--border)';
+    card.style.borderColor = evt.parish_color || 'var(--border)';
     wireEventDrawer(drawer, evt);
   }
 
@@ -2653,9 +2698,11 @@ function collapseEventCardDOM(opts = {}) {
   // closes.
   root.querySelectorAll('.event-card.expanded').forEach(card => {
     card.classList.remove('expanded');
-    card.style.borderLeftColor = '';
+    card.style.borderColor = '';
     const drawer = card.querySelector('.event-card-drawer');
     if (drawer) drawer.remove();
+    const closeBtn = card.querySelector('.event-card-close');
+    if (closeBtn) closeBtn.remove();
   });
 }
 
@@ -2779,9 +2826,6 @@ function wireEventDrawer(drawer, evt) {
   // Stop clicks inside the drawer from bubbling up to the .event-card click
   // handler (which would otherwise treat them as a toggle request).
   drawer.addEventListener('click', e => e.stopPropagation());
-
-  const closeBtn = drawer.querySelector('.event-card-close');
-  if (closeBtn) closeBtn.addEventListener('click', closeDetail);
 
   const header = drawer.querySelector('.event-parish-header');
   if (header) {
