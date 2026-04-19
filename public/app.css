@@ -1007,19 +1007,22 @@ input, select, textarea {
 .earlier-today-chip {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 12px 14px 6px;
   background: #fafafa;
   border: none;
   border-bottom: 1px solid var(--border-light);
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   cursor: pointer;
+}
+.earlier-today-chip .earlier-today-chip-chevron {
+  margin-left: auto;
 }
 .earlier-today-chip:hover { background: #f5f5f5; }
 .earlier-today-chip-chevron {
