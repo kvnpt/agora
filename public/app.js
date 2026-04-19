@@ -1796,6 +1796,9 @@ function initParishSheet() {
       }
     }
     renderParishSheetContent(parishId);
+    // Map highlight: dim other markers, enlarge focused dot + label.
+    state.parishSheetFocus = parishId;
+    if (typeof updateMap === 'function') updateMap(state);
     sheet.classList.remove('hidden');
     sheet.setAttribute('aria-hidden', 'false');
     window.agoraParishSheetVisible = true;
@@ -1853,6 +1856,9 @@ function initParishSheet() {
       delete state._openEventId;
       syncURL();
     }
+    // Restore normal marker styling.
+    state.parishSheetFocus = null;
+    if (typeof updateMap === 'function') updateMap(state);
     snapTo(SNAP_HIDDEN, () => {
       sheet.classList.add('hidden');
       sheet.setAttribute('aria-hidden', 'true');

@@ -73,6 +73,8 @@ function updateMap(state, opts = {}) {
     }
   }
 
+  const focusId = state.parishSheetFocus || null;
+
   const locations = allParishes.map(p => ({
     id: p.id,
     lat: p.lat,
@@ -84,7 +86,7 @@ function updateMap(state, opts = {}) {
     events: eventsByParish[p.id] || []
   }));
 
-  addLabeledMarkers(locations, TZ);
+  addLabeledMarkers(locations, TZ, focusId);
 
   // Fit only when caller opts in — otherwise markers refresh without
   // disturbing the user's current map view.
@@ -107,30 +109,40 @@ function updateMap(state, opts = {}) {
   }
 }
 
-function addLabeledMarkers(locations, TZ) {
+function addLabeledMarkers(locations, TZ, focusId) {
   if (!locations.length) return;
 
   const labelMeta = [];
+  const hasFocus = !!focusId;
 
   // Sort: inactive first so active dots/labels render above (higher z-index
-   // = tap priority when hit targets overlap).
-  const sortedLocs = [...locations].sort((a, b) => (a.active ? 1 : 0) - (b.active ? 1 : 0));
+   // = tap priority when hit targets overlap). Focused parish sorted last
+   // so its marker + label paint on top.
+  const sortedLocs = [...locations].sort((a, b) => {
+    if (a.id === focusId) return 1;
+    if (b.id === focusId) return -1;
+    return (a.active ? 1 : 0) - (b.active ? 1 : 0);
+  });
 
   for (const loc of sortedLocs) {
-    const opacity = loc.active ? 1.0 : 0.25;
+    const isFocus = loc.id === focusId;
+    // Focus: full opacity, bigger. Non-focus while sheet open: strong dim.
+    // No sheet open: original active/inactive logic.
+    const opacity = isFocus ? 1.0 : (hasFocus ? 0.15 : (loc.active ? 1.0 : 0.25));
 
-    const size = loc.active ? 10 : 8;
-    const hitSize = loc.active ? 36 : 24;
+    const size = isFocus ? 16 : (loc.active ? 10 : 8);
+    const hitSize = isFocus ? 44 : (loc.active ? 36 : 24);
+    const borderWidth = isFocus ? 2.5 : 1.5;
     const dot = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({
         className: '',
-        html: `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;"><div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:1.5px solid white;box-sizing:border-box;opacity:${opacity};"></div></div>`,
+        html: `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;"><div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:${isFocus ? '0 2px 10px rgba(0,0,0,0.25)' : 'none'};"></div></div>`,
         iconSize: [hitSize, hitSize],
         iconAnchor: [hitSize / 2, hitSize / 2]
       }),
       interactive: true,
       bubblingMouseEvents: false,
-      zIndexOffset: loc.active ? 1000 : 0
+      zIndexOffset: isFocus ? 2000 : (loc.active ? 1000 : 0)
     });
 
     dot.on('click', () => {
@@ -144,7 +156,7 @@ function addLabeledMarkers(locations, TZ) {
     const line1 = parts[0].trim();
     const line2 = parts.length > 1 ? parts[1].trim() : '';
 
-    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot });
+    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot, isFocus, dotSize: size });
   }
 
   // Label collision detection
@@ -162,10 +174,15 @@ function addLabeledMarkers(locations, TZ) {
   const LABEL_H = 22;
   const placed = [];
 
-  // Active labels get priority
-  labelMeta.sort((a, b) => (b.loc.active ? 1 : 0) - (a.loc.active ? 1 : 0));
+  // Focused label first (it paints wherever it wants), then active, then rest.
+  labelMeta.sort((a, b) => {
+    if (a.isFocus) return -1;
+    if (b.isFocus) return 1;
+    return (b.loc.active ? 1 : 0) - (a.loc.active ? 1 : 0);
+  });
 
   for (const lm of labelMeta) {
+    if (lm.isFocus) continue; // focused label floats free above the dot
     const getBounds = (side) => {
       const x = side === 'right' ? lm.px + 8 : lm.px - LABEL_W - 8;
       return { x1: x, y1: lm.py - LABEL_H / 2, x2: x + LABEL_W, y2: lm.py + LABEL_H / 2 };
@@ -184,8 +201,34 @@ function addLabeledMarkers(locations, TZ) {
   }
 
   for (const lm of labelMeta) {
-    const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
     const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
+
+    if (lm.isFocus) {
+      // Centred above the (now larger) dot. Wider fixed box so longer names
+      // don't clip; label sized up via .map-label-focus class.
+      const FOCUS_W = 220;
+      const FOCUS_H = 60;
+      const labelHtml = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${escMap(lm.line1)}${line2Html}</div>`;
+      const label = L.marker([lm.loc.lat, lm.loc.lng], {
+        icon: L.divIcon({
+          className: '',
+          html: labelHtml,
+          iconSize: [FOCUS_W, FOCUS_H],
+          // Anchor at bottom-centre so the label sits above the dot.
+          iconAnchor: [FOCUS_W / 2, FOCUS_H + lm.dotSize / 2 + 6]
+        }),
+        interactive: true,
+        bubblingMouseEvents: false,
+        zIndexOffset: 2001
+      }).addTo(map);
+      label.on('click', () => {
+        if (window.openParishSheet) window.openParishSheet(lm.loc.id);
+      });
+      markers.push(label);
+      continue;
+    }
+
+    const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
     const labelHtml = `<div class="map-label" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
 
     const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
