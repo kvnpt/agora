@@ -2647,12 +2647,17 @@ function expandEventCard(id, opts = {}) {
 
 function collapseEventCardDOM(opts = {}) {
   const root = opts.scope || document;
-  const card = root.querySelector('.event-card.expanded');
-  if (!card) return;
-  card.classList.remove('expanded');
-  card.style.borderLeftColor = '';
-  const drawer = card.querySelector('.event-card-drawer');
-  if (drawer) drawer.remove();
+  // querySelectorAll because the same event id can be expanded in multiple
+  // scopes at once (main-list and parish-sheet), e.g. after tap-in-list ->
+  // tap-parish-header. A single-scope querySelector would leave a zombie
+  // drawer in the hidden main list that re-appears when the parish sheet
+  // closes.
+  root.querySelectorAll('.event-card.expanded').forEach(card => {
+    card.classList.remove('expanded');
+    card.style.borderLeftColor = '';
+    const drawer = card.querySelector('.event-card-drawer');
+    if (drawer) drawer.remove();
+  });
 }
 
 function renderEventDrawerHTML(evt, opts = {}) {
@@ -3023,11 +3028,14 @@ function closeDetail() {
   }
   // Pinned parish-sheet drawer: tearing down the event should leave the
   // parish sheet on its default state — no pinned slot, event back in
-  // the events stream below, URL at /<acronym>.
+  // the events stream below, URL at /<acronym>. Also collapse any copy
+  // of the same card expanded in the main list (hidden behind the sheet)
+  // so it doesn't re-appear when the sheet closes.
   const pinned = document.querySelector('.ps-pinned-event .event-card.expanded');
   if (pinned && state.parishSheetFocus && typeof renderParishSheetContent === 'function') {
     const pid = state.parishSheetFocus;
     delete state._openEventId;
+    collapseEventCardDOM();
     syncURL();
     renderParishSheetContent(pid, {});
     return;
