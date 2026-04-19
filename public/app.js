@@ -382,7 +382,17 @@ async function reconcileStateFromUrl() {
       delete state._openEventId;
       await openEventFromUrl(nextOpenId);
     } else if (!nextOpenId && panelOpen) {
-      closeDetailDOM();
+      // If the expanded card lives in the parish sheet, closing the sheet
+      // collapses it and clears _openEventId in one move. Otherwise fall
+      // back to the main-list collapse path.
+      const parishSheetHasOpenCard = !!document.querySelector(
+        '#parish-sheet-scroll .event-card.expanded'
+      );
+      if (parishSheetHasOpenCard && typeof closeParishSheet === 'function') {
+        closeParishSheet();
+      } else {
+        closeDetailDOM();
+      }
     }
   } finally {
     _reconciling = false;
@@ -579,9 +589,11 @@ async function applyStartMode() {
   state._initialLoad = false;
 }
 
-// Event permalink loader — fills parish focus + jurisdiction from the event
-// when URL didn't specify them, then opens detail panel. Falls back to a
-// direct /api/events/:id fetch for events outside the current time window.
+// Event permalink loader — opens the parish sheet for the event's parish and
+// expands the event card inline within it. Does NOT change jurisdiction /
+// parish filters — parish card and parish filter are separate concepts now.
+// Falls back to a direct /api/events/:id fetch for events outside the
+// currently-loaded window.
 async function openEventFromUrl(id) {
   let evt = state.events.find(e => e.id === id);
   if (!evt) {
@@ -589,35 +601,24 @@ async function openEventFromUrl(id) {
       const res = await fetch(`/api/events/${id}`);
       if (res.ok) evt = await res.json();
     } catch {}
-    // Inline expander needs the event to be in state.events so the card is
-    // rendered and can host the drawer. Add out-of-window events eagerly here.
     if (evt && !state.events.some(e => e.id === evt.id)) {
       state.events = [...state.events, evt];
     }
   }
   if (!evt) return;
 
-  if (!state.filters.parishIds && evt.parish_id) {
-    state.filters.parishIds = new Set([evt.parish_id]);
-    state.parishFocus = evt.parish_id;
-    const parish = state.parishes.find(p => p.id === evt.parish_id);
-    if (parish) {
-      if (!state.filters.jurisdiction) state.filters.jurisdiction = parish.jurisdiction;
-      renderParishCardHeader(parish);
-      const chipContainer = document.getElementById('jurisdiction-chips');
-      if (chipContainer) {
-        chipContainer.querySelectorAll('.jurisdiction-chip').forEach(c => {
-          c.classList.toggle('active', c.dataset.jurisdiction === parish.jurisdiction);
-        });
-        if (typeof applyChipColors === 'function') applyChipColors(chipContainer);
-      }
-      if (typeof syncParishRowVisibility === 'function') syncParishRowVisibility();
-      if (typeof renderParishPills === 'function') renderParishPills();
-    }
-    renderCurrentView();
+  if (evt.parish_id) {
+    openParishSheet(evt.parish_id);
+    // Wait a tick for renderParishSheetContent to paint the card list, then
+    // expand the target card scoped to the parish sheet.
+    requestAnimationFrame(() => {
+      const scope = document.getElementById('parish-sheet-scroll');
+      if (scope) expandEventCard(id, { scope });
+    });
+  } else {
+    // Event with no parish — fall back to main-list inline expand.
+    showEventDetail(id);
   }
-
-  showEventDetail(id);
 }
 
 // ── Archdiocese events banner ──
@@ -1776,6 +1777,15 @@ function initParishSheet() {
   function open(parishId) {
     const parish = state.parishes.find(p => p.id === parishId);
     if (!parish) return;
+    // If a different parish is being opened and _openEventId belongs to a
+    // different parish, drop the stale event id so URL + header agree.
+    if (state._openEventId) {
+      const evt = state.events.find(e => e.id === state._openEventId);
+      if (evt && evt.parish_id !== parishId) {
+        delete state._openEventId;
+        syncURL();
+      }
+    }
     renderParishSheetContent(parishId);
     sheet.classList.remove('hidden');
     sheet.setAttribute('aria-hidden', 'false');
@@ -1794,6 +1804,11 @@ function initParishSheet() {
   function close() {
     // Release FAB ownership so main sheet's pending/next snapTo repositions it.
     window.agoraParishSheetVisible = false;
+    // Dropping the sheet drops any inline-expanded event with it.
+    if (state._openEventId) {
+      delete state._openEventId;
+      syncURL();
+    }
     snapTo(SNAP_HIDDEN, () => {
       sheet.classList.add('hidden');
       sheet.setAttribute('aria-hidden', 'true');
@@ -1907,8 +1922,8 @@ function renderParishSheetContent(parishId, opts = {}) {
     </div>`;
 
   // Upcoming events: use the main-sheet stream renderer (day headers, Sunday
-  // clusters, month seam) against the parish-filtered slice. Rebind clicks to
-  // close parish sheet → show event detail in main list.
+  // clusters, month seam) against the parish-filtered slice. Card taps expand
+  // inline within the parish sheet — parish "holds" its events.
   const streamEl = contentEl.querySelector('.ps-events-list');
   if (streamEl) {
     if (parishEvents.length) {
@@ -1919,13 +1934,31 @@ function renderParishSheetContent(parishId, opts = {}) {
       empty.textContent = 'No upcoming events this month.';
       streamEl.replaceChildren(empty);
     }
+    // Parish now "holds" its events — tapping a card expands inline within
+    // the parish sheet (toggle if tapping the already-open card).
     streamEl.querySelectorAll('.event-card').forEach(card => {
       card.addEventListener('click', () => {
         const id = parseInt(card.dataset.id);
-        closeParishSheet();
-        setTimeout(() => showEventDetail(id), 380);
+        const scope = document.getElementById('parish-sheet-scroll');
+        const alreadyOpen = card.classList.contains('expanded');
+        if (alreadyOpen) {
+          collapseEventCardDOM({ scope });
+          delete state._openEventId;
+          syncURL();
+        } else {
+          expandEventCard(id, { scope });
+        }
       });
     });
+
+    // Re-expand the open event when parish sheet re-renders (async schedule /
+    // events fetches trigger a full rebuild of the card list).
+    if (state._openEventId) {
+      const stillPresent = (parishEvents || []).some(e => e.id === state._openEventId);
+      if (stillPresent) {
+        requestAnimationFrame(() => expandEventCard(state._openEventId, { scope: streamEl.closest('#parish-sheet-scroll') }));
+      }
+    }
   }
 
   // Lazy-fetch schedules when they haven't been loaded yet
@@ -2418,17 +2451,18 @@ function showEventDetail(id) {
   expandEventCard(id);
 }
 
-function expandEventCard(id) {
+function expandEventCard(id, opts = {}) {
+  const root = opts.scope || document;
   const evt = state.events.find(e => e.id === id);
   if (!evt) return;
 
-  // Collapse any other expanded card first.
-  const curr = document.querySelector('.event-card.expanded');
+  // Collapse any other expanded card first (within the same scope).
+  const curr = root.querySelector('.event-card.expanded');
   if (curr && parseInt(curr.dataset.id) !== id) {
-    collapseEventCardDOM();
+    collapseEventCardDOM({ scope: root });
   }
 
-  const card = document.querySelector(`.event-card[data-id="${id}"]`);
+  const card = root.querySelector(`.event-card[data-id="${id}"]`);
   if (!card) return;
 
   if (!card.classList.contains('expanded')) {
@@ -2445,7 +2479,8 @@ function expandEventCard(id) {
   syncURL();
 
   requestAnimationFrame(() => {
-    const scroller = document.getElementById('sheet-scroll');
+    // Scroll the containing scroller so the expanded card is in view.
+    const scroller = card.closest('#parish-sheet-scroll, #sheet-scroll');
     if (!scroller) return;
     const cardRect = card.getBoundingClientRect();
     const scrollRect = scroller.getBoundingClientRect();
@@ -2455,8 +2490,9 @@ function expandEventCard(id) {
   });
 }
 
-function collapseEventCardDOM() {
-  const card = document.querySelector('.event-card.expanded');
+function collapseEventCardDOM(opts = {}) {
+  const root = opts.scope || document;
+  const card = root.querySelector('.event-card.expanded');
   if (!card) return;
   card.classList.remove('expanded');
   card.style.borderLeftColor = '';
