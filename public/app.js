@@ -1795,10 +1795,45 @@ function initParishSheet() {
     sheet.classList.remove('snapping');
     sheet.style.transform = `translateY(${SNAP_HIDDEN}px)`;
     void sheet.offsetHeight; // force reflow
-    // Open at full so the parish card is fully visible and natively
-    // scrollable from the first gesture. Drag down to peek the map.
-    snapTo(SNAP_FULL);
+    // Open at half: map stays visible above, parish card + events below.
+    snapTo(SNAP_HALF);
     if (window.agoraMainHide) window.agoraMainHide();
+
+    // Centre the parish in the visible (upper) half of the map, zooming in
+    // only if current viewing radius is wider than 30 km.
+    if (window.agoraMap && parish.lat && parish.lng) {
+      const map = window.agoraMap;
+      const mapEl = map.getContainer();
+      const targetX = mapEl.clientWidth / 2;
+      const targetY = SNAP_HALF / 2; // middle of the visible (upper) half
+
+      // Current radius = great-circle distance from centre to NE corner.
+      const c = map.getCenter();
+      const ne = map.getBounds().getNorthEast();
+      const radiusKm = haversineKm(c.lat, c.lng, ne.lat, ne.lng);
+
+      if (radiusKm > 30) {
+        // Find the zoom that frames a 30 km box around the parish, then fly
+        // to a centre that places the parish at (targetX, targetY) at that
+        // zoom. Projecting in target-zoom pixel space is the standard way to
+        // express a pan-with-offset under Leaflet's flyTo.
+        const latDeg = 30 / 111;
+        const lngDeg = 30 / (111 * Math.cos(parish.lat * Math.PI / 180));
+        const box = L.latLngBounds(
+          [parish.lat - latDeg, parish.lng - lngDeg],
+          [parish.lat + latDeg, parish.lng + lngDeg]
+        );
+        const targetZoom = map.getBoundsZoom(box);
+        const parishPx = map.project([parish.lat, parish.lng], targetZoom);
+        const size = map.getSize();
+        const newCentrePx = parishPx.add([size.x / 2 - targetX, size.y / 2 - targetY]);
+        const newCentre = map.unproject(newCentrePx, targetZoom);
+        map.flyTo(newCentre, targetZoom, { duration: 1.2 });
+      } else {
+        const point = map.latLngToContainerPoint([parish.lat, parish.lng]);
+        map.panBy([point.x - targetX, point.y - targetY], { animate: true, duration: 0.9 });
+      }
+    }
   }
 
   function close() {
@@ -1915,11 +1950,8 @@ function renderParishSheetContent(parishId, opts = {}) {
       <div class="ps-actions">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
     </div>
     ${schedSectionHtml}
-    <div class="ps-section">
-      <div class="ps-section-title">Upcoming events</div>
-      <div class="ps-events-list"></div>
-      ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}
-    </div>`;
+    <div class="ps-events-list"></div>
+    ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}`;
 
   // Upcoming events: use the main-sheet stream renderer (day headers, Sunday
   // clusters, month seam) against the parish-filtered slice. Card taps expand

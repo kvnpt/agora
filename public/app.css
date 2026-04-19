@@ -1502,10 +1502,10 @@ body.map-expanded #location-fab { display: flex; }
 .ps-schedule-item-time { color: var(--text-muted); }
 .ps-empty { font-size: 13px; color: var(--text-muted); }
 
+.ps-events-list { border-top: 1px solid var(--border-light); }
 .ps-events-list .event-card { cursor: pointer; }
 .ps-arch-row {
-  margin-top: 14px;
-  padding-top: 14px;
+  padding: 14px 16px;
   border-top: 1px solid var(--border-light);
   text-align: center;
 }
