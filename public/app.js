@@ -1361,6 +1361,13 @@ function initBottomSheet() {
   function onDocEnd() {
     modeBarPending = false;
     if (dragging) endDrag();
+    // Browsers suppress the synthetic click when the touch moved far enough,
+    // so modeBarSwallowClick would otherwise stay true and eat the user's
+    // NEXT real tap on a mode-bar button. Clear it on a short timer so we
+    // only ever swallow the one follow-up click.
+    if (modeBarSwallowClick) {
+      setTimeout(() => { modeBarSwallowClick = false; }, 400);
+    }
   }
 
   // Cancel the synthetic click when a mode-bar drag was engaged from a button.
