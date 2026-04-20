@@ -581,10 +581,7 @@ function initModeBar() {
 
   if (eventsBtn) {
     eventsBtn.addEventListener('click', () => {
-      const menu = document.getElementById('filters-menu');
-      if (menu) menu.classList.add('hidden');
-      const fb = document.getElementById('btn-filters');
-      if (fb) fb.setAttribute('aria-expanded', 'false');
+      closeFiltersMenuAnim();
       // Events is the default mode — clicking exits services and/or socialOnly.
       const wasServices = state.mode === 'services';
       const wasSocial = !!state.filters.socialOnly;
@@ -603,10 +600,7 @@ function initModeBar() {
   }
 
   servicesBtn.addEventListener('click', () => {
-    const menu = document.getElementById('filters-menu');
-    if (menu) menu.classList.add('hidden');
-    const fb = document.getElementById('btn-filters');
-    if (fb) fb.setAttribute('aria-expanded', 'false');
+    closeFiltersMenuAnim();
     // Entering services mode makes the currently-open event irrelevant —
     // close the drawer so the URL chip drops the event id on sync below.
     if (state.mode !== 'services' && state._openEventId) {
@@ -849,10 +843,7 @@ function initMultiParishToggle() {
     // Dismiss the filters dropdown — the parish picker is a mode switch,
     // not an in-menu toggle, so keeping the menu open hides the pills that
     // just appeared below it.
-    const menu = document.getElementById('filters-menu');
-    const filtersBtn = document.getElementById('btn-filters');
-    if (menu) menu.classList.add('hidden');
-    if (filtersBtn) filtersBtn.setAttribute('aria-expanded', 'false');
+    closeFiltersMenuAnim();
     syncMultiParishButton();
     syncParishRowVisibility();
     renderParishPills();
@@ -899,10 +890,7 @@ function exitMultiParish() {
 function initSocialFilter() {
   const btn = document.getElementById('btn-social');
   btn.addEventListener('click', () => {
-    const menu = document.getElementById('filters-menu');
-    if (menu) menu.classList.add('hidden');
-    const fb = document.getElementById('btn-filters');
-    if (fb) fb.setAttribute('aria-expanded', 'false');
+    closeFiltersMenuAnim();
     const willActivate = !state.filters.socialOnly;
     state.filters.socialOnly = willActivate;
     btn.classList.toggle('active', willActivate);
@@ -960,32 +948,67 @@ function initFiltersMenu() {
   const btn = document.getElementById('btn-filters');
   const menu = document.getElementById('filters-menu');
   if (!btn || !menu) return;
-  btn.addEventListener('click', () => {
-    const willOpen = menu.classList.contains('hidden');
-    if (willOpen) {
-      // Compute button insets within the menu and active-item alignment so
-      // the menu literally "grows" out of the button's bounds via clip-path.
-      // .filters-menu.hidden uses visibility-based hiding (not display:none)
-      // so measurements work even while closed.
-      positionFiltersMenu(btn, menu);
-      // Seed the "from" state inline so the transition has a concrete start,
-      // independent of custom-property propagation timing.
-      const it = getComputedStyle(menu).getPropertyValue('--btn-inset-top').trim();
-      const ir = getComputedStyle(menu).getPropertyValue('--btn-inset-right').trim();
-      const ib = getComputedStyle(menu).getPropertyValue('--btn-inset-bottom').trim();
-      const il = getComputedStyle(menu).getPropertyValue('--btn-inset-left').trim();
-      menu.style.clipPath = `inset(${it} ${ir} ${ib} ${il} round 14px)`;
-      menu.style.opacity = '0';
-      menu.classList.remove('hidden');
-      void menu.offsetWidth; // commit start state
+
+  // Both open and close drive the same clip-path + opacity transition with
+  // CONCRETE inline values — relying on the CSS .hidden ruleset with
+  // var(--btn-inset-*) proved flaky when the button moved between peek and
+  // half/full (stale computed custom-prop values made the first post-move
+  // open animate from the wrong origin, and some browsers skip transitions
+  // entirely when a property's resolved value flips via var() substitution).
+  // With explicit inline inset(<px>…) start/end values, every transition is
+  // deterministic regardless of sheet state changes between toggles.
+
+  function openMenu() {
+    clearTimeout(menu._closeTimer);
+    const insets = positionFiltersMenu(btn, menu);
+    const collapsed = `inset(${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px round 14px)`;
+    const expanded = 'inset(0px 0px 0px 0px round 14px)';
+    // 1) Suppress transition while we seed the start state (collapsed).
+    menu.style.transition = 'none';
+    menu.style.clipPath = collapsed;
+    menu.style.opacity = '0';
+    menu.classList.remove('hidden');
+    void menu.offsetWidth;
+    // 2) Restore transition and animate to expanded end state.
+    menu.style.transition = '';
+    menu.style.clipPath = expanded;
+    menu.style.opacity = '1';
+    btn.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeMenu() {
+    if (menu.classList.contains('hidden')) return;
+    clearTimeout(menu._closeTimer);
+    // Recompute insets from the button's current rect — accounts for sheet
+    // having moved since the menu opened.
+    const insets = positionFiltersMenu(btn, menu);
+    const collapsed = `inset(${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px round 14px)`;
+    const expanded = 'inset(0px 0px 0px 0px round 14px)';
+    menu.style.transition = 'none';
+    menu.style.clipPath = expanded;
+    menu.style.opacity = '1';
+    void menu.offsetWidth;
+    menu.style.transition = '';
+    menu.style.clipPath = collapsed;
+    menu.style.opacity = '0';
+    btn.setAttribute('aria-expanded', 'false');
+    // Commit .hidden after the animation so pointer-events lockout and default
+    // resting styles take over without stomping on the running transition.
+    menu._closeTimer = setTimeout(() => {
+      menu.classList.add('hidden');
+      menu.style.transition = 'none';
       menu.style.clipPath = '';
       menu.style.opacity = '';
-      btn.setAttribute('aria-expanded', 'true');
-    } else {
-      menu.classList.add('hidden');
-      btn.setAttribute('aria-expanded', 'false');
-    }
+      void menu.offsetWidth;
+      menu.style.transition = '';
+    }, 240);
+  }
+
+  btn.addEventListener('click', () => {
+    if (menu.classList.contains('hidden')) openMenu();
+    else closeMenu();
   });
+
   // Pointerdown fires reliably on mobile taps (click sometimes doesn't on
   // non-interactive targets on iOS). Close whenever pointer lands outside
   // the menu and trigger button. Capture phase + stopPropagation + a short
@@ -995,8 +1018,7 @@ function initFiltersMenu() {
   document.addEventListener('pointerdown', e => {
     if (menu.classList.contains('hidden')) return;
     if (menu.contains(e.target) || btn.contains(e.target)) return;
-    menu.classList.add('hidden');
-    btn.setAttribute('aria-expanded', 'false');
+    closeMenu();
     swallowClickUntil = performance.now() + 500;
     e.stopPropagation();
   }, true);
@@ -1007,6 +1029,22 @@ function initFiltersMenu() {
     e.stopPropagation();
   }, true);
   syncFiltersButton();
+
+  // Expose for menu-item handlers that also dismiss.
+  menu._closeMenu = closeMenu;
+}
+
+// Menu-item click handlers that trigger a mode change should close the filter
+// menu with animation — using classList.add('hidden') skips the transition and
+// feels jarring after the open animation. Safe before initFiltersMenu runs
+// (falls back to instant hide).
+function closeFiltersMenuAnim() {
+  const menu = document.getElementById('filters-menu');
+  if (!menu) return;
+  if (typeof menu._closeMenu === 'function') menu._closeMenu();
+  else menu.classList.add('hidden');
+  const fb = document.getElementById('btn-filters');
+  if (fb) fb.setAttribute('aria-expanded', 'false');
 }
 
 // Reorder menu so the active mode button lands first; everything else keeps
@@ -1070,6 +1108,9 @@ function positionFiltersMenu(btn, menu) {
   menu.style.setProperty('--btn-inset-right', `${btnRightInMenu}px`);
   menu.style.setProperty('--btn-inset-bottom', `${btnBottomInMenu}px`);
   menu.style.setProperty('--btn-inset-left', `${btnLeftInMenu}px`);
+  // Return so callers can drive the transition with concrete numbers instead
+  // of round-tripping through computed custom properties.
+  return { top: btnTopInMenu, right: btnRightInMenu, bottom: btnBottomInMenu, left: btnLeftInMenu };
 }
 
 function syncFiltersButton() {
