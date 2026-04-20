@@ -2154,9 +2154,11 @@ function renderParishSheetContent(parishId, opts = {}) {
   const focusedEvent = focusEventId
     ? parishEvents.find(e => e.id === focusEventId)
     : null;
-  const streamEvents = focusedEvent
-    ? parishEvents.filter(e => e.id !== focusedEvent.id)
-    : parishEvents;
+  // Stream includes the focused event too so the user sees it in day-context.
+  // Pinned copy is the expanded "highlight"; stream copy stays collapsed by
+  // default. Tapping either expands that specific card and collapses the
+  // other (handled in expandEventCard via opts.card + same-scope collapse).
+  const streamEvents = parishEvents;
 
   contentEl.innerHTML = `
     <div class="ps-header">
@@ -2194,7 +2196,7 @@ function renderParishSheetContent(parishId, opts = {}) {
             delete state._openEventId;
             syncURL();
           } else {
-            expandEventCard(focusedEvent.id, { scope });
+            expandEventCard(focusedEvent.id, { scope, card: pinnedCard });
           }
         });
       }
@@ -2278,7 +2280,7 @@ function renderParishSheetContent(parishId, opts = {}) {
           delete state._openEventId;
           syncURL();
         } else {
-          expandEventCard(id, { scope });
+          expandEventCard(id, { scope, card });
         }
       });
     });
@@ -2297,7 +2299,14 @@ function renderParishSheetContent(parishId, opts = {}) {
       const inPinned = focusedEvent && focusedEvent.id === state._openEventId;
       const inStream = (streamEvents || []).some(e => e.id === state._openEventId);
       if (inPinned || inStream) {
-        requestAnimationFrame(() => expandEventCard(state._openEventId, { scope: scopeEl }));
+        // Prefer the pinned copy when re-expanding; the stream copy (same id)
+        // stays collapsed in day-context, matching the deep-link render.
+        const preferred = scopeEl.querySelector(
+          '.ps-pinned-event .event-card[data-id="' + state._openEventId + '"]'
+        );
+        requestAnimationFrame(() =>
+          expandEventCard(state._openEventId, { scope: scopeEl, card: preferred || undefined })
+        );
       }
     }
   }
@@ -3007,14 +3016,23 @@ function expandEventCard(id, opts = {}) {
   const evt = state.events.find(e => e.id === id);
   if (!evt) return;
 
-  // Collapse any other expanded card first (within the same scope).
-  const curr = root.querySelector('.event-card.expanded');
-  if (curr && parseInt(curr.dataset.id) !== id) {
-    collapseEventCardDOM({ scope: root });
-  }
-
-  const card = root.querySelector(`.event-card[data-id="${id}"]`);
+  // Caller can hand us the specific card element to expand (e.g. stream copy
+  // vs pinned copy of the same focused event). Fall back to the first match.
+  const card = opts.card || root.querySelector(`.event-card[data-id="${id}"]`);
   if (!card) return;
+
+  // Collapse every other expanded card in scope. Covers both different-id
+  // cards AND same-id copies in another slot (pinned ↔ stream), which is
+  // how tapping one copy minimises the other.
+  root.querySelectorAll('.event-card.expanded').forEach(c => {
+    if (c === card) return;
+    c.classList.remove('expanded');
+    c.style.removeProperty('--accent-glow');
+    const d = c.querySelector('.event-card-drawer');
+    if (d) d.remove();
+    const cb = c.querySelector('.event-card-close');
+    if (cb) cb.remove();
+  });
 
   if (!card.classList.contains('expanded')) {
     const inParishSheet = !!(root && root.id === 'parish-sheet-scroll');
@@ -3140,9 +3158,9 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
-  // Promoted hero: parish avatar + big time + big title, with an inline
-  // parish row + chevron that tees off to the parish sheet. Suppressed inside
-  // the parish sheet itself — the user is already on that parish.
+  // Promoted hero: time + title inline (same size/weight, modern-title
+   // feel), followed by a card-shaped parish button with avatar. Suppressed
+   // inside the parish sheet itself — the user is already on that parish.
   let heroHtml = '';
   if (parish) {
     const initial = (parish.name || '?')[0].toUpperCase();
@@ -3151,20 +3169,17 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const heroTime = formatEventTime(start);
     const parishRow = opts.suppressParishHeader ? '' : `
       <button type="button" class="event-drawer-parish-btn" data-parish-id="${esc(parish.id)}">
+        <span class="event-drawer-avatar" style="background:${esc(color)}">${esc(initial)}</span>
         <span class="edp-text">
           <span class="edp-name">${esc(parish.name)}</span>
           <span class="edp-juris">${esc(juris)} Orthodox</span>
         </span>
-        <span class="edp-chev" aria-hidden="true">›</span>
+        <img class="edp-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt="">
       </button>`;
     heroHtml = `
       <div class="event-drawer-hero">
-        <div class="event-drawer-hero-top">
-          <div class="event-drawer-avatar" style="background:${esc(color)}">${esc(initial)}</div>
-          <div class="event-drawer-hero-text">
-            <div class="event-drawer-time-big">${heroTime}</div>
-            <div class="event-drawer-title-big">${esc(evt.title)}</div>
-          </div>
+        <div class="event-drawer-hero-title">
+          <span class="edp-time">${heroTime}</span><span class="edp-title">${esc(evt.title)}</span>
         </div>
         ${parishRow}
       </div>`;
