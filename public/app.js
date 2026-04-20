@@ -1477,33 +1477,53 @@ function initBottomSheet() {
 
   // Mode bar: defer drag decision so taps on buttons still fire as clicks,
   // but vertical drags started on a button still drag the sheet.
-  let modeBarPending = false;
-  let modeBarPendingY = 0;
+  // Axis-lock gesture state shared by mode-bar + parish-filter-row (both are
+  // horizontal trays that sit above #sheet-scroll). Defer commit until the
+  // finger has moved past THRESHOLD: dominant axis wins. Horizontal wins →
+  // native scroll inside the tray; vertical wins → sheet drag.
+  let trayPending = false;
+  let trayPendingX = 0;
+  let trayPendingY = 0;
+  let trayLockedHoriz = false;
   let modeBarSwallowClick = false;
-  const MODE_BAR_DRAG_THRESHOLD = 8;
+  const TRAY_DRAG_THRESHOLD = 8;
 
-  function onModeBarStart(e) {
-    // URL chip owns its own horizontal scroll — don't let the sheet drag
-    // hijack a swipe that's meant to reveal more of the URL.
-    if (e.target.closest('.mode-url-text')) return;
+  function onTrayStart(e) {
     const onInteractive = e.target.closest('button, a, .pill');
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
-    if (onInteractive) {
-      modeBarPending = true;
-      modeBarPendingY = y;
+    const t = e.touches ? e.touches[0] : e;
+    // Empty mode-bar space (no button underneath): drag sheet immediately.
+    // Anywhere else — over buttons, over the parish-filter-row pills, over
+    // the URL chip — defer until the axis is decided.
+    if (!onInteractive && e.currentTarget.id === 'mode-bar') {
+      if (e.cancelable) e.preventDefault();
+      engageDrag(t.clientY);
       return;
     }
-    if (e.cancelable) e.preventDefault();
-    engageDrag(y);
+    trayPending = true;
+    trayLockedHoriz = false;
+    trayPendingX = t.clientX;
+    trayPendingY = t.clientY;
   }
 
   function onDocMove(e) {
-    if (modeBarPending) {
-      const y = e.touches ? e.touches[0].clientY : e.clientY;
-      if (Math.abs(y - modeBarPendingY) > MODE_BAR_DRAG_THRESHOLD) {
-        modeBarPending = false;
-        modeBarSwallowClick = true;
-        engageDrag(modeBarPendingY);
+    if (trayPending) {
+      const t = e.touches ? e.touches[0] : e;
+      const dx = t.clientX - trayPendingX;
+      const dy = t.clientY - trayPendingY;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+      if (adx > TRAY_DRAG_THRESHOLD || ady > TRAY_DRAG_THRESHOLD) {
+        trayPending = false;
+        if (ady > adx) {
+          // Vertical dominates → sheet drag. Swallow the trailing click so the
+          // underlying button doesn't fire on release.
+          modeBarSwallowClick = true;
+          engageDrag(trayPendingY);
+        } else {
+          // Horizontal dominates → native tray scroll. Remember the lock so a
+          // wobble back to vertical mid-gesture doesn't flip us into a drag.
+          trayLockedHoriz = true;
+        }
       }
     }
     if (!dragging) return;
@@ -1513,7 +1533,8 @@ function initBottomSheet() {
   }
 
   function onDocEnd() {
-    modeBarPending = false;
+    trayPending = false;
+    trayLockedHoriz = false;
     if (dragging) endDrag();
     // Browsers suppress the synthetic click when the touch moved far enough,
     // so modeBarSwallowClick would otherwise stay true and eat the user's
@@ -1535,8 +1556,13 @@ function initBottomSheet() {
 
   handle.addEventListener('mousedown', onHandleStart);
   handle.addEventListener('touchstart', onHandleStart, { passive: false });
-  modeBar.addEventListener('mousedown', onModeBarStart);
-  modeBar.addEventListener('touchstart', onModeBarStart, { passive: false });
+  modeBar.addEventListener('mousedown', onTrayStart);
+  modeBar.addEventListener('touchstart', onTrayStart, { passive: false });
+  const parishRow = document.getElementById('parish-filter-row');
+  if (parishRow) {
+    parishRow.addEventListener('mousedown', onTrayStart);
+    parishRow.addEventListener('touchstart', onTrayStart, { passive: false });
+  }
   document.addEventListener('mousemove', onDocMove);
   document.addEventListener('touchmove', onDocMove, { passive: false });
   document.addEventListener('mouseup', onDocEnd);
@@ -1855,12 +1881,6 @@ function initParishSheet() {
   let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0, scrollLastY = 0;
 
   scroll.addEventListener('touchstart', e => {
-    // URL chip inside the sheet header owns its own horizontal scroll —
-    // stay idle so the sheet-drag / scroll-handoff logic doesn't engage.
-    if (e.target.closest('.ps-url-text')) {
-      scrollState = 'idle';
-      return;
-    }
     scrollStartY = e.touches[0].clientY;
     scrollStartX = e.touches[0].clientX;
     scrollStartTop = scroll.scrollTop;
@@ -2215,11 +2235,6 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (streamEl) {
     if (streamEvents.length) {
       renderStream(streamEl, streamEvents);
-    } else if (!focusedEvent) {
-      const empty = document.createElement('div');
-      empty.className = 'ps-empty';
-      empty.textContent = 'No other upcoming events.';
-      streamEl.replaceChildren(empty);
     } else {
       streamEl.replaceChildren();
     }
