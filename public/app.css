@@ -754,6 +754,8 @@ input, select, textarea {
   padding: 18px 14px 20px;
   margin: 0;
   border: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   border-radius: 0;
   box-shadow: none;
   background: transparent;
@@ -809,6 +811,7 @@ input, select, textarea {
   color: var(--text);
   padding-right: 28px; /* clearance for .event-card-close */
   overflow-wrap: anywhere;
+  cursor: pointer;
 }
 .event-drawer-hero-title .edp-time { margin-right: 8px; }
 .event-drawer-hero-title .edp-time .t-min,

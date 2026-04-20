@@ -3226,6 +3226,14 @@ function wireEventDrawer(drawer, evt) {
   // handler (which would otherwise treat them as a toggle request).
   drawer.addEventListener('click', e => e.stopPropagation());
 
+  const heroTitle = drawer.querySelector('.event-drawer-hero-title');
+  if (heroTitle) {
+    heroTitle.addEventListener('click', e => {
+      e.stopPropagation();
+      closeDetail();
+    });
+  }
+
   const parishBtn = drawer.querySelector('.event-drawer-parish-btn');
   if (parishBtn) {
     parishBtn.addEventListener('click', () => {
