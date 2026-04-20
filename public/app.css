@@ -517,6 +517,7 @@ input, select, textarea {
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: #777;
+  text-align: center;
 }
 /* Day wrapper — hairline outline plus a heavier foot-stroke that follows
    the bottom-corner radius. The border itself curves around the corners,
@@ -612,7 +613,10 @@ input, select, textarea {
   pointer-events: none;
   background: radial-gradient(120% 100% at 50% 100%, var(--accent-glow, rgba(136, 136, 136, 0.32)), transparent 75%);
 }
-.event-card.expanded .event-title-row { padding-right: 28px; }
+/* Collapsed summary (time + title + parish row) yields to the drawer's
+   promoted hero when expanded — keep the two states visually distinct. */
+.event-card.expanded .event-title-row,
+.event-card.expanded .event-parish-row { display: none; }
 .event-card.event-cancelled { opacity: 0.5; }
 .event-card.event-cancelled .event-title { text-decoration: line-through; }
 
@@ -786,37 +790,128 @@ input, select, textarea {
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
-.event-parish-header {
+/* Promoted hero inside expanded event card: avatar + big time + big title,
+   followed by a tappable parish row with chevron. Replaces the former
+   "Visit Parish" button + bottom parish header card. */
+.event-drawer-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 0 14px;
+  margin-bottom: 2px;
+}
+.event-drawer-hero-top {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  margin-top: 14px;
-  background: #fff;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  cursor: pointer;
+  gap: 14px;
 }
-.event-parish-header:active { background: #f5f5f5; }
-.event-parish-header-avatar {
-  width: 30px;
-  height: 30px;
+.event-drawer-avatar {
+  flex: none;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 10px 14px -6px var(--accent-glow, rgba(0, 0, 0, 0.35));
 }
-.event-parish-header-info { flex: 1; min-width: 0; }
-.event-parish-header-name { font-size: 13px; font-weight: 600; color: var(--text); }
-.event-parish-header-meta { font-size: 11px; color: var(--text-muted); }
-.event-parish-header-chevron {
+.event-drawer-hero-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 28px; /* clearance for event-card-close */
+}
+.event-drawer-time-big {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-muted);
-  font-size: 18px;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-transform: lowercase;
 }
+.event-drawer-time-big .t-min,
+.event-drawer-time-big .t-mer { font-size: 0.82em; font-weight: 600; }
+.event-drawer-title-big {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.event-drawer-parish-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 2px 2px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-light);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+.event-drawer-parish-btn .edp-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.event-drawer-parish-btn .edp-juris {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.event-drawer-parish-btn .edp-chev {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.event-drawer-parish-btn:active { opacity: 0.6; }
+
+/* Tap-to-copy address row (replaces the plain text line that was here). */
+.event-drawer-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.event-drawer-address-copy {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  filter: brightness(0) saturate(100%) invert(30%);
+}
+.event-drawer-address:active .event-drawer-address-copy { opacity: 1; }
+.event-drawer-address.copied {
+  color: #16a34a;
+  font-weight: 600;
+  animation: url-copied-soft 900ms ease-out;
+}
+.event-drawer-address.copied .event-drawer-address-copy { opacity: 0; }
 
 /* Sundays emphasise their day header inside the day-box. */
 .day-box.day-box-sunday .section-header { font-weight: 700; }
@@ -1660,6 +1755,23 @@ body.map-expanded #location-fab { display: flex; }
   overflow: hidden;
 }
 .ps-pinned-event .event-card { background: transparent; }
+/* Pinned-slot owns its own unfocus X (visible in both collapsed and expanded
+   states) — let it stand in for the per-drawer close inside this scope. */
+.ps-pinned-event .event-card-close { display: none; }
+.ps-pinned-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 10px;
+}
+.ps-pinned-close:hover { color: var(--text); }
 
 .ps-section {
   padding: 14px 16px;

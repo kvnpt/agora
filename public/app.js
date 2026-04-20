@@ -2198,6 +2198,22 @@ function renderParishSheetContent(parishId, opts = {}) {
           }
         });
       }
+      // Unfocus X — stays visible in both collapsed and expanded pinned
+      // states. Drops the pinned slot without closing the parish sheet.
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'ps-pinned-close';
+      closeBtn.setAttribute('aria-label', 'Close event');
+      closeBtn.innerHTML = '&times;';
+      closeBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const pid = state.parishSheetFocus;
+        delete state._openEventId;
+        collapseEventCardDOM();
+        syncURL();
+        if (pid) renderParishSheetContent(pid, {});
+      });
+      pinned.appendChild(closeBtn);
     }
   }
 
@@ -3068,7 +3084,6 @@ function renderEventDrawerHTML(evt, opts = {}) {
   const parish = state.parishes.find(p => p.id === evt.parish_id);
   const lat = evt.location_override ? (evt.lat || (parish && parish.lat) || 0) : ((parish && parish.lat) || evt.lat || 0);
   const lng = evt.location_override ? (evt.lng || (parish && parish.lng) || 0) : ((parish && parish.lng) || evt.lng || 0);
-  const websiteCta = evt.parish_website ? `<a class="btn-outline" href="${esc(evt.parish_website)}" target="_blank" rel="noopener">Visit Parish</a>` : '';
 
   const watchLiveCta = (evt.parish_live_url && !evt.hide_live)
     ? `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`
@@ -3125,32 +3140,48 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
-  // Parish header — tappable, opens the parish sheet (schedules, details,
-  // filtered events). Replaces the old inline schedule-toggle.
-  // Suppressed when the drawer is rendered inside the parish sheet itself:
-  // the user is already on that parish, so the nav affordance is noise.
-  let parishHeaderHtml = '';
-  if (parish && !opts.suppressParishHeader) {
+  // Promoted hero: parish avatar + big time + big title, with an inline
+  // parish row + chevron that tees off to the parish sheet. Suppressed inside
+  // the parish sheet itself — the user is already on that parish.
+  let heroHtml = '';
+  if (parish) {
     const initial = (parish.name || '?')[0].toUpperCase();
     const color = parish.color || '#666';
     const juris = capitalize(parish.jurisdiction || '');
-    parishHeaderHtml = `
-      <div class="event-parish-header" data-parish-id="${esc(parish.id)}" role="button" tabindex="0">
-        <div class="event-parish-header-avatar" style="background:${esc(color)}">${esc(initial)}</div>
-        <div class="event-parish-header-info">
-          <div class="event-parish-header-name">${esc(parish.name)}</div>
-          <div class="event-parish-header-meta">${esc(juris)} Orthodox · Tap for parish</div>
+    const heroTime = formatEventTime(start);
+    const parishRow = opts.suppressParishHeader ? '' : `
+      <button type="button" class="event-drawer-parish-btn" data-parish-id="${esc(parish.id)}">
+        <span class="edp-name">${esc(parish.name)}</span>
+        <span class="edp-juris">${esc(juris)} Orthodox</span>
+        <span class="edp-chev" aria-hidden="true">›</span>
+      </button>`;
+    heroHtml = `
+      <div class="event-drawer-hero">
+        <div class="event-drawer-hero-top">
+          <div class="event-drawer-avatar" style="background:${esc(color)}">${esc(initial)}</div>
+          <div class="event-drawer-hero-text">
+            <div class="event-drawer-time-big">${heroTime}</div>
+            <div class="event-drawer-title-big">${esc(evt.title)}</div>
+          </div>
         </div>
-        <span class="event-parish-header-chevron" aria-hidden="true">›</span>
+        ${parishRow}
       </div>`;
   }
 
+  const addrHtml = addr
+    ? `<button type="button" class="event-drawer-address" data-address="${esc(addr)}">
+         <span class="event-drawer-address-text">${esc(addr)}</span>
+         <img class="event-drawer-address-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+       </button>`
+    : '';
+
   return `
     <button class="event-card-close" type="button" aria-label="Close">&times;</button>
+    ${heroHtml}
     <div class="event-drawer-meta">
       <div>${dateFmt}</div>
       <div>${timeFmt}${endStr}</div>
-      ${addr ? `<div>${esc(addr)}</div>` : ''}
+      ${addrHtml}
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
       ${evt.languages ? `<div>${(() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })()}</div>` : ''}
     </div>
@@ -3159,11 +3190,9 @@ function renderEventDrawerHTML(evt, opts = {}) {
       <a class="btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Directions</a>
       ${watchLiveCta}
       ${serviceBookCta}
-      ${websiteCta}
       ${adminActions}
     </div>
     ${posterHtml}
-    ${parishHeaderHtml}
     ${editForm}`;
 }
 
@@ -3172,11 +3201,40 @@ function wireEventDrawer(drawer, evt) {
   // handler (which would otherwise treat them as a toggle request).
   drawer.addEventListener('click', e => e.stopPropagation());
 
-  const header = drawer.querySelector('.event-parish-header');
-  if (header) {
-    header.addEventListener('click', () => {
-      const pid = header.dataset.parishId;
+  const parishBtn = drawer.querySelector('.event-drawer-parish-btn');
+  if (parishBtn) {
+    parishBtn.addEventListener('click', () => {
+      const pid = parishBtn.dataset.parishId;
       if (pid) openParishSheet(pid);
+    });
+  }
+
+  const addrBtn = drawer.querySelector('.event-drawer-address');
+  if (addrBtn) {
+    addrBtn.addEventListener('click', async () => {
+      const text = addrBtn.dataset.address || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch {}
+        document.body.removeChild(ta);
+      }
+      const label = addrBtn.querySelector('.event-drawer-address-text');
+      if (!label) return;
+      if (addrBtn._copyTimer) clearTimeout(addrBtn._copyTimer);
+      const saved = label.textContent;
+      label.textContent = 'Copied';
+      addrBtn.classList.add('copied');
+      addrBtn._copyTimer = setTimeout(() => {
+        label.textContent = saved;
+        addrBtn.classList.remove('copied');
+        addrBtn._copyTimer = null;
+      }, 1200);
     });
   }
 
