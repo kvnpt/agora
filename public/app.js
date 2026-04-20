@@ -1278,11 +1278,16 @@ function applyFilters(events) {
   // Parish-scoped events: only visible when the user has filtered to exactly
   // one parish AND that parish is the event's parish. Operational entries
   // like "SETUP" live here so the parish can track them without cluttering
-  // the public feed.
+  // the public feed. Cancelled events follow the same rule implicitly —
+  // they're still visible to parishioners viewing that parish, but don't
+  // surface in the open feed / map.
   const singleParishFilter = state.filters.parishIds && state.filters.parishIds.size === 1
     ? [...state.filters.parishIds][0]
     : null;
-  filtered = filtered.filter(e => !e.parish_scoped || e.parish_id === singleParishFilter);
+  filtered = filtered.filter(e => {
+    const scoped = e.parish_scoped || e.status === 'cancelled';
+    return !scoped || e.parish_id === singleParishFilter;
+  });
   if (state.filters.parishIds) {
     filtered = filtered.filter(e => state.filters.parishIds.has(e.parish_id));
   }
