@@ -1783,9 +1783,8 @@ body.map-expanded #location-fab { display: flex; }
   max-width: calc(100% - 130px);
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: none;
   border: none;
   color: var(--text);
@@ -1793,7 +1792,6 @@ body.map-expanded #location-fab { display: flex; }
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
   user-select: none;
   touch-action: manipulation;
   outline: none;
