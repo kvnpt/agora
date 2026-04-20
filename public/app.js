@@ -1483,6 +1483,9 @@ function initBottomSheet() {
   const MODE_BAR_DRAG_THRESHOLD = 8;
 
   function onModeBarStart(e) {
+    // URL chip owns its own horizontal scroll — don't let the sheet drag
+    // hijack a swipe that's meant to reveal more of the URL.
+    if (e.target.closest('.mode-url-text')) return;
     const onInteractive = e.target.closest('button, a, .pill');
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     if (onInteractive) {
@@ -1852,6 +1855,12 @@ function initParishSheet() {
   let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0, scrollLastY = 0;
 
   scroll.addEventListener('touchstart', e => {
+    // URL chip inside the sheet header owns its own horizontal scroll —
+    // stay idle so the sheet-drag / scroll-handoff logic doesn't engage.
+    if (e.target.closest('.ps-url-text')) {
+      scrollState = 'idle';
+      return;
+    }
     scrollStartY = e.touches[0].clientY;
     scrollStartX = e.touches[0].clientX;
     scrollStartTop = scroll.scrollTop;
@@ -2417,15 +2426,27 @@ function updateModeUrl() {
 }
 
 // Long URLs extend to the left under a fade; end stays visible by default.
-// Call after innerHTML changes and on resize so the overflow class + scroll
-// position stay in sync with the available chip width.
+// Call after innerHTML changes and on resize so the directional fade + scroll
+// position stay in sync with the available chip width. Fade sides are live
+// — the scroll handler (wired once per element) repaints them on drag.
 function syncUrlChipOverflow(el) {
   if (!el) return;
   requestAnimationFrame(() => {
     const overflows = el.scrollWidth > el.clientWidth + 1;
-    el.classList.toggle('overflowing', overflows);
     if (overflows) el.scrollLeft = el.scrollWidth;
+    updateUrlChipFade(el);
+    if (!el._fadeWired) {
+      el._fadeWired = true;
+      el.addEventListener('scroll', () => updateUrlChipFade(el), { passive: true });
+    }
   });
+}
+
+function updateUrlChipFade(el) {
+  const max = el.scrollWidth - el.clientWidth;
+  const sl = el.scrollLeft;
+  el.classList.toggle('fade-left', sl > 1);
+  el.classList.toggle('fade-right', sl < max - 1);
 }
 
 function findParishByAcronym(seg) {

@@ -217,11 +217,20 @@ input, select, textarea {
   -webkit-overflow-scrolling: touch;
 }
 .mode-url-text::-webkit-scrollbar { display: none; }
-/* Long URL: fade the left edge to hint the rest is off-screen (swipe right
-   to reveal). JS toggles .overflowing when scrollWidth > clientWidth. */
-.mode-url-text.overflowing {
+/* Long URL: fade whichever edge(s) currently hide content. JS sets
+   .fade-left / .fade-right based on live scrollLeft so the hint only
+   appears where there's actually something to reveal. */
+.mode-url-text.fade-left {
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px);
           mask-image: linear-gradient(to right, transparent 0, #000 24px);
+}
+.mode-url-text.fade-right {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 24px);
+          mask-image: linear-gradient(to left, transparent 0, #000 24px);
+}
+.mode-url-text.fade-left.fade-right {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
 }
 .mode-url-copy {
   width: 12px;
@@ -1605,9 +1614,17 @@ body.map-expanded #location-fab { display: flex; }
   -webkit-overflow-scrolling: touch;
 }
 .ps-url-text::-webkit-scrollbar { display: none; }
-.ps-url-text.overflowing {
+.ps-url-text.fade-left {
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px);
           mask-image: linear-gradient(to right, transparent 0, #000 24px);
+}
+.ps-url-text.fade-right {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 24px);
+          mask-image: linear-gradient(to left, transparent 0, #000 24px);
+}
+.ps-url-text.fade-left.fade-right {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
 }
 .ps-url-copy {
   width: 12px;
