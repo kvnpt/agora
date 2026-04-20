@@ -77,9 +77,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // If the URL named a single parish (e.g. /gosr), open the parish sheet so
   // deep links and refreshes land on the parish card instead of just
-  // filtering the main list.
+  // filtering the main list. Defer past initMap's invalidateSize (100ms) so
+  // the pan/zoom inside openParishSheet reads a real container size.
   if (state.parishFocus && state.parishSheetFocus !== state.parishFocus) {
-    openParishSheet(state.parishFocus, { replaceUrl: true });
+    const focusPid = state.parishFocus;
+    setTimeout(() => {
+      if (window.agoraMap) window.agoraMap.invalidateSize();
+      openParishSheet(focusPid, { replaceUrl: true });
+    }, 150);
   }
 
   // Re-render event cards every minute to keep LIVE countdowns current.
@@ -2177,6 +2182,15 @@ function renderParishSheetContent(parishId, opts = {}) {
       }
       showPsUrlCopied(urlBtn);
     });
+    // Sheet header shrinks as content scrolls / device rotates — keep the
+    // overflow fade + end-scroll in sync with actual chip width.
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => {
+        const el = urlBtn.querySelector('.ps-url-text');
+        if (el) syncUrlChipOverflow(el);
+      });
+      ro.observe(urlBtn);
+    }
   }
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
 
@@ -2329,6 +2343,16 @@ function initModeUrl() {
     showCopiedFeedback(btn);
   });
   updateModeUrl();
+
+  // Filters-button label swaps (Events ↔ Schedules ↔ Socials) resize the
+  // URL chip; re-evaluate overflow on any mode-bar size change.
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => {
+      const el = document.getElementById('mode-url-text');
+      if (el) syncUrlChipOverflow(el);
+    });
+    ro.observe(btn);
+  }
 }
 
 // Briefly swaps the URL text with a glowing 'COPIED' message, then restores.
@@ -2388,6 +2412,20 @@ function updateModeUrl() {
     void el.offsetWidth;
     el.classList.add('mode-url-flash');
   }
+
+  syncUrlChipOverflow(el);
+}
+
+// Long URLs extend to the left under a fade; end stays visible by default.
+// Call after innerHTML changes and on resize so the overflow class + scroll
+// position stay in sync with the available chip width.
+function syncUrlChipOverflow(el) {
+  if (!el) return;
+  requestAnimationFrame(() => {
+    const overflows = el.scrollWidth > el.clientWidth + 1;
+    el.classList.toggle('overflowing', overflows);
+    if (overflows) el.scrollLeft = el.scrollWidth;
+  });
 }
 
 function findParishByAcronym(seg) {
@@ -2438,6 +2476,8 @@ function updateParishSheetUrl() {
     void el.offsetWidth;
     el.classList.add('ps-url-flash');
   }
+
+  syncUrlChipOverflow(el);
 }
 
 function showPsUrlCopied(btn) {

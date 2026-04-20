@@ -204,12 +204,24 @@ input, select, textarea {
 .mode-url:focus-visible,
 .mode-url:active { outline: none; box-shadow: none; }
 .mode-url-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  display: inline-flex;
-  align-items: baseline;
+  display: block;
+  text-align: right;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.mode-url-text::-webkit-scrollbar { display: none; }
+/* Long URL: fade the left edge to hint the rest is off-screen (swipe right
+   to reveal). JS toggles .overflowing when scrollWidth > clientWidth. */
+.mode-url-text.overflowing {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px);
+          mask-image: linear-gradient(to right, transparent 0, #000 24px);
 }
 .mode-url-copy {
   width: 12px;
@@ -1580,12 +1592,22 @@ body.map-expanded #location-fab { display: flex; }
 .ps-url:focus-visible,
 .ps-url:active { outline: none; box-shadow: none; }
 .ps-url-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  display: inline-flex;
-  align-items: baseline;
+  display: block;
+  text-align: right;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.ps-url-text::-webkit-scrollbar { display: none; }
+.ps-url-text.overflowing {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px);
+          mask-image: linear-gradient(to right, transparent 0, #000 24px);
 }
 .ps-url-copy {
   width: 12px;
