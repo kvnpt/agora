@@ -2772,7 +2772,10 @@ function renderEventCard(evt) {
   const isCancelled = evt.status === 'cancelled';
   const cancelledBadge = isCancelled ? `<span class="event-badge badge-cancelled">CANCELLED</span>` : '';
 
-  const hasPoster = !!(state.filters.socialOnly && evt.poster_path);
+  // Posters always render for feasts (calendar anchors, visual emphasis)
+  // and for socials whenever the user is in social view. Other event types
+  // keep the compact text-only card.
+  const hasPoster = !!(evt.poster_path && (evt.event_type === 'feast' || state.filters.socialOnly));
   const posterImg = hasPoster
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
