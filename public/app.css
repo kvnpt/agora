@@ -1214,30 +1214,40 @@ input, select, textarea {
 .btn-action.btn-primary .btn-action-icon {
   filter: brightness(0) saturate(100%) invert(100%);
 }
-.btn-action.btn-share {
-  background: var(--text);
-  color: var(--bg);
-  border-color: var(--text);
-}
-.btn-action.btn-share .btn-action-icon {
-  filter: brightness(0) saturate(100%) invert(100%);
-}
-.btn-action.btn-copy-link {
-  background: #fff;
+/* Event detail URL chip — sits alongside Directions in .detail-actions.
+   Visual twin of .mode-url / .ps-url: borderless, text-first, small copy
+   icon on the right. "Copied" swap on click with a soft green tint. */
+.detail-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-secondary);
-  border-color: var(--border);
+  background: #fff;
+  border: 1px solid var(--border);
+  cursor: pointer;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
+  line-height: 1.2;
+  transition: color 180ms ease-out, border-color 180ms ease-out, background 180ms ease-out;
 }
-.btn-action.btn-copy-link .btn-action-icon {
+.detail-url-text { display: inline; }
+.detail-url-copy {
+  width: 14px;
+  height: 14px;
+  display: block;
   filter: brightness(0) saturate(100%) invert(40%);
+  transition: filter 180ms ease-out;
 }
-.btn-action.btn-copy-link.copied {
+.detail-url.copied {
   color: #16a34a;
   border-color: #16a34a;
   background: #f0fdf4;
 }
-.btn-action.btn-copy-link.copied .btn-action-icon {
+.detail-url.copied .detail-url-copy {
   filter: brightness(0) saturate(100%) invert(45%) sepia(70%) saturate(500%) hue-rotate(85deg);
 }
 .btn-primary {
@@ -1721,64 +1731,51 @@ body.map-expanded #location-fab { display: flex; }
 }
 .ps-meta-sep { margin: 0 4px; }
 
-/* Parish-sheet URL chip — mirrors .mode-url vocabulary: strong weight, full
-   color, whole-URL hot-glow on change, softer COPIED feedback.
-   Absolute-positioned at the bottom-right of the header so the title can
-   span the full header width above. */
-.ps-header-filters {
+/* Parish-sheet filters button — same .filters-btn vocabulary as mode-bar.
+   Sits bottom-left of the header so the URL chip owns the bottom-right.
+   Its dropdown is anchored below the button and uses a simple fade+scale
+   transition rather than the mode-bar's clip-path animation (which needs
+   dynamic inset calculation we don't need on the sticky header). */
+.ps-filters-wrap {
   position: absolute;
-  left: 16px;
+  left: 12px;
   bottom: 4px;
-  display: inline-flex;
-  gap: 6px;
-  z-index: 1;
+  z-index: 3;
 }
-.ps-filter-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.ps-filters-btn {
   padding: 4px 10px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-  background: #fff;
-  border: 1px solid var(--border);
   border-radius: 999px;
-  cursor: pointer;
-  line-height: 1.2;
-  touch-action: manipulation;
 }
-.ps-filter-btn .ps-filter-icon {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
+.ps-filters-btn .filters-btn-label { font-size: 11px; }
+.ps-filters-btn .filters-btn-content img { width: 13px; height: 13px; }
+.ps-filters-btn .filters-btn-content .fm-en-badge {
+  font-size: 9px;
+  padding: 1px 4px;
 }
-.ps-filter-btn .ps-filter-icon img,
-.ps-filter-btn img.ps-filter-icon {
-  width: 13px;
-  height: 13px;
-  display: block;
+.ps-filters-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 200px;
+  transform-origin: top left;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms cubic-bezier(0.2, 0, 0, 1);
 }
-.ps-filter-btn.active {
-  background: var(--text);
-  color: #fff;
-  border-color: var(--text);
-}
-.ps-filter-btn.active img.ps-filter-icon {
-  filter: brightness(0) saturate(100%) invert(100%);
-}
-.ps-filter-english .fm-en-badge { padding: 1px 3px; font-size: 9px; }
-.ps-filter-english.active .fm-en-badge {
-  background: #fff;
-  color: var(--text);
-  border-color: #fff;
+.ps-filters-menu.hidden {
+  opacity: 0;
+  pointer-events: none;
+  clip-path: none;
+  transform: scale(0.92);
+  box-shadow: none;
 }
 
 .ps-url {
   position: absolute;
   right: 8px;
   bottom: 6px;
-  max-width: calc(100% - 210px);
+  max-width: calc(100% - 130px);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1894,6 +1891,52 @@ body.map-expanded #location-fab { display: flex; }
   text-decoration: none;
   display: block;
   margin-bottom: 10px;
+}
+/* Info chip: address / website. Tap copies the value; label briefly flips to
+   "Copied" with a green accent. Full-width row so the text wraps naturally;
+   copy icon stays pinned at the right. */
+.ps-info-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  font: inherit;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 180ms ease-out, border-color 180ms ease-out, background 180ms ease-out;
+}
+.ps-info-copy:last-of-type { margin-bottom: 10px; }
+.ps-info-copy-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ps-info-copy-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  display: block;
+  opacity: 0.55;
+  filter: brightness(0) saturate(100%) invert(40%);
+  transition: filter 180ms ease-out, opacity 180ms ease-out;
+}
+.ps-info-copy.copied {
+  color: #16a34a;
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+.ps-info-copy.copied .ps-info-copy-icon {
+  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(45%) sepia(70%) saturate(500%) hue-rotate(85deg);
 }
 .ps-actions {
   display: flex;

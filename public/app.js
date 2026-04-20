@@ -2130,15 +2130,25 @@ function renderParishSheetContent(parishId, opts = {}) {
     distHtml = `<span class="ps-meta-sep">·</span>${km.toFixed(1)} km`;
   }
 
+  // Address + website are presented as info-with-copy chips: tap copies the
+  // value to clipboard (a brief 'Copied' confirmation swaps for the label).
+  // Directions remains the explicit nav action below; the website is no longer
+  // a separate action button since its URL is visible + copyable here.
   const addrHtml = parish.address
-    ? `<a class="ps-address" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">${esc(parish.address)}</a>`
+    ? `<button class="ps-info-copy" type="button" data-copy="${esc(parish.address)}" aria-label="Copy address">
+        <span class="ps-info-copy-text">${esc(parish.address)}</span>
+        <img class="ps-info-copy-icon" src="https://api.iconify.design/ph:copy.svg" alt="">
+      </button>`
+    : '';
+  const webCopyHtml = parish.website
+    ? `<button class="ps-info-copy" type="button" data-copy="${esc(parish.website)}" aria-label="Copy website URL">
+        <span class="ps-info-copy-text">${esc(parish.website.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
+        <img class="ps-info-copy-icon" src="https://api.iconify.design/ph:copy.svg" alt="">
+      </button>`
     : '';
 
   const dirBtn = parish.lat && parish.lng
     ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
-    : '';
-  const webBtn = parish.website
-    ? `<a class="ps-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
     : '';
   const phoneBtn = parish.phone
     ? `<a class="ps-btn" href="tel:${esc(parish.phone)}">Call</a>`
@@ -2194,6 +2204,16 @@ function renderParishSheetContent(parishId, opts = {}) {
   const socialActive = !!state.filters.socialOnly;
   const englishActive = !!state.filters.englishOnly;
   const englishStrict = !!state.filters.englishStrict;
+  // Filters-button label + icon mirrors the main mode-bar button: either the
+  // current mode (Events / Socials) with an EN badge suffix when the English
+  // filter is on. Events is the "off" state when socialOnly is false.
+  const psFilterIcon = socialActive
+    ? 'https://api.iconify.design/fluent:people-community-16-regular.svg'
+    : 'https://api.iconify.design/ph:list.svg';
+  const psFilterLabel = socialActive ? 'Socials' : 'Events';
+  const psEnBadge = englishActive
+    ? `<span class="fm-en-badge${englishStrict ? ' strict' : ''}">EN</span>`
+    : '';
   contentEl.innerHTML = `
     <div class="ps-header">
       <div class="ps-avatar" style="background:${esc(color)};--parish-glow:${esc(hexToRgba(color, 0.45))}">${esc(initial)}</div>
@@ -2201,15 +2221,29 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
       </div>
-      <div class="ps-header-filters">
-        <button class="ps-filter-btn${socialActive ? ' active' : ''}" id="ps-filter-social" type="button" aria-pressed="${socialActive}">
-          <img class="ps-filter-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
-          <span class="ps-filter-label">Socials</span>
+      <div class="ps-filters-wrap">
+        <button class="filters-btn ps-filters-btn has-active" id="ps-filters-btn" type="button" aria-haspopup="menu" aria-expanded="false">
+          <span class="filters-btn-content">
+            <img src="${psFilterIcon}" alt="">
+            <span class="filters-btn-label">${psFilterLabel}</span>
+            ${psEnBadge}
+          </span>
         </button>
-        <button class="ps-filter-btn ps-filter-english${englishActive ? ' active' : ''}${englishStrict ? ' strict' : ''}" id="ps-filter-english" type="button" aria-pressed="${englishActive}">
-          <span class="ps-filter-icon fm-en-badge${englishStrict ? ' strict' : ''}">EN</span>
-          <span class="ps-filter-label">${englishStrict ? 'English-only' : 'English'}</span>
-        </button>
+        <div class="filters-menu ps-filters-menu hidden" id="ps-filters-menu" role="menu">
+          <button class="filters-menu-item${!socialActive ? ' active' : ''}" id="ps-fm-events" type="button" role="menuitemradio">
+            <img class="fm-icon" src="https://api.iconify.design/ph:list.svg" alt="">
+            <span class="fm-label">Events</span>
+          </button>
+          <button class="filters-menu-item${socialActive ? ' active' : ''}" id="ps-fm-social" type="button" role="menuitemradio">
+            <img class="fm-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
+            <span class="fm-label">Socials</span>
+          </button>
+          <div class="filters-menu-sep" aria-hidden="true"></div>
+          <button class="filters-menu-item fm-english${englishActive ? ' active' : ''}${englishStrict ? ' strict' : ''}" id="ps-fm-english" type="button" role="menuitemcheckbox">
+            <span class="fm-icon fm-en-badge${englishStrict ? ' strict' : ''}">EN</span>
+            <span class="fm-label">${englishStrict ? 'English-only' : englishActive ? 'Any English' : 'English'}</span>
+          </button>
+        </div>
       </div>
       <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
         <span class="ps-url-text" id="ps-url-text"></span>
@@ -2219,7 +2253,8 @@ function renderParishSheetContent(parishId, opts = {}) {
     ${focusedEvent ? '<div class="ps-pinned-event" id="ps-pinned-event"></div>' : ''}
     <div class="ps-section">
       ${addrHtml}
-      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
+      ${webCopyHtml}
+      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${phoneBtn}${watchBtn}</div>
     </div>
     ${schedSectionHtml}
     <div class="ps-events-list"></div>
@@ -2269,24 +2304,60 @@ function renderParishSheetContent(parishId, opts = {}) {
   const nameEl = contentEl.querySelector('.ps-name');
   if (nameEl) fitParishName(nameEl);
 
-  // Parish-card filter buttons (Socials, English) mirror the main filter-menu
-  // toggles — clicking them flips the session flag and re-renders the card so
-  // the pinned/stream events reflect the filter. Keep the main #btn-social /
-  // #btn-english UI in sync via the shared sync* helpers.
-  const psSocialBtn = contentEl.querySelector('#ps-filter-social');
-  if (psSocialBtn) {
-    psSocialBtn.addEventListener('click', () => {
-      state.filters.socialOnly = !state.filters.socialOnly;
+  // Parish-card Filters button + dropdown. Mirrors the main mode-bar Filters
+  // button visually; items scope to what makes sense inside a single-parish
+  // view (no Schedules/Parish picker/Admin). Shared session flags get flipped,
+  // main mode-bar syncs via syncFiltersButton so the two views stay aligned.
+  const psFiltersBtn = contentEl.querySelector('#ps-filters-btn');
+  const psFiltersMenu = contentEl.querySelector('#ps-filters-menu');
+  if (psFiltersBtn && psFiltersMenu) {
+    const closeMenu = () => {
+      psFiltersMenu.classList.add('hidden');
+      psFiltersBtn.setAttribute('aria-expanded', 'false');
+    };
+    const openMenu = () => {
+      psFiltersMenu.classList.remove('hidden');
+      psFiltersBtn.setAttribute('aria-expanded', 'true');
+    };
+    psFiltersBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (psFiltersMenu.classList.contains('hidden')) openMenu();
+      else closeMenu();
+    });
+    document.addEventListener('pointerdown', e => {
+      if (psFiltersMenu.classList.contains('hidden')) return;
+      if (psFiltersMenu.contains(e.target) || psFiltersBtn.contains(e.target)) return;
+      closeMenu();
+    }, true);
+  }
+
+  const psFmEvents = contentEl.querySelector('#ps-fm-events');
+  if (psFmEvents) {
+    psFmEvents.addEventListener('click', () => {
+      if (!state.filters.socialOnly) return; // already in Events scope
+      state.filters.socialOnly = false;
       const mainSocial = document.getElementById('btn-social');
-      if (mainSocial) mainSocial.classList.toggle('active', state.filters.socialOnly);
+      if (mainSocial) mainSocial.classList.remove('active');
       if (typeof syncFiltersButton === 'function') syncFiltersButton();
       renderParishSheetContent(parishId, opts);
       syncURL();
     });
   }
-  const psEnglishBtn = contentEl.querySelector('#ps-filter-english');
-  if (psEnglishBtn) {
-    psEnglishBtn.addEventListener('click', () => {
+  const psFmSocial = contentEl.querySelector('#ps-fm-social');
+  if (psFmSocial) {
+    psFmSocial.addEventListener('click', () => {
+      if (state.filters.socialOnly) return;
+      state.filters.socialOnly = true;
+      const mainSocial = document.getElementById('btn-social');
+      if (mainSocial) mainSocial.classList.add('active');
+      if (typeof syncFiltersButton === 'function') syncFiltersButton();
+      renderParishSheetContent(parishId, opts);
+      syncURL();
+    });
+  }
+  const psFmEnglish = contentEl.querySelector('#ps-fm-english');
+  if (psFmEnglish) {
+    psFmEnglish.addEventListener('click', () => {
       // Tri-state mirror of initEnglishFilter: off → any-english → strict → off
       if (!state.filters.englishOnly) {
         state.filters.englishOnly = true;
@@ -2303,6 +2374,36 @@ function renderParishSheetContent(parishId, opts = {}) {
       syncURL();
     });
   }
+
+  // Address + website copy chips. Click copies the value to clipboard and
+  // flashes a "Copied" label in place of the text for ~1.2s.
+  contentEl.querySelectorAll('.ps-info-copy').forEach(chip => {
+    chip.addEventListener('click', async () => {
+      const value = chip.dataset.copy || '';
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch {}
+        document.body.removeChild(ta);
+      }
+      const label = chip.querySelector('.ps-info-copy-text');
+      if (!label) return;
+      if (chip._copyTimer) clearTimeout(chip._copyTimer);
+      const saved = label.textContent;
+      label.textContent = 'Copied';
+      chip.classList.add('copied');
+      chip._copyTimer = setTimeout(() => {
+        label.textContent = saved;
+        chip.classList.remove('copied');
+        chip._copyTimer = null;
+      }, 1200);
+    });
+  });
 
   // Wire URL button (copy) + paint current location.
   const urlBtn = contentEl.querySelector('#ps-url');
@@ -3306,13 +3407,11 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
     <div class="detail-actions">
       <a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">
-        <img class="btn-action-icon" src="https://api.iconify.design/ph:navigation-arrow-fill.svg" alt="">Directions
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
       </a>
-      <button class="btn-action btn-share" type="button" data-share-id="${evt.id}" data-share-title="${esc(evt.title)}">
-        <img class="btn-action-icon" src="https://api.iconify.design/ph:share-network-fill.svg" alt="">Share
-      </button>
-      <button class="btn-action btn-copy-link" type="button" data-share-id="${evt.id}">
-        <img class="btn-action-icon" src="https://api.iconify.design/ph:copy.svg" alt="">/${evt.id}
+      <button class="detail-url" type="button" data-share-id="${evt.id}" aria-label="Copy event link">
+        <span class="detail-url-text">orthodoxy.au/${evt.id}</span>
+        <img class="detail-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
       </button>
       ${watchLiveCta}
       ${serviceBookCta}
@@ -3372,29 +3471,10 @@ function wireEventDrawer(drawer, evt) {
     });
   }
 
-  const shareBtn = drawer.querySelector('.btn-share');
-  if (shareBtn) {
-    shareBtn.addEventListener('click', async () => {
-      const id = shareBtn.dataset.shareId;
-      const title = shareBtn.dataset.shareTitle || '';
-      const url = `${location.origin}/${id}`;
-      if (navigator.share) {
-        try { await navigator.share({ title, url }); return; } catch {}
-      }
-      // Fallback: copy + flash the copy chip so the user sees something happened.
-      try { await navigator.clipboard.writeText(url); } catch {}
-      const copyBtn = drawer.querySelector('.btn-copy-link');
-      if (copyBtn) {
-        copyBtn.classList.add('copied');
-        setTimeout(() => copyBtn.classList.remove('copied'), 900);
-      }
-    });
-  }
-
-  const copyBtn = drawer.querySelector('.btn-copy-link');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', async () => {
-      const id = copyBtn.dataset.shareId;
+  const urlChip = drawer.querySelector('.detail-url');
+  if (urlChip) {
+    urlChip.addEventListener('click', async () => {
+      const id = urlChip.dataset.shareId;
       const url = `${location.origin}/${id}`;
       try {
         await navigator.clipboard.writeText(url);
@@ -3406,11 +3486,11 @@ function wireEventDrawer(drawer, evt) {
         try { document.execCommand('copy'); } catch {}
         document.body.removeChild(ta);
       }
-      if (copyBtn._copiedTimer) clearTimeout(copyBtn._copiedTimer);
-      copyBtn.classList.add('copied');
-      copyBtn._copiedTimer = setTimeout(() => {
-        copyBtn.classList.remove('copied');
-        copyBtn._copiedTimer = null;
+      if (urlChip._copiedTimer) clearTimeout(urlChip._copiedTimer);
+      urlChip.classList.add('copied');
+      urlChip._copiedTimer = setTimeout(() => {
+        urlChip.classList.remove('copied');
+        urlChip._copiedTimer = null;
       }, 900);
     });
   }
