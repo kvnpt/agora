@@ -1398,10 +1398,9 @@ a.filters-menu-item { text-decoration: none; }
 }
 
 
-/* ── Reset FAB (top center) ── */
+/* ── Reset FAB (bottom center, tracks sheet same as location FAB) ── */
 #reset-fab {
   position: fixed;
-  top: 44px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 600;
@@ -1417,10 +1416,11 @@ a.filters-menu-item { text-decoration: none; }
   border-radius: 18px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  opacity: 1;
+  transition: opacity 0.45s ease;
 }
-body.map-expanded #reset-fab.visible { display: block; opacity: 1; }
+body.map-expanded #reset-fab.visible { display: block; }
+#reset-fab.fading { opacity: 0; pointer-events: none; }
 
 /* ── Location FAB (bottom right) ── */
 #location-fab {

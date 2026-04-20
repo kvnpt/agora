@@ -1308,6 +1308,11 @@ function initBottomSheet() {
   const modeBar = document.getElementById('mode-bar');
   const scroll = document.getElementById('sheet-scroll');
   const fab = document.getElementById('location-fab');
+  const resetFab = document.getElementById('reset-fab');
+  // Both FABs share the sheet-following lifecycle — fade during drag, snap
+  // to (currentY - 52) on settle. Keeping them in an array lets the drag /
+  // snap handlers iterate once instead of duplicating every touchpoint.
+  const trackedFabs = [fab, resetFab].filter(Boolean);
 
   // Snap points (translateY values — lower = sheet higher on screen)
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
@@ -1336,7 +1341,7 @@ function initBottomSheet() {
   currentY = SNAP_HALF;
   sheet.style.transform = `translateY(${currentY}px)`;
   document.body.classList.add('map-expanded');
-  if (fab) fab.style.top = (currentY - 52) + 'px';
+  trackedFabs.forEach(f => { f.style.top = (currentY - 52) + 'px'; });
 
   // Expose for map.js padding calculation
   window.agoraSheetY = () => currentY;
@@ -1396,10 +1401,12 @@ function initBottomSheet() {
     updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
-      // Parish sheet takes ownership of the FAB while main sheet is hidden.
-      if (fab && !window.agoraParishSheetVisible) {
-        fab.style.top = (currentY - 52) + 'px';
-        fab.classList.remove('fading');
+      // Parish sheet takes ownership of the FABs while main sheet is hidden.
+      if (!window.agoraParishSheetVisible) {
+        trackedFabs.forEach(f => {
+          f.style.top = (currentY - 52) + 'px';
+          f.classList.remove('fading');
+        });
       }
       updateScrollLock();
       if (window.agoraMap) {
@@ -1439,7 +1446,7 @@ function initBottomSheet() {
     sheet.classList.remove('snapping');
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
-    if (fab) fab.classList.add('fading');
+    trackedFabs.forEach(f => f.classList.add('fading'));
   }
 
   function moveDrag(y) {
@@ -2003,6 +2010,11 @@ function initParishSheet() {
     // Open at half: map stays visible above, parish card + events below.
     snapTo(SNAP_HALF);
     if (window.agoraMainHide) window.agoraMainHide();
+    // Reset-fab belongs to the main list scope — hide while parish sheet
+    // owns the surface (main sheet's onDone won't touch the fabs while
+    // parish sheet is visible, so do it explicitly here).
+    const rFab = document.getElementById('reset-fab');
+    if (rFab) rFab.classList.add('fading');
 
     // Centre the parish in the visible (upper) half of the map, zooming in
     // only if current viewing radius is wider than 30 km.
