@@ -1214,42 +1214,47 @@ input, select, textarea {
 .btn-action.btn-primary .btn-action-icon {
   filter: brightness(0) saturate(100%) invert(100%);
 }
-/* Event detail URL chip — sits alongside Directions in .detail-actions.
-   Visual twin of .mode-url / .ps-url: borderless, text-first, small copy
-   icon on the right. "Copied" swap on click with a soft green tint. */
+/* Event detail URL chip — same vocabulary as the mode-bar URL chip: no
+   border/bg, text-first, tiny copy glyph on the right. Copy flashes the
+   text green and fades the glyph, mirroring the mode-bar feedback. */
 .detail-url {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 13px;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
-  background: #fff;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  line-height: 1.2;
-  transition: color 180ms ease-out, border-color 180ms ease-out, background 180ms ease-out;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: manipulation;
+  outline: none;
 }
+.detail-url:focus,
+.detail-url:focus-visible,
+.detail-url:active { outline: none; box-shadow: none; }
 .detail-url-text { display: inline; }
 .detail-url-copy {
-  width: 14px;
-  height: 14px;
-  display: block;
-  filter: brightness(0) saturate(100%) invert(40%);
-  transition: filter 180ms ease-out;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.75;
+  filter: brightness(0) saturate(100%) invert(20%);
+  transition: opacity 180ms ease-out;
 }
+.detail-url:hover .detail-url-copy { opacity: 1; }
 .detail-url.copied {
   color: #16a34a;
-  border-color: #16a34a;
-  background: #f0fdf4;
+  animation: url-copied-soft 900ms ease-out;
 }
-.detail-url.copied .detail-url-copy {
-  filter: brightness(0) saturate(100%) invert(45%) sepia(70%) saturate(500%) hue-rotate(85deg);
-}
+.detail-url.copied .detail-url-copy { opacity: 0; }
 .btn-primary {
   background: var(--text);
   color: var(--bg);
