@@ -825,10 +825,10 @@ input, select, textarea {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 14px 8px 8px;
   background: #fff;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius);
+  border-radius: 999px;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -1168,6 +1168,7 @@ input, select, textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 .detail-actions a,
 .detail-actions button {
@@ -1182,6 +1183,63 @@ input, select, textarea {
 }
 .detail-actions a:hover,
 .detail-actions button:hover { opacity: 0.8; }
+/* Rounded action pills: directions (primary), share (primary), copy-link
+   (outline). Icon sits on the left, label reads like a chip. */
+.btn-action {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px !important;
+  border-radius: 999px !important;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.btn-action .btn-action-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: block;
+}
+.btn-action.btn-primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.btn-action.btn-primary .btn-action-icon {
+  filter: brightness(0) saturate(100%) invert(100%);
+}
+.btn-action.btn-share {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.btn-action.btn-share .btn-action-icon {
+  filter: brightness(0) saturate(100%) invert(100%);
+}
+.btn-action.btn-copy-link {
+  background: #fff;
+  color: var(--text-secondary);
+  border-color: var(--border);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.btn-action.btn-copy-link .btn-action-icon {
+  filter: brightness(0) saturate(100%) invert(40%);
+}
+.btn-action.btn-copy-link.copied {
+  color: #16a34a;
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+.btn-action.btn-copy-link.copied .btn-action-icon {
+  filter: brightness(0) saturate(100%) invert(45%) sepia(70%) saturate(500%) hue-rotate(85deg);
+}
 .btn-primary {
   background: var(--text);
   color: var(--bg);
@@ -1667,11 +1725,60 @@ body.map-expanded #location-fab { display: flex; }
    color, whole-URL hot-glow on change, softer COPIED feedback.
    Absolute-positioned at the bottom-right of the header so the title can
    span the full header width above. */
+.ps-header-filters {
+  position: absolute;
+  left: 16px;
+  bottom: 4px;
+  display: inline-flex;
+  gap: 6px;
+  z-index: 1;
+}
+.ps-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+  touch-action: manipulation;
+}
+.ps-filter-btn .ps-filter-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.ps-filter-btn .ps-filter-icon img,
+.ps-filter-btn img.ps-filter-icon {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+.ps-filter-btn.active {
+  background: var(--text);
+  color: #fff;
+  border-color: var(--text);
+}
+.ps-filter-btn.active img.ps-filter-icon {
+  filter: brightness(0) saturate(100%) invert(100%);
+}
+.ps-filter-english .fm-en-badge { padding: 1px 3px; font-size: 9px; }
+.ps-filter-english.active .fm-en-badge {
+  background: #fff;
+  color: var(--text);
+  border-color: #fff;
+}
+
 .ps-url {
   position: absolute;
   right: 8px;
   bottom: 6px;
-  max-width: calc(100% - 72px);
+  max-width: calc(100% - 210px);
   display: inline-flex;
   align-items: center;
   gap: 6px;

@@ -261,8 +261,14 @@ function applyParishSlugs() {
     delete state._parishSlugs;
     return;
   }
-  if (resolved.length === 1) {
+  // Single slug in services mode → main services list filtered to that parish
+  // (no parish card). Single slug in any other mode → parish card focus.
+  // Multi slug (any mode) → main list with multi-parish filter, no card.
+  const servicesMode = state._startMode === 'services';
+  if (resolved.length === 1 && !servicesMode) {
     state.parishFocus = resolved[0].id;
+  } else if (resolved.length === 1) {
+    state.filters.parishIds = new Set([resolved[0].id]);
   } else {
     state.filters.parishIds = new Set(resolved.map(p => p.id));
     state.filters.multiParish = true;
@@ -322,7 +328,10 @@ function syncURL(opts = {}) {
     segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
   }
 
-  if (state._openEventId) segs.push(String(state._openEventId));
+  // Event id is intentionally NOT pushed to the URL. The only /<id> permalink
+  // that exists is the one the share button constructs on demand. Deep links
+  // on first load still work — detectUrlState reads numeric segments — but
+  // once the app takes over, the URL tracks filter/mode state only.
 
   const path = '/' + segs.join('/');
   const target = path + window.location.search + window.location.hash;
@@ -1306,6 +1315,26 @@ function applyFilters(events) {
   return filtered;
 }
 
+// Parish-sheet event list respects session social + english filters so the
+// in-card filter buttons feel connected to the rest of the app. parish_id
+// filter is already applied by the caller; parish_scoped is deliberately NOT
+// enforced here (the card is the authoritative view for this parish).
+function filterParishEventsBySession(events) {
+  let out = events;
+  if (state.filters.socialOnly) {
+    out = out.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
+  }
+  if (state.filters.englishOnly) {
+    out = out.filter(e => {
+      const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
+      if (!langs) return false;
+      if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
+      return langs.some(l => /english/i.test(l));
+    });
+  }
+  return out;
+}
+
 // ── Bottom sheet ──
 function initBottomSheet() {
   const sheet = document.getElementById('bottom-sheet');
@@ -2148,6 +2177,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       .filter(e => e.parish_id === parishId)
       .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
   }
+  parishEvents = filterParishEventsBySession(parishEvents);
   const archUrl = ARCHDIOCESE_EVENTS[parish.jurisdiction];
   const archBtnHtml = archUrl
     ? `<a class="ps-btn ps-arch-btn" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(parish.jurisdiction))} Archdiocese Events</a>`
@@ -2165,12 +2195,25 @@ function renderParishSheetContent(parishId, opts = {}) {
   // other (handled in expandEventCard via opts.card + same-scope collapse).
   const streamEvents = parishEvents;
 
+  const socialActive = !!state.filters.socialOnly;
+  const englishActive = !!state.filters.englishOnly;
+  const englishStrict = !!state.filters.englishStrict;
   contentEl.innerHTML = `
     <div class="ps-header">
       <div class="ps-avatar" style="background:${esc(color)};--parish-glow:${esc(hexToRgba(color, 0.45))}">${esc(initial)}</div>
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
+      </div>
+      <div class="ps-header-filters">
+        <button class="ps-filter-btn${socialActive ? ' active' : ''}" id="ps-filter-social" type="button" aria-pressed="${socialActive}">
+          <img class="ps-filter-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
+          <span class="ps-filter-label">Socials</span>
+        </button>
+        <button class="ps-filter-btn ps-filter-english${englishActive ? ' active' : ''}${englishStrict ? ' strict' : ''}" id="ps-filter-english" type="button" aria-pressed="${englishActive}">
+          <span class="ps-filter-icon fm-en-badge${englishStrict ? ' strict' : ''}">EN</span>
+          <span class="ps-filter-label">${englishStrict ? 'English-only' : 'English'}</span>
+        </button>
       </div>
       <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
         <span class="ps-url-text" id="ps-url-text"></span>
@@ -2229,6 +2272,41 @@ function renderParishSheetContent(parishId, opts = {}) {
   // keeps clientHeight fixed; scrollHeight reports true content height.
   const nameEl = contentEl.querySelector('.ps-name');
   if (nameEl) fitParishName(nameEl);
+
+  // Parish-card filter buttons (Socials, English) mirror the main filter-menu
+  // toggles — clicking them flips the session flag and re-renders the card so
+  // the pinned/stream events reflect the filter. Keep the main #btn-social /
+  // #btn-english UI in sync via the shared sync* helpers.
+  const psSocialBtn = contentEl.querySelector('#ps-filter-social');
+  if (psSocialBtn) {
+    psSocialBtn.addEventListener('click', () => {
+      state.filters.socialOnly = !state.filters.socialOnly;
+      const mainSocial = document.getElementById('btn-social');
+      if (mainSocial) mainSocial.classList.toggle('active', state.filters.socialOnly);
+      if (typeof syncFiltersButton === 'function') syncFiltersButton();
+      renderParishSheetContent(parishId, opts);
+      syncURL();
+    });
+  }
+  const psEnglishBtn = contentEl.querySelector('#ps-filter-english');
+  if (psEnglishBtn) {
+    psEnglishBtn.addEventListener('click', () => {
+      // Tri-state mirror of initEnglishFilter: off → any-english → strict → off
+      if (!state.filters.englishOnly) {
+        state.filters.englishOnly = true;
+        state.filters.englishStrict = false;
+      } else if (!state.filters.englishStrict) {
+        state.filters.englishStrict = true;
+      } else {
+        state.filters.englishOnly = false;
+        state.filters.englishStrict = false;
+      }
+      if (typeof syncEnglishButton === 'function') syncEnglishButton();
+      if (typeof syncFiltersButton === 'function') syncFiltersButton();
+      renderParishSheetContent(parishId, opts);
+      syncURL();
+    });
+  }
 
   // Wire URL button (copy) + paint current location.
   const urlBtn = contentEl.querySelector('#ps-url');
@@ -2349,7 +2427,17 @@ function renderParishSheetContent(parishId, opts = {}) {
     fetch(`/api/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
       .then(r => r.ok ? r.json() : [])
       .then(events => {
-        const filtered = (events || [])
+        const data = events || [];
+        // Merge into state.events so expandEventCard (which looks up events
+        // by id in state.events) can find the card when the user tapped
+        // straight from the services list into the parish card — otherwise
+        // state.events is empty and taps fall through silently.
+        if (data.length) {
+          const existingIds = new Set(state.events.map(e => e.id));
+          const additions = data.filter(e => !existingIds.has(e.id));
+          if (additions.length) state.events = [...state.events, ...additions];
+        }
+        const filtered = data
           .filter(e => e.parish_id === parishId)
           .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
         const sheetEl = document.getElementById('parish-sheet');
@@ -3212,7 +3300,15 @@ function renderEventDrawerHTML(evt, opts = {}) {
     </div>
     ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
     <div class="detail-actions">
-      <a class="btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Directions</a>
+      <a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:navigation-arrow-fill.svg" alt="">Directions
+      </a>
+      <button class="btn-action btn-share" type="button" data-share-id="${evt.id}" data-share-title="${esc(evt.title)}">
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:share-network-fill.svg" alt="">Share
+      </button>
+      <button class="btn-action btn-copy-link" type="button" data-share-id="${evt.id}">
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:copy.svg" alt="">/${evt.id}
+      </button>
       ${watchLiveCta}
       ${serviceBookCta}
       ${adminActions}
@@ -3268,6 +3364,49 @@ function wireEventDrawer(drawer, evt) {
         addrBtn.classList.remove('copied');
         addrBtn._copyTimer = null;
       }, 1200);
+    });
+  }
+
+  const shareBtn = drawer.querySelector('.btn-share');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      const id = shareBtn.dataset.shareId;
+      const title = shareBtn.dataset.shareTitle || '';
+      const url = `${location.origin}/${id}`;
+      if (navigator.share) {
+        try { await navigator.share({ title, url }); return; } catch {}
+      }
+      // Fallback: copy + flash the copy chip so the user sees something happened.
+      try { await navigator.clipboard.writeText(url); } catch {}
+      const copyBtn = drawer.querySelector('.btn-copy-link');
+      if (copyBtn) {
+        copyBtn.classList.add('copied');
+        setTimeout(() => copyBtn.classList.remove('copied'), 900);
+      }
+    });
+  }
+
+  const copyBtn = drawer.querySelector('.btn-copy-link');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const id = copyBtn.dataset.shareId;
+      const url = `${location.origin}/${id}`;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch {}
+        document.body.removeChild(ta);
+      }
+      if (copyBtn._copiedTimer) clearTimeout(copyBtn._copiedTimer);
+      copyBtn.classList.add('copied');
+      copyBtn._copiedTimer = setTimeout(() => {
+        copyBtn.classList.remove('copied');
+        copyBtn._copiedTimer = null;
+      }, 900);
     });
   }
 
