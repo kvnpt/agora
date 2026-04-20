@@ -1218,11 +1218,14 @@ input, select, textarea {
    border/bg, text-first, tiny copy glyph on the right. Copy flashes the
    text green and fades the glyph, mirroring the mode-bar feedback. */
 .detail-url {
+  /* Push to the right edge of the actions row (Directions on the left,
+     URL chip on the right), like the mode-bar URL chip. */
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  padding: 0;
-  margin: 0;
+  padding: 6px 10px;
   background: none;
   border: none;
   color: var(--text);
