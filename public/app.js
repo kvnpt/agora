@@ -2225,14 +2225,14 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
       </div>
       <div class="ps-filters-wrap">
-        <button class="filters-btn ps-filters-btn has-active" id="ps-filters-btn" type="button" aria-haspopup="menu" aria-expanded="false">
+        <button class="filters-btn ps-filters-btn has-active" id="ps-filters-btn" type="button" aria-haspopup="menu" aria-expanded="${opts.filtersMenuOpen ? 'true' : 'false'}">
           <span class="filters-btn-content">
             <img src="${psFilterIcon}" alt="">
             <span class="filters-btn-label">${psFilterLabel}</span>
             ${psEnBadge}
           </span>
         </button>
-        <div class="filters-menu ps-filters-menu hidden" id="ps-filters-menu" role="menu">
+        <div class="filters-menu ps-filters-menu${opts.filtersMenuOpen ? '' : ' hidden'}" id="ps-filters-menu" role="menu">
           <button class="filters-menu-item${!socialActive ? ' active' : ''}" id="ps-fm-events" type="button" role="menuitemradio">
             <img class="fm-icon" src="https://api.iconify.design/ph:list.svg" alt="">
             <span class="fm-label">Events</span>
@@ -2342,7 +2342,9 @@ function renderParishSheetContent(parishId, opts = {}) {
       const mainSocial = document.getElementById('btn-social');
       if (mainSocial) mainSocial.classList.remove('active');
       if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      renderParishSheetContent(parishId, opts);
+      // Mode switch closes the menu; drop filtersMenuOpen explicitly so a
+      // prior EN cycle's flag doesn't carry over through opts.
+      renderParishSheetContent(parishId, { ...opts, filtersMenuOpen: false });
       syncURL();
     });
   }
@@ -2354,14 +2356,18 @@ function renderParishSheetContent(parishId, opts = {}) {
       const mainSocial = document.getElementById('btn-social');
       if (mainSocial) mainSocial.classList.add('active');
       if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      renderParishSheetContent(parishId, opts);
+      renderParishSheetContent(parishId, { ...opts, filtersMenuOpen: false });
       syncURL();
     });
   }
   const psFmEnglish = contentEl.querySelector('#ps-fm-english');
   if (psFmEnglish) {
-    psFmEnglish.addEventListener('click', () => {
-      // Tri-state mirror of initEnglishFilter: off → any-english → strict → off
+    psFmEnglish.addEventListener('click', e => {
+      // Tri-state mirror of initEnglishFilter: off → any-english → strict → off.
+      // Keep the menu open so the user can cycle through states without having
+      // to reopen it between taps. stopPropagation prevents the outside-click
+      // handler from closing on the same gesture.
+      e.stopPropagation();
       if (!state.filters.englishOnly) {
         state.filters.englishOnly = true;
         state.filters.englishStrict = false;
@@ -2373,7 +2379,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       }
       if (typeof syncEnglishButton === 'function') syncEnglishButton();
       if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      renderParishSheetContent(parishId, opts);
+      renderParishSheetContent(parishId, { ...opts, filtersMenuOpen: true });
       syncURL();
     });
   }
