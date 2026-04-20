@@ -3151,8 +3151,10 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const heroTime = formatEventTime(start);
     const parishRow = opts.suppressParishHeader ? '' : `
       <button type="button" class="event-drawer-parish-btn" data-parish-id="${esc(parish.id)}">
-        <span class="edp-name">${esc(parish.name)}</span>
-        <span class="edp-juris">${esc(juris)} Orthodox</span>
+        <span class="edp-text">
+          <span class="edp-name">${esc(parish.name)}</span>
+          <span class="edp-juris">${esc(juris)} Orthodox</span>
+        </span>
         <span class="edp-chev" aria-hidden="true">›</span>
       </button>`;
     heroHtml = `
