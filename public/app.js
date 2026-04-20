@@ -2150,6 +2150,9 @@ function renderParishSheetContent(parishId, opts = {}) {
   const dirBtn = parish.lat && parish.lng
     ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
     : '';
+  const webBtn = parish.website
+    ? `<a class="ps-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
+    : '';
   const phoneBtn = parish.phone
     ? `<a class="ps-btn" href="tel:${esc(parish.phone)}">Call</a>`
     : '';
@@ -2254,7 +2257,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-section">
       ${addrHtml}
       ${webCopyHtml}
-      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${phoneBtn}${watchBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
     </div>
     ${schedSectionHtml}
     <div class="ps-events-list"></div>

@@ -1892,52 +1892,47 @@ body.map-expanded #location-fab { display: flex; }
   display: block;
   margin-bottom: 10px;
 }
-/* Info chip: address / website. Tap copies the value; label briefly flips to
-   "Copied" with a green accent. Full-width row so the text wraps naturally;
-   copy icon stays pinned at the right. */
+/* Address / website: plain text with a small inline copy glyph — matches the
+   event-drawer-address treatment so the two surfaces read the same. Tap
+   copies; text turns green with a soft fade on success. No chip/container
+   decoration — sits flat on the ps-section background. */
 .ps-info-copy {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  background: #fff;
-  border: 1px solid var(--border-light);
-  border-radius: 10px;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 0 6px;
   font: inherit;
-  text-align: left;
+  font-size: 13px;
   color: var(--text-secondary);
+  text-align: left;
   cursor: pointer;
-  transition: color 180ms ease-out, border-color 180ms ease-out, background 180ms ease-out;
+  overflow-wrap: anywhere;
 }
 .ps-info-copy:last-of-type { margin-bottom: 10px; }
 .ps-info-copy-text {
-  flex: 1;
   min-width: 0;
-  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ps-info-copy-icon {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   display: block;
-  opacity: 0.55;
-  filter: brightness(0) saturate(100%) invert(40%);
-  transition: filter 180ms ease-out, opacity 180ms ease-out;
+  opacity: 0.6;
+  filter: brightness(0) saturate(100%) invert(30%);
 }
+.ps-info-copy:active .ps-info-copy-icon { opacity: 1; }
 .ps-info-copy.copied {
   color: #16a34a;
-  border-color: #16a34a;
-  background: #f0fdf4;
+  font-weight: 600;
+  animation: url-copied-soft 900ms ease-out;
 }
-.ps-info-copy.copied .ps-info-copy-icon {
-  opacity: 1;
-  filter: brightness(0) saturate(100%) invert(45%) sepia(70%) saturate(500%) hue-rotate(85deg);
-}
+.ps-info-copy.copied .ps-info-copy-icon { opacity: 0; }
 .ps-actions {
   display: flex;
   flex-wrap: wrap;
