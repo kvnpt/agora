@@ -279,38 +279,20 @@ function applyParishSlugs() {
 // Back-compat shim
 function applyParishSlug() { return applyParishSlugs(); }
 
-// Write current filter/mode/detail state back to the URL. Defaults to
-// pushState so every mutator creates a history entry (back button walks
-// through filter changes). Pass { replace: true } for initial canonicalization
-// and for repair writes that shouldn't create entries.
-function syncURL(opts = {}) {
-  // Guard: only run when state exists (init sequence may call before filters set)
-  if (!state || !state.filters) return;
-  // During popstate reconciliation we're reading the URL into state, not the
-  // reverse — writing would fight the history stack and risk loops.
-  if (_reconciling) return;
+// Build URL path segments from current state. When includeEventId is true the
+// open event's id is appended — this form is what the browser URL carries so
+// the back button can walk through open/close transitions. The share-URL form
+// (what the on-page URL chip displays and the chip-copy action writes) drops
+// the id: viewers want to share the object they're looking at, not the exact
+// modal-open moment. Browser URL and chip URL diverge on purpose.
+function buildPathSegs(opts = {}) {
+  if (!state || !state.filters) return [];
   const segs = [];
-
-  // Order: jurisdiction → services|social → parish → language → eventId.
-  // detectUrlState is order-agnostic; order here is purely for readability.
-
-  // If on a jurisdiction subdomain, omit the segment to avoid /antiochian/antiochian
   if (state.filters.jurisdiction && state.filters.jurisdiction !== state.subdomainJurisdiction) {
     segs.push(state.filters.jurisdiction);
   }
-
-  // /services/<parish> is idempotent with /<parish> — both surface the same
-  // parish view. When the parish sheet is open we prefer the shorter /<parish>
-  // and keep state.mode = 'services' in memory so closing the sheet returns
-  // the user to the services list (URL rebuilds to /services at that point).
-  // In-session browser-back still works because history's previous entry was
-  // /services before the sheet opened.
   if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
   else if (state.filters.socialOnly) segs.push('social');
-
-  // Parish: when the parish sheet is open, its focus wins over the main-list
-  // parishIds filter so closing an event inside the sheet lands the URL on
-  // /<acronym> rather than whatever the list happened to be filtered to.
   const psfId = state.parishSheetFocus;
   const psfParish = psfId ? state.parishes.find(x => x.id === psfId) : null;
   if (psfParish && psfParish.acronym) {
@@ -323,16 +305,30 @@ function syncURL(opts = {}) {
     if (acrs.length === 1) segs.push(acrs[0]);
     else if (acrs.length > 1) segs.push(acrs.join('+'));
   }
-
   if (state.filters.englishOnly) {
     segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
   }
+  if (opts.includeEventId && state._openEventId) {
+    segs.push(String(state._openEventId));
+  }
+  return segs;
+}
+window.agoraBuildPathSegs = buildPathSegs;
 
-  // Event id is intentionally NOT pushed to the URL. The only /<id> permalink
-  // that exists is the one the share button constructs on demand. Deep links
-  // on first load still work — detectUrlState reads numeric segments — but
-  // once the app takes over, the URL tracks filter/mode state only.
+// Write current filter/mode/detail state back to the URL. Defaults to
+// pushState so every mutator creates a history entry (back button walks
+// through filter changes AND event open/close). Pass { replace: true } for
+// initial canonicalization and for repair writes that shouldn't create entries.
+function syncURL(opts = {}) {
+  if (!state || !state.filters) return;
+  // During popstate reconciliation we're reading the URL into state, not the
+  // reverse — writing would fight the history stack and risk loops.
+  if (_reconciling) return;
 
+  // Browser URL includes event-id so back-button closes the drawer via the
+  // popstate reconciler. Page-facing chip (updateModeUrl / updateParishSheetUrl)
+  // builds its own share-form URL without the id.
+  const segs = buildPathSegs({ includeEventId: true });
   const path = '/' + segs.join('/');
   const target = path + window.location.search + window.location.hash;
   // Dedupe — skip writes when URL already matches (avoids redundant history entries
@@ -2312,11 +2308,15 @@ function renderParishSheetContent(parishId, opts = {}) {
   const urlBtn = contentEl.querySelector('#ps-url');
   if (urlBtn) {
     urlBtn.addEventListener('click', async () => {
+      // Copy the chip's share-form URL (no event-id), not location.href —
+      // browser URL may carry /<id> for back-button support that shouldn't
+      // leak into shared links.
+      const shareUrl = location.origin + '/' + buildPathSegs().join('/');
       try {
-        await navigator.clipboard.writeText(location.href);
+        await navigator.clipboard.writeText(shareUrl);
       } catch {
         const ta = document.createElement('textarea');
-        ta.value = location.href;
+        ta.value = shareUrl;
         document.body.appendChild(ta);
         ta.select();
         try { document.execCommand('copy'); } catch {}
@@ -2484,11 +2484,14 @@ function initModeUrl() {
   const btn = document.getElementById('mode-url');
   if (!btn) return;
   btn.addEventListener('click', async () => {
+    // Copy the share-form URL (no event-id) rather than location.href, since
+    // the browser URL may carry /<id> purely for back-button navigation.
+    const shareUrl = location.origin + '/' + buildPathSegs().join('/');
     try {
-      await navigator.clipboard.writeText(location.href);
+      await navigator.clipboard.writeText(shareUrl);
     } catch {
       const ta = document.createElement('textarea');
-      ta.value = location.href;
+      ta.value = shareUrl;
       document.body.appendChild(ta);
       ta.select();
       try { document.execCommand('copy'); } catch {}
@@ -2529,7 +2532,9 @@ function updateModeUrl() {
   // Skip while COPIED feedback is on screen — it'll re-render when timer fires.
   if (el._copiedTimer) return;
   const host = location.host.replace(/^www\./, '');
-  const segs = location.pathname.split('/').filter(Boolean);
+  // Chip shows the shareable form (no event-id), even though the browser URL
+  // may carry one for back-button navigation.
+  const segs = buildPathSegs();
   const hasPrev = !!el.dataset.prevSegs;
   const prevKey = hasPrev ? el.dataset.prevSegs : '';
   const nextKey = JSON.stringify(segs);
@@ -2610,7 +2615,7 @@ function updateParishSheetUrl() {
   if (!el) return;
   if (el._copiedTimer) return;
   const host = location.host.replace(/^www\./, '');
-  const segs = location.pathname.split('/').filter(Boolean);
+  const segs = buildPathSegs();
   const hasPrev = !!el.dataset.prevSegs;
   const prevKey = hasPrev ? el.dataset.prevSegs : '';
   const nextKey = JSON.stringify(segs);
