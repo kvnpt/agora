@@ -238,6 +238,12 @@
             Never show live badge (e.g. Confession, in-person only)
           </label>
         </div>
+        <div class="field" style="margin-top:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
+            <input type="checkbox" name="parish_scoped">
+            Parish-only (hidden unless filtered to parish)
+          </label>
+        </div>
         <div class="btn-row"><button type="submit" class="btn btn-primary">Add Schedule</button></div>
       </form>
       </div>
@@ -796,6 +802,12 @@
                     Never show live badge
                   </label>
                 </div>
+                <div class="field" style="margin-top:6px;">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
+                    <input type="checkbox" data-field="parish_scoped" ${s.parish_scoped ? 'checked' : ''}>
+                    Parish-only (hidden unless filtered to parish)
+                  </label>
+                </div>
                 <div class="btn-row">
                   <button class="btn btn-primary" onclick="saveSchedule(${s.id})">Save</button>
                 </div>
@@ -827,7 +839,7 @@
       const data = { parish_id: f.parish_id.value, day_of_week: parseInt(f.day_of_week.value), start_time: f.start_time.value,
         end_time: f.end_time.value || null, title: f.title.value.trim(), event_type: f.event_type.value,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim()).filter(Boolean)) : null,
-        hide_live: f.hide_live.checked };
+        hide_live: f.hide_live.checked, parish_scoped: f.parish_scoped.checked };
       const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
     });
@@ -841,7 +853,7 @@
         if (field === 'week_of_month') {
           const checked = [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
           data[field] = checked.length ? checked.join(',') : null;
-        } else if (field === 'concurrent' || field === 'hide_live') {
+        } else if (field === 'concurrent' || field === 'hide_live' || field === 'parish_scoped') {
           data[field] = el.checked ? 1 : 0;
         } else if (el.tagName === 'DIV') {
           return; // skip wrapper divs without data-f

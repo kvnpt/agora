@@ -215,7 +215,7 @@ router.get('/schedules', (req, res) => {
 // POST /api/admin/schedules — create a schedule
 router.post('/schedules', (req, res) => {
   const db = getDb();
-  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, hide_live } = req.body;
+  const { parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, hide_live, parish_scoped } = req.body;
 
   if (!parish_id || day_of_week == null || !start_time || !title) {
     return res.status(400).json({ error: 'parish_id, day_of_week, start_time, and title are required' });
@@ -233,9 +233,9 @@ router.post('/schedules', (req, res) => {
   if (!parish) return res.status(400).json({ error: 'Invalid parish_id' });
 
   const result = db.prepare(`
-    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, hide_live)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null, hide_live ? 1 : 0);
+    INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, hide_live, parish_scoped)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null, hide_live ? 1 : 0, parish_scoped ? 1 : 0);
 
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(schedule);
@@ -247,13 +247,14 @@ router.patch('/schedules/:id', (req, res) => {
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
-  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month', 'concurrent', 'hide_live'];
+  const allowed = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type', 'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped'];
+  const boolFields = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
   const updates = [];
   const values = [];
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       updates.push(`${key} = ?`);
-      values.push(req.body[key]);
+      values.push(boolFields.has(key) ? (req.body[key] ? 1 : 0) : req.body[key]);
     }
   }
 

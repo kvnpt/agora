@@ -300,6 +300,11 @@ function migrate(db) {
     db.exec(`ALTER TABLE events ADD COLUMN parish_scoped INTEGER NOT NULL DEFAULT 0`);
     db.pragma('user_version = 16');
   }
+
+  if (version < 17) {
+    db.prepare(`ALTER TABLE schedules ADD COLUMN parish_scoped INTEGER NOT NULL DEFAULT 0`).run();
+    db.pragma('user_version = 17');
+  }
 }
 
 module.exports = { getDb };
