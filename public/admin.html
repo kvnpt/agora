@@ -639,7 +639,7 @@
               <div class="field"><label>Website</label><input value="${esc(p.website || '')}" data-field="website"></div>
               <div class="field"><label>Email</label><input value="${esc(p.email || '')}" data-field="email"></div>
               <div class="field"><label>Phone</label><input value="${esc(p.phone || '')}" data-field="phone"></div>
-              <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" data-field="acronym"></div>
+              <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" data-field="acronym" oninput="checkAcronymClash(this, '${esc(p.id)}')"><span class="acronym-warn" style="font-size:11px;color:#e67e22;display:block;margin-top:2px;">${acronymClashMsg(p.acronym, p.id)}</span></div>
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
@@ -663,6 +663,24 @@
       const chevronMap = { 'add-parish-form': 'add-parish-chevron', 'add-schedule-form': 'add-schedule-chevron' };
       const chevron = document.getElementById(chevronMap[id]);
       if (chevron) chevron.style.transform = document.getElementById(id).classList.contains('open') ? 'rotate(90deg)' : '';
+    }
+
+    function acronymClash(value, selfId) {
+      const v = (value || '').trim().toLowerCase();
+      if (!v) return null;
+      return parishes.find(p => p.id !== selfId && (p.acronym || '').trim().toLowerCase() === v) || null;
+    }
+
+    function acronymClashMsg(value, selfId) {
+      const c = acronymClash(value, selfId);
+      return c ? `⚠ Clashes with ${esc(c.name)}` : '';
+    }
+
+    function checkAcronymClash(input, selfId) {
+      const warnEl = input.parentElement.querySelector('.acronym-warn');
+      if (!warnEl) return;
+      const c = acronymClash(input.value, selfId);
+      warnEl.textContent = c ? `⚠ Clashes with ${c.name}` : '';
     }
 
     async function saveParish(id) {
