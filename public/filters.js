@@ -42,9 +42,9 @@ function initFilters(state) {
     // Reset parish filter + parish focus when jurisdiction changes
     state.filters.parishIds = null;
     state.filters.showAllParishes = null;
-    if (state.parishFocus) {
-      state.parishFocus = null;
-      if (typeof removeParishCardHeader === 'function') removeParishCardHeader();
+    state.parishFocus = null;
+    if (state.parishSheetFocus && typeof window.closeParishSheet === 'function') {
+      window.closeParishSheet();
     }
     if (typeof syncResetFab === 'function') syncResetFab();
     if (typeof window.agoraSyncParishRowVisibility === 'function') window.agoraSyncParishRowVisibility();

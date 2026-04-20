@@ -75,6 +75,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMap(state);
   updateMap(state);
 
+  // If the URL named a single parish (e.g. /gosr), open the parish sheet so
+  // deep links and refreshes land on the parish card instead of just
+  // filtering the main list.
+  if (state.parishFocus && state.parishSheetFocus !== state.parishFocus) {
+    openParishSheet(state.parishFocus, { replaceUrl: true });
+  }
+
   // Re-render event cards every minute to keep LIVE countdowns current.
   // Skip when a drawer is open: re-render rebuilds the list HTML and would
   // wipe the user's in-drawer state (e.g. schedule toggled open).
@@ -253,9 +260,6 @@ function applyParishSlugs() {
   }
   if (resolved.length === 1) {
     state.parishFocus = resolved[0].id;
-    // header render deferred until DOM ready (#sheet-scroll exists); init sequence
-    // calls this after DOMContentLoaded so renderParishCardHeader is safe to invoke.
-    if (typeof renderParishCardHeader === 'function') renderParishCardHeader(resolved[0]);
   } else {
     state.filters.multiParish = true;
   }
@@ -379,25 +383,22 @@ async function reconcileStateFromUrl() {
       if (typeof applyChipColors === 'function') applyChipColors(chipContainer);
     }
 
-    // 5) Parish row + pills + focus header
+    // 5) Parish row + pills
     if (typeof syncParishRowVisibility === 'function') syncParishRowVisibility();
     if (typeof renderParishPills === 'function') renderParishPills();
-    if (state.parishFocus) {
-      const parish = state.parishes.find(p => p.id === state.parishFocus);
-      if (parish) renderParishCardHeader(parish);
-      else removeParishCardHeader();
-    } else {
-      removeParishCardHeader();
-    }
 
-    // 5b) Parish sheet: close if back-navigation landed on a URL that no
-    // longer references the open parish. /services/<parish> now writes as
-    // /<parish> while the sheet is open, so the previous history entry is
-    // typically /services — back press lands here with parishIds empty and
-    // parishSheetFocus still set; close to match the URL.
-    if (state.parishSheetFocus) {
-      const inUrl = state.filters.parishIds && state.filters.parishIds.has(state.parishSheetFocus);
-      if (!inUrl && typeof closeParishSheet === 'function') closeParishSheet();
+    // 5b) Parish sheet mirrors the URL: single-parish URL opens the sheet;
+    // no-parish / multi-parish URL closes it. Skip when sheet is already
+    // open for the same parish (no-op avoids re-triggering the animation).
+    const urlParish = state.parishFocus
+      && state.filters.parishIds
+      && state.filters.parishIds.size === 1
+      && state.filters.parishIds.has(state.parishFocus)
+      ? state.parishFocus : null;
+    if (urlParish && state.parishSheetFocus !== urlParish) {
+      if (typeof openParishSheet === 'function') openParishSheet(urlParish);
+    } else if (!urlParish && state.parishSheetFocus) {
+      if (typeof closeParishSheet === 'function') closeParishSheet();
     }
 
     // 6) Filter menu items + derived UI
@@ -804,19 +805,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!multi) {
       // Sync parish focus with single-pill selection (non-picker only)
       if (state.filters.parishIds && state.filters.parishIds.size === 1) {
-        const focusId = [...state.filters.parishIds][0];
-        const parish = state.parishes.find(p => p.id === focusId);
-        if (parish) {
-          state.parishFocus = focusId;
-          renderParishCardHeader(parish);
-        }
+        state.parishFocus = [...state.filters.parishIds][0];
       } else if (state.parishFocus) {
         state.parishFocus = null;
-        removeParishCardHeader();
       }
     } else if (state.parishFocus) {
       state.parishFocus = null;
-      removeParishCardHeader();
     }
 
     renderParishPills();
@@ -835,10 +829,7 @@ function initMultiParishToggle() {
     if (state.filters.multiParish) {
       // Entering picker mode: drop any single-parish focus so pills start clean.
       state.filters.parishIds = null;
-      if (state.parishFocus) {
-        state.parishFocus = null;
-        removeParishCardHeader();
-      }
+      state.parishFocus = null;
     }
     // Dismiss the filters dropdown — the parish picker is a mode switch,
     // not an in-menu toggle, so keeping the menu open hides the pills that
@@ -876,8 +867,6 @@ function exitMultiParish() {
     const first = [...state.filters.parishIds][0];
     state.filters.parishIds = new Set([first]);
     state.parishFocus = first;
-    const parish = state.parishes.find(p => p.id === first);
-    if (parish) renderParishCardHeader(parish);
   }
   syncMultiParishButton();
   syncParishRowVisibility();
@@ -1178,10 +1167,7 @@ function initResetFab() {
     state.filters.jurisdiction = null;
     state.filters.parishIds = null;
     state.filters.showAllParishes = null;
-    if (state.parishFocus) {
-      state.parishFocus = null;
-      removeParishCardHeader();
-    }
+    state.parishFocus = null;
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
     syncParishRowVisibility();
@@ -1268,110 +1254,23 @@ function renderCurrentView(opts = {}) {
   syncResetFab();
 }
 
-// ── Parish focus card ──
-window.showParishCard = function(pid) {
-  if (state.parishFocus === pid) {
-    clearParishFocus();
-    return;
-  }
-  const parish = state.parishes.find(p => p.id === pid);
-  if (!parish) return;
-
-  state.parishFocus = pid;
-  state.filters.parishIds = new Set([pid]);
-  state.filters.multiParish = false;
-  if (!state.filters.jurisdiction && parish.jurisdiction) {
-    state.filters.jurisdiction = parish.jurisdiction;
-  }
-  if (window.agoraMap) window.agoraMap.closePopup();
-
-  renderParishCardHeader(parish);
-  renderParishPills();
-  renderCurrentView();
-  syncURL();
-
-  if (window.agoraSnapTo && window.agoraSnapHalf) {
-    window.agoraSnapTo(window.agoraSnapHalf());
-  }
-
-  // Pan to centre the parish in the visible map area — zoom preserved.
-  if (window.agoraMap) {
-    const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : window.innerHeight * 0.5;
-    const targetY = sheetY / 2;
-    const mapEl = window.agoraMap.getContainer();
-    const targetX = mapEl.clientWidth / 2;
-    const point = window.agoraMap.latLngToContainerPoint([parish.lat, parish.lng]);
-    const offset = [point.x - targetX, point.y - targetY];
-    window.agoraMap.panBy(offset, { animate: true, duration: 0.9 });
-  }
-};
-
+// ── Parish focus ──
+// Clears the single-parish scope: drops parishFocus + parishIds and closes
+// the parish sheet if it's open. Invoked from the map's empty-tap handler
+// (see map.js) and from the reset FAB flow.
 function clearParishFocus() {
-  if (!state.parishFocus) return;
+  if (!state.parishFocus && !state.parishSheetFocus) return;
   state.parishFocus = null;
   state.filters.parishIds = null;
   state.filters.multiParish = false;
-  removeParishCardHeader();
+  if (state.parishSheetFocus && typeof closeParishSheet === 'function') {
+    closeParishSheet();
+  }
   renderParishPills();
   renderCurrentView();
   syncURL();
 }
 window.agoraClearParishFocus = clearParishFocus;
-
-function renderParishCardHeader(parish) {
-  const scroll = document.getElementById('sheet-scroll');
-  let card = document.getElementById('parish-card-header');
-  if (!card) {
-    card = document.createElement('div');
-    card.id = 'parish-card-header';
-    card.className = 'parish-card-header';
-    scroll.insertBefore(card, scroll.firstChild);
-  }
-
-  const initial = (parish.name || '?')[0].toUpperCase();
-  const color = parish.color || '#666';
-  const juris = capitalize(parish.jurisdiction || '');
-  let distHtml = '';
-  if (state.locationActive && parish.lat && parish.lng) {
-    const km = haversineKm(state.userLat, state.userLng, parish.lat, parish.lng);
-    distHtml = `<span class="parish-card-sep">&middot;</span><span>${km.toFixed(1)} km</span>`;
-  }
-  const addr = parish.address || '';
-  const addrHtml = addr
-    ? `<a class="parish-card-address" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">${esc(addr)}</a>`
-    : '';
-  const dirBtn = `<a class="parish-card-btn" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`;
-  const webBtn = parish.website
-    ? `<a class="parish-card-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
-    : '';
-
-  card.innerHTML = `
-    <div class="parish-card-top" role="button" tabindex="0" title="View service times">
-      <div class="parish-card-avatar" style="background:${color}">${esc(initial)}</div>
-      <div class="parish-card-info">
-        <div class="parish-card-name">${esc(parish.name)}</div>
-        <div class="parish-card-meta">${esc(juris)} Orthodox${distHtml}</div>
-      </div>
-      <span class="parish-card-chevron" aria-hidden="true">›</span>
-      <button class="parish-card-close" type="button">&times;</button>
-    </div>
-    ${addrHtml ? `<div class="parish-card-addr-row">${addrHtml}</div>` : ''}
-    <div class="parish-card-actions">${dirBtn}${webBtn}</div>`;
-
-  const closeBtn = card.querySelector('.parish-card-close');
-  closeBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    clearParishFocus();
-  });
-  card.querySelector('.parish-card-top').addEventListener('click', () => {
-    if (state.mode !== 'services') document.getElementById('btn-services').click();
-  });
-}
-
-function removeParishCardHeader() {
-  const card = document.getElementById('parish-card-header');
-  if (card) card.remove();
-}
 
 // ── Apply client-side filters ──
 function applyFilters(events) {
@@ -2059,7 +1958,10 @@ function initParishSheet() {
     state.parishSheetFocus = parishId;
     // URL carries /<acronym> while the parish sheet is open so the address
     // bar reflects the current surface and tapping copy yields a deep link.
-    syncURL();
+    // Deep-link / refresh opens the sheet on load: write via replaceState so
+    // /services/<parish> → /<parish> canonicalization doesn't leave a dead
+    // history entry the back button has to step over.
+    syncURL(openOpts.replaceUrl ? { replace: true } : {});
     if (typeof updateMap === 'function') updateMap(state);
     sheet.classList.remove('hidden');
     sheet.setAttribute('aria-hidden', 'false');
