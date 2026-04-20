@@ -235,8 +235,10 @@ function detectUrlState() {
 function detectSubdomain() { return detectUrlState(); }
 
 // Resolve parish slugs (single or plus-joined) to parish IDs after parishes load.
-// Sets parishIds, derives jurisdiction if absent, renders focus header for
-// single match, enables multiParish for multiple matches.
+// Single slug: set parishFocus only — the parish card owns that scope, so
+// neither jurisdiction nor the events/schedules list filter is touched.
+// Multi slug: still drives the picker (parishIds + multiParish) since that's
+// the mode that surfaces them; jurisdiction only flips if URL carried it.
 function applyParishSlugs() {
   if (!state._parishSlugs || !state._parishSlugs.length) return;
   const slugs = state._parishSlugs;
@@ -254,13 +256,10 @@ function applyParishSlugs() {
     delete state._parishSlugs;
     return;
   }
-  state.filters.parishIds = new Set(resolved.map(p => p.id));
-  if (!state.filters.jurisdiction) {
-    state.filters.jurisdiction = resolved[0].jurisdiction;
-  }
   if (resolved.length === 1) {
     state.parishFocus = resolved[0].id;
   } else {
+    state.filters.parishIds = new Set(resolved.map(p => p.id));
     state.filters.multiParish = true;
   }
   delete state._parishSlugs;
@@ -387,14 +386,10 @@ async function reconcileStateFromUrl() {
     if (typeof syncParishRowVisibility === 'function') syncParishRowVisibility();
     if (typeof renderParishPills === 'function') renderParishPills();
 
-    // 5b) Parish sheet mirrors the URL: single-parish URL opens the sheet;
-    // no-parish / multi-parish URL closes it. Skip when sheet is already
-    // open for the same parish (no-op avoids re-triggering the animation).
-    const urlParish = state.parishFocus
-      && state.filters.parishIds
-      && state.filters.parishIds.size === 1
-      && state.filters.parishIds.has(state.parishFocus)
-      ? state.parishFocus : null;
+    // 5b) Parish sheet mirrors the URL: single-parish URL (parishFocus set)
+    // opens the sheet; no-parish / multi-parish URL closes it. Skip when
+    // already open for same parish so popstate doesn't replay the animation.
+    const urlParish = state.parishFocus || null;
     if (urlParish && state.parishSheetFocus !== urlParish) {
       if (typeof openParishSheet === 'function') openParishSheet(urlParish);
     } else if (!urlParish && state.parishSheetFocus) {
