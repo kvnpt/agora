@@ -513,35 +513,50 @@
 
     // ── Escalate Modal ──
     let escalateEventId = null;
+    let _escalateCandidates = [];
+
+    function _renderEscalateEventList() {
+      const checked = new Set([...document.querySelectorAll('#escalate-parish-grid input:checked')].map(cb => cb.value));
+      const list = document.getElementById('escalate-event-list');
+      const visible = _escalateCandidates.filter(e => checked.has(e.parish_id));
+      if (!checked.size) {
+        list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Select parishes above to see replaceable events</div>';
+        return;
+      }
+      if (!visible.length) {
+        list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">No events at selected parishes on this date</div>';
+        return;
+      }
+      const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
+      list.innerHTML = visible.map(e => `
+        <label class="modal-event-item">
+          <input type="checkbox" value="${e.id}">
+          <span class="modal-event-label">${esc(e.title)}<small>${fmt(e.start_utc)} · ${esc(e.parish_name)}</small></span>
+        </label>`).join('');
+    }
 
     function openEscalateModal(btn) {
       escalateEventId = Number(btn.dataset.eid);
       const title = btn.dataset.etitle;
       const date = btn.dataset.edate;
       const primaryParish = btn.dataset.eparish;
+      _escalateCandidates = [];
 
       document.getElementById('escalate-modal-subtitle').textContent = `"${title}" on ${date}`;
 
       const grid = document.getElementById('escalate-parish-grid');
       grid.innerHTML = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').map(p => `
         <label class="modal-event-item">
-          <input type="checkbox" value="${esc(p.id)}">
+          <input type="checkbox" value="${esc(p.id)}" onchange="_renderEscalateEventList()">
           <span class="modal-event-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>
         </label>`).join('');
 
       const list = document.getElementById('escalate-event-list');
-      list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Loading…</div>';
+      list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Select parishes above to see replaceable events</div>';
+
       fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${escalateEventId}`, { headers })
         .then(r => r.json())
-        .then(evts => {
-          if (!evts.length) { list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">No events found on this date</div>'; return; }
-          const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
-          list.innerHTML = evts.map(e => `
-            <label class="modal-event-item">
-              <input type="checkbox" value="${e.id}">
-              <span class="modal-event-label">${esc(e.title)}<small>${fmt(e.start_utc)} · ${esc(e.parish_name)}</small></span>
-            </label>`).join('');
-        })
+        .then(evts => { _escalateCandidates = evts; _renderEscalateEventList(); })
         .catch(() => { list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Failed to load</div>'; });
 
       document.getElementById('escalate-modal').classList.add('open');
@@ -1251,12 +1266,12 @@
       <div class="modal-subtitle" id="escalate-modal-subtitle"></div>
 
       <div class="modal-section">
-        <div class="modal-section-title">Add to parishes (Combined — additive, no replacement)</div>
+        <div class="modal-section-title">Appear at parishes</div>
         <div class="modal-parish-grid" id="escalate-parish-grid"></div>
       </div>
 
       <div class="modal-section">
-        <div class="modal-section-title">Replaces these events on same date</div>
+        <div class="modal-section-title">Replace events at selected parishes (optional)</div>
         <div id="escalate-event-list-wrap">
           <div class="modal-event-list" id="escalate-event-list"><div class="empty" style="padding:8px;font-size:12px;">Loading…</div></div>
         </div>

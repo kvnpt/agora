@@ -3622,40 +3622,55 @@ window.deleteEvent = async function(id) {
 };
 
 let _escalatePubEventId = null;
+let _escalatePubCandidates = [];
+
+function _renderPubEscalateEventList() {
+  const checked = new Set([...document.querySelectorAll('#escalate-pub-parishes input:checked')].map(cb => cb.value));
+  const evtList = document.getElementById('escalate-pub-events');
+  const visible = _escalatePubCandidates.filter(e => checked.has(e.parish_id));
+  if (!checked.size) {
+    evtList.innerHTML = '<div class="escalate-empty">Select parishes above to see replaceable events</div>';
+    return;
+  }
+  if (!visible.length) {
+    evtList.innerHTML = '<div class="escalate-empty">No events at selected parishes on this date</div>';
+    return;
+  }
+  const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
+  evtList.innerHTML = visible.map(e => {
+    const label = document.createElement('label');
+    label.className = 'escalate-item';
+    label.innerHTML = `<input type="checkbox" value="${e.id}"><span class="escalate-item-label">${esc(e.title)}<small>${fmt(e.start_utc)} \xb7 ${esc(e.parish_name)}</small></span>`;
+    return label.outerHTML;
+  }).join('');
+}
 
 window.openPublicEscalateModal = function(id) {
   const evt = state.events.find(e => e.id === id);
   if (!evt) return;
   _escalatePubEventId = id;
+  _escalatePubCandidates = [];
   const date = evt.start_utc.split('T')[0];
 
   document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
 
   const parishList = document.getElementById('escalate-pub-parishes');
   const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned');
-  const parishItems = others.map(p => {
-    const label = document.createElement('label');
-    label.className = 'escalate-item';
-    label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"><span class="escalate-item-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>`;
-    return label.outerHTML;
-  });
-  parishList.innerHTML = parishItems.length ? parishItems.join('') : '<div class="escalate-empty">No other parishes</div>';
-
-  const evtList = document.getElementById('escalate-pub-events');
-  evtList.innerHTML = '<div class="escalate-empty">Loading…</div>';
-  fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${id}`)
-    .then(r => r.json())
-    .then(evts => {
-      if (!evts.length) { evtList.innerHTML = '<div class="escalate-empty">No other events on this date</div>'; return; }
-      const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
-      evtList.innerHTML = evts.map(e => {
+  parishList.innerHTML = others.length
+    ? others.map(p => {
         const label = document.createElement('label');
         label.className = 'escalate-item';
-        label.innerHTML = `<input type="checkbox" value="${e.id}"><span class="escalate-item-label">${esc(e.title)}<small>${fmt(e.start_utc)} \xb7 ${esc(e.parish_name)}</small></span>`;
+        label.innerHTML = `<input type="checkbox" value="${esc(p.id)}" onchange="_renderPubEscalateEventList()"><span class="escalate-item-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>`;
         return label.outerHTML;
-      }).join('');
-    })
-    .catch(() => { evtList.innerHTML = '<div class="escalate-empty">Failed to load</div>'; });
+      }).join('')
+    : '<div class="escalate-empty">No other parishes</div>';
+
+  document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Select parishes above to see replaceable events</div>';
+
+  fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${id}`)
+    .then(r => r.json())
+    .then(evts => { _escalatePubCandidates = evts; _renderPubEscalateEventList(); })
+    .catch(() => { document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Failed to load</div>'; });
 
   document.getElementById('escalate-backdrop').classList.add('open');
 };
