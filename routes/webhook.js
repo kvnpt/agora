@@ -89,7 +89,7 @@ function bufferMessage(message) {
   }
 
   if (!senderBuffers.has(sender)) {
-    senderBuffers.set(sender, { messages: [], timer: null });
+    senderBuffers.set(sender, { messages: [], seenIds: new Set(), timer: null });
     // ACK on the first message of a new batch window. Fire-and-forget so a
     // Meta outage never holds up the inbound handler. One ACK per batch —
     // subsequent messages inside the 10s sliding window reuse the buffer.
@@ -97,6 +97,15 @@ function bufferMessage(message) {
   }
 
   const buffer = senderBuffers.get(sender);
+
+  // Deduplicate by message.id — same PDF can arrive multiple times when the
+  // sender has multiple linked devices (phone + WhatsApp Web, etc.)
+  if (message.id && buffer.seenIds.has(message.id)) {
+    console.log(`[webhook] Skipping duplicate message id=${message.id} from ${sender}`);
+    return;
+  }
+  if (message.id) buffer.seenIds.add(message.id);
+
   buffer.messages.push(message);
 
   // Reset the timer on each new message — the window slides
