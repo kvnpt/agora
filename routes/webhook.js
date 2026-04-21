@@ -367,11 +367,7 @@ async function processBatch(sender, messages) {
         p.lat, p.lng, @location_override, @languages, @poster_path, @source_run_id, @hide_live, @parish_scoped
       FROM parishes p WHERE p.id = @parish_id
       ON CONFLICT(source_hash) DO UPDATE SET
-        title = excluded.title, description = excluded.description,
-        start_utc = excluded.start_utc, end_utc = excluded.end_utc,
-        poster_path = COALESCE(excluded.poster_path, events.poster_path),
-        hide_live = excluded.hide_live,
-        parish_scoped = excluded.parish_scoped,
+        status = CASE WHEN events.status = 'rejected' THEN excluded.status ELSE events.status END,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
