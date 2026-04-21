@@ -716,6 +716,13 @@ input, select, textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
 }
 .btn-watch-live .live-dot { background: #fff; }
 .detail-actions .btn-service-book {
@@ -725,6 +732,13 @@ input, select, textarea {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
 }
 .btn-service-book-icon {
   width: 15px;
@@ -1933,9 +1947,8 @@ body.map-expanded #location-fab { display: flex; }
 .ps-info-copy:last-of-type { margin-bottom: 10px; }
 .ps-info-copy-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
 }
 .ps-info-copy-icon {
   flex: none;
@@ -1987,6 +2000,13 @@ body.map-expanded #location-fab { display: flex; }
 }
 
 
+.ps-sched-card {
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 2px 12px 10px;
+  margin-top: 4px;
+}
 .ps-events-list { border-top: 1px solid var(--border-light); }
 .ps-events-list .event-card { cursor: pointer; }
 .ps-arch-row {

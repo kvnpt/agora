@@ -2201,7 +2201,10 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (scheds.length) {
     schedSectionHtml = `
       <div class="ps-section">
-        ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+        <div class="ps-section-title">Service times</div>
+        <div class="ps-sched-card">
+          ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+        </div>
       </div>`;
   }
 
