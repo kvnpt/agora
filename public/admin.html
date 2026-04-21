@@ -148,9 +148,6 @@
     .mutation-headless { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
     .mutation-replaced { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
 
-    /* Admin toggle pill */
-    .admin-toggle-pill { font-size: 11px; padding: 4px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; color: var(--muted); white-space: nowrap; }
-    .admin-toggle-pill.hiding { background: #f0f0f0; color: var(--text); border-color: #ccc; }
     #logout-btn { font-size: 12px; padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: none; cursor: pointer; color: var(--muted); display: none; }
     #logout-btn:hover { color: #ef4444; border-color: #ef4444; }
     .sender-sessions-panel { width: 100%; margin-top: 6px; }
@@ -180,7 +177,6 @@
   <div class="admin-header">
     <h1>Agora Admin</h1>
     <div class="header-right">
-      <button id="admin-toggle-pill" class="admin-toggle-pill">Hide controls</button>
       <select id="jurisdiction-filter">
         <option value="">All jurisdictions</option>
         <option value="antiochian">Antiochian</option>
@@ -364,7 +360,6 @@
       renderSenders();
       renderRuns();
       renderParishSelects();
-      if (typeof applyAdminControlsVisibility === 'function') applyAdminControlsVisibility();
     }
 
     async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); }
@@ -495,17 +490,15 @@
                 <input type="checkbox" class="re-parish-scoped" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)
               </label>
             </div>
-            <div class="admin-controls">
-              <div class="btn-row">
-                <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
-                <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
-                <button class="btn btn-outline"
-                  data-eid="${evt.id}"
-                  data-etitle="${esc(evt.title)}"
-                  data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
-                  data-eparish="${esc(evt.parish_id)}"
-                  onclick="openEscalateModal(this)">Escalate…</button>
-              </div>
+            <div class="btn-row">
+              <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
+              <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
+              <button class="btn btn-outline"
+                data-eid="${evt.id}"
+                data-etitle="${esc(evt.title)}"
+                data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
+                data-eparish="${esc(evt.parish_id)}"
+                onclick="openEscalateModal(this)">Escalate…</button>
             </div>
           </div>`;
       }).join('');
@@ -1260,20 +1253,6 @@
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
-    // Apply/toggle admin controls visibility across all .admin-controls elements
-    function applyAdminControlsVisibility() {
-      const hide = localStorage.getItem('hideAdminControls') === 'true';
-      document.querySelectorAll('.admin-controls').forEach(el => { el.style.display = hide ? 'none' : ''; });
-      const pill = document.getElementById('admin-toggle-pill');
-      if (pill) { pill.textContent = hide ? 'Show controls' : 'Hide controls'; pill.classList.toggle('hiding', hide); }
-    }
-
-    document.getElementById('admin-toggle-pill').addEventListener('click', () => {
-      const hide = localStorage.getItem('hideAdminControls') === 'true';
-      localStorage.setItem('hideAdminControls', hide ? 'false' : 'true');
-      applyAdminControlsVisibility();
-    });
-
     document.getElementById('logout-btn').addEventListener('click', async () => {
       await fetch('/auth/logout', { method: 'POST', headers });
       location.reload();
@@ -1294,7 +1273,6 @@
         return;
       }
 
-      applyAdminControlsVisibility();
       await loadAll();
       lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
       applyDeepLink();

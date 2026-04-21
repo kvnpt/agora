@@ -1276,6 +1276,18 @@ input, select, textarea {
 }
 .btn-cancel-event { color: #b91c1c; border-color: #fca5a5; }
 .btn-hide-event { color: #6b7280; border-color: #d1d5db; }
+.admin-actions-group { display: contents; }
+.btn-admin-controls-pill {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  white-space: nowrap;
+  align-self: center;
+}
 .btn-save {
   background: #28a745;
   color: #fff;

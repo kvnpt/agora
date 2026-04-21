@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   disablePullToRefresh();
   loadCachedLocation();
   await Promise.all([fetchParishes(), checkAdmin()]);
+  _initLogout();
   applyParishSlugs();
   initFilters(state);
   initModeBar();
@@ -568,16 +569,43 @@ async function fetchParishes() {
 }
 
 async function checkAdmin() {
-  try {
-    const res = await fetch('/api/admin/ping');
-    state.isAdmin = res.ok;
-  } catch {
-    state.isAdmin = false;
-  }
+  // Ping the admin gate and also call whoami so phone-auth (magic link)
+  // users get the Admin button + Logout even before the Caddyfile gate flips.
+  const [pingRes, whoami] = await Promise.all([
+    fetch('/api/admin/ping').catch(() => ({ ok: false })),
+    fetch('/auth/whoami').then(r => r.json()).catch(() => ({ method: 'none' }))
+  ]);
+  state.isAdmin = pingRes.ok || whoami.method === 'phone';
+  state.authMethod = whoami.method;
+
   if (state.isAdmin) {
     document.getElementById('btn-admin').hidden = false;
     document.querySelector('.fm-admin-sep').hidden = false;
   }
+  if (whoami.method === 'phone') {
+    const logoutBtn = document.getElementById('btn-logout');
+    if (logoutBtn) logoutBtn.hidden = false;
+  }
+}
+
+function toggleAdminControlsVisibility() {
+  const hiding = localStorage.getItem('hideAdminControls') === 'true';
+  localStorage.setItem('hideAdminControls', hiding ? 'false' : 'true');
+  document.querySelectorAll('.admin-actions-group').forEach(el => {
+    el.style.display = hiding ? '' : 'none';
+  });
+  document.querySelectorAll('.btn-admin-controls-pill').forEach(el => {
+    el.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+  });
+}
+
+function _initLogout() {
+  const btn = document.getElementById('btn-logout');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    await fetch('/auth/logout', { method: 'POST' });
+    location.reload();
+  });
 }
 
 // ── Mode bar ──
@@ -3332,12 +3360,16 @@ function renderEventDrawerHTML(evt, opts = {}) {
   if (state.isAdmin) {
     const isCancelled = evt.status === 'cancelled';
     const isHidden = evt.status === 'hidden';
+    const hiding = localStorage.getItem('hideAdminControls') === 'true';
     adminActions = `
-      <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${evt.id},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
-      <button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>
-      <button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>
-      <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>
-      <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Escalate…</button>`;
+      <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
+        <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${evt.id},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
+        <button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>
+        <button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>
+        <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>
+        <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Escalate…</button>
+      </div>
+      <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
   }
 
   let editForm = '';
