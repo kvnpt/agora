@@ -93,7 +93,7 @@ function bufferMessage(message) {
     // ACK on the first message of a new batch window. Fire-and-forget so a
     // Meta outage never holds up the inbound handler. One ACK per batch —
     // subsequent messages inside the 10s sliding window reuse the buffer.
-    sendText(sender, 'Got it — reading your message...').catch(() => {});
+    sendText(sender, 'Listening for 20s…').catch(() => {});
   }
 
   const buffer = senderBuffers.get(sender);
@@ -118,8 +118,8 @@ function bufferMessage(message) {
     // Claude parsing has started. Fills the silent gap between the initial
     // ACK and the final result reply (which can take 10–30s after this).
     const closeText = batch.length > 1
-      ? `Got your ${batch.length} messages. Parsing now...`
-      : 'Parsing now...';
+      ? `Got your ${batch.length} messages. Processing…`
+      : 'Processing…';
     sendText(sender, closeText).catch(() => {});
     processBatch(sender, batch).catch(err => {
       console.error('[webhook] processBatch error:', err.message);
@@ -496,8 +496,7 @@ async function processBatch(sender, messages) {
       parishChangesN,
       cancellationsN,
       newParishCreated,
-      applied: effectiveStatus === 'approved',
-      runId
+      applied: effectiveStatus === 'approved'
     });
     sendText(sender, summary, { runId }).catch(() => {});
 
@@ -508,7 +507,7 @@ async function processBatch(sender, messages) {
     `).run(err.message, runId);
     console.error('[webhook] Batch processing failed:', err.message);
     sendText(sender,
-      `Hit a snag parsing that — admin will take a look.\nReview: ${ADMIN_BASE_URL}?run=${runId}`,
+      `Hit a snag parsing that — admin will take a look.`,
       { runId }
     ).catch(() => {});
   }
@@ -517,15 +516,13 @@ async function processBatch(sender, messages) {
 // Compose the outbound WhatsApp summary for a finished batch. Returns a
 // single text body; links use ADMIN_BASE_URL so previewing lands on the
 // By-Message card for this run.
-function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChangesN, cancellationsN, newParishCreated, applied, runId }) {
-  const link = `${ADMIN_BASE_URL}?run=${runId}`;
+function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChangesN, cancellationsN, newParishCreated, applied }) {
   if (ambiguous) {
-    const q = question || "I wasn't sure which parish this is for. Can you clarify?";
-    return `${q}\n\nReview: ${link}`;
+    return question || "I wasn't sure which parish this is for. Can you clarify?";
   }
   const total = eventsN + schedulesN + parishChangesN + cancellationsN + (newParishCreated ? 1 : 0);
   if (total === 0) {
-    return `Couldn't find anything actionable in that. Want to rephrase?\nReview: ${link}`;
+    return `Couldn't find anything actionable in that. Want to rephrase?`;
   }
   const parts = [];
   if (eventsN) parts.push(`${eventsN} event${eventsN > 1 ? 's' : ''}`);
@@ -534,7 +531,7 @@ function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChan
   if (cancellationsN) parts.push(`${cancellationsN} cancellation${cancellationsN > 1 ? 's' : ''}`);
   if (newParishCreated) parts.push('new parish');
   const verdict = applied ? 'Applied.' : 'Pending review.';
-  return `Parsed ${parts.join(', ')}. ${verdict}\nReview: ${link}`;
+  return `Parsed ${parts.join(', ')}. ${verdict}`;
 }
 
 module.exports = router;
