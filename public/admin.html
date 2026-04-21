@@ -488,7 +488,7 @@
               <button class="btn btn-outline"
                 data-eid="${evt.id}"
                 data-etitle="${esc(evt.title)}"
-                data-edate="${esc(evt.start_utc.split('T')[0])}"
+                data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
                 data-eparish="${esc(evt.parish_id)}"
                 onclick="openEscalateModal(this)">Escalate…</button>
             </div>

@@ -12,20 +12,26 @@ const router = Router();
 // GET /api/admin/ping — lightweight check for admin access
 router.get('/ping', (req, res) => res.json({ ok: true }));
 
-// GET /api/admin/events/candidates — events on a date for escalation picker
+// GET /api/admin/events/candidates — events on a Sydney local date for escalation picker
+// date param is YYYY-MM-DD in Sydney local time (not UTC).
+// Sydney is UTC+10 (AEST) or UTC+11 (AEDT). A UTC range of [prev-day 13:00, day 14:00]
+// covers the full 24h local day regardless of DST.
 router.get('/events/candidates', (req, res) => {
   const db = getDb();
   const { date, exclude_id } = req.query;
   if (!date) return res.status(400).json({ error: 'date required (YYYY-MM-DD)' });
+  const [y, m, d] = date.split('-').map(Number);
+  const utcFrom = new Date(Date.UTC(y, m - 1, d - 1, 13, 0, 0)).toISOString();
+  const utcTo   = new Date(Date.UTC(y, m - 1, d,     14, 0, 0)).toISOString();
   const events = db.prepare(`
     SELECT e.id, e.title, e.start_utc, e.end_utc, e.parish_id, p.name as parish_name, e.mutation_type, e.status, e.event_type
     FROM events e
     JOIN parishes p ON e.parish_id = p.id
-    WHERE date(e.start_utc) = ?
+    WHERE e.start_utc >= ? AND e.start_utc < ?
       AND e.status NOT IN ('replaced', 'rejected', 'cancelled', 'hidden')
       AND e.id != COALESCE(?, -1)
     ORDER BY e.start_utc
-  `).all(date, exclude_id ? Number(exclude_id) : null);
+  `).all(utcFrom, utcTo, exclude_id ? Number(exclude_id) : null);
   res.json(events);
 });
 

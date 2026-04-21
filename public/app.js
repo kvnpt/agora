@@ -3650,7 +3650,7 @@ window.openPublicEscalateModal = function(id) {
   if (!evt) return;
   _escalatePubEventId = id;
   _escalatePubCandidates = [];
-  const date = evt.start_utc.split('T')[0];
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc));
 
   document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
 
