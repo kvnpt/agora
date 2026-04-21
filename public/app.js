@@ -3364,11 +3364,13 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const isCancelled = evt.status === 'cancelled';
     const isHidden = evt.status === 'hidden';
     const hiding = localStorage.getItem('hideAdminControls') === 'true';
+    const isHeadless = evt.mutation_type === 'headless';
+    const isScheduleOrigin = evt.source_adapter === 'schedule' || evt.mutation_type === 'scheduled' || evt.mutation_type === 'adapted';
     adminActions = `
       <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
         <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${evt.id},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
-        <button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>
-        <button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>
+        ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>` : ''}
+        ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>` : ''}
         <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>
         <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Escalate…</button>
       </div>
