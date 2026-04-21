@@ -3977,7 +3977,10 @@ document.getElementById('close-detail').addEventListener('click', closeDetail);
 function openPosterFullscreen(src) {
   const el = document.getElementById('poster-fullscreen');
   const img = document.getElementById('poster-fullscreen-img');
+  const dlBtn = document.getElementById('poster-download');
   img.src = src;
+  dlBtn.href = src;
+  dlBtn.download = src.split('/').pop();
   el.classList.toggle('poster-fullscreen--light', /\.pdf$/i.test(src));
   el.classList.remove('hidden');
   // Trigger open animation on next frame
