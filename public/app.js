@@ -3332,7 +3332,8 @@ function renderEventDrawerHTML(evt, opts = {}) {
       <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${evt.id},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
       <button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>
       <button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>
-      <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>`;
+      <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>
+      <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Escalate…</button>`;
   }
 
   let editForm = '';
@@ -3617,6 +3618,72 @@ window.deleteEvent = async function(id) {
   if (res.ok) {
     closeDetail();
     fetchEvents();
+  }
+};
+
+let _escalatePubEventId = null;
+
+window.openPublicEscalateModal = function(id) {
+  const evt = state.events.find(e => e.id === id);
+  if (!evt) return;
+  _escalatePubEventId = id;
+  const date = evt.start_utc.split('T')[0];
+
+  document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
+
+  const parishList = document.getElementById('escalate-pub-parishes');
+  const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned');
+  const parishItems = others.map(p => {
+    const label = document.createElement('label');
+    label.className = 'escalate-item';
+    label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"><span class="escalate-item-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>`;
+    return label.outerHTML;
+  });
+  parishList.innerHTML = parishItems.length ? parishItems.join('') : '<div class="escalate-empty">No other parishes</div>';
+
+  const evtList = document.getElementById('escalate-pub-events');
+  evtList.innerHTML = '<div class="escalate-empty">Loading…</div>';
+  fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${id}`)
+    .then(r => r.json())
+    .then(evts => {
+      if (!evts.length) { evtList.innerHTML = '<div class="escalate-empty">No other events on this date</div>'; return; }
+      const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
+      evtList.innerHTML = evts.map(e => {
+        const label = document.createElement('label');
+        label.className = 'escalate-item';
+        label.innerHTML = `<input type="checkbox" value="${e.id}"><span class="escalate-item-label">${esc(e.title)}<small>${fmt(e.start_utc)} \xb7 ${esc(e.parish_name)}</small></span>`;
+        return label.outerHTML;
+      }).join('');
+    })
+    .catch(() => { evtList.innerHTML = '<div class="escalate-empty">Failed to load</div>'; });
+
+  document.getElementById('escalate-backdrop').classList.add('open');
+};
+
+window.closePublicEscalateModal = function() {
+  document.getElementById('escalate-backdrop').classList.remove('open');
+  _escalatePubEventId = null;
+};
+
+window.confirmPublicEscalate = async function() {
+  if (!_escalatePubEventId) return;
+  const additive_parish_ids = [...document.querySelectorAll('#escalate-pub-parishes input:checked')].map(cb => cb.value);
+  const replaced_event_ids = [...document.querySelectorAll('#escalate-pub-events input:checked')].map(cb => Number(cb.value));
+  const btn = document.getElementById('escalate-pub-confirm');
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/events/${_escalatePubEventId}/escalate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ additive_parish_ids, replaced_event_ids })
+    });
+    if (res.ok) {
+      closePublicEscalateModal();
+      closeDetail();
+      fetchEvents();
+    }
+  } finally {
+    btn.disabled = false;
   }
 };
 

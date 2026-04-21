@@ -120,5 +120,24 @@
   <script src="/map.js"></script>
   <script src="/filters.js"></script>
   <script src="/app.js"></script>
+
+  <!-- Escalate modal (admin-only, injected at runtime) -->
+  <div class="escalate-backdrop" id="escalate-backdrop" onclick="if(event.target===this)closePublicEscalateModal()">
+    <div class="escalate-modal">
+      <h2>Extend event scope</h2>
+      <div class="escalate-modal-sub" id="escalate-pub-sub"></div>
+
+      <div class="escalate-section-title">Add to parishes (Combined — additive)</div>
+      <div class="escalate-list" id="escalate-pub-parishes"></div>
+
+      <div class="escalate-section-title">Replaces events on this date</div>
+      <div class="escalate-list" id="escalate-pub-events"><div class="escalate-empty">Loading…</div></div>
+
+      <div class="escalate-btn-row">
+        <button class="btn-outline" onclick="closePublicEscalateModal()">Cancel</button>
+        <button class="btn-primary" id="escalate-pub-confirm" onclick="confirmPublicEscalate()">Confirm</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

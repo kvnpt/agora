@@ -1993,6 +1993,22 @@ body.map-expanded #location-fab { display: flex; }
   .parish-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }
 }
 
+/* ── Escalate modal (admin-only) ── */
+.escalate-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: 16px; }
+.escalate-backdrop.open { display: flex; }
+.escalate-modal { background: var(--bg); border-radius: 8px; padding: 20px; max-width: 480px; width: 100%; max-height: 80dvh; overflow-y: auto; }
+.escalate-modal h2 { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+.escalate-modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+.escalate-section-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+.escalate-list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; margin-bottom: 14px; }
+.escalate-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.escalate-item:hover { background: var(--surface-raised, #f5f5f5); }
+.escalate-item input[type=checkbox] { margin-top: 2px; flex-shrink: 0; }
+.escalate-item-label { font-size: 13px; line-height: 1.4; }
+.escalate-item-label small { display: block; font-size: 11px; color: var(--muted); }
+.escalate-empty { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+.escalate-btn-row { display: flex; gap: 8px; justify-content: flex-end; }
+
 /* ── Responsive ── */
 @media (min-width: 640px) {
   #bottom-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }
