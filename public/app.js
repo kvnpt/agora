@@ -1294,7 +1294,10 @@ function applyFilters(events) {
     return !scoped || e.parish_id === singleParishFilter;
   });
   if (state.filters.parishIds) {
-    filtered = filtered.filter(e => state.filters.parishIds.has(e.parish_id));
+    filtered = filtered.filter(e =>
+      state.filters.parishIds.has(e.parish_id) ||
+      (e.extra_parishes && e.extra_parishes.some(pid => state.filters.parishIds.has(pid)))
+    );
   }
   if (state.filters.socialOnly) {
     // Social = youth, social, talk, other, festival, fundraiser (everything NOT liturgical)
@@ -2183,7 +2186,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     parishEvents = opts.parishEvents;
   } else {
     parishEvents = (state.events || [])
-      .filter(e => e.parish_id === parishId)
+      .filter(e => e.parish_id === parishId || (e.extra_parishes && e.extra_parishes.includes(parishId)))
       .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
   }
   parishEvents = filterParishEventsBySession(parishEvents);
@@ -3655,7 +3658,12 @@ window.openPublicEscalateModal = function(id) {
   document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
 
   const parishList = document.getElementById('escalate-pub-parishes');
-  const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned').sort((a, b) => a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name));
+  const homeJurisdiction = evt.jurisdiction || '';
+  const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned').sort((a, b) => {
+    const ah = a.jurisdiction === homeJurisdiction ? 0 : 1;
+    const bh = b.jurisdiction === homeJurisdiction ? 0 : 1;
+    return ah - bh || a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name);
+  });
   parishList.innerHTML = others.length
     ? others.map(p => {
         const label = document.createElement('label');

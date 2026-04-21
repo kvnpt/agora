@@ -68,6 +68,22 @@ router.get('/', (req, res) => {
 
   let events = db.prepare(query).all(...params).map(({ rn, ...rest }) => rest);
 
+  // Attach extra_parishes from event_parishes junction so client-side
+  // parish filter can include cross-parish escalated events.
+  if (events.length) {
+    const ids = events.map(e => e.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const crossRows = db.prepare(
+      `SELECT event_id, parish_id FROM event_parishes WHERE event_id IN (${placeholders})`
+    ).all(...ids);
+    const crossMap = {};
+    for (const row of crossRows) {
+      if (!crossMap[row.event_id]) crossMap[row.event_id] = [];
+      crossMap[row.event_id].push(row.parish_id);
+    }
+    events = events.map(e => ({ ...e, extra_parishes: crossMap[e.id] || [] }));
+  }
+
   // If lat/lng provided, compute distance and optionally filter by radius
   if (lat && lng) {
     const userLat = parseFloat(lat);
