@@ -226,11 +226,11 @@ async function processBatch(sender, messages) {
         // Default to Sydney CBD; geocode async if address provided
         const lat = -33.8688, lng = 151.2093;
         db.prepare(`
-          INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, phone, languages)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, phone, languages, source_run_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(newId, np.name, np.full_name || null, np.jurisdiction || 'other',
           np.address || null, lat, lng, np.website || null, np.phone || null,
-          np.languages ? JSON.stringify(np.languages) : '["English"]');
+          np.languages ? JSON.stringify(np.languages) : '["English"]', runId);
         console.log(`[webhook] Created new parish: ${newId} (${np.name})`);
         if (np.address) {
           geocode(np.address).then(coords => {

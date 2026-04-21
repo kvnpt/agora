@@ -305,6 +305,11 @@ function migrate(db) {
     db.prepare(`ALTER TABLE schedules ADD COLUMN parish_scoped INTEGER NOT NULL DEFAULT 0`).run();
     db.pragma('user_version = 17');
   }
+
+  if (version < 18) {
+    db.exec(`ALTER TABLE parishes ADD COLUMN source_run_id INTEGER REFERENCES adapter_runs(id)`);
+    db.pragma('user_version = 18');
+  }
 }
 
 module.exports = { getDb };

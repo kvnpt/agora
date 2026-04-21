@@ -489,6 +489,7 @@ router.get('/dropped', (req, res) => {
       AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.source_run_id = adapter_runs.id)
       AND NOT EXISTS (SELECT 1 FROM pending_parish_updates ppu WHERE ppu.source_run_id = adapter_runs.id)
       AND NOT EXISTS (SELECT 1 FROM pending_cancellations pc WHERE pc.source_run_id = adapter_runs.id)
+      AND NOT EXISTS (SELECT 1 FROM parishes p WHERE p.source_run_id = adapter_runs.id)
     ORDER BY started_at DESC
     LIMIT 50
   `).all();
