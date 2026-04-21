@@ -53,6 +53,7 @@ app.use('/api/adapters', require('./routes/adapters'));
 app.use('/api/submissions', writeLimiter, require('./routes/submissions'));
 app.use('/api/webhooks/whatsapp', require('./routes/webhook'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/', require('./routes/magic-auth'));
 app.use('/auth', require('./routes/auth'));
 
 // Admin route

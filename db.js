@@ -325,6 +325,31 @@ function migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS event_replaces (replacing_event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, replaced_event_id INTEGER NOT NULL REFERENCES events(id), PRIMARY KEY (replacing_event_id, replaced_event_id))`);
     db.pragma('user_version = 20');
   }
+
+  if (version < 21) {
+    db.prepare(`CREATE TABLE IF NOT EXISTS sessions (
+      sid        TEXT PRIMARY KEY,
+      data       TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )`).run();
+    db.prepare(`ALTER TABLE senders ADD COLUMN role TEXT NOT NULL DEFAULT 'user'`).run();
+    db.prepare(`CREATE TABLE IF NOT EXISTS admin_magic_tokens (
+      token      TEXT PRIMARY KEY,
+      phone      TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at    TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    )`).run();
+    db.prepare(`CREATE TABLE IF NOT EXISTS admin_sessions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone        TEXT NOT NULL,
+      session_sid  TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      revoked      INTEGER NOT NULL DEFAULT 0
+    )`).run();
+    db.pragma('user_version = 21');
+  }
 }
 
 module.exports = { getDb };

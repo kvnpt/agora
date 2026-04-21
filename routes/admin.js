@@ -430,18 +430,42 @@ router.patch('/senders/:phone', (req, res) => {
   const sender = db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone);
   if (!sender) return res.status(404).json({ error: 'Sender not found' });
 
-  const { name, status } = req.body;
+  const { name, status, role } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name || null); }
   if (status && ['approved', 'review', 'blocked'].includes(status)) {
     updates.push('status = ?'); values.push(status);
   }
+  if (role && ['admin', 'user'].includes(role)) {
+    updates.push('role = ?'); values.push(role);
+  }
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   values.push(phone);
   db.prepare(`UPDATE senders SET ${updates.join(', ')} WHERE phone = ?`).run(...values);
   res.json(db.prepare('SELECT * FROM senders WHERE phone = ?').get(phone));
+});
+
+// GET /api/admin/sessions?phone=<phone> — active admin sessions for a sender
+router.get('/sessions', (req, res) => {
+  const db = getDb();
+  const { phone } = req.query;
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+  const rows = db.prepare(
+    'SELECT id, phone, session_sid, created_at, last_seen_at, revoked FROM admin_sessions WHERE phone = ? ORDER BY created_at DESC'
+  ).all(phone);
+  res.json(rows);
+});
+
+// DELETE /api/admin/sessions/:id — revoke a session
+router.delete('/sessions/:id', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT session_sid FROM admin_sessions WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Session not found' });
+  db.prepare('UPDATE admin_sessions SET revoked = 1 WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM sessions WHERE sid = ?').run(row.session_sid);
+  res.json({ ok: true });
 });
 
 // GET /api/admin/schedules/pending — schedules awaiting review

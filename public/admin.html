@@ -148,6 +148,16 @@
     .mutation-headless { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
     .mutation-replaced { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
 
+    /* Admin toggle pill */
+    .admin-toggle-pill { font-size: 11px; padding: 4px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; color: var(--muted); white-space: nowrap; }
+    .admin-toggle-pill.hiding { background: #f0f0f0; color: var(--text); border-color: #ccc; }
+    #logout-btn { font-size: 12px; padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: none; cursor: pointer; color: var(--muted); display: none; }
+    #logout-btn:hover { color: #ef4444; border-color: #ef4444; }
+    .sender-sessions-panel { width: 100%; margin-top: 6px; }
+    .sender-sessions-panel table { width: 100%; font-size: 11px; border-collapse: collapse; }
+    .sender-sessions-panel th { text-align: left; padding: 2px 4px; color: var(--muted); font-weight: 500; }
+    .sender-sessions-panel td { padding: 3px 4px; border-bottom: 1px solid var(--border-light); }
+
     /* Escalate modal */
     .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
     .modal-backdrop.open { display: flex; }
@@ -170,6 +180,7 @@
   <div class="admin-header">
     <h1>Agora Admin</h1>
     <div class="header-right">
+      <button id="admin-toggle-pill" class="admin-toggle-pill">Hide controls</button>
       <select id="jurisdiction-filter">
         <option value="">All jurisdictions</option>
         <option value="antiochian">Antiochian</option>
@@ -181,6 +192,7 @@
         <option value="other">Other</option>
       </select>
       <a href="/">Back to site</a>
+      <button id="logout-btn">Log out</button>
     </div>
   </div>
 
@@ -352,6 +364,7 @@
       renderSenders();
       renderRuns();
       renderParishSelects();
+      if (typeof applyAdminControlsVisibility === 'function') applyAdminControlsVisibility();
     }
 
     async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); }
@@ -482,15 +495,17 @@
                 <input type="checkbox" class="re-parish-scoped" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)
               </label>
             </div>
-            <div class="btn-row">
-              <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
-              <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
-              <button class="btn btn-outline"
-                data-eid="${evt.id}"
-                data-etitle="${esc(evt.title)}"
-                data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
-                data-eparish="${esc(evt.parish_id)}"
-                onclick="openEscalateModal(this)">Escalate…</button>
+            <div class="admin-controls">
+              <div class="btn-row">
+                <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
+                <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
+                <button class="btn btn-outline"
+                  data-eid="${evt.id}"
+                  data-etitle="${esc(evt.title)}"
+                  data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
+                  data-eparish="${esc(evt.parish_id)}"
+                  onclick="openEscalateModal(this)">Escalate…</button>
+              </div>
             </div>
           </div>`;
       }).join('');
@@ -901,17 +916,61 @@
               <option value="review" ${s.status==='review'?'selected':''}>Review</option>
               <option value="blocked" ${s.status==='blocked'?'selected':''}>Blocked</option>
             </select>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;">
+              <input type="checkbox" data-field="role" ${s.role==='admin'?'checked':''}> Admin
+            </label>
             <button class="btn btn-outline" onclick="saveSender('${esc(s.phone)}')">Save</button>
             <span class="sender-seen">${seen}</span>
+            <button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="toggleSenderSessions('${esc(s.phone)}')">Sessions</button>
+            <div class="sender-sessions-panel" id="ss-${esc(s.phone)}" style="display:none;"></div>
           </div>`;
       }).join('');
     }
 
     async function saveSender(phone) {
       const row = document.querySelector(`.sender-row[data-phone="${phone}"]`);
-      const data = { name: row.querySelector('[data-field="name"]').value || null, status: row.querySelector('[data-field="status"]').value };
+      const data = {
+        name: row.querySelector('[data-field="name"]').value || null,
+        status: row.querySelector('[data-field="status"]').value,
+        role: row.querySelector('[data-field="role"]').checked ? 'admin' : 'user'
+      };
       const res = await fetch(`/api/admin/senders/${phone}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Sender updated'); loadSenders().then(renderSenders); } else toast('Failed', 'error');
+    }
+
+    async function toggleSenderSessions(phone) {
+      const el = document.getElementById('ss-' + phone);
+      if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.textContent = 'Loading…';
+      const sessions = await fetch(`/api/admin/sessions?phone=${encodeURIComponent(phone)}`, { headers }).then(r => r.json()).catch(() => []);
+      if (!sessions.length) { el.textContent = 'No sessions recorded.'; return; }
+
+      const table = document.createElement('table');
+      const thead = table.createTHead();
+      const hrow = thead.insertRow();
+      ['Created', 'Last seen', ''].forEach(t => { const th = document.createElement('th'); th.textContent = t; hrow.appendChild(th); });
+      const tbody = table.createTBody();
+      const fmt = d => d ? new Intl.DateTimeFormat('en-AU', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(d)) : '-';
+      sessions.forEach(s => {
+        const tr = tbody.insertRow();
+        [fmt(s.created_at), fmt(s.last_seen_at)].forEach(t => { const td = tr.insertCell(); td.textContent = t; });
+        const tdBtn = tr.insertCell();
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-outline';
+        btn.style.cssText = 'font-size:10px;padding:2px 6px;';
+        if (s.revoked) { btn.textContent = 'Revoked'; btn.disabled = true; }
+        else {
+          btn.textContent = 'Revoke';
+          btn.onclick = async () => {
+            const res = await fetch(`/api/admin/sessions/${s.id}`, { method: 'DELETE', headers });
+            if (res.ok) { btn.textContent = 'Revoked'; btn.disabled = true; toast('Session revoked'); }
+            else toast('Failed', 'error');
+          };
+        }
+        tdBtn.appendChild(btn);
+      });
+      el.replaceChildren(table);
     }
 
     // ── Parishes ──
@@ -1201,10 +1260,45 @@
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
-    loadAll().then(() => {
+    // Apply/toggle admin controls visibility across all .admin-controls elements
+    function applyAdminControlsVisibility() {
+      const hide = localStorage.getItem('hideAdminControls') === 'true';
+      document.querySelectorAll('.admin-controls').forEach(el => { el.style.display = hide ? 'none' : ''; });
+      const pill = document.getElementById('admin-toggle-pill');
+      if (pill) { pill.textContent = hide ? 'Show controls' : 'Hide controls'; pill.classList.toggle('hiding', hide); }
+    }
+
+    document.getElementById('admin-toggle-pill').addEventListener('click', () => {
+      const hide = localStorage.getItem('hideAdminControls') === 'true';
+      localStorage.setItem('hideAdminControls', hide ? 'false' : 'true');
+      applyAdminControlsVisibility();
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST', headers });
+      location.reload();
+    });
+
+    (async function init() {
+      const whoami = await fetch('/auth/whoami').then(r => r.json()).catch(() => ({ method: 'none' }));
+      if (whoami.method === 'phone') {
+        document.getElementById('logout-btn').style.display = '';
+      }
+
+      const pingResp = await fetch('/api/admin/ping', { headers });
+      if (pingResp.status === 401) {
+        const msg = document.createElement('p');
+        msg.textContent = 'Session expired. Text the bot "admin" to get a new access link.';
+        msg.style.cssText = 'padding:2rem;font-family:sans-serif;font-size:15px;';
+        document.body.replaceChildren(msg);
+        return;
+      }
+
+      applyAdminControlsVisibility();
+      await loadAll();
       lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
       applyDeepLink();
-    });
+    })();
 
     function applyDeepLink() {
       const runId = new URLSearchParams(location.search).get('run');

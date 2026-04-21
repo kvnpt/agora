@@ -220,6 +220,28 @@ async function processBatch(sender, messages) {
   const runId = runRecord.lastInsertRowid;
 
   try {
+    // Fetch sender record early: needed for keyword check and blocked guard
+    // before spending a Haiku call on the batch.
+    const senderRecord = getOrCreateSender(sender);
+    if (senderRecord.status === 'blocked') {
+      console.log(`[webhook] Sender ${sender} is blocked, skipping batch`);
+      db.prepare("UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), status = 'skipped', error_message = 'sender blocked' WHERE id = ?").run(runId);
+      return;
+    }
+
+    // Admin keyword shortcut: single-word text from an admin sender requests
+    // a magic login link without invoking Haiku.
+    if (senderRecord.role === 'admin' && images.length === 0 && texts.length === 1) {
+      const kw = texts[0].trim().toLowerCase();
+      if (['admin', 'login', 'link', 'access'].includes(kw)) {
+        const { generateAdminToken } = require('./magic-auth');
+        const link = generateAdminToken(sender, null);
+        sendText(sender, 'Your Agora admin link:\n' + link).catch(() => {});
+        db.prepare("UPDATE adapter_runs SET status = 'success', finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(runId);
+        return;
+      }
+    }
+
     // Fetch upcoming events across all parishes so Claude can target a
     // specific event when the message announces a cancellation (otherwise
     // the model invents a new "CANCELLED" row that never dedupes).
@@ -232,12 +254,6 @@ async function processBatch(sender, messages) {
     `).all();
 
     const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents });
-    const senderRecord = getOrCreateSender(sender);
-    if (senderRecord.status === 'blocked') {
-      console.log(`[webhook] Sender ${sender} is blocked, skipping batch`);
-      db.prepare("UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), status = 'skipped', error_message = 'sender blocked' WHERE id = ?").run(runId);
-      return;
-    }
     // Low-confidence parish match overrides trust: never auto-apply; route
     // all downstream outputs to pending_review and send sender a clarifier.
     const ambiguous = result.parish_match_confidence === 'low';
@@ -488,6 +504,15 @@ async function processBatch(sender, messages) {
     // Result reply back to sender. Fire-and-forget — a Meta send failure must
     // not flip the already-processed batch to failed status.
     const cancellationsN = cancellationsApplied + cancellationsQueued;
+
+    // Admin senders get a single-use magic link so tapping the reply opens
+    // the admin review page with an active session.
+    let magicLink = null;
+    if (senderRecord.role === 'admin') {
+      const { generateAdminToken } = require('./magic-auth');
+      magicLink = generateAdminToken(sender, runId);
+    }
+
     const summary = buildResultReply({
       ambiguous,
       question: result.parish_match_question,
@@ -496,7 +521,8 @@ async function processBatch(sender, messages) {
       parishChangesN,
       cancellationsN,
       newParishCreated,
-      applied: effectiveStatus === 'approved'
+      applied: effectiveStatus === 'approved',
+      magicLink
     });
     sendText(sender, summary, { runId }).catch(() => {});
 
@@ -513,16 +539,17 @@ async function processBatch(sender, messages) {
   }
 }
 
-// Compose the outbound WhatsApp summary for a finished batch. Returns a
-// single text body; links use ADMIN_BASE_URL so previewing lands on the
-// By-Message card for this run.
-function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChangesN, cancellationsN, newParishCreated, applied }) {
+// Compose the outbound WhatsApp summary for a finished batch.
+// magicLink, when present, is appended to every reply variant so the sender
+// can tap straight into the admin review page with an active session.
+function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChangesN, cancellationsN, newParishCreated, applied, magicLink }) {
+  const link = magicLink ? '\n' + magicLink : '';
   if (ambiguous) {
-    return question || "I wasn't sure which parish this is for. Can you clarify?";
+    return (question || "I wasn't sure which parish this is for. Can you clarify?") + link;
   }
   const total = eventsN + schedulesN + parishChangesN + cancellationsN + (newParishCreated ? 1 : 0);
   if (total === 0) {
-    return `Couldn't find anything actionable in that. Want to rephrase?`;
+    return `Couldn't find anything actionable in that. Want to rephrase?` + link;
   }
   const parts = [];
   if (eventsN) parts.push(`${eventsN} event${eventsN > 1 ? 's' : ''}`);
@@ -531,7 +558,7 @@ function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChan
   if (cancellationsN) parts.push(`${cancellationsN} cancellation${cancellationsN > 1 ? 's' : ''}`);
   if (newParishCreated) parts.push('new parish');
   const verdict = applied ? 'Applied.' : 'Pending review.';
-  return `Parsed ${parts.join(', ')}. ${verdict}`;
+  return `Parsed ${parts.join(', ')}. ${verdict}` + link;
 }
 
 module.exports = router;
