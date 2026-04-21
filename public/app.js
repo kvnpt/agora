@@ -2942,6 +2942,7 @@ function renderEventCard(evt) {
   const badgeCss = `badge-${evt.event_type}`; // keep original CSS class for colors
   const langs = evt.languages ? JSON.parse(evt.languages) : [];
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
+  const combinedBadge = (evt.extra_parishes && evt.extra_parishes.length) ? `<span class="event-badge badge-combined">COMBINED</span>` : '';
   const badge = `<span class="event-badge ${badgeCss}">${displayType}</span>`;
 
   // LIVE badge — in-progress / imminent today gets live/countdown, future days
@@ -2993,7 +2994,7 @@ function renderEventCard(evt) {
           <span class="event-time">${time}</span>
           <span class="event-title">${esc(evt.title)}</span>
         </div>
-        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${liveBadge}${cancelledBadge}</div>
+        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${combinedBadge}${liveBadge}${cancelledBadge}</div>
       </div>
       ${posterImg}
     </div>`;
