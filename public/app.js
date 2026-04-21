@@ -3626,6 +3626,7 @@ window.deleteEvent = async function(id) {
 
 let _escalatePubEventId = null;
 let _escalatePubCandidates = [];
+let _escalatePubCurrentReplacedIds = new Set();
 
 function _renderPubEscalateEventList() {
   const checked = new Set([...document.querySelectorAll('#escalate-pub-parishes input:checked')].map(cb => cb.value));
@@ -3641,9 +3642,10 @@ function _renderPubEscalateEventList() {
   }
   const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
   evtList.innerHTML = visible.map(e => {
+    const pre = _escalatePubCurrentReplacedIds.has(e.id);
     const label = document.createElement('label');
     label.className = 'escalate-item';
-    label.innerHTML = `<input type="checkbox" value="${e.id}"><span class="escalate-item-label">${esc(e.title)}<small>${fmt(e.start_utc)} \xb7 ${esc(e.parish_name)}</small></span>`;
+    label.innerHTML = `<input type="checkbox" value="${e.id}"${pre ? ' checked' : ''}><span class="escalate-item-label">${esc(e.title)}<small>${fmt(e.start_utc)} \xb7 ${esc(e.parish_name)}</small></span>`;
     return label.outerHTML;
   }).join('');
 }
@@ -3653,6 +3655,7 @@ window.openPublicEscalateModal = function(id) {
   if (!evt) return;
   _escalatePubEventId = id;
   _escalatePubCandidates = [];
+  _escalatePubCurrentReplacedIds = new Set();
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc));
 
   document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
@@ -3675,10 +3678,25 @@ window.openPublicEscalateModal = function(id) {
 
   document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Select parishes above to see replaceable events</div>';
 
-  fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${id}`)
-    .then(r => r.json())
-    .then(evts => { _escalatePubCandidates = evts; _renderPubEscalateEventList(); })
-    .catch(() => { document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Failed to load</div>'; });
+  Promise.all([
+    fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${id}`).then(r => r.json()),
+    fetch(`/api/admin/events/${id}/escalation`).then(r => r.json()),
+  ]).then(([candidates, current]) => {
+    // Merge currently-replaced events into candidates so they remain visible
+    const candidateIds = new Set(candidates.map(e => e.id));
+    const merged = [...candidates, ...current.replaced_events.filter(e => !candidateIds.has(e.id))];
+    _escalatePubCandidates = merged;
+    _escalatePubCurrentReplacedIds = new Set(current.replaced_events.map(e => e.id));
+
+    // Pre-check parishes from current escalation state
+    for (const pid of current.additive_parish_ids) {
+      const cb = parishList.querySelector(`input[value="${CSS.escape(pid)}"]`);
+      if (cb) cb.checked = true;
+    }
+    _renderPubEscalateEventList();
+  }).catch(() => {
+    document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Failed to load</div>';
+  });
 
   document.getElementById('escalate-backdrop').classList.add('open');
 };

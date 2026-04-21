@@ -128,7 +128,23 @@ router.delete('/events/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/admin/events/:id/escalate — promote event to cross-parish or replacement
+// GET /api/admin/events/:id/escalation — current escalation state for an event
+router.get('/events/:id/escalation', (req, res) => {
+  const db = getDb();
+  const additive_parish_ids = db.prepare(
+    'SELECT parish_id FROM event_parishes WHERE event_id = ?'
+  ).all(req.params.id).map(r => r.parish_id);
+  const replaced_events = db.prepare(`
+    SELECT e.id, e.title, e.parish_id, p.name as parish_name, e.start_utc, e.end_utc
+    FROM event_replaces er
+    JOIN events e ON e.id = er.replaced_event_id
+    JOIN parishes p ON p.id = e.parish_id
+    WHERE er.replacing_event_id = ?
+  `).all(req.params.id);
+  res.json({ additive_parish_ids, replaced_events });
+});
+
+// POST /api/admin/events/:id/escalate — set desired escalation state (idempotent)
 // Body: { additive_parish_ids: string[], replaced_event_ids: number[], approve: boolean }
 router.post('/events/:id/escalate', (req, res) => {
   const db = getDb();
@@ -141,19 +157,48 @@ router.post('/events/:id/escalate', (req, res) => {
     if (approve) {
       db.prepare(`UPDATE events SET status = 'approved', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`).run(event.id);
     }
-    for (const parishId of additive_parish_ids) {
-      if (typeof parishId === 'string' && parishId !== event.parish_id) {
-        db.prepare(`INSERT OR IGNORE INTO event_parishes (event_id, parish_id) VALUES (?, ?)`).run(event.id, parishId);
+
+    const currentParishes = db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').all(event.id).map(r => r.parish_id);
+    const currentReplaces = db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').all(event.id).map(r => r.replaced_event_id);
+
+    const targetParishes = new Set(additive_parish_ids.filter(pid => typeof pid === 'string' && pid !== event.parish_id));
+    const targetReplaces = new Set(replaced_event_ids.map(Number));
+    const currentParishSet = new Set(currentParishes);
+    const currentReplaceSet = new Set(currentReplaces);
+
+    for (const pid of targetParishes) {
+      if (!currentParishSet.has(pid))
+        db.prepare('INSERT OR IGNORE INTO event_parishes (event_id, parish_id) VALUES (?, ?)').run(event.id, pid);
+    }
+    for (const pid of currentParishes) {
+      if (!targetParishes.has(pid))
+        db.prepare('DELETE FROM event_parishes WHERE event_id = ? AND parish_id = ?').run(event.id, pid);
+    }
+
+    for (const rid of targetReplaces) {
+      if (!currentReplaceSet.has(rid)) {
+        db.prepare('INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?, ?)').run(event.id, rid);
+        db.prepare(`UPDATE events SET status = 'replaced', mutation_type = 'replaced', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`).run(rid);
       }
     }
-    for (const replacedId of replaced_event_ids) {
-      db.prepare(`INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?, ?)`).run(event.id, Number(replacedId));
-      db.prepare(`UPDATE events SET status = 'replaced', mutation_type = 'replaced', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`).run(Number(replacedId));
+    for (const rid of currentReplaces) {
+      if (!targetReplaces.has(rid)) {
+        db.prepare('DELETE FROM event_replaces WHERE replacing_event_id = ? AND replaced_event_id = ?').run(event.id, rid);
+        // Restore status; infer mutation_type from schedule linkage
+        db.prepare(`
+          UPDATE events
+          SET status = 'approved',
+              mutation_type = CASE WHEN schedule_id IS NOT NULL THEN 'scheduled' ELSE 'headless' END,
+              updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE id = ? AND mutation_type = 'replaced'
+        `).run(rid);
+      }
     }
   });
   tx();
 
-  console.log(`[admin] Event ${event.id} escalated: +${additive_parish_ids.length} additive parishes, ${replaced_event_ids.length} replacements${approve ? ', auto-approved' : ''}`);
+  const addedP = additive_parish_ids.length, addedR = replaced_event_ids.length;
+  console.log(`[admin] Event ${event.id} escalation set: ${addedP} parishes, ${addedR} replacements${approve ? ', approved' : ''}`);
   const updated = db.prepare('SELECT * FROM events WHERE id = ?').get(event.id);
   const additional_parishes = db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').all(event.id).map(r => r.parish_id);
   const replaces = db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').all(event.id).map(r => r.replaced_event_id);
