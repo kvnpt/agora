@@ -1575,6 +1575,9 @@ a.filters-menu-item { text-decoration: none; }
   opacity: 1;
   transform: scale(1);
 }
+.poster-fullscreen--light {
+  background: #fff;
+}
 .poster-fullscreen.hidden {
   display: none;
 }

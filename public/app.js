@@ -3549,7 +3549,6 @@ function wireEventDrawer(drawer, evt) {
   const posterContainer = drawer.querySelector('.detail-poster');
   const posterEl = drawer.querySelector('.detail-poster img');
   if (posterEl) {
-    initPosterZoom(posterEl);
     posterContainer.addEventListener('click', () => openPosterFullscreen(posterEl.src));
   }
 }
@@ -3979,6 +3978,7 @@ function openPosterFullscreen(src) {
   const el = document.getElementById('poster-fullscreen');
   const img = document.getElementById('poster-fullscreen-img');
   img.src = src;
+  el.classList.toggle('poster-fullscreen--light', /\.pdf$/i.test(src));
   el.classList.remove('hidden');
   // Trigger open animation on next frame
   requestAnimationFrame(() => {
