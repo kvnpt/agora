@@ -3655,7 +3655,7 @@ window.openPublicEscalateModal = function(id) {
   document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
 
   const parishList = document.getElementById('escalate-pub-parishes');
-  const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned');
+  const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned').sort((a, b) => a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name));
   parishList.innerHTML = others.length
     ? others.map(p => {
         const label = document.createElement('label');

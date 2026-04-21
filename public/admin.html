@@ -545,7 +545,7 @@
       document.getElementById('escalate-modal-subtitle').textContent = `"${title}" on ${date}`;
 
       const grid = document.getElementById('escalate-parish-grid');
-      grid.innerHTML = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').map(p => `
+      grid.innerHTML = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').sort((a, b) => a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name)).map(p => `
         <label class="modal-event-item">
           <input type="checkbox" value="${esc(p.id)}" onchange="_renderEscalateEventList()">
           <span class="modal-event-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>
