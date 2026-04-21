@@ -317,6 +317,14 @@ function migrate(db) {
     db.exec(`ALTER TABLE adapter_runs ADD COLUMN parish_match_question TEXT`);
     db.pragma('user_version = 19');
   }
+
+  if (version < 20) {
+    db.exec(`ALTER TABLE events ADD COLUMN mutation_type TEXT NOT NULL DEFAULT 'scheduled'`);
+    db.exec(`UPDATE events SET mutation_type = 'headless' WHERE source_adapter != 'schedule'`);
+    db.exec(`CREATE TABLE IF NOT EXISTS event_parishes (event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, parish_id TEXT NOT NULL REFERENCES parishes(id), PRIMARY KEY (event_id, parish_id))`);
+    db.exec(`CREATE TABLE IF NOT EXISTS event_replaces (replacing_event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, replaced_event_id INTEGER NOT NULL REFERENCES events(id), PRIMARY KEY (replacing_event_id, replaced_event_id))`);
+    db.pragma('user_version = 20');
+  }
 }
 
 module.exports = { getDb };

@@ -95,25 +95,34 @@ function generateEvents(weeksAhead = 4) {
   }
 
   const upsert = db.prepare(`
-    INSERT INTO events (parish_id, source_adapter, schedule_id, title, start_utc, end_utc, event_type, source_hash, confidence, status, lat, lng, languages, hide_live, parish_scoped)
-    VALUES (@parish_id, 'schedule', @schedule_id, @title, @start_utc, @end_utc, @event_type, @source_hash, 'schedule', 'approved', @lat, @lng, @languages, @hide_live, @parish_scoped)
+    INSERT INTO events (parish_id, source_adapter, schedule_id, title, start_utc, end_utc, event_type, source_hash, confidence, status, lat, lng, languages, hide_live, parish_scoped, mutation_type)
+    VALUES (@parish_id, 'schedule', @schedule_id, @title, @start_utc, @end_utc, @event_type, @source_hash, 'schedule', 'approved', @lat, @lng, @languages, @hide_live, @parish_scoped, 'scheduled')
     ON CONFLICT(source_hash) DO UPDATE SET
-      title = excluded.title,
-      start_utc = excluded.start_utc,
-      end_utc = excluded.end_utc,
-      lat = excluded.lat,
-      lng = excluded.lng,
-      languages = excluded.languages,
-      hide_live = excluded.hide_live,
-      parish_scoped = excluded.parish_scoped,
-      updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      title        = CASE WHEN events.mutation_type = 'scheduled' THEN excluded.title        ELSE events.title        END,
+      start_utc    = CASE WHEN events.mutation_type = 'scheduled' THEN excluded.start_utc    ELSE events.start_utc    END,
+      end_utc      = CASE WHEN events.mutation_type = 'scheduled' THEN excluded.end_utc      ELSE events.end_utc      END,
+      languages    = CASE WHEN events.mutation_type = 'scheduled' THEN excluded.languages    ELSE events.languages    END,
+      hide_live    = CASE WHEN events.mutation_type = 'scheduled' THEN excluded.hide_live    ELSE events.hide_live    END,
+      parish_scoped= CASE WHEN events.mutation_type = 'scheduled' THEN excluded.parish_scoped ELSE events.parish_scoped END,
+      lat          = excluded.lat,
+      lng          = excluded.lng,
+      updated_at   = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
   `);
+
+  // Pre-fetch dates where occurrences have been replaced (generator must skip these)
+  const replacedBySchedule = {};
+  db.prepare(`SELECT schedule_id, date(start_utc) as date_str FROM events WHERE schedule_id IS NOT NULL AND mutation_type = 'replaced'`).all()
+    .forEach(r => {
+      if (!replacedBySchedule[r.schedule_id]) replacedBySchedule[r.schedule_id] = new Set();
+      replacedBySchedule[r.schedule_id].add(r.date_str);
+    });
 
   const now = new Date();
   let generated = 0;
 
   const tx = db.transaction(() => {
     for (const schedule of schedules) {
+      const replacedDates = replacedBySchedule[schedule.id] || new Set();
       for (let week = 0; week < weeksAhead; week++) {
         // Find the next occurrence of this day_of_week
         const target = new Date(now);
@@ -129,6 +138,8 @@ function generateEvents(weeksAhead = 4) {
 
         // Skip if this date doesn't match the week_of_month qualifier
         if (!matchesWeekOfMonth(dateStr, schedule.week_of_month)) continue;
+        // Skip if this occurrence has been replaced by another event
+        if (replacedDates.has(dateStr)) continue;
 
         const startUtc = localToUtc(dateStr, schedule.start_time);
         const endUtc = schedule.end_time ? localToUtc(dateStr, schedule.end_time) : null;

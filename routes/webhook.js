@@ -394,16 +394,38 @@ async function processBatch(sender, messages) {
     const posterPath = images.length > 0 ? '/posters/' + path.basename(images[0]) : null;
 
     // Handle events
+    // Headless upsert: used when no schedule occurrence matches (or sender is pending_review)
     const upsert = db.prepare(`
       INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
-        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path, source_run_id, hide_live, parish_scoped)
+        event_type, source_hash, confidence, status, lat, lng, location_override, languages, poster_path, source_run_id, hide_live, parish_scoped, mutation_type)
       SELECT @parish_id, 'whatsapp-webhook', @title, @description, @start_utc, @end_utc,
         @event_type, @source_hash, 'ai-parsed', @status,
-        p.lat, p.lng, @location_override, @languages, @poster_path, @source_run_id, @hide_live, @parish_scoped
+        p.lat, p.lng, @location_override, @languages, @poster_path, @source_run_id, @hide_live, @parish_scoped, 'headless'
       FROM parishes p WHERE p.id = @parish_id
       ON CONFLICT(source_hash) DO UPDATE SET
         status = CASE WHEN events.status = 'rejected' THEN excluded.status ELSE events.status END,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+    `);
+
+    // Adapted: find schedule occurrence at same parish/date within ±3h (trusted senders only)
+    const findScheduleOccurrence = db.prepare(`
+      SELECT id FROM events
+      WHERE parish_id = ?
+        AND source_adapter = 'schedule'
+        AND date(start_utc) = date(?)
+        AND status NOT IN ('replaced', 'rejected', 'cancelled')
+        AND ABS(CAST(strftime('%s', start_utc) AS INTEGER) - CAST(strftime('%s', ?) AS INTEGER)) <= 10800
+      ORDER BY ABS(CAST(strftime('%s', start_utc) AS INTEGER) - CAST(strftime('%s', ?) AS INTEGER))
+      LIMIT 2
+    `);
+
+    const adaptScheduleEvent = db.prepare(`
+      UPDATE events SET
+        title = ?, start_utc = ?, end_utc = ?, description = ?, event_type = ?,
+        languages = ?, hide_live = ?, parish_scoped = ?,
+        mutation_type = 'adapted', source_run_id = ?,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      WHERE id = ?
     `);
 
     let eventsCreated = 0;
@@ -412,23 +434,43 @@ async function processBatch(sender, messages) {
         const hash = crypto.createHash('sha256')
           .update(`wa-webhook-${parishId}-${evt.date_str}-${evt.title}`)
           .digest('hex');
-        const r = upsert.run({
-          parish_id: parishId,
-          title: evt.title,
-          description: evt.description,
-          start_utc: evt.start_utc,
-          end_utc: evt.end_utc,
-          event_type: evt.event_type,
-          source_hash: hash,
-          location_override: evt.location_override,
-          status: eventStatus,
-          languages: evt.languages ? JSON.stringify(evt.languages) : null,
-          poster_path: posterPath,
-          source_run_id: runId,
-          hide_live: evt.hide_live ? 1 : 0,
-          parish_scoped: evt.parish_scoped ? 1 : 0
-        });
-        if (r.changes > 0) eventsCreated++;
+
+        // Adapted detection: only for trusted senders (approved) at a known parish
+        let adapted = false;
+        if (eventStatus === 'approved' && parishId && parishId !== '_unassigned') {
+          const matches = findScheduleOccurrence.all(parishId, evt.start_utc, evt.start_utc, evt.start_utc);
+          if (matches.length === 1) {
+            const r = adaptScheduleEvent.run(
+              evt.title, evt.start_utc, evt.end_utc || null, evt.description || null, evt.event_type,
+              evt.languages ? JSON.stringify(evt.languages) : null,
+              evt.hide_live ? 1 : 0, evt.parish_scoped ? 1 : 0,
+              runId, matches[0].id
+            );
+            if (r.changes > 0) eventsCreated++;
+            adapted = true;
+          }
+          // 0 matches → headless; 2+ matches → headless (admin escalates to replace)
+        }
+
+        if (!adapted) {
+          const r = upsert.run({
+            parish_id: parishId,
+            title: evt.title,
+            description: evt.description,
+            start_utc: evt.start_utc,
+            end_utc: evt.end_utc,
+            event_type: evt.event_type,
+            source_hash: hash,
+            location_override: evt.location_override,
+            status: eventStatus,
+            languages: evt.languages ? JSON.stringify(evt.languages) : null,
+            poster_path: posterPath,
+            source_run_id: runId,
+            hide_live: evt.hide_live ? 1 : 0,
+            parish_scoped: evt.parish_scoped ? 1 : 0
+          });
+          if (r.changes > 0) eventsCreated++;
+        }
       }
     });
     tx();

@@ -12,6 +12,23 @@ const router = Router();
 // GET /api/admin/ping — lightweight check for admin access
 router.get('/ping', (req, res) => res.json({ ok: true }));
 
+// GET /api/admin/events/candidates — events on a date for escalation picker
+router.get('/events/candidates', (req, res) => {
+  const db = getDb();
+  const { date, exclude_id } = req.query;
+  if (!date) return res.status(400).json({ error: 'date required (YYYY-MM-DD)' });
+  const events = db.prepare(`
+    SELECT e.id, e.title, e.start_utc, e.end_utc, e.parish_id, p.name as parish_name, e.mutation_type, e.status, e.event_type
+    FROM events e
+    JOIN parishes p ON e.parish_id = p.id
+    WHERE date(e.start_utc) = ?
+      AND e.status NOT IN ('replaced', 'rejected', 'cancelled', 'hidden')
+      AND e.id != COALESCE(?, -1)
+    ORDER BY e.start_utc
+  `).all(date, exclude_id ? Number(exclude_id) : null);
+  res.json(events);
+});
+
 // GET /api/admin/events/pending — list pending_review events
 router.get('/events/pending', (req, res) => {
   const db = getDb();
@@ -53,6 +70,16 @@ router.patch('/events/:id', (req, res) => {
   if (hide_live !== undefined) { updates.push('hide_live = ?'); values.push(hide_live ? 1 : 0); }
   if (parish_scoped !== undefined) { updates.push('parish_scoped = ?'); values.push(parish_scoped ? 1 : 0); }
 
+  // If admin edits display fields of a schedule-generated event, promote to 'adapted'
+  // so the nightly generator no longer overwrites these fields
+  const displayFieldEdited = title !== undefined || description !== undefined ||
+    start_utc !== undefined || end_utc !== undefined ||
+    event_type !== undefined || languages !== undefined;
+  if (displayFieldEdited && event.source_adapter === 'schedule' && event.mutation_type === 'scheduled') {
+    updates.push('mutation_type = ?');
+    values.push('adapted');
+  }
+
   if (parish_id && parish_id !== event.parish_id) {
     const parish = db.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').get(parish_id);
     if (!parish) return res.status(400).json({ error: 'Invalid parish_id' });
@@ -93,6 +120,38 @@ router.delete('/events/:id', (req, res) => {
   if (!event) return res.status(404).json({ error: 'Event not found' });
   db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/admin/events/:id/escalate — promote event to cross-parish or replacement
+// Body: { additive_parish_ids: string[], replaced_event_ids: number[], approve: boolean }
+router.post('/events/:id/escalate', (req, res) => {
+  const db = getDb();
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+
+  const { additive_parish_ids = [], replaced_event_ids = [], approve = false } = req.body;
+
+  const tx = db.transaction(() => {
+    if (approve) {
+      db.prepare(`UPDATE events SET status = 'approved', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`).run(event.id);
+    }
+    for (const parishId of additive_parish_ids) {
+      if (typeof parishId === 'string' && parishId !== event.parish_id) {
+        db.prepare(`INSERT OR IGNORE INTO event_parishes (event_id, parish_id) VALUES (?, ?)`).run(event.id, parishId);
+      }
+    }
+    for (const replacedId of replaced_event_ids) {
+      db.prepare(`INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?, ?)`).run(event.id, Number(replacedId));
+      db.prepare(`UPDATE events SET status = 'replaced', mutation_type = 'replaced', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`).run(Number(replacedId));
+    }
+  });
+  tx();
+
+  console.log(`[admin] Event ${event.id} escalated: +${additive_parish_ids.length} additive parishes, ${replaced_event_ids.length} replacements${approve ? ', auto-approved' : ''}`);
+  const updated = db.prepare('SELECT * FROM events WHERE id = ?').get(event.id);
+  const additional_parishes = db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').all(event.id).map(r => r.parish_id);
+  const replaces = db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').all(event.id).map(r => r.replaced_event_id);
+  res.json({ ...updated, additional_parishes, replaces });
 });
 
 // POST /api/admin/parishes — create a new parish

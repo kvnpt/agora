@@ -141,6 +141,29 @@
     .status-pending_review, .status-pending { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
     .status-rejected { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #fee2e2; color: #991b1b; }
     .status-cancelled { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; }
+    .status-replaced { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
+
+    /* Mutation type badges */
+    .mutation-adapted { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
+    .mutation-headless { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
+    .mutation-replaced { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
+
+    /* Escalate modal */
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: var(--bg); border-radius: 4px; padding: 20px; max-width: 540px; width: 100%; max-height: 80vh; overflow-y: auto; }
+    .modal h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .modal-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .modal-section { margin-bottom: 16px; }
+    .modal-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 8px; }
+    .modal-event-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 2px; padding: 4px; }
+    .modal-event-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 2px; cursor: pointer; }
+    .modal-event-item:hover { background: #f5f5f5; }
+    .modal-event-item input[type=checkbox] { flex-shrink: 0; }
+    .modal-event-label { font-size: 12px; line-height: 1.4; }
+    .modal-event-label small { display: block; color: var(--muted); font-size: 11px; }
+    .modal-parish-grid { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
+    .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   </style>
 </head>
 <body>
@@ -422,13 +445,24 @@
             ${posterHtml}
             ${msgText ? `<div class="source-msg">${esc(msgText)}</div>` : ''}
           </div>` : '';
+        const mutationBadge = evt.mutation_type === 'adapted'
+          ? '<span class="mutation-adapted">adapted</span>'
+          : evt.mutation_type === 'replaced'
+          ? '<span class="mutation-replaced">replaced</span>'
+          : evt.mutation_type === 'headless'
+          ? '<span class="mutation-headless">headless</span>'
+          : '';
+        const adaptedNote = evt.mutation_type === 'adapted'
+          ? '<div class="run-question" style="background:#fef3c7;border-left-color:#f59e0b;">Adapts an existing schedule occurrence — approving will update that event in place.</div>'
+          : '';
         return `
           <div class="card ${isUn ? 'warn' : ''}" data-id="${evt.id}">
             <div style="display:flex;justify-content:space-between;align-items:start;gap:6px;flex-wrap:wrap;">
               <span class="card-title">${esc(evt.title)}</span>
-              <span class="badge badge-${evt.event_type}">${evt.event_type}</span>
+              <div style="display:flex;gap:4px;align-items:center;">${mutationBadge}<span class="badge badge-${evt.event_type}">${evt.event_type}</span></div>
             </div>
             <div class="card-meta">${dateFmt} &middot; ${esc(evt.parish_name || evt.source_adapter)}${evt.description ? ' &middot; ' + esc(evt.description) : ''}</div>
+            ${adaptedNote}
             ${sourceRow}
             <div class="field"><label>Title</label><input class="re-title" value="${esc(evt.title)}"></div>
             <div class="field"><label>Description</label><input class="re-desc" value="${esc(evt.description || '')}"></div>
@@ -451,6 +485,12 @@
             <div class="btn-row">
               <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
               <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
+              <button class="btn btn-outline"
+                data-eid="${evt.id}"
+                data-etitle="${esc(evt.title)}"
+                data-edate="${esc(evt.start_utc.split('T')[0])}"
+                data-eparish="${esc(evt.parish_id)}"
+                onclick="openEscalateModal(this)">Escalate…</button>
             </div>
           </div>`;
       }).join('');
@@ -469,6 +509,74 @@
     async function rejectEvent(id) {
       const res = await fetch(`/api/admin/events/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'rejected' }) });
       if (res.ok) { toast('Rejected'); loadAll(); } else toast('Failed', 'error');
+    }
+
+    // ── Escalate Modal ──
+    let escalateEventId = null;
+
+    function openEscalateModal(btn) {
+      escalateEventId = Number(btn.dataset.eid);
+      const title = btn.dataset.etitle;
+      const date = btn.dataset.edate;
+      const primaryParish = btn.dataset.eparish;
+
+      document.getElementById('escalate-modal-subtitle').textContent = `"${title}" on ${date}`;
+
+      const grid = document.getElementById('escalate-parish-grid');
+      grid.innerHTML = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').map(p => `
+        <label class="modal-event-item">
+          <input type="checkbox" value="${esc(p.id)}">
+          <span class="modal-event-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>
+        </label>`).join('');
+
+      const list = document.getElementById('escalate-event-list');
+      list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Loading…</div>';
+      fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${escalateEventId}`, { headers })
+        .then(r => r.json())
+        .then(evts => {
+          if (!evts.length) { list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">No events found on this date</div>'; return; }
+          const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
+          list.innerHTML = evts.map(e => `
+            <label class="modal-event-item">
+              <input type="checkbox" value="${e.id}">
+              <span class="modal-event-label">${esc(e.title)}<small>${fmt(e.start_utc)} · ${esc(e.parish_name)}</small></span>
+            </label>`).join('');
+        })
+        .catch(() => { list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Failed to load</div>'; });
+
+      document.getElementById('escalate-modal').classList.add('open');
+    }
+
+    function closeEscalateModal() {
+      document.getElementById('escalate-modal').classList.remove('open');
+      escalateEventId = null;
+    }
+
+    async function confirmEscalate() {
+      if (!escalateEventId) return;
+      const additive_parish_ids = [...document.querySelectorAll('#escalate-parish-grid input:checked')].map(cb => cb.value);
+      const replaced_event_ids = [...document.querySelectorAll('#escalate-event-list input:checked')].map(cb => Number(cb.value));
+
+      const btn = document.getElementById('escalate-confirm-btn');
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/events/${escalateEventId}/escalate`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ additive_parish_ids, replaced_event_ids, approve: true })
+        });
+        if (res.ok) {
+          const parts = [];
+          if (additive_parish_ids.length) parts.push(`Added to ${additive_parish_ids.length} parish(es)`);
+          if (replaced_event_ids.length) parts.push(`Replaced ${replaced_event_ids.length} event(s)`);
+          toast(parts.length ? parts.join(', ') : 'Escalated');
+          closeEscalateModal();
+          loadAll();
+        } else {
+          toast('Escalation failed', 'error');
+        }
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     // ── Pending Schedules ──
@@ -1135,5 +1243,30 @@
       }, 0);
     });
   </script>
+
+  <!-- Escalate Modal -->
+  <div class="modal-backdrop" id="escalate-modal" onclick="if(event.target===this)closeEscalateModal()">
+    <div class="modal">
+      <h2>Extend event scope</h2>
+      <div class="modal-subtitle" id="escalate-modal-subtitle"></div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">Add to parishes (Combined — additive, no replacement)</div>
+        <div class="modal-parish-grid" id="escalate-parish-grid"></div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">Replaces these events on same date</div>
+        <div id="escalate-event-list-wrap">
+          <div class="modal-event-list" id="escalate-event-list"><div class="empty" style="padding:8px;font-size:12px;">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="modal-btn-row">
+        <button class="btn btn-outline" onclick="closeEscalateModal()">Cancel</button>
+        <button class="btn btn-primary" id="escalate-confirm-btn" onclick="confirmEscalate()">Confirm</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
