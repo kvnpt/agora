@@ -105,6 +105,13 @@ function bufferMessage(message) {
     const batch = buffer.messages;
     senderBuffers.delete(sender);
     console.log(`[webhook] Batch from ${sender}: ${batch.length} message(s), processing...`);
+    // Second ACK at window close — signals the batch is now locked and
+    // Claude parsing has started. Fills the silent gap between the initial
+    // ACK and the final result reply (which can take 10–30s after this).
+    const closeText = batch.length > 1
+      ? `Got your ${batch.length} messages. Parsing now...`
+      : 'Parsing now...';
+    sendText(sender, closeText).catch(() => {});
     processBatch(sender, batch).catch(err => {
       console.error('[webhook] processBatch error:', err.message);
     });
