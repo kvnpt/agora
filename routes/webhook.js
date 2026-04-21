@@ -12,7 +12,7 @@ const ADMIN_BASE_URL = process.env.AGORA_ADMIN_URL || 'https://orthodoxy.au/admi
 const router = Router();
 
 // Buffer messages by sender for batched processing
-const BATCH_WINDOW_MS = 10000; // 10 seconds
+const BATCH_WINDOW_MS = 20000; // 20 seconds
 const senderBuffers = new Map(); // sender -> { messages: [], timer: timeout }
 
 /**
