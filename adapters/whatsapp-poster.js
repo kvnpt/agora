@@ -210,6 +210,7 @@ TASKS:
    - MATCH an existing row when its distinctive tokens (patronage like "St George", type like "Monastery/Cathedral/Parish", plus suburb or jurisdiction) uniquely identify exactly one row. Human messages paraphrase (e.g. "St George monastery" = "Holy Monastery of St George, Yellow Rock" — the only monastery among St George parishes, so match it).
    - EMIT new_parish when the message names a parish whose suburb, jurisdiction, or distinctive tokens do NOT align with any known row (e.g. "St Nicholas Marrickville" when only "St Nicholas Surry Hills" is known — different suburb, different parish).
    - LEAVE inferred_parish null AND new_parish null when the message could refer to multiple known rows and provides no disambiguator (suburb, jurisdiction, distinctive descriptor). Do not guess; do not create a duplicate.
+   - Emit parish_match_confidence = "high" ONLY when EXACTLY ONE known row matches on patronage PLUS (suburb or jurisdiction or a distinctive descriptor). Emit "low" when: (a) multiple known rows plausibly match, (b) only a city/suburb token is present with nothing else (e.g. "Brisbane event" alone), (c) patronage fits but jurisdiction/suburb disagree with the matched row, or (d) you are inferring from shorthand. When "low", set parish_match_question to a short clarifier addressed to the sender (e.g. "Which St Paul\'s — Antiochian Brisbane or Serbian Marrickville?"); when "high", set it to null. Low confidence forces human review regardless of sender trust level.
 2. Extract any one-off EVENTS (dated services, feasts, social events, talks, etc).
 3. Extract any recurring SCHEDULES (weekly services like "Sunday Divine Liturgy 9:30am").
 4. Extract any parish info UPDATES (address, phone, website, languages).
@@ -218,6 +219,8 @@ TASKS:
 Return ONLY valid JSON (no markdown fences) in this exact format:
 {
   "inferred_parish": "<parish id from list, or null>",
+  "parish_match_confidence": "high|low",
+  "parish_match_question": "short clarifier for the sender, or null",
   "new_parish": null or {
     "name": "Short name e.g. St George Carlton",
     "full_name": "Full official name or null",
@@ -283,7 +286,7 @@ parish_scoped: true for internal/operational entries that should only surface wh
 parish_updates: include ONLY keys for fields the message is setting to a new non-null value (name, address, contact details, acronym, chant style, languages, live stream URL, etc). OMIT keys entirely for fields the message does not mention. NEVER emit null inside parish_updates — null is not a meaningful value here.
 parish_clears: an array of field names. Include a field name here ONLY when the message explicitly states the parish no longer has that attribute — e.g. "we no longer livestream" → "live_url"; "stream has been discontinued" → "live_url"; "phone disconnected" → "phone"; "website closed" → "website". Valid field names: name, full_name, address, website, email, phone, acronym, chant_style, live_url, languages. Empty [] when no removal is requested. DO NOT add a field here just because the message didn't mention it — silence is not a removal.
 Only pick an event_id from the UPCOMING EVENTS list above. Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
-If you cannot extract anything, return: {"inferred_parish": null, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "parish_clears": [], "new_parish": null}
+If you cannot extract anything, return: {"inferred_parish": null, "parish_match_confidence": "high", "parish_match_question": null, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "parish_clears": [], "new_parish": null}
 
 DATE EXTRACTION RULES (read carefully — past posters have been misread by +14 days):
 - If the poster has a header/title naming a month and year (e.g. "HOLY WEEK SERVICES - APRIL 2026", "MARCH 2026 PROGRAM"), those ARE the authoritative month and year for every row. Do NOT shift to a future occurrence.
@@ -308,7 +311,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { inferred_parish: null, events: [] };
     } catch {
       console.error('[whatsapp-poster] Failed to parse Claude response:', responseText);
-      return { events: [], inferred_parish: null };
+      return { events: [], inferred_parish: null, parish_match_confidence: 'high', parish_match_question: null };
     }
 
     // Convert events to internal format. source_hash is computed by the
@@ -339,6 +342,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       };
     });
 
+    const confidence = parsed.parish_match_confidence === 'low' ? 'low' : 'high';
     return {
       events,
       inferred_parish: parsed.inferred_parish || null,
@@ -347,6 +351,8 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       parish_updates: parsed.parish_updates || null,
       parish_clears: Array.isArray(parsed.parish_clears) ? parsed.parish_clears : [],
       new_parish: parsed.new_parish || null,
+      parish_match_confidence: confidence,
+      parish_match_question: confidence === 'low' ? (parsed.parish_match_question || null) : null,
       rawResponse: response.content[0].text
     };
   }

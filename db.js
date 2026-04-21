@@ -310,6 +310,13 @@ function migrate(db) {
     db.exec(`ALTER TABLE parishes ADD COLUMN source_run_id INTEGER REFERENCES adapter_runs(id)`);
     db.pragma('user_version = 18');
   }
+
+  if (version < 19) {
+    db.exec(`ALTER TABLE adapter_runs ADD COLUMN sender_phone TEXT`);
+    db.exec(`ALTER TABLE adapter_runs ADD COLUMN parish_match_confidence TEXT`);
+    db.exec(`ALTER TABLE adapter_runs ADD COLUMN parish_match_question TEXT`);
+    db.pragma('user_version = 19');
+  }
 }
 
 module.exports = { getDb };

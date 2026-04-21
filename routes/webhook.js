@@ -4,6 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db');
 const { geocode } = require('../geocode');
+const { sendText } = require('../adapters/whatsapp-send');
+
+// Public-facing admin URL for deep links in outbound replies.
+const ADMIN_BASE_URL = process.env.AGORA_ADMIN_URL || 'https://orthodoxy.au/admin';
 
 const router = Router();
 
@@ -86,6 +90,10 @@ function bufferMessage(message) {
 
   if (!senderBuffers.has(sender)) {
     senderBuffers.set(sender, { messages: [], timer: null });
+    // ACK on the first message of a new batch window. Fire-and-forget so a
+    // Meta outage never holds up the inbound handler. One ACK per batch —
+    // subsequent messages inside the 10s sliding window reuse the buffer.
+    sendText(sender, 'Got it — reading your message...').catch(() => {});
   }
 
   const buffer = senderBuffers.get(sender);
@@ -188,10 +196,11 @@ async function processBatch(sender, messages) {
 
   if (images.length === 0 && texts.length === 0) return;
 
-  // Log the adapter run
+  // Log the adapter run. Persist sender_phone up-front so the By-Message
+  // admin view can surface it even if processing fails mid-flight.
   const runRecord = db.prepare(
-    'INSERT INTO adapter_runs (adapter_id, status) VALUES (?, ?)'
-  ).run('whatsapp-webhook', 'running');
+    'INSERT INTO adapter_runs (adapter_id, status, sender_phone) VALUES (?, ?, ?)'
+  ).run('whatsapp-webhook', 'running', sender);
   const runId = runRecord.lastInsertRowid;
 
   try {
@@ -213,7 +222,15 @@ async function processBatch(sender, messages) {
       db.prepare("UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), status = 'skipped', error_message = 'sender blocked' WHERE id = ?").run(runId);
       return;
     }
-    const eventStatus = senderRecord.status === 'approved' ? 'approved' : 'pending_review';
+    // Low-confidence parish match overrides trust: never auto-apply; route
+    // all downstream outputs to pending_review and send sender a clarifier.
+    const ambiguous = result.parish_match_confidence === 'low';
+    const effectiveStatus = ambiguous ? 'review' : senderRecord.status;
+    const eventStatus = effectiveStatus === 'approved' ? 'approved' : 'pending_review';
+
+    // Counters used to build the outbound result-reply summary below.
+    let parishChangesN = 0;
+    let newParishCreated = false;
 
     // Handle new parish creation
     let parishId = resolveParish(db, result.inferred_parish) || '_unassigned';
@@ -231,6 +248,7 @@ async function processBatch(sender, messages) {
         `).run(newId, np.name, np.full_name || null, np.jurisdiction || 'other',
           np.address || null, lat, lng, np.website || null, np.phone || null,
           np.languages ? JSON.stringify(np.languages) : '["English"]', runId);
+        newParishCreated = true;
         console.log(`[webhook] Created new parish: ${newId} (${np.name})`);
         if (np.address) {
           geocode(np.address).then(coords => {
@@ -270,8 +288,9 @@ async function processBatch(sender, messages) {
       const clears = [...new Set(rawClears)]
         .filter(f => typeof f === 'string' && allFields.has(f) && !(f in sets));
 
+      parishChangesN = Object.keys(sets).length + clears.length;
       if (Object.keys(sets).length || clears.length) {
-        if (senderRecord.status === 'approved') {
+        if (effectiveStatus === 'approved') {
           const frags = [];
           const vals = [];
           for (const [f, v] of Object.entries(sets)) {
@@ -301,7 +320,7 @@ async function processBatch(sender, messages) {
     // Handle schedules — respect sender status
     let schedulesCreated = 0;
     if (result.schedules && result.schedules.length && parishId !== '_unassigned') {
-      const schedStatus = senderRecord.status === 'approved' ? 'approved' : 'pending_review';
+      const schedStatus = effectiveStatus === 'approved' ? 'approved' : 'pending_review';
       const schedActive = schedStatus === 'approved' ? 1 : 0;
       const insertSched = db.prepare(`
         INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month, concurrent, active, status, source_run_id, hide_live)
@@ -336,7 +355,7 @@ async function processBatch(sender, messages) {
           continue;
         }
         if (target.status === 'cancelled') continue; // already cancelled
-        if (senderRecord.status === 'approved') {
+        if (effectiveStatus === 'approved') {
           db.prepare(`UPDATE events SET status = 'cancelled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(eventId);
           cancellationsApplied++;
           console.log(`[webhook] Cancelled event ${eventId} (${target.parish_id}) from approved sender ${sender}`);
@@ -401,10 +420,28 @@ async function processBatch(sender, messages) {
     db.prepare(`
       UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
       status = 'success', events_found = ?, events_created = ?,
-      input_texts = ?, claude_response = ? WHERE id = ?
-    `).run(result.events.length, eventsCreated, JSON.stringify(texts), result.rawResponse || null, runId);
+      input_texts = ?, claude_response = ?,
+      parish_match_confidence = ?, parish_match_question = ? WHERE id = ?
+    `).run(result.events.length, eventsCreated, JSON.stringify(texts), result.rawResponse || null,
+      result.parish_match_confidence || 'high', result.parish_match_question || null, runId);
 
-    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}`);
+    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}, confidence=${result.parish_match_confidence || 'high'}`);
+
+    // Result reply back to sender. Fire-and-forget — a Meta send failure must
+    // not flip the already-processed batch to failed status.
+    const cancellationsN = cancellationsApplied + cancellationsQueued;
+    const summary = buildResultReply({
+      ambiguous,
+      question: result.parish_match_question,
+      eventsN: result.events.length,
+      schedulesN: schedulesCreated,
+      parishChangesN,
+      cancellationsN,
+      newParishCreated,
+      applied: effectiveStatus === 'approved',
+      runId
+    });
+    sendText(sender, summary, { runId }).catch(() => {});
 
   } catch (err) {
     db.prepare(`
@@ -412,7 +449,34 @@ async function processBatch(sender, messages) {
       status = 'failed', error_message = ? WHERE id = ?
     `).run(err.message, runId);
     console.error('[webhook] Batch processing failed:', err.message);
+    sendText(sender,
+      `Hit a snag parsing that — admin will take a look.\nReview: ${ADMIN_BASE_URL}?run=${runId}`,
+      { runId }
+    ).catch(() => {});
   }
+}
+
+// Compose the outbound WhatsApp summary for a finished batch. Returns a
+// single text body; links use ADMIN_BASE_URL so previewing lands on the
+// By-Message card for this run.
+function buildResultReply({ ambiguous, question, eventsN, schedulesN, parishChangesN, cancellationsN, newParishCreated, applied, runId }) {
+  const link = `${ADMIN_BASE_URL}?run=${runId}`;
+  if (ambiguous) {
+    const q = question || "I wasn't sure which parish this is for. Can you clarify?";
+    return `${q}\n\nReview: ${link}`;
+  }
+  const total = eventsN + schedulesN + parishChangesN + cancellationsN + (newParishCreated ? 1 : 0);
+  if (total === 0) {
+    return `Couldn't find anything actionable in that. Want to rephrase?\nReview: ${link}`;
+  }
+  const parts = [];
+  if (eventsN) parts.push(`${eventsN} event${eventsN > 1 ? 's' : ''}`);
+  if (schedulesN) parts.push(`${schedulesN} schedule${schedulesN > 1 ? 's' : ''}`);
+  if (parishChangesN) parts.push(`${parishChangesN} parish change${parishChangesN > 1 ? 's' : ''}`);
+  if (cancellationsN) parts.push(`${cancellationsN} cancellation${cancellationsN > 1 ? 's' : ''}`);
+  if (newParishCreated) parts.push('new parish');
+  const verdict = applied ? 'Applied.' : 'Pending review.';
+  return `Parsed ${parts.join(', ')}. ${verdict}\nReview: ${link}`;
 }
 
 module.exports = router;

@@ -477,6 +477,86 @@ router.post('/cancellations/:id/reject', (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/admin/runs — WhatsApp adapter_runs grouped with downstream counts.
+// Powers the admin "By Message" view: one card per inbound batch, showing
+// sender, confidence, and how many rows of each type the run produced.
+router.get('/runs', (req, res) => {
+  const db = getDb();
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+  const senderFilter = req.query.sender || null;
+  const sql = `
+    SELECT ar.id, ar.started_at, ar.finished_at, ar.status, ar.error_message,
+           ar.sender_phone, ar.input_texts, ar.events_found, ar.events_created,
+           ar.parish_match_confidence, ar.parish_match_question,
+           s.name AS sender_name, s.status AS sender_status,
+           (SELECT COUNT(*) FROM events WHERE source_run_id = ar.id) AS events_n,
+           (SELECT COUNT(*) FROM events WHERE source_run_id = ar.id AND status = 'pending_review') AS pending_events_n,
+           (SELECT COUNT(*) FROM schedules WHERE source_run_id = ar.id) AS schedules_n,
+           (SELECT COUNT(*) FROM schedules WHERE source_run_id = ar.id AND status = 'pending_review') AS pending_schedules_n,
+           (SELECT COUNT(*) FROM pending_parish_updates WHERE source_run_id = ar.id AND status = 'pending') AS pending_parish_updates_n,
+           (SELECT COUNT(*) FROM pending_cancellations WHERE source_run_id = ar.id AND status = 'pending') AS pending_cancellations_n,
+           (SELECT COUNT(*) FROM parishes WHERE source_run_id = ar.id) AS new_parishes_n
+    FROM adapter_runs ar
+    LEFT JOIN senders s ON ar.sender_phone = s.phone
+    WHERE ar.adapter_id = 'whatsapp-webhook'
+      ${senderFilter ? 'AND ar.sender_phone = ?' : ''}
+    ORDER BY ar.started_at DESC
+    LIMIT ?
+  `;
+  const rows = senderFilter
+    ? db.prepare(sql).all(senderFilter, limit)
+    : db.prepare(sql).all(limit);
+  res.json(rows);
+});
+
+// GET /api/admin/runs/:id — full detail for one adapter_run, with all
+// downstream rows (events/schedules/updates/cancellations/new parishes).
+router.get('/runs/:id', (req, res) => {
+  const db = getDb();
+  const id = parseInt(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+  const run = db.prepare(`SELECT * FROM adapter_runs WHERE id = ?`).get(id);
+  if (!run) return res.status(404).json({ error: 'Not found' });
+  const sender = run.sender_phone
+    ? db.prepare(`SELECT * FROM senders WHERE phone = ?`).get(run.sender_phone)
+    : null;
+  const events = db.prepare(`
+    SELECT e.*, p.name AS parish_name
+    FROM events e JOIN parishes p ON e.parish_id = p.id
+    WHERE e.source_run_id = ?
+    ORDER BY e.start_utc ASC
+  `).all(id);
+  const schedules = db.prepare(`
+    SELECT s.*, p.name AS parish_name
+    FROM schedules s JOIN parishes p ON s.parish_id = p.id
+    WHERE s.source_run_id = ?
+    ORDER BY s.day_of_week, s.start_time
+  `).all(id);
+  const parish_updates = db.prepare(`
+    SELECT pu.*, p.name AS parish_name, p.address AS parish_address,
+           p.website AS parish_website, p.email AS parish_email,
+           p.phone AS parish_phone, p.acronym AS parish_acronym,
+           p.chant_style AS parish_chant_style, p.languages AS parish_languages,
+           p.live_url AS parish_live_url, p.full_name AS parish_full_name
+    FROM pending_parish_updates pu
+    JOIN parishes p ON pu.parish_id = p.id
+    WHERE pu.source_run_id = ?
+    ORDER BY pu.created_at ASC
+  `).all(id);
+  const cancellations = db.prepare(`
+    SELECT pc.*, e.title AS event_title, e.start_utc AS event_start_utc,
+           e.event_type AS event_type, e.parish_id AS parish_id,
+           e.status AS event_status, p.name AS parish_name
+    FROM pending_cancellations pc
+    JOIN events e ON pc.event_id = e.id
+    JOIN parishes p ON e.parish_id = p.id
+    WHERE pc.source_run_id = ?
+    ORDER BY pc.created_at ASC
+  `).all(id);
+  const new_parishes = db.prepare(`SELECT * FROM parishes WHERE source_run_id = ?`).all(id);
+  res.json({ run, sender, events, schedules, parish_updates, cancellations, new_parishes });
+});
+
 // GET /api/admin/dropped — WhatsApp runs that produced nothing (no events, schedules, or parish updates)
 router.get('/dropped', (req, res) => {
   const db = getDb();

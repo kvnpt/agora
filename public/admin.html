@@ -117,6 +117,30 @@
     .diff-new { color: #22c55e; flex: 1; min-width: 0; }
     .raw-response { display: none; margin-top: 8px; padding: 8px; background: #f4f4f4; border-radius: 2px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; color: #333; }
     .raw-response.open { display: block; }
+
+    /* By Message view */
+    .run-card { position: relative; }
+    .run-card.warn { border-left: 3px solid #e67e22; }
+    .run-card.highlight { box-shadow: 0 0 0 2px #fbbf24; transition: box-shadow 0.5s ease; }
+    .run-summary { font-size: 13px; margin-top: 6px; color: var(--text); }
+    .run-question { font-size: 13px; margin-top: 6px; padding: 6px 8px; background: #fef3c7; border-left: 2px solid #e67e22; border-radius: 2px; color: #7a4a10; }
+    .run-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+    .conf-low { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
+    .run-status { font-size: 9px; font-weight: 500; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; }
+    .run-status-failed { background: #fee2e2; color: #991b1b; }
+    .run-status-skipped { background: #e5e7eb; color: #4b5563; }
+    .run-status-running { background: #dbeafe; color: #1e40af; }
+    .run-pending { font-size: 9px; font-weight: 500; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
+    .run-detail { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); }
+    .run-detail.open { display: block; }
+    .run-child-group { margin-bottom: 10px; }
+    .run-child-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
+    .run-child { padding: 6px 8px; background: #fafafa; border-radius: 2px; margin-bottom: 4px; font-size: 12px; }
+    .run-child .card-meta { margin-top: 1px; }
+    .status-approved { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #dcfce7; color: #166534; }
+    .status-pending_review, .status-pending { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
+    .status-rejected { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #fee2e2; color: #991b1b; }
+    .status-cancelled { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; }
   </style>
 </head>
 <body>
@@ -140,6 +164,7 @@
   <main>
     <div class="tabs">
       <button class="tab active" data-tab="review">Review <span class="tab-count" id="count-review">0</span></button>
+      <button class="tab" data-tab="runs">By Message <span class="tab-count" id="count-runs">0</span></button>
       <button class="tab" data-tab="senders">Senders <span class="tab-count" id="count-senders">0</span></button>
       <button class="tab" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
@@ -166,6 +191,10 @@
         <div class="review-section-header">Dropped <span id="review-dropped-count"></span></div>
         <div id="review-dropped-list"></div>
       </div>
+    </div>
+
+    <div id="section-runs" class="section">
+      <div id="runs-list"></div>
     </div>
 
     <div id="section-senders" class="section">
@@ -255,7 +284,7 @@
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], pendingCancellations = [], droppedRuns = [], schedules = [], senders = [];
+    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], pendingCancellations = [], droppedRuns = [], schedules = [], senders = [], runs = [];
     let activeJurisdiction = '';
     const headers = { 'Content-Type': 'application/json' };
 
@@ -284,7 +313,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadPendingCancellations(), loadDroppedRuns(), loadSchedules(), loadSenders()]);
+      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadPendingCancellations(), loadDroppedRuns(), loadSchedules(), loadSenders(), loadRuns()]);
       renderAll();
     }
 
@@ -298,6 +327,7 @@
       renderParishList();
       renderScheduleList();
       renderSenders();
+      renderRuns();
       renderParishSelects();
     }
 
@@ -309,6 +339,7 @@
     async function loadDroppedRuns() { droppedRuns = await (await fetch('/api/admin/dropped', { headers })).json(); }
     async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); }
     async function loadSenders() { senders = await (await fetch('/api/admin/senders', { headers })).json(); }
+    async function loadRuns() { runs = await (await fetch('/api/admin/runs?limit=100', { headers })).json(); }
 
     function filteredParishes() {
       if (!activeJurisdiction) return parishes;
@@ -333,6 +364,7 @@
       document.getElementById('count-parishes').textContent = filteredParishes().length;
       document.getElementById('count-schedules').textContent = filteredSchedules().length;
       document.getElementById('count-senders').textContent = senders.length;
+      document.getElementById('count-runs').textContent = runs.length || '';
       const ec = document.getElementById('review-events-count');
       if (ec) ec.textContent = evtCount ? `(${evtCount})` : '';
       const sc = document.getElementById('review-schedules-count');
@@ -591,6 +623,123 @@
     async function deleteDropped(id) {
       const res = await fetch(`/api/admin/dropped/${id}`, { method: 'DELETE', headers });
       if (res.ok) { toast('Deleted'); loadAll(); } else toast('Failed', 'error');
+    }
+
+    // ── By Message (adapter_runs grouped view) ──
+    function activateTab(tabName) {
+      const btn = document.querySelector(`.tab[data-tab="${tabName}"]`);
+      if (!btn) return;
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('section-' + tabName).classList.add('active');
+    }
+
+    function renderRuns() {
+      const c = document.getElementById('runs-list');
+      if (!runs.length) { c.innerHTML = '<div class="empty">No WhatsApp messages yet</div>'; return; }
+      c.innerHTML = runs.map(renderRunCard).join('');
+    }
+
+    function renderRunCard(r) {
+      const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(r.started_at));
+      const inputTexts = (() => { try { return JSON.parse(r.input_texts || '[]'); } catch { return []; } })();
+      const msgText = inputTexts.filter(Boolean).join(' · ');
+      const senderLabel = r.sender_name ? `${esc(r.sender_name)} · +${esc(r.sender_phone || '?')}` : `+${esc(r.sender_phone || '?')}`;
+      const isLow = r.parish_match_confidence === 'low';
+      const confBadge = isLow ? '<span class="conf-low">ambiguous</span>' : '';
+      const statusBadge = r.status && r.status !== 'success' ? `<span class="run-status run-status-${esc(r.status)}">${esc(r.status)}</span>` : '';
+      const pendingN = (r.pending_events_n || 0) + (r.pending_schedules_n || 0) + (r.pending_parish_updates_n || 0) + (r.pending_cancellations_n || 0);
+      const pendingBadge = pendingN ? `<span class="run-pending">${pendingN} pending</span>` : '';
+
+      const parts = [];
+      if (r.events_n) parts.push(`${r.events_n} event${r.events_n > 1 ? 's' : ''}`);
+      if (r.schedules_n) parts.push(`${r.schedules_n} schedule${r.schedules_n > 1 ? 's' : ''}`);
+      if (r.pending_parish_updates_n) parts.push(`${r.pending_parish_updates_n} parish change${r.pending_parish_updates_n > 1 ? 's' : ''}`);
+      if (r.pending_cancellations_n) parts.push(`${r.pending_cancellations_n} cancellation${r.pending_cancellations_n > 1 ? 's' : ''}`);
+      if (r.new_parishes_n) parts.push(`${r.new_parishes_n} new parish${r.new_parishes_n > 1 ? 'es' : ''}`);
+      const summary = parts.length ? parts.join(' · ') : 'No actionable content';
+
+      return `
+        <div class="card run-card ${isLow ? 'warn' : ''}" data-run-id="${r.id}">
+          <div class="card-meta">${dateFmt} · ${senderLabel}</div>
+          <div class="run-badges">${confBadge}${statusBadge}${pendingBadge}</div>
+          ${msgText ? `<div class="source-msg" style="max-height:none;margin-top:6px;">${esc(msgText)}</div>` : ''}
+          <div class="run-summary">${esc(summary)}</div>
+          ${isLow && r.parish_match_question ? `<div class="run-question">${esc(r.parish_match_question)}</div>` : ''}
+          ${r.error_message ? `<div class="run-question" style="background:#fee2e2;color:#991b1b;border-left-color:#ef4444;">${esc(r.error_message)}</div>` : ''}
+          <div class="btn-row">
+            <button class="btn btn-outline" onclick="toggleRunDetail(${r.id})">View details</button>
+          </div>
+          <div class="run-detail" id="run-detail-${r.id}"></div>
+        </div>`;
+    }
+
+    async function toggleRunDetail(runId) {
+      const el = document.getElementById(`run-detail-${runId}`);
+      if (!el) return;
+      if (el.classList.contains('open')) { el.classList.remove('open'); return; }
+      if (!el.dataset.loaded) {
+        el.innerHTML = '<div class="empty" style="padding:12px;">Loading...</div>';
+        try {
+          const detail = await (await fetch(`/api/admin/runs/${runId}`, { headers })).json();
+          el.innerHTML = renderRunDetail(detail);
+          el.dataset.loaded = '1';
+        } catch {
+          el.innerHTML = '<div class="empty" style="padding:12px;">Failed to load</div>';
+        }
+      }
+      el.classList.add('open');
+    }
+
+    function renderRunDetail(d) {
+      const parts = [];
+      if (d.events && d.events.length) {
+        const items = d.events.map(e => {
+          const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(e.start_utc));
+          return `<div class="run-child"><div><strong>${esc(e.title)}</strong> <span class="status-${esc(e.status)}">${esc(e.status)}</span></div><div class="card-meta">${when} · ${esc(e.event_type)} · ${esc(e.parish_name)}</div></div>`;
+        }).join('');
+        parts.push(`<div class="run-child-group"><div class="run-child-header">Events (${d.events.length})</div>${items}</div>`);
+      }
+      if (d.schedules && d.schedules.length) {
+        const items = d.schedules.map(s => `<div class="run-child"><div><strong>${esc(s.title)}</strong> <span class="status-${esc(s.status || 'approved')}">${esc(s.status || 'approved')}</span></div><div class="card-meta">${DAYS[s.day_of_week]} ${esc(s.start_time)} · ${esc(s.parish_name)}</div></div>`).join('');
+        parts.push(`<div class="run-child-group"><div class="run-child-header">Schedules (${d.schedules.length})</div>${items}</div>`);
+      }
+      if (d.parish_updates && d.parish_updates.length) {
+        const items = d.parish_updates.map(pu => {
+          let changes = {}; try { changes = JSON.parse(pu.proposed_changes); } catch {}
+          const isNew = changes && (changes.sets || changes.clears);
+          const setsN = isNew
+            ? Object.keys(changes.sets || {}).length
+            : Object.keys(changes || {}).filter(k => changes[k] != null && changes[k] !== '').length;
+          const clearsN = isNew ? (Array.isArray(changes.clears) ? changes.clears.length : 0) : 0;
+          return `<div class="run-child"><div><strong>${esc(pu.parish_name)}</strong> <span class="status-${esc(pu.status)}">${esc(pu.status)}</span></div><div class="card-meta">${setsN} set${setsN !== 1 ? 's' : ''}${clearsN ? `, ${clearsN} clear${clearsN > 1 ? 's' : ''}` : ''}</div></div>`;
+        }).join('');
+        parts.push(`<div class="run-child-group"><div class="run-child-header">Parish Changes (${d.parish_updates.length})</div>${items}</div>`);
+      }
+      if (d.cancellations && d.cancellations.length) {
+        const items = d.cancellations.map(pc => {
+          const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(pc.event_start_utc));
+          return `<div class="run-child"><div><strong>Cancel: ${esc(pc.event_title)}</strong> <span class="status-${esc(pc.status)}">${esc(pc.status)}</span></div><div class="card-meta">${when} · ${esc(pc.parish_name)}</div></div>`;
+        }).join('');
+        parts.push(`<div class="run-child-group"><div class="run-child-header">Cancellations (${d.cancellations.length})</div>${items}</div>`);
+      }
+      if (d.new_parishes && d.new_parishes.length) {
+        const items = d.new_parishes.map(p => `<div class="run-child"><div><strong>${esc(p.name)}</strong> <span class="status-approved">created</span></div><div class="card-meta">${esc(p.jurisdiction)} · ${esc(p.address || 'No address')}</div></div>`).join('');
+        parts.push(`<div class="run-child-group"><div class="run-child-header">New Parishes (${d.new_parishes.length})</div>${items}</div>`);
+      }
+
+      const rawBlock = d.run && d.run.claude_response
+        ? `<div class="run-child-group"><div class="run-child-header">Raw Claude response</div><div class="raw-response open" style="max-height:none;">${esc(d.run.claude_response)}</div></div>`
+        : '';
+      const reviewHint = (d.events && d.events.some(e => e.status === 'pending_review'))
+        || (d.schedules && d.schedules.some(s => s.status === 'pending_review'))
+        || (d.parish_updates && d.parish_updates.some(pu => pu.status === 'pending'))
+        || (d.cancellations && d.cancellations.some(pc => pc.status === 'pending'))
+        ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">Approve or reject pending items in the <a href="#" onclick="activateTab('review');return false;" style="color:var(--text);text-decoration:underline;">Review</a> tab.</div>`
+        : '';
+      if (!parts.length && !rawBlock) return '<div class="empty" style="padding:12px;">No child rows</div>';
+      return parts.join('') + rawBlock + reviewHint;
     }
 
     // ── Senders ──
@@ -910,7 +1059,22 @@
 
     loadAll().then(() => {
       lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
+      applyDeepLink();
     });
+
+    function applyDeepLink() {
+      const runId = new URLSearchParams(location.search).get('run');
+      if (!runId) return;
+      activateTab('runs');
+      const card = document.querySelector(`[data-run-id="${runId}"]`);
+      if (!card) return;
+      setTimeout(() => {
+        card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        card.classList.add('highlight');
+        setTimeout(() => card.classList.remove('highlight'), 2500);
+        toggleRunDetail(parseInt(runId, 10));
+      }, 150);
+    }
 
     // ── Live-update: poll review endpoints; refresh when counts grow ──
     let lastReviewTotal = -1;
@@ -925,13 +1089,21 @@
     async function pollReview() {
       if (document.visibilityState !== 'visible') return;
       try {
-        const [ev, sc, pu, pcl, dr] = await Promise.all([
+        const [ev, sc, pu, pcl, dr, rn] = await Promise.all([
           fetch('/api/admin/events/pending', { headers }).then(r => r.json()),
           fetch('/api/admin/schedules/pending', { headers }).then(r => r.json()),
           fetch('/api/admin/parish-updates', { headers }).then(r => r.json()),
           fetch('/api/admin/cancellations', { headers }).then(r => r.json()),
           fetch('/api/admin/dropped', { headers }).then(r => r.json()),
+          fetch('/api/admin/runs?limit=100', { headers }).then(r => r.json()),
         ]);
+        // Refresh the By Message view independently — a new run should
+        // appear even if nothing is pending review.
+        if (rn.length !== runs.length) {
+          runs = rn;
+          renderRuns();
+          renderStats();
+        }
         const total = ev.length + sc.length + pu.length + pcl.length + dr.length;
         if (lastReviewTotal < 0) { lastReviewTotal = total; return; }
         if (total > lastReviewTotal) {
