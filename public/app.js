@@ -3455,16 +3455,16 @@ function renderEventDrawerHTML(evt, opts = {}) {
       <a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
       </a>
-      <button class="detail-url" type="button" data-share-id="${evt.id}" aria-label="Copy event link">
-        <span class="detail-url-text">orthodoxy.au/${evt.id}</span>
-        <img class="detail-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
-      </button>
       ${watchLiveCta}
       ${serviceBookCta}
       ${adminActions}
     </div>
     ${posterHtml}
-    ${editForm}`;
+    ${editForm}
+    <button class="detail-url" type="button" data-share-id="${evt.id}" aria-label="Copy event link">
+      <span class="detail-url-text">orthodoxy.au/${evt.id}</span>
+      <img class="detail-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+    </button>`;
 }
 
 function wireEventDrawer(drawer, evt) {
