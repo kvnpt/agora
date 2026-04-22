@@ -88,6 +88,19 @@ function bufferMessage(message) {
     return;
   }
 
+  // Admin keyword fast-path: skip ACK, skip batch window, reply immediately.
+  if (msgType === 'text') {
+    const kw = (message.text?.body || '').trim().toLowerCase();
+    if (['admin', 'login', 'link', 'access'].includes(kw)) {
+      const senderRecord = getOrCreateSender(sender);
+      if (senderRecord.role === 'admin') {
+        const { generateAdminToken } = require('./magic-auth');
+        sendText(sender, 'Your Agora admin link:\n' + generateAdminToken(sender, null)).catch(() => {});
+        return;
+      }
+    }
+  }
+
   if (!senderBuffers.has(sender)) {
     senderBuffers.set(sender, { messages: [], seenIds: new Set(), timer: null });
     // ACK on the first message of a new batch window. Fire-and-forget so a
