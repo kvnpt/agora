@@ -67,9 +67,58 @@ router.get('/auth/check', (req, res) => {
   res.sendStatus(401);
 });
 
-// GET /auth/magic — token redemption. Single-use; sets session cookie on success.
+// GET /auth/magic — validates token only; returns auto-submitting page.
+// Preview bots (WhatsApp, iMessage, etc.) fetch this URL but don't execute JS,
+// so the token is NOT consumed. Real browsers auto-submit the hidden form after
+// 300ms and land on POST /auth/magic which does the actual redemption.
 router.get('/auth/magic', (req, res) => {
   const { t: token, next } = req.query;
+  if (!token) return res.status(400).send('Missing token.');
+
+  const db = getDb();
+  const row = db.prepare(
+    "SELECT 1 FROM admin_magic_tokens WHERE token = ? AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now') AND used_at IS NULL"
+  ).get(token);
+
+  const safeToken = token.replace(/[^a-f0-9]/gi, '');
+  const safeNext = next ? encodeURIComponent(decodeURIComponent(next)) : encodeURIComponent('/admin');
+
+  if (!row) {
+    return res.status(200).send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link expired</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
+.card{background:#fff;border-radius:12px;padding:2rem 2.5rem;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center;max-width:340px}
+p{color:#555;margin:.5rem 0 0}</style>
+</head><body><div class="card">
+<p>This link has already been used or has expired.</p>
+<p>Text the bot <strong>admin</strong> to request a new one.</p>
+</div></body></html>`);
+  }
+
+  res.send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logging in…</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
+.card{background:#fff;border-radius:12px;padding:2rem 2.5rem;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center;max-width:340px}
+p{color:#555;margin:.5rem 0 0}</style>
+</head><body><div class="card">
+<p>Logging you in…</p>
+</div>
+<form id="f" method="POST" action="/auth/magic">
+  <input type="hidden" name="t" value="${safeToken}">
+  <input type="hidden" name="next" value="${safeNext}">
+</form>
+<script>setTimeout(function(){document.getElementById('f').submit();},300);</script>
+</body></html>`);
+});
+
+// POST /auth/magic — actual token redemption. Sets session cookie on success.
+router.post('/auth/magic', (req, res) => {
+  const token = req.body && req.body.t;
+  const next = req.body && req.body.next;
   if (!token) return res.status(400).send('Missing token.');
 
   const db = getDb();
@@ -78,9 +127,17 @@ router.get('/auth/magic', (req, res) => {
   ).get(token);
 
   if (!row) {
-    return res.status(200).send(
-      'This link has already been used or has expired. Text the bot ‘admin’ to request a new one.'
-    );
+    return res.status(200).send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link expired</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
+.card{background:#fff;border-radius:12px;padding:2rem 2.5rem;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center;max-width:340px}
+p{color:#555;margin:.5rem 0 0}</style>
+</head><body><div class="card">
+<p>This link has already been used or has expired.</p>
+<p>Text the bot <strong>admin</strong> to request a new one.</p>
+</div></body></html>`);
   }
 
   db.prepare(
