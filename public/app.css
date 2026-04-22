@@ -693,6 +693,7 @@ input, select, textarea {
 .badge-cancelled { background: #f0f0f0; color: #888; }
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
 .badge-combined { background: #ccf0f0; color: #0e7070; }
+.own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
 .badge-live { background: #ef4444; color: #fff; display: inline-flex; align-items: center; gap: 4px; }
 .badge-live .live-dot { background: #fff; }
 .badge-live-soon { background: #fee2e2; color: #b91c1c; }

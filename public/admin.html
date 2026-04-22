@@ -170,6 +170,7 @@
     .modal-event-label { font-size: 12px; line-height: 1.4; }
     .modal-event-label small { display: block; color: var(--muted); font-size: 11px; }
     .modal-parish-grid { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
+    .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
     .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   </style>
 </head>
@@ -498,7 +499,7 @@
                 data-etitle="${esc(evt.title)}"
                 data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
                 data-eparish="${esc(evt.parish_id)}"
-                onclick="openEscalateModal(this)">Escalate…</button>
+                onclick="openEscalateModal(this)">Absorb…</button>
             </div>
           </div>`;
       }).join('');
@@ -559,18 +560,21 @@
 
       const grid = document.getElementById('escalate-parish-grid');
       const homeJurisdiction = (parishes.find(p => p.id === primaryParish) || {}).jurisdiction || '';
-      grid.innerHTML = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').sort((a, b) => {
+      const ownP = parishes.find(p => p.id === primaryParish);
+      const otherPs = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').sort((a, b) => {
         const ah = a.jurisdiction === homeJurisdiction ? 0 : 1;
         const bh = b.jurisdiction === homeJurisdiction ? 0 : 1;
         return ah - bh || a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name);
-      }).map(p => `
+      });
+      const allPs = ownP ? [{ ...ownP, _isOwn: true }, ...otherPs] : otherPs;
+      grid.innerHTML = allPs.map(p => `
         <label class="modal-event-item">
-          <input type="checkbox" value="${esc(p.id)}" onchange="_renderEscalateEventList()">
-          <span class="modal-event-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>
+          <input type="checkbox" value="${esc(p.id)}"${p._isOwn ? ' checked data-own="1"' : ''} onchange="_renderEscalateEventList()">
+          <span class="modal-event-label">${esc(p.name)}${p._isOwn ? '<em class="own-tag">own</em>' : ''}<small>${esc(p.jurisdiction)}</small></span>
         </label>`).join('');
 
       const list = document.getElementById('escalate-event-list');
-      list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Select parishes above to see replaceable events</div>';
+      list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Loading…</div>';
 
       Promise.all([
         fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${escalateEventId}`, { headers }).then(r => r.json()),
@@ -598,7 +602,7 @@
 
     async function confirmEscalate() {
       if (!escalateEventId) return;
-      const additive_parish_ids = [...document.querySelectorAll('#escalate-parish-grid input:checked')].map(cb => cb.value);
+      const additive_parish_ids = [...document.querySelectorAll('#escalate-parish-grid input:checked:not([data-own])')].map(cb => cb.value);
       const replaced_event_ids = [...document.querySelectorAll('#escalate-event-list input:checked')].map(cb => Number(cb.value));
 
       const btn = document.getElementById('escalate-confirm-btn');

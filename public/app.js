@@ -3372,7 +3372,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>` : ''}
         ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>` : ''}
         <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>
-        <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Escalate…</button>
+        <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Absorb…</button>
       </div>
       <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
   }
@@ -3699,21 +3699,25 @@ window.openPublicEscalateModal = function(id) {
 
   const parishList = document.getElementById('escalate-pub-parishes');
   const homeJurisdiction = evt.jurisdiction || '';
+  const ownParish = state.parishes.find(p => p.id === evt.parish_id);
   const others = state.parishes.filter(p => p.id !== evt.parish_id && p.id !== '_unassigned').sort((a, b) => {
     const ah = a.jurisdiction === homeJurisdiction ? 0 : 1;
     const bh = b.jurisdiction === homeJurisdiction ? 0 : 1;
     return ah - bh || a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name);
   });
-  parishList.innerHTML = others.length
-    ? others.map(p => {
+  const allParishes = ownParish ? [{ ...ownParish, _isOwn: true }, ...others] : others;
+  parishList.innerHTML = allParishes.length
+    ? allParishes.map(p => {
         const label = document.createElement('label');
         label.className = 'escalate-item';
-        label.innerHTML = `<input type="checkbox" value="${esc(p.id)}" onchange="_renderPubEscalateEventList()"><span class="escalate-item-label">${esc(p.name)}<small>${esc(p.jurisdiction)}</small></span>`;
+        const ownAttr = p._isOwn ? ' checked data-own="1"' : '';
+        const ownTag = p._isOwn ? '<em class="own-tag">own</em>' : '';
+        label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"${ownAttr} onchange="_renderPubEscalateEventList()"><span class="escalate-item-label">${esc(p.name)}${ownTag}<small>${esc(p.jurisdiction)}</small></span>`;
         return label.outerHTML;
       }).join('')
-    : '<div class="escalate-empty">No other parishes</div>';
+    : '<div class="escalate-empty">No parishes</div>';
 
-  document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Select parishes above to see replaceable events</div>';
+  document.getElementById('escalate-pub-events').innerHTML = '<div class="escalate-empty">Loading…</div>';
 
   Promise.all([
     fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${id}`).then(r => r.json()),
@@ -3745,7 +3749,7 @@ window.closePublicEscalateModal = function() {
 
 window.confirmPublicEscalate = async function() {
   if (!_escalatePubEventId) return;
-  const additive_parish_ids = [...document.querySelectorAll('#escalate-pub-parishes input:checked')].map(cb => cb.value);
+  const additive_parish_ids = [...document.querySelectorAll('#escalate-pub-parishes input:checked:not([data-own])')].map(cb => cb.value);
   const replaced_event_ids = [...document.querySelectorAll('#escalate-pub-events input:checked')].map(cb => Number(cb.value));
   const btn = document.getElementById('escalate-pub-confirm');
   btn.disabled = true;
