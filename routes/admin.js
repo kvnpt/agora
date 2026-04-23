@@ -704,6 +704,18 @@ router.get('/dropped', (req, res) => {
       AND NOT EXISTS (SELECT 1 FROM pending_parish_updates ppu WHERE ppu.source_run_id = adapter_runs.id)
       AND NOT EXISTS (SELECT 1 FROM pending_cancellations pc WHERE pc.source_run_id = adapter_runs.id)
       AND NOT EXISTS (SELECT 1 FROM parishes p WHERE p.source_run_id = adapter_runs.id)
+      AND NOT (
+        json_array_length(input_texts) = 1
+        AND length(json_extract(input_texts, '$[0]')) <= 20
+        AND EXISTS (
+          SELECT 1 FROM adapter_runs r2
+          WHERE r2.adapter_id = 'whatsapp-webhook'
+            AND r2.sender_phone = adapter_runs.sender_phone
+            AND r2.parish_match_confidence = 'low'
+            AND r2.started_at < adapter_runs.started_at
+            AND r2.started_at > datetime(adapter_runs.started_at, '-24 hours')
+        )
+      )
     ORDER BY started_at DESC
     LIMIT 50
   `).all();

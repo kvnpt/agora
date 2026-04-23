@@ -306,7 +306,9 @@ async function processBatch(sender, messages) {
     const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
     // Low-confidence parish match overrides trust: never auto-apply; route
     // all downstream outputs to pending_review and send sender a clarifier.
-    const ambiguous = result.parish_match_confidence === 'low';
+    // new_parish populated means intent is clear — don't trigger clarifier
+    // even if Haiku also reported low confidence.
+    const ambiguous = result.parish_match_confidence === 'low' && !result.new_parish;
     const effectiveStatus = ambiguous ? 'review' : senderRecord.status;
     const eventStatus = effectiveStatus === 'approved' ? 'approved' : 'pending_review';
 
