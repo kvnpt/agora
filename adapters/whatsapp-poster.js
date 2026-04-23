@@ -120,7 +120,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
    * @param {string[]} opts.texts - Text messages and captions
    * @returns {{ events: Array, inferred_parish: string|null }}
    */
-  async parseMessage({ images = [], texts = [], upcomingEvents = [] }) {
+  async parseMessage({ images = [], texts = [], upcomingEvents = [], clarifierContext = null }) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
 
@@ -204,7 +204,15 @@ ${parishList}
 
 UPCOMING EVENTS (next 14 days, Sydney local time, grouped by parish id):
 ${upcomingList}
+${clarifierContext ? `
+CLARIFIER IN PROGRESS: A previous message from this sender was ambiguous. The system asked a clarifying question and the sender's current message is their answer. Resolve the original message using that answer.
 
+Previous message(s): ${clarifierContext.originalTexts.map(t => `"${t}"`).join(' | ')}
+Question asked: "${clarifierContext.question}"
+Sender's answer (current message): ${texts.map(t => `"${t}"`).join(' | ')}
+
+Use the original message(s) and the answer together. Do not treat the answer text as a standalone new message.
+` : ''}
 TASKS:
 1. Identify which parish the message relates to. Use the known list as ground truth and apply the rules below strictly — users rely on natural-language shorthand, so match confidently when signals align and create confidently when they don't.
    - MATCH an existing row when its distinctive tokens (patronage like "St George", type like "Monastery/Cathedral/Parish", plus suburb or jurisdiction) uniquely identify exactly one row. Human messages paraphrase (e.g. "St George monastery" = "Holy Monastery of St George, Yellow Rock" — the only monastery among St George parishes, so match it).

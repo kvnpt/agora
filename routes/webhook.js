@@ -266,7 +266,31 @@ async function processBatch(sender, messages) {
       ORDER BY parish_id, start_utc
     `).all();
 
-    const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents });
+    // If this is a text-only batch, check for a recent low-confidence run
+    // still unresolved (no output). The new texts are likely the sender's
+    // answer to that clarifier — pass the original context to Haiku so it
+    // can interpret the answer correctly.
+    let clarifierContext = null;
+    if (images.length === 0) {
+      const pendingLow = db.prepare(`
+        SELECT input_texts, parish_match_question FROM adapter_runs
+        WHERE adapter_id = 'whatsapp-webhook'
+          AND sender_phone = ?
+          AND parish_match_confidence = 'low'
+          AND events_created = 0
+          AND status = 'success'
+          AND started_at > datetime('now', '-24 hours')
+        ORDER BY started_at DESC LIMIT 1
+      `).get(sender);
+      if (pendingLow && pendingLow.parish_match_question) {
+        clarifierContext = {
+          originalTexts: JSON.parse(pendingLow.input_texts || '[]'),
+          question: pendingLow.parish_match_question,
+        };
+      }
+    }
+
+    const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
     // Low-confidence parish match overrides trust: never auto-apply; route
     // all downstream outputs to pending_review and send sender a clarifier.
     const ambiguous = result.parish_match_confidence === 'low';
