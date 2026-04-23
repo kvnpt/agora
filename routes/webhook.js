@@ -273,15 +273,28 @@ async function processBatch(sender, messages) {
     let clarifierContext = null;
     if (images.length === 0) {
       const pendingLow = db.prepare(`
-        SELECT input_texts, parish_match_question FROM adapter_runs
-        WHERE adapter_id = 'whatsapp-webhook'
-          AND sender_phone = ?
-          AND parish_match_confidence = 'low'
-          AND events_created = 0
-          AND status = 'success'
-          AND started_at > datetime('now', '-24 hours')
-        ORDER BY started_at DESC LIMIT 1
-      `).get(sender);
+        SELECT r.input_texts, r.parish_match_question FROM adapter_runs r
+        WHERE r.adapter_id = 'whatsapp-webhook'
+          AND r.sender_phone = ?
+          AND r.parish_match_confidence = 'low'
+          AND r.events_created = 0
+          AND r.status = 'success'
+          AND r.started_at > datetime('now', '-24 hours')
+          AND NOT EXISTS (
+            SELECT 1 FROM adapter_runs r2
+            WHERE r2.adapter_id = 'whatsapp-webhook'
+              AND r2.sender_phone = ?
+              AND r2.started_at > r.started_at
+              AND (
+                r2.events_created > 0
+                OR EXISTS (SELECT 1 FROM schedules s       WHERE s.source_run_id = r2.id)
+                OR EXISTS (SELECT 1 FROM pending_parish_updates ppu WHERE ppu.source_run_id = r2.id)
+                OR EXISTS (SELECT 1 FROM pending_cancellations pc  WHERE pc.source_run_id = r2.id)
+                OR EXISTS (SELECT 1 FROM parishes p         WHERE p.source_run_id = r2.id)
+              )
+          )
+        ORDER BY r.started_at DESC LIMIT 1
+      `).get(sender, sender);
       if (pendingLow && pendingLow.parish_match_question) {
         clarifierContext = {
           originalTexts: JSON.parse(pendingLow.input_texts || '[]'),
