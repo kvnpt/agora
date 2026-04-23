@@ -45,11 +45,13 @@ router.get('/auth/check', (req, res) => {
   }
 
   const adminPhone = req.session && req.session.adminPhone;
+  console.log(`[auth-check] sid=${req.sessionID} phone=${adminPhone || 'none'} cookie=${req.headers.cookie ? 'present' : 'absent'}`);
   if (adminPhone) {
     const db = getDb();
     const row = db.prepare(
       'SELECT id, last_seen_at FROM admin_sessions WHERE session_sid = ? AND revoked = 0'
     ).get(req.sessionID);
+    console.log(`[auth-check] admin_sessions lookup sid=${req.sessionID} found=${!!row}`);
     if (row) {
       // Throttle last_seen_at writes to once per minute per session
       const now = Date.now();
