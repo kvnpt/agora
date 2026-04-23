@@ -11,6 +11,10 @@ const scheduler = require('./scheduler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Caddy's X-Forwarded-Proto so req.secure = true on HTTPS requests.
+// Required for express-session to send Secure cookies through a reverse proxy.
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
