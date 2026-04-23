@@ -81,6 +81,7 @@ function updateMap(state, opts = {}) {
     lng: p.lng,
     name: p.name,
     color: p.color || '#000',
+    logo: p.logo_path || null,
     website: p.website || '',
     active: activeParishIds.has(p.id),
     events: eventsByParish[p.id] || []
@@ -130,13 +131,17 @@ function addLabeledMarkers(locations, TZ, focusId) {
     // No sheet open: original active/inactive logic.
     const opacity = isFocus ? 1.0 : (hasFocus ? 0.15 : (loc.active ? 1.0 : 0.25));
 
-    const size = isFocus ? 16 : (loc.active ? 10 : 8);
+    const focusLogo = isFocus && loc.logo;
+    const size = focusLogo ? 32 : (isFocus ? 16 : (loc.active ? 10 : 8));
     const hitSize = isFocus ? 44 : (loc.active ? 36 : 24);
     const borderWidth = isFocus ? 2.5 : 1.5;
+    const innerHtml = focusLogo
+      ? `<img src="${loc.logo}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:0 2px 10px rgba(0,0,0,0.25);">`
+      : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:${isFocus ? '0 2px 10px rgba(0,0,0,0.25)' : 'none'};"></div>`;
     const dot = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({
         className: '',
-        html: `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;"><div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:${isFocus ? '0 2px 10px rgba(0,0,0,0.25)' : 'none'};"></div></div>`,
+        html: `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;">${innerHtml}</div>`,
         iconSize: [hitSize, hitSize],
         iconAnchor: [hitSize / 2, hitSize / 2]
       }),

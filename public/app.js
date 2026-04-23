@@ -2253,7 +2253,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     : '';
   contentEl.innerHTML = `
     <div class="ps-header">
-      <div class="ps-avatar" style="background:${esc(color)};--parish-glow:${esc(hexToRgba(color, 0.45))}">${esc(initial)}</div>
+      <div class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}</div>
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
@@ -3194,19 +3194,20 @@ function renderServices() {
     for (const { pid, grp: { info, items } } of pgs) {
       const pColor = info.parish_color || jColor;
       const initial = (info.parish_name || '?')[0].toUpperCase();
+      const parish = state.parishes.find(p => p.id === pid);
       // Distance chip: same intensity tiers as event list (near ≤5, mid ≤15, far).
       let distHtml = '';
-      if (state.locationActive) {
-        const parish = state.parishes.find(p => p.id === pid);
-        if (parish && parish.lat && parish.lng) {
-          const km = haversineKm(state.userLat, state.userLng, parish.lat, parish.lng);
-          const cls = km <= 5 ? 'distance-near' : km <= 15 ? 'distance-mid' : 'distance-far';
-          distHtml = `<span class="parish-schedule-dist ${cls}">${km.toFixed(1)} km</span>`;
-        }
+      if (state.locationActive && parish && parish.lat && parish.lng) {
+        const km = haversineKm(state.userLat, state.userLng, parish.lat, parish.lng);
+        const cls = km <= 5 ? 'distance-near' : km <= 15 ? 'distance-mid' : 'distance-far';
+        distHtml = `<span class="parish-schedule-dist ${cls}">${km.toFixed(1)} km</span>`;
       }
+      const hasLogo = !!(parish && parish.logo_path);
+      const avatarInner = hasLogo ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial);
+      const avatarStyle = hasLogo ? '' : ` style="background:${esc(pColor)}"`;
       html += `<div class="parish-schedule" data-parish-id="${esc(pid)}">`;
       html += `<div class="parish-schedule-head">`;
-      html += `<div class="parish-schedule-avatar" style="background:${esc(pColor)}">${esc(initial)}</div>`;
+      html += `<div class="parish-schedule-avatar"${avatarStyle}>${avatarInner}</div>`;
       html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
       html += distHtml;
       html += `</div>`;
@@ -3420,9 +3421,12 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const color = parish.color || '#666';
     const juris = capitalize(parish.jurisdiction || '');
     const heroTime = formatEventTime(start);
+    const hasLogo = !!parish.logo_path;
+    const avatarInner = hasLogo ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial);
+    const avatarStyle = hasLogo ? '' : ` style="background:${esc(color)}"`;
     const parishRow = opts.suppressParishHeader ? '' : `
       <button type="button" class="event-drawer-parish-btn" data-parish-id="${esc(parish.id)}">
-        <span class="event-drawer-avatar" style="background:${esc(color)}">${esc(initial)}</span>
+        <span class="event-drawer-avatar"${avatarStyle}>${avatarInner}</span>
         <span class="edp-text">
           <span class="edp-name">${esc(parish.name)}</span>
           <span class="edp-juris">${esc(juris)} Orthodox</span>
