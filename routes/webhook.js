@@ -277,9 +277,12 @@ async function processBatch(sender, messages) {
     let parishChangesN = 0;
     let newParishCreated = false;
 
-    // Handle new parish creation
-    let parishId = resolveParish(db, result.inferred_parish) || '_unassigned';
-    if (!resolveParish(db, result.inferred_parish) && result.new_parish) {
+    // new_parish takes priority over inferred_parish when both are present
+    // (prompt says they're mutually exclusive, but confabulation can set both).
+    let parishId = result.new_parish
+      ? '_unassigned'
+      : (resolveParish(db, result.inferred_parish) || '_unassigned');
+    if (result.new_parish) {
       const np = result.new_parish;
       const newId = (np.jurisdiction || 'other') + '-' + (np.name || 'unknown').toLowerCase()
         .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
