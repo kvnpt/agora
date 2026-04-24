@@ -2085,16 +2085,78 @@ function initParishSheet() {
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     engageDrag(y);
   }
+  // Axis-locked drag from the parish header. Mirrors mode-bar behaviour on
+  // the main sheet: empty header space starts drag immediately; touches on
+  // buttons/links defer until the gesture's dominant axis is known so taps
+  // still fire as clicks while vertical flicks drag the sheet.
+  let headerPending = false;
+  let headerPX = 0, headerPY = 0;
+  let headerSwallowClick = false;
+  const HEADER_THRESHOLD = 8;
+
+  function onHeaderStart(e) {
+    const headerEl = e.target.closest('.ps-header');
+    if (!headerEl) return;
+    const t = e.touches ? e.touches[0] : e;
+    const onInteractive = e.target.closest('button, a, .pill, .ps-filters-menu');
+    // Stop the touchstart from bubbling to the scroll container so it
+    // doesn't enter its own deciding-state machine while we own the gesture.
+    e.stopPropagation();
+    if (!onInteractive) {
+      if (e.cancelable) e.preventDefault();
+      engageDrag(t.clientY);
+      return;
+    }
+    headerPending = true;
+    headerPX = t.clientX;
+    headerPY = t.clientY;
+  }
+
   function onDocMove(e) {
+    if (headerPending) {
+      const t = e.touches ? e.touches[0] : e;
+      const dx = t.clientX - headerPX;
+      const dy = t.clientY - headerPY;
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      if (adx > HEADER_THRESHOLD || ady > HEADER_THRESHOLD) {
+        headerPending = false;
+        if (ady > adx) {
+          headerSwallowClick = true;
+          engageDrag(headerPY);
+        }
+      }
+    }
     if (!dragging) return;
     if (e.cancelable) e.preventDefault();
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     moveDrag(y);
   }
-  function onDocEnd() { if (dragging) endDrag(); }
+  function onDocEnd() {
+    headerPending = false;
+    if (dragging) endDrag();
+    if (headerSwallowClick) setTimeout(() => { headerSwallowClick = false; }, 400);
+  }
 
   handle.addEventListener('mousedown', onHandleStart);
   handle.addEventListener('touchstart', onHandleStart, { passive: false });
+  // Delegate header drag via the stable #parish-sheet-content wrapper so it
+  // survives the innerHTML swap that renderParishSheetContent performs each
+  // time the card is rebuilt.
+  const contentEl = document.getElementById('parish-sheet-content');
+  if (contentEl) {
+    contentEl.addEventListener('mousedown', onHeaderStart);
+    contentEl.addEventListener('touchstart', onHeaderStart, { passive: false });
+    // Eat the synthetic click emitted after a header-initiated drag so the
+    // underlying button (filters, URL-copy) doesn't fire on release.
+    contentEl.addEventListener('click', e => {
+      if (!e.target.closest('.ps-header')) return;
+      if (headerSwallowClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        headerSwallowClick = false;
+      }
+    }, true);
+  }
   document.addEventListener('mousemove', onDocMove);
   document.addEventListener('touchmove', onDocMove, { passive: false });
   document.addEventListener('mouseup', onDocEnd);
