@@ -32,6 +32,18 @@ function initMap(state) {
   map.on('click', () => {
     if (window.agoraClearParishFocus) window.agoraClearParishFocus();
   });
+
+  // Debounced viewport hook — narrows the event list to parishes whose pin
+  // is inside the current bounds. 150ms trailing debounce keeps panning smooth.
+  let viewportDebounce = null;
+  map.on('moveend', () => {
+    clearTimeout(viewportDebounce);
+    viewportDebounce = setTimeout(() => {
+      if (window.agoraOnViewportChange) window.agoraOnViewportChange();
+    }, 150);
+  });
+  // Seed the first viewport after the map settles.
+  setTimeout(() => { if (window.agoraOnViewportChange) window.agoraOnViewportChange(); }, 150);
 }
 
 function updateMap(state, opts = {}) {

@@ -29,7 +29,8 @@ const state = {
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
   eventsSort: 'time',  // 'time' | 'nearby'
-  parishFocus: null  // parish ID when focused, null when browsing
+  parishFocus: null,  // parish ID when focused, null when browsing
+  viewportParishIds: null  // Set of parish IDs inside current map bounds; null until first moveend
 };
 
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
@@ -466,6 +467,110 @@ function centerMapOnUser() {
   if (!window.agoraMap || state.userLat == null || state.userLng == null) return;
   window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.9 });
 }
+
+// Recompute the set of parishes inside the current map bounds. Fired by
+// map.js's debounced moveend hook; also seeded once at startup.
+function recomputeViewportParishIds() {
+  if (!window.agoraMap) return;
+  const b = window.agoraMap.getBounds();
+  const ids = new Set();
+  for (const p of state.parishes) {
+    if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
+    if (b.contains([p.lat, p.lng])) ids.add(p.id);
+  }
+  state.viewportParishIds = ids;
+  // Don't fit — the user just moved the map, we don't want to fight them.
+  renderCurrentView();
+}
+window.agoraOnViewportChange = recomputeViewportParishIds;
+
+// Find the nearest parish (to user or map centre) that satisfies a predicate.
+// Used by the empty-state CTAs: "show nearest parish" = any parish;
+// "find nearest matching" = one whose events survive the current filters.
+function findNearestParishWhere(predicate) {
+  const originLat = state.locationActive ? state.userLat
+    : (window.agoraMap ? window.agoraMap.getCenter().lat : state.userLat);
+  const originLng = state.locationActive ? state.userLng
+    : (window.agoraMap ? window.agoraMap.getCenter().lng : state.userLng);
+  let best = null;
+  let bestKm = Infinity;
+  for (const p of state.parishes) {
+    if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
+    if (!predicate(p)) continue;
+    const km = haversineKm(originLat, originLng, p.lat, p.lng);
+    if (km < bestKm) { bestKm = km; best = p; }
+  }
+  return best;
+}
+
+// Handlers for empty-state CTA buttons. Widen the map to include the nearest
+// (matching) parish and the origin; the moveend hook will re-compute the
+// viewport set and the list will repopulate.
+function handleEmptyStateCta(action) {
+  const matchingPred = p => state.events.some(e =>
+    (e.parish_id === p.id || (e.extra_parishes && e.extra_parishes.includes(p.id)))
+  );
+  const passesNonViewport = p => applyNonViewportFilters(
+    state.events.filter(e => e.parish_id === p.id || (e.extra_parishes && e.extra_parishes.includes(p.id)))
+  ).length > 0;
+
+  let target = null;
+  if (action === 'show-nearest-parish') target = findNearestParishWhere(matchingPred);
+  else if (action === 'find-matching-parish') target = findNearestParishWhere(passesNonViewport);
+  if (!target) return;
+
+  const originLat = state.locationActive ? state.userLat
+    : (window.agoraMap ? window.agoraMap.getCenter().lat : state.userLat);
+  const originLng = state.locationActive ? state.userLng
+    : (window.agoraMap ? window.agoraMap.getCenter().lng : state.userLng);
+  if (window.agoraMap) {
+    const bounds = L.latLngBounds([[originLat, originLng], [target.lat, target.lng]]).pad(0.25);
+    window.agoraMap.fitBounds(bounds, { maxZoom: 13, animate: true, duration: 0.6 });
+  }
+}
+window.agoraEmptyStateCta = handleEmptyStateCta;
+
+// Build the empty-state block with a context-aware CTA. Three branches:
+// - viewport holds no parishes → offer to jump to the nearest one
+// - viewport holds parishes but social/english filter wipes all their events
+//   → offer to jump to the nearest parish that satisfies those filters
+// - neither (true empty / all-parish jurisdiction filter with no events)
+//   → static ornament only, no CTA
+function renderEmptyStateHTML() {
+  const explicitParish = !!state.filters.parishIds;
+  const viewportVisible = state.viewportParishIds instanceof Set;
+  const viewportEmpty = viewportVisible && state.viewportParishIds.size === 0 && !explicitParish;
+
+  let filtersExcluding = false;
+  if (!viewportEmpty && viewportVisible && !explicitParish
+      && (state.filters.socialOnly || state.filters.englishOnly)) {
+    const vp = state.viewportParishIds;
+    const eventsInViewport = state.events.filter(e =>
+      vp.has(e.parish_id) || (e.extra_parishes && e.extra_parishes.some(pid => vp.has(pid)))
+    );
+    filtersExcluding = eventsInViewport.length > 0 && applyNonViewportFilters(eventsInViewport).length === 0;
+  }
+
+  let headline = 'Nothing upcoming';
+  let cta = '';
+  if (viewportEmpty) {
+    headline = 'No parishes in this area';
+    cta = `<button class="empty-state-cta" data-cta="show-nearest-parish" type="button">Show nearest parish</button>`;
+  } else if (filtersExcluding) {
+    const label = state.filters.socialOnly ? 'socials' : 'English-friendly services';
+    headline = `No ${label} in this area`;
+    cta = `<button class="empty-state-cta" data-cta="find-matching-parish" type="button">Find nearest match</button>`;
+  }
+  return `<div class="empty-state"><span class="empty-ornament">✦</span><h3>${esc(headline)}</h3>${cta}</div>`;
+}
+
+// Delegate empty-state CTA clicks — fires on either services-list or events
+// container since both host the empty-state block.
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-cta]');
+  if (!btn) return;
+  handleEmptyStateCta(btn.dataset.cta);
+});
 
 // ── Geolocation ──
 function loadCachedLocation() {
@@ -1307,7 +1412,10 @@ function clearParishFocus() {
 window.agoraClearParishFocus = clearParishFocus;
 
 // ── Apply client-side filters ──
-function applyFilters(events) {
+// Non-viewport filters — explicit parish pick + parish-scoped + social + english.
+// Split out so empty-state CTAs can ask "would this event pass if the user
+// zoomed out far enough?" without re-implementing every axis.
+function applyNonViewportFilters(events) {
   let filtered = events;
   // Parish-scoped events: only visible when the user has filtered to exactly
   // one parish AND that parish is the event's parish. Operational entries
@@ -1339,6 +1447,19 @@ function applyFilters(events) {
       if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
       return langs.some(l => /english/i.test(l));
     });
+  }
+  return filtered;
+}
+
+function applyFilters(events) {
+  let filtered = applyNonViewportFilters(events);
+  // Viewport axis — only applies when the user has NOT made an explicit parish
+  // pick. Keeps pill taps / URL-scoped views visible even when off-screen.
+  if (!state.filters.parishIds && state.viewportParishIds) {
+    const vp = state.viewportParishIds;
+    filtered = filtered.filter(e =>
+      vp.has(e.parish_id) || (e.extra_parishes && e.extra_parishes.some(pid => vp.has(pid)))
+    );
   }
   return filtered;
 }
@@ -2879,7 +3000,7 @@ function renderStream(container, events) {
   if (future.length) {
     html += renderFutureDays(future);
   } else if (!hasToday) {
-    html += '<div class="empty-state"><span class="empty-ornament">✦</span><h3>Nothing upcoming</h3></div>';
+    html += renderEmptyStateHTML();
   }
 
   html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
@@ -3141,6 +3262,8 @@ function renderServices() {
   let schedules = state.schedules;
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));
+  } else if (state.viewportParishIds) {
+    schedules = schedules.filter(s => state.viewportParishIds.has(s.parish_id));
   }
   if (state.filters.englishOnly) {
     schedules = schedules.filter(s => {
@@ -3153,7 +3276,7 @@ function renderServices() {
 
   let html = '';
   if (!schedules.length) {
-    html = '<div class="empty-state"><span class="empty-ornament">✦</span><h3>No services listed</h3></div>';
+    html = renderEmptyStateHTML();
   }
 
   const byParish = new Map();

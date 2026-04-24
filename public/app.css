@@ -1379,6 +1379,20 @@ input, select, textarea {
 .empty-state p {
   font-size: 12px;
 }
+.empty-state-cta {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--accent, #2c6cb4);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+.empty-state-cta:active { opacity: 0.85; }
 /* Pull View more closer when nothing is on today. */
 .empty-state + .list-footer {
   padding-top: 4px;
