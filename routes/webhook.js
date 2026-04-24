@@ -2,7 +2,7 @@ const { Router } = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { getDb } = require('../db');
+const { getDb, syncEventCoordsForParish } = require('../db');
 const { geocode } = require('../geocode');
 const { sendText } = require('../adapters/whatsapp-send');
 
@@ -341,6 +341,7 @@ async function processBatch(sender, messages) {
           geocode(np.address).then(coords => {
             if (coords) {
               db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, newId);
+              syncEventCoordsForParish(db, newId);
               console.log(`[webhook] Geocoded new parish ${newId}: ${coords.lat}, ${coords.lng}`);
             }
           });
@@ -392,6 +393,7 @@ async function processBatch(sender, messages) {
             geocode(sets.address).then(coords => {
               if (coords) {
                 db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, parishId);
+                syncEventCoordsForParish(db, parishId);
                 console.log(`[webhook] Geocoded parish ${parishId}: ${coords.lat}, ${coords.lng}`);
               }
             });

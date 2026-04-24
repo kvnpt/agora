@@ -485,6 +485,7 @@ function requestGeolocation(callback) {
       state.userLng = pos.coords.longitude;
       localStorage.setItem('agora_location', JSON.stringify({ lat: state.userLat, lng: state.userLng }));
       state.locationActive = true;
+      if (window.agoraUpdateUserLocation) window.agoraUpdateUserLocation(state.userLat, state.userLng);
       // Always re-fetch events with fresh coords so distance_km is current
       fetchEvents().then(() => {
         if (callback) callback();

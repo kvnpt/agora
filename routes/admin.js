@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { getDb } = require('../db');
+const { getDb, syncEventCoordsForParish } = require('../db');
 const { geocode } = require('../geocode');
 const path = require('path');
 const fs = require('fs');
@@ -262,11 +262,17 @@ router.patch('/parishes/:id', (req, res) => {
   values.push(id);
   db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
+  // If lat/lng were updated directly, resync dependent events immediately.
+  if (req.body.lat !== undefined || req.body.lng !== undefined) {
+    syncEventCoordsForParish(db, id);
+  }
+
   // Auto-geocode if address changed and lat/lng weren't explicitly provided
   if (req.body.address && req.body.lat === undefined) {
     geocode(req.body.address).then(coords => {
       if (coords) {
         db.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, id);
+        syncEventCoordsForParish(db, id);
         console.log(`[admin] Geocoded parish ${id}: ${coords.lat}, ${coords.lng}`);
       }
     });

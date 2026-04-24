@@ -350,6 +350,32 @@ function migrate(db) {
     )`).run();
     db.pragma('user_version = 21');
   }
+
+  if (version < 22) {
+    // Backfill: events written before their parish was geocoded held stale
+    // Sydney-default coords. Resync non-overridden events to current parish
+    // coords in one pass.
+    db.prepare(`
+      UPDATE events SET lat = (SELECT p.lat FROM parishes p WHERE p.id = events.parish_id),
+                        lng = (SELECT p.lng FROM parishes p WHERE p.id = events.parish_id)
+      WHERE (location_override IS NULL OR location_override = '')
+        AND parish_id IN (SELECT id FROM parishes WHERE id != '_unassigned')
+    `).run();
+    db.pragma('user_version = 22');
+  }
 }
 
-module.exports = { getDb };
+// Resync all non-overridden event coords for a single parish to match the
+// parish's current lat/lng. Call this after any write that updates a parish's
+// coordinates (webhook geocode, admin edit) so events don't drift.
+function syncEventCoordsForParish(db, parishId) {
+  if (!parishId || parishId === '_unassigned') return;
+  const p = db.prepare('SELECT lat, lng FROM parishes WHERE id = ?').get(parishId);
+  if (!p || p.lat == null || p.lng == null) return;
+  db.prepare(`
+    UPDATE events SET lat = ?, lng = ?
+    WHERE parish_id = ? AND (location_override IS NULL OR location_override = '')
+  `).run(p.lat, p.lng, parishId);
+}
+
+module.exports = { getDb, syncEventCoordsForParish };

@@ -1,5 +1,6 @@
 let map = null;
 let markers = [];
+let userMarker = null;
 
 function initMap(state) {
   if (map) return;
@@ -12,7 +13,7 @@ function initMap(state) {
     maxZoom: 18
   }).addTo(map);
 
-  L.marker([state.userLat, state.userLng], {
+  userMarker = L.marker([state.userLat, state.userLng], {
     icon: L.divIcon({
       className: '',
       html: '<div style="width:12px;height:12px;border-radius:50%;background:#4285f4;border:2px solid white;box-sizing:border-box;"></div>',
@@ -20,6 +21,9 @@ function initMap(state) {
       iconAnchor: [6, 6]
     })
   }).addTo(map).bindPopup('You are here');
+  window.agoraUpdateUserLocation = (lat, lng) => {
+    if (userMarker) userMarker.setLatLng([lat, lng]);
+  };
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   setTimeout(() => map.invalidateSize(), 100);
