@@ -561,6 +561,14 @@ router.post('/parish-updates/:id/approve', (req, res) => {
     db.prepare(`UPDATE parishes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   }
 
+  if (rawSets.address) {
+    geocode(rawSets.address).then(coords => {
+      if (coords) {
+        getDb().prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(coords.lat, coords.lng, pu.parish_id);
+      }
+    });
+  }
+
   db.prepare("UPDATE pending_parish_updates SET status = 'approved', reviewed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(req.params.id);
   res.json({ ok: true });
 });
