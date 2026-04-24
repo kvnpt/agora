@@ -481,6 +481,8 @@ function recomputeViewportParishIds() {
   state.viewportParishIds = ids;
   // Don't fit — the user just moved the map, we don't want to fight them.
   renderCurrentView();
+  // Pills sort by viewport-centre distance; re-render so order tracks pan/zoom.
+  renderParishPills();
 }
 window.agoraOnViewportChange = recomputeViewportParishIds;
 
@@ -865,14 +867,23 @@ function renderParishPills() {
     return true;
   });
 
-  if (state.nearPillActive) {
-    // Sort by distance when Near pill is active
+  // Distance origin: viewport centre when map is ready, else user location.
+  // Pill sort is viewport-driven, not FAB-driven — when the user centres on
+  // their location the two coincide, but panning the map should re-sort pills.
+  let originLat = null, originLng = null;
+  if (window.agoraMap) {
+    const c = window.agoraMap.getCenter();
+    originLat = c.lat; originLng = c.lng;
+  } else if (state.userLat != null && state.userLng != null) {
+    originLat = state.userLat; originLng = state.userLng;
+  }
+
+  if (originLat != null && originLng != null) {
     relevant = relevant.map(p => ({
       ...p,
-      _dist: haversineKm(state.userLat, state.userLng, p.lat, p.lng)
+      _dist: (p.lat != null && p.lng != null) ? haversineKm(originLat, originLng, p.lat, p.lng) : Infinity
     })).sort((a, b) => a._dist - b._dist);
   } else {
-    // Sort alphabetically by acronym/name
     relevant = relevant.sort((a, b) => {
       const aName = a.acronym || a.name.split(',')[0];
       const bName = b.acronym || b.name.split(',')[0];
@@ -886,7 +897,7 @@ function renderParishPills() {
 
   for (const p of relevant) {
     const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
-    const distLabel = state.nearPillActive && p._dist != null ? `\u00B7${Math.round(p._dist)}km` : '';
+    const distLabel = (p._dist != null && isFinite(p._dist)) ? `\u00B7${Math.round(p._dist)}km` : '';
     const label = distLabel ? `${acronym}${distLabel}` : acronym;
     const isSelected = state.filters.parishIds && state.filters.parishIds.has(p.id);
     const isUnselected = state.filters.parishIds && !state.filters.parishIds.has(p.id);

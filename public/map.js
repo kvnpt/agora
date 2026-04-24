@@ -195,6 +195,21 @@ function addLabeledMarkers(locations, TZ, focusId) {
   const LABEL_H = 22;
   const placed = [];
 
+  // Cap text labels to 15 most-central parishes — dots still render for all,
+  // but rasterising 40+ divIcon labels lags older iOS devices on pan/zoom.
+  // Focused parish always labels regardless of cap.
+  const LABEL_CAP = 15;
+  const mapSize = map.getSize();
+  const cx = mapSize.x / 2, cy = mapSize.y / 2;
+  const nonFocus = labelMeta.filter(lm => !lm.isFocus);
+  nonFocus.sort((a, b) => {
+    const da = (a.px - cx) ** 2 + (a.py - cy) ** 2;
+    const db = (b.px - cx) ** 2 + (b.py - cy) ** 2;
+    return da - db;
+  });
+  const keep = new Set(nonFocus.slice(0, LABEL_CAP).map(lm => lm.loc.id));
+  for (const lm of labelMeta) lm.renderLabel = lm.isFocus || keep.has(lm.loc.id);
+
   // Focused label first (it paints wherever it wants), then active, then rest.
   labelMeta.sort((a, b) => {
     if (a.isFocus) return -1;
@@ -204,6 +219,7 @@ function addLabeledMarkers(locations, TZ, focusId) {
 
   for (const lm of labelMeta) {
     if (lm.isFocus) continue; // focused label floats free above the dot
+    if (!lm.renderLabel) continue;
     const getBounds = (side) => {
       const x = side === 'right' ? lm.px + 8 : lm.px - LABEL_W - 8;
       return { x1: x, y1: lm.py - LABEL_H / 2, x2: x + LABEL_W, y2: lm.py + LABEL_H / 2 };
@@ -222,6 +238,7 @@ function addLabeledMarkers(locations, TZ, focusId) {
   }
 
   for (const lm of labelMeta) {
+    if (!lm.renderLabel) continue;
     const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
 
     if (lm.isFocus) {
