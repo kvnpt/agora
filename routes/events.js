@@ -108,6 +108,7 @@ router.get('/', (req, res) => {
     });
   }
 
+  res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
   res.json(events);
 });
 

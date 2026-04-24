@@ -24,6 +24,7 @@ const state = {
   userLat: -33.8688,
   userLng: 151.2093,
   mode: 'events',
+  _eventsExtended: false,
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
@@ -625,8 +626,9 @@ async function fetchEvents(opts = {}) {
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
 
   const now = new Date();
-  // Include events from start of today (Sydney local) through 28 days out —
-  // stream renders Today phase buckets at top, followed by day-grouped future.
+  // Include events from start of today (Sydney local) through 60 days out by default,
+  // 180 days when extended. Round `to` to end of UTC day so the URL is stable within
+  // the day and browser cache can hit on repeat loads.
   const sydneyDate = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
   const [d, m, y] = sydneyDate.split('/');
   const todayStr = `${y}-${m}-${d}`;
@@ -636,19 +638,24 @@ async function fetchEvents(opts = {}) {
   const sydneyParsed = new Date(sydneyStr);
   const offsetMs = sydneyParsed.getTime() - testDate.getTime();
   params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
-  params.set('to', new Date(now.getTime() + 28 * 86400000).toISOString());
+  if (!opts.extended) state._eventsExtended = false;
+  const windowDays = opts.extended ? 180 : 60;
+  const toDate = new Date(now.getTime() + windowDays * 86400000);
+  toDate.setUTCHours(23, 59, 59, 0);
+  params.set('to', toDate.toISOString());
 
-  if (window.lsLog) window.lsLog('GET /api/events?from=…&to=+28d …');
+  if (window.lsLog) window.lsLog(`GET /api/events?from=…&to=+${windowDays}d …`);
   try {
     const res = await fetch(`/api/events?${params}`);
     state.events = await res.json();
+    if (opts.extended) state._eventsExtended = true;
   } catch {
     state.events = [];
   }
   if (window.lsLog) window.lsLog('✓ events loaded (' + state.events.length + ')');
   if (window.lsProgress) window.lsProgress(0.75);
 
-  // Initial load: empty 28-day window → fall through to Services mode.
+  // Initial load: empty 60-day window → fall through to Services mode.
   if (state._initialLoad) {
     const filteredNow = applyFilters(state.events).filter(e => {
       const end = e.end_utc ? new Date(e.end_utc) : new Date(new Date(e.start_utc).getTime() + 3600000);
@@ -664,6 +671,10 @@ async function fetchEvents(opts = {}) {
   renderEvents();
   updateMap(state, { fit: !!opts.fit });
 }
+
+window.loadMoreEvents = function() {
+  fetchEvents({ extended: true });
+};
 
 async function fetchSchedules(opts = {}) {
   const params = new URLSearchParams();
@@ -3100,7 +3111,13 @@ function renderStream(container, events) {
     html += renderEmptyStateHTML();
   }
 
-  html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
+  if (!state._eventsExtended) {
+    const cutoff = new Date(now.getTime() + 60 * 86400000);
+    const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
+    html += `<div class="list-footer"><button class="list-footer-btn" onclick="loadMoreEvents()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
+  } else {
+    html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
+  }
 
   container.innerHTML = html;
 
@@ -3116,7 +3133,7 @@ function renderStream(container, events) {
   }
 }
 
-// Day-grouped render for future events (tomorrow → end of 28-day window).
+// Day-grouped render for future events (tomorrow → end of window).
 function renderFutureDays(events) {
   const groups = groupByDay(events);
   const now = new Date();
