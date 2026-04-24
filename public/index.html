@@ -8,6 +8,130 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+  <!-- Loading overlay (gum-tree fills from bottom; Minecraft-style verbose log).
+       Removed by lsHide() once parishes + events + first render are done. -->
+  <div id="loading-screen" aria-hidden="true">
+    <div class="ls-header">orthodoxy.au</div>
+    <div class="ls-tree-wrap">
+      <svg class="ls-tree" viewBox="0 0 240 360" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <clipPath id="ls-tree-fill-clip">
+            <rect id="ls-tree-fill-rect" x="0" y="0" width="240" height="360"/>
+          </clipPath>
+        </defs>
+        <!-- Ground dashes + outline of trunk + foliage clumps -->
+        <g class="ls-tree-outline" fill="none" stroke="#c6c9c2" stroke-width="1.6" stroke-linejoin="round">
+          <line x1="18" y1="342" x2="222" y2="342" stroke-dasharray="2,4"/>
+          <path d="M113 340 Q114 270 116 190 L125 190 Q127 270 128 340 Z"/>
+          <circle cx="120" cy="128" r="56"/>
+          <circle cx="74"  cy="152" r="38"/>
+          <circle cx="166" cy="146" r="40"/>
+          <circle cx="108" cy="78"  r="32"/>
+          <circle cx="156" cy="94"  r="28"/>
+          <circle cx="88"  cy="104" r="25"/>
+        </g>
+        <!-- Same shapes, filled, clipped by rising rect -->
+        <g clip-path="url(#ls-tree-fill-clip)">
+          <line x1="18" y1="342" x2="222" y2="342" stroke="#8b7d6a" stroke-width="1.6" stroke-dasharray="2,4"/>
+          <path d="M113 340 Q114 270 116 190 L125 190 Q127 270 128 340 Z" fill="#a08870"/>
+          <circle cx="120" cy="128" r="56" fill="#6b8e5a"/>
+          <circle cx="74"  cy="152" r="38" fill="#7a9c68"/>
+          <circle cx="166" cy="146" r="40" fill="#6b8e5a"/>
+          <circle cx="108" cy="78"  r="32" fill="#7a9c68"/>
+          <circle cx="156" cy="94"  r="28" fill="#6b8e5a"/>
+          <circle cx="88"  cy="104" r="25" fill="#7a9c68"/>
+        </g>
+      </svg>
+    </div>
+    <div class="ls-log" id="ls-log"></div>
+  </div>
+  <script>
+    // Inline boot loader — defined before app.js so it can log from anywhere.
+    // Tree fills via CSS scaleY on the clip-rect; log stream emulates a
+    // Minecraft world-loader with a pool of fake-verbose init messages and
+    // real events pushed in from app.js as data arrives.
+    (function () {
+      var log = document.getElementById('ls-log');
+      var rect = document.getElementById('ls-tree-fill-rect');
+      var screen = document.getElementById('loading-screen');
+      var progress = 0;
+
+      function lsLog(msg) {
+        if (!log) return;
+        var line = document.createElement('div');
+        line.className = 'ls-log-line';
+        line.textContent = msg;
+        log.appendChild(line);
+        while (log.children.length > 14) log.removeChild(log.firstChild);
+      }
+      function lsProgress(p) {
+        progress = Math.max(progress, Math.min(1, p));
+        if (rect) rect.style.transform = 'scaleY(' + progress + ')';
+      }
+      function lsHide() {
+        lsProgress(1);
+        setTimeout(function () {
+          if (!screen) return;
+          screen.classList.add('hidden');
+          setTimeout(function () { if (screen && screen.parentNode) screen.parentNode.removeChild(screen); }, 750);
+        }, 400);
+      }
+
+      // Filler messages — deterministic-ish but shuffled so each load looks
+      // different. Real progress events (from app.js) interleave via lsLog.
+      var pool = [
+        'Initialising namespace…',
+        'Parsing Australia/Sydney timezone…',
+        'Allocating tile cache (CARTO light_all)…',
+        'Reading jurisdiction palette…',
+        'Warming haversine cache…',
+        'Hydrating cached location…',
+        'Seeding parish-filter pills…',
+        'Binding touch event handlers…',
+        'Disabling pull-to-refresh…',
+        'Inflating map container…',
+        'Computing viewport bounds…',
+        'Synchronising URL slug state…',
+        'Registering history popstate handler…',
+        'Scheduling LIVE countdown timer (60s)…',
+        'Checking admin session…',
+        'Evaluating prefers-color-scheme…',
+        'Reticulating iconostases…',
+        'Calibrating bottom-sheet snap points…',
+        'Resolving adapter registry…',
+        'Mounting event-card delegate…',
+        'Opening IndexedDB (noop)…',
+        'Priming Leaflet divIcon pool…',
+        'Loading tabler-location.svg…',
+        'Checking service worker (disabled)…',
+        'Measuring safe-area insets…'
+      ];
+      for (var i = pool.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+      }
+
+      lsLog('» boot orthodoxy.au');
+      var poolIdx = 0;
+      var spam = setInterval(function () {
+        if (!document.getElementById('loading-screen')) { clearInterval(spam); return; }
+        lsLog(pool[poolIdx % pool.length]);
+        poolIdx++;
+        // Creep fill on filler lines so the tree grows even before real
+        // events arrive. Real events bump it further.
+        lsProgress(progress + 0.02);
+      }, 85);
+
+      window.lsLog = lsLog;
+      window.lsProgress = lsProgress;
+      window.lsHide = lsHide;
+
+      // Safety net — if applyStartMode throws or a fetch hangs, tear down
+      // the overlay after 10s so the user isn't stuck behind a tree.
+      setTimeout(function () { lsHide(); }, 10000);
+    })();
+  </script>
+
   <!-- Jurisdiction banner -->
   <div class="jurisdiction-banner" id="jurisdiction-chips"></div>
 

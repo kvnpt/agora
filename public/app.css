@@ -2112,3 +2112,78 @@ body.map-expanded #location-fab { display: flex; }
   .mode-bar { max-width: none; padding: 4px 12px 8px; }
   .parish-filter-row { max-width: none; }
 }
+
+/* ── Loading screen ─────────────────────────────────────────
+   Fixed overlay above the map; gum-tree silhouette fills green from bottom
+   while a Minecraft-style verbose log scrolls at the bottom. Translucent
+   so the page visibly "comes to life" (tiles load, pins drop) behind it. */
+#loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(252, 250, 243, 0.82);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: max(44px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  gap: 16px;
+  opacity: 1;
+  transition: opacity 0.7s ease;
+  pointer-events: auto;
+}
+#loading-screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.ls-header {
+  font-weight: 800;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  color: #2a2a2a;
+  text-transform: lowercase;
+  font-family: inherit;
+}
+.ls-tree-wrap {
+  flex: 0 0 auto;
+}
+.ls-tree {
+  width: 180px;
+  height: 270px;
+  display: block;
+}
+#ls-tree-fill-rect {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  transform: scaleY(0);
+  transition: transform 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ls-log {
+  width: 100%;
+  max-width: 360px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #7a7a76;
+  -webkit-mask-image: linear-gradient(to top, #000 60%, transparent);
+          mask-image: linear-gradient(to top, #000 60%, transparent);
+}
+.ls-log-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: ls-log-in 0.22s ease;
+  opacity: 0.85;
+}
+.ls-log-line:last-child { color: #2a2a2a; opacity: 1; }
+@keyframes ls-log-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 0.85; transform: translateY(0); }
+}

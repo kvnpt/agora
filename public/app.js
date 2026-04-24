@@ -51,11 +51,13 @@ function saveMultiParishPref(on) {
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
+  if (window.lsLog) window.lsLog('» DOM ready');
   state.filters.multiParish = loadMultiParishPref();
   detectUrlState();
   disablePageZoom();
   disablePullToRefresh();
   loadCachedLocation();
+  if (window.lsProgress) window.lsProgress(0.15);
   await Promise.all([fetchParishes(), checkAdmin()]);
   _initLogout();
   applyParishSlugs();
@@ -74,8 +76,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
+  if (window.lsLog) window.lsLog('Initialising Leaflet map…');
   initMap(state);
   updateMap(state);
+  if (window.lsLog) window.lsLog('✓ map ready');
+  if (window.lsProgress) window.lsProgress(0.9);
 
   // If the URL named a single parish (e.g. /gosr), open the parish sheet so
   // deep links and refreshes land on the parish card instead of just
@@ -630,12 +635,15 @@ async function fetchEvents(opts = {}) {
   params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
   params.set('to', new Date(now.getTime() + 28 * 86400000).toISOString());
 
+  if (window.lsLog) window.lsLog('GET /api/events?from=…&to=+28d …');
   try {
     const res = await fetch(`/api/events?${params}`);
     state.events = await res.json();
   } catch {
     state.events = [];
   }
+  if (window.lsLog) window.lsLog('✓ events loaded (' + state.events.length + ')');
+  if (window.lsProgress) window.lsProgress(0.75);
 
   // Initial load: empty 28-day window → fall through to Services mode.
   if (state._initialLoad) {
@@ -657,22 +665,33 @@ async function fetchEvents(opts = {}) {
 async function fetchSchedules(opts = {}) {
   const params = new URLSearchParams();
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
+  if (window.lsLog) window.lsLog('GET /api/schedules …');
   try {
     const res = await fetch(`/api/schedules?${params}`);
     state.schedules = await res.json();
   } catch {
     state.schedules = [];
   }
+  if (window.lsLog) window.lsLog('✓ schedules loaded (' + state.schedules.length + ')');
+  if (window.lsProgress) window.lsProgress(0.75);
   renderServices();
   updateMap(state, { fit: !!opts.fit });
 }
 
 async function fetchParishes() {
+  if (window.lsLog) window.lsLog('GET /api/parishes …');
   try {
     const res = await fetch('/api/parishes');
     state.parishes = await res.json();
   } catch {
     state.parishes = [];
+  }
+  if (window.lsLog) window.lsLog('✓ parishes loaded (' + state.parishes.length + ')');
+  if (window.lsProgress) window.lsProgress(0.35);
+  // Flash a few parish names through the log so it feels like it's doing work.
+  if (window.lsLog && state.parishes.length) {
+    const sample = state.parishes.filter(p => p.id !== '_unassigned').slice(0, 6);
+    sample.forEach((p, i) => setTimeout(() => window.lsLog('  · ' + p.name), 40 * (i + 1)));
   }
 }
 
@@ -807,6 +826,8 @@ async function applyStartMode() {
     syncURL({ replace: true });
   }
   state._initialLoad = false;
+  if (window.lsLog) window.lsLog('✓ ready');
+  if (window.lsHide) window.lsHide();
 }
 
 // Event permalink loader — opens the parish sheet for the event's parish and
