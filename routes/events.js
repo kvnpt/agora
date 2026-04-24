@@ -64,7 +64,7 @@ router.get('/', (req, res) => {
     params.push(jurisdiction);
   }
 
-  query += ') WHERE rn = 1 ORDER BY start_utc ASC LIMIT 200';
+  query += ') WHERE rn = 1 ORDER BY start_utc ASC LIMIT 1000';
 
   let events = db.prepare(query).all(...params).map(({ rn, ...rest }) => rest);
 
