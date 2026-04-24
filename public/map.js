@@ -46,16 +46,16 @@ function initMap(state) {
   setTimeout(() => { if (window.agoraOnViewportChange) window.agoraOnViewportChange(); }, 150);
 
   // Live re-cluster during pan/zoom — clustering is based on pixel distance,
-  // so as the user pans/zooms the cluster membership changes. rAF throttle
-  // caps at 60fps. Only updateMap runs here; event list + pill sort stay
-  // frozen until the 'moveend' handler above fires.
-  let moveRaf = null;
+  // so as the user pans/zooms the cluster membership changes. Throttled to
+  // 2Hz (500ms) so cluster math doesn't run every frame. Only updateMap runs
+  // here; event list + pill sort stay frozen until 'moveend' fires.
+  let moveThrottle = null;
   map.on('move', () => {
-    if (moveRaf) return;
-    moveRaf = requestAnimationFrame(() => {
-      moveRaf = null;
+    if (moveThrottle) return;
+    moveThrottle = setTimeout(() => {
+      moveThrottle = null;
       if (window.agoraStateRef && typeof updateMap === 'function') updateMap(window.agoraStateRef);
-    });
+    }, 500);
   });
 }
 
