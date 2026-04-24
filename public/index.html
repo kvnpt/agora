@@ -29,11 +29,13 @@
 
       function lsLog(msg) {
         if (!log) return;
+        // Single status line that re-animates on each update — no stack.
+        // Fresh element forces the CSS enter animation to retrigger.
+        while (log.firstChild) log.removeChild(log.firstChild);
         var line = document.createElement('div');
         line.className = 'ls-log-line';
         line.textContent = msg;
         log.appendChild(line);
-        while (log.children.length > 14) log.removeChild(log.firstChild);
       }
       function lsProgress(p) {
         progress = Math.max(progress, Math.min(1, p));
@@ -101,80 +103,90 @@
       window.lsProgress = lsProgress;
       window.lsHide = lsHide;
 
-      // Random eucalyptus (1..7). Remember last pick in localStorage so we
-      // never show the same tree twice in a row.
+      // Eucalyptus tree: cached in localStorage for instant boot on repeat
+      // visits. Most loads reuse the cached SVG; a small reroll chance
+      // occasionally picks a new one — long-term variety without forcing
+      // short-term churn. No cache (first visit) always fetches.
       var TOTAL = 7;
-      var last = -1;
-      try { last = parseInt(localStorage.getItem('ls-last-tree') || '-1', 10); } catch (e) {}
-      var idx;
-      do { idx = Math.floor(Math.random() * TOTAL) + 1; } while (idx === last && TOTAL > 1);
-      try { localStorage.setItem('ls-last-tree', String(idx)); } catch (e) {}
+      var REROLL_CHANCE = 0.2;
+      var cachedSvg = null, cachedIdx = null;
+      try {
+        cachedSvg = localStorage.getItem('ls-tree-svg');
+        cachedIdx = localStorage.getItem('ls-tree-idx');
+      } catch (e) {}
+      var shouldReroll = !cachedSvg || Math.random() < REROLL_CHANCE;
 
-      // Fetch the random eucalyptus SVG, parse via DOMParser (no innerHTML),
-      // and mount twice — once as a pale silhouette, once clipped by the
-      // rising fill rect so the tree "fills up" as loading progresses.
-      fetch('/eucalyptus/eucalyptus-' + idx + '.svg')
-        .then(function (r) { return r.ok ? r.text() : null; })
-        .then(function (text) {
-          if (!text) return;
-          var SVG_NS = 'http://www.w3.org/2000/svg';
-          var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
-          var src = doc.querySelector('svg');
-          if (!src) return;
-          var vb = src.getAttribute('viewBox') || '0 0 2048 2048';
-          var parts = vb.split(/\s+/).map(Number);
-          var x0 = parts[0] || 0, y0 = parts[1] || 0;
-          var vbW = (parts[2] || 2048) - x0;
-          var vbH = (parts[3] || 2048) - y0;
+      function mountTree(text, idx) {
+        var SVG_NS = 'http://www.w3.org/2000/svg';
+        var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+        var src = doc.querySelector('svg');
+        if (!src) return;
+        var vb = src.getAttribute('viewBox') || '0 0 2048 2048';
+        var parts = vb.split(/\s+/).map(Number);
+        var x0 = parts[0] || 0, y0 = parts[1] || 0;
+        var vbW = (parts[2] || 2048) - x0;
+        var vbH = (parts[3] || 2048) - y0;
 
-          var out = document.createElementNS(SVG_NS, 'svg');
-          out.setAttribute('class', 'ls-tree');
-          out.setAttribute('viewBox', vb);
-          out.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-          out.setAttribute('aria-hidden', 'true');
+        var out = document.createElementNS(SVG_NS, 'svg');
+        out.setAttribute('class', 'ls-tree');
+        out.setAttribute('viewBox', vb);
+        out.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        out.setAttribute('aria-hidden', 'true');
 
-          var defs = document.createElementNS(SVG_NS, 'defs');
-          var clip = document.createElementNS(SVG_NS, 'clipPath');
-          clip.setAttribute('id', 'ls-tree-fill-clip');
-          var rect = document.createElementNS(SVG_NS, 'rect');
-          rect.setAttribute('id', 'ls-tree-fill-rect');
-          rect.setAttribute('x', String(x0));
-          rect.setAttribute('y', String(y0));
-          rect.setAttribute('width', String(vbW));
-          rect.setAttribute('height', String(vbH));
-          clip.appendChild(rect);
-          defs.appendChild(clip);
-          out.appendChild(defs);
+        var defs = document.createElementNS(SVG_NS, 'defs');
+        var clip = document.createElementNS(SVG_NS, 'clipPath');
+        clip.setAttribute('id', 'ls-tree-fill-clip');
+        var rect = document.createElementNS(SVG_NS, 'rect');
+        rect.setAttribute('id', 'ls-tree-fill-rect');
+        rect.setAttribute('x', String(x0));
+        rect.setAttribute('y', String(y0));
+        rect.setAttribute('width', String(vbW));
+        rect.setAttribute('height', String(vbH));
+        clip.appendChild(rect);
+        defs.appendChild(clip);
+        out.appendChild(defs);
 
-          var outline = document.createElementNS(SVG_NS, 'g');
-          outline.setAttribute('class', 'ls-outline-pass');
-          var colour = document.createElementNS(SVG_NS, 'g');
-          colour.setAttribute('class', 'ls-colour-pass');
-          colour.setAttribute('clip-path', 'url(#ls-tree-fill-clip)');
+        var outline = document.createElementNS(SVG_NS, 'g');
+        outline.setAttribute('class', 'ls-outline-pass');
+        var colour = document.createElementNS(SVG_NS, 'g');
+        colour.setAttribute('class', 'ls-colour-pass');
+        colour.setAttribute('clip-path', 'url(#ls-tree-fill-clip)');
 
-          // Clone every child of the source <svg> into each pass — keeps
-          // <g>, <path>, <defs>, etc. intact. Both passes render the same
-          // geometry; CSS differentiates fill on .ls-outline-pass vs
-          // .ls-colour-pass.
-          var kids = Array.prototype.slice.call(src.childNodes);
-          for (var i = 0; i < kids.length; i++) {
-            outline.appendChild(kids[i].cloneNode(true));
-            colour.appendChild(kids[i].cloneNode(true));
-          }
-          out.appendChild(outline);
-          out.appendChild(colour);
+        var kids = Array.prototype.slice.call(src.childNodes);
+        for (var i = 0; i < kids.length; i++) {
+          outline.appendChild(kids[i].cloneNode(true));
+          colour.appendChild(kids[i].cloneNode(true));
+        }
+        out.appendChild(outline);
+        out.appendChild(colour);
 
-          var wrap = document.querySelector('.ls-tree-wrap');
-          if (!wrap) return;
-          while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
-          wrap.appendChild(out);
+        var wrap = document.querySelector('.ls-tree-wrap');
+        if (!wrap) return;
+        while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+        wrap.appendChild(out);
+        // Replay whatever progress accumulated before mount.
+        lsProgress(progress);
+      }
 
-          // Replay current progress so the newly-mounted rect animates up
-          // to wherever loading already reached while we were fetching.
-          lsProgress(progress);
-          lsLog('✓ loaded eucalyptus-' + idx + '.svg');
-        })
-        .catch(function () { /* overlay works without the tree */ });
+      if (!shouldReroll && cachedSvg) {
+        mountTree(cachedSvg, cachedIdx);
+      } else {
+        var idx = Math.floor(Math.random() * TOTAL) + 1;
+        fetch('/eucalyptus/eucalyptus-' + idx + '.svg')
+          .then(function (r) { return r.ok ? r.text() : null; })
+          .then(function (text) {
+            if (!text) return;
+            try {
+              localStorage.setItem('ls-tree-svg', text);
+              localStorage.setItem('ls-tree-idx', String(idx));
+            } catch (e) {}
+            mountTree(text, idx);
+          })
+          .catch(function () {
+            // Fetch failed — fall back to cache if we have one.
+            if (cachedSvg) mountTree(cachedSvg, cachedIdx);
+          });
+      }
 
       // Safety net — if applyStartMode throws or a fetch hangs, tear down
       // the overlay after 10s so the user isn't stuck behind a tree.

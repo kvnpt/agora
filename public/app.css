@@ -2176,28 +2176,24 @@ body.map-expanded #location-fab { display: flex; }
 .ls-log {
   width: 100%;
   max-width: 360px;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
+  min-height: 22px;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
   line-height: 1.55;
-  color: #7a7a76;
-  -webkit-mask-image: linear-gradient(to top, #000 60%, transparent);
-          mask-image: linear-gradient(to top, #000 60%, transparent);
+  color: #2a2a2a;
+  text-align: center;
 }
 .ls-log-line {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
   animation: ls-log-in 0.22s ease;
-  opacity: 0.85;
 }
-.ls-log-line:last-child { color: #2a2a2a; opacity: 1; }
 @keyframes ls-log-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 0.85; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
