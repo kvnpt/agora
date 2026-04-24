@@ -81,9 +81,14 @@ function updateMap(state, opts = {}) {
     for (const evt of filtered) activeParishIds.add(evt.parish_id);
   }
 
+  // Filters that cut visibility entirely (no fading): jurisdiction always
+  // hard-filters. Social/English hard-filter parishes with zero matching
+  // events — a parish whose events don't pass the filter is hidden, not dimmed.
+  const hardFilterOnEvents = state.filters.socialOnly || state.filters.englishOnly;
   const allParishes = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+    if (hardFilterOnEvents && !activeParishIds.has(p.id)) return false;
     if (!p.lat || !p.lng) return false;
     return true;
   });
@@ -208,9 +213,8 @@ function addLabeledMarkers(locations, TZ, focusId) {
   for (const loc of sortedLocs) {
     if (clusteredIds.has(loc.id)) continue; // rendered as a grape cluster below
     const isFocus = loc.id === focusId;
-    // Focus: full opacity, bigger. Non-focus while sheet open: strong dim.
-    // No sheet open: original active/inactive logic.
-    const opacity = isFocus ? 1.0 : (hasFocus ? 0.15 : (loc.active ? 1.0 : 0.25));
+    // All parishes full opacity — filters cut visibility completely, no fading.
+    const opacity = 1.0;
 
     const focusLogo = isFocus && loc.logo;
     const size = focusLogo ? 32 : (isFocus ? 16 : (loc.active ? 10 : 8));
@@ -255,8 +259,7 @@ function addLabeledMarkers(locations, TZ, focusId) {
     const cx = sx / members.length, cy = sy / members.length;
     const ll = map.containerPointToLatLng([cx, cy]);
     const anyActive = members.some(m => m.active);
-    const opacity = hasFocus ? 0.2 : (anyActive ? 1.0 : 0.4);
-    const html = buildGrapeClusterHtml(members.length, opacity);
+    const html = buildGrapeClusterHtml(members.length, 1.0);
     const BOX = 40;
     const cluster = L.marker(ll, {
       icon: L.divIcon({
