@@ -32,6 +32,9 @@ const state = {
   parishFocus: null,  // parish ID when focused, null when browsing
   viewportParishIds: null  // Set of parish IDs inside current map bounds; null until first moveend
 };
+// Expose so map.js's 'move' rAF-throttled handler can re-cluster without
+// passing state through window-scoped callbacks.
+window.agoraStateRef = state;
 
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
 let detailHistoryPushed = false;

@@ -12,92 +12,9 @@
        Removed by lsHide() once parishes + events + first render are done. -->
   <div id="loading-screen" aria-hidden="true">
     <div class="ls-header">orthodoxy.au</div>
-    <div class="ls-tree-wrap">
-      <svg class="ls-tree" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <defs>
-          <clipPath id="ls-tree-fill-clip">
-            <rect id="ls-tree-fill-rect" x="0" y="0" width="300" height="400"/>
-          </clipPath>
-        </defs>
-
-        <!-- ─── PASS 1: pale-grey outline (silhouette of unfilled tree). ─── -->
-        <g fill="none" stroke="#cdd0c9" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round">
-          <!-- Foliage blob outlines (base layer only — mid/hi are subsumed) -->
-          <path d="M 50 112 C 28 108 18 92 26 72 C 34 52 60 46 82 54 C 104 60 112 82 102 102 C 92 122 68 118 50 112 Z"/>
-          <path d="M 255 108 C 278 106 290 90 282 68 C 272 48 246 44 224 54 C 202 62 196 84 208 104 C 220 122 242 116 255 108 Z"/>
-          <path d="M 145 50 C 120 48 108 32 118 14 C 130 -4 158 -2 172 12 C 184 24 180 44 168 52 C 158 58 150 52 145 50 Z"/>
-          <path d="M 95 60 C 78 58 68 44 76 30 C 86 14 106 14 118 24 C 128 34 124 50 114 56 C 106 62 98 62 95 60 Z"/>
-          <path d="M 215 58 C 232 56 244 42 236 26 C 226 10 206 12 196 24 C 188 34 194 52 204 56 C 210 60 212 60 215 58 Z"/>
-          <!-- Branches (strokes) -->
-          <path d="M 150 150 Q 118 120 82 108 Q 62 105 45 110" stroke-width="3"/>
-          <path d="M 165 148 Q 195 118 232 106 Q 252 103 270 108" stroke-width="3"/>
-          <path d="M 155 135 Q 155 90 145 55" stroke-width="3"/>
-          <path d="M 160 140 Q 178 110 195 72 Q 200 58 202 45" stroke-width="2.2"/>
-          <path d="M 152 145 Q 140 115 128 78 Q 124 65 122 52" stroke-width="2.2"/>
-          <path d="M 82 108 Q 68 98 52 88" stroke-width="1.6"/>
-          <path d="M 232 106 Q 248 96 262 86" stroke-width="1.6"/>
-          <path d="M 145 55 Q 140 40 138 28" stroke-width="1.6"/>
-          <path d="M 195 72 Q 208 55 220 42" stroke-width="1.6"/>
-          <path d="M 128 78 Q 112 62 98 48" stroke-width="1.6"/>
-          <!-- Trunk silhouette -->
-          <path d="M 138 392 C 134 360 144 330 146 298 C 148 270 140 242 150 210 C 154 190 148 168 156 138 L 167 138 C 172 168 166 190 170 210 C 179 242 170 270 172 298 C 175 330 181 360 177 392 Z" stroke-width="1.2"/>
-        </g>
-
-        <!-- ─── PASS 2: full colour, clipped by the rising fill rect. ─── -->
-        <g clip-path="url(#ls-tree-fill-clip)">
-          <!-- Foliage base (darkest, rearmost) -->
-          <path d="M 50 112 C 28 108 18 92 26 72 C 34 52 60 46 82 54 C 104 60 112 82 102 102 C 92 122 68 118 50 112 Z" fill="#4f6e41"/>
-          <path d="M 255 108 C 278 106 290 90 282 68 C 272 48 246 44 224 54 C 202 62 196 84 208 104 C 220 122 242 116 255 108 Z" fill="#4f6e41"/>
-          <path d="M 145 50 C 120 48 108 32 118 14 C 130 -4 158 -2 172 12 C 184 24 180 44 168 52 C 158 58 150 52 145 50 Z" fill="#4f6e41"/>
-          <path d="M 95 60 C 78 58 68 44 76 30 C 86 14 106 14 118 24 C 128 34 124 50 114 56 C 106 62 98 62 95 60 Z" fill="#4f6e41"/>
-          <path d="M 215 58 C 232 56 244 42 236 26 C 226 10 206 12 196 24 C 188 34 194 52 204 56 C 210 60 212 60 215 58 Z" fill="#4f6e41"/>
-          <!-- Foliage mid (body sage-green, offset from base for depth) -->
-          <path d="M 56 108 C 40 100 34 84 44 70 C 54 58 76 56 90 66 C 102 76 102 92 92 102 C 82 114 66 112 56 108 Z" fill="#6b8e5a"/>
-          <path d="M 250 104 C 266 98 272 82 262 68 C 252 56 230 56 216 66 C 204 76 204 92 214 102 C 224 114 240 110 250 104 Z" fill="#6b8e5a"/>
-          <path d="M 148 48 C 128 44 122 30 132 18 C 144 6 164 8 172 20 C 178 30 172 44 160 48 C 154 50 150 48 148 48 Z" fill="#6b8e5a"/>
-          <path d="M 98 60 C 86 58 80 48 86 38 C 94 28 108 30 116 38 C 122 46 118 56 110 60 C 104 62 100 60 98 60 Z" fill="#6b8e5a"/>
-          <path d="M 213 58 C 225 56 232 46 226 36 C 218 26 204 28 196 36 C 190 44 194 54 202 58 C 208 60 210 60 213 58 Z" fill="#6b8e5a"/>
-          <!-- Foliage highlights (lightest lobes, sun-caught edge) -->
-          <path d="M 50 82 Q 62 74 76 78 Q 80 86 72 92 Q 60 94 50 82 Z" fill="#8aac78" opacity="0.9"/>
-          <path d="M 228 78 Q 242 72 254 80 Q 252 90 240 92 Q 228 88 228 78 Z" fill="#8aac78" opacity="0.9"/>
-          <path d="M 140 20 Q 154 14 164 22 Q 162 32 150 34 Q 138 30 140 20 Z" fill="#8aac78" opacity="0.9"/>
-          <path d="M 92 40 Q 104 36 112 42 Q 108 50 100 52 Q 90 48 92 40 Z" fill="#8aac78" opacity="0.9"/>
-          <path d="M 208 38 Q 218 34 224 40 Q 222 48 214 50 Q 206 46 208 38 Z" fill="#8aac78" opacity="0.9"/>
-          <!-- Drooping sickle-leaf accents — the eucalyptus tell -->
-          <path d="M 102 102 q 3 6 8 10 q -2 -7 -8 -10 z" fill="#3f5a33"/>
-          <path d="M 45 112 q -4 6 -6 12 q 7 -2 6 -12 z" fill="#3f5a33"/>
-          <path d="M 208 102 q -3 6 -8 10 q 2 -7 8 -10 z" fill="#3f5a33"/>
-          <path d="M 270 108 q 4 6 6 12 q -7 -2 -6 -12 z" fill="#3f5a33"/>
-          <path d="M 120 28 q -5 4 -8 9 q 7 1 8 -9 z" fill="#3f5a33"/>
-          <path d="M 180 28 q 5 4 8 9 q -7 1 -8 -9 z" fill="#3f5a33"/>
-          <!-- Branches (strokes, warm brown) -->
-          <g fill="none" stroke="#8b7a5e" stroke-linejoin="round" stroke-linecap="round">
-            <path d="M 150 150 Q 118 120 82 108 Q 62 105 45 110" stroke-width="3"/>
-            <path d="M 165 148 Q 195 118 232 106 Q 252 103 270 108" stroke-width="3"/>
-            <path d="M 155 135 Q 155 90 145 55" stroke-width="3"/>
-            <path d="M 160 140 Q 178 110 195 72 Q 200 58 202 45" stroke-width="2.2"/>
-            <path d="M 152 145 Q 140 115 128 78 Q 124 65 122 52" stroke-width="2.2"/>
-            <path d="M 82 108 Q 68 98 52 88" stroke-width="1.6"/>
-            <path d="M 232 106 Q 248 96 262 86" stroke-width="1.6"/>
-            <path d="M 145 55 Q 140 40 138 28" stroke-width="1.6"/>
-            <path d="M 195 72 Q 208 55 220 42" stroke-width="1.6"/>
-            <path d="M 128 78 Q 112 62 98 48" stroke-width="1.6"/>
-          </g>
-          <!-- Trunk silhouette (pale gum bark) -->
-          <path d="M 138 392 C 134 360 144 330 146 298 C 148 270 140 242 150 210 C 154 190 148 168 156 138 L 167 138 C 172 168 166 190 170 210 C 179 242 170 270 172 298 C 175 330 181 360 177 392 Z" fill="#a9977a"/>
-          <!-- Trunk shade (right side; darker) -->
-          <path d="M 162 392 C 166 360 170 330 170 298 C 170 270 170 242 170 210 L 170 138 L 167 138 L 167 210 C 173 242 168 270 168 298 C 170 330 176 360 172 392 Z" fill="#7a6a52" opacity="0.55"/>
-          <!-- Bark strips (peeling ribbons — hallmark of gums) -->
-          <g fill="none" stroke="#5c4f3c" stroke-width="1" stroke-linecap="round" opacity="0.55">
-            <path d="M 148 360 q -1 -24 4 -50 q -1 -8 3 -14"/>
-            <path d="M 154 300 q 4 -18 -1 -42 q 1 -6 -2 -12"/>
-            <path d="M 162 270 q -3 -14 3 -32 q 0 -6 -2 -10"/>
-            <path d="M 144 230 q 5 -10 1 -22 q 0 -4 2 -8"/>
-            <path d="M 159 200 q -3 -9 1 -20"/>
-          </g>
-        </g>
-      </svg>
-    </div>
+    <!-- Eucalyptus SVG is injected on boot (random pick of 7) by the inline
+         script below. The wrapper stays empty until the fetch resolves. -->
+    <div class="ls-tree-wrap"></div>
     <div class="ls-log" id="ls-log"></div>
   </div>
   <script>
@@ -107,7 +24,6 @@
     // real events pushed in from app.js as data arrives.
     (function () {
       var log = document.getElementById('ls-log');
-      var rect = document.getElementById('ls-tree-fill-rect');
       var screen = document.getElementById('loading-screen');
       var progress = 0;
 
@@ -121,6 +37,10 @@
       }
       function lsProgress(p) {
         progress = Math.max(progress, Math.min(1, p));
+        // Rect is created asynchronously once the random eucalyptus SVG
+        // loads — re-query each call so progress lands whether the SVG
+        // arrived or not.
+        var rect = document.getElementById('ls-tree-fill-rect');
         if (rect) rect.style.transform = 'scaleY(' + progress + ')';
       }
       function lsHide() {
@@ -180,6 +100,81 @@
       window.lsLog = lsLog;
       window.lsProgress = lsProgress;
       window.lsHide = lsHide;
+
+      // Random eucalyptus (1..7). Remember last pick in localStorage so we
+      // never show the same tree twice in a row.
+      var TOTAL = 7;
+      var last = -1;
+      try { last = parseInt(localStorage.getItem('ls-last-tree') || '-1', 10); } catch (e) {}
+      var idx;
+      do { idx = Math.floor(Math.random() * TOTAL) + 1; } while (idx === last && TOTAL > 1);
+      try { localStorage.setItem('ls-last-tree', String(idx)); } catch (e) {}
+
+      // Fetch the random eucalyptus SVG, parse via DOMParser (no innerHTML),
+      // and mount twice — once as a pale silhouette, once clipped by the
+      // rising fill rect so the tree "fills up" as loading progresses.
+      fetch('/eucalyptus/eucalyptus-' + idx + '.svg')
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (text) {
+          if (!text) return;
+          var SVG_NS = 'http://www.w3.org/2000/svg';
+          var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+          var src = doc.querySelector('svg');
+          if (!src) return;
+          var vb = src.getAttribute('viewBox') || '0 0 2048 2048';
+          var parts = vb.split(/\s+/).map(Number);
+          var x0 = parts[0] || 0, y0 = parts[1] || 0;
+          var vbW = (parts[2] || 2048) - x0;
+          var vbH = (parts[3] || 2048) - y0;
+
+          var out = document.createElementNS(SVG_NS, 'svg');
+          out.setAttribute('class', 'ls-tree');
+          out.setAttribute('viewBox', vb);
+          out.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          out.setAttribute('aria-hidden', 'true');
+
+          var defs = document.createElementNS(SVG_NS, 'defs');
+          var clip = document.createElementNS(SVG_NS, 'clipPath');
+          clip.setAttribute('id', 'ls-tree-fill-clip');
+          var rect = document.createElementNS(SVG_NS, 'rect');
+          rect.setAttribute('id', 'ls-tree-fill-rect');
+          rect.setAttribute('x', String(x0));
+          rect.setAttribute('y', String(y0));
+          rect.setAttribute('width', String(vbW));
+          rect.setAttribute('height', String(vbH));
+          clip.appendChild(rect);
+          defs.appendChild(clip);
+          out.appendChild(defs);
+
+          var outline = document.createElementNS(SVG_NS, 'g');
+          outline.setAttribute('class', 'ls-outline-pass');
+          var colour = document.createElementNS(SVG_NS, 'g');
+          colour.setAttribute('class', 'ls-colour-pass');
+          colour.setAttribute('clip-path', 'url(#ls-tree-fill-clip)');
+
+          // Clone every child of the source <svg> into each pass — keeps
+          // <g>, <path>, <defs>, etc. intact. Both passes render the same
+          // geometry; CSS differentiates fill on .ls-outline-pass vs
+          // .ls-colour-pass.
+          var kids = Array.prototype.slice.call(src.childNodes);
+          for (var i = 0; i < kids.length; i++) {
+            outline.appendChild(kids[i].cloneNode(true));
+            colour.appendChild(kids[i].cloneNode(true));
+          }
+          out.appendChild(outline);
+          out.appendChild(colour);
+
+          var wrap = document.querySelector('.ls-tree-wrap');
+          if (!wrap) return;
+          while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+          wrap.appendChild(out);
+
+          // Replay current progress so the newly-mounted rect animates up
+          // to wherever loading already reached while we were fetching.
+          lsProgress(progress);
+          lsLog('✓ loaded eucalyptus-' + idx + '.svg');
+        })
+        .catch(function () { /* overlay works without the tree */ });
 
       // Safety net — if applyStartMode throws or a fetch hangs, tear down
       // the overlay after 10s so the user isn't stuck behind a tree.

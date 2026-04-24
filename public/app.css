@@ -2148,12 +2148,25 @@ body.map-expanded #location-fab { display: flex; }
 .ls-tree-wrap {
   flex: 0 0 auto;
 }
+.ls-tree-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 240px;
+  height: 320px;
+  flex: 0 0 auto;
+}
 .ls-tree {
-  width: 220px;
-  height: 293px;
+  width: 100%;
+  max-height: 100%;
   display: block;
   overflow: visible;
 }
+/* Outline pass — pale silhouette always visible so the user sees the tree
+   shape before it fills. Source paths have no explicit fill, so CSS wins. */
+.ls-outline-pass path { fill: #dfe4d8; stroke: none; }
+/* Colour pass — full eucalyptus green, clipped by the rising rect. */
+.ls-colour-pass path { fill: #4f6e41; stroke: none; }
 #ls-tree-fill-rect {
   transform-box: fill-box;
   transform-origin: bottom;

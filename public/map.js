@@ -44,6 +44,19 @@ function initMap(state) {
   });
   // Seed the first viewport after the map settles.
   setTimeout(() => { if (window.agoraOnViewportChange) window.agoraOnViewportChange(); }, 150);
+
+  // Live re-cluster during pan/zoom — clustering is based on pixel distance,
+  // so as the user pans/zooms the cluster membership changes. rAF throttle
+  // caps at 60fps. Only updateMap runs here; event list + pill sort stay
+  // frozen until the 'moveend' handler above fires.
+  let moveRaf = null;
+  map.on('move', () => {
+    if (moveRaf) return;
+    moveRaf = requestAnimationFrame(() => {
+      moveRaf = null;
+      if (window.agoraStateRef && typeof updateMap === 'function') updateMap(window.agoraStateRef);
+    });
+  });
 }
 
 function updateMap(state, opts = {}) {
@@ -379,36 +392,35 @@ function addLabeledMarkers(locations, TZ, focusId) {
 function buildGrapeClusterHtml(count, opacity) {
   const GRAPE = '#6a2d5c'; // muscat purple
   const GRAPE_HI = '#8a4a7a';
-  const STEM = '#5a6b3c';
-  const r = 4.5;
-  // Grape offsets (cx, cy) in a 40×40 box centred at (20,20). Tapered
-  // down-pointing cluster; visual count capped at 7.
+  const r = 5;
+  // Tight, heavily overlapping layouts — centre spacing ~0.7r–1.4r so every
+  // grape overlaps at least one neighbour. Box is 40×40, visual centre (20,20).
+  // Group is rotated -30° at render so the bunch tilts counter-clockwise.
   const n = Math.min(count, 7);
   const layouts = {
-    2: [[-r, 0], [r, 0]],
-    3: [[-r, -r * 0.5], [r, -r * 0.5], [0, r]],
-    4: [[-r, -r], [r, -r], [-r * 0.7, r * 0.6], [r * 0.7, r * 0.6]],
-    5: [[-2 * r, -r], [0, -r], [2 * r, -r], [-r, r * 0.6], [r, r * 0.6]],
-    6: [[-2 * r, -r], [0, -r], [2 * r, -r], [-r, r * 0.5], [r, r * 0.5], [0, r * 1.8]],
-    7: [[-2 * r, -r * 1.2], [0, -r * 1.2], [2 * r, -r * 1.2], [-r * 1.2, r * 0.3], [r * 1.2, r * 0.3], [-r * 0.4, r * 1.6], [r * 0.4, r * 1.6]]
+    2: [[-r * 0.55, 0], [r * 0.55, 0]],
+    3: [[-r * 0.75, -r * 0.45], [r * 0.75, -r * 0.45], [0, r * 0.6]],
+    4: [[-r * 0.6, -r * 0.55], [r * 0.6, -r * 0.55], [-r * 0.45, r * 0.55], [r * 0.45, r * 0.55]],
+    5: [[-r * 1.15, -r * 0.45], [0, -r * 0.7], [r * 1.15, -r * 0.45], [-r * 0.55, r * 0.6], [r * 0.55, r * 0.6]],
+    6: [[-r * 1.05, -r * 0.5], [0, -r * 0.75], [r * 1.05, -r * 0.5], [-r * 0.5, r * 0.45], [r * 0.5, r * 0.45], [0, r * 1.25]],
+    7: [[-r * 1.3, -r * 0.65], [0, -r * 0.85], [r * 1.3, -r * 0.65], [-r * 0.7, r * 0.15], [r * 0.7, r * 0.15], [-r * 0.35, r * 1.0], [r * 0.35, r * 1.0]]
   };
   const pts = layouts[n];
-  const cx0 = 20, cy0 = 22;
+  const cx0 = 20, cy0 = 20;
   let grapes = '';
-  for (let i = 0; i < pts.length; i++) {
-    const [ox, oy] = pts[i];
+  for (const [ox, oy] of pts) {
     const x = cx0 + ox, y = cy0 + oy;
-    grapes += `<circle cx="${x}" cy="${y}" r="${r}" fill="${GRAPE}" stroke="white" stroke-width="1.2"/>`;
-    grapes += `<circle cx="${x - 1.3}" cy="${y - 1.3}" r="1.3" fill="${GRAPE_HI}" opacity="0.8"/>`;
+    grapes += `<circle cx="${x}" cy="${y}" r="${r}" fill="${GRAPE}" stroke="white" stroke-width="1.1"/>`;
+    grapes += `<circle cx="${x - 1.5}" cy="${y - 1.5}" r="1.3" fill="${GRAPE_HI}" opacity="0.85"/>`;
   }
-  // Stem + leaf at top
-  const stem = `<path d="M20 12 Q 20 16 ${cx0 + pts[0][0]} ${cy0 + pts[0][1] - r}" stroke="${STEM}" stroke-width="1.4" fill="none" stroke-linecap="round"/>
-                <path d="M20 12 q 4 -2 6 -6 q -5 0 -6 6 z" fill="${STEM}"/>`;
   const overflow = count > 7
-    ? `<text x="20" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" style="paint-order:stroke;stroke:${GRAPE};stroke-width:3;">+${count - 7}</text>`
+    ? `<text x="20" y="36" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" style="paint-order:stroke;stroke:${GRAPE};stroke-width:2.5;">+${count - 7}</text>`
     : '';
   return `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;opacity:${opacity};filter:drop-shadow(0 2px 3px rgba(0,0,0,0.18));">
-    <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">${stem}${grapes}${overflow}</svg>
+    <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+      <g transform="rotate(-30 20 20)">${grapes}</g>
+      ${overflow}
+    </svg>
   </div>`;
 }
 
