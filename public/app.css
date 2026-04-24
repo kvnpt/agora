@@ -2149,9 +2149,10 @@ body.map-expanded #location-fab { display: flex; }
   flex: 0 0 auto;
 }
 .ls-tree {
-  width: 180px;
-  height: 270px;
+  width: 220px;
+  height: 293px;
   display: block;
+  overflow: visible;
 }
 #ls-tree-fill-rect {
   transform-box: fill-box;

@@ -141,7 +141,59 @@ function addLabeledMarkers(locations, TZ, focusId) {
     return (a.active ? 1 : 0) - (b.active ? 1 : 0);
   });
 
+  // ── Grape clustering ──────────────────────────────────────────
+  // Cluster dots whose screen-pixel centres sit within 1.3 × dot diameter
+  // of each other (single-linkage union-find). The focused parish is never
+  // clustered. Re-runs on every moveend so dots detach as the user zooms.
+  const DOT_DIAMETER = 10;
+  const CLUSTER_K = 1.3;
+  const THRESH2 = (DOT_DIAMETER * CLUSTER_K * 2) ** 2; // squared pixel distance
+  const pxPos = new Map();
   for (const loc of sortedLocs) {
+    if (loc.id === focusId) continue;
+    const pt = map.latLngToContainerPoint([loc.lat, loc.lng]);
+    pxPos.set(loc.id, { x: pt.x, y: pt.y });
+  }
+  const parent = new Map();
+  sortedLocs.forEach(l => parent.set(l.id, l.id));
+  const find = id => {
+    let p = id;
+    while (parent.get(p) !== p) p = parent.get(p);
+    let q = id;
+    while (parent.get(q) !== p) { const nx = parent.get(q); parent.set(q, p); q = nx; }
+    return p;
+  };
+  const clusterable = sortedLocs.filter(l => l.id !== focusId);
+  for (let i = 0; i < clusterable.length; i++) {
+    const a = clusterable[i], pa = pxPos.get(a.id);
+    if (!pa) continue;
+    for (let j = i + 1; j < clusterable.length; j++) {
+      const b = clusterable[j], pb = pxPos.get(b.id);
+      if (!pb) continue;
+      const dx = pa.x - pb.x, dy = pa.y - pb.y;
+      if (dx * dx + dy * dy < THRESH2) {
+        const ra = find(a.id), rb = find(b.id);
+        if (ra !== rb) parent.set(ra, rb);
+      }
+    }
+  }
+  const clusterMembers = new Map();
+  for (const l of clusterable) {
+    const root = find(l.id);
+    if (!clusterMembers.has(root)) clusterMembers.set(root, []);
+    clusterMembers.get(root).push(l);
+  }
+  const clusteredIds = new Set();
+  const clusterGroups = [];
+  for (const members of clusterMembers.values()) {
+    if (members.length > 1) {
+      members.forEach(m => clusteredIds.add(m.id));
+      clusterGroups.push(members);
+    }
+  }
+
+  for (const loc of sortedLocs) {
+    if (clusteredIds.has(loc.id)) continue; // rendered as a grape cluster below
     const isFocus = loc.id === focusId;
     // Focus: full opacity, bigger. Non-focus while sheet open: strong dim.
     // No sheet open: original active/inactive logic.
@@ -178,6 +230,38 @@ function addLabeledMarkers(locations, TZ, focusId) {
     const line2 = parts.length > 1 ? parts[1].trim() : '';
 
     labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot, isFocus, dotSize: size });
+  }
+
+  // Render one grape-bunch marker per multi-member cluster at the pixel
+  // centroid (converted back to latLng). Any member being active makes the
+  // whole bunch full-opacity. Tap → zoom in toward the cluster so members
+  // detach once they exceed the 1.3×diameter threshold at the new zoom.
+  for (const members of clusterGroups) {
+    let sx = 0, sy = 0;
+    for (const m of members) { const p = pxPos.get(m.id); sx += p.x; sy += p.y; }
+    const cx = sx / members.length, cy = sy / members.length;
+    const ll = map.containerPointToLatLng([cx, cy]);
+    const anyActive = members.some(m => m.active);
+    const opacity = hasFocus ? 0.2 : (anyActive ? 1.0 : 0.4);
+    const html = buildGrapeClusterHtml(members.length, opacity);
+    const BOX = 40;
+    const cluster = L.marker(ll, {
+      icon: L.divIcon({
+        className: '',
+        html,
+        iconSize: [BOX, BOX],
+        iconAnchor: [BOX / 2, BOX / 2]
+      }),
+      interactive: true,
+      bubblingMouseEvents: false,
+      zIndexOffset: anyActive ? 1100 : 50
+    });
+    cluster.on('click', () => {
+      const cur = map.getZoom();
+      map.flyTo(ll, Math.min(cur + 2, 16), { duration: 0.55 });
+    });
+    cluster.addTo(map);
+    markers.push(cluster);
   }
 
   // Label collision detection
@@ -286,6 +370,46 @@ function addLabeledMarkers(locations, TZ, focusId) {
     });
     markers.push(label);
   }
+}
+
+// Compact grape-bunch divIcon for a clustered set of parishes. One grape
+// per member up to 7; overflow collapses into a "+N" badge on the last
+// visible grape. Layout is a tapered bunch pointing downward with a short
+// stem at the top.
+function buildGrapeClusterHtml(count, opacity) {
+  const GRAPE = '#6a2d5c'; // muscat purple
+  const GRAPE_HI = '#8a4a7a';
+  const STEM = '#5a6b3c';
+  const r = 4.5;
+  // Grape offsets (cx, cy) in a 40×40 box centred at (20,20). Tapered
+  // down-pointing cluster; visual count capped at 7.
+  const n = Math.min(count, 7);
+  const layouts = {
+    2: [[-r, 0], [r, 0]],
+    3: [[-r, -r * 0.5], [r, -r * 0.5], [0, r]],
+    4: [[-r, -r], [r, -r], [-r * 0.7, r * 0.6], [r * 0.7, r * 0.6]],
+    5: [[-2 * r, -r], [0, -r], [2 * r, -r], [-r, r * 0.6], [r, r * 0.6]],
+    6: [[-2 * r, -r], [0, -r], [2 * r, -r], [-r, r * 0.5], [r, r * 0.5], [0, r * 1.8]],
+    7: [[-2 * r, -r * 1.2], [0, -r * 1.2], [2 * r, -r * 1.2], [-r * 1.2, r * 0.3], [r * 1.2, r * 0.3], [-r * 0.4, r * 1.6], [r * 0.4, r * 1.6]]
+  };
+  const pts = layouts[n];
+  const cx0 = 20, cy0 = 22;
+  let grapes = '';
+  for (let i = 0; i < pts.length; i++) {
+    const [ox, oy] = pts[i];
+    const x = cx0 + ox, y = cy0 + oy;
+    grapes += `<circle cx="${x}" cy="${y}" r="${r}" fill="${GRAPE}" stroke="white" stroke-width="1.2"/>`;
+    grapes += `<circle cx="${x - 1.3}" cy="${y - 1.3}" r="1.3" fill="${GRAPE_HI}" opacity="0.8"/>`;
+  }
+  // Stem + leaf at top
+  const stem = `<path d="M20 12 Q 20 16 ${cx0 + pts[0][0]} ${cy0 + pts[0][1] - r}" stroke="${STEM}" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                <path d="M20 12 q 4 -2 6 -6 q -5 0 -6 6 z" fill="${STEM}"/>`;
+  const overflow = count > 7
+    ? `<text x="20" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" style="paint-order:stroke;stroke:${GRAPE};stroke-width:3;">+${count - 7}</text>`
+    : '';
+  return `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;opacity:${opacity};filter:drop-shadow(0 2px 3px rgba(0,0,0,0.18));">
+    <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">${stem}${grapes}${overflow}</svg>
+  </div>`;
 }
 
 // Reframe map to fit current markers without rebuilding them (smooth animation)
