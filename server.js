@@ -60,8 +60,9 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/', require('./routes/magic-auth'));
 app.use('/auth', require('./routes/auth'));
 
-// Admin route
-app.get('/admin', (req, res) => {
+// Admin route — gated server-side; non-admin requests redirect to /
+const { requireAdmin } = require('./routes/magic-auth');
+app.get('/admin', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 

@@ -184,5 +184,26 @@ router.post('/auth/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
+// Middleware: allow only Tailscale IPs or valid phone-auth sessions.
+// Unauthorized requests are redirected to / (not 401) so the user gets a
+// useful page rather than a browser error screen.
+function requireAdmin(req, res, next) {
+  const forwarded = req.headers['x-forwarded-for'] || '';
+  const clientIp = forwarded.split(',')[0].trim();
+  if (clientIp && isTailscaleIp(clientIp)) return next();
+
+  const adminPhone = req.session && req.session.adminPhone;
+  if (adminPhone) {
+    const db = getDb();
+    const row = db.prepare(
+      'SELECT 1 FROM admin_sessions WHERE session_sid = ? AND revoked = 0'
+    ).get(req.sessionID);
+    if (row) return next();
+  }
+
+  res.redirect('/');
+}
+
 module.exports = router;
 module.exports.generateAdminToken = generateAdminToken;
+module.exports.requireAdmin = requireAdmin;
