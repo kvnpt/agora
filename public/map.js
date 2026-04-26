@@ -33,6 +33,20 @@ function initMap(state) {
   };
   L.maplibreGL({ style, attributionControl: false }).addTo(map);
 
+  // White translucent fade pane — sits above the tile pane, below the overlay
+  // and marker panes, so basemap mutes but markers/labels stay sharp.
+  const fadePane = map.createPane('fade');
+  Object.assign(fadePane.style, {
+    background: 'rgba(255, 255, 255, 0.35)',
+    pointerEvents: 'none',
+    zIndex: 250,
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0
+  });
+
   userMarker = L.marker([state.userLat, state.userLng], {
     icon: L.divIcon({
       className: '',
@@ -53,30 +67,17 @@ function initMap(state) {
     if (window.agoraClearParishFocus) window.agoraClearParishFocus();
   });
 
-  // Debounced viewport hook — narrows the event list to parishes whose pin
-  // is inside the current bounds. 150ms trailing debounce keeps panning smooth.
-  let viewportDebounce = null;
+  // Viewport hook — runs on moveend only, deferred via rAF + idle so the next
+  // gesture isn't blocked by the pill/list re-render. Mid-pan re-clustering
+  // was removed: with the vector basemap on GPU, a Leaflet marker rebuild
+  // mid-gesture costs more than the live cluster delivered.
   map.on('moveend', () => {
-    clearTimeout(viewportDebounce);
-    viewportDebounce = setTimeout(() => {
+    requestAnimationFrame(() => {
       if (window.agoraOnViewportChange) window.agoraOnViewportChange();
-    }, 150);
+    });
   });
   // Seed the first viewport after the map settles.
   setTimeout(() => { if (window.agoraOnViewportChange) window.agoraOnViewportChange(); }, 150);
-
-  // Live re-cluster during pan/zoom — clustering is based on pixel distance,
-  // so as the user pans/zooms the cluster membership changes. Throttled to
-  // 2Hz (500ms) so cluster math doesn't run every frame. Only updateMap runs
-  // here; event list + pill sort stay frozen until 'moveend' fires.
-  let moveThrottle = null;
-  map.on('move', () => {
-    if (moveThrottle) return;
-    moveThrottle = setTimeout(() => {
-      moveThrottle = null;
-      if (window.agoraStateRef && typeof updateMap === 'function') updateMap(window.agoraStateRef);
-    }, 500);
-  });
 }
 
 function updateMap(state, opts = {}) {
