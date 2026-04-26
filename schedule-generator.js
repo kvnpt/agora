@@ -79,7 +79,7 @@ function weekOfMonthLabel(qualifier) {
 /**
  * Generate event instances from recurring schedules for the next N weeks.
  */
-function generateEvents(weeksAhead = 4) {
+function generateEvents(weeksAhead = 10) {
   const db = getDb();
 
   const schedules = db.prepare(`
