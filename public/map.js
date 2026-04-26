@@ -8,10 +8,30 @@ function initMap(state) {
   map = L.map('map', { zoomControl: false, zoomSnap: 0 }).setView([state.userLat, state.userLng], 11);
   window.agoraMap = map;
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
-    maxZoom: 18
-  }).addTo(map);
+  // Vector basemap via self-hosted Protomaps pmtiles + MapLibre GL.
+  // Leaflet stays as the marker host; MapLibre is mounted as a layer
+  // underneath via the maplibre-gl-leaflet shim. Pixel-coord helpers
+  // (containerPointToLatLng, latLngToContainerPoint) keep working
+  // because they're Leaflet-driven.
+  if (!window.__pmtilesRegistered) {
+    const proto = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', proto.tile);
+    window.__pmtilesRegistered = true;
+  }
+  const style = {
+    version: 8,
+    glyphs: '/glyphs/{fontstack}/{range}.pbf',
+    sprite: window.location.origin + '/sprites/protomaps',
+    sources: {
+      protomaps: {
+        type: 'vector',
+        url: 'pmtiles:///tiles/oceania.pmtiles',
+        attribution: '<a href="https://protomaps.com">Protomaps</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
+      }
+    },
+    layers: protomaps_themes_base.layers('protomaps', 'light')
+  };
+  L.maplibreGL({ style, attributionControl: false }).addTo(map);
 
   userMarker = L.marker([state.userLat, state.userLng], {
     icon: L.divIcon({

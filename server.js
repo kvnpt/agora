@@ -37,6 +37,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 app.use('/logos', express.static(path.join(__dirname, 'data', 'logos')));
 app.use('/posters', express.static(path.join(__dirname, 'data', 'posters')));
+app.use('/tiles', express.static('/app/tiles', { maxAge: '7d', acceptRanges: true }));
 
 // Health check
 app.get('/health', (req, res) => {

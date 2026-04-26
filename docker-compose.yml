@@ -10,6 +10,7 @@ services:
       AGORA_DB_PATH: /app/data/agora.db
     volumes:
       - /opt/agora/data:/app/data
+      - /opt/agora/tiles:/app/tiles:ro
     networks:
       homelab:
         ipv4_address: 172.18.0.2
@@ -28,6 +29,7 @@ services:
       - "3002:3000"
     volumes:
       - /opt/agora/data-dev:/app/data
+      - /opt/agora/tiles:/app/tiles:ro
     networks:
       homelab:
         ipv4_address: 172.18.0.3
