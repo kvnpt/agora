@@ -1030,50 +1030,42 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// ── Multi-parish toggle ──
-// Two entry points share this: the menu item ("Select parishes" → also
-// enters selection-mode) and the in-view chip in the modal bar (toggle only).
-function setParishPicker(on, opts = {}) {
+// ── Pill drawer (chip toggle) — drawer visibility only, doesn't reset filter ──
+function setParishPicker(on) {
   state.filters.multiParish = !!on;
   saveMultiParishPref(state.filters.multiParish);
-  if (state.filters.multiParish) {
-    // Entering picker mode: drop any single-parish focus so pills start clean.
-    state.filters.parishIds = null;
-    state.parishFocus = null;
-  }
-  if (opts.selectionMode) {
-    state.selectionMode = true;
-    showMapSelectOverlay();
-  } else if (!state.filters.multiParish) {
-    // Leaving picker mode also tears down selection mode if active.
-    state.selectionMode = false;
-    hideMapSelectOverlay();
-  }
-  // Dismiss the filters dropdown — picker is a mode switch, not an in-menu
-  // toggle, so keeping the menu open hides the pills that just appeared.
-  closeFiltersMenuAnim();
-  syncMultiParishButton();
   syncParishRowVisibility();
   renderParishPills();
   renderInViewChip();
-  renderCurrentView();
-  syncURL();
-  if (state.mode === 'services') window.agoraFetchSchedules();
-  else window.agoraFetchEvents();
+}
+
+// ── Selection mode (map-tap to toggle parish in filter set) ──
+function setSelectionMode(on) {
+  state.selectionMode = !!on;
+  if (on) showMapSelectOverlay(); else hideMapSelectOverlay();
+  syncMultiParishButton();
+  closeFiltersMenuAnim();
+  if (typeof window.updateMap === 'function') window.updateMap(state);
+  if (!on) {
+    renderCurrentView();
+    syncURL();
+    if (state.mode === 'services') window.agoraFetchSchedules();
+    else window.agoraFetchEvents();
+  }
 }
 
 function initMultiParishToggle() {
   const btn = document.getElementById('btn-multi-parish');
   if (btn) {
-    // Menu entry: turning ON also enters selection-mode (tap parishes on map).
+    // Menu entry "Select parishes": toggles selection mode only.
     btn.addEventListener('click', () => {
-      const next = !state.filters.multiParish;
-      setParishPicker(next, { selectionMode: next });
+      setSelectionMode(!state.selectionMode);
     });
   }
   syncMultiParishButton();
 
-  // In-view chip in modal bar: pure picker toggle, no selection-mode.
+  // In-view chip in modal bar: pure pill drawer toggle, independent of
+  // selection mode.
   const chip = document.getElementById('in-view-chip');
   if (chip) {
     chip.addEventListener('click', () => {
@@ -1081,13 +1073,11 @@ function initMultiParishToggle() {
     });
   }
 
-  // Confirm-FAB exits selection-mode but keeps the picker on with current
-  // selection. One map move at the end fits the chosen parishes.
+  // Confirm-FAB exits selection mode and fits map to selection.
   const confirm = document.getElementById('map-select-confirm');
   if (confirm) {
     confirm.addEventListener('click', () => {
-      state.selectionMode = false;
-      hideMapSelectOverlay();
+      setSelectionMode(false);
       if (state.filters.parishIds && window.agoraMap) {
         const sel = state.parishes.filter(p =>
           state.filters.parishIds.has(p.id) && p.lat != null && p.lng != null);
@@ -1096,16 +1086,21 @@ function initMultiParishToggle() {
           window.agoraMap.fitBounds(b, { maxZoom: 13, animate: true, duration: 0.7 });
         }
       }
-      renderParishPills();
-      renderCurrentView();
-      syncURL();
     });
   }
 }
 
+function syncJurisBottomVar() {
+  // Push --juris-bottom to actual banner bottom-edge so the dotted ring
+  // doesn't overlap jurisdiction chips.
+  const banner = document.getElementById('jurisdiction-chips');
+  const h = banner ? banner.getBoundingClientRect().bottom : 48;
+  document.documentElement.style.setProperty('--juris-bottom', Math.round(h + 8) + 'px');
+}
 function showMapSelectOverlay() {
   const el = document.getElementById('map-select-overlay');
   if (!el) return;
+  syncJurisBottomVar();
   el.classList.remove('hidden');
   el.setAttribute('aria-hidden', 'false');
 }
@@ -1137,7 +1132,9 @@ window.agoraSyncParishRowVisibility = syncParishRowVisibility;
 function syncMultiParishButton() {
   const btn = document.getElementById('btn-multi-parish');
   if (!btn) return;
-  btn.classList.toggle('active', !!state.filters.multiParish);
+  // Menu item label is "Select parishes" — active state tracks selection mode,
+  // not pill-drawer visibility (those are decoupled now).
+  btn.classList.toggle('active', !!state.selectionMode);
 }
 
 function exitMultiParish() {

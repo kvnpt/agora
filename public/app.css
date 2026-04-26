@@ -1573,6 +1573,21 @@ a.filters-menu-item { text-decoration: none; }
   opacity: 0.8;
   margin-top: 2px;
 }
+/* Selected (in selection mode): same emphasis as focus, but stays in the
+   side-flow position (no free-float-above-dot). Multiple parishes can be
+   selected at once, so each label sits next to its dot. */
+.map-label-selected {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: normal;
+  text-shadow: 1px 1px 3px rgba(255,255,255,0.95), -1px -1px 3px rgba(255,255,255,0.95),
+               0 1px 3px rgba(255,255,255,0.95), 0 -1px 3px rgba(255,255,255,0.95);
+}
+.map-label-selected .map-label-sub {
+  font-size: 11px;
+  opacity: 0.8;
+}
 
 /* ── Event poster in detail panel ── */
 .detail-poster {
@@ -1753,7 +1768,7 @@ body.map-expanded #btn-filters.map-fab { display: flex; }
 #map-select-overlay.hidden { display: none; }
 #map-select-overlay .map-select-ring {
   position: absolute;
-  top: 16px;
+  top: var(--juris-bottom, 48px);
   left: 16px;
   right: 16px;
   bottom: var(--sheet-cover, 50dvh);
@@ -1763,7 +1778,7 @@ body.map-expanded #btn-filters.map-fab { display: flex; }
 }
 #map-select-overlay .map-select-label {
   position: absolute;
-  top: 28px;
+  top: calc(var(--juris-bottom, 48px) + 12px);
   left: 50%;
   transform: translateX(-50%);
   background: #fff;

@@ -121,7 +121,11 @@ function updateMap(state, opts = {}) {
     events: eventsByParish[p.id] || []
   }));
 
-  addLabeledMarkers(locations, TZ, focusId);
+  // In selection mode, render every currently-selected parish with the
+  // bigger "focus" label so the user gets visual feedback as they tap.
+  const selectedIds = (state.selectionMode && state.filters.parishIds)
+    ? new Set(state.filters.parishIds) : null;
+  addLabeledMarkers(locations, TZ, focusId, selectedIds);
 
   // Fit only when caller opts in — otherwise markers refresh without
   // disturbing the user's current map view.
@@ -144,11 +148,12 @@ function updateMap(state, opts = {}) {
   }
 }
 
-function addLabeledMarkers(locations, TZ, focusId) {
+function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   if (!locations.length) return;
 
   const labelMeta = [];
   const hasFocus = !!focusId;
+  const isSel = id => !!(selectedIds && selectedIds.has(id));
 
   // Sort: inactive first so active dots/labels render above (higher z-index
    // = tap priority when hit targets overlap). Focused parish sorted last
@@ -213,16 +218,21 @@ function addLabeledMarkers(locations, TZ, focusId) {
   for (const loc of sortedLocs) {
     if (clusteredIds.has(loc.id)) continue; // rendered as a grape cluster below
     const isFocus = loc.id === focusId;
+    const isSelected = isSel(loc.id);
+    // Selected parishes get the same emphasis as focus (bigger dot, bigger
+    // label) but without the logo swap — that's reserved for the parish
+    // sheet's single-focus case.
+    const emphasised = isFocus || isSelected;
     // All parishes full opacity — filters cut visibility completely, no fading.
     const opacity = 1.0;
 
     const focusLogo = isFocus && loc.logo;
-    const size = focusLogo ? 32 : (isFocus ? 16 : (loc.active ? 10 : 8));
-    const hitSize = isFocus ? 44 : (loc.active ? 36 : 24);
-    const borderWidth = isFocus ? 2.5 : 1.5;
+    const size = focusLogo ? 32 : (emphasised ? 16 : (loc.active ? 10 : 8));
+    const hitSize = emphasised ? 44 : (loc.active ? 36 : 24);
+    const borderWidth = emphasised ? 2.5 : 1.5;
     const innerHtml = focusLogo
       ? `<img src="${loc.logo}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:0 2px 10px rgba(0,0,0,0.25);">`
-      : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:${isFocus ? '0 2px 10px rgba(0,0,0,0.25)' : 'none'};"></div>`;
+      : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:${emphasised ? '0 2px 10px rgba(0,0,0,0.25)' : 'none'};"></div>`;
     const dot = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({
         className: '',
@@ -232,7 +242,7 @@ function addLabeledMarkers(locations, TZ, focusId) {
       }),
       interactive: true,
       bubblingMouseEvents: false,
-      zIndexOffset: isFocus ? 2000 : (loc.active ? 1000 : 0)
+      zIndexOffset: isFocus ? 2000 : (isSelected ? 1500 : (loc.active ? 1000 : 0))
     });
 
     dot.on('click', () => {
@@ -258,7 +268,7 @@ function addLabeledMarkers(locations, TZ, focusId) {
     const line1 = parts[0].trim();
     const line2 = parts.length > 1 ? parts[1].trim() : '';
 
-    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot, isFocus, dotSize: size });
+    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot, isFocus, isSelected, dotSize: size });
   }
 
   // Render one grape-bunch marker per multi-member cluster at the pixel
@@ -379,21 +389,34 @@ function addLabeledMarkers(locations, TZ, focusId) {
     }
 
     const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
-    const labelHtml = `<div class="map-label" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
+    const cls = lm.isSelected ? 'map-label map-label-selected' : 'map-label';
+    const labelHtml = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
 
+    const labelH = lm.isSelected ? 44 : 30;
     const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
     const label = L.marker([lm.loc.lat, lm.loc.lng], {
       icon: L.divIcon({
         className: '',
         html: labelHtml,
-        iconSize: [LABEL_W, 30],
-        iconAnchor: [anchorX, 15]
+        iconSize: [LABEL_W, labelH],
+        iconAnchor: [anchorX, labelH / 2]
       }),
       interactive: true,
       bubblingMouseEvents: false,
-      zIndexOffset: lm.loc.active ? 1000 : 0
+      zIndexOffset: lm.isSelected ? 1500 : (lm.loc.active ? 1000 : 0)
     }).addTo(map);
     label.on('click', () => {
+      const st = window.agoraStateRef;
+      if (st?.selectionMode) {
+        // Tap selected label = toggle off; same shape as dot click handler.
+        const cur = st.filters.parishIds ? new Set(st.filters.parishIds) : new Set();
+        if (cur.has(lm.loc.id)) cur.delete(lm.loc.id); else cur.add(lm.loc.id);
+        st.filters.parishIds = cur.size ? cur : null;
+        if (typeof renderParishPills === 'function') renderParishPills();
+        if (typeof updateMap === 'function') updateMap(st);
+        if (typeof window.agoraSyncURL === 'function') window.agoraSyncURL();
+        return;
+      }
       if (window.openParishSheet) window.openParishSheet(lm.loc.id);
     });
     markers.push(label);
