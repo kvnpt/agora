@@ -673,8 +673,14 @@ async function fetchEvents(opts = {}) {
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
 }
 
-window.loadMoreEvents = function() {
-  fetchEvents({ extended: true });
+window.loadMoreEvents = async function() {
+  const mainScroll = document.getElementById('sheet-scroll');
+  const parishScroll = document.getElementById('parish-sheet-scroll');
+  const mainTop = mainScroll ? mainScroll.scrollTop : 0;
+  const parishTop = parishScroll ? parishScroll.scrollTop : 0;
+  await fetchEvents({ extended: true });
+  if (mainScroll) mainScroll.scrollTop = mainTop;
+  if (parishScroll) parishScroll.scrollTop = parishTop;
 };
 
 async function fetchSchedules(opts = {}) {
@@ -3117,7 +3123,12 @@ function renderStream(container, events) {
     const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
     html += `<div class="list-footer"><button class="list-footer-btn" onclick="loadMoreEvents()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
   } else {
-    html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
+    // Show the schedule horizon so the user knows the fetch worked and this is genuinely the end.
+    const lastEvt = events.length ? events[events.length - 1] : null;
+    const horizonNote = lastEvt
+      ? `<div class="list-footer-note">Events scheduled to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
+      : '';
+    html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
   }
 
   container.innerHTML = html;
