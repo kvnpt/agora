@@ -79,15 +79,12 @@ function weekOfMonthLabel(qualifier) {
 /**
  * Generate event instances from recurring schedules for the next N weeks.
  */
-function generateEvents(weeksAhead = 10) {
+function generateEvents(weeksAhead = 10, scheduleId = null) {
   const db = getDb();
 
-  const schedules = db.prepare(`
-    SELECT s.*, p.lat, p.lng
-    FROM schedules s
-    JOIN parishes p ON s.parish_id = p.id
-    WHERE s.active = 1
-  `).all();
+  const schedules = scheduleId
+    ? db.prepare(`SELECT s.*, p.lat, p.lng FROM schedules s JOIN parishes p ON s.parish_id = p.id WHERE s.id = ? AND s.active = 1`).all(scheduleId)
+    : db.prepare(`SELECT s.*, p.lat, p.lng FROM schedules s JOIN parishes p ON s.parish_id = p.id WHERE s.active = 1`).all();
 
   if (!schedules.length) {
     console.log('[schedule-gen] No active schedules');

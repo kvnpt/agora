@@ -355,7 +355,7 @@ router.post('/schedules', (req, res) => {
   `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null, hide_live ? 1 : 0, parish_scoped ? 1 : 0);
 
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
-  generateEvents();
+  generateEvents(10, schedule.id);
   res.status(201).json(schedule);
 });
 
@@ -381,8 +381,7 @@ router.patch('/schedules/:id', (req, res) => {
   values.push(req.params.id);
   db.prepare(`UPDATE schedules SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
-  // Immediately propagate schedule changes to existing generated events.
-  generateEvents();
+  generateEvents(10, Number(req.params.id));
 
   const updated = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   res.json(updated);
