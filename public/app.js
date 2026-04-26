@@ -670,6 +670,7 @@ async function fetchEvents(opts = {}) {
 
   renderEvents();
   updateMap(state, { fit: !!opts.fit });
+  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
 }
 
 window.loadMoreEvents = function() {
