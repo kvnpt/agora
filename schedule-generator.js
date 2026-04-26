@@ -163,7 +163,12 @@ function generateEvents(weeksAhead = 10, scheduleId = null) {
   tx();
 
   // Clean up future events that no longer match their schedule's week_of_month
-  const womSchedules = db.prepare(`SELECT id, week_of_month, day_of_week FROM schedules WHERE week_of_month IS NOT NULL AND active = 1`).all();
+  const womQuery = scheduleId
+    ? `SELECT id, week_of_month, day_of_week FROM schedules WHERE id = ? AND week_of_month IS NOT NULL AND active = 1`
+    : `SELECT id, week_of_month, day_of_week FROM schedules WHERE week_of_month IS NOT NULL AND active = 1`;
+  const womSchedules = scheduleId
+    ? db.prepare(womQuery).all(scheduleId)
+    : db.prepare(womQuery).all();
   const delMismatch = db.prepare(`DELETE FROM events WHERE schedule_id = ? AND source_adapter = 'schedule' AND source_hash = ?`);
   let womCleaned = 0;
   for (const ws of womSchedules) {
@@ -178,18 +183,17 @@ function generateEvents(weeksAhead = 10, scheduleId = null) {
   }
   if (womCleaned) console.log(`[schedule-gen] Cleaned ${womCleaned} events not matching week_of_month`);
 
-  // Clean up old schedule-generated events (older than 7 days)
-  const cutoff = new Date(now.getTime() - 7 * 86400000).toISOString();
-  let cleaned = db.prepare(`
-    DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc < ?
-  `).run(cutoff).changes;
+  // Clean up future events from disabled schedules (scoped or global)
+  const disabledCleaned = scheduleId
+    ? db.prepare(`DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc >= ? AND schedule_id = ? AND schedule_id IN (SELECT id FROM schedules WHERE active = 0)`).run(now.toISOString(), scheduleId).changes
+    : db.prepare(`DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc >= ? AND schedule_id IN (SELECT id FROM schedules WHERE active = 0)`).run(now.toISOString()).changes;
 
-  // Clean up future events from disabled schedules
-  const disabledCleaned = db.prepare(`
-    DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc >= ?
-    AND schedule_id IN (SELECT id FROM schedules WHERE active = 0)
-  `).run(now.toISOString()).changes;
-  cleaned += disabledCleaned;
+  // Clean up old schedule-generated events (older than 7 days) — global maintenance, cron only
+  let cleaned = disabledCleaned;
+  if (!scheduleId) {
+    const cutoff = new Date(now.getTime() - 7 * 86400000).toISOString();
+    cleaned += db.prepare(`DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc < ?`).run(cutoff).changes;
+  }
 
   console.log(`[schedule-gen] Generated ${generated} events, cleaned ${cleaned} old`);
   return { generated, cleaned };
