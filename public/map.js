@@ -31,21 +31,15 @@ function initMap(state) {
     },
     layers: protomaps_themes_base.default('protomaps', 'light')
   };
-  L.maplibreGL({ style, attributionControl: false }).addTo(map);
-
-  // White translucent fade pane — sits above the tile pane, below the overlay
-  // and marker panes, so basemap mutes but markers/labels stay sharp.
-  const fadePane = map.createPane('fade');
-  Object.assign(fadePane.style, {
-    background: 'rgba(255, 255, 255, 0.35)',
-    pointerEvents: 'none',
-    zIndex: 250,
-    width: '100%',
-    height: '100%',
-    position: 'absolute',
-    top: 0,
-    left: 0
+  // White translucent fade rendered inside the MapLibre canvas as a final
+  // background layer. Painted last so it mutes every basemap layer below;
+  // Leaflet markers/labels live in DOM above the canvas and stay sharp.
+  style.layers.push({
+    id: 'fade-overlay',
+    type: 'background',
+    paint: { 'background-color': '#ffffff', 'background-opacity': 0.35 }
   });
+  L.maplibreGL({ style, attributionControl: false }).addTo(map);
 
   userMarker = L.marker([state.userLat, state.userLng], {
     icon: L.divIcon({
@@ -67,14 +61,17 @@ function initMap(state) {
     if (window.agoraClearParishFocus) window.agoraClearParishFocus();
   });
 
-  // Viewport hook — runs on moveend only, deferred via rAF + idle so the next
-  // gesture isn't blocked by the pill/list re-render. Mid-pan re-clustering
-  // was removed: with the vector basemap on GPU, a Leaflet marker rebuild
-  // mid-gesture costs more than the live cluster delivered.
+  // Viewport hook — trailing debounce on moveend so a quick gesture-end →
+  // gesture-begin doesn't get blocked by the rerender of a moveend that the
+  // user has already abandoned. Live mid-pan re-cluster removed: with the
+  // GPU basemap, a Leaflet marker rebuild during the gesture window competed
+  // with touch dispatch and stalled the next pan.
+  let viewportDebounce = null;
   map.on('moveend', () => {
-    requestAnimationFrame(() => {
+    clearTimeout(viewportDebounce);
+    viewportDebounce = setTimeout(() => {
       if (window.agoraOnViewportChange) window.agoraOnViewportChange();
-    });
+    }, 200);
   });
   // Seed the first viewport after the map settles.
   setTimeout(() => { if (window.agoraOnViewportChange) window.agoraOnViewportChange(); }, 150);

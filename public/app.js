@@ -922,6 +922,11 @@ function initParishFilter() {
 
 function renderParishPills() {
   const row = document.getElementById('parish-filter-row');
+  // Skip the rebuild when the row is hidden — pill order has no visible
+  // effect, and the rerender on every moveend was a measurable lag source.
+  // syncParishRowVisibility() callers (toggle picker, jurisdiction change)
+  // call renderParishPills() directly so the row repopulates before showing.
+  if (!row.classList.contains('visible')) return;
   let relevant = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
