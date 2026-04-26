@@ -61,20 +61,45 @@ function initMap(state) {
     if (window.agoraClearParishFocus) window.agoraClearParishFocus();
   });
 
-  // Viewport hook — trailing debounce on moveend so a quick gesture-end →
-  // gesture-begin doesn't get blocked by the rerender of a moveend that the
-  // user has already abandoned. Live mid-pan re-cluster removed: with the
-  // GPU basemap, a Leaflet marker rebuild during the gesture window competed
-  // with touch dispatch and stalled the next pan.
-  let viewportDebounce = null;
-  map.on('moveend', () => {
-    clearTimeout(viewportDebounce);
-    viewportDebounce = setTimeout(() => {
-      if (window.agoraOnViewportChange) window.agoraOnViewportChange();
-    }, 200);
+  // Viewport hooks — split into two debounced phases so a slow events-list
+  // rerender can't block the next gesture:
+  //   • mapPhase  (200ms) — viewport ids + markers + in-view chip + pills
+  //   • listPhase (800ms) — events/services list innerHTML rebuild
+  // Both cancel on movestart so a follow-up gesture preempts the prior
+  // gesture's pending work. The list debounce sits long enough that a quick
+  // gesture-end → gesture-begin never lets the heavy list rerender start.
+  let mapPhase = null, listPhase = null;
+  map.on('movestart', () => {
+    clearTimeout(mapPhase);
+    clearTimeout(listPhase);
   });
+  map.on('moveend', () => {
+    clearTimeout(mapPhase);
+    clearTimeout(listPhase);
+    mapPhase = setTimeout(() => {
+      if (window.agoraOnViewportMapPhase) window.agoraOnViewportMapPhase();
+    }, 200);
+    listPhase = setTimeout(() => {
+      if (window.agoraOnViewportListPhase) window.agoraOnViewportListPhase();
+    }, 800);
+  });
+
+  // Live mid-pan re-cluster — clusters detach as the user zooms even before
+  // moveend. Throttled to 2Hz so cluster math doesn't run every frame.
+  let moveThrottle = null;
+  map.on('move', () => {
+    if (moveThrottle) return;
+    moveThrottle = setTimeout(() => {
+      moveThrottle = null;
+      if (window.agoraStateRef && typeof updateMap === 'function') updateMap(window.agoraStateRef);
+    }, 500);
+  });
+
   // Seed the first viewport after the map settles.
-  setTimeout(() => { if (window.agoraOnViewportChange) window.agoraOnViewportChange(); }, 150);
+  setTimeout(() => {
+    if (window.agoraOnViewportMapPhase) window.agoraOnViewportMapPhase();
+    if (window.agoraOnViewportListPhase) window.agoraOnViewportListPhase();
+  }, 150);
 }
 
 function updateMap(state, opts = {}) {

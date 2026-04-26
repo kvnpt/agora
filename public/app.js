@@ -478,9 +478,9 @@ function centerMapOnUser() {
   window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.9 });
 }
 
-// Recompute the set of parishes inside the current map bounds. Fired by
-// map.js's debounced moveend hook; also seeded once at startup.
-function recomputeViewportParishIds() {
+// Compute viewport parish set from current map bounds. Cheap — pure math
+// over the parish list. Stored in state for use by the heavier renders.
+function recomputeViewportSet() {
   if (!window.agoraMap) return;
   const b = window.agoraMap.getBounds();
   const ids = new Set();
@@ -489,13 +489,28 @@ function recomputeViewportParishIds() {
     if (b.contains([p.lat, p.lng])) ids.add(p.id);
   }
   state.viewportParishIds = ids;
-  // Don't fit — the user just moved the map, we don't want to fight them.
-  renderCurrentView();
-  // Pills sort by viewport-centre distance; re-render so order tracks pan/zoom.
+}
+
+// Map-phase: cheap-ish work that should track the map closely — viewport
+// recompute, marker redraw (cluster), in-view chip, pill re-sort. Runs
+// 200ms after gesture-end via map.js's debounce.
+function onViewportMapPhase() {
+  recomputeViewportSet();
+  if (typeof updateMap === 'function') updateMap(state);
   renderParishPills();
   if (typeof renderInViewChip === 'function') renderInViewChip();
+  if (typeof syncResetFab === 'function') syncResetFab();
 }
-window.agoraOnViewportChange = recomputeViewportParishIds;
+
+// List-phase: events/services list innerHTML rebuild. Heavy. Runs 800ms
+// after gesture-end so a quick follow-up pan preempts it via movestart.
+function onViewportListPhase() {
+  recomputeViewportSet();
+  if (state.mode === 'services') renderServices(); else renderEvents();
+}
+
+window.agoraOnViewportMapPhase = onViewportMapPhase;
+window.agoraOnViewportListPhase = onViewportListPhase;
 
 // Centre of the *visible* map rectangle — i.e. the part above the bottom
 // sheet. Distance-from-centre sort lives or dies on this number: when the
