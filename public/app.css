@@ -97,8 +97,12 @@ input, select, textarea {
   height: 78dvh;
   z-index: 700;
   background: var(--bg);
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  border-radius: 22px 22px 0 0;
+  /* White halo + thin dark hairline outline. Halo lifts the sheet visually
+     off the map; the 1px dark ring gives a crisp edge against light tiles. */
+  box-shadow:
+    0 -10px 28px rgba(255, 255, 255, 0.7),
+    0 0 0 1px #1c1c1c;
   display: flex;
   flex-direction: column;
   will-change: transform;
@@ -333,7 +337,7 @@ input, select, textarea {
   border-radius: 14px; /* matches .filters-btn */
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 6px;
-  z-index: 600;
+  z-index: 750;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1712,6 +1716,122 @@ body.map-expanded #reset-fab.visible { display: block; }
 #location-fab.fading { opacity: 0; pointer-events: none; }
 body.map-expanded #location-fab { display: flex; }
 
+/* Filters FAB — mirror of #location-fab on the bottom-left. JS top-positions
+   it to (currentY - 52) so it tracks the sheet snap, same as location FAB. */
+#btn-filters.map-fab {
+  position: fixed;
+  left: 16px;
+  z-index: 600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border, #d0d0d0);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.45s ease;
+}
+#btn-filters.map-fab .filters-btn-content { display: inline-flex; align-items: center; justify-content: center; }
+#btn-filters.map-fab .filters-btn-content img { width: 20px; height: 20px; opacity: 0.75; }
+#btn-filters.map-fab.fading { opacity: 0; pointer-events: none; }
+body.map-expanded #btn-filters.map-fab { display: flex; }
+
+/* Map-selection overlay — dotted blue ring + label + tick FAB. Inset so the
+   ring lives slightly inside the visible map rectangle. The bottom inset is
+   driven by `--sheet-cover` which app.js updates as the sheet snaps. */
+#map-select-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 650;
+}
+#map-select-overlay.hidden { display: none; }
+#map-select-overlay .map-select-ring {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  bottom: var(--sheet-cover, 50dvh);
+  border: 2px dashed #4a86ff;
+  border-radius: 14px;
+  pointer-events: none;
+}
+#map-select-overlay .map-select-label {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a86ff;
+  border: 1px solid #4a86ff;
+  pointer-events: none;
+}
+#map-select-confirm.map-fab {
+  position: fixed;
+  right: 16px;
+  z-index: 660;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: #4a86ff;
+  border: 1px solid #4a86ff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  pointer-events: auto;
+}
+#map-select-confirm.map-fab img {
+  width: 22px;
+  height: 22px;
+  filter: brightness(0) invert(1);
+}
+
+/* In-view chip in the modal bar (replaces the old filters button slot).
+   Live count of parishes inside the current viewport; tap toggles the
+   parish-picker pill drawer. Chevron rotates 90° when drawer is open. */
+.in-view-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color 0.15s, border-color 0.15s;
+}
+.in-view-chip:hover { color: var(--text); border-color: var(--text-secondary); }
+.in-view-chip.open {
+  color: var(--text);
+  border-color: var(--text);
+  background: var(--border-light);
+}
+.in-view-chevron {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+  transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+.in-view-chip.open .in-view-chevron { transform: rotate(90deg); }
+
 /* ── Parish sheet (secondary sheet opened from event drawer) ── */
 .parish-sheet {
   position: fixed;
@@ -1721,8 +1841,10 @@ body.map-expanded #location-fab { display: flex; }
   height: 78dvh;
   z-index: 800;
   background: var(--bg);
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 -4px 16px rgba(0,0,0,0.18);
+  border-radius: 22px 22px 0 0;
+  box-shadow:
+    0 -10px 28px rgba(255, 255, 255, 0.7),
+    0 0 0 1px #1c1c1c;
   display: flex;
   flex-direction: column;
   will-change: transform;

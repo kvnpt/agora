@@ -210,52 +210,70 @@
     <img src="/tabler-location.svg" alt="">
   </button>
 
+  <!-- Filters FAB (bottom left, above sheet) -->
+  <button id="btn-filters" class="map-fab filters-fab has-active" type="button" aria-haspopup="menu" aria-expanded="false" title="Filters">
+    <span class="filters-btn-content">
+      <img src="https://api.iconify.design/ph:funnel.svg" alt="">
+    </span>
+  </button>
+
+  <!-- Filters dropdown menu, anchored to #btn-filters via positionFiltersMenu -->
+  <div class="filters-menu hidden" id="filters-menu" role="menu">
+    <button class="filters-menu-item" id="btn-events" role="menuitemradio">
+      <img class="fm-icon" src="https://api.iconify.design/ph:list.svg" alt="">
+      <span class="fm-label">Events</span>
+    </button>
+    <button class="filters-menu-item" id="btn-services" role="menuitemradio">
+      <img class="fm-icon" src="https://api.iconify.design/ph:church.svg" alt="">
+      <span class="fm-label">Schedules</span>
+    </button>
+    <button class="filters-menu-item" id="btn-social" role="menuitemradio">
+      <img class="fm-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
+      <span class="fm-label">Socials</span>
+    </button>
+    <div class="filters-menu-sep" aria-hidden="true"></div>
+    <button class="filters-menu-item fm-english" id="btn-english" role="menuitemcheckbox">
+      <span class="fm-icon fm-en-badge">EN</span>
+      <span class="fm-label">English</span>
+    </button>
+    <div class="filters-menu-sep" aria-hidden="true"></div>
+    <button class="filters-menu-item" id="btn-multi-parish" role="menuitemcheckbox">
+      <img class="fm-icon" src="https://api.iconify.design/ph:list-plus.svg" alt="">
+      <span class="fm-label">Select parishes</span>
+    </button>
+    <div class="filters-menu-sep fm-admin-sep" aria-hidden="true" hidden></div>
+    <a class="filters-menu-item fm-admin" id="btn-admin" href="/admin" role="menuitem" hidden>
+      <img class="fm-icon" src="https://api.iconify.design/ph:shield-check.svg" alt="">
+      <span class="fm-label">Admin</span>
+    </a>
+    <button class="filters-menu-item fm-logout" id="btn-logout" role="menuitem" hidden>
+      <img class="fm-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+      <span class="fm-label">Log out</span>
+    </button>
+  </div>
+
+  <!-- Map-selection overlay (visible when state.selectionMode is true) -->
+  <div id="map-select-overlay" class="hidden" aria-hidden="true">
+    <div class="map-select-ring"></div>
+    <div class="map-select-label">Select parishes</div>
+    <button id="map-select-confirm" class="map-fab confirm-fab" type="button" aria-label="Confirm selection">
+      <img src="https://api.iconify.design/ph:check-bold.svg" alt="">
+    </button>
+  </div>
+
   <div id="bottom-sheet">
     <div class="map-grab-handle"></div>
 
-    <!-- Mode bar: filters button (left), URL + copy (centre), sort (right) -->
+    <!-- Mode bar: in-view chip (left), URL + copy (centre) -->
     <div class="mode-bar" id="mode-bar">
-      <button class="filters-btn" id="btn-filters" type="button" aria-haspopup="menu" aria-expanded="false">
-        <span class="filters-btn-content"><span class="filters-btn-label">Events</span></span>
+      <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Toggle parish picker">
+        <span class="in-view-count" id="in-view-count">0 parishes in-view</span>
+        <img class="in-view-chevron" src="https://api.iconify.design/ph:caret-right.svg" alt="">
       </button>
       <button class="mode-url" id="mode-url" type="button" aria-label="Copy page URL">
         <span class="mode-url-text" id="mode-url-text">orthodoxy.au</span>
         <img class="mode-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
       </button>
-      <!-- Dropdown menu, anchored under filters-btn -->
-      <div class="filters-menu hidden" id="filters-menu" role="menu">
-        <button class="filters-menu-item" id="btn-events" role="menuitemradio">
-          <img class="fm-icon" src="https://api.iconify.design/ph:list.svg" alt="">
-          <span class="fm-label">Events</span>
-        </button>
-        <button class="filters-menu-item" id="btn-services" role="menuitemradio">
-          <img class="fm-icon" src="https://api.iconify.design/ph:church.svg" alt="">
-          <span class="fm-label">Schedules</span>
-        </button>
-        <button class="filters-menu-item" id="btn-social" role="menuitemradio">
-          <img class="fm-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
-          <span class="fm-label">Socials</span>
-        </button>
-        <div class="filters-menu-sep" aria-hidden="true"></div>
-        <button class="filters-menu-item fm-english" id="btn-english" role="menuitemcheckbox">
-          <span class="fm-icon fm-en-badge">EN</span>
-          <span class="fm-label">English</span>
-        </button>
-        <div class="filters-menu-sep" aria-hidden="true"></div>
-        <button class="filters-menu-item" id="btn-multi-parish" role="menuitemcheckbox">
-          <img class="fm-icon" src="https://api.iconify.design/ph:list-plus.svg" alt="">
-          <span class="fm-label">Parish picker</span>
-        </button>
-        <div class="filters-menu-sep fm-admin-sep" aria-hidden="true" hidden></div>
-        <a class="filters-menu-item fm-admin" id="btn-admin" href="/admin" role="menuitem" hidden>
-          <img class="fm-icon" src="https://api.iconify.design/ph:shield-check.svg" alt="">
-          <span class="fm-label">Admin</span>
-        </a>
-        <button class="filters-menu-item fm-logout" id="btn-logout" role="menuitem" hidden>
-          <img class="fm-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-          <span class="fm-label">Log out</span>
-        </button>
-      </div>
     </div>
 
     <!-- Parish filter pills (shown when a jurisdiction is selected) -->

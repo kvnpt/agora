@@ -236,6 +236,18 @@ function addLabeledMarkers(locations, TZ, focusId) {
     });
 
     dot.on('click', () => {
+      const st = window.agoraStateRef;
+      if (st?.selectionMode) {
+        // Selection mode: tap toggles parish in the picker filter set
+        // instead of opening the parish sheet. Map stays put.
+        const cur = st.filters.parishIds ? new Set(st.filters.parishIds) : new Set();
+        if (cur.has(loc.id)) cur.delete(loc.id); else cur.add(loc.id);
+        st.filters.parishIds = cur.size ? cur : null;
+        if (typeof renderParishPills === 'function') renderParishPills();
+        if (typeof updateMap === 'function') updateMap(st);
+        if (typeof window.agoraSyncURL === 'function') window.agoraSyncURL();
+        return;
+      }
       if (window.openParishSheet) window.openParishSheet(loc.id);
     });
 

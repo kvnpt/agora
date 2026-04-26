@@ -26,6 +26,7 @@ const state = {
   mode: 'events',
   _eventsExtended: false,
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
+  selectionMode: false,
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
@@ -492,17 +493,34 @@ function recomputeViewportParishIds() {
   renderCurrentView();
   // Pills sort by viewport-centre distance; re-render so order tracks pan/zoom.
   renderParishPills();
+  if (typeof renderInViewChip === 'function') renderInViewChip();
 }
 window.agoraOnViewportChange = recomputeViewportParishIds;
+
+// Centre of the *visible* map rectangle — i.e. the part above the bottom
+// sheet. Distance-from-centre sort lives or dies on this number: when the
+// sheet is at SNAP_HALF, map.getCenter() (full container centre) sits behind
+// the sheet, well below where the user is actually looking. By measuring
+// from the midpoint of [0, sheetTopY] we anchor on the visible epicentre.
+function visibleCentreLatLng() {
+  if (!window.agoraMap) return null;
+  const m = window.agoraMap;
+  const size = m.getSize();
+  const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : size.y;
+  const visibleBottom = Math.max(0, Math.min(sheetY, size.y));
+  return m.containerPointToLatLng([size.x / 2, visibleBottom / 2]);
+}
+window.agoraVisibleCentre = visibleCentreLatLng;
 
 // Find the nearest parish (to user or map centre) that satisfies a predicate.
 // Used by the empty-state CTAs: "show nearest parish" = any parish;
 // "find nearest matching" = one whose events survive the current filters.
 function findNearestParishWhere(predicate) {
+  const vc = !state.locationActive ? visibleCentreLatLng() : null;
   const originLat = state.locationActive ? state.userLat
-    : (window.agoraMap ? window.agoraMap.getCenter().lat : state.userLat);
+    : (vc ? vc.lat : state.userLat);
   const originLng = state.locationActive ? state.userLng
-    : (window.agoraMap ? window.agoraMap.getCenter().lng : state.userLng);
+    : (vc ? vc.lng : state.userLng);
   let best = null;
   let bestKm = Infinity;
   for (const p of state.parishes) {
@@ -530,10 +548,11 @@ function handleEmptyStateCta(action) {
   else if (action === 'find-matching-parish') target = findNearestParishWhere(passesNonViewport);
   if (!target) return;
 
+  const vc2 = !state.locationActive ? visibleCentreLatLng() : null;
   const originLat = state.locationActive ? state.userLat
-    : (window.agoraMap ? window.agoraMap.getCenter().lat : state.userLat);
+    : (vc2 ? vc2.lat : state.userLat);
   const originLng = state.locationActive ? state.userLng
-    : (window.agoraMap ? window.agoraMap.getCenter().lng : state.userLng);
+    : (vc2 ? vc2.lng : state.userLng);
   if (window.agoraMap) {
     const bounds = L.latLngBounds([[originLat, originLng], [target.lat, target.lng]]).pad(0.25);
     window.agoraMap.fitBounds(bounds, { maxZoom: 13, animate: true, duration: 0.6 });
@@ -909,13 +928,13 @@ function renderParishPills() {
     return true;
   });
 
-  // Distance origin: viewport centre when map is ready, else user location.
-  // Pill sort is viewport-driven, not FAB-driven — when the user centres on
-  // their location the two coincide, but panning the map should re-sort pills.
+  // Distance origin: centre of the *visible* map rectangle (above the sheet)
+  // when map is ready, else user location. Visible-rect centre — not full
+  // container centre — keeps the first pill aligned with where the eye is.
   let originLat = null, originLng = null;
-  if (window.agoraMap) {
-    const c = window.agoraMap.getCenter();
-    originLat = c.lat; originLng = c.lng;
+  const vc = window.agoraMap ? visibleCentreLatLng() : null;
+  if (vc) {
+    originLat = vc.lat; originLng = vc.lng;
   } else if (state.userLat != null && state.userLng != null) {
     originLat = state.userLat; originLng = state.userLng;
   }
@@ -1012,31 +1031,100 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Multi-parish toggle ──
+// Two entry points share this: the menu item ("Select parishes" → also
+// enters selection-mode) and the in-view chip in the modal bar (toggle only).
+function setParishPicker(on, opts = {}) {
+  state.filters.multiParish = !!on;
+  saveMultiParishPref(state.filters.multiParish);
+  if (state.filters.multiParish) {
+    // Entering picker mode: drop any single-parish focus so pills start clean.
+    state.filters.parishIds = null;
+    state.parishFocus = null;
+  }
+  if (opts.selectionMode) {
+    state.selectionMode = true;
+    showMapSelectOverlay();
+  } else if (!state.filters.multiParish) {
+    // Leaving picker mode also tears down selection mode if active.
+    state.selectionMode = false;
+    hideMapSelectOverlay();
+  }
+  // Dismiss the filters dropdown — picker is a mode switch, not an in-menu
+  // toggle, so keeping the menu open hides the pills that just appeared.
+  closeFiltersMenuAnim();
+  syncMultiParishButton();
+  syncParishRowVisibility();
+  renderParishPills();
+  renderInViewChip();
+  renderCurrentView();
+  syncURL();
+  if (state.mode === 'services') window.agoraFetchSchedules();
+  else window.agoraFetchEvents();
+}
+
 function initMultiParishToggle() {
   const btn = document.getElementById('btn-multi-parish');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    state.filters.multiParish = !state.filters.multiParish;
-    saveMultiParishPref(state.filters.multiParish);
-    if (state.filters.multiParish) {
-      // Entering picker mode: drop any single-parish focus so pills start clean.
-      state.filters.parishIds = null;
-      state.parishFocus = null;
-    }
-    // Dismiss the filters dropdown — the parish picker is a mode switch,
-    // not an in-menu toggle, so keeping the menu open hides the pills that
-    // just appeared below it.
-    closeFiltersMenuAnim();
-    syncMultiParishButton();
-    syncParishRowVisibility();
-    renderParishPills();
-    renderCurrentView();
-    syncURL();
-    if (state.mode === 'services') window.agoraFetchSchedules();
-    else window.agoraFetchEvents();
-  });
+  if (btn) {
+    // Menu entry: turning ON also enters selection-mode (tap parishes on map).
+    btn.addEventListener('click', () => {
+      const next = !state.filters.multiParish;
+      setParishPicker(next, { selectionMode: next });
+    });
+  }
   syncMultiParishButton();
+
+  // In-view chip in modal bar: pure picker toggle, no selection-mode.
+  const chip = document.getElementById('in-view-chip');
+  if (chip) {
+    chip.addEventListener('click', () => {
+      setParishPicker(!state.filters.multiParish);
+    });
+  }
+
+  // Confirm-FAB exits selection-mode but keeps the picker on with current
+  // selection. One map move at the end fits the chosen parishes.
+  const confirm = document.getElementById('map-select-confirm');
+  if (confirm) {
+    confirm.addEventListener('click', () => {
+      state.selectionMode = false;
+      hideMapSelectOverlay();
+      if (state.filters.parishIds && window.agoraMap) {
+        const sel = state.parishes.filter(p =>
+          state.filters.parishIds.has(p.id) && p.lat != null && p.lng != null);
+        if (sel.length) {
+          const b = L.latLngBounds(sel.map(p => [p.lat, p.lng])).pad(0.25);
+          window.agoraMap.fitBounds(b, { maxZoom: 13, animate: true, duration: 0.7 });
+        }
+      }
+      renderParishPills();
+      renderCurrentView();
+      syncURL();
+    });
+  }
 }
+
+function showMapSelectOverlay() {
+  const el = document.getElementById('map-select-overlay');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.setAttribute('aria-hidden', 'false');
+}
+function hideMapSelectOverlay() {
+  const el = document.getElementById('map-select-overlay');
+  if (!el) return;
+  el.classList.add('hidden');
+  el.setAttribute('aria-hidden', 'true');
+}
+
+function renderInViewChip() {
+  const countEl = document.getElementById('in-view-count');
+  if (!countEl) return;
+  const n = state.viewportParishIds ? state.viewportParishIds.size : 0;
+  countEl.textContent = `${n} ${n === 1 ? 'parish' : 'parishes'} in-view`;
+  const chip = document.getElementById('in-view-chip');
+  chip?.classList.toggle('open', !!state.filters.multiParish);
+}
+window.agoraRenderInViewChip = renderInViewChip;
 
 function syncParishRowVisibility() {
   const row = document.getElementById('parish-filter-row');
@@ -1297,27 +1385,10 @@ function positionFiltersMenu(btn, menu) {
 function syncFiltersButton() {
   const btn = document.getElementById('btn-filters');
   if (!btn) return;
-  const content = btn.querySelector('.filters-btn-content');
-  const parts = [];
-  let label;
-  if (state.mode === 'services') {
-    parts.push(`<img src="https://api.iconify.design/ph:church.svg" alt="">`);
-    label = 'Schedules';
-  } else if (state.filters.socialOnly) {
-    parts.push(`<img src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">`);
-    label = 'Socials';
-  } else {
-    parts.push(`<img src="https://api.iconify.design/ph:list.svg" alt="">`);
-    label = 'Events';
-  }
-  parts.push(`<span class="filters-btn-label">${label}</span>`);
-  if (state.filters.englishOnly) {
-    const strict = state.filters.englishStrict ? ' strict' : '';
-    parts.push(`<span class="fm-en-badge${strict}">EN</span>`);
-  }
-  // Always prominent — the button is a mode indicator, not just a menu toggle.
+  // FAB content is a fixed funnel icon — mode/social/EN state lives inside
+  // the menu's active items now, not on the trigger. Keep .has-active so any
+  // future styling that depends on it (e.g. a dot indicator) still applies.
   btn.classList.add('has-active');
-  content.innerHTML = parts.join('');
 
   // Mirror the radio state on the dropdown's mode items so the menu reflects
   // which view is live without tick marks. Style carries the signal.
@@ -1545,10 +1616,11 @@ function initBottomSheet() {
   const scroll = document.getElementById('sheet-scroll');
   const fab = document.getElementById('location-fab');
   const resetFab = document.getElementById('reset-fab');
-  // Both FABs share the sheet-following lifecycle — fade during drag, snap
+  const filterFab = document.getElementById('btn-filters');
+  // All sheet-following FABs share the lifecycle — fade during drag, snap
   // to (currentY - 52) on settle. Keeping them in an array lets the drag /
   // snap handlers iterate once instead of duplicating every touchpoint.
-  const trackedFabs = [fab, resetFab].filter(Boolean);
+  const trackedFabs = [fab, resetFab, filterFab].filter(Boolean);
 
   // Snap points (translateY values — lower = sheet higher on screen)
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
@@ -1565,7 +1637,12 @@ function initBottomSheet() {
     // Sheet z-index > banner z-index so it overlays cleanly.
     SNAP_FULL = 0;
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
-    SNAP_PEEK = window.innerHeight - 140;
+    // PEEK exposes only the grab handle + modal bar. Measure live so it
+    // tracks any future bar-height changes without a magic constant.
+    const handleEl = sheet.querySelector('.map-grab-handle');
+    const modeBarEl = document.getElementById('mode-bar');
+    const peekHeight = (handleEl?.offsetHeight || 14) + (modeBarEl?.offsetHeight || 38);
+    SNAP_PEEK = window.innerHeight - peekHeight;
     // Sheet total height = visible list area (innerHeight - SNAP_FULL) plus
     // the offscreen spacer. At SNAP_FULL, sheet bottom sits SHEET_SPACER_PX
     // below the visible viewport bottom. sheet-scroll keeps its original
@@ -1648,6 +1725,10 @@ function initBottomSheet() {
       if (window.agoraMap) {
         window.agoraMap.invalidateSize();
       }
+      // Visible-rect centre changed → re-rank pills (sort origin moved).
+      // Also keep the map-select overlay's bottom inset in sync with sheet.
+      if (typeof renderParishPills === 'function') renderParishPills();
+      document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - currentY) + 'px');
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
     // Fallback if transitionend doesn't fire
