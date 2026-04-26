@@ -29,7 +29,7 @@ function initMap(state) {
         attribution: '<a href="https://protomaps.com">Protomaps</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
       }
     },
-    layers: protomaps_themes_base.layers('protomaps', 'light')
+    layers: protomaps_themes_base.default('protomaps', 'light')
   };
   L.maplibreGL({ style, attributionControl: false }).addTo(map);
 
