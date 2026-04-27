@@ -204,21 +204,12 @@
             tr.zoom = this._map.getZoom() - 1;
         },
 
-        // No-op during pinch. The original implementation called
-        // `_glMap.jumpTo()` every `zoom` event to keep the basemap
-        // continuously re-rendered at the live zoom. Problem: the canvas
-        // is a child of `mapPane`, which Leaflet is simultaneously
-        // CSS-scaling for the pinch animation. Re-rendering canvas
-        // content at exact float zoom while the parent applies CSS scale
-        // creates a fight between the two coord systems — markers
-        // (which ride mapPane's scale) drift relative to basemap
-        // (which is being redrawn from scratch each frame). That's the
-        // marker "wiggle" during pinch zoom.
-        //
-        // Letting CSS scale handle it means basemap visually rasterizes
-        // mid-pinch (same as CARTO raster did). At `zoomend` we re-sync
-        // MapLibre to the final zoom and the canvas snaps crisp again.
+        // update the map constantly during a pinch zoom
         _pinchZoom: function (e) {
+            this._glMap.jumpTo({
+                zoom: this._map.getZoom() - 1,
+                center: this._map.getCenter()
+            });
         },
 
         // borrowed from L.ImageOverlay
