@@ -201,7 +201,7 @@ IMPORTANT: If the question text above contains extracted details (church name, a
 ` : ''}
 TASKS:
 1. Extract parish identification signals — do NOT attempt to match against any list, just describe what you see:
-   - saint_name: patron saint name copied verbatim from text or image (e.g. "St John the Baptist", "Saint Nicholas", "Archangel Michael"). null if not identifiable.
+   - saint_name: the HOSTING CHURCH's patron saint — NOT a saint mentioned in an event title, ministry name, or group name (e.g. "St Joseph Men's Group" hosted at St John the Baptist → saint_name is "St John the Baptist"). If a caption or text message names a parish, that takes priority over anything visible in a poster image. Look for venue indicators at the bottom of posters (church name, address, "hosted by") to identify the host. null if not identifiable.
    - suburb: the suburb or city the message refers to. null if not stated.
    - jurisdiction: ONLY populate if the message explicitly uses one of these words (set lowercase): "serbian", "greek", "antiochian", "russian", "romanian", "macedonian". null if not mentioned.
    - explicit_new: true ONLY when the message says "new parish", "new church", "new community", or "new congregation". false otherwise.
