@@ -1,3 +1,27 @@
+// Skip Leaflet's post-pinch settle animation. Default Leaflet runs a
+// ~250ms CSS scale tween after fingers lift to "land" at the target zoom.
+// During that window map._animatingZoom = true and TouchZoom._onTouchStart
+// rejects new pinches (and Drag stalls until the transition ends). With
+// zoomSnap: 0 our live pinch zoom already IS the target — the settle is
+// purely cosmetic and costs us a quarter-second input lockout per pinch.
+// Programmatic animations (flyTo for cluster expand, fitBounds for reframe)
+// keep their easing via _tryAnimatedZoom, which respects options.zoomAnimation
+// independently of this handler.
+if (L.Map.TouchZoom && !L.Map.TouchZoom.prototype._agoraNoSettle) {
+  L.Map.TouchZoom.prototype._agoraNoSettle = true;
+  L.Map.TouchZoom.prototype._onTouchEnd = function () {
+    if (!this._moved || !this._zooming) {
+      this._zooming = false;
+      return;
+    }
+    this._zooming = false;
+    L.Util.cancelAnimFrame(this._animRequest);
+    L.DomEvent.off(document, 'touchmove', this._onTouchMove, this);
+    L.DomEvent.off(document, 'touchend touchcancel', this._onTouchEnd, this);
+    this._map._resetView(this._center, this._map._limitZoom(this._zoom));
+  };
+}
+
 let map = null;
 // markers = flat union of dotPool / labelPool / clusterPool entries currently
 // on the map. Kept up to date by addLabeledMarkers so reframeMap can iterate.
