@@ -175,22 +175,103 @@ async function downloadMedia(mediaId) {
   return { filepath, filename, mimeType: contentType };
 }
 
-function resolveParish(db, inferredParish) {
-  if (!inferredParish) return null;
+// ── Deterministic parish matching ─────────────────────────────────────────
+// Haiku extracts signals (saint_name, suburb, jurisdiction, explicit_new).
+// This code does the actual lookup — no LLM needed for comparison.
 
-  // Exact ID match
-  const exact = db.prepare('SELECT id FROM parishes WHERE id = ?').get(inferredParish);
-  if (exact) return exact.id;
+const NOISE_WORDS = new Set([
+  'church','orthodox','parish','community','cathedral','monastery',
+  'chapel','archdiocese','diocese','the','of','and','a','an'
+]);
+const SAINT_SYNONYMS = [
+  [/\barchangel michael\b/i, 'st michael'],
+  [/\barchangel gabriel\b/i, 'st gabriel'],
+  [/\barchangel raphael\b/i, 'st raphael'],
+  [/\btheotokos\b/i,         'mary'],
+  [/\bdormition\b/i,         'st mary'],
+  [/\bannunciation\b/i,      'st mary'],
+];
+function expandSaints(s) {
+  if (!s) return s;
+  for (const [pat, repl] of SAINT_SYNONYMS) if (pat.test(s)) return s.replace(pat, repl);
+  return s;
+}
+function normalizeTokens(str) {
+  if (!str) return [];
+  return str.toLowerCase().replace(/\bsaint\b/g, 'st')
+    .split(/[\s\-\&\/,\.'"]+/)
+    .filter(t => t.length > 0 && !NOISE_WORDS.has(t));
+}
+function buildClarifierQ(candidates, saintName) {
+  const list = candidates
+    .map(p => p.name.split(',').pop().trim() + ' (' + p.jurisdiction + ')')
+    .join(' or ');
+  return `Which ${saintName || 'parish'} — ${list}?`;
+}
+function matchParish(signal, parishes) {
+  const { saint_name, suburb, jurisdiction, explicit_new } = signal || {};
+  if (explicit_new) return { result: 'new' };
+  if (!saint_name)  return { result: 'unknown' };
 
-  // Case-insensitive name match
-  const byName = db.prepare('SELECT id FROM parishes WHERE LOWER(name) = LOWER(?)').get(inferredParish);
-  if (byName) return byName.id;
+  const core = normalizeTokens(expandSaints(saint_name)).filter(t => t !== 'st' && t !== 'sts');
+  if (!core.length) return { result: 'unknown' };
 
-  // Substring match
-  const byLike = db.prepare('SELECT id FROM parishes WHERE LOWER(name) LIKE ?').get(`%${inferredParish.toLowerCase()}%`);
-  if (byLike) return byLike.id;
+  const suburbLc = suburb ? suburb.toLowerCase() : null;
+  const scored = [];
 
-  return null;
+  for (const p of parishes) {
+    if (p.id === '_unassigned') continue;
+    // Hard-exclude on explicit jurisdiction contradiction
+    if (jurisdiction && p.jurisdiction !== jurisdiction) continue;
+
+    // All core patron tokens must appear in candidate name
+    const nameTokens = new Set(
+      normalizeTokens((p.name + ' ' + (p.full_name || '')).replace(/\bsaint\b/g, 'st'))
+    );
+    if (!core.every(t => nameTokens.has(t))) continue;
+
+    let score = 10; // patron matched
+    if (suburbLc) {
+      const addr = (p.address || '').toLowerCase();
+      if (addr.includes(suburbLc) || p.name.toLowerCase().includes(suburbLc)) score += 5;
+    }
+    if (jurisdiction) score += 5; // explicit agreement (contradiction already excluded above)
+    scored.push({ parish: p, score });
+  }
+
+  if (!scored.length) return { result: 'new' };
+  scored.sort((a, b) => b.score - a.score);
+
+  const top = scored[0].score;
+  const topGroup = scored.filter(s => s.score === top);
+
+  if (topGroup.length === 1 && (top >= 15 || scored.length === 1))
+    return { result: 'match', id: topGroup[0].parish.id };
+
+  return {
+    result: 'ambiguous',
+    candidates: topGroup.map(s => s.parish),
+    question: buildClarifierQ(topGroup.map(s => s.parish), saint_name)
+  };
+}
+function buildNewParish(signal) {
+  const d = (signal && signal.explicit_new && signal.details) ? signal.details : {};
+  const nameParts = [signal && signal.saint_name, signal && signal.suburb].filter(Boolean);
+  return {
+    name:         d.name         || nameParts.join(', ') || 'Unknown Parish',
+    full_name:    d.full_name    || null,
+    jurisdiction: d.jurisdiction || (signal && signal.jurisdiction) || 'other',
+    address:      d.address      || null,
+    lat:          d.lat          || null,
+    lng:          d.lng          || null,
+    website:      d.website      || null,
+    email:        d.email        || null,
+    phone:        d.phone        || null,
+    acronym:      d.acronym      || null,
+    chant_style:  d.chant_style  || null,
+    live_url:     d.live_url     || null,
+    languages:    d.languages    || ['English'],
+  };
 }
 
 async function processBatch(sender, messages) {
@@ -305,55 +386,33 @@ async function processBatch(sender, messages) {
 
     const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
 
-    // Server-side sanity: catch jurisdiction/patronage mismatches that the
-    // model missed. These signals are deterministic — no re-call needed.
-    if (result.inferred_parish && !result.new_parish) {
-      const matchedParish = db.prepare('SELECT name, jurisdiction FROM parishes WHERE id=?').get(result.inferred_parish);
-      if (matchedParish) {
-        const inputAll = texts.join(' ');
-        const inputLower = inputAll.toLowerCase();
-        const JURISDICTIONS = ['serbian', 'antiochian', 'greek', 'russian', 'romanian', 'macedonian'];
-        const inputJurisdiction = JURISDICTIONS.find(j => inputLower.includes(j));
+    // Deterministic parish matching — Haiku extracted signals, code does lookup.
+    const allParishes = db.prepare(
+      "SELECT id, name, full_name, jurisdiction, address FROM parishes WHERE id != '_unassigned'"
+    ).all();
+    const matchResult = matchParish(result.parishSignal || {}, allParishes);
 
-        // Patron saint: grab first "St(aint) X" occurrence from input
-        const saintM = inputAll.match(/\bSt(?:aint)?\s+([A-Z][a-z]+(?:\s+(?:the\s+)?[A-Z]?[a-z]+)?)/);
-        const inputSaint = saintM ? saintM[1].toLowerCase() : null;
-        const parishNameLower = matchedParish.name.toLowerCase();
-        // Check if the first token of the input saint appears in the matched parish name
-        const saintFirstToken = inputSaint ? inputSaint.split(' ')[0] : null;
-        const patronMismatch = saintFirstToken && !parishNameLower.includes(saintFirstToken);
-        const jurisdictionMismatch = inputJurisdiction && inputJurisdiction !== matchedParish.jurisdiction;
+    let parishMatchConfidence, parishMatchQuestion, newParishData;
+    let parishId;
 
-        if (jurisdictionMismatch || patronMismatch) {
-          console.log(`[webhook] post-check override: model matched ${result.inferred_parish} but input saint="${inputSaint}" jurisdiction="${inputJurisdiction}" vs parish="${matchedParish.name}" (${matchedParish.jurisdiction}) — forcing new_parish`);
-          // Build a minimal new_parish from the input; Haiku already extracted
-          // anything richer that we can borrow from result.parish_updates etc.
-          const extractedName = saintM
-            ? saintM[0].trim()  // e.g. "St John the Baptist"
-            : null;
-          result.inferred_parish = null;
-          result.new_parish = {
-            name: extractedName,
-            full_name: null,
-            jurisdiction: inputJurisdiction || 'other',
-            address: null,
-            phone: null,
-            website: null,
-            languages: Array.isArray(result.parish_updates && result.parish_updates.languages)
-              ? result.parish_updates.languages : null,
-          };
-          result.parish_match_confidence = 'high';
-          result.parish_updates = null;
-          result.parish_clears = [];
-        }
-      }
+    if (matchResult.result === 'match') {
+      parishMatchConfidence = 'high'; parishMatchQuestion = null;
+      parishId = matchResult.id;      newParishData = null;
+    } else if (matchResult.result === 'new') {
+      parishMatchConfidence = 'high'; parishMatchQuestion = null;
+      parishId = '_unassigned';
+      newParishData = buildNewParish(result.parishSignal);
+    } else if (matchResult.result === 'ambiguous') {
+      parishMatchConfidence = 'low';  parishMatchQuestion = matchResult.question;
+      parishId = '_unassigned';       newParishData = null;
+    } else { // 'unknown'
+      parishMatchConfidence = 'high'; parishMatchQuestion = null;
+      parishId = '_unassigned';       newParishData = null;
     }
 
-    // Low-confidence parish match overrides trust: never auto-apply; route
-    // all downstream outputs to pending_review and send sender a clarifier.
-    // new_parish populated means intent is clear — don't trigger clarifier
-    // even if Haiku also reported low confidence.
-    const ambiguous = result.parish_match_confidence === 'low' && !result.new_parish;
+    // Low-confidence (ambiguous) overrides sender trust — route everything to
+    // pending_review and send a clarifier. New parishes are always confident.
+    const ambiguous = parishMatchConfidence === 'low';
     const effectiveStatus = ambiguous ? 'review' : senderRecord.status;
     const eventStatus = effectiveStatus === 'approved' ? 'approved' : 'pending_review';
 
@@ -361,24 +420,19 @@ async function processBatch(sender, messages) {
     let parishChangesN = 0;
     let newParishCreated = false;
 
-    // new_parish takes priority over inferred_parish when both are present
-    // (prompt says they're mutually exclusive, but confabulation can set both).
-    let parishId = result.new_parish
-      ? '_unassigned'
-      : (resolveParish(db, result.inferred_parish) || '_unassigned');
-    if (result.new_parish) {
-      const np = result.new_parish;
+    // Create new parish row when matchParish returned 'new'
+    if (newParishData) {
+      const np = newParishData;
       const newId = (np.jurisdiction || 'other') + '-' + (np.name || 'unknown').toLowerCase()
         .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
       const existing = db.prepare('SELECT id FROM parishes WHERE id = ?').get(newId);
       if (!existing && np.name) {
-        // Default to Sydney CBD; geocode async if address provided
-        const lat = -33.8688, lng = 151.2093;
+        const lat = np.lat || -33.8688, lng = np.lng || 151.2093;
         db.prepare(`
-          INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, phone, languages, source_run_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, source_run_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(newId, np.name, np.full_name || null, np.jurisdiction || 'other',
-          np.address || null, lat, lng, np.website || null, np.phone || null,
+          np.address || null, lat, lng, np.website || null, np.email || null, np.phone || null,
           np.languages ? JSON.stringify(np.languages) : '["English"]', runId);
         newParishCreated = true;
         console.log(`[webhook] Created new parish: ${newId} (${np.name})`);
@@ -599,9 +653,9 @@ async function processBatch(sender, messages) {
       input_texts = ?, claude_response = ?,
       parish_match_confidence = ?, parish_match_question = ? WHERE id = ?
     `).run(result.events.length, eventsCreated, JSON.stringify(texts), result.rawResponse || null,
-      result.parish_match_confidence || 'high', result.parish_match_question || null, runId);
+      parishMatchConfidence, parishMatchQuestion || null, runId);
 
-    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}, confidence=${result.parish_match_confidence || 'high'}`);
+    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}, confidence=${parishMatchConfidence}`);
 
     // Result reply back to sender. Fire-and-forget — a Meta send failure must
     // not flip the already-processed batch to failed status.
@@ -617,7 +671,7 @@ async function processBatch(sender, messages) {
 
     const summary = buildResultReply({
       ambiguous,
-      question: result.parish_match_question,
+      question: parishMatchQuestion,
       eventsN: result.events.length,
       schedulesN: schedulesCreated,
       parishChangesN,

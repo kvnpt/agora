@@ -118,24 +118,13 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
    * @param {Object} opts
    * @param {string[]} opts.images - Paths to image files
    * @param {string[]} opts.texts - Text messages and captions
-   * @returns {{ events: Array, inferred_parish: string|null }}
+   * @returns {{ events: Array, parishSignal: Object }}
    */
   async parseMessage({ images = [], texts = [], upcomingEvents = [], clarifierContext = null }) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
 
     const client = new Anthropic();
-
-    // Fetch known parishes for the prompt
-    const { getDb } = require('../db');
-    const db = getDb();
-    const parishes = db.prepare(
-      "SELECT id, name, acronym, jurisdiction, address FROM parishes WHERE id != '_unassigned'"
-    ).all();
-
-    const parishList = parishes.map(p =>
-      `- "${p.name}"${p.acronym ? ` [${p.acronym}]` : ''} (id: ${p.id}, ${p.jurisdiction}, ${p.address})`
-    ).join('\n');
 
     // Group upcoming events by parish for the prompt. Claude needs these to
     // target a specific event when a message announces a cancellation, rather
@@ -199,10 +188,7 @@ ${textCount > 0 ? `${textCount} text message(s) shown above.` : 'No text was pro
 
 These messages were sent together by the same person. Use ALL available context across images and text.
 
-KNOWN PARISHES:
-${parishList}
-
-UPCOMING EVENTS (next 14 days, Sydney local time, grouped by parish id):
+UPCOMING EVENTS (next 14 days, Sydney local time):
 ${upcomingList}
 ${clarifierContext ? `
 CLARIFIER IN PROGRESS: A previous message from this sender was ambiguous. The system asked a clarifying question and the sender's current message is their answer. Resolve the original message using that answer.
@@ -211,41 +197,28 @@ Previous message(s): ${clarifierContext.originalTexts.map(t => `"${t}"`).join(' 
 Question asked: "${clarifierContext.question}"
 Sender's answer (current message): ${texts.map(t => `"${t}"`).join(' | ')}
 
-IMPORTANT: The question text above may itself contain extracted details (church name, address, etc.) from a previous image. If it does, use those details directly to populate new_parish — do not ask for information already present in the question text. Only ask a further clarifying question if the parish NAME is still genuinely unknown after reading all available context.
+IMPORTANT: If the question text above contains extracted details (church name, address, etc.) from a previous image, use those directly to populate parish_signal.details — do not ask for information already present in the question text.
 ` : ''}
 TASKS:
-1. Identify which parish the message relates to. Use the known list as ground truth and apply the rules below strictly — users rely on natural-language shorthand, so match confidently when signals align and create confidently when they don't.
-   - MATCH an existing row only when patronage AND at least one of (suburb, jurisdiction) align with EXACTLY ONE known row. Patronage must match — do NOT match on suburb or jurisdiction alone.
-   - EMIT new_parish when: (a) the patron saint name does not appear in any known row, OR (b) the patron saint matches a known row but the suburb AND jurisdiction both differ (e.g. "St John the Baptist Serbian Orthodox Wollongong" when the only St John the Baptist is Antiochian Croydon Park — same patron, different suburb AND different jurisdiction → new parish). OR (c) the jurisdiction explicitly contradicts the only matching row (e.g. message says "Serbian" but the only suburb match is Antiochian).
-   - ALWAYS emit new_parish (never inferred_parish) when the message explicitly says "new parish", "new church", or "new community" — even if a similarly-named parish exists, even if an image is attached. Set inferred_parish to null and parish_match_confidence to "high". When an image (e.g. Google Maps screenshot) is provided alongside "new parish" text: extract the church name, address, phone, website, and jurisdiction directly from the image into new_parish fields. Do not ask for information that is already visible in the image or the message.
-   - new_parish and inferred_parish are mutually exclusive — never populate both. When new_parish is set, any events[] and schedules[] in the message belong to that new parish.
-   - For new_parish: populate every field you can extract from available text and images. Only emit confidence="low" and ask a question if the parish NAME cannot be determined at all. Missing address, phone, or website are fine — leave those fields null and proceed.
-   - LEAVE inferred_parish null AND new_parish null when the message could refer to multiple known rows and provides no disambiguator (suburb, jurisdiction, distinctive descriptor). Do not guess; do not create a duplicate.
-   - Emit parish_match_confidence = "high" ONLY when EXACTLY ONE known row matches on patronage PLUS (suburb or jurisdiction or a distinctive descriptor). Emit "low" when: (a) multiple known rows plausibly match, (b) only a city/suburb token is present with nothing else (e.g. "Brisbane event" alone), (c) patronage fits but jurisdiction/suburb disagree with the matched row, or (d) you are inferring from shorthand. When "low", set parish_match_question to a short clarifier addressed to the sender (e.g. "Which St Paul\'s — Antiochian Brisbane or Serbian Marrickville?"); when "high", set it to null. Low confidence forces human review regardless of sender trust level.
-2. Extract any one-off EVENTS (dated services, feasts, social events, talks, etc) that are explicitly stated in the sender's message. NEVER generate events from the Orthodox calendar, from the UPCOMING EVENTS context above, or from your own knowledge — only from what the sender wrote.
+1. Extract parish identification signals — do NOT attempt to match against any list, just describe what you see:
+   - saint_name: patron saint name copied verbatim from text or image (e.g. "St John the Baptist", "Saint Nicholas", "Archangel Michael"). null if not identifiable.
+   - suburb: the suburb or city the message refers to. null if not stated.
+   - jurisdiction: ONLY populate if the message explicitly uses one of these words (set lowercase): "serbian", "greek", "antiochian", "russian", "romanian", "macedonian". null if not mentioned.
+   - explicit_new: true ONLY when the message says "new parish", "new church", "new community", or "new congregation". false otherwise.
+   - details: ONLY when explicit_new=true — extract every field visible in the text and images: name, full_name, jurisdiction, address, lat, lng, website, email, phone, acronym, chant_style, live_url, languages. null when explicit_new=false.
+2. Extract any one-off EVENTS explicitly stated in the sender's message. NEVER generate events from the Orthodox calendar, from the UPCOMING EVENTS context above, or from your own knowledge — only from what the sender wrote.
 3. Extract any recurring SCHEDULES (weekly services like "Sunday Divine Liturgy 9:30am").
 4. Extract any parish info UPDATES (address, phone, website, languages).
 5. Detect CANCELLATIONS of upcoming events listed above. If the message announces that a specific upcoming service is cancelled, not happening, postponed, or moved (e.g. "no Liturgy tonight", "Vespers cancelled this week", "no mid-week Liturgy"), emit a cancellations[] entry referencing the exact id of the matching upcoming event. Do NOT also emit a duplicate row in events[] for the same service — either cancel it OR create it, never both.
 
 Return ONLY valid JSON (no markdown fences) in this exact format:
 {
-  "inferred_parish": "<parish id from list, or null>",
-  "parish_match_confidence": "high|low",
-  "parish_match_question": "short clarifier for the sender, or null",
-  "new_parish": null or {
-    "name": "Short name e.g. St George Carlton",
-    "full_name": "Full official name or null",
-    "jurisdiction": "antiochian|greek|serbian|russian|romanian|macedonian|other",
-    "address": "Full street address or null",
-    "lat": -33.8688 or null,
-    "lng": 151.2093 or null,
-    "website": "url or null",
-    "email": "email or null",
-    "phone": "phone or null",
-    "acronym": "SNP or null",
-    "chant_style": "Byzantine|Western|Mixed or null",
-    "live_url": "livestream url or null",
-    "languages": ["English", "Slavonic"]
+  "parish_signal": {
+    "saint_name": "St John the Baptist or null",
+    "suburb": "Wollongong or null",
+    "jurisdiction": "antiochian|greek|serbian|russian|romanian|macedonian|other|null",
+    "explicit_new": false,
+    "details": null
   },
   "events": [
     {
@@ -297,7 +270,8 @@ parish_scoped: true for internal/operational entries that should only surface wh
 parish_updates: include ONLY keys for fields the message is setting to a new non-null value (name, address, contact details, acronym, chant style, languages, live stream URL, etc). OMIT keys entirely for fields the message does not mention. NEVER emit null inside parish_updates — null is not a meaningful value here.
 parish_clears: an array of field names. Include a field name here ONLY when the message explicitly states the parish no longer has that attribute — e.g. "we no longer livestream" → "live_url"; "stream has been discontinued" → "live_url"; "phone disconnected" → "phone"; "website closed" → "website". Valid field names: name, full_name, address, website, email, phone, acronym, chant_style, live_url, languages. Empty [] when no removal is requested. DO NOT add a field here just because the message didn't mention it — silence is not a removal.
 Only pick an event_id from the UPCOMING EVENTS list above. Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
-If you cannot extract anything, return: {"inferred_parish": null, "parish_match_confidence": "high", "parish_match_question": null, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "parish_clears": [], "new_parish": null}
+When explicit_new=true, details has the same shape as parish_signal but with full fields: { name, full_name, jurisdiction, address, lat, lng, website, email, phone, acronym, chant_style, live_url, languages }.
+If you cannot extract anything, return: {"parish_signal": {"saint_name": null, "suburb": null, "jurisdiction": null, "explicit_new": false, "details": null}, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "parish_clears": []}
 
 DATE EXTRACTION RULES (read carefully — past posters have been misread by +14 days):
 - If the poster has a header/title naming a month and year (e.g. "HOLY WEEK SERVICES - APRIL 2026", "MARCH 2026 PROGRAM"), those ARE the authoritative month and year for every row. Do NOT shift to a future occurrence.
@@ -319,10 +293,10 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
     let parsed;
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { inferred_parish: null, events: [] };
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { parish_signal: null, events: [] };
     } catch {
       console.error('[whatsapp-poster] Failed to parse Claude response:', responseText);
-      return { events: [], inferred_parish: null, parish_match_confidence: 'high', parish_match_question: null };
+      return { events: [], parishSignal: null };
     }
 
     // Convert events to internal format. source_hash is computed by the
@@ -353,17 +327,14 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       };
     });
 
-    const confidence = parsed.parish_match_confidence === 'low' ? 'low' : 'high';
+    const defaultSignal = { saint_name: null, suburb: null, jurisdiction: null, explicit_new: false, details: null };
     return {
       events,
-      inferred_parish: parsed.inferred_parish || null,
+      parishSignal: parsed.parish_signal || defaultSignal,
       schedules: parsed.schedules || [],
       cancellations: Array.isArray(parsed.cancellations) ? parsed.cancellations : [],
       parish_updates: parsed.parish_updates || null,
       parish_clears: Array.isArray(parsed.parish_clears) ? parsed.parish_clears : [],
-      new_parish: parsed.new_parish || null,
-      parish_match_confidence: confidence,
-      parish_match_question: confidence === 'low' ? (parsed.parish_match_question || null) : null,
       rawResponse: response.content[0].text
     };
   }
