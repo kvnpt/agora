@@ -1,12 +1,20 @@
 // Skip Leaflet's post-pinch settle animation. Default Leaflet runs a
 // ~250ms CSS scale tween after fingers lift to "land" at the target zoom.
 // During that window map._animatingZoom = true and TouchZoom._onTouchStart
-// rejects new pinches (and Drag stalls until the transition ends). With
-// zoomSnap: 0 our live pinch zoom already IS the target — the settle is
-// purely cosmetic and costs us a quarter-second input lockout per pinch.
-// Programmatic animations (flyTo for cluster expand, fitBounds for reframe)
-// keep their easing via _tryAnimatedZoom, which respects options.zoomAnimation
-// independently of this handler.
+// rejects new pinches (and Drag stalls). With zoomSnap: 0 our live pinch
+// zoom already IS the target — the settle is purely cosmetic and costs
+// us a quarter-second input lockout per pinch. Programmatic animations
+// (flyTo for cluster expand, fitBounds for reframe) keep their easing
+// via _tryAnimatedZoom, which is independent of this handler.
+//
+// We then have to force-fire zoomend. _resetView only fires zoomend when
+// its zoomChanged check is true, but per-frame _move calls during pinch
+// already advance map._zoom to the final value, so zoomChanged is false
+// at touchend → no zoomend → maplibre-gl-leaflet shim's _zooming flag
+// stays true → shim._update returns early → basemap canvas stops
+// repositioning past the first gesture (partial-grey tiles, desynced
+// markers). shim._zoomEnd is idempotent so a duplicate fire is harmless
+// in the rare case where _resetView's zoomend already fired.
 if (L.Map.TouchZoom && !L.Map.TouchZoom.prototype._agoraNoSettle) {
   L.Map.TouchZoom.prototype._agoraNoSettle = true;
   L.Map.TouchZoom.prototype._onTouchEnd = function () {
@@ -18,7 +26,9 @@ if (L.Map.TouchZoom && !L.Map.TouchZoom.prototype._agoraNoSettle) {
     L.Util.cancelAnimFrame(this._animRequest);
     L.DomEvent.off(document, 'touchmove', this._onTouchMove, this);
     L.DomEvent.off(document, 'touchend touchcancel', this._onTouchEnd, this);
-    this._map._resetView(this._center, this._map._limitZoom(this._zoom));
+    const map = this._map;
+    map._resetView(this._center, map._limitZoom(this._zoom));
+    map.fire('zoomend');
   };
 }
 
