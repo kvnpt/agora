@@ -304,6 +304,51 @@ async function processBatch(sender, messages) {
     }
 
     const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
+
+    // Server-side sanity: catch jurisdiction/patronage mismatches that the
+    // model missed. These signals are deterministic — no re-call needed.
+    if (result.inferred_parish && !result.new_parish) {
+      const matchedParish = db.prepare('SELECT name, jurisdiction FROM parishes WHERE id=?').get(result.inferred_parish);
+      if (matchedParish) {
+        const inputAll = texts.join(' ');
+        const inputLower = inputAll.toLowerCase();
+        const JURISDICTIONS = ['serbian', 'antiochian', 'greek', 'russian', 'romanian', 'macedonian'];
+        const inputJurisdiction = JURISDICTIONS.find(j => inputLower.includes(j));
+
+        // Patron saint: grab first "St(aint) X" occurrence from input
+        const saintM = inputAll.match(/\bSt(?:aint)?\s+([A-Z][a-z]+(?:\s+(?:the\s+)?[A-Z]?[a-z]+)?)/);
+        const inputSaint = saintM ? saintM[1].toLowerCase() : null;
+        const parishNameLower = matchedParish.name.toLowerCase();
+        // Check if the first token of the input saint appears in the matched parish name
+        const saintFirstToken = inputSaint ? inputSaint.split(' ')[0] : null;
+        const patronMismatch = saintFirstToken && !parishNameLower.includes(saintFirstToken);
+        const jurisdictionMismatch = inputJurisdiction && inputJurisdiction !== matchedParish.jurisdiction;
+
+        if (jurisdictionMismatch || patronMismatch) {
+          console.log(`[webhook] post-check override: model matched ${result.inferred_parish} but input saint="${inputSaint}" jurisdiction="${inputJurisdiction}" vs parish="${matchedParish.name}" (${matchedParish.jurisdiction}) — forcing new_parish`);
+          // Build a minimal new_parish from the input; Haiku already extracted
+          // anything richer that we can borrow from result.parish_updates etc.
+          const extractedName = saintM
+            ? saintM[0].trim()  // e.g. "St John the Baptist"
+            : null;
+          result.inferred_parish = null;
+          result.new_parish = {
+            name: extractedName,
+            full_name: null,
+            jurisdiction: inputJurisdiction || 'other',
+            address: null,
+            phone: null,
+            website: null,
+            languages: Array.isArray(result.parish_updates && result.parish_updates.languages)
+              ? result.parish_updates.languages : null,
+          };
+          result.parish_match_confidence = 'high';
+          result.parish_updates = null;
+          result.parish_clears = [];
+        }
+      }
+    }
+
     // Low-confidence parish match overrides trust: never auto-apply; route
     // all downstream outputs to pending_review and send sender a clarifier.
     // new_parish populated means intent is clear — don't trigger clarifier
