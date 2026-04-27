@@ -8,13 +8,26 @@ function initMap(state) {
   map = L.map('map', { zoomControl: false, zoomSnap: 0 }).setView([state.userLat, state.userLng], 11);
   window.agoraMap = map;
 
-  // Sub-pixel marker positioning. Leaflet's default latLngToLayerPoint
-  // rounds projected pixel coords to whole pixels — fine against a raster
-  // basemap that scales by integer tiles, but visibly wiggly against the
-  // MapLibre canvas (and any zoomSnap:0 fractional zoom). Drop the round
-  // so divIcon transforms get sub-pixel translate3d values.
+  // Sub-pixel marker positioning. Leaflet rounds projected pixel coords in
+  // three places that all need patching to stop the per-zoom-step jitter:
+  //   1. latLngToLayerPoint     — non-animated repositions (setLatLng, etc.)
+  //   2. _getNewPixelOrigin     — origin recompute snaps to whole pixels each
+  //      zoom step, shifting every marker by up to 0.5px relative to the
+  //      basemap (which renders at sub-pixel precision).
+  //   3. Marker._animateZoom    — final reposition at the end of a zoom
+  //      animation explicitly calls .round() on the new layer point.
+  // Patches scoped to this map instance + L.Marker prototype (we control
+  // every marker in the app).
   map.latLngToLayerPoint = function (latlng) {
     return this.project(L.latLng(latlng)).subtract(this.getPixelOrigin());
+  };
+  map._getNewPixelOrigin = function (center, zoom) {
+    const viewHalf = this.getSize().divideBy(2);
+    return this.project(center, zoom).subtract(viewHalf);
+  };
+  L.Marker.prototype._animateZoom = function (opt) {
+    const pos = this._map._latLngToNewLayerPoint(this._latlng, opt.zoom, opt.center);
+    this._setPos(pos);
   };
 
   // Vector basemap via self-hosted Protomaps pmtiles + MapLibre GL.
