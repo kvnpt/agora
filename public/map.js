@@ -5,22 +5,22 @@ let userMarker = null;
 function initMap(state) {
   if (map) return;
 
-  map = L.map('map', { zoomControl: false, zoomSnap: 0 }).setView([state.userLat, state.userLng], 11);
+  // markerZoomAnimation: false — disables per-frame marker reposition
+  // during zoom anim. Markers stay at their old layer point and ride
+  // mapPane's CSS scale (so they grow/shrink with the map during pinch),
+  // then snap to correct layer point at zoomend. Tradeoff vs default:
+  // markers scale visually mid-pinch, but stay locked to basemap (no
+  // wiggle from CSS transform composition vs marker per-frame
+  // reprojection drift). Wiggle is intrinsic to Leaflet's DOM-markers-
+  // on-CSS-transformed-mapPane model — same problem on Trivago + any
+  // other Leaflet-based site. Apple/Google Maps avoid it by rendering
+  // markers in the same WebGL canvas as the basemap.
+  map = L.map('map', {
+    zoomControl: false,
+    zoomSnap: 0,
+    markerZoomAnimation: false
+  }).setView([state.userLat, state.userLng], 11);
   window.agoraMap = map;
-
-  // Sub-pixel marker positioning during pinch zoom. Leaflet's default
-  // Marker._animateZoom rounds the projected layer point to integer
-  // pixels every animation frame:
-  //   var pos = ..._latLngToNewLayerPoint(...).round();
-  // During pinch, Leaflet fires zoomanim per-frame, so this round()
-  // snaps the marker to a different integer-pixel grid each frame
-  // while mapPane's CSS scale is sub-pixel precise. Composed effective
-  // position drifts ±1px per frame = the visible wiggle.
-  // Remove round() only. All other Leaflet projection math intact.
-  L.Marker.prototype._animateZoom = function (opt) {
-    var pos = this._map._latLngToNewLayerPoint(this._latlng, opt.zoom, opt.center);
-    this._setPos(pos);
-  };
 
   // Vector basemap via self-hosted Protomaps pmtiles + MapLibre GL.
   // Leaflet stays as the marker host; MapLibre is mounted as a layer
