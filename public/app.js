@@ -1859,7 +1859,7 @@ function initBottomSheet() {
           // Vertical dominates → sheet drag. Swallow the trailing click so the
           // underlying button doesn't fire on release.
           modeBarSwallowClick = true;
-          engageDrag(trayPendingY);
+          engageDrag(t.clientY);
         } else {
           // Horizontal dominates → native tray scroll. Remember the lock so a
           // wobble back to vertical mid-gesture doesn't flip us into a drag.
@@ -2238,7 +2238,7 @@ function initParishSheet() {
         headerPending = false;
         if (ady > adx) {
           headerSwallowClick = true;
-          engageDrag(headerPY);
+          engageDrag(t.clientY);
         }
       }
     }

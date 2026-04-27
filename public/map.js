@@ -1,11 +1,30 @@
 let map = null;
+// markers = flat union of dotPool / labelPool / clusterPool entries currently
+// on the map. Kept up to date by addLabeledMarkers so reframeMap can iterate.
 let markers = [];
+// Persistent pools keyed by parish_id (dots/labels) or member-set string
+// (clusters). Avoids destroy/recreate of ~50 marker DOM nodes on every
+// updateMap call — that was a 50-150ms main-thread block during gestures
+// (see the gesture-recovery lag investigation 2026-04-27).
+const dotPool = new Map();      // parish_id -> { marker, key, onMap }
+const labelPool = new Map();    // parish_id -> { marker, key, onMap }
+const clusterPool = new Map();  // sorted-member-ids string -> { marker, key, onMap }
 let userMarker = null;
 
 function initMap(state) {
   if (map) return;
 
-  map = L.map('map', { zoomControl: false, zoomSnap: 0 }).setView([state.userLat, state.userLng], 11);
+  // tap: false — disables Leaflet's tap polyfill (was for very old iOS Safari
+  // bugs, not needed on modern browsers). With it on, Leaflet imposes a 15px
+  // tapTolerance: no panning until the finger crosses 15px, then the map
+  // "catches up" instantly. That catch-up is the snap users feel at gesture
+  // start. With tap: false, browser-native touchmove drives panning from
+  // pixel 1 — no threshold, no snap.
+  map = L.map('map', {
+    zoomControl: false,
+    zoomSnap: 0,
+    tap: false
+  }).setView([state.userLat, state.userLng], 11);
   window.agoraMap = map;
 
   // Vector basemap via self-hosted Protomaps pmtiles + MapLibre GL.
@@ -105,8 +124,10 @@ function initMap(state) {
 function updateMap(state, opts = {}) {
   if (!map) return;
 
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
+  // Markers are pool-managed. addLabeledMarkers diffs against the current
+  // pools, reuses existing L.marker instances (setLatLng + conditional
+  // setIcon), and removes only the parishes/clusters no longer needed.
+  // Avoids the destroy/recreate cost that was blocking gesture recovery.
 
   const TZ = 'Australia/Sydney';
 
@@ -191,8 +212,55 @@ function updateMap(state, opts = {}) {
   }
 }
 
+// Unified click handler — read parish_id from the marker so reused markers
+// don't capture a stale loc closure across updateMap calls. Selection mode
+// toggles parish in the picker; otherwise opens the parish sheet.
+function onMarkerClick(e) {
+  const id = e.target._parishId;
+  if (!id) return;
+  const st = window.agoraStateRef;
+  if (st?.selectionMode) {
+    const cur = st.filters.parishIds ? new Set(st.filters.parishIds) : new Set();
+    if (cur.has(id)) cur.delete(id); else cur.add(id);
+    st.filters.parishIds = cur.size ? cur : null;
+    if (typeof renderParishPills === 'function') renderParishPills();
+    if (typeof updateMap === 'function') updateMap(st);
+    if (typeof window.agoraSyncURL === 'function') window.agoraSyncURL();
+    return;
+  }
+  if (window.openParishSheet) window.openParishSheet(id);
+}
+
+function onClusterClick(e) {
+  const cluster = e.target;
+  const cur = map.getZoom();
+  map.flyTo(cluster.getLatLng(), Math.min(cur + 2, 16), { duration: 0.55 });
+}
+
+function rebuildMarkersArray() {
+  markers = [];
+  for (const e of dotPool.values()) if (e.onMap) markers.push(e.marker);
+  for (const e of labelPool.values()) if (e.onMap) markers.push(e.marker);
+  for (const e of clusterPool.values()) if (e.onMap) markers.push(e.marker);
+}
+
+function cullPool(pool, keepKeys) {
+  for (const [id, entry] of pool) {
+    if (!keepKeys.has(id) && entry.onMap) {
+      map.removeLayer(entry.marker);
+      entry.onMap = false;
+    }
+  }
+}
+
 function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
-  if (!locations.length) return;
+  if (!locations.length) {
+    cullPool(dotPool, new Set());
+    cullPool(labelPool, new Set());
+    cullPool(clusterPool, new Set());
+    rebuildMarkersArray();
+    return;
+  }
 
   const labelMeta = [];
   const hasFocus = !!focusId;
@@ -258,6 +326,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     }
   }
 
+  const keepDotIds = new Set();
   for (const loc of sortedLocs) {
     if (clusteredIds.has(loc.id)) continue; // rendered as a grape cluster below
     const isFocus = loc.id === focusId;
@@ -266,7 +335,6 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     // label) but without the logo swap — that's reserved for the parish
     // sheet's single-focus case.
     const emphasised = isFocus || isSelected;
-    // All parishes full opacity — filters cut visibility completely, no fading.
     const opacity = 1.0;
 
     const focusLogo = isFocus && loc.logo;
@@ -276,73 +344,88 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     const innerHtml = focusLogo
       ? `<img src="${loc.logo}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:0 2px 10px rgba(0,0,0,0.25);">`
       : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${loc.color};border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:${emphasised ? '0 2px 10px rgba(0,0,0,0.25)' : 'none'};"></div>`;
-    const dot = L.marker([loc.lat, loc.lng], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;">${innerHtml}</div>`,
-        iconSize: [hitSize, hitSize],
-        iconAnchor: [hitSize / 2, hitSize / 2]
-      }),
-      interactive: true,
-      bubblingMouseEvents: false,
-      zIndexOffset: isFocus ? 2000 : (isSelected ? 1500 : (loc.active ? 1000 : 0))
-    });
+    const html = `<div style="width:${hitSize}px;height:${hitSize}px;display:flex;align-items:center;justify-content:center;">${innerHtml}</div>`;
+    const zIdx = isFocus ? 2000 : (isSelected ? 1500 : (loc.active ? 1000 : 0));
+    // Style key — anything that changes icon HTML or zIndex. setIcon (which
+    // innerHTMLs the icon node) only fires on key change; setLatLng (cheap
+    // CSS transform update) always fires.
+    const key = `${size}|${hitSize}|${borderWidth}|${loc.color}|${focusLogo ? loc.logo : ''}|${zIdx}`;
 
-    dot.on('click', () => {
-      const st = window.agoraStateRef;
-      if (st?.selectionMode) {
-        // Selection mode: tap toggles parish in the picker filter set
-        // instead of opening the parish sheet. Map stays put.
-        const cur = st.filters.parishIds ? new Set(st.filters.parishIds) : new Set();
-        if (cur.has(loc.id)) cur.delete(loc.id); else cur.add(loc.id);
-        st.filters.parishIds = cur.size ? cur : null;
-        if (typeof renderParishPills === 'function') renderParishPills();
-        if (typeof updateMap === 'function') updateMap(st);
-        if (typeof window.agoraSyncURL === 'function') window.agoraSyncURL();
-        return;
+    let entry = dotPool.get(loc.id);
+    if (!entry) {
+      const dot = L.marker([loc.lat, loc.lng], {
+        icon: L.divIcon({ className: '', html, iconSize: [hitSize, hitSize], iconAnchor: [hitSize / 2, hitSize / 2] }),
+        interactive: true,
+        bubblingMouseEvents: false,
+        zIndexOffset: zIdx
+      });
+      dot._parishId = loc.id;
+      dot.on('click', onMarkerClick);
+      entry = { marker: dot, key, onMap: false };
+      dotPool.set(loc.id, entry);
+    } else {
+      entry.marker._parishId = loc.id;
+      if (entry.key !== key) {
+        entry.marker.setIcon(L.divIcon({ className: '', html, iconSize: [hitSize, hitSize], iconAnchor: [hitSize / 2, hitSize / 2] }));
+        entry.marker.setZIndexOffset(zIdx);
+        entry.key = key;
       }
-      if (window.openParishSheet) window.openParishSheet(loc.id);
-    });
-
-    dot.addTo(map);
-    markers.push(dot);
+    }
+    entry.marker.setLatLng([loc.lat, loc.lng]);
+    if (!entry.onMap) {
+      entry.marker.addTo(map);
+      entry.onMap = true;
+    }
+    keepDotIds.add(loc.id);
 
     const parts = loc.name.split(',');
     const line1 = parts[0].trim();
     const line2 = parts.length > 1 ? parts[1].trim() : '';
 
-    labelMeta.push({ loc, line1, line2, opacity, dotMarker: dot, isFocus, isSelected, dotSize: size });
+    labelMeta.push({ loc, line1, line2, opacity, dotMarker: entry.marker, isFocus, isSelected, dotSize: size });
   }
 
   // Render one grape-bunch marker per multi-member cluster at the pixel
   // centroid (converted back to latLng). Any member being active makes the
   // whole bunch full-opacity. Tap → zoom in toward the cluster so members
   // detach once they exceed the 1.3×diameter threshold at the new zoom.
+  // Pool keyed by sorted member id set — a cluster with the same members at
+  // the same zoom reuses its marker (just setLatLng for centroid drift).
+  const keepClusterKeys = new Set();
+  const BOX = 40;
   for (const members of clusterGroups) {
     let sx = 0, sy = 0;
     for (const m of members) { const p = pxPos.get(m.id); sx += p.x; sy += p.y; }
     const cx = sx / members.length, cy = sy / members.length;
     const ll = map.containerPointToLatLng([cx, cy]);
     const anyActive = members.some(m => m.active);
-    const html = buildGrapeClusterHtml(members.length, 1.0);
-    const BOX = 40;
-    const cluster = L.marker(ll, {
-      icon: L.divIcon({
-        className: '',
-        html,
-        iconSize: [BOX, BOX],
-        iconAnchor: [BOX / 2, BOX / 2]
-      }),
-      interactive: true,
-      bubblingMouseEvents: false,
-      zIndexOffset: anyActive ? 1100 : 50
-    });
-    cluster.on('click', () => {
-      const cur = map.getZoom();
-      map.flyTo(ll, Math.min(cur + 2, 16), { duration: 0.55 });
-    });
-    cluster.addTo(map);
-    markers.push(cluster);
+    const setKey = members.map(m => m.id).sort().join(',');
+    const styleKey = `${members.length}|${anyActive ? 1 : 0}`;
+
+    let entry = clusterPool.get(setKey);
+    if (!entry) {
+      const html = buildGrapeClusterHtml(members.length, 1.0);
+      const cluster = L.marker(ll, {
+        icon: L.divIcon({ className: '', html, iconSize: [BOX, BOX], iconAnchor: [BOX / 2, BOX / 2] }),
+        interactive: true,
+        bubblingMouseEvents: false,
+        zIndexOffset: anyActive ? 1100 : 50
+      });
+      cluster.on('click', onClusterClick);
+      entry = { marker: cluster, key: styleKey, onMap: false };
+      clusterPool.set(setKey, entry);
+    } else if (entry.key !== styleKey) {
+      const html = buildGrapeClusterHtml(members.length, 1.0);
+      entry.marker.setIcon(L.divIcon({ className: '', html, iconSize: [BOX, BOX], iconAnchor: [BOX / 2, BOX / 2] }));
+      entry.marker.setZIndexOffset(anyActive ? 1100 : 50);
+      entry.key = styleKey;
+    }
+    entry.marker.setLatLng(ll);
+    if (!entry.onMap) {
+      entry.marker.addTo(map);
+      entry.onMap = true;
+    }
+    keepClusterKeys.add(setKey);
   }
 
   // Label collision detection
@@ -402,68 +485,67 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     placed.push(bounds);
   }
 
+  const keepLabelIds = new Set();
   for (const lm of labelMeta) {
     if (!lm.renderLabel) continue;
     const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
 
+    let html, iconSize, iconAnchor, zIdx, styleKey;
     if (lm.isFocus) {
-      // Centred above the (now larger) dot. Wider fixed box so longer names
-      // don't clip; label sized up via .map-label-focus class.
       const FOCUS_W = 220;
       const FOCUS_H = 60;
-      const labelHtml = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${escMap(lm.line1)}${line2Html}</div>`;
-      const label = L.marker([lm.loc.lat, lm.loc.lng], {
-        icon: L.divIcon({
-          className: '',
-          html: labelHtml,
-          iconSize: [FOCUS_W, FOCUS_H],
-          // Anchor at bottom-centre so the label sits above the dot.
-          iconAnchor: [FOCUS_W / 2, FOCUS_H + lm.dotSize / 2 + 6]
-        }),
-        interactive: true,
-        bubblingMouseEvents: false,
-        zIndexOffset: 2001
-      }).addTo(map);
-      label.on('click', () => {
-        if (window.openParishSheet) window.openParishSheet(lm.loc.id);
-      });
-      markers.push(label);
-      continue;
+      const anchorY = FOCUS_H + lm.dotSize / 2 + 6;
+      html = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${escMap(lm.line1)}${line2Html}</div>`;
+      iconSize = [FOCUS_W, FOCUS_H];
+      iconAnchor = [FOCUS_W / 2, anchorY];
+      zIdx = 2001;
+      styleKey = `focus|${lm.line1}|${lm.line2}|${lm.loc.color}|${anchorY}`;
+    } else {
+      const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
+      const cls = lm.isSelected ? 'map-label map-label-selected' : 'map-label';
+      const labelH = lm.isSelected ? 44 : 30;
+      const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
+      html = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
+      iconSize = [LABEL_W, labelH];
+      iconAnchor = [anchorX, labelH / 2];
+      zIdx = lm.isSelected ? 1500 : (lm.loc.active ? 1000 : 0);
+      styleKey = `std|${lm.line1}|${lm.line2}|${lm.loc.color}|${lm.opacity}|${cls}|${labelH}|${anchorX}|${zIdx}`;
     }
 
-    const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
-    const cls = lm.isSelected ? 'map-label map-label-selected' : 'map-label';
-    const labelHtml = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
-
-    const labelH = lm.isSelected ? 44 : 30;
-    const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
-    const label = L.marker([lm.loc.lat, lm.loc.lng], {
-      icon: L.divIcon({
-        className: '',
-        html: labelHtml,
-        iconSize: [LABEL_W, labelH],
-        iconAnchor: [anchorX, labelH / 2]
-      }),
-      interactive: true,
-      bubblingMouseEvents: false,
-      zIndexOffset: lm.isSelected ? 1500 : (lm.loc.active ? 1000 : 0)
-    }).addTo(map);
-    label.on('click', () => {
-      const st = window.agoraStateRef;
-      if (st?.selectionMode) {
-        // Tap selected label = toggle off; same shape as dot click handler.
-        const cur = st.filters.parishIds ? new Set(st.filters.parishIds) : new Set();
-        if (cur.has(lm.loc.id)) cur.delete(lm.loc.id); else cur.add(lm.loc.id);
-        st.filters.parishIds = cur.size ? cur : null;
-        if (typeof renderParishPills === 'function') renderParishPills();
-        if (typeof updateMap === 'function') updateMap(st);
-        if (typeof window.agoraSyncURL === 'function') window.agoraSyncURL();
-        return;
+    let entry = labelPool.get(lm.loc.id);
+    if (!entry) {
+      const label = L.marker([lm.loc.lat, lm.loc.lng], {
+        icon: L.divIcon({ className: '', html, iconSize, iconAnchor }),
+        interactive: true,
+        bubblingMouseEvents: false,
+        zIndexOffset: zIdx
+      });
+      label._parishId = lm.loc.id;
+      label.on('click', onMarkerClick);
+      entry = { marker: label, key: styleKey, onMap: false };
+      labelPool.set(lm.loc.id, entry);
+    } else {
+      entry.marker._parishId = lm.loc.id;
+      if (entry.key !== styleKey) {
+        entry.marker.setIcon(L.divIcon({ className: '', html, iconSize, iconAnchor }));
+        entry.marker.setZIndexOffset(zIdx);
+        entry.key = styleKey;
       }
-      if (window.openParishSheet) window.openParishSheet(lm.loc.id);
-    });
-    markers.push(label);
+    }
+    entry.marker.setLatLng([lm.loc.lat, lm.loc.lng]);
+    if (!entry.onMap) {
+      entry.marker.addTo(map);
+      entry.onMap = true;
+    }
+    keepLabelIds.add(lm.loc.id);
   }
+
+  // Cull pool entries no longer in target sets — these are parishes/clusters
+  // that filtered out, clustered/declustered, or moved out of view.
+  cullPool(dotPool, keepDotIds);
+  cullPool(labelPool, keepLabelIds);
+  cullPool(clusterPool, keepClusterKeys);
+  rebuildMarkersArray();
 }
 
 // Compact grape-bunch divIcon for a clustered set of parishes. One grape
