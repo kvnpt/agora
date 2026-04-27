@@ -8,6 +8,15 @@ function initMap(state) {
   map = L.map('map', { zoomControl: false, zoomSnap: 0 }).setView([state.userLat, state.userLng], 11);
   window.agoraMap = map;
 
+  // Sub-pixel marker positioning. Leaflet's default latLngToLayerPoint
+  // rounds projected pixel coords to whole pixels — fine against a raster
+  // basemap that scales by integer tiles, but visibly wiggly against the
+  // MapLibre canvas (and any zoomSnap:0 fractional zoom). Drop the round
+  // so divIcon transforms get sub-pixel translate3d values.
+  map.latLngToLayerPoint = function (latlng) {
+    return this.project(L.latLng(latlng)).subtract(this.getPixelOrigin());
+  };
+
   // Vector basemap via self-hosted Protomaps pmtiles + MapLibre GL.
   // Leaflet stays as the marker host; MapLibre is mounted as a layer
   // underneath via the maplibre-gl-leaflet shim. Pixel-coord helpers
