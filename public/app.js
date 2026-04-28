@@ -2832,8 +2832,14 @@ function renderParishSheetContent(parishId, opts = {}) {
     }
     // Parish now "holds" its events — tapping a card expands inline within
     // the parish sheet (toggle if tapping the already-open card).
-    streamEl.querySelectorAll('.event-card').forEach(card => {
-      card.addEventListener('click', () => {
+    // Delegated so pooled card reuse across renders doesn't double-bind.
+    if (!streamEl._cardsBound) {
+      streamEl._cardsBound = true;
+      streamEl.addEventListener('click', (e) => {
+        if (e.target.closest('.event-card-drawer')) return;
+        if (e.target.closest('.event-card-close')) return;
+        const card = e.target.closest('.event-card');
+        if (!card || !streamEl.contains(card)) return;
         const id = parseInt(card.dataset.id);
         const scope = document.getElementById('parish-sheet-scroll');
         const alreadyOpen = card.classList.contains('expanded');
@@ -2845,7 +2851,7 @@ function renderParishSheetContent(parishId, opts = {}) {
           expandEventCard(id, { scope, card });
         }
       });
-    });
+    }
 
     // Re-expand the open event when parish sheet re-renders (async schedule /
     // events fetches trigger a full rebuild). Cover both the pinned hoist
@@ -2928,14 +2934,72 @@ function renderParishSheetContent(parishId, opts = {}) {
   }
 }
 
+// ── Event card pool ──
+// Card DOM nodes are reused across re-renders. Full-list innerHTML on a
+// 60+ card list reflows the whole subtree on the gesture-end frame;
+// pooling lets renderStream rebuild only the section structure (cheap,
+// ~10 nodes) and reuse card nodes via insertBefore — most cards don't
+// move on a viewport pan, so reflow cost drops to the few that did.
+//
+// Pool keyed by event.id. Entry holds node + source event ref. Same
+// reference (within a fetch cycle) → reuse; different reference (after
+// refetch) → rebuild but migrate expanded drawer state so the open
+// card doesn't blink.
+const cardPool = new Map();
+const _cardRange = document.createRange();
+
+function buildCardNode(evt) {
+  return _cardRange.createContextualFragment(renderEventCard(evt)).firstElementChild;
+}
+
+function getPooledCardNode(evt) {
+  const cached = cardPool.get(evt.id);
+  if (cached && cached.evt === evt) return cached.node;
+  const node = buildCardNode(evt);
+  if (cached && cached.node.classList.contains('expanded')) {
+    node.classList.add('expanded');
+    const drawer = cached.node.querySelector('.event-card-drawer');
+    const closeBtn = cached.node.querySelector('.event-card-close');
+    if (drawer) node.appendChild(drawer);
+    if (closeBtn) node.appendChild(closeBtn);
+    const glow = cached.node.style.getPropertyValue('--accent-glow');
+    if (glow) node.style.setProperty('--accent-glow', glow);
+  }
+  cardPool.set(evt.id, { node, evt });
+  return node;
+}
+
+function diffCardsInto(host, events) {
+  const desired = events.map(getPooledCardNode);
+  let prev = null;
+  for (const node of desired) {
+    const expected = prev ? prev.nextElementSibling : host.firstElementChild;
+    if (node !== expected) host.insertBefore(node, expected);
+    prev = node;
+  }
+  let n = prev ? prev.nextElementSibling : host.firstElementChild;
+  while (n) {
+    const next = n.nextElementSibling;
+    host.removeChild(n);
+    n = next;
+  }
+}
+
+function pruneCardPool() {
+  const live = new Set(state.events.map(e => e.id));
+  for (const id of cardPool.keys()) {
+    if (!live.has(id)) cardPool.delete(id);
+  }
+}
+
 // ── Render Events ──
 function renderEvents() {
   const container = document.getElementById('events-list');
+  pruneCardPool();
   const filtered = applyFilters(state.events);
   renderStream(container, filtered);
   bindEventCards(container);
 
-  // Re-expand the open event (list HTML was rebuilt — drawer must be re-injected).
   if (state._openEventId) {
     expandEventCard(state._openEventId);
   }
@@ -3143,16 +3207,16 @@ function showPsUrlCopied(btn) {
   }, 900);
 }
 
-function renderSubDaySections(events, html) {
+function renderSubDaySections(events, html, reserveHost) {
   const { morning, evening } = splitMorningEvening(events);
   if (morning.length) {
     html += `<div class="sub-day-header">Morning</div>`;
-    html += sortEvents(morning).map(renderEventCard).join('');
+    html += reserveHost(sortEvents(morning));
   }
   if (evening.length) {
     if (morning.length) html += `<hr class="sub-day-divider">`;
     html += `<div class="sub-day-header">Evening</div>`;
-    html += sortEvents(evening).map(renderEventCard).join('');
+    html += reserveHost(sortEvents(evening));
   }
   return html;
 }
@@ -3184,6 +3248,16 @@ function renderStream(container, events) {
   const hasToday = happeningNow.length || laterToday.length;
   let html = '';
 
+  // Section structure renders as HTML (cheap, ~10 nodes); cards are
+  // populated post-swap from the pool so unchanged cards don't reflow.
+  const hosts = [];
+  let nextHostId = 0;
+  function reserveHost(evts) {
+    const id = `h${nextHostId++}`;
+    hosts.push({ id, events: evts });
+    return `<div data-card-host="${id}"></div>`;
+  }
+
   // Earlier-today chip — collapsed by default; expands inline on tap.
   if (earlierToday.length) {
     html += `<button class="earlier-today-chip" id="earlier-today-chip" type="button" aria-expanded="false">`;
@@ -3191,27 +3265,27 @@ function renderStream(container, events) {
     html += `<span class="earlier-today-chip-chevron">▾</span>`;
     html += `</button>`;
     html += `<div class="earlier-today-list" id="earlier-today-list" hidden>`;
-    html += sortEvents(earlierToday).map(renderEventCard).join('');
+    html += reserveHost(sortEvents(earlierToday));
     html += `</div>`;
   }
 
   if (happeningNow.length) {
     html += `<div class="happening-now-section">`;
     html += `<div class="section-header"><span class="now-dot"></span>Happening now</div>`;
-    html += sortEvents(happeningNow).map(renderEventCard).join('');
+    html += reserveHost(sortEvents(happeningNow));
     html += `</div>`;
   }
   if (laterToday.length) {
     html += `<div class="day-box">`;
     html += `<div class="section-header">Later today</div>`;
-    html = renderSubDaySections(laterToday, html);
+    html = renderSubDaySections(laterToday, html, reserveHost);
     html += `</div>`;
   }
 
   // Month seam + day groups. Always emit the seam when future events exist so
   // later async updates slot into a stable position (no scroll jump).
   if (future.length) {
-    html += renderFutureDays(future);
+    html += renderFutureDays(future, reserveHost);
   } else if (!hasToday) {
     html += renderEmptyStateHTML();
   }
@@ -3231,6 +3305,14 @@ function renderStream(container, events) {
 
   container.innerHTML = html;
 
+  // Populate hosts with pooled card nodes. Cards that already lived in
+  // a previous host get moved (no reflow of their subtree); cards new
+  // to the viewport are constructed once and pooled for next render.
+  for (const { id, events: hostEvts } of hosts) {
+    const host = container.querySelector(`[data-card-host="${id}"]`);
+    if (host) diffCardsInto(host, hostEvts);
+  }
+
   const chip = container.querySelector('#earlier-today-chip');
   if (chip) {
     chip.addEventListener('click', () => {
@@ -3244,7 +3326,7 @@ function renderStream(container, events) {
 }
 
 // Day-grouped render for future events (tomorrow → end of window).
-function renderFutureDays(events) {
+function renderFutureDays(events, reserveHost) {
   const groups = groupByDay(events);
   const now = new Date();
   const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
@@ -3267,7 +3349,7 @@ function renderFutureDays(events) {
 
     html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}">`;
     html += `<div class="section-header">${dayFmt}</div>`;
-    html = renderSubDaySections(evts, html);
+    html = renderSubDaySections(evts, html, reserveHost);
     html += `</div>`;
   }
   return html;
@@ -3378,10 +3460,17 @@ function renderEventCard(evt) {
 }
 
 function bindEventCards(container) {
-  container.querySelectorAll('.event-card').forEach(card => {
-    card.addEventListener('click', () => {
-      showEventDetail(parseInt(card.dataset.id));
-    });
+  // Delegated — cards are pooled and reused across renders, so per-card
+  // listeners would accumulate. One listener on the stable container
+  // dispatches by .event-card ancestry.
+  if (container._cardsBound) return;
+  container._cardsBound = true;
+  container.addEventListener('click', (e) => {
+    if (e.target.closest('.event-card-drawer')) return;
+    if (e.target.closest('.event-card-close')) return;
+    const card = e.target.closest('.event-card');
+    if (!card || !container.contains(card)) return;
+    showEventDetail(parseInt(card.dataset.id));
   });
 }
 
