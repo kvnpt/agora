@@ -498,9 +498,17 @@ async function processBatch(sender, messages) {
             });
           }
         } else {
-          db.prepare(`INSERT INTO pending_parish_updates (parish_id, proposed_changes, sender_phone, source_run_id)
-                      VALUES (?, ?, ?, ?)`).run(parishId, JSON.stringify({ sets, clears }), sender, runId);
-          console.log(`[webhook] Queued parish update for review: ${parishId} sets=[${Object.keys(sets).join(',')}] clears=[${clears.join(',')}]`);
+          const changesJson = JSON.stringify({ sets, clears });
+          const dupUpdate = db.prepare(
+            "SELECT id FROM pending_parish_updates WHERE parish_id = ? AND proposed_changes = ? AND status = 'pending'"
+          ).get(parishId, changesJson);
+          if (dupUpdate) {
+            console.log(`[webhook] Skipping duplicate parish update for ${parishId} (existing id=${dupUpdate.id})`);
+          } else {
+            db.prepare(`INSERT INTO pending_parish_updates (parish_id, proposed_changes, sender_phone, source_run_id)
+                        VALUES (?, ?, ?, ?)`).run(parishId, changesJson, sender, runId);
+            console.log(`[webhook] Queued parish update for review: ${parishId} sets=[${Object.keys(sets).join(',')}] clears=[${clears.join(',')}]`);
+          }
         }
       }
     }
