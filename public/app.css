@@ -1544,19 +1544,22 @@ a.filters-menu-item { text-decoration: none; }
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
+  background: white;
+  border-radius: 10px;
+  padding: 3px 7px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.22), 0 0 0 0.5px rgba(0,0,0,0.06);
   white-space: normal;
+  word-break: break-word;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  -webkit-text-stroke: 4px rgba(255,255,255,0.85);
-  paint-order: stroke fill;
+  transform: translateY(-50%);
 }
 .map-label-focus {
   font-size: 15px;
   font-weight: 700;
   text-align: center;
-  white-space: normal;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -1564,7 +1567,11 @@ a.filters-menu-item { text-decoration: none; }
   justify-content: flex-end;
   height: 100%;
   line-height: 1.15;
-  overflow: hidden;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+  transform: none;
   -webkit-text-stroke: 4px rgba(255,255,255,0.85);
   paint-order: stroke fill;
 }
@@ -1575,9 +1582,6 @@ a.filters-menu-item { text-decoration: none; }
   font-size: 14px;
   font-weight: 700;
   line-height: 1.15;
-  white-space: normal;
-  -webkit-text-stroke: 4px rgba(255,255,255,0.85);
-  paint-order: stroke fill;
 }
 
 /* ── Event poster in detail panel ── */

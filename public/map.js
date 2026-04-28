@@ -462,8 +462,8 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     const opacity = 1.0;
 
     const focusLogo = isFocus && loc.logo;
-    const size = focusLogo ? 32 : (emphasised ? 16 : (loc.active ? 10 : 8));
-    const hitSize = emphasised ? 44 : (loc.active ? 36 : 24);
+    const size = focusLogo ? 32 : (emphasised ? 16 : 10);
+    const hitSize = emphasised ? 44 : 32;
     const borderWidth = emphasised ? 2.5 : 1.5;
     const innerHtml = focusLogo
       ? `<img src="${loc.logo}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:${borderWidth}px solid white;box-sizing:border-box;opacity:${opacity};box-shadow:0 2px 10px rgba(0,0,0,0.25);">`
@@ -563,8 +563,8 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     lm.py = pt.y;
   }
 
-  const LABEL_W = 120;
-  const LABEL_H = 30;
+  const LABEL_W = 90;
+  const LABEL_H = 32;
   const placed = [];
 
   // Cap text labels to 15 most-central parishes — dots still render for all,
@@ -627,13 +627,12 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     } else {
       const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
       const cls = lm.isSelected ? 'map-label map-label-selected' : 'map-label';
-      const labelH = 44;
       const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
       html = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${labelText}</div>`;
-      iconSize = [LABEL_W, labelH];
-      iconAnchor = [anchorX, labelH / 2];
+      iconSize = [LABEL_W, 1];
+      iconAnchor = [anchorX, 0];
       zIdx = lm.isSelected ? 1500 : (lm.loc.active ? 1000 : 0);
-      styleKey = `std|${lm.line1}|${lm.line2}|${lm.loc.color}|${lm.opacity}|${cls}|${labelH}|${anchorX}|${zIdx}`;
+      styleKey = `std|${lm.line1}|${lm.line2}|${lm.loc.color}|${lm.opacity}|${cls}|${anchorX}|${zIdx}`;
     }
 
     let entry = labelPool.get(lm.loc.id);
