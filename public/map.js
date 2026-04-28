@@ -19,49 +19,31 @@
 // doesn't engage until the finger moves 3 Manhattan pixels, then the
 // map snaps the accumulated offset (Draggable._startPos is rewritten
 // to compensate for the missed pixels). That rewrite IS the snap users
-// feel when the gesture commits.
+// feel when the gesture commits. Default _onMove anchor pattern stays
+// (matches Apple Maps web's behavior — first move is anchor, second
+// move shows full delta). What feels like "wait for travel" was the
+// basemap render lag (see L.MaplibreGL.getEvents override below), not
+// the anchor itself.
 if (L.Draggable && L.Draggable.prototype.options) {
   L.Draggable.prototype.options.clickTolerance = 0;
 }
 
-// Apply the first-move offset directly instead of anchoring it.
-// Default Leaflet _onMove sets `_startPos = getPosition() - offset` on
-// the first triggering move, so `_newPos = _startPos + offset` produces
-// zero visible movement on that first frame — finger has moved N pixels
-// but map shows no change until the SECOND move. Designed to swallow
-// the 3 tolerance pixels; with tolerance=0 it's vestigial and costs us
-// one frame of perceived "wait" before the pan commits visually.
-// Override drops the subtract so frame 1 of the gesture moves the map
-// by the cumulative offset since touchstart.
-if (L.Draggable && !L.Draggable.prototype._agoraNoAnchor) {
-  L.Draggable.prototype._agoraNoAnchor = true;
-  L.Draggable.prototype._onMove = function (e) {
-    if (e._simulated) return;
-    if (e.touches && e.touches.length > 1) {
-      this._moved = true;
-      return;
-    }
-    const first = (e.touches && e.touches.length === 1 ? e.touches[0] : e);
-    const offset = new L.Point(first.clientX, first.clientY)._subtract(this._startPoint);
-    if (!offset.x && !offset.y) return;
-    if (Math.abs(offset.x) + Math.abs(offset.y) < this.options.clickTolerance) return;
-    L.DomEvent.preventDefault(e);
-    if (!this._moved) {
-      this.fire('dragstart');
-      this._moved = true;
-      this._startPos = L.DomUtil.getPosition(this._element);
-      L.DomUtil.addClass(document.body, 'leaflet-dragging');
-      this._lastTarget = e.target || e.srcElement;
-      if (window.SVGElementInstance && this._lastTarget instanceof window.SVGElementInstance) {
-        this._lastTarget = this._lastTarget.correspondingUseElement;
-      }
-      L.DomUtil.addClass(this._lastTarget, 'leaflet-drag-target');
-    }
-    this._newPos = this._startPos.add(offset);
-    this._moving = true;
-    L.Util.cancelAnimFrame(this._animRequest);
-    this._lastEvent = e;
-    this._animRequest = L.Util.requestAnimFrame(this._updatePosition, this, true);
+// Hook shim's _update directly to map 'move' events instead of through
+// the default L.Util.throttle wrapper. The throttle uses setTimeout to
+// gate calls, which fires async after the current RAF — so the marker
+// pane (riding mapPane CSS-translate in lockstep with Draggable's RAF)
+// updates one frame ahead of the basemap canvas (whose container
+// transform is set asynchronously). Visible result: markers drift
+// slightly relative to the basemap during fast pan. Synchronous _update
+// runs in the same move event as mapPane translate, so both
+// transforms commit in the same frame before paint.
+if (L.MaplibreGL && !L.MaplibreGL.prototype._agoraSyncMove) {
+  L.MaplibreGL.prototype._agoraSyncMove = true;
+  const origGetEvents = L.MaplibreGL.prototype.getEvents;
+  L.MaplibreGL.prototype.getEvents = function () {
+    const events = origGetEvents.call(this);
+    events.move = this._update;
+    return events;
   };
 }
 
@@ -142,13 +124,7 @@ function initMap(state) {
     type: 'background',
     paint: { 'background-color': '#ffffff', 'background-opacity': 0.35 }
   });
-  // updateInterval: 0 — let _update fire on every move event. The shim's
-  // 32ms default was tuned for 30Hz mobile chips ca. 2018; on 120Hz iOS
-  // it's 4× slower than the display, so the basemap canvas falls behind
-  // the marker pane during pan (markers ride mapPane CSS-translate at
-  // display rate; basemap re-renders at 30Hz). At 0 it batches via
-  // setTimeout(later, 0) ≈ 4ms minimum, well under the frame budget.
-  L.maplibreGL({ style, attributionControl: false, updateInterval: 0 }).addTo(map);
+  L.maplibreGL({ style, attributionControl: false }).addTo(map);
 
   userMarker = L.marker([state.userLat, state.userLng], {
     icon: L.divIcon({
