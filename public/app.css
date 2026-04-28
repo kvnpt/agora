@@ -1544,10 +1544,6 @@ a.filters-menu-item { text-decoration: none; }
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
-  background: white;
-  border-radius: 10px;
-  padding: 3px 7px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.22), 0 0 0 0.5px rgba(0,0,0,0.06);
   white-space: normal;
   word-break: break-word;
   display: -webkit-box;
@@ -1555,6 +1551,9 @@ a.filters-menu-item { text-decoration: none; }
   -webkit-line-clamp: 2;
   overflow: hidden;
   transform: translateY(-50%);
+  -webkit-text-stroke: 4px rgba(255,255,255,0.85);
+  paint-order: stroke fill;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.28));
 }
 .map-label-focus {
   font-size: 15px;
@@ -1567,13 +1566,11 @@ a.filters-menu-item { text-decoration: none; }
   justify-content: flex-end;
   height: 100%;
   line-height: 1.15;
-  background: none;
-  box-shadow: none;
-  padding: 0;
   overflow: visible;
   transform: none;
   -webkit-text-stroke: 4px rgba(255,255,255,0.85);
   paint-order: stroke fill;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.28));
 }
 /* Selected (in selection mode): same emphasis as focus, but stays in the
    side-flow position (no free-float-above-dot). Multiple parishes can be
