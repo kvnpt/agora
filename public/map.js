@@ -109,10 +109,15 @@ let markers = [];
 // (clusters). Avoids destroy/recreate of ~50 marker DOM nodes on every
 // updateMap call — that was a 50-150ms main-thread block during gestures
 // (see the gesture-recovery lag investigation 2026-04-27).
-const dotPool = new Map();      // parish_id -> { marker, key, onMap }
+const dotPool = new Map();      // parish_id -> { marker, key, onMap, traveling }
 const labelPool = new Map();    // parish_id -> { marker, key, onMap }
 const clusterPool = new Map();  // sorted-member-ids string -> { marker, key, onMap }
 let userMarker = null;
+
+// Cluster membership from the most-recent render. Used to diff joins/leaves
+// and compute travel start positions for animation.
+let _prevParishCluster = new Map();  // parishId → setKey (in cluster) | null (solo)
+let _prevClusterCentroid = new Map(); // setKey → L.LatLng
 
 function initMap(state) {
   if (map) return;
@@ -349,7 +354,7 @@ function rebuildMarkersArray() {
 
 function cullPool(pool, keepKeys) {
   for (const [id, entry] of pool) {
-    if (!keepKeys.has(id) && entry.onMap) {
+    if (!keepKeys.has(id) && entry.onMap && !entry.traveling) {
       map.removeLayer(entry.marker);
       entry.onMap = false;
     }
@@ -429,6 +434,25 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     }
   }
 
+  // Pre-compute cluster centroids once — used in both the cluster render loop
+  // and the animation diff. Avoids duplicate pixel-to-latlng conversions.
+  const newParishCluster = new Map();   // parishId → setKey | null
+  const newClusterCentroid = new Map(); // setKey → LatLng
+  const joiningClusterMap = new Map();  // parishId → cluster LatLng (join target)
+  for (const members of clusterGroups) {
+    let sx = 0, sy = 0;
+    for (const m of members) { const p = pxPos.get(m.id); sx += p.x; sy += p.y; }
+    const ll = map.containerPointToLatLng([sx / members.length, sy / members.length]);
+    const setKey = members.map(m => m.id).sort().join(',');
+    newClusterCentroid.set(setKey, ll);
+    for (const m of members) { newParishCluster.set(m.id, setKey); joiningClusterMap.set(m.id, ll); }
+  }
+  for (const loc of sortedLocs) { if (!newParishCluster.has(loc.id)) newParishCluster.set(loc.id, null); }
+  // Parishes that were clustered last render but are solo now — need leave animation.
+  const fromClusterIds = new Set(
+    sortedLocs.filter(l => !clusteredIds.has(l.id) && !!_prevParishCluster.get(l.id)).map(l => l.id)
+  );
+
   const keepDotIds = new Set();
   for (const loc of sortedLocs) {
     if (clusteredIds.has(loc.id)) continue; // rendered as a grape cluster below
@@ -497,13 +521,10 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   const keepClusterKeys = new Set();
   const BOX = 40;
   for (const members of clusterGroups) {
-    let sx = 0, sy = 0;
-    for (const m of members) { const p = pxPos.get(m.id); sx += p.x; sy += p.y; }
-    const cx = sx / members.length, cy = sy / members.length;
-    const ll = map.containerPointToLatLng([cx, cy]);
     const anyActive = members.some(m => m.active);
     const setKey = members.map(m => m.id).sort().join(',');
     const styleKey = `${members.length}|${anyActive ? 1 : 0}`;
+    const ll = newClusterCentroid.get(setKey);
 
     let entry = clusterPool.get(setKey);
     if (!entry) {
@@ -522,11 +543,27 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
       entry.marker.setIcon(L.divIcon({ className: '', html, iconSize: [BOX, BOX], iconAnchor: [BOX / 2, BOX / 2] }));
       entry.marker.setZIndexOffset(anyActive ? 1100 : 50);
       entry.key = styleKey;
+      // Membership or active-state changed — bounce-pulse
+      requestAnimationFrame(() => {
+        const inner = entry.marker.getElement()?.querySelector('.cluster-inner');
+        if (!inner) return;
+        inner.classList.remove('cluster-pulse');
+        void inner.offsetWidth;
+        inner.classList.add('cluster-pulse');
+        inner.addEventListener('animationend', () => inner.classList.remove('cluster-pulse'), { once: true });
+      });
     }
     entry.marker.setLatLng(ll);
     if (!entry.onMap) {
       entry.marker.addTo(map);
       entry.onMap = true;
+      // Bounce-in for newly appearing clusters
+      requestAnimationFrame(() => {
+        const inner = entry.marker.getElement()?.querySelector('.cluster-inner');
+        if (!inner) return;
+        inner.classList.add('cluster-appear');
+        inner.addEventListener('animationend', () => inner.classList.remove('cluster-appear'), { once: true });
+      });
     }
     keepClusterKeys.add(setKey);
   }
@@ -643,6 +680,74 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     keepLabelIds.add(lm.loc.id);
   }
 
+  // ── Travel animations ──
+
+  // Dots going solo → clustered: animate to cluster centroid, then self-cull.
+  // Only applies to dots that were solo last render (cluster→cluster skipped).
+  // cullPool below skips entry.traveling=true; transitionend removes them.
+  for (const [id, entry] of dotPool) {
+    if (keepDotIds.has(id) || !entry.onMap || entry.traveling) continue;
+    const destLl = joiningClusterMap.get(id);
+    if (!destLl || !!_prevParishCluster.get(id)) continue; // filtered out OR was already clustered
+    entry.traveling = true;
+    requestAnimationFrame(() => {
+      const el = entry.marker.getElement();
+      if (!el) { entry.traveling = false; return; }
+      el.classList.add('marker-traveling');
+      el.addEventListener('transitionend', () => {
+        el.classList.remove('marker-traveling');
+        entry.traveling = false;
+        if (entry.onMap) { map.removeLayer(entry.marker); entry.onMap = false; }
+      }, { once: true });
+      entry.marker.setLatLng(destLl);
+    });
+  }
+
+  // Dots going clustered → solo: teleport to old cluster centroid, then animate
+  // to own position. Label hidden until arrival.
+  requestAnimationFrame(() => {
+    for (const id of fromClusterIds) {
+      const entry = dotPool.get(id);
+      if (!entry || !entry.onMap || entry.traveling) continue;
+      const prevKey = _prevParishCluster.get(id);
+      const fromLl = prevKey && _prevClusterCentroid.get(prevKey);
+      if (!fromLl) continue;
+      const loc = locations.find(l => l.id === id);
+      if (!loc) continue;
+      // Hide label before dot starts moving
+      const lblEntry = labelPool.get(id);
+      const lel = lblEntry?.onMap ? lblEntry.marker.getElement() : null;
+      if (lel) lel.classList.add('label-hidden');
+      // Instant teleport to cluster origin
+      entry.marker.setLatLng(fromLl);
+      entry.traveling = true;
+      requestAnimationFrame(() => {
+        const el = entry.marker.getElement();
+        if (!el) { entry.traveling = false; return; }
+        el.classList.add('marker-traveling');
+        el.addEventListener('transitionend', () => {
+          el.classList.remove('marker-traveling');
+          entry.traveling = false;
+          // Reveal label with a short fade
+          const lbl2 = labelPool.get(id);
+          if (lbl2?.onMap) {
+            const lel2 = lbl2.marker.getElement();
+            if (lel2) {
+              lel2.classList.remove('label-hidden');
+              lel2.classList.add('label-appear');
+              lel2.addEventListener('animationend', () => lel2.classList.remove('label-appear'), { once: true });
+            }
+          }
+        }, { once: true });
+        entry.marker.setLatLng([loc.lat, loc.lng]);
+      });
+    }
+  });
+
+  // Store for next render's diff
+  _prevParishCluster = newParishCluster;
+  _prevClusterCentroid = newClusterCentroid;
+
   // Cull pool entries no longer in target sets — these are parishes/clusters
   // that filtered out, clustered/declustered, or moved out of view.
   cullPool(dotPool, keepDotIds);
@@ -682,11 +787,13 @@ function buildGrapeClusterHtml(count, opacity) {
   const overflow = count > 7
     ? `<text x="20" y="36" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" style="paint-order:stroke;stroke:${GRAPE};stroke-width:2.5;">+${count - 7}</text>`
     : '';
-  return `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;opacity:${opacity};filter:drop-shadow(0 2px 3px rgba(0,0,0,0.18));">
-    <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-      <g transform="rotate(-30 20 20)">${grapes}</g>
-      ${overflow}
-    </svg>
+  return `<div style="width:40px;height:40px;opacity:${opacity};">
+    <div class="cluster-inner" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,0.18));">
+      <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <g transform="rotate(-30 20 20)">${grapes}</g>
+        ${overflow}
+      </svg>
+    </div>
   </div>`;
 }
 
