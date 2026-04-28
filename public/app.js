@@ -948,11 +948,15 @@ function renderParishPills() {
     return true;
   });
 
-  // Distance origin: centre of the *visible* map rectangle (above the sheet)
-  // when map is ready, else user location. Visible-rect centre — not full
-  // container centre — keeps the first pill aligned with where the eye is.
+  // Distance origin: always use the visible-centre at SNAP_HALF (sheet at 50%
+  // of screen height) — pills sort as if the user is in the standard browsing
+  // position regardless of where they've dragged the sheet.
   let originLat = null, originLng = null;
-  const vc = window.agoraMap ? visibleCentreLatLng() : null;
+  const vc = window.agoraMap ? (() => {
+    const m = window.agoraMap;
+    const sz = m.getSize();
+    return m.containerPointToLatLng([sz.x / 2, (window.innerHeight * 0.5) / 2]);
+  })() : null;
   if (vc) {
     originLat = vc.lat; originLng = vc.lng;
   } else if (state.userLat != null && state.userLng != null) {
