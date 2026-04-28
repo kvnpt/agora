@@ -564,7 +564,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   }
 
   const LABEL_W = 120;
-  const LABEL_H = 22;
+  const LABEL_H = 30;
   const placed = [];
 
   // Cap text labels to 15 most-central parishes — dots still render for all,
@@ -612,6 +612,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   const keepLabelIds = new Set();
   for (const lm of labelMeta) {
     if (!lm.renderLabel) continue;
+    const line1Html = `<div class="map-label-line1">${escMap(lm.line1)}</div>`;
     const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
 
     let html, iconSize, iconAnchor, zIdx, styleKey;
@@ -619,7 +620,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
       const FOCUS_W = 220;
       const FOCUS_H = 60;
       const anchorY = FOCUS_H + lm.dotSize / 2 + 6;
-      html = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${escMap(lm.line1)}${line2Html}</div>`;
+      html = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${line1Html}${line2Html}</div>`;
       iconSize = [FOCUS_W, FOCUS_H];
       iconAnchor = [FOCUS_W / 2, anchorY];
       zIdx = 2001;
@@ -627,9 +628,9 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     } else {
       const align = lm.side === 'right' ? 'text-align:left;' : 'text-align:right;';
       const cls = lm.isSelected ? 'map-label map-label-selected' : 'map-label';
-      const labelH = lm.isSelected ? 44 : 30;
+      const labelH = 44;
       const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
-      html = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${escMap(lm.line1)}${line2Html}</div>`;
+      html = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${line1Html}${line2Html}</div>`;
       iconSize = [LABEL_W, labelH];
       iconAnchor = [anchorX, labelH / 2];
       zIdx = lm.isSelected ? 1500 : (lm.loc.active ? 1000 : 0);
