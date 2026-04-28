@@ -15,17 +15,54 @@
 // repositioning past the first gesture (partial-grey tiles, desynced
 // markers). shim._zoomEnd is idempotent so a duplicate fire is harmless
 // in the rare case where _resetView's zoomend already fired.
-// Drop Leaflet's 3px Draggable click-tolerance. Default behavior: pan
-// doesn't engage until the finger moves 3 Manhattan pixels, then the
-// map snaps the accumulated offset (Draggable._startPos is rewritten
-// to compensate for the missed pixels). That rewrite IS the snap users
-// feel when the gesture commits. Default _onMove anchor pattern stays
-// (matches Apple Maps web's behavior — first move is anchor, second
-// move shows full delta). What feels like "wait for travel" was the
-// basemap render lag (see L.MaplibreGL.getEvents override below), not
-// the anchor itself.
-if (L.Draggable && L.Draggable.prototype.options) {
-  L.Draggable.prototype.options.clickTolerance = 0;
+// Apple Maps web pattern: pan engages after a small travel threshold
+// (no time fallback — even a 2-second slow drag works), then the
+// gesture begins from the threshold point with NO snap.
+//
+// Leaflet 1.9.4 _onMove does NOT anchor: once threshold passes, it
+// applies the full accumulated offset to _newPos on that same frame,
+// jumping the pane by clickTolerance+ pixels. That jump is the snap.
+//
+// Patch: re-anchor _startPoint to current finger position on the first
+// triggering move and skip _updatePosition for that frame. Subsequent
+// moves compute offset from the new anchor, so motion is incremental
+// from where the threshold crossed — Apple-style. clickTolerance kept
+// at the default 3px (the threshold the user wants to feel).
+if (L.Draggable && !L.Draggable.prototype._agoraAnchored) {
+  L.Draggable.prototype._agoraAnchored = true;
+  L.Draggable.prototype._onMove = function (e) {
+    if (!this._enabled) return;
+    if (e.touches && e.touches.length > 1) {
+      this._moved = true;
+      return;
+    }
+    const first = (e.touches && e.touches.length === 1 ? e.touches[0] : e);
+    const offset = new L.Point(first.clientX, first.clientY)._subtract(this._startPoint);
+    if (!offset.x && !offset.y) return;
+    if (Math.abs(offset.x) + Math.abs(offset.y) < this.options.clickTolerance) return;
+
+    L.DomEvent.preventDefault(e);
+
+    if (!this._moved) {
+      this.fire('dragstart');
+      this._moved = true;
+      L.DomUtil.addClass(document.body, 'leaflet-dragging');
+      this._lastTarget = e.target || e.srcElement;
+      if (window.SVGElementInstance && this._lastTarget instanceof window.SVGElementInstance) {
+        this._lastTarget = this._lastTarget.correspondingUseElement;
+      }
+      L.DomUtil.addClass(this._lastTarget, 'leaflet-drag-target');
+      this._startPoint = new L.Point(first.clientX, first.clientY);
+      return;
+    }
+
+    offset.x /= this._parentScale.x;
+    offset.y /= this._parentScale.y;
+    this._newPos = this._startPos.add(offset);
+    this._moving = true;
+    this._lastEvent = e;
+    this._updatePosition();
+  };
 }
 
 // Hook shim's _update directly to map 'move' events instead of through
