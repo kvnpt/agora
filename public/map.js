@@ -15,6 +15,17 @@
 // repositioning past the first gesture (partial-grey tiles, desynced
 // markers). shim._zoomEnd is idempotent so a duplicate fire is harmless
 // in the rare case where _resetView's zoomend already fired.
+// Drop Leaflet's 3px Draggable click-tolerance. Default behavior: pan
+// doesn't engage until the finger moves 3 Manhattan pixels, then the
+// map snaps the accumulated offset (Draggable._startPos is rewritten
+// to compensate for the missed pixels). That rewrite IS the snap users
+// feel when the gesture commits. With tolerance: 0, drag engages on
+// the first pixel of movement and there's no snap because the
+// compensation is sub-pixel.
+if (L.Draggable && L.Draggable.prototype.options) {
+  L.Draggable.prototype.options.clickTolerance = 0;
+}
+
 if (L.Map.TouchZoom && !L.Map.TouchZoom.prototype._agoraNoSettle) {
   L.Map.TouchZoom.prototype._agoraNoSettle = true;
   L.Map.TouchZoom.prototype._onTouchEnd = function () {
