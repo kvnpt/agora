@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.mode !== 'events') return;
     if (!state.events.some(e => e.parish_live_url)) return;
     if (document.querySelector('.event-card.expanded')) return;
-    renderEvents();
+    scheduleRenderEvents();
   }, 60000);
 
   // Browser back button: poster first, then legacy parish-detail modal (flag-based,
@@ -504,9 +504,11 @@ function onViewportMapPhase() {
 
 // List-phase: events/services list innerHTML rebuild. Heavy. Runs 800ms
 // after gesture-end so a quick follow-up pan preempts it via movestart.
+// scheduleRenderEvents adds a second gate: the actual DOM work waits for
+// a genuine idle window so an in-progress gesture can't be interrupted.
 function onViewportListPhase() {
   recomputeViewportSet();
-  if (state.mode === 'services') renderServices(); else renderEvents();
+  if (state.mode === 'services') renderServices(); else scheduleRenderEvents();
 }
 
 window.agoraOnViewportMapPhase = onViewportMapPhase;
@@ -702,7 +704,7 @@ async function fetchEvents(opts = {}) {
     }
   }
 
-  renderEvents();
+  scheduleRenderEvents(300);
   updateMap(state, { fit: !!opts.fit });
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
 }
@@ -1532,7 +1534,7 @@ function renderCurrentView(opts = {}) {
   if (state.mode === 'services') {
     renderServices();
   } else {
-    renderEvents();
+    scheduleRenderEvents(200);
   }
   updateMap(state, { fit: !!opts.fit });
   syncResetFab();
@@ -2997,6 +2999,18 @@ function pruneCardPool() {
 }
 
 // ── Render Events ──
+let _renderEventsIdleCancel = null;
+function scheduleRenderEvents(timeout = 500) {
+  if (_renderEventsIdleCancel) { _renderEventsIdleCancel(); _renderEventsIdleCancel = null; }
+  if (window.requestIdleCallback) {
+    const id = requestIdleCallback(() => { _renderEventsIdleCancel = null; renderEvents(); }, { timeout });
+    _renderEventsIdleCancel = () => cancelIdleCallback(id);
+  } else {
+    const id = setTimeout(() => { _renderEventsIdleCancel = null; renderEvents(); }, 16);
+    _renderEventsIdleCancel = () => clearTimeout(id);
+  }
+}
+
 function renderEvents() {
   const container = document.getElementById('events-list');
   pruneCardPool();
