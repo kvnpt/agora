@@ -612,15 +612,14 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   const keepLabelIds = new Set();
   for (const lm of labelMeta) {
     if (!lm.renderLabel) continue;
-    const line1Html = `<div class="map-label-line1">${escMap(lm.line1)}</div>`;
-    const line2Html = lm.line2 ? `<div class="map-label-sub">${escMap(lm.line2)}</div>` : '';
+    const labelText = lm.line2 ? `${escMap(lm.line1)} ${escMap(lm.line2)}` : escMap(lm.line1);
 
     let html, iconSize, iconAnchor, zIdx, styleKey;
     if (lm.isFocus) {
       const FOCUS_W = 220;
       const FOCUS_H = 60;
       const anchorY = FOCUS_H + lm.dotSize / 2 + 6;
-      html = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${line1Html}${line2Html}</div>`;
+      html = `<div class="map-label map-label-focus" style="color:${lm.loc.color};">${labelText}</div>`;
       iconSize = [FOCUS_W, FOCUS_H];
       iconAnchor = [FOCUS_W / 2, anchorY];
       zIdx = 2001;
@@ -630,7 +629,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
       const cls = lm.isSelected ? 'map-label map-label-selected' : 'map-label';
       const labelH = 44;
       const anchorX = lm.side === 'right' ? -8 : LABEL_W + 8;
-      html = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${line1Html}${line2Html}</div>`;
+      html = `<div class="${cls}" style="color:${lm.loc.color};opacity:${lm.opacity};${align}">${labelText}</div>`;
       iconSize = [LABEL_W, labelH];
       iconAnchor = [anchorX, labelH / 2];
       zIdx = lm.isSelected ? 1500 : (lm.loc.active ? 1000 : 0);
