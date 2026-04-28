@@ -1589,55 +1589,6 @@ a.filters-menu-item { text-decoration: none; }
   opacity: 0.8;
 }
 
-/* ── Marker / cluster animations ── */
-
-/* Dot traveling toward or away from a cluster. Added/removed in JS;
-   only active during explicit join/leave transitions, never during pan. */
-.leaflet-marker-icon.marker-traveling {
-  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
-}
-
-/* Scale layer inside grape cluster icon. Leaflet owns the outer
-   transform (position); this inner layer handles scale independently. */
-.cluster-inner {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.cluster-inner.cluster-appear {
-  animation: cluster-appear 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-.cluster-inner.cluster-pulse {
-  animation: cluster-pulse 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-@keyframes cluster-appear {
-  from { transform: scale(0.4); opacity: 0.4; }
-  to   { transform: scale(1);   opacity: 1;   }
-}
-@keyframes cluster-pulse {
-  0%   { transform: scale(1);    }
-  40%  { transform: scale(1.28); }
-  70%  { transform: scale(0.92); }
-  100% { transform: scale(1);    }
-}
-
-/* Label hidden while its dot is still traveling in from a cluster.
-   Revealed in JS on transitionend with a brief fade-rise. */
-.leaflet-marker-icon.label-hidden {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-.leaflet-marker-icon.label-appear {
-  animation: label-appear 200ms ease-out both;
-}
-@keyframes label-appear {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
 /* ── Event poster in detail panel ── */
 .detail-poster {
   display: flex;
