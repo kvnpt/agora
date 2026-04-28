@@ -363,6 +363,18 @@ function migrate(db) {
     `).run();
     db.pragma('user_version = 22');
   }
+
+  if (version < 23) {
+    // Persist seen WhatsApp message IDs so Meta retry deliveries during
+    // container restarts don't get processed a second time.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS wa_seen_message_ids (
+        id      TEXT PRIMARY KEY,
+        seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      )
+    `).run();
+    db.pragma('user_version = 23');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the

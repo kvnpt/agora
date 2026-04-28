@@ -101,6 +101,20 @@ function bufferMessage(message) {
     }
   }
 
+  // Deduplicate by message.id across restarts — Meta retries unacknowledged
+  // deliveries for up to 24h, so in-memory dedup alone isn't enough.
+  if (message.id) {
+    const db = getDb();
+    const alreadySeen = db.prepare('SELECT 1 FROM wa_seen_message_ids WHERE id = ?').get(message.id);
+    if (alreadySeen) {
+      console.log(`[webhook] Skipping already-processed message id=${message.id} from ${sender}`);
+      return;
+    }
+    db.prepare('INSERT OR IGNORE INTO wa_seen_message_ids (id) VALUES (?)').run(message.id);
+    // Prune IDs older than 48h so the table stays small
+    db.prepare("DELETE FROM wa_seen_message_ids WHERE seen_at < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-48 hours')").run();
+  }
+
   if (!senderBuffers.has(sender)) {
     senderBuffers.set(sender, { messages: [], seenIds: new Set(), timer: null });
     // ACK on the first message of a new batch window. Fire-and-forget so a
@@ -111,8 +125,7 @@ function bufferMessage(message) {
 
   const buffer = senderBuffers.get(sender);
 
-  // Deduplicate by message.id — same PDF can arrive multiple times when the
-  // sender has multiple linked devices (phone + WhatsApp Web, etc.)
+  // Secondary in-memory dedup for same-session duplicates (multi-device delivery)
   if (message.id && buffer.seenIds.has(message.id)) {
     console.log(`[webhook] Skipping duplicate message id=${message.id} from ${sender}`);
     return;
