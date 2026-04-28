@@ -19,11 +19,50 @@
 // doesn't engage until the finger moves 3 Manhattan pixels, then the
 // map snaps the accumulated offset (Draggable._startPos is rewritten
 // to compensate for the missed pixels). That rewrite IS the snap users
-// feel when the gesture commits. With tolerance: 0, drag engages on
-// the first pixel of movement and there's no snap because the
-// compensation is sub-pixel.
+// feel when the gesture commits.
 if (L.Draggable && L.Draggable.prototype.options) {
   L.Draggable.prototype.options.clickTolerance = 0;
+}
+
+// Apply the first-move offset directly instead of anchoring it.
+// Default Leaflet _onMove sets `_startPos = getPosition() - offset` on
+// the first triggering move, so `_newPos = _startPos + offset` produces
+// zero visible movement on that first frame — finger has moved N pixels
+// but map shows no change until the SECOND move. Designed to swallow
+// the 3 tolerance pixels; with tolerance=0 it's vestigial and costs us
+// one frame of perceived "wait" before the pan commits visually.
+// Override drops the subtract so frame 1 of the gesture moves the map
+// by the cumulative offset since touchstart.
+if (L.Draggable && !L.Draggable.prototype._agoraNoAnchor) {
+  L.Draggable.prototype._agoraNoAnchor = true;
+  L.Draggable.prototype._onMove = function (e) {
+    if (e._simulated) return;
+    if (e.touches && e.touches.length > 1) {
+      this._moved = true;
+      return;
+    }
+    const first = (e.touches && e.touches.length === 1 ? e.touches[0] : e);
+    const offset = new L.Point(first.clientX, first.clientY)._subtract(this._startPoint);
+    if (!offset.x && !offset.y) return;
+    if (Math.abs(offset.x) + Math.abs(offset.y) < this.options.clickTolerance) return;
+    L.DomEvent.preventDefault(e);
+    if (!this._moved) {
+      this.fire('dragstart');
+      this._moved = true;
+      this._startPos = L.DomUtil.getPosition(this._element);
+      L.DomUtil.addClass(document.body, 'leaflet-dragging');
+      this._lastTarget = e.target || e.srcElement;
+      if (window.SVGElementInstance && this._lastTarget instanceof window.SVGElementInstance) {
+        this._lastTarget = this._lastTarget.correspondingUseElement;
+      }
+      L.DomUtil.addClass(this._lastTarget, 'leaflet-drag-target');
+    }
+    this._newPos = this._startPos.add(offset);
+    this._moving = true;
+    L.Util.cancelAnimFrame(this._animRequest);
+    this._lastEvent = e;
+    this._animRequest = L.Util.requestAnimFrame(this._updatePosition, this, true);
+  };
 }
 
 if (L.Map.TouchZoom && !L.Map.TouchZoom.prototype._agoraNoSettle) {
@@ -103,7 +142,13 @@ function initMap(state) {
     type: 'background',
     paint: { 'background-color': '#ffffff', 'background-opacity': 0.35 }
   });
-  L.maplibreGL({ style, attributionControl: false }).addTo(map);
+  // updateInterval: 0 — let _update fire on every move event. The shim's
+  // 32ms default was tuned for 30Hz mobile chips ca. 2018; on 120Hz iOS
+  // it's 4× slower than the display, so the basemap canvas falls behind
+  // the marker pane during pan (markers ride mapPane CSS-translate at
+  // display rate; basemap re-renders at 30Hz). At 0 it batches via
+  // setTimeout(later, 0) ≈ 4ms minimum, well under the frame budget.
+  L.maplibreGL({ style, attributionControl: false, updateInterval: 0 }).addTo(map);
 
   userMarker = L.marker([state.userLat, state.userLng], {
     icon: L.divIcon({
