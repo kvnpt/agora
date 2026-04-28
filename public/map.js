@@ -123,11 +123,13 @@ function initMap(state) {
   // "catches up" instantly. That catch-up is the snap users feel at gesture
   // start. With tap: false, browser-native touchmove drives panning from
   // pixel 1 — no threshold, no snap.
+  // Default view covers Oceania; overridden below by fitBounds to parishes
+  // (fresh session) or by the cached/live user location once geolocation resolves.
   map = L.map('map', {
     zoomControl: false,
     zoomSnap: 0,
     tap: false
-  }).setView([state.userLat, state.userLng], 11);
+  }).setView([-20, 145], 4);
   window.agoraMap = map;
 
   // Vector basemap via self-hosted Protomaps pmtiles + MapLibre GL.
@@ -163,17 +165,36 @@ function initMap(state) {
   });
   L.maplibreGL({ style, attributionControl: false }).addTo(map);
 
-  userMarker = L.marker([state.userLat, state.userLng], {
-    icon: L.divIcon({
-      className: '',
-      html: '<div style="width:12px;height:12px;border-radius:50%;background:#4285f4;border:2px solid white;box-sizing:border-box;"></div>',
-      iconSize: [12, 12],
-      iconAnchor: [6, 6]
-    })
-  }).addTo(map).bindPopup('You are here');
+  const userDotIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:12px;height:12px;border-radius:50%;background:#4285f4;border:2px solid white;box-sizing:border-box;"></div>',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6]
+  });
+  if (state.locationActive && state.userLat != null) {
+    userMarker = L.marker([state.userLat, state.userLng], { icon: userDotIcon })
+      .addTo(map).bindPopup('You are here');
+  }
   window.agoraUpdateUserLocation = (lat, lng) => {
-    if (userMarker) userMarker.setLatLng([lat, lng]);
+    if (!userMarker) {
+      userMarker = L.marker([lat, lng], { icon: userDotIcon }).addTo(map).bindPopup('You are here');
+    } else {
+      userMarker.setLatLng([lat, lng]);
+    }
   };
+
+  // Fresh session (no cached location): fit all parishes into view once markers
+  // are available. Parishes are loaded before initMap is called.
+  if (!state.locationActive) {
+    const pts = state.parishes
+      .filter(p => p.id !== '_unassigned' && p.lat != null && p.lng != null)
+      .map(p => [p.lat, p.lng]);
+    if (pts.length) {
+      setTimeout(() => {
+        map.fitBounds(L.latLngBounds(pts).pad(0.05), { maxZoom: 6, animate: false });
+      }, 120); // after invalidateSize
+    }
+  }
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   setTimeout(() => map.invalidateSize(), 100);

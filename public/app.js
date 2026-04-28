@@ -21,8 +21,8 @@ const state = {
   parishes: [],
   user: null,
   isAdmin: false,
-  userLat: -33.8688,
-  userLng: 151.2093,
+  userLat: null,
+  userLng: null,
   mode: 'events',
   _eventsExtended: false,
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
@@ -624,6 +624,7 @@ function loadCachedLocation() {
     const loc = JSON.parse(cached);
     state.userLat = loc.lat;
     state.userLng = loc.lng;
+    state.locationActive = true;
   }
 }
 
@@ -652,10 +653,9 @@ function requestGeolocation(callback) {
 
 // ── API ──
 async function fetchEvents(opts = {}) {
-  const params = new URLSearchParams({
-    lat: state.userLat,
-    lng: state.userLng
-  });
+  const params = new URLSearchParams();
+  if (state.userLat != null) params.set('lat', state.userLat);
+  if (state.userLng != null) params.set('lng', state.userLng);
   if (state.filters.type) params.set('type', state.filters.type);
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
 
