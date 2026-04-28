@@ -600,11 +600,12 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
     const overlaps = (bounds) =>
       placed.some(p => bounds.x1 < p.x2 && bounds.x2 > p.x1 && bounds.y1 < p.y2 && bounds.y2 > p.y1);
 
-    // Try preferred side, then opposite side
+    // Try preferred side, then opposite; suppress if both collide
     let bounds = getBounds(lm.side);
     if (overlaps(bounds)) {
       lm.side = lm.side === 'right' ? 'left' : 'right';
       bounds = getBounds(lm.side);
+      if (overlaps(bounds)) { lm.renderLabel = false; continue; }
     }
     placed.push(bounds);
   }
