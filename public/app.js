@@ -3055,7 +3055,10 @@ function renderEvents() {
   renderStream(container, filtered);
   bindEventCards(container);
 
-  if (state._openEventId) {
+  // Only re-expand in the main list when the parish sheet isn't showing the
+  // event. Without the guard, expandEventCard's document-scoped "collapse all
+  // other expanded cards" pass tramples the pinned card in the parish sheet.
+  if (state._openEventId && !state.parishSheetFocus) {
     expandEventCard(state._openEventId);
   }
 }
