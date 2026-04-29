@@ -211,7 +211,10 @@ function expandSaints(s) {
 }
 function normalizeTokens(str) {
   if (!str) return [];
-  return str.toLowerCase().replace(/\bsaint\b/g, 'st')
+  return str.toLowerCase()
+    .replace(/[‘’‚‛]/g, "'")  // curly single quotes → ASCII
+    .replace(/[“”„‟]/g, '"')  // curly double quotes → ASCII
+    .replace(/\bsaint\b/g, 'st')
     .split(/[\s\-\&\/,\.'"]+/)
     .filter(t => t.length > 0 && !NOISE_WORDS.has(t));
 }
