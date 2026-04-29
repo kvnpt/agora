@@ -3496,10 +3496,9 @@ function renderEventCard(evt) {
   const isCancelled = evt.status === 'cancelled';
   const cancelledBadge = isCancelled ? `<span class="event-badge badge-cancelled">CANCELLED</span>` : '';
 
-  // Posters always render for feasts and talks (calendar anchors, visual
-  // emphasis) and for socials whenever the user is in social view. Other
-  // event types keep the compact text-only card.
-  const hasPoster = !!(evt.poster_path && (evt.event_type === 'feast' || evt.event_type === 'talk' || state.filters.socialOnly));
+  // Posters always render for feasts, talks, and socials. Other event types
+  // keep the compact text-only card.
+  const hasPoster = !!(evt.poster_path && (evt.event_type === 'feast' || evt.event_type === 'talk' || evt.event_type === 'social'));
   const posterImg = hasPoster
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
