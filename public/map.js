@@ -444,7 +444,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   const clusteredIds = new Set();
   const clusterGroups = [];
   for (const members of clusterMembers.values()) {
-    if (members.length > 1) {
+    if (members.length >= 5) {
       members.forEach(m => clusteredIds.add(m.id));
       clusterGroups.push(members);
     }
@@ -533,7 +533,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
         icon: L.divIcon({ className: '', html, iconSize: [BOX, BOX], iconAnchor: [BOX / 2, BOX / 2] }),
         interactive: true,
         bubblingMouseEvents: false,
-        zIndexOffset: anyActive ? 1100 : 50
+        zIndexOffset: -100
       });
       cluster.on('click', onClusterClick);
       entry = { marker: cluster, key: styleKey, onMap: false };
@@ -564,7 +564,7 @@ function addLabeledMarkers(locations, TZ, focusId, selectedIds) {
   }
 
   const LABEL_W = 90;
-  const LABEL_H = 32;
+  const LABEL_H = 40;
   const placed = [];
 
   // Cap text labels to 15 most-central parishes — dots still render for all,

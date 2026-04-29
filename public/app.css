@@ -1546,10 +1546,6 @@ a.filters-menu-item { text-decoration: none; }
   line-height: 1.2;
   white-space: normal;
   word-break: break-word;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
   transform: translateY(-50%);
   -webkit-text-stroke: 4px rgba(255,255,255,0.85);
   paint-order: stroke fill;
