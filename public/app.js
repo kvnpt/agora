@@ -26,6 +26,7 @@ const state = {
   mode: 'events',
   _eventsExtended: false,
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
+  parishFilters: { socialOnly: false, englishOnly: false, englishStrict: false },
   selectionMode: false,
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
@@ -800,6 +801,13 @@ function initModeBar() {
   if (eventsBtn) {
     eventsBtn.addEventListener('click', () => {
       closeFiltersMenuAnim();
+      if (window.agoraParishSheetVisible) {
+        if (!state.parishFilters.socialOnly) return;
+        state.parishFilters.socialOnly = false;
+        syncFiltersButton();
+        renderParishSheetContent(state.parishSheetFocus);
+        return;
+      }
       // Events is the default mode — clicking exits services and/or socialOnly.
       const wasServices = state.mode === 'services';
       const wasSocial = !!state.filters.socialOnly;
@@ -1183,17 +1191,19 @@ function initSocialFilter() {
   const btn = document.getElementById('btn-social');
   btn.addEventListener('click', () => {
     closeFiltersMenuAnim();
+    if (window.agoraParishSheetVisible) {
+      state.parishFilters.socialOnly = !state.parishFilters.socialOnly;
+      syncFiltersButton();
+      renderParishSheetContent(state.parishSheetFocus);
+      return;
+    }
     const willActivate = !state.filters.socialOnly;
     state.filters.socialOnly = willActivate;
     btn.classList.toggle('active', willActivate);
-    // Toggling social (in or out) makes the currently-open event likely irrelevant.
-    if (state._openEventId) {
-      closeDetailDOM();
-    }
-    // Mutex: turning social on while in services mode exits services mode.
+    if (state._openEventId) closeDetailDOM();
     if (willActivate && state.mode === 'services') {
       document.getElementById('btn-services').click();
-      return; // services-click handles render + syncFiltersButton + syncURL
+      return;
     }
     renderCurrentView();
     syncFiltersButton();
@@ -1205,6 +1215,16 @@ function initSocialFilter() {
 function initEnglishFilter() {
   const btn = document.getElementById('btn-english');
   btn.addEventListener('click', () => {
+    if (window.agoraParishSheetVisible) {
+      const f = state.parishFilters;
+      if (!f.englishOnly) { f.englishOnly = true; f.englishStrict = false; }
+      else if (!f.englishStrict) { f.englishStrict = true; }
+      else { f.englishOnly = false; f.englishStrict = false; }
+      syncEnglishButton();
+      syncFiltersButton();
+      renderParishSheetContent(state.parishSheetFocus);
+      return;
+    }
     if (!state.filters.englishOnly) {
       state.filters.englishOnly = true;
       state.filters.englishStrict = false;
@@ -1225,12 +1245,13 @@ function initEnglishFilter() {
 function syncEnglishButton() {
   const btn = document.getElementById('btn-english');
   if (!btn) return;
-  btn.classList.toggle('active', state.filters.englishOnly);
-  btn.classList.toggle('strict', state.filters.englishStrict);
+  const f = window.agoraParishSheetVisible ? state.parishFilters : state.filters;
+  btn.classList.toggle('active', f.englishOnly);
+  btn.classList.toggle('strict', f.englishStrict);
   const label = btn.querySelector('.fm-label');
   if (label) {
-    if (state.filters.englishStrict) label.textContent = 'English-only';
-    else if (state.filters.englishOnly) label.textContent = 'English with bilingual';
+    if (f.englishStrict) label.textContent = 'English-only';
+    else if (f.englishOnly) label.textContent = 'English with bilingual';
     else label.textContent = 'English';
   }
 }
@@ -1408,23 +1429,24 @@ function positionFiltersMenu(btn, menu) {
 function syncFiltersButton() {
   const btn = document.getElementById('btn-filters');
   if (!btn) return;
-  // FAB content is a fixed funnel icon — mode/social/EN state lives inside
-  // the menu's active items now, not on the trigger. Keep .has-active so any
-  // future styling that depends on it (e.g. a dot indicator) still applies.
   btn.classList.add('has-active');
-
-  // Mirror the radio state on the dropdown's mode items so the menu reflects
-  // which view is live without tick marks. Style carries the signal.
-  const isEvents = state.mode !== 'services' && !state.filters.socialOnly;
-  const isServices = state.mode === 'services';
-  const isSocial = state.mode !== 'services' && !!state.filters.socialOnly;
   const setActive = (id, on) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('active', on);
   };
-  setActive('btn-events', isEvents);
-  setActive('btn-services', isServices);
-  setActive('btn-social', isSocial);
+  if (window.agoraParishSheetVisible) {
+    const f = state.parishFilters;
+    setActive('btn-events', !f.socialOnly);
+    setActive('btn-services', false);
+    setActive('btn-social', !!f.socialOnly);
+  } else {
+    const isEvents = state.mode !== 'services' && !state.filters.socialOnly;
+    const isServices = state.mode === 'services';
+    const isSocial = state.mode !== 'services' && !!state.filters.socialOnly;
+    setActive('btn-events', isEvents);
+    setActive('btn-services', isServices);
+    setActive('btn-social', isSocial);
+  }
 }
 
 // ── Reset FAB (top center) ──
@@ -1536,7 +1558,6 @@ function renderCurrentView(opts = {}) {
   } else {
     scheduleRenderEvents(200);
   }
-  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus);
   updateMap(state, { fit: !!opts.fit });
   syncResetFab();
 }
@@ -1617,15 +1638,16 @@ function applyFilters(events) {
 // filter is already applied by the caller; parish_scoped is deliberately NOT
 // enforced here (the card is the authoritative view for this parish).
 function filterParishEventsBySession(events) {
+  const f = state.parishFilters;
   let out = events;
-  if (state.filters.socialOnly) {
+  if (f.socialOnly) {
     out = out.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
   }
-  if (state.filters.englishOnly) {
+  if (f.englishOnly) {
     out = out.filter(e => {
       const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
       if (!langs) return false;
-      if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
+      if (f.englishStrict) return langs.every(l => /english/i.test(l));
       return langs.some(l => /english/i.test(l));
     });
   }
@@ -2410,6 +2432,9 @@ function initParishSheet() {
     sheet.setAttribute('aria-hidden', 'false');
     window.agoraParishSheetVisible = true;
     document.body.classList.add('parish-sheet-open');
+    state.parishFilters = { socialOnly: false, englishOnly: false, englishStrict: false };
+    syncFiltersButton();
+    syncEnglishButton();
     // Ensure we start at SNAP_HIDDEN, then force layout so transition fires.
     currentY = SNAP_HIDDEN;
     sheet.classList.remove('snapping');
@@ -2467,6 +2492,8 @@ function initParishSheet() {
     // Release FAB ownership so main sheet's pending/next snapTo repositions it.
     window.agoraParishSheetVisible = false;
     document.body.classList.remove('parish-sheet-open');
+    syncFiltersButton();
+    syncEnglishButton();
     // Keep state._openEventId so the URL remains shareable for the event.
     // Drop parishSheetFocus (it drove the /<acronym> URL segment while the
     // sheet was open) and resync so the URL no longer advertises a view that
