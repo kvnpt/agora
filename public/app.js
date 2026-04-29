@@ -1297,10 +1297,6 @@ function initFiltersMenu() {
   }
 
   btn.addEventListener('click', () => {
-    if (window.agoraParishSheetVisible) {
-      const psBtn = document.getElementById('ps-filters-btn');
-      if (psBtn) { psBtn.click(); return; }
-    }
     if (menu.classList.contains('hidden')) openMenu();
     else closeMenu();
   });
@@ -1540,6 +1536,7 @@ function renderCurrentView(opts = {}) {
   } else {
     scheduleRenderEvents(200);
   }
+  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus);
   updateMap(state, { fit: !!opts.fit });
   syncResetFab();
 }
@@ -2228,7 +2225,7 @@ function initParishSheet() {
     const headerEl = e.target.closest('.ps-header');
     if (!headerEl) return;
     const t = e.touches ? e.touches[0] : e;
-    const onInteractive = e.target.closest('button, a, .pill, .ps-filters-menu');
+    const onInteractive = e.target.closest('button, a, .pill');
     // Stop the touchstart from bubbling to the scroll container so it
     // doesn't enter its own deciding-state machine while we own the gesture.
     e.stopPropagation();
@@ -2626,49 +2623,12 @@ function renderParishSheetContent(parishId, opts = {}) {
   // other (handled in expandEventCard via opts.card + same-scope collapse).
   const streamEvents = parishEvents;
 
-  const socialActive = !!state.filters.socialOnly;
-  const englishActive = !!state.filters.englishOnly;
-  const englishStrict = !!state.filters.englishStrict;
-  // Filters-button label + icon mirrors the main mode-bar button: either the
-  // current mode (Events / Socials) with an EN badge suffix when the English
-  // filter is on. Events is the "off" state when socialOnly is false.
-  const psFilterIcon = socialActive
-    ? 'https://api.iconify.design/fluent:people-community-16-regular.svg'
-    : 'https://api.iconify.design/ph:list.svg';
-  const psFilterLabel = socialActive ? 'Socials' : 'Events';
-  const psEnBadge = englishActive
-    ? `<span class="fm-en-badge${englishStrict ? ' strict' : ''}">EN</span>`
-    : '';
   contentEl.innerHTML = `
     <div class="ps-header">
       <div class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}</div>
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
-      </div>
-      <div class="ps-filters-wrap">
-        <button class="filters-btn ps-filters-btn has-active" id="ps-filters-btn" type="button" aria-haspopup="menu" aria-expanded="${opts.filtersMenuOpen ? 'true' : 'false'}">
-          <span class="filters-btn-content">
-            <img src="${psFilterIcon}" alt="">
-            <span class="filters-btn-label">${psFilterLabel}</span>
-            ${psEnBadge}
-          </span>
-        </button>
-        <div class="filters-menu ps-filters-menu${opts.filtersMenuOpen ? '' : ' hidden'}" id="ps-filters-menu" role="menu">
-          <button class="filters-menu-item${!socialActive ? ' active' : ''}" id="ps-fm-events" type="button" role="menuitemradio">
-            <img class="fm-icon" src="https://api.iconify.design/ph:list.svg" alt="">
-            <span class="fm-label">Events</span>
-          </button>
-          <button class="filters-menu-item${socialActive ? ' active' : ''}" id="ps-fm-social" type="button" role="menuitemradio">
-            <img class="fm-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
-            <span class="fm-label">Socials</span>
-          </button>
-          <div class="filters-menu-sep" aria-hidden="true"></div>
-          <button class="filters-menu-item fm-english${englishActive ? ' active' : ''}${englishStrict ? ' strict' : ''}" id="ps-fm-english" type="button" role="menuitemcheckbox">
-            <span class="fm-icon fm-en-badge${englishStrict ? ' strict' : ''}">EN</span>
-            <span class="fm-label">${englishStrict ? 'English-only' : englishActive ? 'Any English' : 'English'}</span>
-          </button>
-        </div>
       </div>
       <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
         <span class="ps-url-text" id="ps-url-text"></span>
@@ -2730,83 +2690,6 @@ function renderParishSheetContent(parishId, opts = {}) {
   // keeps clientHeight fixed; scrollHeight reports true content height.
   const nameEl = contentEl.querySelector('.ps-name');
   if (nameEl) fitParishName(nameEl);
-
-  // Parish-card Filters button + dropdown. Mirrors the main mode-bar Filters
-  // button visually; items scope to what makes sense inside a single-parish
-  // view (no Schedules/Parish picker/Admin). Shared session flags get flipped,
-  // main mode-bar syncs via syncFiltersButton so the two views stay aligned.
-  const psFiltersBtn = contentEl.querySelector('#ps-filters-btn');
-  const psFiltersMenu = contentEl.querySelector('#ps-filters-menu');
-  if (psFiltersBtn && psFiltersMenu) {
-    const closeMenu = () => {
-      psFiltersMenu.classList.add('hidden');
-      psFiltersBtn.setAttribute('aria-expanded', 'false');
-    };
-    const openMenu = () => {
-      psFiltersMenu.classList.remove('hidden');
-      psFiltersBtn.setAttribute('aria-expanded', 'true');
-    };
-    psFiltersBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      if (psFiltersMenu.classList.contains('hidden')) openMenu();
-      else closeMenu();
-    });
-    document.addEventListener('pointerdown', e => {
-      if (psFiltersMenu.classList.contains('hidden')) return;
-      if (psFiltersMenu.contains(e.target) || psFiltersBtn.contains(e.target)) return;
-      closeMenu();
-    }, true);
-  }
-
-  const psFmEvents = contentEl.querySelector('#ps-fm-events');
-  if (psFmEvents) {
-    psFmEvents.addEventListener('click', () => {
-      if (!state.filters.socialOnly) return; // already in Events scope
-      state.filters.socialOnly = false;
-      const mainSocial = document.getElementById('btn-social');
-      if (mainSocial) mainSocial.classList.remove('active');
-      if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      // Mode switch closes the menu; drop filtersMenuOpen explicitly so a
-      // prior EN cycle's flag doesn't carry over through opts.
-      renderParishSheetContent(parishId, { ...opts, filtersMenuOpen: false });
-      syncURL();
-    });
-  }
-  const psFmSocial = contentEl.querySelector('#ps-fm-social');
-  if (psFmSocial) {
-    psFmSocial.addEventListener('click', () => {
-      if (state.filters.socialOnly) return;
-      state.filters.socialOnly = true;
-      const mainSocial = document.getElementById('btn-social');
-      if (mainSocial) mainSocial.classList.add('active');
-      if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      renderParishSheetContent(parishId, { ...opts, filtersMenuOpen: false });
-      syncURL();
-    });
-  }
-  const psFmEnglish = contentEl.querySelector('#ps-fm-english');
-  if (psFmEnglish) {
-    psFmEnglish.addEventListener('click', e => {
-      // Tri-state mirror of initEnglishFilter: off → any-english → strict → off.
-      // Keep the menu open so the user can cycle through states without having
-      // to reopen it between taps. stopPropagation prevents the outside-click
-      // handler from closing on the same gesture.
-      e.stopPropagation();
-      if (!state.filters.englishOnly) {
-        state.filters.englishOnly = true;
-        state.filters.englishStrict = false;
-      } else if (!state.filters.englishStrict) {
-        state.filters.englishStrict = true;
-      } else {
-        state.filters.englishOnly = false;
-        state.filters.englishStrict = false;
-      }
-      if (typeof syncEnglishButton === 'function') syncEnglishButton();
-      if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      renderParishSheetContent(parishId, { ...opts, filtersMenuOpen: true });
-      syncURL();
-    });
-  }
 
   // Address + website copy chips. Click copies the value to clipboard and
   // flashes a "Copied" label in place of the text for ~1.2s.
