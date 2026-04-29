@@ -1297,6 +1297,10 @@ function initFiltersMenu() {
   }
 
   btn.addEventListener('click', () => {
+    if (window.agoraParishSheetVisible) {
+      const psBtn = document.getElementById('ps-filters-btn');
+      if (psBtn) { psBtn.click(); return; }
+    }
     if (menu.classList.contains('hidden')) openMenu();
     else closeMenu();
   });
@@ -2082,6 +2086,7 @@ function initParishSheet() {
   const closeBtn = document.getElementById('parish-sheet-close');
   const scroll = document.getElementById('parish-sheet-scroll');
   const fab = document.getElementById('location-fab');
+  const filterFab = document.getElementById('btn-filters');
 
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK, SNAP_HIDDEN;
   let currentY;
@@ -2138,11 +2143,14 @@ function initParishSheet() {
       settled = true;
       sheet.classList.remove('snapping');
       updateScrollLock();
-      // Follow parish sheet with the location FAB — except while dismissed
-      // (onDone takes care of those cleanup cases).
-      if (fab && window.agoraParishSheetVisible) {
-        fab.style.top = (currentY - 52) + 'px';
-        fab.classList.remove('fading');
+      // Follow parish sheet with the location + filter FABs — except while
+      // dismissed (onDone takes care of those cleanup cases).
+      if (window.agoraParishSheetVisible) {
+        [fab, filterFab].forEach(f => {
+          if (!f) return;
+          f.style.top = (currentY - 52) + 'px';
+          f.classList.remove('fading');
+        });
       }
       if (onDone) onDone();
     };
@@ -2171,7 +2179,7 @@ function initParishSheet() {
     sheet.classList.remove('snapping');
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
-    if (fab) fab.classList.add('fading');
+    [fab, filterFab].forEach(f => { if (f) f.classList.add('fading'); });
   }
 
   function moveDrag(y) {
@@ -2404,6 +2412,7 @@ function initParishSheet() {
     sheet.classList.remove('hidden');
     sheet.setAttribute('aria-hidden', 'false');
     window.agoraParishSheetVisible = true;
+    document.body.classList.add('parish-sheet-open');
     // Ensure we start at SNAP_HIDDEN, then force layout so transition fires.
     currentY = SNAP_HIDDEN;
     sheet.classList.remove('snapping');
@@ -2417,6 +2426,8 @@ function initParishSheet() {
     // parish sheet is visible, so do it explicitly here).
     const rFab = document.getElementById('reset-fab');
     if (rFab) rFab.classList.add('fading');
+    // Seed filter FAB position so it appears at the right spot when revealed.
+    if (filterFab) filterFab.style.top = (SNAP_HALF - 52) + 'px';
 
     // Centre the parish in the visible (upper) half of the map, zooming in
     // only if current viewing radius is wider than 30 km.
@@ -2458,6 +2469,7 @@ function initParishSheet() {
   function close() {
     // Release FAB ownership so main sheet's pending/next snapTo repositions it.
     window.agoraParishSheetVisible = false;
+    document.body.classList.remove('parish-sheet-open');
     // Keep state._openEventId so the URL remains shareable for the event.
     // Drop parishSheetFocus (it drove the /<acronym> URL segment while the
     // sheet was open) and resync so the URL no longer advertises a view that

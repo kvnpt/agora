@@ -1669,6 +1669,7 @@ a.filters-menu-item { text-decoration: none; }
 #reset-fab {
   position: fixed;
   left: 50%;
+  top: calc(50vh - 52px);
   transform: translateX(-50%);
   z-index: 600;
   display: none;
@@ -1693,6 +1694,7 @@ body.map-expanded #reset-fab.visible { display: block; }
 #location-fab {
   position: fixed;
   right: 16px;
+  top: calc(50vh - 52px);
   z-index: 600;
   display: none;
   align-items: center;
@@ -1724,6 +1726,7 @@ body.map-expanded #location-fab { display: flex; }
 #btn-filters.map-fab {
   position: fixed;
   left: 16px;
+  top: calc(50vh - 52px);
   z-index: 600;
   display: none;
   align-items: center;
@@ -1742,7 +1745,7 @@ body.map-expanded #location-fab { display: flex; }
 #btn-filters.map-fab .filters-btn-content { display: inline-flex; align-items: center; justify-content: center; }
 #btn-filters.map-fab .filters-btn-content img { width: 20px; height: 20px; opacity: 0.75; }
 #btn-filters.map-fab.fading { opacity: 0; pointer-events: none; }
-body.map-expanded #btn-filters.map-fab { display: flex; }
+body.parish-sheet-open #btn-filters.map-fab { display: flex; }
 
 /* Map-selection overlay — dotted blue ring + label + tick FAB. Inset so the
    ring lives slightly inside the visible map rectangle. The bottom inset is
