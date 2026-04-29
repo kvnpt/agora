@@ -2532,6 +2532,41 @@ function renderParishSheetContent(parishId, opts = {}) {
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
     : '';
 
+  // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
+  let parishAdminHtml = '';
+  let parishEditFormHtml = '';
+  if (state.isAdmin) {
+    const hiding = localStorage.getItem('hideAdminControls') === 'true';
+    const pid = esc(parishId);
+    parishAdminHtml = `
+      <div class="admin-actions-group ps-admin-actions" style="${hiding ? 'display:none' : ''}">
+        <button class="ps-btn btn-outline" onclick="toggleParishEdit('${pid}')">Edit</button>
+        <button class="btn-danger" onclick="deleteParish('${pid}')">Delete</button>
+      </div>
+      <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
+    const jurisdictionOpts = ['antiochian','ecumenical','greek','macedonian','russian','serbian','other']
+      .map(j => `<option value="${j}"${parish.jurisdiction === j ? ' selected' : ''}>${capitalize(j)}</option>`)
+      .join('');
+    let langsVal = '';
+    try { langsVal = parish.languages ? JSON.parse(parish.languages).join(', ') : ''; } catch { langsVal = parish.languages || ''; }
+    parishEditFormHtml = `
+      <div class="detail-edit-form" id="ps-edit-form-${pid}" style="display:none;">
+        <div class="edit-row"><label>Short name</label><input id="pse-name-${pid}" value="${esc(parish.name || '')}"></div>
+        <div class="edit-row"><label>Full name</label><input id="pse-fullname-${pid}" value="${esc(parish.full_name || '')}"></div>
+        <div class="edit-row"><label>Jurisdiction</label><select id="pse-jurisdiction-${pid}">${jurisdictionOpts}</select></div>
+        <div class="edit-row"><label>Address</label><input id="pse-address-${pid}" value="${esc(parish.address || '')}"></div>
+        <div class="edit-row"><label>Website</label><input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}"></div>
+        <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
+        <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
+        <div class="edit-row"><label>Color</label><input type="color" id="pse-color-${pid}" value="${esc(parish.color || '#666666')}"></div>
+        <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
+        <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
+        <div style="margin-top:8px;display:flex;gap:8px;">
+          <button class="btn-save" onclick="saveParish('${pid}')">Save</button>
+        </div>
+      </div>`;
+  }
+
   // Schedule section — drop entirely when there's nothing to show. Uses the
   // same renderer as the main services list so the two views stay visually
   // identical and share admin edit affordances.
@@ -2633,7 +2668,9 @@ function renderParishSheetContent(parishId, opts = {}) {
       ${addrHtml}
       ${webCopyHtml}
       <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
+      ${parishAdminHtml}
     </div>
+    ${parishEditFormHtml ? `<div class="ps-section">${parishEditFormHtml}</div>` : ''}
     ${schedSectionHtml}
     <div class="ps-events-list"></div>
     ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}`;
@@ -4117,6 +4154,64 @@ window.deleteEvent = async function(id) {
   if (res.ok) {
     closeDetail();
     fetchEvents();
+  }
+};
+
+window.toggleParishEdit = function(id) {
+  const form = document.getElementById(`ps-edit-form-${id}`);
+  if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+};
+
+window.saveParish = async function(id) {
+  const pid = id;
+  const langsRaw = document.getElementById(`pse-langs-${pid}`).value;
+  const langsArr = langsRaw ? langsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const data = {
+    name: document.getElementById(`pse-name-${pid}`).value,
+    full_name: document.getElementById(`pse-fullname-${pid}`).value || null,
+    jurisdiction: document.getElementById(`pse-jurisdiction-${pid}`).value,
+    address: document.getElementById(`pse-address-${pid}`).value || null,
+    website: document.getElementById(`pse-website-${pid}`).value || null,
+    phone: document.getElementById(`pse-phone-${pid}`).value || null,
+    live_url: document.getElementById(`pse-live-${pid}`).value || null,
+    color: document.getElementById(`pse-color-${pid}`).value,
+    acronym: document.getElementById(`pse-acro-${pid}`).value || null,
+    languages: langsArr.length ? JSON.stringify(langsArr) : null,
+  };
+  const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (res.ok) {
+    const updated = await res.json();
+    const idx = state.parishes.findIndex(p => p.id === pid);
+    if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
+    renderParishSheetContent(pid, {});
+    if (typeof updateMap === 'function') updateMap(state);
+  } else {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Save failed');
+  }
+};
+
+window.deleteParish = async function(id) {
+  const parish = state.parishes.find(p => p.id === id);
+  if (!confirm(`Delete "${parish ? parish.name : id}"?`)) return;
+  const tryDelete = async (qs = '') => fetch(`/api/admin/parishes/${encodeURIComponent(id)}${qs}`, { method: 'DELETE' });
+  let res = await tryDelete();
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    if (err.event_count && confirm(`${err.event_count} events belong to this parish. Delete them too?`)) {
+      res = await tryDelete('?delete_events=1');
+      if (res.ok) state.events = state.events.filter(e => e.parish_id !== id);
+    } else { return; }
+  }
+  if (res.ok) {
+    state.parishes = state.parishes.filter(p => p.id !== id);
+    if (typeof closeParishSheet === 'function') closeParishSheet();
+    if (typeof updateMap === 'function') updateMap(state);
+    scheduleRenderEvents();
   }
 };
 
