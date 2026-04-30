@@ -3225,7 +3225,7 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
   if (morning.length) {
     if (groupByParish) {
       html += `<div class="time-card time-card-morning">`;
-      html += `<div class="time-card-head"><span class="time-card-icon">☀</span>Morning</div>`;
+      html += `<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="1.8" fill="currentColor" stroke="none"/><line x1="5" y1="0.5" x2="5" y2="1.9"/><line x1="5" y1="8.1" x2="5" y2="9.5"/><line x1="0.5" y1="5" x2="1.9" y2="5"/><line x1="8.1" y1="5" x2="9.5" y2="5"/><line x1="1.5" y1="1.5" x2="2.4" y2="2.4"/><line x1="7.6" y1="7.6" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="7.6" y2="2.4"/><line x1="2.4" y1="7.6" x2="1.5" y2="8.5"/></svg><span class="tc-label">Morning</span></div>`;
       html += renderParishGroupsHTML(sortEvents(morning), reserveHost);
       html += `</div>`;
     } else {
@@ -3236,7 +3236,7 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
   if (evening.length) {
     if (groupByParish) {
       html += `<div class="time-card time-card-evening">`;
-      html += `<div class="time-card-head"><span class="time-card-icon">☾</span>Evening</div>`;
+      html += `<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" fill-rule="evenodd" xmlns="http://www.w3.org/2000/svg"><circle cx="4.5" cy="5" r="3.5"/><circle cx="6.2" cy="4.3" r="3"/></svg><span class="tc-label">Evening</span></div>`;
       html += renderParishGroupsHTML(sortEvents(evening), reserveHost);
       html += `</div>`;
     } else {
@@ -3505,6 +3505,7 @@ function renderEventCard(evt) {
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
       </div>
       ${posterImg}
+      <span class="event-card-chev"></span>
     </div>`;
 }
 

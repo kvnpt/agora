@@ -561,93 +561,122 @@ input, select, textarea {
 }
 
 /* ── Grouped events view (main events list) ──
-   day-section replaces day-box: no frame, just a subtle liturgy tint that
-   increases toward Sunday. time-card groups morning/evening within a day.
-   parish-group adds left+bottom border in parish colour around each cluster. */
+   day-section: liturgy tint on the day background (not the time-card).
+   time-card sits on top as a white card; the tint shows as the day "frame".
+   parish-group: left border only (no bottom) with footer name+acronym. */
 .day-section {
+  background: rgba(200, 169, 81, var(--liturgy-alpha, 0));
+  border-radius: 14px;
   margin: 10px 10px 6px;
+  padding: 2px 4px 4px;
 }
 .day-hdr {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: var(--text);
-  padding: 8px 0 6px;
+  padding: 7px 4px 5px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  text-align: center;
 }
 .day-hdr::before, .day-hdr::after {
   content: '';
-  flex: 0 1 32px;
+  flex: 0 1 40px;
   height: 1px;
-  background: linear-gradient(to right, transparent, var(--border) 60%, transparent);
+  background: linear-gradient(to right, transparent, var(--text) 80%);
+  opacity: 0.18;
 }
-.day-section-sunday .day-hdr { font-weight: 800; color: var(--text); }
+.day-hdr::after {
+  background: linear-gradient(to left, transparent, var(--text) 80%);
+}
+.day-section-sunday .day-hdr { font-weight: 800; }
 
 .time-card {
-  background: rgba(200, 169, 81, var(--liturgy-alpha, 0));
+  background: var(--bg);
   border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 8px;
-  border: 1px solid rgba(200, 169, 81, calc(var(--liturgy-alpha, 0) * 4 + 0.06));
+  margin-bottom: 4px;
+  border: 1px solid var(--border-light);
 }
+/* Centered header with hairline wings on each side. */
 .time-card-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px 6px;
-  font-size: 10px;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 12px 6px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #fff;
 }
-.time-card-icon { font-size: 12px; opacity: 0.85; }
+.time-card-head::before, .time-card-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  opacity: 0.45;
+}
+.tc-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  overflow: visible;
+}
+.tc-label { letter-spacing: inherit; }
 
 .time-card-morning .time-card-head {
-  background:
-    radial-gradient(ellipse at 12% 60%, rgba(255, 225, 80, 0.45) 0%, transparent 55%),
-    linear-gradient(110deg, #e8943a 0%, #f0c044 100%);
+  color: #9a5c18;
+  background: rgba(220, 150, 40, 0.07);
 }
-.time-card-evening .time-card-head {
-  background:
-    radial-gradient(ellipse at 88% 60%, rgba(120, 80, 200, 0.5) 0%, transparent 55%),
-    linear-gradient(110deg, #1e2e50 0%, #3a2868 100%);
+.time-card-morning .time-card-head::before {
+  background: linear-gradient(to right, transparent, #9a5c18);
+}
+.time-card-morning .time-card-head::after {
+  background: linear-gradient(to left, transparent, #9a5c18);
 }
 
-/* Parish group: left + bottom border in parish color, footer shows name. */
+.time-card-evening .time-card-head {
+  color: #2c3d72;
+  background: rgba(40, 55, 130, 0.06);
+}
+.time-card-evening .time-card-head::before {
+  background: linear-gradient(to right, transparent, #2c3d72);
+}
+.time-card-evening .time-card-head::after {
+  background: linear-gradient(to left, transparent, #2c3d72);
+}
+
+/* Parish group: left border only in parish color; footer stacks name then acronym. */
 .parish-group {
   border-left: 3px solid var(--parish-color, #888);
-  border-bottom: 2px solid var(--parish-color, #888);
-  border-radius: 0 0 0 4px;
-  margin: 6px 10px 8px 10px;
+  border-radius: 0 0 0 3px;
+  margin: 6px 8px 6px 8px;
   padding-left: 10px;
 }
-.parish-group:last-child { margin-bottom: 4px; }
+.parish-group:last-child { margin-bottom: 2px; }
 .parish-group .event-card { padding: 10px 10px 10px 4px; }
-.parish-group .event-card + .event-card { border-top: 1px solid var(--border-light); }
 /* In parish groups the card's own parish row is redundant — the footer covers it. */
 .parish-group .event-parish-row { display: none; }
 .parish-group-footer {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 4px 5px 4px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-.parish-group-acro {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px 4px 7px 4px;
 }
 .parish-group-name {
-  flex: 1;
-  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.parish-group-acro {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 /* Type label above time+title in the expanded drawer. */
@@ -657,6 +686,25 @@ input, select, textarea {
 .edp-type-label .event-badge {
   font-size: 10px;
   padding: 2px 8px;
+}
+
+/* Chevron affordance on every event card row. */
+.event-card-chev {
+  flex: none;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--text-muted);
+  border-top: 1.5px solid var(--text-muted);
+  transform: rotate(45deg);
+  opacity: 0.25;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+.event-card.expanded .event-card-chev { display: none; }
+/* Subtle separator between consecutive event rows everywhere. */
+.event-card + .event-card {
+  border-top: 1px solid var(--border-light);
 }
 .month-header {
   padding: 28px 14px 12px;
