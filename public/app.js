@@ -3205,7 +3205,9 @@ function renderParishGroupsHTML(events, reserveHost) {
     byParish.get(e.parish_id).push(e);
   }
   let html = '';
-  for (const pid of order) {
+  for (let i = 0; i < order.length; i++) {
+    if (i > 0) html += `<div class="parish-group-sep" aria-hidden="true"></div>`;
+    const pid = order[i];
     const evts = byParish.get(pid);
     const first = evts[0];
     const color = first.parish_color || '#888888';

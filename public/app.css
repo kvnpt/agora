@@ -591,13 +591,20 @@ input, select, textarea {
   margin: 0 0 0 6px;
 }
 .time-card + .time-card { margin-top: 14px; }
-/* Left-aligned morning/evening label — icon then text, no wings. */
+/* Left-aligned morning/evening label — icon then text, no wings. Sticky under day header. */
 .time-card-head {
+  position: sticky;
+  top: 40px;
+  z-index: 4;
+  /* Match day-section liturgy tint so sticky head doesn't look detached. */
+  background:
+    linear-gradient(rgba(200,169,81,var(--liturgy-alpha,0)), rgba(200,169,81,var(--liturgy-alpha,0))),
+    var(--bg);
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
-  padding: 7px 12px 6px;
+  padding: 8px 12px 6px;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -615,19 +622,29 @@ input, select, textarea {
 .time-card-morning .time-card-head { color: #9a5c18; }
 .time-card-evening .time-card-head { color: #2c3d72; }
 
-/* Parish group: left border in parish colour; events go full-width inside card. */
+/* Parish group: left border in parish colour; events go full-width inside. */
 .parish-group {
   border-left: 3px solid var(--parish-color, #888);
-  margin: 6px 0 6px 6px;
+  margin-left: 6px;
   padding-left: 8px;
 }
-/* Separator + extra breathing room between consecutive groups. */
-.parish-group + .parish-group {
-  border-top: 1px solid rgba(0,0,0,0.09);
-  margin-top: 0;
-  padding-top: 18px;
-}
 .parish-group:last-child { margin-bottom: 8px; }
+/* Separator between groups — DOM element emitted by renderParishGroupsHTML.
+   Equal space above/below so the stroke is clearly per-group, not bridging. */
+.parish-group-sep {
+  height: 20px;
+  position: relative;
+  margin-left: 6px;
+}
+.parish-group-sep::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(0,0,0,0.10);
+}
 .parish-group .event-card { padding: 8px 10px 8px 0; }
 /* In parish groups the card's own parish row is redundant — footer covers it. */
 .parish-group .event-parish-row { display: none; }
@@ -663,17 +680,17 @@ input, select, textarea {
   padding: 2px 8px;
 }
 
-/* Chevron affordance on every event card row. */
+/* Chevron affordance on every event card row — aligned with first title line. */
 .event-card-chev {
   flex: none;
   align-self: flex-start;
-  margin-top: 6px;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--text-muted);
-  border-top: 2px solid var(--text-muted);
+  margin-top: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid var(--text-secondary);
+  border-top: 2.5px solid var(--text-secondary);
   transform: rotate(45deg);
-  opacity: 0.5;
+  opacity: 0.6;
 }
 .event-card.expanded .event-card-chev { display: none; }
 /* Subtle separator between consecutive event rows everywhere. */
