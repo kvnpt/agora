@@ -785,18 +785,11 @@ input, select, textarea {
   margin-right: 2px;
   margin-top: 4px;
 }
-/* Wrapper takes the remaining width; title + badges wrap together inside it. */
-.event-title-wrap {
+/* Badges live inside .event-title so they flow inline with the title text.
+   flex: 1 fills the row; text + inline badges wrap together naturally. */
+.event-title {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 5px;
-}
-.event-title {
-  flex: 0 0 auto;
-  max-width: 100%;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);

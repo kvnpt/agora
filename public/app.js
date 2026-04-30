@@ -3491,19 +3491,16 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
-  // Title row: dot · time · [title + badges as inline wrap block] · chev
-  // Chev lives inside the title row so it stays top-right for both normal
-  // and has-poster cards (poster appended below event-content in column layout).
+  // Title row: dot · time · title(flex:1, badges inside) · chev
+  // Badges live inside the title span so they flow inline with the text — they
+  // wrap with the title on long titles and never appear on a separate line.
   return `
     <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           ${typeDot}
           <span class="event-time">${time}</span>
-          <span class="event-title-wrap">
-            <span class="event-title">${esc(evt.title)}</span>
-            ${liveBadge}${bilingualBadge}${combinedBadge}${cancelledBadge}
-          </span>
+          <span class="event-title">${esc(evt.title)}${liveBadge}${bilingualBadge}${combinedBadge}${cancelledBadge}</span>
           <span class="event-card-chev"></span>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
