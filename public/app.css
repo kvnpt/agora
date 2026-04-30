@@ -561,14 +561,20 @@ input, select, textarea {
 }
 
 /* ── Grouped events view (main events list) ──
-   day-section: full-width band (no card radius/margin). Banded liturgy tint.
-   time-card: frameless — band colour shows through the full day area.
-   parish-group: left border in parish colour; footer name (prominent) then acronym
-   snapped flush to the stroke. */
+   day-section: full-width band. Banded liturgy tint applied to band + sticky header.
+   time-card: framed card with gutters, left-aligned morning/evening label.
+   parish-group: left border in parish colour; name then acronym snapped to stroke. */
 .day-section {
   background: rgba(200, 169, 81, var(--liturgy-alpha, 0));
 }
 .day-hdr {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  /* Layer tint over solid white so tinted days keep colour when stuck. */
+  background:
+    linear-gradient(rgba(200,169,81,var(--liturgy-alpha,0)), rgba(200,169,81,var(--liturgy-alpha,0))),
+    var(--bg);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -582,27 +588,25 @@ input, select, textarea {
 .day-section-sunday .day-hdr { font-weight: 800; }
 
 .time-card {
+  background: var(--bg);
+  border-radius: 10px;
   overflow: hidden;
+  margin: 0 10px 6px;
+  border: 1px solid var(--border-light);
 }
-.time-card + .time-card { margin-top: 2px; }
-/* Centered morning/evening label with hairline wings — kept for internal structure. */
+/* Left-aligned morning/evening label — icon then text, no wings. */
 .time-card-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 7px 14px 5px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 7px 12px 6px;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.time-card-head::before, .time-card-head::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  opacity: 0.4;
-}
+.time-card-head::before, .time-card-head::after { display: none; }
 .tc-icon {
   flex: none;
   width: 10px;
@@ -613,28 +617,17 @@ input, select, textarea {
 
 .time-card-morning .time-card-head {
   color: #9a5c18;
+  background: rgba(220, 150, 40, 0.06);
 }
-.time-card-morning .time-card-head::before {
-  background: linear-gradient(to right, transparent, #9a5c18);
-}
-.time-card-morning .time-card-head::after {
-  background: linear-gradient(to left, transparent, #9a5c18);
-}
-
 .time-card-evening .time-card-head {
   color: #2c3d72;
-}
-.time-card-evening .time-card-head::before {
-  background: linear-gradient(to right, transparent, #2c3d72);
-}
-.time-card-evening .time-card-head::after {
-  background: linear-gradient(to left, transparent, #2c3d72);
+  background: rgba(40, 55, 130, 0.05);
 }
 
-/* Parish group: left border in parish colour; no card border or radius. */
+/* Parish group: left border in parish colour; gutters inside the time-card. */
 .parish-group {
   border-left: 3px solid var(--parish-color, #888);
-  margin: 4px 10px 4px 10px;
+  margin: 4px 4px 4px 8px;
   padding-left: 10px;
 }
 /* Hairline separator between consecutive groups within a time-card. */
@@ -652,11 +645,11 @@ input, select, textarea {
   gap: 2px;
   padding: 3px 4px 6px 4px;
 }
-/* Name: prominent, close to last event row. */
+/* Name: secondary label — lighter weight, muted colour. */
 .parish-group-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -799,7 +792,7 @@ input, select, textarea {
   flex: 1;
   min-width: 0;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text);
 }
 .event-time {

@@ -3236,7 +3236,7 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
   if (evening.length) {
     if (groupByParish) {
       html += `<div class="time-card time-card-evening">`;
-      html += `<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" fill-rule="evenodd" xmlns="http://www.w3.org/2000/svg"><circle cx="4.5" cy="5" r="3.5"/><circle cx="6.2" cy="4.3" r="3"/></svg><span class="tc-label">Evening</span></div>`;
+      html += `<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg><span class="tc-label">Evening</span></div>`;
       html += renderParishGroupsHTML(sortEvents(evening), reserveHost);
       html += `</div>`;
     } else {
