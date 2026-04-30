@@ -2977,7 +2977,7 @@ function renderEvents() {
   const container = document.getElementById('events-list');
   pruneCardPool();
   const filtered = applyFilters(state.events);
-  renderStream(container, filtered);
+  renderStream(container, filtered, { groupByParish: true });
   bindEventCards(container);
 
   // Only re-expand in the main list when the parish sheet isn't showing the
@@ -3190,16 +3190,60 @@ function showPsUrlCopied(btn) {
   }, 900);
 }
 
-function renderSubDaySections(events, html, reserveHost) {
+// Liturgy color intensity by day of week. Sunday peaks; Monday resets to 0.
+function liturgyDepth(dow) {
+  return [0.07, 0, 0.01, 0.02, 0.03, 0.04, 0.06][dow] || 0;
+}
+
+// Group sorted events by parish; each parish gets a bordered group box with
+// a footer showing acronym + name. Used only in the main (grouped) events list.
+function renderParishGroupsHTML(events, reserveHost) {
+  const byParish = new Map();
+  const order = [];
+  for (const e of events) {
+    if (!byParish.has(e.parish_id)) { byParish.set(e.parish_id, []); order.push(e.parish_id); }
+    byParish.get(e.parish_id).push(e);
+  }
+  let html = '';
+  for (const pid of order) {
+    const evts = byParish.get(pid);
+    const first = evts[0];
+    const color = first.parish_color || '#888888';
+    html += `<div class="parish-group" style="--parish-color:${esc(color)}">`;
+    html += reserveHost(evts);
+    html += `<div class="parish-group-footer">`;
+    if (first.parish_acronym) html += `<span class="parish-group-acro" style="color:${esc(color)}">${esc(first.parish_acronym)}</span>`;
+    html += `<span class="parish-group-name">${esc(first.parish_name || '')}</span>`;
+    html += `</div></div>`;
+  }
+  return html;
+}
+
+function renderSubDaySections(events, html, reserveHost, opts = {}) {
+  const { groupByParish = false } = opts;
   const { morning, evening } = splitMorningEvening(events);
   if (morning.length) {
-    html += `<div class="sub-day-header">Morning</div>`;
-    html += reserveHost(sortEvents(morning));
+    if (groupByParish) {
+      html += `<div class="time-card time-card-morning">`;
+      html += `<div class="time-card-head"><span class="time-card-icon">☀</span>Morning</div>`;
+      html += renderParishGroupsHTML(sortEvents(morning), reserveHost);
+      html += `</div>`;
+    } else {
+      html += `<div class="sub-day-header">Morning</div>`;
+      html += reserveHost(sortEvents(morning));
+    }
   }
   if (evening.length) {
-    if (morning.length) html += `<hr class="sub-day-divider">`;
-    html += `<div class="sub-day-header">Evening</div>`;
-    html += reserveHost(sortEvents(evening));
+    if (groupByParish) {
+      html += `<div class="time-card time-card-evening">`;
+      html += `<div class="time-card-head"><span class="time-card-icon">☾</span>Evening</div>`;
+      html += renderParishGroupsHTML(sortEvents(evening), reserveHost);
+      html += `</div>`;
+    } else {
+      if (morning.length) html += `<hr class="sub-day-divider">`;
+      html += `<div class="sub-day-header">Evening</div>`;
+      html += reserveHost(sortEvents(evening));
+    }
   }
   return html;
 }
@@ -3208,7 +3252,7 @@ function renderSubDaySections(events, html, reserveHost) {
 // buckets (Happening now / Later today), then day-grouped events through the
 // rest of the 28-day window. Sort toggle reorders within morning/evening
 // sub-groups across the whole stream.
-function renderStream(container, events) {
+function renderStream(container, events, opts = {}) {
   const now = new Date();
   const TZ_LOCAL = TZ;
   const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -3259,16 +3303,22 @@ function renderStream(container, events) {
     html += `</div>`;
   }
   if (laterToday.length) {
-    html += `<div class="day-box">`;
-    html += `<div class="section-header">Later today</div>`;
-    html = renderSubDaySections(laterToday, html, reserveHost);
+    if (opts.groupByParish) {
+      const alpha = liturgyDepth(now.getDay());
+      html += `<div class="day-section" style="--liturgy-alpha:${alpha}">`;
+      html += `<div class="day-hdr">Later today</div>`;
+    } else {
+      html += `<div class="day-box">`;
+      html += `<div class="section-header">Later today</div>`;
+    }
+    html = renderSubDaySections(laterToday, html, reserveHost, opts);
     html += `</div>`;
   }
 
   // Month seam + day groups. Always emit the seam when future events exist so
   // later async updates slot into a stable position (no scroll jump).
   if (future.length) {
-    html += renderFutureDays(future, reserveHost);
+    html += renderFutureDays(future, reserveHost, opts);
   } else if (!hasToday) {
     html += renderEmptyStateHTML();
   }
@@ -3309,7 +3359,8 @@ function renderStream(container, events) {
 }
 
 // Day-grouped render for future events (tomorrow → end of window).
-function renderFutureDays(events, reserveHost) {
+function renderFutureDays(events, reserveHost, opts = {}) {
+  const { groupByParish = false } = opts;
   const groups = groupByDay(events);
   const now = new Date();
   const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
@@ -3330,9 +3381,15 @@ function renderFutureDays(events, reserveHost) {
       prevMonthKey = monthKey;
     }
 
-    html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}">`;
-    html += `<div class="section-header">${dayFmt}</div>`;
-    html = renderSubDaySections(evts, html, reserveHost);
+    if (groupByParish) {
+      const alpha = liturgyDepth(d.getDay());
+      html += `<div class="day-section${isSunday ? ' day-section-sunday' : ''}" style="--liturgy-alpha:${alpha}">`;
+      html += `<div class="day-hdr">${dayFmt}</div>`;
+    } else {
+      html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}">`;
+      html += `<div class="section-header">${dayFmt}</div>`;
+    }
+    html = renderSubDaySections(evts, html, reserveHost, opts);
     html += `</div>`;
   }
   return html;
@@ -3373,19 +3430,25 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Returns the fill color for the event-type dot (Google Calendar style).
+function eventTypeDotColor(type) {
+  const m = { liturgy: '#6b2d6b', feast: '#7a6520', prayer: '#2d4a7a', talk: '#7a5a20', youth: '#2d5a8a', social: '#2d6a2d', other: '#888' };
+  return m[type] || '#888';
+}
+
 function renderEventCard(evt) {
   const start = new Date(evt.start_utc);
   const time = formatEventTime(start);
   const acronymColor = evt.parish_color || '#000';
   const acronym = evt.parish_acronym ? `<span class="event-parish-acronym" style="color:${esc(acronymColor)}">${esc(evt.parish_acronym)}</span>` : '';
 
-  // Display-time type mapping
-  const displayType = TYPE_DISPLAY[evt.event_type] || evt.event_type;
-  const badgeCss = `badge-${evt.event_type}`; // keep original CSS class for colors
+  // Type dot replaces the type badge in the collapsed card.
+  const dotColor = eventTypeDotColor(evt.event_type);
+  const typeDot = `<span class="event-type-dot" style="--dot-color:${esc(dotColor)}"></span>`;
+
   const langs = evt.languages ? JSON.parse(evt.languages) : [];
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
   const combinedBadge = (evt.extra_parishes && evt.extra_parishes.length) ? `<span class="event-badge badge-combined">COMBINED</span>` : '';
-  const badge = `<span class="event-badge ${badgeCss}">${displayType}</span>`;
 
   // LIVE badge — in-progress / imminent today gets live/countdown, future days
   // get the generic LIVE AVAIL tag (no per-minute countdown).
@@ -3428,14 +3491,18 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
+  // Title row: dot · time · title · live/bilingual/combined/cancelled
+  // Parish row: acronym · name · distance (type badge moved to dot + drawer)
   return `
-    <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}">
+    <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
+          ${typeDot}
           <span class="event-time">${time}</span>
           <span class="event-title">${esc(evt.title)}</span>
+          ${liveBadge}${bilingualBadge}${combinedBadge}${cancelledBadge}
         </div>
-        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml} ${badge}${bilingualBadge}${combinedBadge}${liveBadge}${cancelledBadge}</div>
+        <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
       </div>
       ${posterImg}
     </div>`;
@@ -3478,7 +3545,10 @@ function renderScheduleDaysHTML(items, opts = {}) {
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
       const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
       const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
-      html += `<div class="schedule-item"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${womLabel}${scopeLabel}${editBtn}</div>`;
+      html += `<div class="schedule-item">`;
+      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${editBtn}</div>`;
+      if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
+      html += `</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
         html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
@@ -3835,9 +3905,10 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
-  // Promoted hero: time + title inline (same size/weight, modern-title
-   // feel), followed by a card-shaped parish button with avatar. Suppressed
-   // inside the parish sheet itself — the user is already on that parish.
+  // Promoted hero: type label above, then time + title inline, then parish.
+  // Suppressed inside the parish sheet itself — the user is already on that parish.
+  const displayType = TYPE_DISPLAY[evt.event_type] || evt.event_type;
+  const badgeCss = `badge-${evt.event_type}`;
   let heroHtml = '';
   if (parish) {
     const initial = (parish.name || '?')[0].toUpperCase();
@@ -3858,6 +3929,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
       </button>`;
     heroHtml = `
       <div class="event-drawer-hero">
+        <div class="edp-type-label"><span class="event-badge ${badgeCss}">${displayType}</span></div>
         <div class="event-drawer-hero-title">
           <span class="edp-time">${heroTime}</span><span class="edp-title">${esc(evt.title)}</span>
         </div>
