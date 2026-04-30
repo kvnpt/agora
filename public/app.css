@@ -588,13 +588,9 @@ input, select, textarea {
 .day-section-sunday .day-hdr { font-weight: 800; }
 
 .time-card {
-  background: var(--bg);
-  border-radius: 10px;
-  overflow: hidden;
-  margin: 0 10px 6px;
-  border: 1px solid var(--border-light);
+  margin: 0 0 0 6px;
 }
-.time-card + .time-card { margin-top: 10px; }
+.time-card + .time-card { margin-top: 14px; }
 /* Left-aligned morning/evening label — icon then text, no wings. */
 .time-card-head {
   display: flex;
@@ -627,9 +623,9 @@ input, select, textarea {
 }
 /* Separator + extra breathing room between consecutive groups. */
 .parish-group + .parish-group {
-  border-top: 1px solid rgba(0,0,0,0.07);
+  border-top: 1px solid rgba(0,0,0,0.09);
   margin-top: 0;
-  padding-top: 12px;
+  padding-top: 18px;
 }
 .parish-group:last-child { margin-bottom: 8px; }
 .parish-group .event-card { padding: 8px 10px 8px 0; }
@@ -670,7 +666,8 @@ input, select, textarea {
 /* Chevron affordance on every event card row. */
 .event-card-chev {
   flex: none;
-  align-self: center;
+  align-self: flex-start;
+  margin-top: 6px;
   width: 7px;
   height: 7px;
   border-right: 2px solid var(--text-muted);
@@ -767,8 +764,8 @@ input, select, textarea {
 
 .event-title-row {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  flex-wrap: nowrap;
   gap: 0 4px;
   line-height: 1.5;
 }
@@ -779,15 +776,28 @@ input, select, textarea {
   min-width: 8px;
   border-radius: 50%;
   background: var(--dot-color, #9ca3af);
+  margin-top: 5px;
 }
-.event-title {
+/* Column container: title text + optional badge row below */
+.event-title-block {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.event-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.event-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
 }
 .event-time {
+  flex: none;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);

@@ -3432,8 +3432,8 @@ function hexToRgba(hex, alpha) {
 
 // Returns the fill color for the event-type dot (Google Calendar style).
 function eventTypeDotColor(type) {
-  const m = { liturgy: '#6b2d6b', feast: '#7a6520', prayer: '#2d4a7a', talk: '#7a5a20', youth: '#2d5a8a', social: '#2d6a2d', other: '#888' };
-  return m[type] || '#888';
+  const m = { liturgy: '#9333ea', feast: '#d97706', prayer: '#2563eb', talk: '#ea580c', youth: '#0284c7', social: '#16a34a', other: '#6b7280' };
+  return m[type] || '#6b7280';
 }
 
 function renderEventCard(evt) {
@@ -3491,14 +3491,19 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
+  const badges = [liveBadge, bilingualBadge, combinedBadge, cancelledBadge].filter(Boolean).join('');
+  const badgeRow = badges ? `<div class="event-badge-row">${badges}</div>` : '';
+
   return `
     <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           ${typeDot}
           <span class="event-time">${time}</span>
-          <span class="event-title">${esc(evt.title)}</span>
-          ${liveBadge}${bilingualBadge}${combinedBadge}${cancelledBadge}
+          <div class="event-title-block">
+            <span class="event-title">${esc(evt.title)}</span>
+            ${badgeRow}
+          </div>
           <span class="event-card-chev"></span>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
