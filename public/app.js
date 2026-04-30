@@ -3212,8 +3212,8 @@ function renderParishGroupsHTML(events, reserveHost) {
     html += `<div class="parish-group" style="--parish-color:${esc(color)}">`;
     html += reserveHost(evts);
     html += `<div class="parish-group-footer">`;
-    html += `<span class="parish-group-name">${esc(first.parish_name || '')}</span>`;
     if (first.parish_acronym) html += `<span class="parish-group-acro" style="color:${esc(color)}">${esc(first.parish_acronym)}</span>`;
+    html += `<span class="parish-group-name">${esc(first.parish_name || '')}</span>`;
     html += `</div></div>`;
   }
   return html;
@@ -3491,21 +3491,24 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
-  // Title row: dot · time · title · live/bilingual/combined/cancelled
-  // Parish row: acronym · name · distance (type badge moved to dot + drawer)
+  // Title row: dot · time · [title + badges as inline wrap block] · chev
+  // Chev lives inside the title row so it stays top-right for both normal
+  // and has-poster cards (poster appended below event-content in column layout).
   return `
     <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           ${typeDot}
           <span class="event-time">${time}</span>
-          <span class="event-title">${esc(evt.title)}</span>
-          ${liveBadge}${bilingualBadge}${combinedBadge}${cancelledBadge}
+          <span class="event-title-wrap">
+            <span class="event-title">${esc(evt.title)}</span>
+            ${liveBadge}${bilingualBadge}${combinedBadge}${cancelledBadge}
+          </span>
+          <span class="event-card-chev"></span>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
       </div>
       ${posterImg}
-      <span class="event-card-chev"></span>
     </div>`;
 }
 

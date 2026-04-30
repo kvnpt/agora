@@ -594,6 +594,7 @@ input, select, textarea {
   margin: 0 10px 6px;
   border: 1px solid var(--border-light);
 }
+.time-card + .time-card { margin-top: 10px; }
 /* Left-aligned morning/evening label — icon then text, no wings. */
 .time-card-head {
   display: flex;
@@ -615,37 +616,33 @@ input, select, textarea {
 }
 .tc-label { letter-spacing: inherit; }
 
-.time-card-morning .time-card-head {
-  color: #9a5c18;
-  background: rgba(220, 150, 40, 0.06);
-}
-.time-card-evening .time-card-head {
-  color: #2c3d72;
-  background: rgba(40, 55, 130, 0.05);
-}
+.time-card-morning .time-card-head { color: #9a5c18; }
+.time-card-evening .time-card-head { color: #2c3d72; }
 
-/* Parish group: left border in parish colour; gutters inside the time-card. */
+/* Parish group: left border in parish colour; events go full-width inside card. */
 .parish-group {
   border-left: 3px solid var(--parish-color, #888);
-  margin: 4px 4px 4px 8px;
-  padding-left: 10px;
+  margin: 6px 0 6px 6px;
+  padding-left: 8px;
 }
-/* Hairline separator between consecutive groups within a time-card. */
+/* Separator + extra breathing room between consecutive groups. */
 .parish-group + .parish-group {
   border-top: 1px solid rgba(0,0,0,0.07);
-  padding-top: 4px;
+  margin-top: 0;
+  padding-top: 12px;
 }
-.parish-group:last-child { margin-bottom: 6px; }
-.parish-group .event-card { padding: 8px 10px 8px 4px; }
+.parish-group:last-child { margin-bottom: 8px; }
+.parish-group .event-card { padding: 8px 10px 8px 0; }
 /* In parish groups the card's own parish row is redundant — footer covers it. */
 .parish-group .event-parish-row { display: none; }
+/* Footer: acronym + name side by side on one line. */
 .parish-group-footer {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 3px 4px 6px 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 6px 0;
 }
-/* Name: secondary label — lighter weight, muted colour. */
 .parish-group-name {
   font-size: 12px;
   font-weight: 400;
@@ -654,13 +651,11 @@ input, select, textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Acronym: snapped flush to the left border stroke. */
 .parish-group-acro {
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  margin-left: -10px;
-  padding-left: 3px;
+  flex-shrink: 0;
 }
 
 /* Type label above time+title in the expanded drawer. */
@@ -675,14 +670,15 @@ input, select, textarea {
 /* Chevron affordance on every event card row. */
 .event-card-chev {
   flex: none;
-  align-self: center;
-  width: 6px;
-  height: 6px;
-  border-right: 1.5px solid var(--text-muted);
-  border-top: 1.5px solid var(--text-muted);
+  align-self: flex-start;
+  margin-top: 5px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--text-muted);
+  border-top: 2px solid var(--text-muted);
   transform: rotate(45deg);
-  opacity: 0.25;
-  margin-left: 8px;
+  opacity: 0.5;
+  margin-left: 6px;
   flex-shrink: 0;
 }
 .event-card.expanded .event-card-chev { display: none; }
@@ -774,8 +770,8 @@ input, select, textarea {
 
 .event-title-row {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  flex-wrap: nowrap;
   gap: 0 4px;
   line-height: 1.5;
 }
@@ -787,10 +783,20 @@ input, select, textarea {
   border-radius: 50%;
   background: var(--dot-color, #9ca3af);
   margin-right: 2px;
+  margin-top: 4px;
 }
-.event-title {
+/* Wrapper takes the remaining width; title + badges wrap together inside it. */
+.event-title-wrap {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 5px;
+}
+.event-title {
+  flex: 0 0 auto;
+  max-width: 100%;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
