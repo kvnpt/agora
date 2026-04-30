@@ -2505,6 +2505,9 @@ function initParishSheet() {
       sheet.classList.add('hidden');
       sheet.setAttribute('aria-hidden', 'true');
     });
+    // Restore main list cards that renderParishSheetContent may have stolen via
+    // diffCardsInto (card pool nodes move between containers; main hosts go empty).
+    renderEvents();
     if (window.agoraMainRestore) window.agoraMainRestore();
   }
 
