@@ -669,8 +669,7 @@ input, select, textarea {
 
 /* Chevron affordance on every event card row. */
 .event-card-chev {
-  flex: none;
-  align-self: flex-start;
+  align-self: start;
   margin-top: 5px;
   width: 7px;
   height: 7px;
@@ -678,8 +677,6 @@ input, select, textarea {
   border-top: 2px solid var(--text-muted);
   transform: rotate(45deg);
   opacity: 0.5;
-  margin-left: 6px;
-  flex-shrink: 0;
 }
 .event-card.expanded .event-card-chev { display: none; }
 /* Subtle separator between consecutive event rows everywhere. */
@@ -768,31 +765,30 @@ input, select, textarea {
 }
 .event-card.expanded .event-card-poster { display: none; }
 
+/* Grid gives each column an explicit position.
+   Wrapping title text always starts at column 3 — never below the time. */
 .event-title-row {
-  display: flex;
-  align-items: flex-start;
-  flex-wrap: nowrap;
-  gap: 0 4px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  column-gap: 4px;
+  align-items: start;
   line-height: 1.5;
 }
 .event-type-dot {
-  flex: none;
   width: 8px;
   height: 8px;
   min-width: 8px;
   border-radius: 50%;
   background: var(--dot-color, #9ca3af);
-  margin-right: 2px;
   margin-top: 4px;
 }
-/* Badges live inside .event-title so they flow inline with the title text.
-   flex: 1 fills the row; text + inline badges wrap together naturally. */
+/* Badges live inside .event-title so they flow inline with title text.
+   The 1fr grid column handles width — no flex needed. */
 .event-title {
-  flex: 1;
-  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+  min-width: 0;
 }
 .event-time {
   font-size: 14px;
