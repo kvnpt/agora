@@ -3190,9 +3190,9 @@ function showPsUrlCopied(btn) {
   }, 900);
 }
 
-// Liturgy color intensity by day of week. Sunday peaks; Monday resets to 0.
+// Banded liturgy tint: Sun filled, Mon/Wed/Fri (fasting days) tinted, Tue/Thu/Sat plain.
 function liturgyDepth(dow) {
-  return [0.07, 0, 0.01, 0.02, 0.03, 0.04, 0.06][dow] || 0;
+  return [0.12, 0.05, 0, 0.05, 0, 0.05, 0][dow] || 0;
 }
 
 // Group sorted events by parish; each parish gets a bordered group box with
@@ -3212,8 +3212,8 @@ function renderParishGroupsHTML(events, reserveHost) {
     html += `<div class="parish-group" style="--parish-color:${esc(color)}">`;
     html += reserveHost(evts);
     html += `<div class="parish-group-footer">`;
-    if (first.parish_acronym) html += `<span class="parish-group-acro" style="color:${esc(color)}">${esc(first.parish_acronym)}</span>`;
     html += `<span class="parish-group-name">${esc(first.parish_name || '')}</span>`;
+    if (first.parish_acronym) html += `<span class="parish-group-acro" style="color:${esc(color)}">${esc(first.parish_acronym)}</span>`;
     html += `</div></div>`;
   }
   return html;
