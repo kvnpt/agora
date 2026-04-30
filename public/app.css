@@ -840,6 +840,16 @@ input, select, textarea {
   color: var(--text-muted);
   margin-top: 3px;
 }
+/* In the parish sheet the parish identity is already the sheet header —
+   suppress the redundant per-card row. Show alt address when present. */
+.ps-events-list .event-parish-row { display: none; }
+.event-address-row { display: none; }
+.ps-events-list .event-address-row {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
 
 .event-badge {
   display: inline-block;

@@ -3496,6 +3496,10 @@ function renderEventCard(evt) {
   const badges = [liveBadge, bilingualBadge, combinedBadge, cancelledBadge].filter(Boolean).join('');
   const badgeRow = badges ? `<div class="event-badge-row">${badges}</div>` : '';
 
+  // Show event address only when it differs from the parish's own address.
+  const altAddr = (evt.address && evt.address !== evt.parish_address) ? evt.address : null;
+  const altAddrHtml = altAddr ? `<div class="event-address-row">${esc(altAddr)}</div>` : '';
+
   return `
     <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
@@ -3509,6 +3513,7 @@ function renderEventCard(evt) {
           <span class="event-card-chev"></span>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
+        ${altAddrHtml}
       </div>
       ${posterImg}
     </div>`;
@@ -3619,7 +3624,7 @@ function wireScheduleAdminHandlers(container) {
         }
       });
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-        .then(r => { if (r.ok) fetchSchedules(); });
+        .then(r => { if (r.ok) { form.style.display = 'none'; fetchSchedules(); } });
     });
   });
   container.querySelectorAll('.schedule-del-btn').forEach(btn => {
