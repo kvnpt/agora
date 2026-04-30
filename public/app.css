@@ -561,20 +561,13 @@ input, select, textarea {
 }
 
 /* ── Grouped events view (main events list) ──
-   day-section: full-width band. Banded liturgy tint applied to band + sticky header.
-   time-card: framed card with gutters, left-aligned morning/evening label.
+   time-card: morning/evening section; left-aligned label.
    parish-group: left border in parish colour; name then acronym snapped to stroke. */
-.day-section {
-  background: rgba(200, 169, 81, var(--liturgy-alpha, 0));
-}
 .day-hdr {
   position: sticky;
   top: 0;
   z-index: 5;
-  /* Layer tint over solid white so tinted days keep colour when stuck. */
-  background:
-    linear-gradient(rgba(200,169,81,var(--liturgy-alpha,0)), rgba(200,169,81,var(--liturgy-alpha,0))),
-    var(--bg);
+  background: var(--bg);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -591,15 +584,8 @@ input, select, textarea {
   margin: 0 0 0 6px;
 }
 .time-card + .time-card { margin-top: 14px; }
-/* Left-aligned morning/evening label — icon then text, no wings. Sticky under day header. */
+/* Left-aligned morning/evening label — icon then text, no wings. */
 .time-card-head {
-  position: sticky;
-  top: 40px;
-  z-index: 4;
-  /* Match day-section liturgy tint so sticky head doesn't look detached. */
-  background:
-    linear-gradient(rgba(200,169,81,var(--liturgy-alpha,0)), rgba(200,169,81,var(--liturgy-alpha,0))),
-    var(--bg);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -680,17 +666,18 @@ input, select, textarea {
   padding: 2px 8px;
 }
 
-/* Chevron affordance on every event card row — aligned with first title line. */
+/* Chevron — inline after title text, no flex column. */
 .event-card-chev {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 5px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--text-secondary);
+  border-top: 2px solid var(--text-secondary);
+  transform: rotate(45deg) translateY(-1px);
+  opacity: 0.65;
   flex: none;
-  align-self: flex-start;
-  margin-top: 5px;
-  width: 8px;
-  height: 8px;
-  border-right: 2.5px solid var(--text-secondary);
-  border-top: 2.5px solid var(--text-secondary);
-  transform: rotate(45deg);
-  opacity: 0.6;
 }
 .event-card.expanded .event-card-chev { display: none; }
 /* Subtle separator between consecutive event rows everywhere. */
@@ -802,6 +789,7 @@ input, select, textarea {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  align-items: flex-start;
 }
 .event-badge-row {
   display: flex;

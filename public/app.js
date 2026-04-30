@@ -3306,8 +3306,7 @@ function renderStream(container, events, opts = {}) {
   }
   if (laterToday.length) {
     if (opts.groupByParish) {
-      const alpha = liturgyDepth(now.getDay());
-      html += `<div class="day-section" style="--liturgy-alpha:${alpha}">`;
+      html += `<div class="day-section">`;
       html += `<div class="day-hdr">Later today</div>`;
     } else {
       html += `<div class="day-box">`;
@@ -3384,8 +3383,7 @@ function renderFutureDays(events, reserveHost, opts = {}) {
     }
 
     if (groupByParish) {
-      const alpha = liturgyDepth(d.getDay());
-      html += `<div class="day-section${isSunday ? ' day-section-sunday' : ''}" style="--liturgy-alpha:${alpha}">`;
+      html += `<div class="day-section${isSunday ? ' day-section-sunday' : ''}">`;
       html += `<div class="day-hdr">${dayFmt}</div>`;
     } else {
       html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}">`;
@@ -3507,10 +3505,9 @@ function renderEventCard(evt) {
           ${typeDot}
           <span class="event-time">${time}</span>
           <div class="event-title-block">
-            <span class="event-title">${esc(evt.title)}</span>
+            <span class="event-title">${esc(evt.title)}<span class="event-card-chev"></span></span>
             ${badgeRow}
           </div>
-          <span class="event-card-chev"></span>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
         ${altAddrHtml}
