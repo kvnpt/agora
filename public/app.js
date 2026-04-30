@@ -3477,17 +3477,18 @@ function renderScheduleDaysHTML(items, opts = {}) {
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
       const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
-      html += `<div class="schedule-item"><span class="schedule-item-title">${esc(s.title)}</span> <span class="schedule-item-time">${t}</span> ${langLabel}${womLabel}${editBtn}</div>`;
+      const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
+      html += `<div class="schedule-item"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${womLabel}${scopeLabel}${editBtn}</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
         html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
           <div class="schedule-edit-grid">
-            <input data-f="title" value="${esc(s.title)}" placeholder="Title">
+            <input data-f="title" class="sef-full" value="${esc(s.title)}" placeholder="Title">
             <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
+            <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
             <input data-f="start_time" type="time" value="${esc(s.start_time)}">
             <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
-            <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
-            <input data-f="languages" value="${esc(langs.join(', '))}" placeholder="Languages">
+            <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
           </div>
           <div class="wom-checkboxes" data-f="week_of_month">
             <span class="wom-label">Weeks:</span>
@@ -3495,8 +3496,11 @@ function renderScheduleDaysHTML(items, opts = {}) {
               `<label class="wom-check"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
             ).join('')}
           </div>
-          <label class="wom-check" style="margin-top:4px;display:inline-flex;"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> Never show live badge</label>
-          <div style="display:flex;gap:4px;margin-top:4px;">
+          <div class="sef-toggles">
+            <label class="wom-check"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> No live badge</label>
+            <label class="wom-check"><input type="checkbox" data-f="parish_scoped" ${s.parish_scoped?'checked':''}> Parish only</label>
+          </div>
+          <div class="sef-actions">
             <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
             <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
           </div>
@@ -3529,7 +3533,7 @@ function wireScheduleAdminHandlers(container) {
         if (field === 'week_of_month') {
           const checked = [...input.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
           data[field] = checked.length ? checked.join(',') : null;
-        } else if (field === 'hide_live') {
+        } else if (field === 'hide_live' || field === 'parish_scoped') {
           data[field] = input.checked ? 1 : 0;
         } else {
           const val = input.tagName === 'SELECT' ? input.value : input.value.trim();

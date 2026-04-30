@@ -975,21 +975,23 @@ input, select, textarea {
    then day rows. No glow: the parish avatar carries the identity. */
 .parish-schedule {
   position: relative;
-  padding: 14px 14px 16px;
+  padding: 12px 14px 14px;
   cursor: pointer;
 }
 .parish-schedule + .parish-schedule {
   border-top: 1px solid var(--border-light);
 }
+.parish-schedule:active { background: var(--bg-secondary, rgba(0,0,0,0.03)); }
 .parish-schedule-head {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-bottom: 2px;
 }
 .parish-schedule-avatar {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   color: #fff;
   display: flex;
@@ -1003,68 +1005,101 @@ input, select, textarea {
 .parish-schedule-name {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--text);
 }
 .parish-schedule-dist {
   flex: none;
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .schedule-day {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-top: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-top: 12px;
+  margin-bottom: 1px;
 }
 .schedule-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
   font-size: 13.5px;
-  color: var(--text-secondary);
-  margin-top: 3px;
-  padding-left: 2px;
+  padding: 4px 0 3px;
+  border-bottom: 1px solid var(--border-light);
 }
-.schedule-item-title { color: var(--text-secondary); }
-.schedule-item-time {
+.parish-schedule-head + .schedule-day { margin-top: 8px; }
+.schedule-item-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
   font-weight: 500;
-  color: var(--text-secondary);
+}
+.schedule-item-time {
+  flex: none;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  margin-left: 4px;
+  color: var(--text-muted);
+  font-size: 12.5px;
 }
 .schedule-item-time .ampm {
-  font-size: 0.75em;
+  font-size: 0.78em;
   font-weight: 600;
   font-variant: all-small-caps;
-  letter-spacing: 0.06em;
-  margin-left: 2px;
+  letter-spacing: 0.04em;
+  margin-left: 1px;
   color: var(--text-muted);
 }
 .schedule-item-lang {
-  font-size: 10.5px;
+  flex: none;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--text-secondary);
-  margin-left: 6px;
+  color: var(--text-muted);
+  background: var(--bg-secondary, rgba(0,0,0,0.05));
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 .schedule-item-wom {
-  font-size: 10.5px;
+  flex: none;
+  font-size: 10px;
   color: var(--text-muted);
-  margin-left: 4px;
+}
+.schedule-item-scope {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--bg-secondary, rgba(0,0,0,0.05));
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 .schedule-edit-btn {
+  flex: none;
   background: none;
   border: none;
   font-size: 11px;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0 2px;
-  margin-left: 2px;
-  opacity: 0.5;
+  opacity: 0.45;
+  line-height: 1;
 }
 .schedule-edit-btn:hover { opacity: 1; }
 .schedule-edit-form {
-  padding: 6px 0 8px;
-  margin-left: 8px;
+  padding: 8px;
+  margin: 2px 0 4px;
+  background: var(--bg-secondary, rgba(0,0,0,0.03));
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
 }
 .schedule-edit-grid {
   display: grid;
@@ -1073,18 +1108,26 @@ input, select, textarea {
 }
 .schedule-edit-grid input,
 .schedule-edit-grid select {
-  padding: 4px 6px;
+  padding: 5px 7px;
   font-size: 12px;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+}
+.schedule-edit-grid .sef-full {
+  grid-column: 1 / -1;
 }
 .wom-checkboxes {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: 11px;
 }
 .wom-label {
@@ -1099,12 +1142,22 @@ input, select, textarea {
   font-size: 11px !important;
 }
 .wom-check input { width: auto; font-size: 11px !important; }
-
+.sef-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.sef-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
 .schedule-save-btn, .schedule-del-btn {
-  padding: 3px 10px;
-  font-size: 11px;
+  padding: 4px 12px;
+  font-size: 12px;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   font-family: inherit;
 }
@@ -2171,7 +2224,7 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   background: var(--bg);
   border: 1px solid var(--border-light);
   border-radius: 12px;
-  padding: 2px 12px 10px;
+  padding: 4px 14px 12px;
   margin-top: 4px;
 }
 .ps-events-list { border-top: 1px solid var(--border-light); }
