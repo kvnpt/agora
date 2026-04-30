@@ -404,7 +404,7 @@ async function processBatch(sender, messages) {
 
     // Deterministic parish matching — Haiku extracted signals, code does lookup.
     const allParishes = db.prepare(
-      "SELECT id, name, full_name, jurisdiction, address FROM parishes WHERE id != '_unassigned'"
+      "SELECT id, name, full_name, jurisdiction, address, acronym FROM parishes WHERE id != '_unassigned'"
     ).all();
     const matchResult = matchParish(result.parishSignal || {}, allParishes);
 
@@ -424,6 +424,21 @@ async function processBatch(sender, messages) {
     } else { // 'unknown'
       parishMatchConfidence = 'high'; parishMatchQuestion = null;
       parishId = '_unassigned';       newParishData = null;
+
+      // Acronym fallback: Haiku couldn't extract a saint name, but the sender
+      // may have used the parish's known acronym (e.g. "AMCN").
+      if (texts.length > 0) {
+        const combined = texts.join(' ');
+        const byAcronym = allParishes.filter(p => {
+          if (!p.acronym) return false;
+          const esc = p.acronym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp('\\b' + esc + '\\b', 'i').test(combined);
+        });
+        if (byAcronym.length === 1) {
+          parishId = byAcronym[0].id;
+          console.log(`[webhook] Matched parish by acronym: ${parishId} (${byAcronym[0].acronym})`);
+        }
+      }
     }
 
     // Low-confidence (ambiguous) overrides sender trust — route everything to
