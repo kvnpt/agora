@@ -3432,9 +3432,14 @@ function hexToRgba(hex, alpha) {
 
 // Returns the fill color for the event-type dot (Google Calendar style).
 function eventTypeDotColor(type) {
-  // Badge box (background) colours — faded tint version of each type.
+  // Badge box (background) colours — faded tint, matches badge fill.
   const m = { liturgy: '#e8d5e8', feast: '#f5ecd0', prayer: '#d5e0f0', talk: '#f0e8d5', youth: '#d0e8f5', social: '#d5ead5', other: '#e8e8e8' };
   return m[type] || '#e8e8e8';
+}
+function eventTypeDotTextColor(type) {
+  // Badge text colours — darker muted version, used for the letter inside the dot.
+  const m = { liturgy: '#6b2d6b', feast: '#7a6520', prayer: '#2d4a7a', talk: '#7a5a20', youth: '#2d5a8a', social: '#2d6a2d', other: '#555' };
+  return m[type] || '#555';
 }
 
 function renderEventCard(evt) {
@@ -3443,9 +3448,12 @@ function renderEventCard(evt) {
   const acronymColor = evt.parish_color || '#000';
   const acronym = evt.parish_acronym ? `<span class="event-parish-acronym" style="color:${esc(acronymColor)}">${esc(evt.parish_acronym)}</span>` : '';
 
-  // Type dot replaces the type badge in the collapsed card.
-  const dotColor = eventTypeDotColor(evt.event_type);
-  const typeDot = `<span class="event-type-dot" style="--dot-color:${esc(dotColor)}"></span>`;
+  // Normalise to display type so vespers→prayer, matins→prayer etc. map correctly.
+  const displayType = TYPE_DISPLAY[evt.event_type] || evt.event_type || 'other';
+  const dotColor = eventTypeDotColor(displayType);
+  const dotTextColor = eventTypeDotTextColor(displayType);
+  const typeInitial = displayType[0].toUpperCase();
+  const typeDot = `<span class="event-type-dot" style="--dot-color:${esc(dotColor)};--dot-text:${esc(dotTextColor)}">${typeInitial}</span>`;
 
   const langs = evt.languages ? JSON.parse(evt.languages) : [];
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
