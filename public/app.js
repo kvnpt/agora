@@ -476,7 +476,16 @@ async function reconcileStateFromUrl() {
 // Recenter map on user location — used by location FAB, Near pill, Nearby sort
 function centerMapOnUser() {
   if (!window.agoraMap || state.userLat == null || state.userLng == null) return;
-  window.agoraMap.setView([state.userLat, state.userLng], 13, { animate: true, duration: 0.9 });
+  const map = window.agoraMap;
+  const targetZoom = Math.max(map.getZoom(), 13);
+  // Place user at the visual centre of the visible map (above the SNAP_HALF sheet).
+  const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
+  const targetX = map.getContainer().clientWidth / 2;
+  const targetY = snapHalf / 2;
+  const userPx = map.project([state.userLat, state.userLng], targetZoom);
+  const size = map.getSize();
+  const newCentrePx = userPx.add([size.x / 2 - targetX, size.y / 2 - targetY]);
+  map.flyTo(map.unproject(newCentrePx, targetZoom), targetZoom, { animate: true, duration: 0.9 });
 }
 
 // Compute viewport parish set from current map bounds. Cheap — pure math
