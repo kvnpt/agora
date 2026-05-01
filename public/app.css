@@ -697,10 +697,12 @@ input, select, textarea {
   flex: none;
 }
 .event-card.expanded .event-card-chev { display: none; }
-/* Subtle separator between consecutive event rows everywhere. */
+/* Subtle separator between consecutive event rows in the flat (non-grouped) list. */
 .event-card + .event-card {
   border-top: 1px solid var(--border-light);
 }
+/* Within a parish group the border stroke already separates — no inner dividers. */
+.parish-group .event-card + .event-card { border-top: none; }
 .month-header {
   padding: 28px 14px 12px;
   font-size: 20px;
@@ -787,7 +789,7 @@ input, select, textarea {
   display: flex;
   align-items: flex-start;
   flex-wrap: nowrap;
-  gap: 0 4px;
+  gap: 0 8px;
   line-height: 1.5;
 }
 .event-type-dot {
@@ -959,7 +961,7 @@ input, select, textarea {
    Glow at the bottom (::after above) is the only visual cue. */
 .event-card.expanded {
   display: block;
-  padding: 18px 14px 20px;
+  padding: 12px 14px 14px;
   margin: 0;
   border: none;
   border-top: 1px solid var(--border);
@@ -972,7 +974,7 @@ input, select, textarea {
 
 .event-card-drawer {
   position: relative;
-  padding: 10px 0 4px;
+  padding: 4px 0 2px;
   animation: drawer-in 0.18s ease-out;
 }
 @keyframes drawer-in {
@@ -995,21 +997,17 @@ input, select, textarea {
 .event-drawer-meta {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   font-size: 13px;
   color: var(--text-secondary);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
-/* Promoted hero inside expanded event card: time + title inline (same
-   weight + size, modern-title feel), followed by a card-shaped parish
-   button with avatar. Replaces the former "Visit Parish" button + bottom
-   parish header card. */
 .event-drawer-hero {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 2px 0 14px;
-  margin-bottom: 2px;
+  gap: 10px;
+  padding: 0 0 10px;
+  margin-bottom: 0;
 }
 .event-drawer-hero-title {
   font-size: 22px;
