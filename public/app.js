@@ -3510,8 +3510,8 @@ function renderEventCard(evt) {
     <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
-          ${typeDot}
           <span class="event-time">${time}</span>
+          ${typeDot}
           <div class="event-title-block">
             <span class="event-title">${esc(evt.title)}${inlineBadges ? `<span class="event-inline-badges">${inlineBadges}</span>` : ''}<span class="event-card-chev"></span></span>
           </div>
