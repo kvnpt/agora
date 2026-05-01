@@ -3432,8 +3432,9 @@ function hexToRgba(hex, alpha) {
 
 // Returns the fill color for the event-type dot (Google Calendar style).
 function eventTypeDotColor(type) {
-  const m = { liturgy: '#9333ea', feast: '#d97706', prayer: '#2563eb', talk: '#ea580c', youth: '#0284c7', social: '#16a34a', other: '#6b7280' };
-  return m[type] || '#6b7280';
+  // Badge box (background) colours — faded tint version of each type.
+  const m = { liturgy: '#e8d5e8', feast: '#f5ecd0', prayer: '#d5e0f0', talk: '#f0e8d5', youth: '#d0e8f5', social: '#d5ead5', other: '#e8e8e8' };
+  return m[type] || '#e8e8e8';
 }
 
 function renderEventCard(evt) {
