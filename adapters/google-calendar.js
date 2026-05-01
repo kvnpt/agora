@@ -75,7 +75,7 @@ class GoogleCalendarAdapter extends BaseAdapter {
 
   _isParishScoped(title) {
     // Operational/internal entries that should only surface when the user has filtered to this parish
-    return /^\s*setup\s*$/i.test(title);
+    return /^\s*(setup|cleaning|confession)\s*$/i.test(title);
   }
 
   _guessEventType(title) {
