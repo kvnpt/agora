@@ -3491,8 +3491,7 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
-  const badges = [liveBadge, bilingualBadge, combinedBadge, cancelledBadge].filter(Boolean).join('');
-  const badgeRow = badges ? `<div class="event-badge-row">${badges}</div>` : '';
+  const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, cancelledBadge].filter(Boolean).join('');
 
   // Show event address only when it differs from the parish's own address.
   const altAddr = (evt.address && evt.address !== evt.parish_address) ? evt.address : null;
@@ -3505,8 +3504,7 @@ function renderEventCard(evt) {
           ${typeDot}
           <span class="event-time">${time}</span>
           <div class="event-title-block">
-            <span class="event-title">${esc(evt.title)}<span class="event-card-chev"></span></span>
-            ${badgeRow}
+            <span class="event-title">${esc(evt.title)}${inlineBadges ? `<span class="event-inline-badges">${inlineBadges}</span>` : ''}<span class="event-card-chev"></span></span>
           </div>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>

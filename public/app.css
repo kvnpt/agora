@@ -584,8 +584,14 @@ input, select, textarea {
   margin: 0 0 0 6px;
 }
 .time-card + .time-card { margin-top: 14px; }
-/* Left-aligned morning/evening label — icon then text, no wings. */
+/* Left-aligned morning/evening label — sticky just below the day-hdr (top: 37px
+   is 1px under the day-hdr's measured height of ~38px; the overlap is hidden
+   behind day-hdr's z-index: 5 background, guaranteeing zero sub-pixel gap). */
 .time-card-head {
+  position: sticky;
+  top: 37px;
+  z-index: 4;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -782,19 +788,19 @@ input, select, textarea {
   background: var(--dot-color, #9ca3af);
   margin-top: 5px;
 }
-/* Column container: title text + optional badge row below */
+/* Block takes remaining flex space; title + inline badges flow as one text run. */
 .event-title-block {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
 }
-.event-badge-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
+/* Inline badge group — sits right after title text, wraps with it naturally. */
+.event-inline-badges {
+  display: inline;
+}
+.event-inline-badges .event-badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 4px;
 }
 .event-title {
   font-size: 14px;
