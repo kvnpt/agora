@@ -157,6 +157,7 @@ input, select, textarea {
   align-items: center;
   gap: 6px;
   padding: 4px 12px 8px;
+  min-height: 44px;
   border-bottom: 1px solid var(--border-light);
 }
 
@@ -180,47 +181,30 @@ input, select, textarea {
   border-color: var(--text);
 }
 
-/* ── Mode-bar URL display (right-aligned) ── */
-.mode-url {
-  flex: 1 1 auto;
-  min-width: 0;
+/* ── Mode-bar share pill ── */
+.mode-url.share-pill {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 5px;
+  padding: 6px 12px;
   background: none;
-  border: none;
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  /* Share-worthy chip: no tap-highlight box (especially while dragging the
-     modal bar, which would otherwise flash the native touch outline). */
   -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
-  user-select: none;
   touch-action: manipulation;
   outline: none;
+  transition: color 0.15s, border-color 0.15s;
 }
-.mode-url:focus,
-.mode-url:focus-visible,
-.mode-url:active { outline: none; box-shadow: none; }
-.mode-url-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  display: block;
-  text-align: right;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-overflow-scrolling: touch;
-}
-.mode-url-text::-webkit-scrollbar { display: none; }
+.mode-url.share-pill:hover { color: var(--text); border-color: var(--text-secondary); }
+.mode-url:focus, .mode-url:focus-visible, .mode-url:active { outline: none; box-shadow: none; }
+.share-pill-icon { width: 14px; height: 14px; opacity: 0.7; }
+.share-pill-label { font-size: 12px; }
 /* Long URL: fade whichever edge(s) currently hide content. JS sets
    .fade-left / .fade-right based on live scrollLeft so the hint only
    appears where there's actually something to reveal. */
@@ -496,6 +480,7 @@ input, select, textarea {
   transition: all 0.15s;
 }
 .parish-pill:hover { color: var(--text-secondary); border-color: var(--border); }
+.pill-dist { opacity: 0.45; font-weight: 500; }
 .parish-pill.active {
   color: var(--bg);
   border-color: transparent;
@@ -1909,6 +1894,68 @@ a.filters-menu-item { text-decoration: none; }
 
 
 /* ── Reset FAB (bottom center, tracks sheet same as location FAB) ── */
+
+/* ── Filter active label stack (above filters FAB) ── */
+#filter-active-stack {
+  position: fixed;
+  left: 16px;
+  bottom: calc(50vh + 60px);
+  z-index: 600;
+  display: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  pointer-events: none;
+}
+body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: auto; }
+.filter-clear-chip {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.95);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: color 0.15s;
+}
+.filter-clear-chip:hover { color: var(--text); }
+.filter-chip-list { display: flex; flex-direction: column; gap: 4px; }
+.filter-chip-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* Share event button in detail-actions */
+.btn-share-event {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-share-event:hover { color: var(--text); border-color: var(--text-secondary); }
+.btn-share-event .btn-action-icon { width: 16px; height: 16px; }
+
 #reset-fab {
   position: fixed;
   left: 50%;
@@ -2054,35 +2101,28 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
    Live count of parishes inside the current viewport; tap toggles the
    parish-picker pill drawer. Chevron rotates 90° when drawer is open. */
 .in-view-chip {
-  flex: none;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 10px;
+  padding: 7px 14px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   cursor: pointer;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
+  white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .in-view-chip:hover { color: var(--text); border-color: var(--text-secondary); }
-.in-view-chip.open {
-  color: var(--text);
-  border-color: var(--text);
-  background: var(--border-light);
-}
-.in-view-chevron {
-  width: 12px;
-  height: 12px;
-  opacity: 0.7;
-  transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1);
-}
-.in-view-chip.open .in-view-chevron { transform: rotate(90deg); }
 
 /* ── Parish sheet (secondary sheet opened from event drawer) ── */
 .parish-sheet {

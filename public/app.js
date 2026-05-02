@@ -25,7 +25,8 @@ const state = {
   userLng: null,
   mode: 'events',
   _eventsExtended: false,
-  _eventsRenderAll: false,
+  _eventsShowCount: 30,
+  _parishEventsShowCount: 30,
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   parishFilters: { socialOnly: false, englishOnly: false, englishStrict: false },
   selectionMode: false,
@@ -354,6 +355,13 @@ function syncURL(opts = {}) {
   } catch {}
   if (typeof updateModeUrl === 'function') updateModeUrl();
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
+
+  contentEl.querySelectorAll('.ps-share-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url = location.origin + '/' + (parish.acronym || '').toLowerCase();
+      await shareUrl(url, parish.full_name || parish.name || '');
+    });
+  });
 }
 window.agoraSyncURL = syncURL;
 
@@ -685,7 +693,7 @@ async function fetchEvents(opts = {}) {
   const sydneyParsed = new Date(sydneyStr);
   const offsetMs = sydneyParsed.getTime() - testDate.getTime();
   params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
-  if (!opts.extended) { state._eventsExtended = false; state._eventsRenderAll = false; }
+  if (!opts.extended) { state._eventsExtended = false; state._eventsShowCount = 30; }
   const windowDays = opts.extended ? 180 : 60;
   const toDate = new Date(now.getTime() + windowDays * 86400000);
   toDate.setUTCHours(23, 59, 59, 0);
@@ -730,14 +738,23 @@ window.loadMoreEvents = async function() {
   if (parishScroll) parishScroll.scrollTop = parishTop;
 };
 
-// Reveal events already in state.events beyond the initial render cutoff.
-// No network request — just re-render with the full cached dataset.
-window.expandEventsRenderAll = function() {
-  const mainScroll = document.getElementById('sheet-scroll');
-  const top = mainScroll ? mainScroll.scrollTop : 0;
-  state._eventsRenderAll = true;
+// Reveal next 30 events from already-fetched state.events — no network request.
+window.showMoreEvents = function() {
+  const scroll = document.getElementById('sheet-scroll');
+  const top = scroll ? scroll.scrollTop : 0;
+  state._eventsShowCount += 30;
   scheduleRenderEvents(0);
-  requestAnimationFrame(() => { if (mainScroll) mainScroll.scrollTop = top; });
+  requestAnimationFrame(() => { if (scroll) scroll.scrollTop = top; });
+};
+
+window.showMoreParishEvents = function() {
+  const scroll = document.getElementById('parish-sheet-scroll');
+  const top = scroll ? scroll.scrollTop : 0;
+  state._parishEventsShowCount += 30;
+  if (state.parishSheetFocus) {
+    renderParishSheetContent(state.parishSheetFocus, {});
+    requestAnimationFrame(() => { if (scroll) scroll.scrollTop = top; });
+  }
 };
 
 async function fetchSchedules(opts = {}) {
@@ -967,11 +984,7 @@ function initParishFilter() {
 
 function renderParishPills() {
   const row = document.getElementById('parish-filter-row');
-  // Skip the rebuild when the row is hidden — pill order has no visible
-  // effect, and the rerender on every moveend was a measurable lag source.
-  // syncParishRowVisibility() callers (toggle picker, jurisdiction change)
-  // call renderParishPills() directly so the row repopulates before showing.
-  if (!row.classList.contains('visible')) return;
+  if (!row) return;
   let relevant = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
@@ -1006,30 +1019,39 @@ function renderParishPills() {
     });
   }
 
+  // Selected parishes always appear first, maintaining their relative distance/alpha order.
+  if (state.filters.parishIds) {
+    const sel = relevant.filter(p => state.filters.parishIds.has(p.id));
+    const unsel = relevant.filter(p => !state.filters.parishIds.has(p.id));
+    relevant = [...sel, ...unsel];
+  }
+
   const allActive = state.filters.parishIds === null;
+  const vp = state.viewportParishIds;
 
   let html = '';
 
   for (const p of relevant) {
     const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
-    const distLabel = (p._dist != null && isFinite(p._dist)) ? `\u00B7${Math.round(p._dist)}km` : '';
-    const label = distLabel ? `${acronym}${distLabel}` : acronym;
+    const distLabel = (p._dist != null && isFinite(p._dist)) ? `·${Math.round(p._dist)}km` : '';
+    const labelHtml = distLabel
+      ? `${esc(acronym)}<span class="pill-dist">${esc(distLabel)}</span>`
+      : esc(acronym);
     const isSelected = state.filters.parishIds && state.filters.parishIds.has(p.id);
-    const isUnselected = state.filters.parishIds && !state.filters.parishIds.has(p.id);
     const color = p.color || '#000';
     let style;
     if (allActive) {
-      // All active: colored outline, no fill
-      style = `color:${color};border-color:${color};background:none;`;
+      const inView = !vp || vp.has(p.id);
+      style = inView
+        ? `color:${color};border-color:${color};background:none;`
+        : `color:var(--text-muted);border-color:var(--border-light);background:none;opacity:0.35;`;
     } else if (isSelected) {
-      // Individually selected: full color fill
       style = `background:${color};color:#fff;border-color:transparent;`;
     } else {
-      // Unselected: faded
       style = `color:var(--text-muted);border-color:var(--border-light);background:none;opacity:0.4;`;
     }
     const activeClass = (allActive || isSelected) ? 'active' : '';
-    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${esc(label)}</button>`;
+    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}</button>`;
   }
   row.innerHTML = html;
   row.classList.toggle('multi-parish', !!state.filters.multiParish);
@@ -1118,12 +1140,21 @@ function initMultiParishToggle() {
   }
   syncMultiParishButton();
 
-  // In-view chip in modal bar: pure pill drawer toggle, independent of
-  // selection mode.
+  // In-view chip: toggle sheet between PEEK and HALF (FULL → HALF).
   const chip = document.getElementById('in-view-chip');
   if (chip) {
     chip.addEventListener('click', () => {
-      setParishPicker(!state.filters.multiParish);
+      if (!window.agoraSnapTo || !window.agoraSnapHalf || !window.agoraSnapPeek) return;
+      const y = window.agoraSheetY ? window.agoraSheetY() : null;
+      const half = window.agoraSnapHalf();
+      const peek = window.agoraSnapPeek();
+      if (y !== null && y < half - 5) {
+        window.agoraSnapTo(half);
+      } else if (y !== null && y >= half - 5 && y <= half + 5) {
+        window.agoraSnapTo(peek);
+      } else {
+        window.agoraSnapTo(half);
+      }
     });
   }
 
@@ -1168,18 +1199,22 @@ function hideMapSelectOverlay() {
 function renderInViewChip() {
   const countEl = document.getElementById('in-view-count');
   if (!countEl) return;
-  const n = state.viewportParishIds ? state.viewportParishIds.size : 0;
-  countEl.textContent = `${n} ${n === 1 ? 'parish' : 'parishes'} in-view`;
-  const chip = document.getElementById('in-view-chip');
-  chip?.classList.toggle('open', !!state.filters.multiParish);
+  let n = 0;
+  if (state.viewportParishIds) {
+    n = [...state.viewportParishIds].filter(id => {
+      if (!state.filters.jurisdiction) return true;
+      const p = state.parishes.find(pa => pa.id === id);
+      return p && p.jurisdiction === state.filters.jurisdiction;
+    }).length;
+  }
+  countEl.textContent = `${n} ${n === 1 ? 'parish' : 'parishes'} in view`;
 }
 window.agoraRenderInViewChip = renderInViewChip;
 
 function syncParishRowVisibility() {
   const row = document.getElementById('parish-filter-row');
   if (!row) return;
-  // Parish picker is an explicit mode now — no auto-open on jurisdiction chip.
-  row.classList.toggle('visible', !!state.filters.multiParish);
+  row.classList.add('visible');
 }
 window.agoraSyncParishRowVisibility = syncParishRowVisibility;
 
@@ -1485,30 +1520,68 @@ function hasResettableScope() {
 
 function syncResetFab() {
   const fab = document.getElementById('reset-fab');
-  if (fab) fab.classList.toggle('visible', hasResettableScope());
+  if (!fab) return;
+  const viewportEmpty = state.viewportParishIds instanceof Set && state.viewportParishIds.size === 0;
+  fab.classList.toggle('visible', hasResettableScope() || viewportEmpty);
+  syncFilterActiveStack();
+}
+
+function clearAllFilters() {
+  state.filters.jurisdiction = null;
+  state.filters.parishIds = null;
+  state.filters.showAllParishes = null;
+  state.parishFocus = null;
+  document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
+  if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
+  syncParishRowVisibility();
+  syncResetFab();
+  renderParishPills();
+  if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
+  if (typeof syncFiltersButton === 'function') syncFiltersButton();
+  if (state.mode === 'services') window.agoraFetchSchedules();
+  else window.agoraFetchEvents();
+  syncURL();
 }
 
 function initResetFab() {
   const fab = document.getElementById('reset-fab');
   if (!fab) return;
+  // "Show all" now zooms the map to fit all parishes matching current filters.
   fab.addEventListener('click', () => {
-    state.filters.jurisdiction = null;
-    state.filters.parishIds = null;
-    state.filters.showAllParishes = null;
-    state.parishFocus = null;
-    document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
-    if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
-    syncParishRowVisibility();
-    syncResetFab();
-    renderParishPills();
-    if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
-    if (typeof syncFiltersButton === 'function') syncFiltersButton();
-    if (state.mode === 'services') window.agoraFetchSchedules();
-    else window.agoraFetchEvents();
-    syncURL();
+    const matching = state.parishes.filter(p =>
+      p.id !== '_unassigned' &&
+      p.lat != null && p.lng != null &&
+      (!state.filters.jurisdiction || p.jurisdiction === state.filters.jurisdiction) &&
+      (!state.filters.parishIds || state.filters.parishIds.has(p.id))
+    );
+    if (matching.length && window.agoraMap) {
+      const b = L.latLngBounds(matching.map(p => [p.lat, p.lng])).pad(0.2);
+      window.agoraMap.fitBounds(b, { maxZoom: 13, animate: true, duration: 0.7 });
+    }
   });
+
+  // "Clear" button inside the filter active stack clears all filters.
+  const clearBtn = document.getElementById('filter-clear-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', e => { e.stopPropagation(); clearAllFilters(); });
+  }
+
   syncResetFab();
 }
+function syncFilterActiveStack() {
+  const stack = document.getElementById('filter-active-stack');
+  if (!stack) return;
+  const chips = [];
+  if (state.filters.jurisdiction) chips.push(capitalize(state.filters.jurisdiction));
+  if (state.filters.socialOnly) chips.push('Social');
+  if (state.filters.englishOnly) chips.push('English');
+  if (state.mode === 'services') chips.push('Schedules');
+  const hasFilters = chips.length > 0 || (state.filters.parishIds && state.filters.parishIds.size > 0);
+  stack.classList.toggle('visible', hasFilters);
+  const list = document.getElementById('filter-chip-list');
+  if (list) list.innerHTML = chips.map(c => `<span class="filter-chip-label">${esc(c)}</span>`).join('');
+}
+
 
 // ── Location FAB (bottom right) ──
 // Single toggle: sorts events by distance + sorts parish pills by distance
@@ -2090,6 +2163,7 @@ function initBottomSheet() {
   // Expose snapTo for external callers (map popup "All events" button)
   window.agoraSnapTo = snapTo;
   window.agoraSnapHalf = () => SNAP_HALF;
+  window.agoraSnapPeek = () => SNAP_PEEK;
 
   // Hide/restore for parish sheet overlay — stash current Y and scrollTop,
   // snap offscreen, restore both when overlay closes. snapTo itself resets
@@ -2438,6 +2512,7 @@ function initParishSheet() {
         syncURL();
       }
     }
+    state._parishEventsShowCount = 30;
     renderParishSheetContent(parishId, openOpts);
     // Map highlight: dim other markers, enlarge focused dot + label.
     state.parishSheetFocus = parishId;
@@ -2590,6 +2665,7 @@ function renderParishSheetContent(parishId, opts = {}) {
   const watchBtn = parish.live_url
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
     : '';
+  const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}">Share</button>`;
 
   // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
   let parishAdminHtml = '';
@@ -2689,7 +2765,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-section">
       ${addrHtml}
       ${webCopyHtml}
-      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
     ${parishEditFormHtml ? `<div class="ps-section">${parishEditFormHtml}</div>` : ''}
@@ -2814,7 +2890,7 @@ function renderParishSheetContent(parishId, opts = {}) {
   const streamEl = contentEl.querySelector('.ps-events-list');
   if (streamEl) {
     if (streamEvents.length) {
-      renderStream(streamEl, streamEvents, { parishMode: true });
+      renderStream(streamEl, streamEvents, { parishMode: true, showCount: state._parishEventsShowCount || 30 });
     } else {
       streamEl.replaceChildren();
     }
@@ -2997,7 +3073,7 @@ function renderEvents() {
   const container = document.getElementById('events-list');
   pruneCardPool();
   const filtered = applyFilters(state.events);
-  renderStream(container, filtered, { groupByParish: true });
+  renderStream(container, filtered, { groupByParish: true, showCount: state._eventsShowCount || 30 });
   bindEventCards(container);
 
   // Only re-expand in the main list when the parish sheet isn't showing the
@@ -3026,36 +3102,29 @@ function sortEvents(arr) {
 }
 
 // ── Mode-bar URL display + copy ──
+// Share a URL via native share sheet, falling back to clipboard copy.
+async function shareUrl(url, title = '') {
+  if (navigator.share) {
+    try { await navigator.share({ url, title }); return; } catch (e) {
+      if (e.name === 'AbortError') return; // user cancelled
+    }
+  }
+  try { await navigator.clipboard.writeText(url); } catch {
+    const ta = document.createElement('textarea');
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+}
+
 function initModeUrl() {
   const btn = document.getElementById('mode-url');
   if (!btn) return;
   btn.addEventListener('click', async () => {
-    // Copy the share-form URL (no event-id) rather than location.href, since
-    // the browser URL may carry /<id> purely for back-button navigation.
-    const shareUrl = location.origin + '/' + buildPathSegs().join('/');
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = shareUrl;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch {}
-      document.body.removeChild(ta);
-    }
-    showCopiedFeedback(btn);
+    const url = location.origin + '/' + buildPathSegs().join('/');
+    await shareUrl(url, document.title);
   });
   updateModeUrl();
-
-  // Filters-button label swaps (Events ↔ Schedules ↔ Socials) resize the
-  // URL chip; re-evaluate overflow on any mode-bar size change.
-  if (window.ResizeObserver) {
-    const ro = new ResizeObserver(() => {
-      const el = document.getElementById('mode-url-text');
-      if (el) syncUrlChipOverflow(el);
-    });
-    ro.observe(btn);
-  }
 }
 
 // Briefly swaps the URL text with a glowing 'COPIED' message, then restores.
@@ -3274,10 +3343,8 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
 // buckets (Happening now / Later today), then day-grouped events through the
 // rest of the 28-day window. Sort toggle reorders within morning/evening
 // sub-groups across the whole stream.
-const RENDER_CUTOFF_DAYS = 28;
-
 function renderStream(container, events, opts = {}) {
-  const { parishMode = false } = opts;
+  const { parishMode = false, showCount = 30 } = opts;
   const now = new Date();
   const TZ_LOCAL = TZ;
   const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -3297,14 +3364,10 @@ function renderStream(container, events, opts = {}) {
     }
   }
 
-  // Main list: defer rendering of events beyond RENDER_CUTOFF_DAYS when
-  // the user hasn't yet clicked "show more". Data is already in state.events;
-  // the CTA re-renders with no network request.
-  const renderCutoff = (!parishMode && !state._eventsRenderAll && !state._eventsExtended)
-    ? new Date(now.getTime() + RENDER_CUTOFF_DAYS * 86400000)
-    : null;
-  const visibleFuture = renderCutoff ? future.filter(e => new Date(e.start_utc) <= renderCutoff) : future;
-  const hasDeferredFuture = renderCutoff && future.some(e => new Date(e.start_utc) > renderCutoff);
+  // Cap future events at showCount items + complete the day the cap falls on.
+  // Today events (happening now, later today) are always shown in full.
+  const { visible: visibleFuture, deferredCount } = capFutureAtCount(future, showCount);
+  const hasDeferredFuture = deferredCount > 0;
 
   const hasToday = happeningNow.length || laterToday.length;
   let html = '';
@@ -3356,27 +3419,25 @@ function renderStream(container, events, opts = {}) {
     html += renderEmptyStateHTML();
   }
 
+  const lastEvt = events.length ? events[events.length - 1] : null;
+  const horizonNote = lastEvt
+    ? `<div class="list-footer-note">Events scheduled to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
+    : '';
+
   if (parishMode) {
-    // Parish sheet always shows horizon note — no load-more button.
-    const lastEvt = events.length ? events[events.length - 1] : null;
-    const horizonNote = lastEvt
-      ? `<div class="list-footer-note">Events scheduled to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
-      : '';
-    html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
+    if (hasDeferredFuture) {
+      html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreParishEvents()">Show ${deferredCount} more events</button><div class="list-footer-ornament">· · ·</div></div>`;
+    } else {
+      html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
+    }
   } else if (hasDeferredFuture) {
-    // Events beyond render cutoff are already in state.events — reveal with no fetch.
-    const cutoffLabel = renderCutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
-    html += `<div class="list-footer"><button class="list-footer-btn" onclick="expandEventsRenderAll()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
+    // Events beyond count cap are already in state.events — reveal with no fetch.
+    html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreEvents()">Show ${deferredCount} more events</button><div class="list-footer-ornament">· · ·</div></div>`;
   } else if (!state._eventsExtended) {
     const cutoff = new Date(now.getTime() + 60 * 86400000);
     const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
     html += `<div class="list-footer"><button class="list-footer-btn" onclick="loadMoreEvents()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
   } else {
-    // Show the schedule horizon so the user knows the fetch worked and this is genuinely the end.
-    const lastEvt = events.length ? events[events.length - 1] : null;
-    const horizonNote = lastEvt
-      ? `<div class="list-footer-note">Events scheduled to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
-      : '';
     html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
   }
 
@@ -4017,16 +4078,15 @@ function renderEventDrawerHTML(evt, opts = {}) {
       <a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
       </a>
+      <button class="btn-action btn-share-event" type="button" data-share-id="${evt.id}">
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:share-network.svg" alt="">Share
+      </button>
       ${watchLiveCta}
       ${serviceBookCta}
       ${adminActions}
     </div>
     ${posterHtml}
-    ${editForm}
-    <button class="detail-url" type="button" data-share-id="${evt.id}" aria-label="Copy event link">
-      <span class="detail-url-text">orthodoxy.au/${evt.id}</span>
-      <img class="detail-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
-    </button>`;
+    ${editForm}`;
 }
 
 function wireEventDrawer(drawer, evt) {
@@ -4079,27 +4139,12 @@ function wireEventDrawer(drawer, evt) {
     });
   }
 
-  const urlChip = drawer.querySelector('.detail-url');
-  if (urlChip) {
-    urlChip.addEventListener('click', async () => {
-      const id = urlChip.dataset.shareId;
+  const shareEvtBtn = drawer.querySelector('.btn-share-event');
+  if (shareEvtBtn) {
+    shareEvtBtn.addEventListener('click', async () => {
+      const id = shareEvtBtn.dataset.shareId;
       const url = `${location.origin}/${id}`;
-      try {
-        await navigator.clipboard.writeText(url);
-      } catch {
-        const ta = document.createElement('textarea');
-        ta.value = url;
-        document.body.appendChild(ta);
-        ta.select();
-        try { document.execCommand('copy'); } catch {}
-        document.body.removeChild(ta);
-      }
-      if (urlChip._copiedTimer) clearTimeout(urlChip._copiedTimer);
-      urlChip.classList.add('copied');
-      urlChip._copiedTimer = setTimeout(() => {
-        urlChip.classList.remove('copied');
-        urlChip._copiedTimer = null;
-      }, 900);
+      await shareUrl(url, evt.title);
     });
   }
 
@@ -4680,6 +4725,26 @@ function initPosterSwipeDismiss(overlay, img) {
 }
 
 // ── Helpers ──
+
+function capFutureAtCount(future, cap) {
+  if (cap <= 0) return { visible: [], deferredCount: future.length };
+  if (future.length <= cap) return { visible: future, deferredCount: 0 };
+  const groups = groupByDay(future);
+  let count = 0;
+  let cutoffKey = null;
+  for (const [dk, evts] of groups) {
+    count += evts.length;
+    if (count >= cap && cutoffKey === null) cutoffKey = dk;
+  }
+  const visible = [], deferred = [];
+  let pastCutoff = false;
+  for (const [dk, evts] of groups) {
+    if (pastCutoff) deferred.push(...evts);
+    else visible.push(...evts);
+    if (dk === cutoffKey) pastCutoff = true;
+  }
+  return { visible, deferredCount: deferred.length };
+}
 function groupByDay(events) {
   const groups = new Map();
   for (const evt of events) {

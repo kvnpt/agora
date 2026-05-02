@@ -211,10 +211,14 @@
     <img src="/tabler-location.svg" alt="">
   </button>
 
-  <!-- Filters FAB (bottom left, above sheet) -->
+  <!-- Filters FAB (bottom left, above sheet) + active filter label stack -->
+  <div id="filter-active-stack" class="filter-active-stack">
+    <button id="filter-clear-btn" class="filter-clear-chip" type="button">&#x2715; Clear</button>
+    <div id="filter-chip-list" class="filter-chip-list"></div>
+  </div>
   <button id="btn-filters" class="map-fab filters-fab has-active" type="button" aria-haspopup="menu" aria-expanded="false" title="Filters">
     <span class="filters-btn-content">
-      <img src="https://api.iconify.design/ph:funnel.svg" alt="">
+      <img src="https://api.iconify.design/ph:sliders.svg" alt="">
     </span>
   </button>
 
@@ -240,7 +244,7 @@
     <div class="filters-menu-sep fm-multi-sep" aria-hidden="true"></div>
     <button class="filters-menu-item" id="btn-multi-parish" role="menuitemcheckbox">
       <img class="fm-icon" src="https://api.iconify.design/ph:list-plus.svg" alt="">
-      <span class="fm-label">Select parishes</span>
+      <span class="fm-label">Create filter</span>
     </button>
     <div class="filters-menu-sep fm-admin-sep" aria-hidden="true" hidden></div>
     <a class="filters-menu-item fm-admin" id="btn-admin" href="/admin" role="menuitem" hidden>
@@ -265,15 +269,14 @@
   <div id="bottom-sheet">
     <div class="map-grab-handle"></div>
 
-    <!-- Mode bar: in-view chip (left), URL + copy (centre) -->
+    <!-- Mode bar: share pill (left), in-view chip (centred) -->
     <div class="mode-bar" id="mode-bar">
-      <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Toggle parish picker">
-        <span class="in-view-count" id="in-view-count">0 parishes in-view</span>
-        <img class="in-view-chevron" src="https://api.iconify.design/ph:caret-right.svg" alt="">
+      <button class="mode-url share-pill" id="mode-url" type="button" aria-label="Share view">
+        <img class="share-pill-icon" src="https://api.iconify.design/ph:share-network.svg" alt="">
+        <span class="share-pill-label">Share View</span>
       </button>
-      <button class="mode-url" id="mode-url" type="button" aria-label="Copy page URL">
-        <span class="mode-url-text" id="mode-url-text">orthodoxy.au</span>
-        <img class="mode-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+      <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Scroll sheet">
+        <span class="in-view-count" id="in-view-count">0 parishes in view</span>
       </button>
     </div>
 
