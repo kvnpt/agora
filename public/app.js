@@ -25,6 +25,7 @@ const state = {
   userLng: null,
   mode: 'events',
   _eventsExtended: false,
+  _eventsRenderAll: false,
   filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   parishFilters: { socialOnly: false, englishOnly: false, englishStrict: false },
   selectionMode: false,
@@ -684,7 +685,7 @@ async function fetchEvents(opts = {}) {
   const sydneyParsed = new Date(sydneyStr);
   const offsetMs = sydneyParsed.getTime() - testDate.getTime();
   params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
-  if (!opts.extended) state._eventsExtended = false;
+  if (!opts.extended) { state._eventsExtended = false; state._eventsRenderAll = false; }
   const windowDays = opts.extended ? 180 : 60;
   const toDate = new Date(now.getTime() + windowDays * 86400000);
   toDate.setUTCHours(23, 59, 59, 0);
@@ -727,6 +728,16 @@ window.loadMoreEvents = async function() {
   await fetchEvents({ extended: true });
   if (mainScroll) mainScroll.scrollTop = mainTop;
   if (parishScroll) parishScroll.scrollTop = parishTop;
+};
+
+// Reveal events already in state.events beyond the initial render cutoff.
+// No network request — just re-render with the full cached dataset.
+window.expandEventsRenderAll = function() {
+  const mainScroll = document.getElementById('sheet-scroll');
+  const top = mainScroll ? mainScroll.scrollTop : 0;
+  state._eventsRenderAll = true;
+  scheduleRenderEvents(0);
+  requestAnimationFrame(() => { if (mainScroll) mainScroll.scrollTop = top; });
 };
 
 async function fetchSchedules(opts = {}) {
@@ -2803,7 +2814,7 @@ function renderParishSheetContent(parishId, opts = {}) {
   const streamEl = contentEl.querySelector('.ps-events-list');
   if (streamEl) {
     if (streamEvents.length) {
-      renderStream(streamEl, streamEvents);
+      renderStream(streamEl, streamEvents, { parishMode: true });
     } else {
       streamEl.replaceChildren();
     }
@@ -3263,7 +3274,10 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
 // buckets (Happening now / Later today), then day-grouped events through the
 // rest of the 28-day window. Sort toggle reorders within morning/evening
 // sub-groups across the whole stream.
+const RENDER_CUTOFF_DAYS = 28;
+
 function renderStream(container, events, opts = {}) {
+  const { parishMode = false } = opts;
   const now = new Date();
   const TZ_LOCAL = TZ;
   const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -3282,6 +3296,15 @@ function renderStream(container, events, opts = {}) {
       future.push(e);
     }
   }
+
+  // Main list: defer rendering of events beyond RENDER_CUTOFF_DAYS when
+  // the user hasn't yet clicked "show more". Data is already in state.events;
+  // the CTA re-renders with no network request.
+  const renderCutoff = (!parishMode && !state._eventsRenderAll && !state._eventsExtended)
+    ? new Date(now.getTime() + RENDER_CUTOFF_DAYS * 86400000)
+    : null;
+  const visibleFuture = renderCutoff ? future.filter(e => new Date(e.start_utc) <= renderCutoff) : future;
+  const hasDeferredFuture = renderCutoff && future.some(e => new Date(e.start_utc) > renderCutoff);
 
   const hasToday = happeningNow.length || laterToday.length;
   let html = '';
@@ -3327,13 +3350,24 @@ function renderStream(container, events, opts = {}) {
 
   // Month seam + day groups. Always emit the seam when future events exist so
   // later async updates slot into a stable position (no scroll jump).
-  if (future.length) {
-    html += renderFutureDays(future, reserveHost, opts);
+  if (visibleFuture.length) {
+    html += renderFutureDays(visibleFuture, reserveHost, opts);
   } else if (!hasToday) {
     html += renderEmptyStateHTML();
   }
 
-  if (!state._eventsExtended) {
+  if (parishMode) {
+    // Parish sheet always shows horizon note — no load-more button.
+    const lastEvt = events.length ? events[events.length - 1] : null;
+    const horizonNote = lastEvt
+      ? `<div class="list-footer-note">Events scheduled to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
+      : '';
+    html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
+  } else if (hasDeferredFuture) {
+    // Events beyond render cutoff are already in state.events — reveal with no fetch.
+    const cutoffLabel = renderCutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
+    html += `<div class="list-footer"><button class="list-footer-btn" onclick="expandEventsRenderAll()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
+  } else if (!state._eventsExtended) {
     const cutoff = new Date(now.getTime() + 60 * 86400000);
     const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
     html += `<div class="list-footer"><button class="list-footer-btn" onclick="loadMoreEvents()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
