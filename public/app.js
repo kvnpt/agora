@@ -35,11 +35,44 @@ const state = {
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
   eventsSort: 'time',  // 'time' | 'nearby'
   parishFocus: null,  // parish ID when focused, null when browsing
-  viewportParishIds: null  // Set of parish IDs inside current map bounds; null until first moveend
+  viewportParishIds: null,  // Set of parish IDs inside current map bounds; null until first moveend
+  _dateFocus: null          // 'YYYY-MM-DD' when user has jumped to a specific date
 };
 // Expose so map.js's 'move' rAF-throttled handler can re-cluster without
 // passing state through window-scoped callbacks.
 window.agoraStateRef = state;
+
+// Convert a UTC event timestamp to a Sydney-local ISO date string (YYYY-MM-DD)
+const isoDateSyd = (utcStr) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(utcStr));
+
+// Jump to a specific date in the events list stream.
+window.setDateFocus = function(dateStr) {
+  state._dateFocus = dateStr || null;
+  renderEvents();
+  if (dateStr) {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`.day-box[data-date="${dateStr}"], .day-section[data-date="${dateStr}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+};
+window.clearDateFocus = function() {
+  state._dateFocus = null;
+  renderEvents();
+};
+window.openDatePicker = function(btn) {
+  const picker = document.getElementById('date-focus-picker');
+  if (!picker) return;
+  // Derive range from loaded events
+  const dates = (state.events || []).map(e => isoDateSyd(e.start_utc)).sort();
+  const today = isoDateSyd(new Date().toISOString());
+  picker.min = today;
+  picker.max = dates[dates.length - 1] || today;
+  picker.value = state._dateFocus || '';
+  picker.onchange = () => { if (picker.value) window.setDateFocus(picker.value); };
+  picker.click();
+};
 
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
 let detailHistoryPushed = false;
@@ -3369,6 +3402,7 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
 // sub-groups across the whole stream.
 function renderStream(container, events, opts = {}) {
   const { parishMode = false, showCount = 30 } = opts;
+  const dateFocus = !parishMode ? (state._dateFocus || null) : null;
   const now = new Date();
   const TZ_LOCAL = TZ;
   const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -3379,7 +3413,7 @@ function renderStream(container, events, opts = {}) {
     const start = new Date(e.start_utc);
     const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
     const isToday = dayKey(e.start_utc) === todayKey;
-    if (isToday) {
+    if (isToday && !dateFocus) {
       if (start <= now && end >= now) happeningNow.push(e);
       else if (start > now) laterToday.push(e);
       else earlierToday.push(e);
@@ -3388,9 +3422,14 @@ function renderStream(container, events, opts = {}) {
     }
   }
 
+  // When a date is focused, filter to events on or after that date and skip the cap.
+  const activeFuture = dateFocus
+    ? future.filter(e => isoDateSyd(e.start_utc) >= dateFocus)
+    : future;
+
   // Cap future events at showCount items + complete the day the cap falls on.
   // Today events (happening now, later today) are always shown in full.
-  const { visible: visibleFuture, deferredCount } = capFutureAtCount(future, showCount);
+  const { visible: visibleFuture, deferredCount } = capFutureAtCount(activeFuture, dateFocus ? Infinity : showCount);
   const hasDeferredFuture = deferredCount > 0;
 
   const hasToday = happeningNow.length || laterToday.length;
@@ -3450,13 +3489,15 @@ function renderStream(container, events, opts = {}) {
 
   if (parishMode) {
     if (hasDeferredFuture) {
-      html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreParishEvents()">Show ${deferredCount} more events</button><div class="list-footer-ornament">· · ·</div></div>`;
+      html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreParishEvents()">Show more</button><div class="list-footer-ornament">· · ·</div></div>`;
     } else {
       html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
     }
+  } else if (dateFocus) {
+    html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
   } else if (hasDeferredFuture) {
     // Events beyond count cap are already in state.events — reveal with no fetch.
-    html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreEvents()">Show ${deferredCount} more events</button><div class="list-footer-ornament">· · ·</div></div>`;
+    html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreEvents()">Show more</button><div class="list-footer-ornament">· · ·</div></div>`;
   } else if (!state._eventsExtended && events.length > 0) {
     const cutoff = new Date(now.getTime() + 60 * 86400000);
     const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
@@ -3489,7 +3530,8 @@ function renderStream(container, events, opts = {}) {
 
 // Day-grouped render for future events (tomorrow → end of window).
 function renderFutureDays(events, reserveHost, opts = {}) {
-  const { groupByParish = false } = opts;
+  const { groupByParish = false, parishMode = false } = opts;
+  const showDateNav = !parishMode;
   const groups = groupByDay(events);
   const now = new Date();
   const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
@@ -3502,6 +3544,8 @@ function renderFutureDays(events, reserveHost, opts = {}) {
     const dayFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: weekdayStyle, day: 'numeric', month: 'short' }).format(d);
     const dayOfWeek = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
     const isSunday = dayOfWeek === 'Sunday';
+    const dateStr = isoDateSyd(evts[0].start_utc);
+    const isFocused = showDateNav && state._dateFocus === dateStr;
 
     const monthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
     if (monthKey !== prevMonthKey) {
@@ -3510,12 +3554,18 @@ function renderFutureDays(events, reserveHost, opts = {}) {
       prevMonthKey = monthKey;
     }
 
+    const dateNavBtn = showDateNav
+      ? (isFocused
+          ? `<button class="day-date-clear" type="button" onclick="clearDateFocus()" title="Back to stream">&times;</button>`
+          : `<button class="day-date-pick" type="button" onclick="openDatePicker(this)" title="Jump to date"><img src="https://api.iconify.design/ph:calendar.svg" alt=""></button>`)
+      : '';
+
     if (groupByParish) {
-      html += `<div class="day-section${isSunday ? ' day-section-sunday' : ''}">`;
-      html += `<div class="day-hdr">${dayFmt}</div>`;
+      html += `<div class="day-section${isSunday ? ' day-section-sunday' : ''}" data-date="${dateStr}">`;
+      html += `<div class="day-hdr">${dayFmt}${dateNavBtn}</div>`;
     } else {
-      html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}">`;
-      html += `<div class="section-header">${dayFmt}</div>`;
+      html += `<div class="day-box${isSunday ? ' day-box-sunday' : ''}" data-date="${dateStr}">`;
+      html += `<div class="section-header">${dayFmt}${dateNavBtn}</div>`;
     }
     html = renderSubDaySections(evts, html, reserveHost, opts);
     html += `</div>`;

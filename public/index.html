@@ -332,6 +332,9 @@
     </a>
   </div>
 
+  <!-- Hidden date picker — triggered by calendar icon in day headers -->
+  <input type="date" id="date-focus-picker" style="position:fixed;opacity:0;pointer-events:none;width:0;height:0;top:0;left:0" tabindex="-1" aria-hidden="true">
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>

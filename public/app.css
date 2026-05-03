@@ -538,6 +538,9 @@ input, select, textarea {
   height: 1px;
   background: linear-gradient(to right, transparent, var(--border) 50%, transparent);
 }
+/* The calendar/X buttons shrink the hairlines but stay within the centered row */
+.day-box .section-header .day-date-pick,
+.day-box .section-header .day-date-clear { margin-left: 0; }
 /* Clear line between morning and evening sub-groups inside a day box. */
 .sub-day-divider {
   border: none;
@@ -564,6 +567,49 @@ input, select, textarea {
 /* Month-header already separates; drop redundant border on the first day after it. */
 .month-header + .day-section .day-hdr { border-top: none; }
 .day-section-sunday .day-hdr { font-weight: 800; }
+
+/* Calendar jump-to-date icon (appears after date label in each day header) */
+.day-date-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  margin-left: 4px;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.15s;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.day-date-pick:hover, .day-hdr:hover .day-date-pick { opacity: 0.7; }
+.day-date-pick img { width: 13px; height: 13px; display: block; }
+
+/* X to clear date focus — slightly more prominent */
+.day-date-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--text);
+  color: var(--bg);
+  border: none;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  margin-left: 6px;
+  opacity: 0.75;
+  flex-shrink: 0;
+  vertical-align: middle;
+  transition: opacity 0.15s;
+}
+.day-date-clear:hover { opacity: 1; }
+
+/* Keep the day-hdr layout flex so the icon sits inline with the date text */
+.day-hdr { display: flex; align-items: center; }
 
 .time-card {
   margin: 0 0 0 6px;
