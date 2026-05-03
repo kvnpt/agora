@@ -1938,22 +1938,9 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
 
 /* Share event button in detail-actions */
 .btn-share-event {
-  font: inherit;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  color: var(--text);
   background: none;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-  -webkit-tap-highlight-color: transparent;
 }
-.btn-share-event:hover { color: var(--text); border-color: var(--text-secondary); }
 .btn-share-event .btn-action-icon { width: 16px; height: 16px; }
 
 #reset-fab {
@@ -2423,16 +2410,21 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 .ps-btn {
   display: inline-flex;
   align-items: center;
-  padding: 7px 16px;
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
+  padding: 7px 16px;
   color: var(--parish-color, var(--text));
   background: #fff;
   border: 1px solid var(--parish-color, var(--border));
   border-radius: 999px;
   text-decoration: none;
   cursor: pointer;
+}
+.ps-share-btn {
+  color: var(--text);
+  border-color: var(--border);
 }
 .ps-btn:hover {
   background: var(--parish-color, var(--text));

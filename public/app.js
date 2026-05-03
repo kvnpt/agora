@@ -355,13 +355,6 @@ function syncURL(opts = {}) {
   } catch {}
   if (typeof updateModeUrl === 'function') updateModeUrl();
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
-
-  contentEl.querySelectorAll('.ps-share-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const url = location.origin + '/' + (parish.acronym || '').toLowerCase();
-      await shareUrl(url, parish.full_name || parish.name || '');
-    });
-  });
 }
 window.agoraSyncURL = syncURL;
 
@@ -2902,6 +2895,13 @@ function renderParishSheetContent(parishId, opts = {}) {
     }
   }
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
+
+  contentEl.querySelectorAll('.ps-share-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url = location.origin + '/' + (parish.acronym || '').toLowerCase();
+      await shareUrl(url, parish.full_name || parish.name || '');
+    });
+  });
 
   // Schedule section shares the services-list markup — wire admin edit
   // handlers if the admin is viewing.
