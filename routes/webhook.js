@@ -224,8 +224,18 @@ function buildClarifierQ(candidates, saintName) {
     .join(' or ');
   return `Which ${saintName || 'parish'} — ${list}?`;
 }
+// Jurisdictions Haiku is allowed to assert. Anything else (e.g. "other")
+// is treated as null — don't constrain the search on unrecognized values.
+const RECOGNIZED_JURISDICTIONS = new Set([
+  'serbian','greek','antiochian','russian','romanian','macedonian'
+]);
+
 function matchParish(signal, parishes) {
-  const { saint_name, suburb, jurisdiction, explicit_new } = signal || {};
+  const { saint_name, suburb, explicit_new } = signal || {};
+  // Only apply jurisdiction filter for values the prompt actually allows
+  const jurisdiction = RECOGNIZED_JURISDICTIONS.has(signal && signal.jurisdiction)
+    ? signal.jurisdiction : null;
+
   if (explicit_new) return { result: 'new' };
   if (!saint_name)  return { result: 'unknown' };
 
@@ -406,7 +416,28 @@ async function processBatch(sender, messages) {
     const allParishes = db.prepare(
       "SELECT id, name, full_name, jurisdiction, address, acronym FROM parishes WHERE id != '_unassigned'"
     ).all();
-    const matchResult = matchParish(result.parishSignal || {}, allParishes);
+
+    // Acronym pre-check: if raw texts contain a known parish acronym (word-boundary,
+    // case-insensitive), use that match directly — takes priority over signal analysis.
+    // Covers cases where Haiku can't extract a saint name (e.g. input is just "AMCN")
+    // AND cases where bad jurisdiction from Haiku would otherwise exclude the right parish.
+    let acronymParishId = null;
+    if (texts.length > 0) {
+      const combined = texts.join(' ');
+      const byAcronym = allParishes.filter(p => {
+        if (!p.acronym) return false;
+        const esc = p.acronym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp('\\b' + esc + '\\b', 'i').test(combined);
+      });
+      if (byAcronym.length === 1) {
+        acronymParishId = byAcronym[0].id;
+        console.log(`[webhook] Matched parish by acronym: ${acronymParishId} (${byAcronym[0].acronym})`);
+      }
+    }
+
+    const matchResult = acronymParishId
+      ? { result: 'match', id: acronymParishId }
+      : matchParish(result.parishSignal || {}, allParishes);
 
     let parishMatchConfidence, parishMatchQuestion, newParishData;
     let parishId;
@@ -424,21 +455,6 @@ async function processBatch(sender, messages) {
     } else { // 'unknown'
       parishMatchConfidence = 'high'; parishMatchQuestion = null;
       parishId = '_unassigned';       newParishData = null;
-
-      // Acronym fallback: Haiku couldn't extract a saint name, but the sender
-      // may have used the parish's known acronym (e.g. "AMCN").
-      if (texts.length > 0) {
-        const combined = texts.join(' ');
-        const byAcronym = allParishes.filter(p => {
-          if (!p.acronym) return false;
-          const esc = p.acronym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          return new RegExp('\\b' + esc + '\\b', 'i').test(combined);
-        });
-        if (byAcronym.length === 1) {
-          parishId = byAcronym[0].id;
-          console.log(`[webhook] Matched parish by acronym: ${parishId} (${byAcronym[0].acronym})`);
-        }
-      }
     }
 
     // Low-confidence (ambiguous) overrides sender trust — route everything to
