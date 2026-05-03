@@ -1567,8 +1567,32 @@ function hasResettableScope() {
 function syncResetFab() {
   const fab = document.getElementById('reset-fab');
   if (!fab) return;
-  const viewportEmpty = state.viewportParishIds instanceof Set && state.viewportParishIds.size === 0;
-  fab.classList.toggle('visible', hasResettableScope() || viewportEmpty);
+  const vp = state.viewportParishIds;
+  const viewportKnown = vp instanceof Set;
+  const viewportEmpty = viewportKnown && vp.size === 0;
+
+  let show;
+  if (viewportEmpty) {
+    show = true; // "no parishes in area" — show nearest parish CTA
+  } else if (hasResettableScope()) {
+    if (viewportKnown) {
+      // Only show if at least one matching parish is outside the viewport
+      const allInView = state.parishes
+        .filter(p =>
+          p.id !== '_unassigned' && p.lat != null && p.lng != null &&
+          (!state.filters.jurisdiction || p.jurisdiction === state.filters.jurisdiction) &&
+          (!state.filters.parishIds || state.filters.parishIds.has(p.id))
+        )
+        .every(p => vp.has(p.id));
+      show = !allInView;
+    } else {
+      show = true; // viewport not yet initialised — assume needed
+    }
+  } else {
+    show = false;
+  }
+
+  fab.classList.toggle('visible', show);
   syncFilterActiveStack();
   renderInViewChip();
 }
