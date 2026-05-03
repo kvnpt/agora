@@ -1201,10 +1201,26 @@ function renderInViewChip() {
   if (!countEl) return;
   let n = 0;
   if (state.viewportParishIds) {
+    // Build set of parish IDs that have at least one English-matching event
+    // (only needed when English filter is active)
+    let englishParishIds = null;
+    if (state.filters.englishOnly && state.events) {
+      englishParishIds = new Set();
+      for (const e of state.events) {
+        const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
+        if (!langs) continue;
+        const ok = state.filters.englishStrict
+          ? langs.every(l => /english/i.test(l))
+          : langs.some(l => /english/i.test(l));
+        if (ok && e.parish_id != null) englishParishIds.add(e.parish_id);
+      }
+    }
     n = [...state.viewportParishIds].filter(id => {
-      if (!state.filters.jurisdiction) return true;
       const p = state.parishes.find(pa => pa.id === id);
-      return p && p.jurisdiction === state.filters.jurisdiction;
+      if (!p) return false;
+      if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+      if (englishParishIds && !englishParishIds.has(id)) return false;
+      return true;
     }).length;
   }
   countEl.textContent = `${n} ${n === 1 ? 'parish' : 'parishes'} in view`;
@@ -1524,6 +1540,7 @@ function syncResetFab() {
   const viewportEmpty = state.viewportParishIds instanceof Set && state.viewportParishIds.size === 0;
   fab.classList.toggle('visible', hasResettableScope() || viewportEmpty);
   syncFilterActiveStack();
+  renderInViewChip();
 }
 
 function clearAllFilters() {
@@ -1760,6 +1777,10 @@ function initBottomSheet() {
   // to (currentY - 52) on settle. Keeping them in an array lets the drag /
   // snap handlers iterate once instead of duplicating every touchpoint.
   const trackedFabs = [fab, resetFab, filterFab].filter(Boolean);
+  const filterStack = document.getElementById('filter-active-stack');
+  function positionFilterStack(y) {
+    if (filterStack) filterStack.style.bottom = (window.innerHeight - y + 60) + 'px';
+  }
 
   // Snap points (translateY values — lower = sheet higher on screen)
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
@@ -1794,6 +1815,7 @@ function initBottomSheet() {
   sheet.style.transform = `translateY(${currentY}px)`;
   document.body.classList.add('map-expanded');
   trackedFabs.forEach(f => { f.style.top = (currentY - 52) + 'px'; });
+  positionFilterStack(currentY);
 
   // Expose for map.js padding calculation
   window.agoraSheetY = () => currentY;
@@ -1859,6 +1881,7 @@ function initBottomSheet() {
           f.style.top = (currentY - 52) + 'px';
           f.classList.remove('fading');
         });
+        positionFilterStack(currentY);
       }
       updateScrollLock();
       if (window.agoraMap) {
@@ -2543,8 +2566,9 @@ function initParishSheet() {
     // parish sheet is visible, so do it explicitly here).
     const rFab = document.getElementById('reset-fab');
     if (rFab) rFab.classList.add('fading');
-    // Seed filter FAB position so it appears at the right spot when revealed.
+    // Seed filter FAB + stack position so they appear at the right spot when revealed.
     if (filterFab) filterFab.style.top = (SNAP_HALF - 52) + 'px';
+    positionFilterStack(SNAP_HALF);
 
     // Centre the parish in the visible (upper) half of the map, zooming in
     // only if current viewing radius is wider than 30 km.
@@ -3433,7 +3457,7 @@ function renderStream(container, events, opts = {}) {
   } else if (hasDeferredFuture) {
     // Events beyond count cap are already in state.events — reveal with no fetch.
     html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreEvents()">Show ${deferredCount} more events</button><div class="list-footer-ornament">· · ·</div></div>`;
-  } else if (!state._eventsExtended) {
+  } else if (!state._eventsExtended && events.length > 0) {
     const cutoff = new Date(now.getTime() + 60 * 86400000);
     const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
     html += `<div class="list-footer"><button class="list-footer-btn" onclick="loadMoreEvents()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
@@ -4079,7 +4103,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
       </a>
       <button class="btn-action btn-share-event" type="button" data-share-id="${evt.id}">
-        <img class="btn-action-icon" src="https://api.iconify.design/ph:share-network.svg" alt="">Share
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share
       </button>
       ${watchLiveCta}
       ${serviceBookCta}
