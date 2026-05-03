@@ -192,6 +192,9 @@ function generateEvents(weeksAhead = 10, scheduleId = null) {
   let cleaned = disabledCleaned;
   if (!scheduleId) {
     const cutoff = new Date(now.getTime() - 7 * 86400000).toISOString();
+    // event_replaces.replaced_event_id has no ON DELETE CASCADE, so clear those
+    // references before deleting events to avoid FK constraint failures.
+    db.prepare(`DELETE FROM event_replaces WHERE replaced_event_id IN (SELECT id FROM events WHERE source_adapter = 'schedule' AND start_utc < ?)`).run(cutoff);
     cleaned += db.prepare(`DELETE FROM events WHERE source_adapter = 'schedule' AND start_utc < ?`).run(cutoff).changes;
   }
 
