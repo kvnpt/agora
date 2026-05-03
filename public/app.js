@@ -1170,20 +1170,20 @@ function initMultiParishToggle() {
   }
   syncMultiParishButton();
 
-  // In-view chip: toggle sheet between PEEK and HALF (FULL → HALF).
+  // In-view chip: FULL → HALF, HALF → FULL, PEEK → HALF.
   const chip = document.getElementById('in-view-chip');
   if (chip) {
     chip.addEventListener('click', () => {
-      if (!window.agoraSnapTo || !window.agoraSnapHalf || !window.agoraSnapPeek) return;
+      if (!window.agoraSnapTo || !window.agoraSnapHalf) return;
       const y = window.agoraSheetY ? window.agoraSheetY() : null;
       const half = window.agoraSnapHalf();
-      const peek = window.agoraSnapPeek();
+      const full = window.agoraSnapFull ? window.agoraSnapFull() : 0;
       if (y !== null && y < half - 5) {
-        window.agoraSnapTo(half);
+        window.agoraSnapTo(half);   // FULL → HALF
       } else if (y !== null && y >= half - 5 && y <= half + 5) {
-        window.agoraSnapTo(peek);
+        window.agoraSnapTo(full);   // HALF → FULL
       } else {
-        window.agoraSnapTo(half);
+        window.agoraSnapTo(half);   // PEEK → HALF
       }
     });
   }
@@ -1226,6 +1226,16 @@ function hideMapSelectOverlay() {
   el.setAttribute('aria-hidden', 'true');
 }
 
+function updateInViewChevron() {
+  const chip = document.getElementById('in-view-chip');
+  if (!chip || !window.agoraSheetY || !window.agoraSnapHalf) return;
+  const y = window.agoraSheetY();
+  const half = window.agoraSnapHalf();
+  // At FULL (y < half): pressing collapses → point DOWN
+  // At HALF or PEEK (y >= half): pressing expands → point UP
+  chip.classList.toggle('chevron-down', y < half - 5);
+}
+
 function renderInViewChip() {
   const countEl = document.getElementById('in-view-count');
   if (!countEl) return;
@@ -1254,6 +1264,7 @@ function renderInViewChip() {
     }).length;
   }
   countEl.textContent = `${n} ${n === 1 ? 'parish' : 'parishes'} in view`;
+  updateInViewChevron();
 }
 window.agoraRenderInViewChip = renderInViewChip;
 
@@ -1668,6 +1679,30 @@ function initResetFab() {
 
   syncResetFab();
 }
+let _lastFilterCount = null; // null = not yet initialised; skip wave on first render
+
+function triggerFilterWave() {
+  const elements = [];
+  const clearBtn = document.getElementById('filter-clear-btn');
+  if (clearBtn) elements.push(clearBtn);
+  document.querySelectorAll('#filter-chip-list .filter-chip-label').forEach(el => elements.push(el));
+  const filterFab = document.getElementById('btn-filters');
+  if (filterFab) elements.push(filterFab);
+  const sharePill = document.getElementById('mode-url');
+  if (sharePill) elements.push(sharePill);
+
+  elements.forEach((el, i) => {
+    el.classList.remove('filter-wave-pop');
+    void el.offsetWidth;
+    el.style.animationDelay = `${i * 75}ms`;
+    el.classList.add('filter-wave-pop');
+    el.addEventListener('animationend', () => {
+      el.classList.remove('filter-wave-pop');
+      el.style.animationDelay = '';
+    }, { once: true });
+  });
+}
+
 function syncFilterActiveStack() {
   const stack = document.getElementById('filter-active-stack');
   if (!stack) return;
@@ -1676,10 +1711,27 @@ function syncFilterActiveStack() {
   if (state.filters.socialOnly) chips.push('Social');
   if (state.filters.englishOnly) chips.push('English');
   if (state.mode === 'services') chips.push('Schedules');
-  const hasFilters = chips.length > 0 || (state.filters.parishIds && state.filters.parishIds.size > 0);
+  const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
+  const totalCount = chips.length + (parishCount > 0 ? 1 : 0);
+  const hasFilters = chips.length > 0 || parishCount > 0;
+  const wasAdded = _lastFilterCount !== null && totalCount > _lastFilterCount;
+  _lastFilterCount = totalCount;
+
   stack.classList.toggle('visible', hasFilters);
   const list = document.getElementById('filter-chip-list');
-  if (list) list.innerHTML = chips.map(c => `<span class="filter-chip-label">${esc(c)}</span>`).join('');
+  if (list) {
+    list.textContent = '';
+    chips.forEach(c => {
+      const span = document.createElement('span');
+      span.className = 'filter-chip-label';
+      span.textContent = c;
+      list.appendChild(span);
+    });
+  }
+
+  if (wasAdded && hasFilters) {
+    requestAnimationFrame(() => triggerFilterWave());
+  }
 }
 
 
@@ -1974,6 +2026,7 @@ function initBottomSheet() {
       // Also keep the map-select overlay's bottom inset in sync with sheet.
       if (typeof renderParishPills === 'function') renderParishPills();
       document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - currentY) + 'px');
+      if (typeof updateInViewChevron === 'function') updateInViewChevron();
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
     // Fallback if transitionend doesn't fire
@@ -2268,6 +2321,7 @@ function initBottomSheet() {
 
   // Expose snapTo for external callers (map popup "All events" button)
   window.agoraSnapTo = snapTo;
+  window.agoraSnapFull = () => SNAP_FULL;
   window.agoraSnapHalf = () => SNAP_HALF;
   window.agoraSnapPeek = () => SNAP_PEEK;
 

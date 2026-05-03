@@ -1971,6 +1971,7 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
 .filter-clear-chip:hover { color: var(--text); }
 .filter-chip-list { display: flex; flex-direction: column; gap: 4px; }
 .filter-chip-label {
+  display: inline-block;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -1980,6 +1981,17 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   border-radius: 12px;
   color: var(--text-secondary);
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* Filter cascade wave — plays top-to-bottom when a new filter is added */
+@keyframes filter-wave-pop {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.09); color: #b06820; }
+  65%  { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.filter-wave-pop {
+  animation: filter-wave-pop 0.42s cubic-bezier(0.34,1.4,0.64,1) both;
 }
 
 /* Share event button in detail-actions */
@@ -2139,23 +2151,34 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 7px 14px;
   background: none;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 16px;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--text);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.in-view-chip:hover { color: var(--text); border-color: var(--text-secondary); }
+.in-view-chevron {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-top: 1.5px solid currentColor;
+  transform: rotate(-45deg) translateY(1px);
+  transition: transform 0.2s ease;
+}
+.in-view-chip.chevron-down .in-view-chevron {
+  transform: rotate(135deg) translateY(-1px);
+}
 
 /* ── Parish sheet (secondary sheet opened from event drawer) ── */
 .parish-sheet {
