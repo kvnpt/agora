@@ -64,13 +64,15 @@ window.clearDateFocus = function() {
 window.openDatePicker = function(btn) {
   const picker = document.getElementById('date-focus-picker');
   if (!picker) return;
-  // Derive range from loaded events
   const dates = (state.events || []).map(e => isoDateSyd(e.start_utc)).sort();
   const today = isoDateSyd(new Date().toISOString());
   picker.min = today;
   picker.max = dates[dates.length - 1] || today;
   picker.value = state._dateFocus || '';
   picker.onchange = () => { if (picker.value) window.setDateFocus(picker.value); };
+  if (typeof picker.showPicker === 'function') {
+    try { picker.showPicker(); return; } catch(e) { console.warn('[date-picker] showPicker failed:', e); }
+  }
   picker.click();
 };
 
@@ -2931,8 +2933,8 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   contentEl.querySelectorAll('.ps-share-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const url = location.origin + '/' + (parish.acronym || '').toLowerCase();
-      await shareUrl(url, parish.full_name || parish.name || '');
+      const url = location.origin + '/' + (parish.acronym || '').toLowerCase().replace(/\s+/g, '');
+      await shareUrl(url, parish.full_name || parish.name || '', btn);
     });
   });
 
@@ -3160,17 +3162,29 @@ function sortEvents(arr) {
 
 // ── Mode-bar URL display + copy ──
 // Share a URL via native share sheet, falling back to clipboard copy.
-async function shareUrl(url, title = '') {
+// feedbackEl: optional button/element whose text is briefly replaced with 'Copied!'
+async function shareUrl(url, title = '', feedbackEl = null) {
   if (navigator.share) {
-    try { await navigator.share({ url, title }); return; } catch (e) {
-      if (e.name === 'AbortError') return; // user cancelled
+    try { await navigator.share({ title, text: '', url }); return; } catch (e) {
+      if (e.name === 'AbortError') return;
+      console.warn('[share] navigator.share failed:', e);
     }
   }
-  try { await navigator.clipboard.writeText(url); } catch {
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(url);
+    copied = true;
+  } catch(e) {
+    console.warn('[share] clipboard.writeText failed:', e);
     const ta = document.createElement('textarea');
     ta.value = url; document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); } catch {}
+    try { document.execCommand('copy'); copied = true; } catch(e2) { console.warn('[share] execCommand copy failed:', e2); }
     document.body.removeChild(ta);
+  }
+  if (copied && feedbackEl) {
+    const saved = feedbackEl.textContent;
+    feedbackEl.textContent = 'Copied!';
+    setTimeout(() => { feedbackEl.textContent = saved; }, 1500);
   }
 }
 
@@ -4218,7 +4232,7 @@ function wireEventDrawer(drawer, evt) {
     shareEvtBtn.addEventListener('click', async () => {
       const id = shareEvtBtn.dataset.shareId;
       const url = `${location.origin}/${id}`;
-      await shareUrl(url, evt.title);
+      await shareUrl(url, evt.title, shareEvtBtn);
     });
   }
 
