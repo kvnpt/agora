@@ -886,6 +886,7 @@ function initModeBar() {
       if (wasServices || wasSocial || !state.events.length) fetchEvents();
       updateArchdioceseEventsBanner();
       if (typeof syncFiltersButton === 'function') syncFiltersButton();
+      if (typeof syncResetFab === 'function') syncResetFab();
       syncURL();
     });
   }
@@ -916,6 +917,7 @@ function initModeBar() {
       updateArchdioceseEventsBanner();
     }
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
+    if (typeof syncResetFab === 'function') syncResetFab();
     syncURL();
   });
 }
@@ -1572,26 +1574,38 @@ function syncResetFab() {
 }
 
 function clearAllFilters() {
+  const wasServices = state.mode === 'services';
   state.filters.jurisdiction = null;
   state.filters.parishIds = null;
   state.filters.showAllParishes = null;
+  state.filters.socialOnly = false;
+  state.filters.englishOnly = false;
+  state.filters.englishStrict = false;
   state.parishFocus = null;
+  if (wasServices) {
+    state.mode = 'events';
+    const servicesBtn = document.getElementById('btn-services');
+    if (servicesBtn) servicesBtn.classList.remove('active');
+    showView('events');
+  }
   document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('btn-social')?.classList.remove('active');
+  if (typeof syncEnglishButton === 'function') syncEnglishButton();
   if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
   syncParishRowVisibility();
   syncResetFab();
   renderParishPills();
   if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
   if (typeof syncFiltersButton === 'function') syncFiltersButton();
-  if (state.mode === 'services') window.agoraFetchSchedules();
-  else window.agoraFetchEvents();
+  window.agoraFetchEvents();
   syncURL();
 }
 
 function initResetFab() {
   const fab = document.getElementById('reset-fab');
   if (!fab) return;
-  // "Show all" now zooms the map to fit all parishes matching current filters.
+  // "Show all" zooms the map to fit all parishes matching current filters,
+  // accounting for how much of the map is visible above the bottom sheet.
   fab.addEventListener('click', () => {
     const matching = state.parishes.filter(p =>
       p.id !== '_unassigned' &&
@@ -1601,7 +1615,24 @@ function initResetFab() {
     );
     if (matching.length && window.agoraMap) {
       const b = L.latLngBounds(matching.map(p => [p.lat, p.lng])).pad(0.2);
-      window.agoraMap.fitBounds(b, { maxZoom: 13, animate: true, duration: 0.7 });
+      // When sheet is at SNAP_HALF or lower, shrink the visible region by padding
+      // the bottom of the fit window so markers land above the sheet.
+      const sheetY = window.agoraSheetY ? window.agoraSheetY() : window.innerHeight;
+      const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
+      const snapPeek = window.agoraSnapPeek ? window.agoraSnapPeek() : window.innerHeight * 0.85;
+      let bottomPad = 0;
+      if (sheetY <= snapHalf + 10) {
+        // Sheet at HALF: visible map = top half; pad bottom to push fit up
+        bottomPad = window.innerHeight - sheetY + 20;
+      } else if (sheetY < snapPeek - 10) {
+        // Sheet between HALF and PEEK: proportional pad
+        const t = (sheetY - snapHalf) / (snapPeek - snapHalf);
+        bottomPad = Math.round((window.innerHeight - sheetY + 20) * (1 - t));
+      }
+      window.agoraMap.fitBounds(b, {
+        maxZoom: 13, animate: true, duration: 0.7,
+        paddingBottomRight: [0, bottomPad]
+      });
     }
   });
 
@@ -3512,10 +3543,6 @@ function renderStream(container, events, opts = {}) {
   } else if (hasDeferredFuture) {
     // Events beyond count cap are already in state.events — reveal with no fetch.
     html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreEvents()">Show more</button><div class="list-footer-ornament">· · ·</div></div>`;
-  } else if (!state._eventsExtended && events.length > 0) {
-    const cutoff = new Date(now.getTime() + 60 * 86400000);
-    const cutoffLabel = cutoff.toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long' });
-    html += `<div class="list-footer"><button class="list-footer-btn" onclick="loadMoreEvents()">Show events beyond ${cutoffLabel}…</button><div class="list-footer-ornament">· · ·</div></div>`;
   } else {
     html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
   }
