@@ -236,20 +236,15 @@ function addParishSourceAndLayers() {
     'symbol-sort-key': 0
   };
 
-  // Shadow paint = drop-shadow(0 1px 3px rgba(0,0,0,0.28)) approximation.
-  //
-  // Trade-off: text-halo is per-glyph, not per-word. CSS drop-shadow
-  // composites the whole word's alpha mask once, which is why old labels
-  // show a single continuous shadow behind the text. MapLibre can't do
-  // that, so we tune halo small enough that adjacent glyphs' halos merge
-  // (no visible per-letter boxes) but still register as a shadow.
-  // width 1 + blur 2 + 0.3 alpha keeps the fade tight enough to merge.
-  const SHADOW_PAINT = {
-    'text-color': 'rgba(0,0,0,0.3)',
-    'text-halo-color': 'rgba(0,0,0,0.3)',
-    'text-halo-width': 1,
-    'text-halo-blur': 2,
-    'text-translate': [0, 1.5]
+  // Two-stroke effect: thin dark-grey outer ring just beyond the white halo.
+  // MapLibre allows only one halo per layer, so stack two layers — the bottom
+  // layer's wider dark halo is overdrawn by the top layer's crisp text + white
+  // halo, leaving a thin outer dark ring visible at width-delta px.
+  const OUTER_STROKE_PAINT = {
+    'text-color': ['get', 'color'],
+    'text-halo-color': 'rgba(60,60,60,0.85)',
+    'text-halo-width': 2.8,
+    'text-halo-blur': 0
   };
   const CRISP_PAINT = {
     'text-color': ['get', 'color'],
@@ -259,12 +254,12 @@ function addParishSourceAndLayers() {
   };
 
   map.addLayer({
-    id: 'parish-label-shadow',
+    id: 'parish-label-outer',
     type: 'symbol',
     source: PARISH_SOURCE,
     filter: DEFAULT_LABEL_FILTER,
     layout: DEFAULT_LABEL_LAYOUT,
-    paint: SHADOW_PAINT
+    paint: OUTER_STROKE_PAINT
   });
   map.addLayer({
     id: 'parish-label',
@@ -334,15 +329,15 @@ function addParishSourceAndLayers() {
   });
 
   // Emphasised labels (focused / selected) — centred above the marker, no
-  // side-flip. Same shadow + crisp pair as default labels; rendered last so
-  // they paint over the cluster + focus-icon stack.
+  // side-flip. Same outer-stroke + crisp pair as default labels; rendered last
+  // so they paint over the cluster + focus-icon stack.
   map.addLayer({
-    id: 'parish-label-above-shadow',
+    id: 'parish-label-above-outer',
     type: 'symbol',
     source: PARISH_SOURCE,
     filter: ABOVE_LABEL_FILTER,
     layout: ABOVE_LABEL_LAYOUT,
-    paint: SHADOW_PAINT
+    paint: OUTER_STROKE_PAINT
   });
   map.addLayer({
     id: 'parish-label-above',
