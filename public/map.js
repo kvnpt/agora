@@ -20,7 +20,7 @@ const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
 // using Medium uniformly keeps parish labels visually distinct from the
 // basemap layer underneath. (No Bold glyph dir exists.)
 const FONT_MEDIUM = ['Noto Sans Medium'];
-const HALO = 'rgba(255,255,255,0.85)';
+const HALO = '#ffffff';   // fully opaque white — hard edge, no fade
 
 let map = null;
 let styleLoaded = false;
@@ -243,7 +243,7 @@ function addParishSourceAndLayers() {
   const OUTER_STROKE_PAINT = {
     'text-color': ['get', 'color'],
     'text-halo-color': 'rgba(60,60,60,0.85)',
-    'text-halo-width': 2.8,
+    'text-halo-width': 2.3,   // 0.3 px visible band beyond the white halo
     'text-halo-blur': 0
   };
   const CRISP_PAINT = {
