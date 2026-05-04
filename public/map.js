@@ -15,10 +15,10 @@ const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
 const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
-// Two font variants for visual hierarchy. Default labels use Regular; focused
-// and selected get Medium (we have no Bold glyph dir). Each must match an
-// existing /glyphs/<name>/ subdirectory exactly.
-const FONT_REGULAR = ['Noto Sans Regular'];
+// Parish labels always use Medium — the heaviest glyph dir we have shipped.
+// Regular is reserved for the protomaps basemap (city/town/country names);
+// using Medium uniformly keeps parish labels visually distinct from the
+// basemap layer underneath. (No Bold glyph dir exists.)
 const FONT_MEDIUM = ['Noto Sans Medium'];
 const HALO = 'rgba(255,255,255,0.85)';
 
@@ -202,12 +202,7 @@ function addParishSourceAndLayers() {
     filter: ['!', ['has', 'point_count']],
     layout: {
       'text-field': ['get', 'label'],
-      'text-font': [
-        'case',
-        ['==', ['get', 'focused'], true], ['literal', ['Noto Sans Medium']],
-        ['==', ['get', 'selected'], true], ['literal', ['Noto Sans Medium']],
-        ['literal', ['Noto Sans Regular']]
-      ],
+      'text-font': FONT_MEDIUM,
       'text-size': [
         'case',
         ['==', ['get', 'focused'], true], 15,
