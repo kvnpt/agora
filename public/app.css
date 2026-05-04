@@ -57,6 +57,10 @@
     0 -10px 28px rgba(255, 255, 255, 0.7),
     0 0 0 1px var(--sheet-ring);
 
+  /* translucent FAB / chip backgrounds — match the map-fade tint for both modes */
+  --fab-bg: rgba(255, 255, 255, 0.92);
+  --chip-bg: rgba(255, 255, 255, 0.95);
+
   /* loading screen */
   --loading-bg: rgba(252, 250, 243, 0.82);
   --tree-fill: #4f6e41;
@@ -68,12 +72,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* surfaces */
-    --bg: #0b0b0d;
-    --surface: #15161a;
-    --surface-2: #1c1d22;
-    --surface-raised: #22232a;
-    --bg-card: #15161a;
+    /* surfaces — softened from true black so sheets/banner read as charcoal,
+       not OLED-black. --bg stays slightly darker than --surface so cards
+       still pop against the page bg. */
+    --bg: #15161a;
+    --surface: #1c1d22;
+    --surface-2: #25272d;
+    --surface-raised: #2c2e35;
+    --bg-card: #1c1d22;
     --backdrop: rgba(0, 0, 0, 0.7);
 
     /* text */
@@ -104,7 +110,10 @@
     --evening: #8ba3d4;
 
     /* map */
-    --halo: #0b0b0d;
+    /* Halo is a light grey so coloured parish labels lift off dark tiles
+       without a hard-black outline (which would make dark parish colours
+       blend into the basemap). */
+    --halo: #cfcfcf;
     --map-fade: #0b0b0d;
     --map-fade-opacity: 0.25;
 
@@ -114,6 +123,9 @@
     --sheet-shadow:
       0 -10px 28px rgba(0, 0, 0, 0.55),
       0 0 0 1px var(--sheet-ring);
+
+    --fab-bg: rgba(40, 42, 50, 0.92);
+    --chip-bg: rgba(40, 42, 50, 0.95);
 
     /* loading screen */
     --loading-bg: rgba(15, 15, 18, 0.92);
@@ -1169,7 +1181,7 @@ input, select, textarea {
   gap: 12px;
   width: 100%;
   padding: 8px 14px 8px 8px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border-light);
   border-radius: 999px;
   font: inherit;
@@ -1606,7 +1618,7 @@ input, select, textarea {
   font-size: 13px;
   font-weight: 600;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
   text-decoration: none;
@@ -1624,7 +1636,43 @@ input, select, textarea {
   border-color: var(--text);
 }
 .btn-action.btn-primary .btn-action-icon {
-  filter: brightness(0) saturate(100%) invert(100%);
+  /* Iconify SVGs ship black; flip to inverse-text colour so the icon reads
+     against the primary (text-coloured) background. brightness(0)→black,
+     then invert toggles to white in light mode, stays black-against-light
+     in dark mode (where bg = light text). */
+  filter: brightness(0) invert(1);
+}
+@media (prefers-color-scheme: dark) {
+  /* Non-primary action buttons: surface bg is dark, default Iconify SVG is
+     black → invert to white so the directions/share icons read. */
+  .btn-action .btn-action-icon { filter: brightness(0) invert(1); }
+  /* Primary button keeps text-colour bg (light in dark mode), needs dark icon. */
+  .btn-action.btn-primary .btn-action-icon { filter: brightness(0); }
+  /* Mode-bar share pill icon: same dark-icon-on-dark-bg problem. */
+  .share-pill-icon { filter: brightness(0) invert(1); }
+  /* Detail-url copy glyph picks up the page text colour (light) instead of
+     the hardcoded dark filter. */
+  .detail-url-copy { filter: brightness(0) invert(1); }
+  /* Lift parish-coloured acronyms on event cards so dark hues stay legible. */
+  .event-parish-acronym { filter: brightness(1.5); }
+
+  /* Event-type badges — light-mode pastels look like glow strips on a dark
+     surface. Retune to muted dark backgrounds with lifted text colours that
+     keep the same hue family (so the badge → type mapping still reads). */
+  .badge-liturgy   { background: #3a2840; color: #d4a3d4; }
+  .badge-prayer,
+  .badge-vespers   { background: #1f2a3a; color: #9bb8e0; }
+  .badge-youth     { background: #1c303d; color: #a8c8de; }
+  .badge-social,
+  .badge-festival  { background: #1f2e1f; color: #a3c8a3; }
+  .badge-talk      { background: #3a2f1c; color: #d4b682; }
+  .badge-feast     { background: #3a3220; color: #d4c082; }
+  .badge-matins    { background: #3a2820; color: #d4a682; }
+  .badge-fundraiser{ background: #1f2e1f; color: #a3c8a3; }
+  .badge-bilingual { background: #1c2e25; color: #9ad4b8; }
+  .badge-combined  { background: #1a3434; color: #9ad4d4; }
+  .badge-other     { background: #26272c; color: #aaaaaa; }
+  .badge-cancelled { background: #26272c; color: #888888; }
 }
 /* Event detail URL chip — same vocabulary as the mode-bar URL chip: no
    border/bg, text-first, tiny copy glyph on the right. Copy flashes the
@@ -2021,15 +2069,18 @@ a.filters-menu-item { text-decoration: none; }
   align-items: flex-start;
   gap: 4px;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.45s ease;
 }
 body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: auto; }
+#filter-active-stack.fading { opacity: 0; pointer-events: none; }
 .filter-clear-chip {
   font: inherit;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 4px 10px;
-  background: rgba(255,255,255,0.95);
+  background: var(--chip-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text-secondary);
@@ -2045,7 +2096,7 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 4px 10px;
-  background: rgba(255,255,255,0.92);
+  background: var(--fab-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text-secondary);
@@ -2083,7 +2134,7 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   font-weight: 600;
   letter-spacing: 0.03em;
   color: var(--text-secondary, #555);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--fab-bg);
   border: 1px solid var(--border, #d0d0d0);
   border-radius: 18px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
@@ -2106,7 +2157,7 @@ body.map-expanded #reset-fab.visible { display: block; }
   width: 36px;
   height: 36px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--fab-bg);
   border: 1px solid var(--border, #d0d0d0);
   border-radius: 50%;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
@@ -2138,7 +2189,7 @@ body.map-expanded #location-fab { display: flex; }
   width: 36px;
   height: 36px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--fab-bg);
   border: 1px solid var(--border, #d0d0d0);
   border-radius: 50%;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
@@ -2553,7 +2604,7 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   line-height: 1.2;
   padding: 7px 16px;
   color: var(--parish-color, var(--text));
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--parish-color, var(--border));
   border-radius: 999px;
   text-decoration: none;

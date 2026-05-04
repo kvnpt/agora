@@ -2035,6 +2035,7 @@ function initBottomSheet() {
           f.classList.remove('fading');
         });
         positionFilterStack(currentY);
+        if (filterStack) filterStack.classList.remove('fading');
       }
       updateScrollLock();
       if (window.agoraMap) {
@@ -2080,6 +2081,7 @@ function initBottomSheet() {
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
     trackedFabs.forEach(f => f.classList.add('fading'));
+    if (filterStack) filterStack.classList.add('fading');
   }
 
   function moveDrag(y) {
