@@ -195,22 +195,22 @@ function addParishSourceAndLayers() {
     }
   });
 
+  // Default labels — sit beside the dot, engine flips left↔right on collision.
+  // Halo width + soft blur replicate the pre-migration -webkit-text-stroke 4px
+  // + drop-shadow look that MapLibre symbol layers can't render directly.
   map.addLayer({
     id: 'parish-label',
     type: 'symbol',
     source: PARISH_SOURCE,
-    filter: ['!', ['has', 'point_count']],
+    filter: ['all',
+      ['!', ['has', 'point_count']],
+      ['!=', ['get', 'focused'], true],
+      ['!=', ['get', 'selected'], true]
+    ],
     layout: {
       'text-field': ['get', 'label'],
       'text-font': FONT_MEDIUM,
-      'text-size': [
-        'case',
-        ['==', ['get', 'focused'], true], 15,
-        ['==', ['get', 'selected'], true], 14,
-        11
-      ],
-      // Variable anchor: engine flips the label to the other side when the
-      // preferred side collides. Replaces the old greedy median-split flip.
+      'text-size': 11,
       'text-variable-anchor': ['left', 'right'],
       'text-radial-offset': 0.9,
       'text-justify': 'auto',
@@ -219,7 +219,6 @@ function addParishSourceAndLayers() {
       'text-optional': true,
       'symbol-sort-key': [
         'case',
-        ['==', ['get', 'focused'], true], 0,
         ['==', ['get', 'active'], true], 1,
         2
       ]
@@ -227,8 +226,42 @@ function addParishSourceAndLayers() {
     paint: {
       'text-color': ['get', 'color'],
       'text-halo-color': HALO,
-      'text-halo-width': 1.5,
-      'text-halo-blur': 0
+      'text-halo-width': 2,
+      'text-halo-blur': 0.5
+    }
+  });
+
+  // Emphasised labels (focused / selected) — centred above the marker, no
+  // side-flip. Above-positioning matches the pre-migration focused label,
+  // which was anchored at the bottom of its bbox so it floated over the dot.
+  map.addLayer({
+    id: 'parish-label-above',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: ['all',
+      ['!', ['has', 'point_count']],
+      ['any', ['==', ['get', 'focused'], true], ['==', ['get', 'selected'], true]]
+    ],
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-font': FONT_MEDIUM,
+      'text-size': [
+        'case',
+        ['==', ['get', 'focused'], true], 15,
+        14
+      ],
+      'text-anchor': 'bottom',
+      'text-offset': [0, -1.4],   // em — push label clear of the 32 px logo / 16 px ring
+      'text-padding': 2,
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+      'symbol-sort-key': 0
+    },
+    paint: {
+      'text-color': ['get', 'color'],
+      'text-halo-color': HALO,
+      'text-halo-width': 2,
+      'text-halo-blur': 0.5
     }
   });
 
