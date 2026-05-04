@@ -20,7 +20,23 @@ const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
 // using Medium uniformly keeps parish labels visually distinct from the
 // basemap layer underneath. (No Bold glyph dir exists.)
 const FONT_MEDIUM = ['Noto Sans Medium'];
-const HALO = '#ffffff';   // fully opaque white — hard edge, no fade
+
+// Halo color comes from CSS var --halo so dark mode flips it (white halo on
+// light bg, dark halo on dark bg). Read fresh each time it's used.
+function getHalo() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--halo').trim();
+  return v || '#ffffff';
+}
+function getMapFade() {
+  const css = getComputedStyle(document.documentElement);
+  return {
+    color: css.getPropertyValue('--map-fade').trim() || '#ffffff',
+    opacity: parseFloat(css.getPropertyValue('--map-fade-opacity')) || 0.35
+  };
+}
+function isDark() {
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
 
 let map = null;
 let styleLoaded = false;
@@ -57,17 +73,19 @@ function boundsFromPoints(pts) {
 window.agoraPadBounds = padBounds;
 window.agoraBoundsFromPoints = boundsFromPoints;
 
-// ── initMap ────────────────────────────────────────────────────────────
-function initMap(state) {
-  if (map) return;
-
-  if (!window.__pmtilesRegistered) {
-    const proto = new pmtiles.Protocol();
-    maplibregl.addProtocol('pmtiles', proto.tile);
-    window.__pmtilesRegistered = true;
-  }
-
-  const style = {
+// ── Base style builder ────────────────────────────────────────────────
+// Pulled out of initMap so the scheme-change handler can rebuild it. The
+// fade overlay color + the protomaps theme variant flip together with
+// prefers-color-scheme.
+function buildBaseStyle() {
+  const fade = getMapFade();
+  const layers = protomaps_themes_base.default('protomaps', isDark() ? 'dark' : 'light');
+  layers.push({
+    id: 'fade-overlay',
+    type: 'background',
+    paint: { 'background-color': fade.color, 'background-opacity': fade.opacity }
+  });
+  return {
     version: 8,
     glyphs: '/glyphs/{fontstack}/{range}.pbf',
     sprite: window.location.origin + '/sprites/protomaps',
@@ -78,14 +96,21 @@ function initMap(state) {
         attribution: '<a href="https://protomaps.com">Protomaps</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
       }
     },
-    layers: protomaps_themes_base.default('protomaps', 'light')
+    layers
   };
-  // White translucent fade — same overlay as before.
-  style.layers.push({
-    id: 'fade-overlay',
-    type: 'background',
-    paint: { 'background-color': '#ffffff', 'background-opacity': 0.35 }
-  });
+}
+
+// ── initMap ────────────────────────────────────────────────────────────
+function initMap(state) {
+  if (map) return;
+
+  if (!window.__pmtilesRegistered) {
+    const proto = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', proto.tile);
+    window.__pmtilesRegistered = true;
+  }
+
+  const style = buildBaseStyle();
 
   map = new maplibregl.Map({
     container: 'map',
@@ -148,6 +173,32 @@ function initMap(state) {
 
   // Resize once after layout settles (matches old invalidateSize timing).
   setTimeout(() => map && map.resize(), 100);
+
+  // Live scheme switch — when system flips dark/light, rebuild the basemap
+  // style and re-add our custom sources/layers/sprites. setStyle({diff:false})
+  // wipes everything; the style.load handler rehydrates from current state.
+  if (!window.__agoraSchemeListener) {
+    window.__agoraSchemeListener = true;
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!map) return;
+      styleLoaded = false;
+      logoRegistered.clear();
+      map.setStyle(buildBaseStyle(), { diff: false });
+      map.once('style.load', async () => {
+        const st = window.agoraStateRef || { parishes: [], locationActive: false };
+        addParishSourceAndLayers();
+        addUserLocSourceAndLayer(st);
+        setupClickHandlers();
+        await Promise.allSettled([
+          registerGrapeSprites(),
+          registerParishLogos(st.parishes || [])
+        ]);
+        styleLoaded = true;
+        if (typeof updateMap === 'function') updateMap(st);
+        map.triggerRepaint();
+      });
+    });
+  }
 }
 
 // ── Sources & layers ────────────────────────────────────────────────────
@@ -238,7 +289,7 @@ function addParishSourceAndLayers() {
 
   const CRISP_PAINT = {
     'text-color': ['get', 'color'],
-    'text-halo-color': HALO,
+    'text-halo-color': getHalo(),
     'text-halo-width': 2,
     'text-halo-blur': 0
   };
