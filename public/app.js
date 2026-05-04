@@ -1209,7 +1209,13 @@ function initMultiParishToggle() {
           state.filters.parishIds.has(p.id) && p.lat != null && p.lng != null);
         if (sel.length) {
           const b = window.agoraPadBounds(window.agoraBoundsFromPoints(sel), 0.25);
-          window.agoraMap.fitBounds(b, { maxZoom: 13, duration: 700 });
+          const sheetY = window.agoraSheetY ? window.agoraSheetY() : window.innerHeight;
+          const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
+          const bottomPad = sheetY <= snapHalf + 10 ? window.innerHeight - sheetY + 20 : 0;
+          window.agoraMap.fitBounds(b, {
+            maxZoom: 13, duration: 700,
+            padding: { top: 30, right: 30, bottom: 30 + bottomPad, left: 30 }
+          });
         }
       }
     });
@@ -2722,39 +2728,21 @@ function initParishSheet() {
     // only if current viewing radius is wider than 30 km.
     if (window.agoraMap && parish.lat && parish.lng) {
       const map = window.agoraMap;
-      const mapEl = map.getContainer();
-      const targetX = mapEl.clientWidth / 2;
-      const targetY = SNAP_HALF / 2; // middle of the visible (upper) half
-
       // Current radius = great-circle distance from centre to NE corner.
       const c = map.getCenter();
       const ne = map.getBounds().getNorthEast();
       const radiusKm = haversineKm(c.lat, c.lng, ne.lat, ne.lng);
-
-      if (radiusKm > 30) {
-        // Find the zoom that frames a 30 km box around the parish, then fly
-        // to a centre that places the parish at (targetX, targetY). Project
-        // at current zoom and scale the pixel offset by 2^(target-current);
-        // pure math, no internal-API dependency.
-        const latDeg = 30 / 111;
-        const lngDeg = 30 / (111 * Math.cos(parish.lat * Math.PI / 180));
-        const box = window.agoraBoundsFromPoints([
-          { lat: parish.lat - latDeg, lng: parish.lng - lngDeg },
-          { lat: parish.lat + latDeg, lng: parish.lng + lngDeg }
-        ]);
-        const cam = map.cameraForBounds(box);
-        const targetZoom = cam ? cam.zoom : Math.min(map.getZoom() + 2, 14);
-        const currentZoom = map.getZoom();
-        const scale = Math.pow(2, targetZoom - currentZoom);
-        const parishPx = map.project([parish.lng, parish.lat]);
-        const dx = (mapEl.clientWidth / 2 - targetX) / scale;
-        const dy = (mapEl.clientHeight / 2 - targetY) / scale;
-        const newCentre = map.unproject([parishPx.x + dx, parishPx.y + dy]);
-        map.flyTo({ center: [newCentre.lng, newCentre.lat], zoom: targetZoom, duration: 1200 });
-      } else {
-        const point = map.project([parish.lng, parish.lat]);
-        map.panBy([point.x - targetX, point.y - targetY], { duration: 900 });
-      }
+      // Tell flyTo to centre the parish in the *unpadded* viewport — bottom
+      // padding equals the sheet-occluded region, so the parish lands in the
+      // visible upper half. Replaces the old project/unproject offset math.
+      const bottomPad = Math.max(0, window.innerHeight - SNAP_HALF);
+      const flyOpts = {
+        center: [parish.lng, parish.lat],
+        padding: { top: 0, right: 0, bottom: bottomPad, left: 0 },
+        duration: radiusKm > 30 ? 1200 : 900
+      };
+      if (radiusKm > 30) flyOpts.zoom = Math.max(map.getZoom(), 12);
+      map.flyTo(flyOpts);
     }
   }
 

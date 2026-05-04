@@ -13,16 +13,15 @@
 
 const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
-const CLUSTER_RADIUS_PX = 26;     // matches old 1.3 * dot diameter * 2
+const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
-const FONT_STACK = ['Noto Sans Medium', 'Noto Sans Regular'];
+const FONT_LABEL = ['Noto Sans Medium'];   // matches /glyphs/Noto Sans Medium/ — single font, no fallback fontstack
 const HALO = 'rgba(255,255,255,0.85)';
 
 let map = null;
 let styleLoaded = false;
 let pendingUpdate = null;          // queued updateMap call if style not ready
 let parishesById = new Map();      // populated at initMap; fast lookup for click handler
-const featureStateById = new Map(); // last applied {focused, selected, active} per parish_id
 const logoRegistered = new Set();   // parish ids whose focus_<id> sprite is registered
 
 // ── Bounds helpers (replace L.latLngBounds.pad). MapLibre fitBounds takes
@@ -102,15 +101,22 @@ function initMap(state) {
   parishesById.clear();
   for (const p of state.parishes || []) parishesById.set(p.id, p);
 
-  map.on('load', () => {
+  map.on('load', async () => {
     addParishSourceAndLayers();
     addUserLocSourceAndLayer(state);
-    registerGrapeSprites();
-    registerParishLogos(state.parishes || []);
     setupClickHandlers();
     setupViewportPhases();
-    styleLoaded = true;
 
+    // Register sprites BEFORE any layer tries to render them — otherwise the
+    // symbol layers report "image missing" and skip drawing for the first
+    // render frames, which is what made cluster icons vanish at low zoom.
+    await Promise.allSettled([
+      registerGrapeSprites(),
+      registerParishLogos(state.parishes || [])
+    ]);
+    map.triggerRepaint();
+
+    styleLoaded = true;
     if (window.lsLog) window.lsLog('✓ map ready');
 
     // Fresh session (no cached location): fit to all parishes.
@@ -147,63 +153,60 @@ function addParishSourceAndLayers() {
     data: { type: 'FeatureCollection', features: [] },
     cluster: true,
     clusterRadius: CLUSTER_RADIUS_PX,
-    clusterMinPoints: CLUSTER_MIN_POINTS,
-    promoteId: 'parish_id'  // use parish_id as the feature id for setFeatureState
+    clusterMinPoints: CLUSTER_MIN_POINTS
   });
 
-  // parish-circle: non-clustered parish dots. Radius/stroke driven by feature
-  // state so focus/selected/active toggles do not rebuild the source.
+  // Drive focus/selected/active off feature properties (rebuilt on every
+  // updateMap) rather than feature-state. ~50 features, source rebuild is
+  // free, and properties are bulletproof across MapLibre versions and apply
+  // uniformly to layout + paint expressions (feature-state has version-by-
+  // -version quirks on symbol layers).
   map.addLayer({
     id: 'parish-circle',
     type: 'circle',
     source: PARISH_SOURCE,
-    filter: ['!', ['has', 'point_count']],
+    filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'focused'], true]],
     paint: {
       'circle-radius': [
         'case',
-        ['boolean', ['feature-state', 'focused'], false], 0,
-        ['boolean', ['feature-state', 'selected'], false], 8,
-        ['boolean', ['feature-state', 'active'], false], 8,
+        ['==', ['get', 'selected'], true], 8,
+        ['==', ['get', 'active'], true], 8,
         5
       ],
       'circle-color': ['get', 'color'],
       'circle-stroke-color': '#ffffff',
       'circle-stroke-width': [
         'case',
-        ['boolean', ['feature-state', 'selected'], false], 2.5,
-        ['boolean', ['feature-state', 'active'], false], 2.5,
+        ['==', ['get', 'selected'], true], 2.5,
+        ['==', ['get', 'active'], true], 2.5,
         1.5
       ]
     }
   });
 
-  // parish-label: text label per non-clustered parish. WASM placement handles
-  // collision (replaces the old greedy median-split algorithm). Priority via
-  // symbol-sort-key so focused/active labels win when collisions force a drop.
   map.addLayer({
     id: 'parish-label',
     type: 'symbol',
     source: PARISH_SOURCE,
     filter: ['!', ['has', 'point_count']],
     layout: {
-      'text-field': ['coalesce', ['get', 'line1'], ['get', 'name']],
-      'text-font': FONT_STACK,
+      'text-field': ['get', 'label'],
+      'text-font': FONT_LABEL,
       'text-size': [
         'case',
-        ['boolean', ['feature-state', 'focused'], false], 15,
-        ['boolean', ['feature-state', 'selected'], false], 14,
+        ['==', ['get', 'focused'], true], 15,
+        ['==', ['get', 'selected'], true], 14,
         11
       ],
-      'text-variable-anchor': ['left', 'right'],
-      'text-radial-offset': 0.9,
-      'text-justify': 'auto',
+      'text-anchor': 'left',
+      'text-offset': [0.7, 0],
       'text-padding': 2,
       'text-allow-overlap': false,
       'text-optional': true,
       'symbol-sort-key': [
         'case',
-        ['boolean', ['feature-state', 'focused'], false], 0,
-        ['boolean', ['feature-state', 'active'], false], 1,
+        ['==', ['get', 'focused'], true], 0,
+        ['==', ['get', 'active'], true], 1,
         2
       ]
     },
@@ -215,26 +218,20 @@ function addParishSourceAndLayers() {
     }
   });
 
-  // parish-focus-icon: 32 px circular logo for the focused parish. Hidden via
-  // icon-opacity for non-focused features.
+  // parish-focus-icon: only renders for the single focused parish. Filter on
+  // the property gates visibility entirely — no need to rely on icon-opacity
+  // tricks.
   map.addLayer({
     id: 'parish-focus-icon',
     type: 'symbol',
     source: PARISH_SOURCE,
-    filter: ['!', ['has', 'point_count']],
+    filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']],
     layout: {
       'icon-image': ['get', 'focus_icon_id'],
       'icon-size': 1,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
       'icon-anchor': 'center'
-    },
-    paint: {
-      'icon-opacity': [
-        'case',
-        ['boolean', ['feature-state', 'focused'], false], 1,
-        0
-      ]
     }
   });
 
@@ -265,7 +262,7 @@ function addParishSourceAndLayers() {
     filter: ['all', ['has', 'point_count'], ['>=', ['get', 'point_count'], 8]],
     layout: {
       'text-field': ['concat', '+', ['to-string', ['-', ['get', 'point_count'], 7]]],
-      'text-font': FONT_STACK,
+      'text-font': FONT_LABEL,
       'text-size': 11,
       'text-offset': [0.7, 0.7],
       'text-allow-overlap': true,
@@ -314,10 +311,10 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 // to per-count bitmaps and register via map.addImage. Symbol layer references
 // them by name via icon-image expression.
 function registerGrapeSprites() {
-  for (const n of [5, 6, 7]) {
+  return Promise.all([5, 6, 7].map(n =>
     rasteriseSvgAndRegister(buildGrapeSvg(n), `grape_${n}`, 40, 40, 2)
-      .catch(err => console.warn('grape sprite fail', n, err));
-  }
+      .catch(err => console.warn('grape sprite fail', n, err))
+  ));
 }
 
 function buildGrapeSvg(count) {
@@ -372,10 +369,11 @@ function loadSvgAsImage(svgString) {
 // focus-icon layer's icon-image expression can resolve as soon as a parish
 // gets focused. ~50–150 small images, completes within first second.
 function registerParishLogos(parishes) {
-  for (const p of parishes) {
-    if (!p.logo_path || logoRegistered.has(p.id)) continue;
-    bakeAndRegisterLogo(p).catch(() => { /* skip silently — feature falls back to circle */ });
-  }
+  return Promise.allSettled(
+    parishes
+      .filter(p => p.logo_path && !logoRegistered.has(p.id))
+      .map(p => bakeAndRegisterLogo(p).catch(() => { /* skip silently — feature falls back to circle */ }))
+  );
 }
 
 async function bakeAndRegisterLogo(parish) {
@@ -450,7 +448,14 @@ function updateMap(state, opts = {}) {
 
   const hardFilterOnEvents = state.filters.socialOnly || state.filters.englishOnly;
 
-  // Build features.
+  const focusId = state.parishSheetFocus || null;
+  const selectedSet = (state.selectionMode && state.filters.parishIds)
+    ? state.filters.parishIds
+    : null;
+
+  // Build features. Focus/selected/active are baked into properties so the
+  // layer expressions can read them with ['get', ...]; rebuilt-source-on-state
+  // is fine for ~50 features and avoids feature-state quirks on symbol layers.
   const features = [];
   for (const p of state.parishes || []) {
     if (p.id === '_unassigned') continue;
@@ -458,17 +463,20 @@ function updateMap(state, opts = {}) {
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) continue;
     if (hardFilterOnEvents && !activeSet.has(p.id)) continue;
     const parts = (p.name || '').split(',');
-    const line1 = (parts[0] || '').trim();
+    const label = (parts[0] || p.name || '').trim();
+    const props = {
+      parish_id: p.id,
+      label,
+      color: p.color || '#000',
+      jurisdiction: p.jurisdiction || '',
+      focused: p.id === focusId,
+      selected: selectedSet ? selectedSet.has(p.id) : false,
+      active: activeSet.has(p.id)
+    };
+    if (logoRegistered.has(p.id)) props.focus_icon_id = `focus_${p.id}`;
     features.push({
       type: 'Feature',
-      properties: {
-        parish_id: p.id,
-        name: p.name,
-        line1,
-        color: p.color || '#000',
-        jurisdiction: p.jurisdiction || '',
-        focus_icon_id: p.logo_path ? `focus_${p.id}` : ''
-      },
+      properties: props,
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
     });
   }
@@ -476,37 +484,8 @@ function updateMap(state, opts = {}) {
   const src = map.getSource(PARISH_SOURCE);
   if (src) src.setData({ type: 'FeatureCollection', features });
 
-  // Apply feature states (focused / selected / active) per parish.
-  const focusId = state.parishSheetFocus || null;
-  const selectedSet = (state.selectionMode && state.filters.parishIds)
-    ? state.filters.parishIds
-    : null;
-
-  const presentIds = new Set();
-  for (const f of features) {
-    const id = f.properties.parish_id;
-    presentIds.add(id);
-    const desired = {
-      focused: id === focusId,
-      selected: selectedSet ? selectedSet.has(id) : false,
-      active: activeSet.has(id)
-    };
-    const prev = featureStateById.get(id);
-    if (!prev || prev.focused !== desired.focused || prev.selected !== desired.selected || prev.active !== desired.active) {
-      map.setFeatureState({ source: PARISH_SOURCE, id }, desired);
-      featureStateById.set(id, desired);
-    }
-  }
-  // Clear state for features no longer present.
-  for (const id of Array.from(featureStateById.keys())) {
-    if (!presentIds.has(id)) {
-      try { map.removeFeatureState({ source: PARISH_SOURCE, id }); } catch (_) { /* feature gone, ignore */ }
-      featureStateById.delete(id);
-    }
-  }
-
   if (opts.fit) {
-    const activeFeatures = features.filter(f => activeSet.has(f.properties.parish_id));
+    const activeFeatures = features.filter(f => f.properties.active);
     if (activeFeatures.length) {
       let b = boundsFromPoints(activeFeatures.map(f => ({
         lat: f.geometry.coordinates[1],
