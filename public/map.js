@@ -236,16 +236,6 @@ function addParishSourceAndLayers() {
     'symbol-sort-key': 0
   };
 
-  // Two-stroke effect: thin dark-grey outer ring just beyond the white halo.
-  // MapLibre allows only one halo per layer, so stack two layers — the bottom
-  // layer's wider dark halo is overdrawn by the top layer's crisp text + white
-  // halo, leaving a thin outer dark ring visible at width-delta px.
-  const OUTER_STROKE_PAINT = {
-    'text-color': ['get', 'color'],
-    'text-halo-color': 'rgba(60,60,60,0.85)',
-    'text-halo-width': 2.3,   // 0.3 px visible band beyond the white halo
-    'text-halo-blur': 0
-  };
   const CRISP_PAINT = {
     'text-color': ['get', 'color'],
     'text-halo-color': HALO,
@@ -253,14 +243,6 @@ function addParishSourceAndLayers() {
     'text-halo-blur': 0
   };
 
-  map.addLayer({
-    id: 'parish-label-outer',
-    type: 'symbol',
-    source: PARISH_SOURCE,
-    filter: DEFAULT_LABEL_FILTER,
-    layout: DEFAULT_LABEL_LAYOUT,
-    paint: OUTER_STROKE_PAINT
-  });
   map.addLayer({
     id: 'parish-label',
     type: 'symbol',
@@ -329,16 +311,7 @@ function addParishSourceAndLayers() {
   });
 
   // Emphasised labels (focused / selected) — centred above the marker, no
-  // side-flip. Same outer-stroke + crisp pair as default labels; rendered last
-  // so they paint over the cluster + focus-icon stack.
-  map.addLayer({
-    id: 'parish-label-above-outer',
-    type: 'symbol',
-    source: PARISH_SOURCE,
-    filter: ABOVE_LABEL_FILTER,
-    layout: ABOVE_LABEL_LAYOUT,
-    paint: OUTER_STROKE_PAINT
-  });
+  // side-flip. Rendered last so they paint over the cluster + focus-icon stack.
   map.addLayer({
     id: 'parish-label-above',
     type: 'symbol',
