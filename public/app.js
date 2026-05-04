@@ -2728,21 +2728,28 @@ function initParishSheet() {
     // only if current viewing radius is wider than 30 km.
     if (window.agoraMap && parish.lat && parish.lng) {
       const map = window.agoraMap;
-      // Current radius = great-circle distance from centre to NE corner.
       const c = map.getCenter();
       const ne = map.getBounds().getNorthEast();
       const radiusKm = haversineKm(c.lat, c.lng, ne.lat, ne.lng);
-      // Tell flyTo to centre the parish in the *unpadded* viewport — bottom
-      // padding equals the sheet-occluded region, so the parish lands in the
-      // visible upper half. Replaces the old project/unproject offset math.
-      const bottomPad = Math.max(0, window.innerHeight - SNAP_HALF);
-      const flyOpts = {
-        center: [parish.lng, parish.lat],
-        padding: { top: 0, right: 0, bottom: bottomPad, left: 0 },
+
+      // Compute the target camera centre directly: project the parish at
+      // current zoom, push the centre down by half the sheet-occluded height
+      // (scaled to target zoom), unproject. Avoids relying on flyTo's
+      // padding/offset options, which silently no-op'd in MapLibre 4.7.1
+      // when combined with center+zoom.
+      const currentZoom = map.getZoom();
+      const targetZoom = radiusKm > 30 ? Math.max(currentZoom, 12) : currentZoom;
+      const scale = Math.pow(2, targetZoom - currentZoom);
+      const containerH = map.getContainer().clientHeight;
+      const dyAtTargetZoom = (containerH - SNAP_HALF) / 2;
+      const parishPx = map.project([parish.lng, parish.lat]);
+      const newCentre = map.unproject([parishPx.x, parishPx.y + dyAtTargetZoom / scale]);
+
+      map.flyTo({
+        center: [newCentre.lng, newCentre.lat],
+        zoom: targetZoom,
         duration: radiusKm > 30 ? 1200 : 900
-      };
-      if (radiusKm > 30) flyOpts.zoom = Math.max(map.getZoom(), 12);
-      map.flyTo(flyOpts);
+      });
     }
   }
 
