@@ -15,7 +15,11 @@ const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
 const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
-const FONT_LABEL = ['Noto Sans Medium'];   // matches /glyphs/Noto Sans Medium/ — single font, no fallback fontstack
+// Two font variants for visual hierarchy. Default labels use Regular; focused
+// and selected get Medium (we have no Bold glyph dir). Each must match an
+// existing /glyphs/<name>/ subdirectory exactly.
+const FONT_REGULAR = ['Noto Sans Regular'];
+const FONT_MEDIUM = ['Noto Sans Medium'];
 const HALO = 'rgba(255,255,255,0.85)';
 
 let map = null;
@@ -161,24 +165,31 @@ function addParishSourceAndLayers() {
   // free, and properties are bulletproof across MapLibre versions and apply
   // uniformly to layout + paint expressions (feature-state has version-by-
   // -version quirks on symbol layers).
+  // Circle layer renders for every non-cluster parish, including the focused
+  // one. When focused parish has a logo, circle-radius drops to 0 and the
+  // focus-icon symbol covers it; without a logo, the circle stays at 8 so
+  // the focused parish is still visible. Active state has no size delta —
+  // active is purely a sort-key for label priority (matches the pre-migration
+  // behaviour where active dots had higher z-index but identical visuals).
   map.addLayer({
     id: 'parish-circle',
     type: 'circle',
     source: PARISH_SOURCE,
-    filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'focused'], true]],
+    filter: ['!', ['has', 'point_count']],
     paint: {
       'circle-radius': [
         'case',
+        ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
+        ['==', ['get', 'focused'], true], 8,
         ['==', ['get', 'selected'], true], 8,
-        ['==', ['get', 'active'], true], 8,
         5
       ],
       'circle-color': ['get', 'color'],
       'circle-stroke-color': '#ffffff',
       'circle-stroke-width': [
         'case',
+        ['==', ['get', 'focused'], true], 2.5,
         ['==', ['get', 'selected'], true], 2.5,
-        ['==', ['get', 'active'], true], 2.5,
         1.5
       ]
     }
@@ -191,15 +202,23 @@ function addParishSourceAndLayers() {
     filter: ['!', ['has', 'point_count']],
     layout: {
       'text-field': ['get', 'label'],
-      'text-font': FONT_LABEL,
+      'text-font': [
+        'case',
+        ['==', ['get', 'focused'], true], ['literal', ['Noto Sans Medium']],
+        ['==', ['get', 'selected'], true], ['literal', ['Noto Sans Medium']],
+        ['literal', ['Noto Sans Regular']]
+      ],
       'text-size': [
         'case',
         ['==', ['get', 'focused'], true], 15,
         ['==', ['get', 'selected'], true], 14,
         11
       ],
-      'text-anchor': 'left',
-      'text-offset': [0.7, 0],
+      // Variable anchor: engine flips the label to the other side when the
+      // preferred side collides. Replaces the old greedy median-split flip.
+      'text-variable-anchor': ['left', 'right'],
+      'text-radial-offset': 0.9,
+      'text-justify': 'auto',
       'text-padding': 2,
       'text-allow-overlap': false,
       'text-optional': true,
@@ -262,7 +281,7 @@ function addParishSourceAndLayers() {
     filter: ['all', ['has', 'point_count'], ['>=', ['get', 'point_count'], 8]],
     layout: {
       'text-field': ['concat', '+', ['to-string', ['-', ['get', 'point_count'], 7]]],
-      'text-font': FONT_LABEL,
+      'text-font': FONT_MEDIUM,
       'text-size': 11,
       'text-offset': [0.7, 0.7],
       'text-allow-overlap': true,
