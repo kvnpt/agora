@@ -237,15 +237,18 @@ function addParishSourceAndLayers() {
   };
 
   // Shadow paint = drop-shadow(0 1px 3px rgba(0,0,0,0.28)) approximation.
-  // Mostly fade, very little solid halo — a thick solid halo reads as a hard
-  // dark border, not a shadow. width 1 + blur 4 gives a 1 px solid lip
-  // around the glyph that fades over 4 px to transparent. Text color is
-  // bumped to ~0.45 alpha so the glyph body still reads through the blur.
+  //
+  // Trade-off: text-halo is per-glyph, not per-word. CSS drop-shadow
+  // composites the whole word's alpha mask once, which is why old labels
+  // show a single continuous shadow behind the text. MapLibre can't do
+  // that, so we tune halo small enough that adjacent glyphs' halos merge
+  // (no visible per-letter boxes) but still register as a shadow.
+  // width 1 + blur 2 + 0.3 alpha keeps the fade tight enough to merge.
   const SHADOW_PAINT = {
-    'text-color': 'rgba(0,0,0,0.45)',
-    'text-halo-color': 'rgba(0,0,0,0.45)',
+    'text-color': 'rgba(0,0,0,0.3)',
+    'text-halo-color': 'rgba(0,0,0,0.3)',
     'text-halo-width': 1,
-    'text-halo-blur': 4,
+    'text-halo-blur': 2,
     'text-translate': [0, 1.5]
   };
   const CRISP_PAINT = {
