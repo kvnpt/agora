@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
-  if (window.lsLog) window.lsLog('Initialising Leaflet map…');
+  if (window.lsLog) window.lsLog('Initialising MapLibre…');
   initMap(state);
   updateMap(state);
   if (window.lsLog) window.lsLog('✓ map ready');
@@ -127,12 +127,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // If the URL named a single parish (e.g. /gosr), open the parish sheet so
   // deep links and refreshes land on the parish card instead of just
-  // filtering the main list. Defer past initMap's invalidateSize (100ms) so
+  // filtering the main list. Defer past initMap's resize (100ms) so
   // the pan/zoom inside openParishSheet reads a real container size.
   if (state.parishFocus && state.parishSheetFocus !== state.parishFocus) {
     const focusPid = state.parishFocus;
     setTimeout(() => {
-      if (window.agoraMap) window.agoraMap.invalidateSize();
+      if (window.agoraMap) window.agoraMap.resize();
       openParishSheet(focusPid, { replaceUrl: true });
     }, 150);
   }
@@ -514,15 +514,21 @@ async function reconcileStateFromUrl() {
 function centerMapOnUser() {
   if (!window.agoraMap || state.userLat == null || state.userLng == null) return;
   const map = window.agoraMap;
-  const targetZoom = Math.max(map.getZoom(), 13);
+  const currentZoom = map.getZoom();
+  const targetZoom = Math.max(currentZoom, 13);
   // Place user at the visual centre of the visible map (above the SNAP_HALF sheet).
   const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
-  const targetX = map.getContainer().clientWidth / 2;
+  const container = map.getContainer();
+  const targetX = container.clientWidth / 2;
   const targetY = snapHalf / 2;
-  const userPx = map.project([state.userLat, state.userLng], targetZoom);
-  const size = map.getSize();
-  const newCentrePx = userPx.add([size.x / 2 - targetX, size.y / 2 - targetY]);
-  map.flyTo(map.unproject(newCentrePx, targetZoom), targetZoom, { animate: true, duration: 0.9 });
+  // Project at current zoom, then scale offset by the zoom delta so the
+  // post-fly position lands the user dot at (targetX, targetY).
+  const userPx = map.project([state.userLng, state.userLat]);
+  const scale = Math.pow(2, targetZoom - currentZoom);
+  const dx = (container.clientWidth / 2 - targetX) / scale;
+  const dy = (container.clientHeight / 2 - targetY) / scale;
+  const newCentre = map.unproject([userPx.x + dx, userPx.y + dy]);
+  map.flyTo({ center: [newCentre.lng, newCentre.lat], zoom: targetZoom, duration: 900 });
 }
 
 // Compute viewport parish set from current map bounds. Cheap — pure math
@@ -533,7 +539,7 @@ function recomputeViewportSet() {
   const ids = new Set();
   for (const p of state.parishes) {
     if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
-    if (b.contains([p.lat, p.lng])) ids.add(p.id);
+    if (b.contains([p.lng, p.lat])) ids.add(p.id);
   }
   state.viewportParishIds = ids;
 }
@@ -569,10 +575,12 @@ window.agoraOnViewportListPhase = onViewportListPhase;
 function visibleCentreLatLng() {
   if (!window.agoraMap) return null;
   const m = window.agoraMap;
-  const size = m.getSize();
-  const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : size.y;
-  const visibleBottom = Math.max(0, Math.min(sheetY, size.y));
-  return m.containerPointToLatLng([size.x / 2, visibleBottom / 2]);
+  const container = m.getContainer();
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : h;
+  const visibleBottom = Math.max(0, Math.min(sheetY, h));
+  return m.unproject([w / 2, visibleBottom / 2]);
 }
 window.agoraVisibleCentre = visibleCentreLatLng;
 
@@ -618,8 +626,11 @@ function handleEmptyStateCta(action) {
   const originLng = state.locationActive ? state.userLng
     : (vc2 ? vc2.lng : state.userLng);
   if (window.agoraMap) {
-    const bounds = L.latLngBounds([[originLat, originLng], [target.lat, target.lng]]).pad(0.25);
-    window.agoraMap.fitBounds(bounds, { maxZoom: 13, animate: true, duration: 0.6 });
+    const bounds = window.agoraPadBounds(
+      window.agoraBoundsFromPoints([{ lat: originLat, lng: originLng }, { lat: target.lat, lng: target.lng }]),
+      0.25
+    );
+    window.agoraMap.fitBounds(bounds, { maxZoom: 13, duration: 600 });
   }
 }
 window.agoraEmptyStateCta = handleEmptyStateCta;
@@ -1027,8 +1038,8 @@ function renderParishPills() {
   let originLat = null, originLng = null;
   const vc = window.agoraMap ? (() => {
     const m = window.agoraMap;
-    const sz = m.getSize();
-    return m.containerPointToLatLng([sz.x / 2, (window.innerHeight * 0.5) / 2]);
+    const w = m.getContainer().clientWidth;
+    return m.unproject([w / 2, (window.innerHeight * 0.5) / 2]);
   })() : null;
   if (vc) {
     originLat = vc.lat; originLng = vc.lng;
@@ -1197,8 +1208,8 @@ function initMultiParishToggle() {
         const sel = state.parishes.filter(p =>
           state.filters.parishIds.has(p.id) && p.lat != null && p.lng != null);
         if (sel.length) {
-          const b = L.latLngBounds(sel.map(p => [p.lat, p.lng])).pad(0.25);
-          window.agoraMap.fitBounds(b, { maxZoom: 13, animate: true, duration: 0.7 });
+          const b = window.agoraPadBounds(window.agoraBoundsFromPoints(sel), 0.25);
+          window.agoraMap.fitBounds(b, { maxZoom: 13, duration: 700 });
         }
       }
     });
@@ -1649,7 +1660,7 @@ function initResetFab() {
       (!state.filters.parishIds || state.filters.parishIds.has(p.id))
     );
     if (matching.length && window.agoraMap) {
-      const b = L.latLngBounds(matching.map(p => [p.lat, p.lng])).pad(0.2);
+      const b = window.agoraPadBounds(window.agoraBoundsFromPoints(matching), 0.2);
       // When sheet is at SNAP_HALF or lower, shrink the visible region by padding
       // the bottom of the fit window so markers land above the sheet.
       const sheetY = window.agoraSheetY ? window.agoraSheetY() : window.innerHeight;
@@ -1665,8 +1676,8 @@ function initResetFab() {
         bottomPad = Math.round((window.innerHeight - sheetY + 20) * (1 - t));
       }
       window.agoraMap.fitBounds(b, {
-        maxZoom: 13, animate: true, duration: 0.7,
-        paddingBottomRight: [0, bottomPad]
+        maxZoom: 13, duration: 700,
+        padding: { top: 0, right: 0, bottom: bottomPad, left: 0 }
       });
     }
   });
@@ -2020,7 +2031,7 @@ function initBottomSheet() {
       }
       updateScrollLock();
       if (window.agoraMap) {
-        window.agoraMap.invalidateSize();
+        window.agoraMap.resize();
       }
       // Visible-rect centre changed → re-rank pills (sort origin moved).
       // Also keep the map-select overlay's bottom inset in sync with sheet.
@@ -2722,24 +2733,27 @@ function initParishSheet() {
 
       if (radiusKm > 30) {
         // Find the zoom that frames a 30 km box around the parish, then fly
-        // to a centre that places the parish at (targetX, targetY) at that
-        // zoom. Projecting in target-zoom pixel space is the standard way to
-        // express a pan-with-offset under Leaflet's flyTo.
+        // to a centre that places the parish at (targetX, targetY). Project
+        // at current zoom and scale the pixel offset by 2^(target-current);
+        // pure math, no internal-API dependency.
         const latDeg = 30 / 111;
         const lngDeg = 30 / (111 * Math.cos(parish.lat * Math.PI / 180));
-        const box = L.latLngBounds(
-          [parish.lat - latDeg, parish.lng - lngDeg],
-          [parish.lat + latDeg, parish.lng + lngDeg]
-        );
-        const targetZoom = map.getBoundsZoom(box);
-        const parishPx = map.project([parish.lat, parish.lng], targetZoom);
-        const size = map.getSize();
-        const newCentrePx = parishPx.add([size.x / 2 - targetX, size.y / 2 - targetY]);
-        const newCentre = map.unproject(newCentrePx, targetZoom);
-        map.flyTo(newCentre, targetZoom, { duration: 1.2 });
+        const box = window.agoraBoundsFromPoints([
+          { lat: parish.lat - latDeg, lng: parish.lng - lngDeg },
+          { lat: parish.lat + latDeg, lng: parish.lng + lngDeg }
+        ]);
+        const cam = map.cameraForBounds(box);
+        const targetZoom = cam ? cam.zoom : Math.min(map.getZoom() + 2, 14);
+        const currentZoom = map.getZoom();
+        const scale = Math.pow(2, targetZoom - currentZoom);
+        const parishPx = map.project([parish.lng, parish.lat]);
+        const dx = (mapEl.clientWidth / 2 - targetX) / scale;
+        const dy = (mapEl.clientHeight / 2 - targetY) / scale;
+        const newCentre = map.unproject([parishPx.x + dx, parishPx.y + dy]);
+        map.flyTo({ center: [newCentre.lng, newCentre.lat], zoom: targetZoom, duration: 1200 });
       } else {
-        const point = map.latLngToContainerPoint([parish.lat, parish.lng]);
-        map.panBy([point.x - targetX, point.y - targetY], { animate: true, duration: 0.9 });
+        const point = map.project([parish.lng, parish.lat]);
+        map.panBy([point.x - targetX, point.y - targetY], { duration: 900 });
       }
     }
   }

@@ -1813,44 +1813,6 @@ a.filters-menu-item { text-decoration: none; }
   z-index: 999;
 }
 
-/* ── Map text labels ── */
-.map-label {
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: normal;
-  word-break: break-word;
-  transform: translateY(-50%);
-  -webkit-text-stroke: 4px rgba(255,255,255,0.85);
-  paint-order: stroke fill;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.28));
-}
-.map-label-focus {
-  font-size: 15px;
-  font-weight: 700;
-  text-align: center;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  height: 100%;
-  line-height: 1.15;
-  overflow: visible;
-  transform: none;
-  -webkit-text-stroke: 4px rgba(255,255,255,0.85);
-  paint-order: stroke fill;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.28));
-}
-/* Selected (in selection mode): same emphasis as focus, but stays in the
-   side-flow position (no free-float-above-dot). Multiple parishes can be
-   selected at once, so each label sits next to its dot. */
-.map-label-selected {
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.15;
-}
-
 /* ── Event poster in detail panel ── */
 .detail-poster {
   display: flex;

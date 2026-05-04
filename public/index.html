@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Orthodox Services & Events — Sydney</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/lib/maplibre-gl.css" />
   <link rel="stylesheet" href="/app.css">
 </head>
@@ -79,7 +78,7 @@
         'Resolving adapter registry…',
         'Mounting event-card delegate…',
         'Opening IndexedDB (noop)…',
-        'Priming Leaflet divIcon pool…',
+        'Priming MapLibre symbol layers…',
         'Loading tabler-location.svg…',
         'Checking service worker (disabled)…',
         'Measuring safe-area insets…'
@@ -336,10 +335,8 @@
   <!-- Hidden date picker — triggered by calendar icon in day headers -->
   <input type="date" id="date-focus-picker" style="position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;top:0;left:0" tabindex="-1" aria-hidden="true">
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
-  <script src="/lib/leaflet-maplibre-gl.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
   <script src="/map.js"></script>
   <script src="/filters.js"></script>
