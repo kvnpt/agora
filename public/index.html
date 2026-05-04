@@ -79,7 +79,7 @@
         'Mounting event-card delegate…',
         'Opening IndexedDB (noop)…',
         'Priming MapLibre symbol layers…',
-        'Loading tabler-location.svg…',
+        'Hydrating location reticle…',
         'Checking service worker (disabled)…',
         'Measuring safe-area insets…'
       ];
@@ -206,8 +206,15 @@
   <button id="reset-fab" type="button">Show all</button>
 
   <!-- Location FAB (bottom right, above sheet) -->
-  <button id="location-fab" type="button" title="My location">
-    <img src="/tabler-location.svg" alt="">
+  <button id="location-fab" type="button" title="My location" aria-label="My location">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.7" fill="none"/>
+      <line x1="12" y1="2" x2="12" y2="4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      <line x1="12" y1="19.5" x2="12" y2="22" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      <line x1="2" y1="12" x2="4.5" y2="12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      <line x1="19.5" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </svg>
   </button>
 
   <!-- Filters FAB (bottom left, above sheet) + active filter label stack -->

@@ -2007,14 +2007,14 @@ body.map-expanded #reset-fab.visible { display: block; }
   opacity: 1;
   transition: opacity 0.45s ease;
 }
-#location-fab img {
+#location-fab svg {
   width: 22px;
   height: 22px;
-  filter: brightness(0) saturate(100%) invert(60%);
-  transform: translateX(-1px);
+  color: #888;
+  transition: color 0.18s ease;
 }
 #location-fab.active { border-color: #4285f4; }
-#location-fab.active img { filter: brightness(0) saturate(100%) invert(38%) sepia(98%) saturate(1000%) hue-rotate(199deg); }
+#location-fab.active svg { color: #4285f4; }
 #location-fab.fading { opacity: 0; pointer-events: none; }
 body.map-expanded #location-fab { display: flex; }
 

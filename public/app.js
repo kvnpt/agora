@@ -1761,8 +1761,6 @@ function initLocationFab() {
 
   function syncLocationState() {
     fab.classList.toggle('active', state.locationActive);
-    const img = fab.querySelector('img');
-    if (img) img.src = state.locationActive ? '/tabler-location-filled.svg' : '/tabler-location.svg';
   }
 
   fab.addEventListener('click', () => {
