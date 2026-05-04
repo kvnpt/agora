@@ -559,9 +559,22 @@ function handleClusterClick(feature) {
   const clusterId = feature.properties.cluster_id;
   const src = map.getSource(PARISH_SOURCE);
   const flyIn = (zoom) => {
+    // Sheet-padded centring: project the cluster at current zoom, push the
+    // camera centre down by half the occluded (sheet-covered) height so the
+    // cluster lands in the visible region above the bottom sheet.
+    const targetZoom = Math.min(zoom, 16);
+    const currentZoom = map.getZoom();
+    const scale = Math.pow(2, targetZoom - currentZoom);
+    const sheetY = (typeof window.agoraSheetY === 'function')
+      ? window.agoraSheetY()
+      : (window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight);
+    const containerH = map.getContainer().clientHeight;
+    const dy = Math.max(0, (containerH - sheetY) / 2);
+    const clusterPx = map.project(feature.geometry.coordinates);
+    const newCentre = map.unproject([clusterPx.x, clusterPx.y + dy / scale]);
     map.flyTo({
-      center: feature.geometry.coordinates,
-      zoom: Math.min(zoom, 16),
+      center: [newCentre.lng, newCentre.lat],
+      zoom: targetZoom,
       duration: 600
     });
   };

@@ -1933,6 +1933,9 @@ function initBottomSheet() {
   function positionFilterStack(y) {
     if (filterStack) filterStack.style.bottom = (window.innerHeight - y + 60) + 'px';
   }
+  // Expose so the parish-sheet closure (separate scope at initParishSheet)
+  // can keep the filter stack in sync without reaching across closures.
+  window.agoraPositionFilterStack = positionFilterStack;
 
   // Snap points (translateY values — lower = sheet higher on screen)
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK;
@@ -2722,7 +2725,7 @@ function initParishSheet() {
     if (rFab) rFab.classList.add('fading');
     // Seed filter FAB + stack position so they appear at the right spot when revealed.
     if (filterFab) filterFab.style.top = (SNAP_HALF - 52) + 'px';
-    positionFilterStack(SNAP_HALF);
+    if (window.agoraPositionFilterStack) window.agoraPositionFilterStack(SNAP_HALF);
 
     // Centre the parish in the visible (upper) half of the map, zooming in
     // only if current viewing radius is wider than 30 km.
