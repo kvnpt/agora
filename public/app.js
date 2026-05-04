@@ -559,8 +559,12 @@ function onViewportMapPhase() {
 // after gesture-end so a quick follow-up pan preempts it via movestart.
 // scheduleRenderEvents adds a second gate: the actual DOM work waits for
 // a genuine idle window so an in-progress gesture can't be interrupted.
+// Skip while a drawer is open: rebuilding the list tears down and recreates
+// the expanded card, which the user perceives as a flash ~1s after the
+// sheet snaps (sheet's map.resize fires moveend → 800ms list-phase).
 function onViewportListPhase() {
   recomputeViewportSet();
+  if (document.querySelector('.event-card.expanded')) return;
   if (state.mode === 'services') renderServices(); else scheduleRenderEvents();
 }
 
