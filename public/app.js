@@ -3495,7 +3495,7 @@ function renderParishGroupsHTML(events, reserveHost) {
     const pid = order[i];
     const evts = byParish.get(pid);
     const first = evts[0];
-    const color = first.parish_color || '#888888';
+    const color = getParishDisplayColor(first.parish_color || '#888888');
     html += `<div class="parish-group" style="--parish-color:${esc(color)}">`;
     html += reserveHost(evts);
     html += `<div class="parish-group-footer">`;
@@ -3732,6 +3732,17 @@ function getJurisdictionColor(j) {
 // Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
 // parish-colored glow on an expanded event card (injected as a CSS var so the
 // ::after pseudo can pick it up).
+// When system dark/light flips, HTML rendered with inline parish colours
+// is frozen — the @media block flips CSS vars but inline `style="color:#..."`
+// strings persist. Re-render the events list so getParishDisplayColor()
+// recomputes against the new scheme. Map handles its own restyle in map.js.
+if (!window.__agoraSchemeRerender) {
+  window.__agoraSchemeRerender = true;
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (typeof scheduleRenderEvents === 'function') scheduleRenderEvents(0);
+  });
+}
+
 function hexToRgba(hex, alpha) {
   if (!hex || typeof hex !== 'string') return `rgba(136, 136, 136, ${alpha})`;
   let h = hex.replace('#', '');
@@ -3741,6 +3752,15 @@ function hexToRgba(hex, alpha) {
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Lift a parish hex colour for dark-mode legibility, hue preserved. Pass-through
+// in light mode. See liftColorForDark in map.js for the algorithm.
+function getParishDisplayColor(hex) {
+  if (!hex) return hex;
+  return (matchMedia('(prefers-color-scheme: dark)').matches && window.liftColorForDark)
+    ? window.liftColorForDark(hex)
+    : hex;
 }
 
 // Returns the fill color for the event-type dot (Google Calendar style).
@@ -3758,7 +3778,7 @@ function eventTypeDotTextColor(type) {
 function renderEventCard(evt) {
   const start = new Date(evt.start_utc);
   const time = formatEventTime(start);
-  const acronymColor = evt.parish_color || '#000';
+  const acronymColor = getParishDisplayColor(evt.parish_color || '#000');
   const acronym = evt.parish_acronym ? `<span class="event-parish-acronym" style="color:${esc(acronymColor)}">${esc(evt.parish_acronym)}</span>` : '';
 
   // Normalise to display type so vespers→prayer, matins→prayer etc. map correctly.
@@ -4013,7 +4033,7 @@ function renderServices() {
     html += `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">`;
     html += `<div class="section-header jurisdiction-header">${esc(jLabel)}</div>`;
     for (const { pid, grp: { info, items } } of pgs) {
-      const pColor = info.parish_color || jColor;
+      const pColor = getParishDisplayColor(info.parish_color || jColor);
       const initial = (info.parish_name || '?')[0].toUpperCase();
       const parish = state.parishes.find(p => p.id === pid);
       // Distance chip: same intensity tiers as event list (near ≤5, mid ≤15, far).
@@ -4116,7 +4136,7 @@ function expandEventCard(id, opts = {}) {
       closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeDetail(); });
     }
     card.classList.add('expanded');
-    const accent = evt.parish_color || '#888888';
+    const accent = getParishDisplayColor(evt.parish_color || '#888888');
     card.style.setProperty('--accent-glow', hexToRgba(accent, 0.28));
     wireEventDrawer(drawer, evt);
   }

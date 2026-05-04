@@ -38,6 +38,36 @@ function isDark() {
   return matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// Lift a parish hex colour to legible luminance on a dark background while
+// preserving hue. Many parish colours in the DB sit at perceptual luminance
+// 50–110 (Rec 601 weighted) — fine on white, near-invisible on charcoal.
+// Strategy: compute luminance, scale RGB uniformly so it hits MIN_L. Hue
+// stays put because every channel scales by the same factor; saturation
+// drops slightly when one channel saturates at 255, which is acceptable
+// (and only kicks in for already-bright colours that don't need lifting).
+// Pure black falls back to a neutral light grey because zero RGB has no
+// hue to preserve.
+function liftColorForDark(hex) {
+  if (!hex) return '#aaaaaa';
+  const m = String(hex).trim().replace(/^#/, '').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return hex;
+  let s = m[1];
+  if (s.length === 3) s = s.split('').map(c => c + c).join('');
+  let r = parseInt(s.slice(0, 2), 16);
+  let g = parseInt(s.slice(2, 4), 16);
+  let b = parseInt(s.slice(4, 6), 16);
+  const L = 0.299 * r + 0.587 * g + 0.114 * b;
+  const MIN_L = 165;
+  if (L >= MIN_L) return '#' + s.toLowerCase();
+  if (L < 5) return '#cccccc';
+  const k = MIN_L / L;
+  r = Math.min(255, Math.round(r * k));
+  g = Math.min(255, Math.round(g * k));
+  b = Math.min(255, Math.round(b * k));
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+window.liftColorForDark = liftColorForDark;
+
 let map = null;
 let styleLoaded = false;
 let pendingUpdate = null;          // queued updateMap call if style not ready
@@ -288,7 +318,7 @@ function addParishSourceAndLayers() {
   };
 
   const CRISP_PAINT = {
-    'text-color': ['get', 'color'],
+    'text-color': ['get', 'display_color'],
     'text-halo-color': getHalo(),
     'text-halo-width': 2,
     'text-halo-blur': 0
@@ -560,10 +590,14 @@ function updateMap(state, opts = {}) {
     if (hardFilterOnEvents && !activeSet.has(p.id)) continue;
     const parts = (p.name || '').split(',');
     const label = (parts[0] || p.name || '').trim();
+    const baseColor = p.color || '#000';
     const props = {
       parish_id: p.id,
       label,
-      color: p.color || '#000',
+      color: baseColor,
+      // Used for label text only — dot circles keep the authentic parish hue
+      // so map identity is preserved; labels need legibility against tiles.
+      display_color: isDark() ? liftColorForDark(baseColor) : baseColor,
       jurisdiction: p.jurisdiction || '',
       focused: p.id === focusId,
       selected: selectedSet ? selectedSet.has(p.id) : false,

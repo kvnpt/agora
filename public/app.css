@@ -110,12 +110,14 @@
     --evening: #8ba3d4;
 
     /* map */
-    /* Halo is a light grey so coloured parish labels lift off dark tiles
-       without a hard-black outline (which would make dark parish colours
-       blend into the basemap). */
-    --halo: #cfcfcf;
+    /* Halo is mid-grey so coloured parish labels read on dark tiles without
+       the hard white-on-black look; mid-grey gives contrast for both dark
+       and light parish hues without bleaching the colour. */
+    --halo: #888888;
+    /* Fade overlay is off in dark — the basemap's own dark theme is
+       already the desired tone, no white-wash needed. */
     --map-fade: #0b0b0d;
-    --map-fade-opacity: 0.25;
+    --map-fade-opacity: 0;
 
     /* shadow */
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.6);
