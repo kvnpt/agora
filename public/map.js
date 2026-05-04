@@ -38,6 +38,57 @@ function isDark() {
   return matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// Solarize transform — photographic-style lightness inversion in HSL space.
+// L → 1−L; hue and saturation untouched. A near-black parish becomes near-
+// white at the same hue, a navy becomes a sky blue, a bright pink becomes
+// a muted plum. Symmetric: applying twice returns the original. Used in
+// dark mode to flip parish identity colours into their light counterparts
+// so dots, labels, acronyms, pills, avatars and glows all read on charcoal.
+function solarizeColor(hex) {
+  if (!hex) return '#aaaaaa';
+  const m = String(hex).trim().replace(/^#/, '').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return hex;
+  let s = m[1];
+  if (s.length === 3) s = s.split('').map(c => c + c).join('');
+  const r = parseInt(s.slice(0, 2), 16) / 255;
+  const g = parseInt(s.slice(2, 4), 16) / 255;
+  const b = parseInt(s.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let sat = 0;
+  let l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  l = 1 - l;
+  let r2, g2, b2;
+  if (sat === 0) { r2 = g2 = b2 = l; }
+  else {
+    const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
+    const p = 2 * l - q;
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    r2 = hue2rgb(p, q, h + 1 / 3);
+    g2 = hue2rgb(p, q, h);
+    b2 = hue2rgb(p, q, h - 1 / 3);
+  }
+  const toHex = v => Math.round(v * 255).toString(16).padStart(2, '0');
+  return '#' + toHex(r2) + toHex(g2) + toHex(b2);
+}
+window.solarizeColor = solarizeColor;
+
 let map = null;
 let styleLoaded = false;
 let pendingUpdate = null;          // queued updateMap call if style not ready
@@ -560,10 +611,14 @@ function updateMap(state, opts = {}) {
     if (hardFilterOnEvents && !activeSet.has(p.id)) continue;
     const parts = (p.name || '').split(',');
     const label = (parts[0] || p.name || '').trim();
+    const baseColor = p.color || '#000';
     const props = {
       parish_id: p.id,
       label,
-      color: p.color || '#000',
+      // Single source for both circle-color and text-color paint expressions.
+      // Solarized in dark so the dot, the label, and any feature-state-derived
+      // visual all stay in lockstep with the inline-styled surfaces in app.js.
+      color: isDark() ? solarizeColor(baseColor) : baseColor,
       jurisdiction: p.jurisdiction || '',
       focused: p.id === focusId,
       selected: selectedSet ? selectedSet.has(p.id) : false,

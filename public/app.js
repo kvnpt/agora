@@ -1083,7 +1083,7 @@ function renderParishPills() {
       ? `${esc(acronym)}<span class="pill-dist">${esc(distLabel)}</span>`
       : esc(acronym);
     const isSelected = state.filters.parishIds && state.filters.parishIds.has(p.id);
-    const color = p.color || '#000';
+    const color = getParishDisplayColor(p.color || '#000');
     let style;
     if (allActive) {
       const inView = !vp || vp.has(p.id);
@@ -2805,7 +2805,7 @@ function renderParishSheetContent(parishId, opts = {}) {
   // are shrunk to fit two lines by fitParishName() after insertion.
   const displayName = parish.full_name || parish.name || '';
   const initial = (displayName || '?')[0].toUpperCase();
-  const color = parish.color || '#666';
+  const color = getParishDisplayColor(parish.color || '#666');
   const juris = capitalize(parish.jurisdiction || '');
   let distHtml = '';
   if (state.locationActive && parish.lat && parish.lng) {
@@ -2942,7 +2942,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-section">
       ${addrHtml}
       ${webCopyHtml}
-      <div class="ps-actions" style="--parish-color:${esc(parish.color || '#333')}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${shareParishBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
     ${parishEditFormHtml ? `<div class="ps-section">${parishEditFormHtml}</div>` : ''}
@@ -3357,7 +3357,7 @@ function updateModeUrl() {
   let tint = '#1565c0';
   for (let i = segs.length - 1; i >= 0; i--) {
     const p = findParishByAcronym(decodeURIComponent(segs[i]));
-    if (p && p.color) { tint = p.color; break; }
+    if (p && p.color) { tint = getParishDisplayColor(p.color); break; }
   }
 
   let html = `<span class="mode-url-host">${esc(host)}</span>`;
@@ -3365,7 +3365,7 @@ function updateModeUrl() {
     const decoded = decodeURIComponent(seg);
     const parish = findParishByAcronym(decoded);
     if (parish) {
-      const color = parish.color || '#888';
+      const color = getParishDisplayColor(parish.color || '#888');
       html += `<span class="mode-url-sep">/</span><span class="mode-url-seg mode-url-parish" style="color:${esc(color)}">${esc(decoded.toLowerCase())}</span>`;
     } else {
       html += `<span class="mode-url-sep">/</span><span class="mode-url-seg">${esc(decoded)}</span>`;
@@ -3436,7 +3436,7 @@ function updateParishSheetUrl() {
   let tint = '#1565c0';
   for (let i = segs.length - 1; i >= 0; i--) {
     const p = findParishByAcronym(decodeURIComponent(segs[i]));
-    if (p && p.color) { tint = p.color; break; }
+    if (p && p.color) { tint = getParishDisplayColor(p.color); break; }
   }
 
   let html = `<span class="ps-url-host">${esc(host)}</span>`;
@@ -3444,7 +3444,7 @@ function updateParishSheetUrl() {
     const decoded = decodeURIComponent(seg);
     const parish = findParishByAcronym(decoded);
     if (parish) {
-      const color = parish.color || '#888';
+      const color = getParishDisplayColor(parish.color || '#888');
       html += `<span class="ps-url-sep">/</span><span class="ps-url-seg ps-url-parish" style="color:${esc(color)}">${esc(decoded.toLowerCase())}</span>`;
     } else {
       html += `<span class="ps-url-sep">/</span><span class="ps-url-seg">${esc(decoded)}</span>`;
@@ -3495,7 +3495,7 @@ function renderParishGroupsHTML(events, reserveHost) {
     const pid = order[i];
     const evts = byParish.get(pid);
     const first = evts[0];
-    const color = first.parish_color || '#888888';
+    const color = getParishDisplayColor(first.parish_color || '#888888');
     html += `<div class="parish-group" style="--parish-color:${esc(color)}">`;
     html += reserveHost(evts);
     html += `<div class="parish-group-footer">`;
@@ -3732,6 +3732,29 @@ function getJurisdictionColor(j) {
 // Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
 // parish-colored glow on an expanded event card (injected as a CSS var so the
 // ::after pseudo can pick it up).
+// Single funnel for every inline-styled parish-colour site (acronym, pill,
+// avatar, glow, --parish-color CSS var, etc). Pass-through in light mode;
+// in dark, defers to window.solarizeColor (defined in map.js, so it loads
+// first per index.html script order). The matchMedia check means inline
+// HTML re-renders pick up scheme changes — see __agoraSchemeRerender below.
+function getParishDisplayColor(hex) {
+  if (!hex) return hex;
+  return (matchMedia('(prefers-color-scheme: dark)').matches && window.solarizeColor)
+    ? window.solarizeColor(hex)
+    : hex;
+}
+
+// On scheme flip, re-render the events list so all the inline `style="..."`
+// strings re-stamp through getParishDisplayColor. CSS @media block flips
+// vars automatically; inline styles are frozen at render time and need this.
+if (!window.__agoraSchemeRerender) {
+  window.__agoraSchemeRerender = true;
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (typeof scheduleRenderEvents === 'function') scheduleRenderEvents(0);
+    if (typeof renderParishPills === 'function') renderParishPills();
+  });
+}
+
 function hexToRgba(hex, alpha) {
   if (!hex || typeof hex !== 'string') return `rgba(136, 136, 136, ${alpha})`;
   let h = hex.replace('#', '');
@@ -3758,7 +3781,7 @@ function eventTypeDotTextColor(type) {
 function renderEventCard(evt) {
   const start = new Date(evt.start_utc);
   const time = formatEventTime(start);
-  const acronymColor = evt.parish_color || '#000';
+  const acronymColor = getParishDisplayColor(evt.parish_color || '#000');
   const acronym = evt.parish_acronym ? `<span class="event-parish-acronym" style="color:${esc(acronymColor)}">${esc(evt.parish_acronym)}</span>` : '';
 
   // Normalise to display type so vespers→prayer, matins→prayer etc. map correctly.
@@ -4013,7 +4036,7 @@ function renderServices() {
     html += `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">`;
     html += `<div class="section-header jurisdiction-header">${esc(jLabel)}</div>`;
     for (const { pid, grp: { info, items } } of pgs) {
-      const pColor = info.parish_color || jColor;
+      const pColor = getParishDisplayColor(info.parish_color || jColor);
       const initial = (info.parish_name || '?')[0].toUpperCase();
       const parish = state.parishes.find(p => p.id === pid);
       // Distance chip: same intensity tiers as event list (near ≤5, mid ≤15, far).
@@ -4116,7 +4139,7 @@ function expandEventCard(id, opts = {}) {
       closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeDetail(); });
     }
     card.classList.add('expanded');
-    const accent = evt.parish_color || '#888888';
+    const accent = getParishDisplayColor(evt.parish_color || '#888888');
     card.style.setProperty('--accent-glow', hexToRgba(accent, 0.28));
     wireEventDrawer(drawer, evt);
   }
@@ -4240,7 +4263,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
   let heroHtml = '';
   if (parish) {
     const initial = (parish.name || '?')[0].toUpperCase();
-    const color = parish.color || '#666';
+    const color = getParishDisplayColor(parish.color || '#666');
     const juris = capitalize(parish.jurisdiction || '');
     const heroTime = formatEventTime(start);
     const hasLogo = !!parish.logo_path;
@@ -4405,7 +4428,7 @@ function showParishDetail(parishId) {
       ${websiteCta}
     </div>`;
 
-  panel.style.borderLeftColor = parish.color || 'var(--border)';
+  panel.style.borderLeftColor = getParishDisplayColor(parish.color || '#cccccc');
   history.pushState({ detail: true }, '');
   detailHistoryPushed = true;
   panel.classList.remove('hidden');
