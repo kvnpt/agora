@@ -237,14 +237,16 @@ function addParishSourceAndLayers() {
   };
 
   // Shadow paint = drop-shadow(0 1px 3px rgba(0,0,0,0.28)) approximation.
-  // text-translate offsets the rendered text downward by 1 px; the halo gives
-  // it width and a 1.5 px fade for the blur radius.
+  // Mostly fade, very little solid halo — a thick solid halo reads as a hard
+  // dark border, not a shadow. width 1 + blur 4 gives a 1 px solid lip
+  // around the glyph that fades over 4 px to transparent. Text color is
+  // bumped to ~0.45 alpha so the glyph body still reads through the blur.
   const SHADOW_PAINT = {
-    'text-color': 'rgba(0,0,0,0.28)',
-    'text-halo-color': 'rgba(0,0,0,0.28)',
-    'text-halo-width': 3,
-    'text-halo-blur': 1.5,
-    'text-translate': [0, 1]
+    'text-color': 'rgba(0,0,0,0.45)',
+    'text-halo-color': 'rgba(0,0,0,0.45)',
+    'text-halo-width': 1,
+    'text-halo-blur': 4,
+    'text-translate': [0, 1.5]
   };
   const CRISP_PAINT = {
     'text-color': ['get', 'color'],
