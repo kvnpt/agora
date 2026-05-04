@@ -195,74 +195,79 @@ function addParishSourceAndLayers() {
     }
   });
 
-  // Default labels — sit beside the dot, engine flips left↔right on collision.
-  // Halo width + soft blur replicate the pre-migration -webkit-text-stroke 4px
-  // + drop-shadow look that MapLibre symbol layers can't render directly.
+  // ── Label layers ──────────────────────────────────────────────────────
+  // MapLibre symbol layers can't render filter: drop-shadow, so the old
+  // CSS look (4 px white text-stroke + soft drop-shadow) is composited from
+  // TWO layers per label state: a translated dark "shadow" underlay rendered
+  // first, then the crisp white-halo text on top. Layout is identical
+  // between each pair so the engine's collision pass keeps them in lockstep.
+
+  const DEFAULT_LABEL_FILTER = ['all',
+    ['!', ['has', 'point_count']],
+    ['!=', ['get', 'focused'], true],
+    ['!=', ['get', 'selected'], true]
+  ];
+  const DEFAULT_LABEL_LAYOUT = {
+    'text-field': ['get', 'label'],
+    'text-font': FONT_MEDIUM,
+    'text-size': 11,
+    'text-variable-anchor': ['left', 'right'],
+    'text-radial-offset': 0.9,
+    'text-justify': 'auto',
+    'text-padding': 2,
+    'text-allow-overlap': false,
+    'text-optional': true,
+    'symbol-sort-key': ['case', ['==', ['get', 'active'], true], 1, 2]
+  };
+
+  const ABOVE_LABEL_FILTER = ['all',
+    ['!', ['has', 'point_count']],
+    ['any', ['==', ['get', 'focused'], true], ['==', ['get', 'selected'], true]]
+  ];
+  const ABOVE_LABEL_LAYOUT = {
+    'text-field': ['get', 'label'],
+    'text-font': FONT_MEDIUM,
+    'text-size': ['case', ['==', ['get', 'focused'], true], 15, 14],
+    'text-anchor': 'bottom',
+    'text-offset': [0, -1.4],
+    'text-padding': 2,
+    'text-allow-overlap': true,
+    'text-ignore-placement': true,
+    'symbol-sort-key': 0
+  };
+
+  // Shadow paint = drop-shadow(0 1px 3px rgba(0,0,0,0.28)) approximation.
+  // text-translate offsets the rendered text downward by 1 px; the halo gives
+  // it width and a 1.5 px fade for the blur radius.
+  const SHADOW_PAINT = {
+    'text-color': 'rgba(0,0,0,0.28)',
+    'text-halo-color': 'rgba(0,0,0,0.28)',
+    'text-halo-width': 3,
+    'text-halo-blur': 1.5,
+    'text-translate': [0, 1]
+  };
+  const CRISP_PAINT = {
+    'text-color': ['get', 'color'],
+    'text-halo-color': HALO,
+    'text-halo-width': 2,
+    'text-halo-blur': 0
+  };
+
+  map.addLayer({
+    id: 'parish-label-shadow',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: DEFAULT_LABEL_FILTER,
+    layout: DEFAULT_LABEL_LAYOUT,
+    paint: SHADOW_PAINT
+  });
   map.addLayer({
     id: 'parish-label',
     type: 'symbol',
     source: PARISH_SOURCE,
-    filter: ['all',
-      ['!', ['has', 'point_count']],
-      ['!=', ['get', 'focused'], true],
-      ['!=', ['get', 'selected'], true]
-    ],
-    layout: {
-      'text-field': ['get', 'label'],
-      'text-font': FONT_MEDIUM,
-      'text-size': 11,
-      'text-variable-anchor': ['left', 'right'],
-      'text-radial-offset': 0.9,
-      'text-justify': 'auto',
-      'text-padding': 2,
-      'text-allow-overlap': false,
-      'text-optional': true,
-      'symbol-sort-key': [
-        'case',
-        ['==', ['get', 'active'], true], 1,
-        2
-      ]
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': HALO,
-      'text-halo-width': 2,
-      'text-halo-blur': 0.5
-    }
-  });
-
-  // Emphasised labels (focused / selected) — centred above the marker, no
-  // side-flip. Above-positioning matches the pre-migration focused label,
-  // which was anchored at the bottom of its bbox so it floated over the dot.
-  map.addLayer({
-    id: 'parish-label-above',
-    type: 'symbol',
-    source: PARISH_SOURCE,
-    filter: ['all',
-      ['!', ['has', 'point_count']],
-      ['any', ['==', ['get', 'focused'], true], ['==', ['get', 'selected'], true]]
-    ],
-    layout: {
-      'text-field': ['get', 'label'],
-      'text-font': FONT_MEDIUM,
-      'text-size': [
-        'case',
-        ['==', ['get', 'focused'], true], 15,
-        14
-      ],
-      'text-anchor': 'bottom',
-      'text-offset': [0, -1.4],   // em — push label clear of the 32 px logo / 16 px ring
-      'text-padding': 2,
-      'text-allow-overlap': true,
-      'text-ignore-placement': true,
-      'symbol-sort-key': 0
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': HALO,
-      'text-halo-width': 2,
-      'text-halo-blur': 0.5
-    }
+    filter: DEFAULT_LABEL_FILTER,
+    layout: DEFAULT_LABEL_LAYOUT,
+    paint: CRISP_PAINT
   });
 
   // parish-focus-icon: only renders for the single focused parish. Filter on
@@ -321,6 +326,26 @@ function addParishSourceAndLayers() {
       'text-halo-color': '#6a2d5c',
       'text-halo-width': 2.5
     }
+  });
+
+  // Emphasised labels (focused / selected) — centred above the marker, no
+  // side-flip. Same shadow + crisp pair as default labels; rendered last so
+  // they paint over the cluster + focus-icon stack.
+  map.addLayer({
+    id: 'parish-label-above-shadow',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: ABOVE_LABEL_FILTER,
+    layout: ABOVE_LABEL_LAYOUT,
+    paint: SHADOW_PAINT
+  });
+  map.addLayer({
+    id: 'parish-label-above',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: ABOVE_LABEL_FILTER,
+    layout: ABOVE_LABEL_LAYOUT,
+    paint: CRISP_PAINT
   });
 }
 
