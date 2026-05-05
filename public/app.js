@@ -2978,6 +2978,10 @@ function initParishSheet() {
   }
 
   _parishSheetAPI = { open, close };
+  // Expose snap-to-full so expandEventCard can drive the parish sheet to
+  // FULL when an event inside it is tapped (matches the main sheet's
+  // tap-to-full behaviour).
+  window.agoraParishSheetSnapFull = () => snapTo(SNAP_FULL);
 }
 
 function openParishSheet(parishId, opts = {}) {
@@ -4389,6 +4393,16 @@ function expandEventCard(id, opts = {}) {
   state._openEventId = id;
   syncURL();
 
+  // Always snap the host sheet to FULL when an event expands. Whether the
+  // tap originated in the main bottom-sheet or the parish-sheet, the user
+  // expects the drawer to occupy maximum space.
+  const inParishSheetScroll = card.closest('#parish-sheet-scroll');
+  if (inParishSheetScroll && typeof window.agoraParishSheetSnapFull === 'function') {
+    window.agoraParishSheetSnapFull();
+  } else if (typeof window.agoraSnapTo === 'function' && typeof window.agoraSnapFull === 'function') {
+    window.agoraSnapTo(window.agoraSnapFull());
+  }
+
   requestAnimationFrame(() => {
     // Scroll the containing scroller so the expanded card is in view.
     const scroller = card.closest('#parish-sheet-scroll, #sheet-scroll');
@@ -4564,9 +4578,23 @@ function renderEventDrawerHTML(evt, opts = {}) {
 }
 
 function wireEventDrawer(drawer, evt) {
-  // Stop clicks inside the drawer from bubbling up to the .event-card click
-  // handler (which would otherwise treat them as a toggle request).
-  drawer.addEventListener('click', e => e.stopPropagation());
+  // Drawer click handling has two responsibilities:
+  // 1. Stop bubbling for taps on interactive children, so the .event-card
+  //    click handler doesn't treat them as a "toggle the card" request.
+  // 2. Tap on bare drawer surface (not on a button/link/input/text input
+  //    or a known interactive class) collapses the drawer — gives the
+  //    user a generous tap-to-close target instead of needing the close
+  //    button or hero-title specifically.
+  drawer.addEventListener('click', e => {
+    const interactive = e.target.closest(
+      'button, a, input, textarea, select, .event-drawer-hero-title, .event-drawer-address, .event-drawer-poster'
+    );
+    if (interactive) {
+      e.stopPropagation();
+      return;
+    }
+    closeDetail();
+  });
 
   const heroTitle = drawer.querySelector('.event-drawer-hero-title');
   if (heroTitle) {
