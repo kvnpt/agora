@@ -1003,7 +1003,9 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
      .ps-header + .ps-filter-row so day headers stick below them.
      Outside parish-sheet, the var resolves to 0 (default). */
   top: var(--ps-stack-h, 0);
-  z-index: 1;
+  /* Above expanded event cards (default no z-index) so the sticky
+     header stays in front when scrolling past an open drawer. */
+  z-index: 4;
   background: var(--bg);
   font-size: 13px;
   font-weight: 700;
@@ -1073,7 +1075,9 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
      parish-sheet add --ps-stack-h on top so it sits below the
      header + filter row + day-hdr. */
   top: calc(var(--ps-stack-h, 0px) + 37px);
-  z-index: 0;
+  /* Above expanded event cards so the morning/evening label stays
+     visible when scrolling past an open drawer. */
+  z-index: 4;
   background: var(--bg);
   display: flex;
   align-items: center;
@@ -2549,6 +2553,21 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   filter: saturate(0.7);
   transition: opacity 0.18s ease, filter 0.18s ease;
 }
+/* Top-to-bottom progressive unfade — when .unfading is present (set by
+   markEventsApplied for ~1s), each card animates from the dimmed state
+   back to full with a staggered delay derived from its index. JS writes
+   the index to --card-i on each card. Capped at 15 so very long lists
+   don't take forever. */
+@keyframes card-unfade {
+  0%   { opacity: 0.55; filter: saturate(0.7); transform: translateY(-3px); }
+  100% { opacity: 1; filter: saturate(1); transform: translateY(0); }
+}
+.events-list.unfading .event-card,
+.ps-events-list.unfading .event-card,
+.services-list.unfading .parish-schedule {
+  animation: card-unfade 0.42s cubic-bezier(0.34, 1.15, 0.64, 1) both;
+  animation-delay: calc(min(var(--card-i, 0), 15) * 28ms);
+}
 @keyframes events-glimmer {
   0%   { background-position: 0% -100%; opacity: 0; }
   20%  { opacity: 1; }
@@ -2856,13 +2875,13 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   position: sticky;
   top: 0;
   /* z-index hierarchy inside parish-sheet:
-       .ps-header (3) → highest, paints over filter row + day-hdr
-       .ps-filter-row (2)
-       .day-hdr (1)
-       .time-card-head (default 0)
+       .ps-header (6)         → highest, paints over filter row + day-hdr
+       .ps-filter-row (5)
+       .day-hdr / time-card (4) → above expanded event cards
+       expanded event cards    → default (auto)
      Even if --ps-stack-h is briefly 0 (before measurement), the day-hdr
      stays beneath the header instead of floating over it. */
-  z-index: 3;
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3046,7 +3065,7 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
      JS measures header height after each render and writes the value
      to --ps-header-h on the parish-sheet root. */
   top: var(--ps-header-h, 80px);
-  z-index: 2;
+  z-index: 5;
   display: flex;
   gap: 6px;
   padding: 8px 16px;

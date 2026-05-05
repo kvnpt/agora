@@ -543,15 +543,42 @@ function centerMapOnUser() {
   map.flyTo({ center: [newCentre.lng, newCentre.lat], zoom: targetZoom, duration: 900 });
 }
 
-// Compute viewport parish set from current map bounds. Cheap — pure math
-// over the parish list. Stored in state for use by the heavier renders.
+// Compute viewport parish set from a STABLE visible-rectangle cutoff.
+//
+// The cutoff is fixed at the bottom-sheet's HALF snap (or the parish-
+// sheet's HALF when the parish card is open) regardless of where the
+// sheet currently sits. Without this, sheet snap changes change the
+// "visible" rect → recompute → events list refresh — the user sees the
+// list rebuild every time they drag the sheet between PEEK/HALF/FULL.
+//
+// Pinning to HALF means the parish set only changes when the user
+// actually pans the map, not when they resize the sheet.
 function recomputeViewportSet() {
   if (!window.agoraMap) return;
-  const b = window.agoraMap.getBounds();
+  const m = window.agoraMap;
+  const container = m.getContainer();
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  // Choose the cutoff: parish-sheet HALF (its own 50%) when open, else
+  // the main bottom-sheet's HALF.
+  let cutoffY;
+  if (window.agoraParishSheetVisible) {
+    cutoffY = Math.round(h * 0.5);
+  } else if (typeof window.agoraSnapHalf === 'function') {
+    cutoffY = window.agoraSnapHalf();
+  } else {
+    cutoffY = Math.round(h * 0.5);
+  }
+  const ne = m.unproject([w, 0]);
+  const sw = m.unproject([0, cutoffY]);
   const ids = new Set();
+  const minLat = Math.min(ne.lat, sw.lat);
+  const maxLat = Math.max(ne.lat, sw.lat);
+  const minLng = Math.min(ne.lng, sw.lng);
+  const maxLng = Math.max(ne.lng, sw.lng);
   for (const p of state.parishes) {
     if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
-    if (b.contains([p.lng, p.lat])) ids.add(p.id);
+    if (p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng) ids.add(p.id);
   }
   state.viewportParishIds = ids;
 }
@@ -576,7 +603,24 @@ function onViewportMapPhase() {
 // sheet snaps (sheet's map.resize fires moveend → 800ms list-phase).
 function onViewportListPhase() {
   recomputeViewportSet();
-  if (document.querySelector('.event-card.expanded')) return;
+  // If a drawer is open we still need to release any pending state
+  // markEventsPending fired on movestart — otherwise the list stays in
+  // the dim/saturated state forever.
+  if (document.querySelector('.event-card.expanded')) {
+    if (typeof markEventsApplied === 'function') markEventsApplied();
+    return;
+  }
+  // If the parish set didn't actually change (sheet snap with stable
+  // viewport cutoff), skip the heavy re-render — but still release the
+  // pending lock so the list unfades.
+  const sig = state.viewportParishIds
+    ? [...state.viewportParishIds].sort((a, b) => a - b).join(',')
+    : '';
+  if (sig === state._lastViewportSig) {
+    if (typeof markEventsApplied === 'function') markEventsApplied();
+    return;
+  }
+  state._lastViewportSig = sig;
   if (state.mode === 'services') renderServices(); else scheduleRenderEvents();
 }
 
@@ -594,9 +638,18 @@ function visibleCentreLatLng() {
   const container = m.getContainer();
   const w = container.clientWidth;
   const h = container.clientHeight;
-  const sheetY = typeof window.agoraSheetY === 'function' ? window.agoraSheetY() : h;
-  const visibleBottom = Math.max(0, Math.min(sheetY, h));
-  return m.unproject([w / 2, visibleBottom / 2]);
+  // Stable centre — always anchored at the HALF cutoff, not the live
+  // sheetY. Same reason as recomputeViewportSet: sheet snap changes
+  // shouldn't trigger viewport-driven re-renders.
+  let cutoffY;
+  if (window.agoraParishSheetVisible) {
+    cutoffY = Math.round(h * 0.5);
+  } else if (typeof window.agoraSnapHalf === 'function') {
+    cutoffY = window.agoraSnapHalf();
+  } else {
+    cutoffY = Math.round(h * 0.5);
+  }
+  return m.unproject([w / 2, cutoffY / 2]);
 }
 window.agoraVisibleCentre = visibleCentreLatLng;
 
@@ -3204,6 +3257,15 @@ function refreshParishContentPortion(parishId, opts = {}) {
   // the same fade/glimmer flow as the main events list.
   if (typeof markEventsPending === 'function') markEventsPending();
 
+  // FLIP snapshot — capture per-card positions BEFORE the renderStream
+  // mutation. After the mutation we measure new positions, apply
+  // inverse transforms, and animate them out so cards that are still
+  // present glide to their new spot instead of popping in/out.
+  const flipBefore = new Map();
+  contentEl.querySelectorAll('.ps-events-list .event-card[data-id]').forEach(c => {
+    flipBefore.set(c.dataset.id, c.getBoundingClientRect().top);
+  });
+
   // Snapshot scroll position so renderStream's innerHTML write doesn't
   // jump the user's view.
   const scrollEl = document.getElementById('parish-sheet-scroll');
@@ -3262,8 +3324,35 @@ function refreshParishContentPortion(parishId, opts = {}) {
   if (scrollEl) {
     requestAnimationFrame(() => { scrollEl.scrollTop = savedScroll; });
   }
+
+  // FLIP play — for every card that survived the diff, compute the
+  // delta between old and new top, set an inverse transform, then
+  // animate to identity. Cards new to the list don't have a "before"
+  // position and skip — they'll fade in via the unfade stagger instead.
+  const survivors = contentEl.querySelectorAll('.ps-events-list .event-card[data-id]');
+  let flipped = 0;
+  survivors.forEach(c => {
+    const oldTop = flipBefore.get(c.dataset.id);
+    if (oldTop == null) return;
+    const newTop = c.getBoundingClientRect().top;
+    const dy = oldTop - newTop;
+    if (Math.abs(dy) < 2) return;
+    flipped++;
+    c.style.transform = `translateY(${dy}px)`;
+    c.style.transition = 'none';
+    requestAnimationFrame(() => {
+      c.style.transition = 'transform 0.36s cubic-bezier(0.34, 1.15, 0.64, 1)';
+      c.style.transform = '';
+    });
+    setTimeout(() => {
+      c.style.transition = '';
+    }, 420);
+  });
+
   if (typeof markEventsApplied === 'function') {
-    requestAnimationFrame(() => markEventsApplied());
+    // Defer applied-mark until FLIP frame completes so the unfade
+    // stagger doesn't fight FLIP's transform.
+    requestAnimationFrame(() => requestAnimationFrame(() => markEventsApplied()));
   }
 }
 window.agoraRefreshParishContentPortion = refreshParishContentPortion;
@@ -3808,18 +3897,25 @@ function markEventsPending() {
   if (chip) chip.classList.add('prominent');
 }
 function markEventsApplied() {
-  document.querySelectorAll('.events-list, .services-list, .ps-events-list').forEach(l => {
+  const lists = document.querySelectorAll('.events-list, .services-list, .ps-events-list');
+  lists.forEach(l => {
+    // Stagger the per-card unfade — each card animates from the pending
+    // dim back to full with a small delay derived from index. Top-to-
+    // bottom flow.
+    l.querySelectorAll('.event-card, .parish-schedule').forEach((c, i) => {
+      c.style.setProperty('--card-i', i);
+    });
     l.classList.remove('pending');
-    // Restart the glimmer animation by removing → reflow → re-adding.
-    l.classList.remove('glimmer');
+    // Restart the glimmer + unfading animations by removing → reflow → re-adding.
+    l.classList.remove('glimmer', 'unfading');
     void l.offsetWidth;
-    l.classList.add('glimmer');
+    l.classList.add('glimmer', 'unfading');
   });
   if (_glimmerTimer) clearTimeout(_glimmerTimer);
   _glimmerTimer = setTimeout(() => {
-    document.querySelectorAll('.events-list, .services-list, .ps-events-list').forEach(l => l.classList.remove('glimmer'));
+    lists.forEach(l => l.classList.remove('glimmer', 'unfading'));
     _glimmerTimer = null;
-  }, 750);
+  }, 1200);
   const chip = document.getElementById('in-view-chip');
   if (chip) chip.classList.remove('prominent');
 }
