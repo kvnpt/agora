@@ -656,7 +656,12 @@ function updateMap(state, opts = {}) {
     if (hardFilterOnEvents && !activeSet.has(p.id)) continue;
     const parts = (p.name || '').split(',');
     const label = (parts[0] || p.name || '').trim();
-    const baseColor = p.color || '#000';
+    // Juris filter active → render every parish as the one juris colour
+    // (matches the inline-style funnel in app.js getParishDisplayColor).
+    const jurisOverride = state.filters && state.filters.jurisdiction;
+    const baseColor = jurisOverride && window.rawJurisColor
+      ? window.rawJurisColor(jurisOverride)
+      : (p.color || '#000');
     const props = {
       parish_id: p.id,
       label,

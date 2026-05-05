@@ -1089,11 +1089,11 @@ function renderParishPills() {
       const inView = !vp || vp.has(p.id);
       style = inView
         ? `color:${color};border-color:${color};background:none;`
-        : `color:var(--text-muted);border-color:var(--border-light);background:none;opacity:0.35;`;
+        : `color:var(--text-secondary);border-color:var(--border);background:none;opacity:0.7;`;
     } else if (isSelected) {
       style = `background:${color};color:#fff;border-color:transparent;`;
     } else {
-      style = `color:var(--text-muted);border-color:var(--border-light);background:none;opacity:0.4;`;
+      style = `color:var(--text-secondary);border-color:var(--border);background:none;opacity:0.7;`;
     }
     const activeClass = (allActive || isSelected) ? 'active' : '';
     html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}</button>`;
@@ -1284,7 +1284,14 @@ function renderInViewChip() {
       return true;
     }).length;
   }
-  countEl.textContent = `${n} ${n === 1 ? 'parish' : 'parishes'} in view`;
+  // When a juris filter is active, brand the count with the juris name —
+  // "12 Russian parishes in view" reads as confirmation of the active scope
+  // rather than a generic count of "all visible".
+  const noun = n === 1 ? 'parish' : 'parishes';
+  const j = state.filters.jurisdiction;
+  countEl.textContent = j
+    ? `${n} ${capitalize(j)} ${noun} in view`
+    : `${n} ${noun} in view`;
   updateInViewChevron();
 }
 window.agoraRenderInViewChip = renderInViewChip;
@@ -1732,17 +1739,60 @@ function triggerFilterWave() {
   });
 }
 
+// Per-filter clearers — each filter chip has its own × button that drops
+// just that one filter and re-syncs the world. Mirrors clearAllFilters'
+// post-clear cleanup but limited to the dropped key.
+function clearOneFilter(kind) {
+  if (kind === 'jurisdiction') {
+    state.filters.jurisdiction = null;
+    document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
+    if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
+  } else if (kind === 'social') {
+    state.filters.socialOnly = false;
+    document.getElementById('btn-social')?.classList.remove('active');
+  } else if (kind === 'english') {
+    state.filters.englishOnly = false;
+    state.filters.englishStrict = false;
+    if (typeof syncEnglishButton === 'function') syncEnglishButton();
+  } else if (kind === 'schedules') {
+    state.mode = 'events';
+    const servicesBtn = document.getElementById('btn-services');
+    if (servicesBtn) servicesBtn.classList.remove('active');
+    showView('events');
+  } else if (kind === 'parishes') {
+    state.filters.parishIds = null;
+    state.filters.showAllParishes = null;
+    state.parishFocus = null;
+    if (typeof window.closeParishSheet === 'function' && state.parishSheetFocus) window.closeParishSheet();
+  }
+  syncParishRowVisibility();
+  syncResetFab();
+  renderParishPills();
+  if (typeof updateArchdioceseEventsBanner === 'function') updateArchdioceseEventsBanner();
+  if (typeof syncFiltersButton === 'function') syncFiltersButton();
+  if (state.mode === 'services') {
+    window.agoraFetchSchedules?.();
+  } else {
+    window.agoraFetchEvents();
+  }
+  syncURL();
+}
+
 function syncFilterActiveStack() {
   const stack = document.getElementById('filter-active-stack');
   if (!stack) return;
+  // Each filter is now { kind, label } so the rendered chip can carry the
+  // clearer wired to its specific filter key.
   const chips = [];
-  if (state.filters.jurisdiction) chips.push(capitalize(state.filters.jurisdiction));
-  if (state.filters.socialOnly) chips.push('Social');
-  if (state.filters.englishOnly) chips.push('English');
-  if (state.mode === 'services') chips.push('Schedules');
+  if (state.filters.jurisdiction) chips.push({ kind: 'jurisdiction', label: capitalize(state.filters.jurisdiction) });
+  if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Social' });
+  if (state.filters.englishOnly) chips.push({ kind: 'english', label: 'English' });
+  if (state.mode === 'services') chips.push({ kind: 'schedules', label: 'Schedules' });
   const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
-  const totalCount = chips.length + (parishCount > 0 ? 1 : 0);
-  const hasFilters = chips.length > 0 || parishCount > 0;
+  if (parishCount > 0) chips.push({ kind: 'parishes', label: `${parishCount} parish${parishCount === 1 ? '' : 'es'}` });
+
+  const totalCount = chips.length;
+  const hasFilters = totalCount > 0;
   const juris = state.filters.jurisdiction || null;
   const wasAdded = _lastFilterCount !== null && (
     totalCount > _lastFilterCount ||
@@ -1756,10 +1806,18 @@ function syncFilterActiveStack() {
   if (list) {
     list.textContent = '';
     chips.forEach(c => {
-      const span = document.createElement('span');
-      span.className = 'filter-chip-label';
-      span.textContent = c;
-      list.appendChild(span);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'filter-chip-label';
+      btn.dataset.kind = c.kind;
+      btn.appendChild(document.createTextNode(c.label));
+      const x = document.createElement('span');
+      x.className = 'filter-chip-x';
+      x.setAttribute('aria-hidden', 'true');
+      x.textContent = '✕';
+      btn.appendChild(x);
+      btn.addEventListener('click', e => { e.stopPropagation(); clearOneFilter(c.kind); });
+      list.appendChild(btn);
     });
   }
 
@@ -3749,10 +3807,19 @@ function formatEventTime(date) {
   return `${hour}${minHtml}${merHtml}`;
 }
 
+// Single source for jurisdiction hex values. Used both for direct juris
+// rendering (via getJurisdictionColor below, no substitution) and as the
+// override target when a juris filter is active (in getParishDisplayColor).
+const _JURIS_RAW_COLORS = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
+function rawJurisColor(j) { return _JURIS_RAW_COLORS[j] || '#888888'; }
+window.rawJurisColor = rawJurisColor;
+
 function getJurisdictionColor(j) {
   const key = j || state.filters.jurisdiction;
-  const map = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
-  return getParishDisplayColor(map[key] || '#888888');
+  // Use the no-substitution path so passing a non-active juris (e.g. when
+  // colouring a parish-group header for a juris that isn't the filter)
+  // still returns that specific juris's colour.
+  return _liftIfDark(rawJurisColor(key));
 }
 
 // Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
@@ -3764,11 +3831,25 @@ function getJurisdictionColor(j) {
 // loads first per index.html script order). The matchMedia check means
 // inline HTML re-renders pick up scheme changes — see __agoraSchemeRerender
 // below.
-function getParishDisplayColor(hex) {
+// Dark-mode perceptual lift only. No juris-filter substitution.
+// Used by getJurisdictionColor (drawing a specific juris's tone) and as
+// the inner step of getParishDisplayColor (which adds the substitution).
+function _liftIfDark(hex) {
   if (!hex) return hex;
   return (matchMedia('(prefers-color-scheme: dark)').matches && window.liftParishColor)
     ? window.liftParishColor(hex)
     : hex;
+}
+
+function getParishDisplayColor(hex) {
+  if (!hex) return hex;
+  // When a jurisdiction filter is active, every parish reads as that one
+  // juris's colour — the per-parish hue identity is intentionally hidden
+  // under the juris-wide selection. Cascades into dot/label/acronym/pill/
+  // avatar/glow because they all flow through this funnel.
+  const j = state && state.filters && state.filters.jurisdiction;
+  const effective = j ? rawJurisColor(j) : hex;
+  return _liftIfDark(effective);
 }
 // Exposed so filters.js (jurisdiction chips) and any other module can route
 // colour through the same dark-mode lift funnel.

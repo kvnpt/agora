@@ -90,13 +90,13 @@
     --text-muted: #888c95;
     --text-inverse: #0b0b0d;
 
-    /* borders + rings — bumped from the original muted tones so outlines
-       on share pills, FABs, and parish card surfaces actually read against
-       --surface. The originals (#2e2e35 / #1f1f25) are too close to the
-       surface colours to register as a border. */
-    --border: #50545e;
-    --border-light: #3a3d44;
-    --ring: rgba(255, 255, 255, 0.08);
+    /* borders + rings — bumped further (#50545e → #6e7280) so outlines
+       on share pills, FABs, and parish card surfaces really pop against
+       --surface. Earlier --border-light at #3a3d44 was still soft for
+       event-card separators in the lifted scheme. */
+    --border: #6e7280;
+    --border-light: #4a4e58;
+    --ring: rgba(255, 255, 255, 0.10);
 
     /* accents */
     --accent: #5b8fd6;
@@ -2108,17 +2108,30 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
 .filter-clear-chip:hover { color: var(--text); }
 .filter-chip-list { display: flex; flex-direction: column; gap: 4px; }
 .filter-chip-label {
-  display: inline-block;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  padding: 4px 10px;
+  padding: 4px 8px 4px 10px;
   background: var(--fab-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text-secondary);
+  cursor: pointer;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
+.filter-chip-label:hover { color: var(--text); }
+.filter-chip-x {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.65;
+  margin-left: 2px;
+}
+.filter-chip-label:hover .filter-chip-x { opacity: 1; }
 
 /* Filter cascade wave — plays top-to-bottom when a new filter is added */
 @keyframes filter-wave-pop {

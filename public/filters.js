@@ -82,11 +82,11 @@ function applyChipColors(container) {
       chip.style.borderBottomColor = c;
       chip.style.opacity = '1';
     } else {
-      // Another jurisdiction selected: dimmed
+      // Another jurisdiction selected: dimmed but still legible
       chip.style.background = '';
       chip.style.color = '';
       chip.style.borderBottomColor = '';
-      chip.style.opacity = '0.35';
+      chip.style.opacity = '0.6';
     }
   });
 }
