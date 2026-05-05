@@ -1304,6 +1304,12 @@ function syncParishRowVisibility() {
   // varies with safe-area-inset-top, so measure live every visibility
   // change rather than using a static offset.
   positionParishFilterRow();
+  // Sheet's SNAP_FULL is computed against the pill-row bottom edge, so
+  // recompute now that the row has measurable layout. Defer one frame
+  // so getBoundingClientRect() reflects the new position.
+  if (typeof window.agoraRecomputeSnaps === 'function') {
+    requestAnimationFrame(() => window.agoraRecomputeSnaps());
+  }
 }
 
 function positionParishFilterRow() {
@@ -2031,22 +2037,29 @@ function initBottomSheet() {
   const SHEET_SPACER_PX = 200;
 
   function computeSnaps() {
-    // Full covers entire viewport (including jurisdiction banner).
-    // Sheet z-index > banner z-index so it overlays cleanly.
-    SNAP_FULL = 0;
-    SNAP_HALF = Math.round(window.innerHeight * 0.5);
-    // PEEK exposes grab handle + mode bar. Parish pill row is no longer in
-    // the sheet (promoted to floating below the jurisdiction banner) so the
-    // measurement here is just handle + mode-bar height.
+    // FULL leaves the jurisdiction banner + parish pill row visible above
+    // the sheet — sheet's top edge sits just below the pill row (or below
+    // the banner if pill row is hidden).
+    const bannerEl = document.getElementById('jurisdiction-chips');
+    const pillRowEl = document.getElementById('parish-filter-row');
+    const pillRowVisible = pillRowEl && pillRowEl.classList.contains('visible');
+    const topReserved = pillRowVisible
+      ? (pillRowEl.getBoundingClientRect().bottom)
+      : (bannerEl ? bannerEl.getBoundingClientRect().bottom : 0);
+    SNAP_FULL = Math.max(0, Math.round(topReserved + 6));
+
+    // PEEK exposes grab handle + mode bar.
     const handleEl = sheet.querySelector('.map-grab-handle');
     const modeBarEl = document.getElementById('mode-bar');
     const peekHeight = (handleEl?.offsetHeight || 14) + (modeBarEl?.offsetHeight || 38);
     SNAP_PEEK = window.innerHeight - peekHeight;
-    // Sheet total height = visible list area (innerHeight - SNAP_FULL) plus
-    // the offscreen spacer. At SNAP_FULL, sheet bottom sits SHEET_SPACER_PX
-    // below the visible viewport bottom. sheet-scroll keeps its original
-    // clientHeight because the spacer takes a fixed flex-basis, so the
-    // iOS address-bar overflow fix stays intact.
+
+    // HALF shows mode-bar + ~one event card + a bit of pad. Single event
+    // card is ~84px (padding 18 14 + content). 30px pad nudges the next
+    // row's silhouette into view as a hint.
+    const halfRevealPx = peekHeight + 84 + 30;
+    SNAP_HALF = Math.max(SNAP_FULL + 80, window.innerHeight - halfRevealPx);
+
     sheet.style.height = `${window.innerHeight - SNAP_FULL + SHEET_SPACER_PX}px`;
   }
   computeSnaps();
