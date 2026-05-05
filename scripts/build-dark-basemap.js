@@ -41,14 +41,21 @@ const darkLayers = themes.default('protomaps', 'dark');
 console.log(`Loaded ${darkLayers.length} layers from protomaps_themes_base('protomaps', 'dark')`);
 
 // ── Lift algorithm ───────────────────────────────────────────────────────
-// Linear remap of HSL lightness: L_new = FLOOR + L_old * (1 - FLOOR).
+// Linear remap of HSL lightness: L_new = floor + L_old * (1 - floor).
 // Preserves order between features (water still darker than land than roads)
-// while pushing the darkest end up to FLOOR. Hue and saturation untouched
-// so the basemap retains its existing colour identity.
+// while pushing the darkest end up to floor. Saturation also bumped so
+// protomaps' muted park greens / water blues approach Apple/Google's
+// vividness — the L lift alone left features sitting at neutral grey.
 //
-// FLOOR=0.18 targets parity with Apple Maps / Google Maps dark, which
-// render their darkest land tones around L≈0.18 (vs protomaps ≈0.07).
-const FLOOR = 0.18;
+// Per-paint-property tuning:
+//   FLOOR       = 0.22  — fills/lines/backgrounds. Apple/Google land floor
+//   SAT_BOOST   = 1.3   — multiplies saturation, clamped to 1.0
+//   LABEL_FLOOR = 0.60  — text-color: place names need to read against the
+//                         lifted basemap; protomaps ships them around
+//                         L≈0.4 (mid-grey), too dim against L=0.22 land.
+const FLOOR = 0.22;
+const SAT_BOOST = 1.3;
+const LABEL_FLOOR = 0.60;
 
 function rgbToHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
@@ -117,12 +124,14 @@ function toHex2(n) {
   return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
 }
 
-function liftColor(s) {
+function liftColor(s, opts) {
   const c = parseColor(s);
   if (!c) return s;
-  const [h, sat, l] = rgbToHsl(c.r, c.g, c.b);
-  const newL = FLOOR + l * (1 - FLOOR);
-  const [r, g, b] = hslToRgb(h, sat, newL);
+  // eslint-disable-next-line prefer-const
+  let [h, sat, l] = rgbToHsl(c.r, c.g, c.b);
+  l = opts.floor + l * (1 - opts.floor);
+  sat = Math.min(1, sat * opts.sat);
+  const [r, g, b] = hslToRgb(h, sat, l);
   if (c.a < 1) return `rgba(${r}, ${g}, ${b}, ${c.a})`;
   return '#' + toHex2(r) + toHex2(g) + toHex2(b);
 }
@@ -132,17 +141,28 @@ function liftColor(s) {
 // every embedded colour lifted, while non-colour values pass through.
 const COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\()/;
 
-function walkAndLift(value) {
+function walkAndLift(value, opts) {
   if (typeof value === 'string') {
-    return COLOR_RE.test(value) ? liftColor(value) : value;
+    return COLOR_RE.test(value) ? liftColor(value, opts) : value;
   }
-  if (Array.isArray(value)) return value.map(walkAndLift);
+  if (Array.isArray(value)) return value.map(v => walkAndLift(v, opts));
   if (value && typeof value === 'object') {
     const out = {};
-    for (const k of Object.keys(value)) out[k] = walkAndLift(value[k]);
+    for (const k of Object.keys(value)) out[k] = walkAndLift(value[k], opts);
     return out;
   }
   return value;
+}
+
+// Per-paint-key tuning. text-color gets a much higher floor so place names
+// stay legible against the lifted land/road tones. text-halo-color stays
+// at the default floor so the halo is darker than the text — that's the
+// contrast that makes labels read (light text, darker outline).
+const DEFAULT_OPTS = { floor: FLOOR, sat: SAT_BOOST };
+const TEXT_OPTS = { floor: LABEL_FLOOR, sat: 1.0 };
+function optsForKey(key) {
+  if (key === 'text-color') return TEXT_OPTS;
+  return DEFAULT_OPTS;
 }
 
 let lifted = 0;
@@ -152,7 +172,7 @@ const liftedLayers = darkLayers.map(layer => {
   for (const k of Object.keys(layer.paint)) {
     if (/color/i.test(k)) {
       const before = JSON.stringify(layer.paint[k]);
-      newPaint[k] = walkAndLift(layer.paint[k]);
+      newPaint[k] = walkAndLift(layer.paint[k], optsForKey(k));
       if (JSON.stringify(newPaint[k]) !== before) lifted++;
     } else {
       newPaint[k] = layer.paint[k];
