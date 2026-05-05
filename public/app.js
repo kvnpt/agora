@@ -1154,6 +1154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pid = pill.dataset.parish;
     const multi = !!state.filters.multiParish;
 
+    let justOpenedParishSheet = false;
     if (!multi) {
       // Single-parish default: tapping a pill is equivalent to tapping that
       // parish's marker — open the parish card and set the focus filter.
@@ -1166,6 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.filters.parishIds = new Set([pid]);
         state.parishFocus = pid;
         if (typeof window.openParishSheet === 'function') window.openParishSheet(pid);
+        justOpenedParishSheet = true;
       }
     } else {
       // Picker mode: pure toggle. No auto-collapse, no focus header — all
@@ -1182,7 +1184,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderParishPills();
-    renderCurrentView({ fit: true });
+    // When we just opened the parish sheet, its own flyTo math centres
+    // the parish in the visible-above-sheet region. updateMap's fitBounds
+    // would override that with a whole-viewport-centred fit, so suppress
+    // the fit on this code path.
+    renderCurrentView({ fit: !justOpenedParishSheet });
     syncURL();
   });
 });
@@ -1235,16 +1241,11 @@ function initParishMultiToggle() {
   const btn = document.getElementById('parish-multi-toggle');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    // Soft multi only — no map-tap ring overlay. Toggles the ability
-    // to keep adding/removing pill selections without single-tap-replace.
-    if (state.selectionMode) {
-      // Already in full Selection Mode — let the user step out via Done,
-      // but allow the multi-toggle to also act as an exit.
-      setSelectionMode(false);
-      return;
-    }
-    setParishPicker(!state.filters.multiParish);
-    syncParishMultiToggle();
+    // Single source of multi-select entry now: this FAB toggles the full
+    // Selection Mode (with map-tap-to-select ring + Done confirm). The
+    // old "Create filter" item in the filter menu has been removed; this
+    // is the canonical entry point.
+    setSelectionMode(!state.selectionMode);
   });
   syncParishMultiToggle();
 }
@@ -1260,7 +1261,11 @@ function initMultiParishToggle() {
   }
   syncMultiParishButton();
 
-  // In-view chip: FULL → HALF, HALF → FULL, PEEK → HALF.
+  // In-view chip toggles between FULL and HALF.
+  //   FULL  → HALF (collapse)
+  //   HALF  → FULL (expand)
+  //   PEEK  → FULL (jump up two stops; the user is reaching for the
+  //                 list, half-way feels like a non-commital stop).
   const chip = document.getElementById('in-view-chip');
   if (chip) {
     chip.addEventListener('click', () => {
@@ -1270,10 +1275,8 @@ function initMultiParishToggle() {
       const full = window.agoraSnapFull ? window.agoraSnapFull() : 0;
       if (y !== null && y < half - 5) {
         window.agoraSnapTo(half);   // FULL → HALF
-      } else if (y !== null && y >= half - 5 && y <= half + 5) {
-        window.agoraSnapTo(full);   // HALF → FULL
       } else {
-        window.agoraSnapTo(half);   // PEEK → HALF
+        window.agoraSnapTo(full);   // HALF or PEEK → FULL
       }
     });
   }
