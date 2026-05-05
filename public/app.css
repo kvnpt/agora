@@ -1661,9 +1661,12 @@ input, select, textarea {
   .detail-url-copy { filter: brightness(0) invert(1); }
   /* Filter FAB sliders glyph + filter-menu list-item glyphs (Iconify imgs).
      img.fm-icon — the EN badge is a span, no filter applied (it picks up
-     CSS color). */
+     CSS color). The .active rule below at non-dark specificity sets
+     filter:none, which would leave the glyph black on the .active dark
+     bg — restore the invert for active items too. */
   #btn-filters .filters-btn-content img,
-  .filters-menu-item img.fm-icon { filter: brightness(0) invert(1); }
+  .filters-menu-item img.fm-icon,
+  .filters-menu-item.active img.fm-icon { filter: brightness(0) invert(1); }
   /* Lift parish-coloured acronyms on event cards so dark hues stay legible. */
   .event-parish-acronym { filter: brightness(1.5); }
 
@@ -1850,7 +1853,7 @@ input, select, textarea {
   gap: 6px;
   width: 100%;
   padding: 12px 14px 6px;
-  background: #fafafa;
+  background: var(--surface-2);
   border: none;
   border-bottom: 1px solid var(--border-light);
   color: var(--text-muted);
@@ -1903,7 +1906,7 @@ input, select, textarea {
   align-items: center;
   justify-content: flex-start;
   gap: 20px;
-  background: #fff;
+  background: var(--bg);
 }
 .list-footer-note {
   font-size: 11px;
@@ -1918,7 +1921,7 @@ input, select, textarea {
   user-select: none;
 }
 .list-footer-btn {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 12px;
@@ -1954,7 +1957,7 @@ input, select, textarea {
   border-radius: 20px;
   padding: 10px 20px;
   min-height: 44px;
-  background: #fff;
+  background: var(--surface);
   transition: border-color 0.15s, color 0.15s;
 }
 .list-footer-arch-link::after {
