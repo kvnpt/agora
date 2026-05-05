@@ -325,8 +325,9 @@ input, select, textarea {
   gap: 6px;
   flex-wrap: wrap;
 }
-/* English toggle in mode-bar — replaces the share pill's old slot. Inherits
-   .filters-menu-item base look but compacted to fit the row. */
+/* English toggle in mode-bar — replaces the share pill's old slot. Pill
+   button (NOT a filters-menu-item) so the menu's vertical-list layout
+   doesn't override the inline-flex pill look. */
 .mode-bar-en {
   flex: none;
   display: inline-flex;
@@ -344,6 +345,7 @@ input, select, textarea {
 }
 .mode-bar-en:hover { color: var(--text); }
 .mode-bar-en .fm-en-badge {
+  display: inline-block;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -358,8 +360,10 @@ input, select, textarea {
   border-color: var(--text);
 }
 .mode-bar-en.strict .fm-en-badge { background: currentColor; color: var(--bg); }
-/* Mode-bar pill row — Schedules / Socials / Admin promoted from filter
-   menu. Each pill is icon + label, FAB-styled like the parish pills. */
+/* Mode-bar pill row — Schedules / Socials / Admin. Each pill is icon +
+   label, FAB-styled like the parish pills. Standalone class (not
+   filters-menu-item) so the menu's block-stacked-list layout never
+   overrides the row layout. */
 .mode-bar-pill {
   flex: none;
   display: inline-flex;
@@ -369,30 +373,35 @@ input, select, textarea {
   background: var(--fab-bg);
   border: 1px solid var(--border);
   border-radius: 999px;
+  font: inherit;
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text-secondary);
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
 }
 .mode-bar-pill:hover { color: var(--text); }
-.mode-bar-pill .fm-icon {
+.mode-bar-pill-icon {
   width: 16px;
   height: 16px;
   flex: none;
   opacity: 0.85;
 }
+.mode-bar-pill-label { font-size: 12px; }
 .mode-bar-pill.active {
   background: var(--text);
   color: var(--bg);
   border-color: var(--text);
 }
-.mode-bar-pill.active .fm-icon { filter: brightness(0) invert(1); opacity: 1; }
+.mode-bar-pill.active .mode-bar-pill-icon { filter: brightness(0) invert(1); opacity: 1; }
 @media (prefers-color-scheme: dark) {
   /* Dark mode: --bg is charcoal, so .active bg=var(--text) means light-on-dark
      is already correct; icon needs to flip to dark to match the inverse text. */
-  .mode-bar-pill.active .fm-icon { filter: brightness(0); }
+  .mode-bar-en .fm-en-badge { filter: none; }
+  .mode-bar-pill .mode-bar-pill-icon { filter: brightness(0) invert(1); }
+  .mode-bar-pill.active .mode-bar-pill-icon { filter: brightness(0); }
 }
 
 .services-btn {
@@ -679,7 +688,11 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 /* ── Parish filter pills ── */
 /* Promoted out of #bottom-sheet so it floats below the jurisdiction banner.
    Pinned via position:fixed so it stays put while the sheet drags. JS still
-   toggles .visible to mount/unmount. */
+   toggles .visible to mount/unmount.
+
+   Solid backdrop strip (--bg with subtle blur) so the row reads as a
+   continuation of the jurisdiction banner rather than a transparent
+   strip overlay on the map. */
 .parish-filter-row {
   position: fixed;
   left: 0;
@@ -690,6 +703,8 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   padding: 8px 12px;
   padding-left: max(12px, env(safe-area-inset-left));
   padding-right: max(12px, env(safe-area-inset-right));
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-light);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;

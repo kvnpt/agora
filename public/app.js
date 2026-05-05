@@ -1415,7 +1415,10 @@ function syncEnglishButton() {
   const f = window.agoraParishSheetVisible ? state.parishFilters : state.filters;
   btn.classList.toggle('active', f.englishOnly);
   btn.classList.toggle('strict', f.englishStrict);
-  const label = btn.querySelector('.fm-label');
+  // Label class changed when the English button moved from filter menu
+  // (.fm-label) to mode-bar (.mode-bar-en-label). Match either so the
+  // function works regardless of where the button is mounted.
+  const label = btn.querySelector('.mode-bar-en-label, .fm-label');
   if (label) {
     if (f.englishStrict) label.textContent = 'English-only';
     else if (f.englishOnly) label.textContent = 'English with bilingual';
