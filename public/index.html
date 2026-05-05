@@ -248,13 +248,6 @@
     <span class="share-pill-label">Share View</span>
   </button>
 
-  <!-- Logout button kept off-screen via .filters-menu-item hidden flow.
-       Surfaces only after auth (whoami.method === 'phone'); user taps to
-       end session. Lives outside the now-removed filter menu. -->
-  <button class="filters-menu-item fm-logout" id="btn-logout" role="menuitem" hidden style="display:none">
-    <img class="fm-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-    <span class="fm-label">Log out</span>
-  </button>
 
   <!-- Map-selection overlay (visible when state.selectionMode is true).
        Toolbar sits inset in the dotted ring's top-left corner: label +
@@ -300,6 +293,10 @@
           <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:shield-check.svg" alt="">
           <span class="mode-bar-pill-label">Admin</span>
         </a>
+        <button class="mode-bar-pill fm-logout" id="btn-logout" type="button" role="menuitem" hidden>
+          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+          <span class="mode-bar-pill-label">Log out</span>
+        </button>
       </div>
     </div>
 
