@@ -1292,7 +1292,14 @@ window.agoraRenderInViewChip = renderInViewChip;
 function syncParishRowVisibility() {
   const row = document.getElementById('parish-filter-row');
   if (!row) return;
+  const wasVisible = row.classList.contains('visible');
   row.classList.add('visible');
+  // First time the row becomes visible, recompute snaps — PEEK includes
+  // the pill row's height, but at init the row was display:none and
+  // measured zero. Defer one frame so layout reflects the class change.
+  if (!wasVisible && typeof window.agoraRecomputeSnaps === 'function') {
+    requestAnimationFrame(() => window.agoraRecomputeSnaps());
+  }
 }
 window.agoraSyncParishRowVisibility = syncParishRowVisibility;
 
@@ -2355,6 +2362,18 @@ function initBottomSheet() {
   window.agoraSnapFull = () => SNAP_FULL;
   window.agoraSnapHalf = () => SNAP_HALF;
   window.agoraSnapPeek = () => SNAP_PEEK;
+  // Expose recompute so syncParishRowVisibility can re-measure once the
+  // pill row has actually been display:flex'd. Without this, computeSnaps
+  // runs at init while the row is still display:none → offsetHeight=0,
+  // PEEK lands too low and the parish pills hide behind the viewport.
+  window.agoraRecomputeSnaps = () => {
+    computeSnaps();
+    // If the sheet is currently parked at PEEK, snap it to the new value
+    // so the pill row visibly comes into view.
+    if (Math.abs(currentY - SNAP_PEEK) < 4 || currentY > SNAP_PEEK - 4) {
+      snapTo(SNAP_PEEK);
+    }
+  };
 
   // Hide/restore for parish sheet overlay — stash current Y and scrollTop,
   // snap offscreen, restore both when overlay closes. snapTo itself resets
