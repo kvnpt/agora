@@ -604,18 +604,18 @@ input, select, textarea {
   opacity: 0.5;
 }
 
-/* Parish pill — FAB-row vocabulary now: surface fill, shadow, larger
-   tap target. Inline JS still stamps colour/border for active/in-view
-   states (see renderParishPills). */
+/* Parish pill — FAB vocabulary: same translucent surface as the
+   location/filters FABs so the row reads as a peer band of FABs.
+   Compact padding/size kept tight so the row fits more on-screen. */
 .parish-pill {
   flex: none;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 3px 9px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-muted);
   background: var(--fab-bg);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   border-radius: 999px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
   cursor: pointer;
