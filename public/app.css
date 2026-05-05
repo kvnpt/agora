@@ -185,18 +185,36 @@ input, select, textarea {
      fits). JS adds .scrolled-start / .scrolled-end to apply the
      gradient mask when the user scrolls past the start / before the end. */
 }
-.jurisdiction-banner.scrolled-start {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+/* Edge fades use ::before / ::after gradient overlays in --bg so the fade
+   ramps to the bar's bg colour, not transparent (which would show map
+   underneath). Only painted when the matching scrolled-* class is on. */
+.jurisdiction-banner::before,
+.jurisdiction-banner::after {
+  content: '';
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: 28px;
+  height: 100%;
+  align-self: stretch;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
 }
-.jurisdiction-banner.scrolled-end {
-  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+.jurisdiction-banner::before {
+  left: 0;
+  margin-right: -28px;
+  background: linear-gradient(to right, var(--bg) 0, transparent);
+  order: -1;
 }
-.jurisdiction-banner.scrolled-start.scrolled-end {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
+.jurisdiction-banner::after {
+  right: 0;
+  margin-left: -28px;
+  background: linear-gradient(to left, var(--bg) 0, transparent);
 }
+.jurisdiction-banner.scrolled-start::before { opacity: 1; }
+.jurisdiction-banner.scrolled-end::after { opacity: 1; }
 .jurisdiction-banner::-webkit-scrollbar { display: none; }
 
 .jurisdiction-chip {
@@ -344,20 +362,34 @@ input, select, textarea {
   scrollbar-width: none;
 }
 .mode-bar-row-pills::-webkit-scrollbar { display: none; }
-/* Edge-fade mask, applied via JS class when there's content off the
-   respective edge. Same pattern as the jurisdiction banner. */
-.mode-bar-row-pills.scrolled-start {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+/* Edge fades with sticky pseudo-elements painting var(--bg)→transparent
+   so map doesn't show through. Same pattern as .jurisdiction-banner. */
+.mode-bar-row-pills::before,
+.mode-bar-row-pills::after {
+  content: '';
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: 24px;
+  align-self: stretch;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
 }
-.mode-bar-row-pills.scrolled-end {
-  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+.mode-bar-row-pills::before {
+  left: 0;
+  margin-right: -24px;
+  background: linear-gradient(to right, var(--bg) 0, transparent);
+  order: -1;
 }
-.mode-bar-row-pills.scrolled-start.scrolled-end {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
+.mode-bar-row-pills::after {
+  right: 0;
+  margin-left: -24px;
+  background: linear-gradient(to left, var(--bg) 0, transparent);
 }
+.mode-bar-row-pills.scrolled-start::before { opacity: 1; }
+.mode-bar-row-pills.scrolled-end::after { opacity: 1; }
 /* English toggle in mode-bar — replaces the share pill's old slot. Pill
    button (NOT a filters-menu-item) so the menu's vertical-list layout
    doesn't override the inline-flex pill look. */
@@ -765,6 +797,32 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .parish-filter-row::-webkit-scrollbar { display: none; }
 .parish-filter-row.visible { display: flex; align-items: center; }
+.parish-filter-row::before,
+.parish-filter-row::after {
+  content: '';
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: 24px;
+  align-self: stretch;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+.parish-filter-row::before {
+  left: 0;
+  margin-right: -24px;
+  background: linear-gradient(to right, var(--bg) 0, transparent);
+  order: -1;
+}
+.parish-filter-row::after {
+  right: 0;
+  margin-left: -24px;
+  background: linear-gradient(to left, var(--bg) 0, transparent);
+}
+.parish-filter-row.scrolled-start::before { opacity: 1; }
+.parish-filter-row.scrolled-end::after { opacity: 1; }
 
 /* Multi-toggle FAB at the start of the row — sticky-left so it stays
    put while pills scroll under it. Active state mirrors selection mode
@@ -1419,7 +1477,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   cursor: pointer;
   line-height: 1;
   padding: 4px 8px;
-  z-index: 1;
+  /* No explicit z-index — leave the close button in the card's natural
+     stacking so the parish-sheet's sticky header (z=2) paints over it
+     when the card scrolls behind. Earlier z-index:1 made it float over
+     the header. */
 }
 .event-drawer-meta {
   display: flex;
@@ -2678,7 +2739,10 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   align-items: center;
   gap: 12px;
   padding: 10px 12px 34px 16px; /* extra bottom for absolute URL chip */
-  background: var(--surface);
+  /* --bg matches the parish-sheet background so the header reads as
+     part of the same surface. Using --surface earlier produced a slight
+     band of different tone in dark mode. */
+  background: var(--bg);
   border-bottom: 1px solid var(--border-light);
 }
 .ps-avatar {
@@ -2850,8 +2914,13 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
    toggle the in-card filter while reading down the events list. */
 .ps-filter-row {
   position: sticky;
-  top: 0;
-  z-index: 5;
+  /* Sticks to the bottom edge of .ps-header (also sticky at top:0).
+     JS measures header height after each render and writes the value
+     to --ps-header-h on the parish-sheet root. */
+  top: var(--ps-header-h, 80px);
+  /* Z-index sits below .ps-header (z=2) so the header always paints over
+     the filter row when both are sticky-stacked. */
+  z-index: 1;
   display: flex;
   gap: 6px;
   padding: 8px 16px;
