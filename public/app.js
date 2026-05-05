@@ -1960,11 +1960,12 @@ function initBottomSheet() {
     // Sheet z-index > banner z-index so it overlays cleanly.
     SNAP_FULL = 0;
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
-    // PEEK exposes only the grab handle + modal bar. Measure live so it
-    // tracks any future bar-height changes without a magic constant.
+    // PEEK exposes grab handle + modal bar + parish pill row. Measure live so
+    // it tracks any future bar-height changes without a magic constant.
     const handleEl = sheet.querySelector('.map-grab-handle');
     const modeBarEl = document.getElementById('mode-bar');
-    const peekHeight = (handleEl?.offsetHeight || 14) + (modeBarEl?.offsetHeight || 38);
+    const pillRowEl = document.getElementById('parish-filter-row');
+    const peekHeight = (handleEl?.offsetHeight || 14) + (modeBarEl?.offsetHeight || 38) + (pillRowEl?.offsetHeight || 0);
     SNAP_PEEK = window.innerHeight - peekHeight;
     // Sheet total height = visible list area (innerHeight - SNAP_FULL) plus
     // the offscreen spacer. At SNAP_FULL, sheet bottom sits SHEET_SPACER_PX
