@@ -115,8 +115,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMultiParishToggle();
   initParishMultiToggle();
   initScrollFade(document.getElementById('mode-bar-row-pills'));
-  initScrollFade(document.getElementById('jurisdiction-chips'));
-  initScrollFade(document.getElementById('parish-filter-row'));
+  // Juris banner + parish-pill row use a wrapper-with-overlays pattern;
+  // classes go on the wrap, scroll listener attaches to the inner row.
+  initScrollFade(
+    document.getElementById('jurisdiction-chips'),
+    document.getElementById('jurisdiction-banner-wrap')
+  );
+  initScrollFade(
+    document.getElementById('parish-filter-row'),
+    document.getElementById('parish-filter-row-wrap')
+  );
   initResetFab();
   initLocationFab();
   initModeUrl();
@@ -1031,8 +1039,8 @@ function updateArchdioceseEventsBanner() {
   const banner = document.getElementById('archdiocese-events-banner');
   const j = state.filters.jurisdiction;
   const url = j && ARCHDIOCESE_EVENTS[j];
-  const parishRow = document.getElementById('parish-filter-row');
-  const pillsVisible = parishRow.classList.contains('visible');
+  const parishRowWrap = document.getElementById('parish-filter-row-wrap');
+  const pillsVisible = parishRowWrap && parishRowWrap.classList.contains('visible');
 
   if (state.mode === 'services' && pillsVisible && url) {
     banner.href = url;
@@ -1254,18 +1262,21 @@ function syncParishMultiToggle() {
 window.agoraSyncParishMultiToggle = syncParishMultiToggle;
 
 // Toggle .scrolled-start / .scrolled-end on a horizontal-scroll container so
-// CSS edge-fade masks only paint when there's content beyond the visible
-// edge. Used by .jurisdiction-banner and .mode-bar-row-pills.
-function initScrollFade(el) {
+// CSS edge-fade overlays only paint when there's content beyond the visible
+// edge. classTarget defaults to the scroll element — pass a separate target
+// (e.g. wrap container) when fades live as ::before/::after on the wrap
+// rather than on the scrolling element itself.
+function initScrollFade(el, classTarget) {
   if (!el) return;
+  const target = classTarget || el;
   const sync = () => {
     const max = el.scrollWidth - el.clientWidth;
     if (max <= 1) {
-      el.classList.remove('scrolled-start', 'scrolled-end');
+      target.classList.remove('scrolled-start', 'scrolled-end');
       return;
     }
-    el.classList.toggle('scrolled-start', el.scrollLeft > 1);
-    el.classList.toggle('scrolled-end', el.scrollLeft < max - 1);
+    target.classList.toggle('scrolled-start', el.scrollLeft > 1);
+    target.classList.toggle('scrolled-end', el.scrollLeft < max - 1);
   };
   el.addEventListener('scroll', sync, { passive: true });
   window.addEventListener('resize', sync);
@@ -1346,14 +1357,14 @@ function syncJurisBottomVar() {
   // jurisdiction banner alone, or banner + parish pill row when the row
   // is mounted. Selection mode's dotted ring uses this to start below
   // both, keeping the ring's bounds clean of the top UI.
-  const banner = document.getElementById('jurisdiction-chips');
-  const pillRow = document.getElementById('parish-filter-row');
-  const pillVisible = pillRow && pillRow.classList.contains('visible');
+  const bannerWrap = document.getElementById('jurisdiction-banner-wrap');
+  const pillWrap = document.getElementById('parish-filter-row-wrap');
+  const pillVisible = pillWrap && pillWrap.classList.contains('visible');
   let bottom = 48;
   if (pillVisible) {
-    bottom = pillRow.getBoundingClientRect().bottom;
-  } else if (banner) {
-    bottom = banner.getBoundingClientRect().bottom;
+    bottom = pillWrap.getBoundingClientRect().bottom;
+  } else if (bannerWrap) {
+    bottom = bannerWrap.getBoundingClientRect().bottom;
   }
   document.documentElement.style.setProperty('--juris-bottom', Math.round(bottom + 8) + 'px');
 }
@@ -1431,10 +1442,10 @@ function renderInViewChip() {
 window.agoraRenderInViewChip = renderInViewChip;
 
 function syncParishRowVisibility() {
-  const row = document.getElementById('parish-filter-row');
-  if (!row) return;
-  row.classList.add('visible');
-  // Pin the row directly below the jurisdiction banner. Banner height
+  const wrap = document.getElementById('parish-filter-row-wrap');
+  if (!wrap) return;
+  wrap.classList.add('visible');
+  // Pin the wrap directly below the jurisdiction banner. Banner height
   // varies with safe-area-inset-top, so measure live every visibility
   // change rather than using a static offset.
   positionParishFilterRow();
@@ -1447,11 +1458,11 @@ function syncParishRowVisibility() {
 }
 
 function positionParishFilterRow() {
-  const banner = document.getElementById('jurisdiction-chips');
-  const row = document.getElementById('parish-filter-row');
-  if (!banner || !row) return;
-  const rect = banner.getBoundingClientRect();
-  row.style.top = Math.max(0, rect.bottom) + 'px';
+  const bannerWrap = document.getElementById('jurisdiction-banner-wrap');
+  const wrap = document.getElementById('parish-filter-row-wrap');
+  if (!bannerWrap || !wrap) return;
+  const rect = bannerWrap.getBoundingClientRect();
+  wrap.style.top = Math.max(0, rect.bottom) + 'px';
 }
 window.agoraPositionParishFilterRow = positionParishFilterRow;
 window.addEventListener('resize', positionParishFilterRow);
@@ -2195,12 +2206,12 @@ function initBottomSheet() {
     // FULL leaves the jurisdiction banner + parish pill row visible above
     // the sheet — sheet's top edge sits just below the pill row (or below
     // the banner if pill row is hidden).
-    const bannerEl = document.getElementById('jurisdiction-chips');
-    const pillRowEl = document.getElementById('parish-filter-row');
-    const pillRowVisible = pillRowEl && pillRowEl.classList.contains('visible');
-    const topReserved = pillRowVisible
-      ? (pillRowEl.getBoundingClientRect().bottom)
-      : (bannerEl ? bannerEl.getBoundingClientRect().bottom : 0);
+    const bannerWrap = document.getElementById('jurisdiction-banner-wrap');
+    const pillWrap = document.getElementById('parish-filter-row-wrap');
+    const pillVisible = pillWrap && pillWrap.classList.contains('visible');
+    const topReserved = pillVisible
+      ? (pillWrap.getBoundingClientRect().bottom)
+      : (bannerWrap ? bannerWrap.getBoundingClientRect().bottom : 0);
     SNAP_FULL = Math.max(0, Math.round(topReserved + 6));
 
     // PEEK exposes grab handle + mode bar.
@@ -2768,10 +2779,13 @@ function initParishSheet() {
     document.body.style.userSelect = '';
     document.body.style.webkitUserSelect = '';
     const velocity = getVelocity();
-    // Dismiss if dragged well past peek, or fast-flicked down past half
+    // Dismiss if dragged well past peek, or fast-flicked down past half.
+    // Route through closeParishSheet so the implicit single-pill filter
+    // gets cleared on swipe-dismiss too (the inner close() bypasses it).
     const dismissThreshold = SNAP_PEEK + 60;
     if (currentY > dismissThreshold || (velocity > 600 && currentY > SNAP_HALF)) {
-      close();
+      if (typeof window.closeParishSheet === 'function') window.closeParishSheet();
+      else close();
       return;
     }
     snapTo(nearestSnap(currentY, velocity));
@@ -3209,8 +3223,11 @@ function renderParishSheetContent(parishId, opts = {}) {
       </div>`;
   }
 
-  // Service times — always shown when there are schedules. Same renderer
-  // as the main schedules list so visuals stay aligned.
+  // Service times — always shown when there are schedules. Renders inside
+  // the same .parish-schedule wrapper used by the main schedules list so
+  // visuals match (no more forked .ps-sched-card style). Avatar/name head
+  // is suppressed via .head-suppressed since the parish identity is
+  // already carried by .ps-header above.
   const scheds = (state.schedules || [])
     .filter(s => s.parish_id === parishId)
     .sort((a, b) => a.day_of_week - b.day_of_week);
@@ -3218,8 +3235,7 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (scheds.length) {
     schedSectionHtml = `
       <div class="ps-section">
-        <div class="ps-section-title">Service times</div>
-        <div class="ps-sched-card">
+        <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
           ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
         </div>
       </div>`;
@@ -3426,19 +3442,32 @@ function renderParishSheetContent(parishId, opts = {}) {
         else { f.englishOnly = false; f.englishStrict = false; }
       }
       syncParishFilterPills();
-      // Re-render the events list with the updated parish-scoped filters.
+      // Snapshot scroll position before the re-render and restore after.
+      // Filter toggles only affect events list contents — preserve the
+      // user's scroll position rather than jumping to the top.
+      const scrollEl = document.getElementById('parish-sheet-scroll');
+      const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
       if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus);
+      requestAnimationFrame(() => {
+        if (scrollEl) scrollEl.scrollTop = savedScroll;
+      });
     });
   });
   syncParishFilterPills();
-  // After the parish-sheet content paints, write the header's measured
-  // height into a CSS var so .ps-filter-row's sticky top sits cleanly
-  // below the (also sticky) .ps-header.
+  // After the parish-sheet content paints, write the measured heights
+  // into CSS vars so sticky descendants land at the right offsets:
+  //   --ps-header-h: just below .ps-header (used by .ps-filter-row)
+  //   --ps-stack-h:  just below header + filter row (used by .day-hdr)
+  // Sticky time-card-head adds 37px to --ps-stack-h.
   requestAnimationFrame(() => {
     const header = contentEl.querySelector('.ps-header');
+    const filterRow = contentEl.querySelector('.ps-filter-row');
     const sheet = document.getElementById('parish-sheet');
     if (header && sheet) {
-      sheet.style.setProperty('--ps-header-h', Math.round(header.getBoundingClientRect().height) + 'px');
+      const headerH = Math.round(header.getBoundingClientRect().height);
+      const filterH = filterRow ? Math.round(filterRow.getBoundingClientRect().height) : 0;
+      sheet.style.setProperty('--ps-header-h', headerH + 'px');
+      sheet.style.setProperty('--ps-stack-h', (headerH + filterH) + 'px');
     }
   });
 

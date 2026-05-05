@@ -164,57 +164,53 @@ input, select, textarea {
   font-size: 16px !important;
 }
 
-/* ── Jurisdiction banner ── */
-.jurisdiction-banner {
+/* ── Jurisdiction banner ──
+   Wrapper carries fixed positioning + edge-fade overlays. Inner div is
+   the actual horizontally-scrolling row. Wrapper-with-overlay pattern
+   avoids the sticky-inside-scroll issues that the earlier pseudo-on-the-
+   scrolling-element approach had. */
+.jurisdiction-banner-wrap {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 600;
   background: var(--bg);
-  display: flex;
-  gap: 0;
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  overflow: hidden;
   padding-top: env(safe-area-inset-top);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
-  /* Edge-fade mask. Default state has neither edge faded (banner content
-     fits). JS adds .scrolled-start / .scrolled-end to apply the
-     gradient mask when the user scrolls past the start / before the end. */
 }
-/* Edge fades use ::before / ::after gradient overlays in --bg so the fade
-   ramps to the bar's bg colour, not transparent (which would show map
-   underneath). Only painted when the matching scrolled-* class is on. */
-.jurisdiction-banner::before,
-.jurisdiction-banner::after {
+.jurisdiction-banner {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.jurisdiction-banner-wrap::before,
+.jurisdiction-banner-wrap::after {
   content: '';
-  position: sticky;
-  top: 0;
-  flex: none;
+  position: absolute;
+  top: env(safe-area-inset-top);
+  bottom: 0;
   width: 28px;
-  height: 100%;
-  align-self: stretch;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 1;
 }
-.jurisdiction-banner::before {
-  left: 0;
-  margin-right: -28px;
+.jurisdiction-banner-wrap::before {
+  left: env(safe-area-inset-left);
   background: linear-gradient(to right, var(--bg) 0, transparent);
-  order: -1;
 }
-.jurisdiction-banner::after {
-  right: 0;
-  margin-left: -28px;
+.jurisdiction-banner-wrap::after {
+  right: env(safe-area-inset-right);
   background: linear-gradient(to left, var(--bg) 0, transparent);
 }
-.jurisdiction-banner.scrolled-start::before { opacity: 1; }
-.jurisdiction-banner.scrolled-end::after { opacity: 1; }
+.jurisdiction-banner-wrap.scrolled-start::before { opacity: 1; }
+.jurisdiction-banner-wrap.scrolled-end::after { opacity: 1; }
 .jurisdiction-banner::-webkit-scrollbar { display: none; }
 
 .jurisdiction-chip {
@@ -769,69 +765,70 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border-color: var(--border);
 }
 
-/* ── Parish filter pills ── */
-/* Promoted out of #bottom-sheet so it floats below the jurisdiction banner.
-   Pinned via position:fixed so it stays put while the sheet drags. JS still
-   toggles .visible to mount/unmount.
-
-   Solid backdrop strip (--bg with subtle blur) so the row reads as a
-   continuation of the jurisdiction banner rather than a transparent
-   strip overlay on the map. */
-.parish-filter-row {
+/* ── Parish filter pills ──
+   Wrapper carries fixed positioning + the multi-toggle FAB (sits OUTSIDE
+   the scroll so it doesn't move with pills) + edge-fade overlays. Inner
+   .parish-filter-row is just the scrolling flex container. */
+.parish-filter-row-wrap {
   position: fixed;
   left: 0;
   right: 0;
   z-index: 600;
   display: none;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   padding: 8px 12px;
   padding-left: max(12px, env(safe-area-inset-left));
   padding-right: max(12px, env(safe-area-inset-right));
   background: var(--bg);
   border-bottom: 1px solid var(--border-light);
+  overflow: hidden;
+  /* JS sets `top` to the bottom edge of the jurisdiction banner so the
+     wrap tracks the banner's height + safe-area-inset-top. */
+}
+.parish-filter-row-wrap.visible { display: flex; }
+.parish-filter-row {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  /* JS sets `top` to the bottom edge of the jurisdiction banner so the
-     row tracks the banner's height + safe-area-inset-top. */
+  min-width: 0;
 }
 .parish-filter-row::-webkit-scrollbar { display: none; }
-.parish-filter-row.visible { display: flex; align-items: center; }
-.parish-filter-row::before,
-.parish-filter-row::after {
+.parish-filter-row-wrap::before,
+.parish-filter-row-wrap::after {
   content: '';
-  position: sticky;
+  position: absolute;
   top: 0;
-  flex: none;
+  bottom: 0;
   width: 24px;
-  align-self: stretch;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 1;
 }
-.parish-filter-row::before {
-  left: 0;
-  margin-right: -24px;
+.parish-filter-row-wrap::before {
+  /* Start fade sits to the right of the multi-toggle FAB so the FAB
+     stays clear; matches the visible scroll-edge of the inner row. */
+  left: calc(max(12px, env(safe-area-inset-left)) + 32px);
   background: linear-gradient(to right, var(--bg) 0, transparent);
-  order: -1;
 }
-.parish-filter-row::after {
-  right: 0;
-  margin-left: -24px;
+.parish-filter-row-wrap::after {
+  right: max(12px, env(safe-area-inset-right));
   background: linear-gradient(to left, var(--bg) 0, transparent);
 }
-.parish-filter-row.scrolled-start::before { opacity: 1; }
-.parish-filter-row.scrolled-end::after { opacity: 1; }
+.parish-filter-row-wrap.scrolled-start::before { opacity: 1; }
+.parish-filter-row-wrap.scrolled-end::after { opacity: 1; }
 
-/* Multi-toggle FAB at the start of the row — sticky-left so it stays
-   put while pills scroll under it. Active state mirrors selection mode
-   too (state.filters.multiParish || state.selectionMode → .active). */
+/* Multi-toggle FAB sits outside the scrolling pill row inside
+   .parish-filter-row-wrap, so no sticky positioning needed. Active state
+   mirrors selection mode (state.filters.multiParish || state.selectionMode
+   → .active). */
 .parish-multi-toggle {
   flex: none;
-  position: sticky;
-  left: 0;
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -843,7 +840,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
   cursor: pointer;
-  margin-right: 4px;
+  margin-right: 2px;
 }
 .parish-multi-toggle img {
   width: 16px;
@@ -1008,7 +1005,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
    parish-group: left border in parish colour; name then acronym snapped to stroke. */
 .day-hdr {
   position: sticky;
-  top: 0;
+  /* In parish-sheet, --ps-stack-h is set to the combined height of
+     .ps-header + .ps-filter-row so day headers stick below them.
+     Outside parish-sheet, the var resolves to 0 (default). */
+  top: var(--ps-stack-h, 0);
   z-index: 5;
   background: var(--bg);
   font-size: 13px;
@@ -1075,7 +1075,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
    behind day-hdr's z-index: 5 background, guaranteeing zero sub-pixel gap). */
 .time-card-head {
   position: sticky;
-  top: 37px;
+  /* Sticks 37px below the day-hdr (its measured height of ~38px). In
+     parish-sheet add --ps-stack-h on top so it sits below the
+     header + filter row + day-hdr. */
+  top: calc(var(--ps-stack-h, 0px) + 37px);
   z-index: 4;
   background: var(--bg);
   display: flex;
