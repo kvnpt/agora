@@ -115,8 +115,11 @@
        lift off the dark protomaps tiles. Used by both text-halo-color
        (parish labels) and circle-stroke-color (parish dots). */
     --halo: #0b0b0d;
+    /* No fade overlay in dark — the protomaps dark basemap is already the
+       desired tone, no tint needed. Opacity 0 keeps the layer in the stack
+       (paint property setting still works) but renders invisible. */
     --map-fade: #0b0b0d;
-    --map-fade-opacity: 0.25;
+    --map-fade-opacity: 0;
 
     /* shadow */
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.6);

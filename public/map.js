@@ -282,9 +282,9 @@ function addParishSourceAndLayers() {
       'circle-radius': [
         'case',
         ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
-        ['==', ['get', 'focused'], true], 8,
-        ['==', ['get', 'selected'], true], 8,
-        5
+        ['==', ['get', 'focused'], true], 6,
+        ['==', ['get', 'selected'], true], 6,
+        3.75
       ],
       'circle-color': ['get', 'color'],
       // Same source as label halo so dot rings and label outlines flip
@@ -440,7 +440,7 @@ function addUserLocSourceAndLayer(state) {
     type: 'circle',
     source: USER_SOURCE,
     paint: {
-      'circle-radius': 6,
+      'circle-radius': 4.5,
       'circle-color': '#4285f4',
       'circle-stroke-color': '#ffffff',
       'circle-stroke-width': 2
