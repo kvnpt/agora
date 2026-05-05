@@ -940,6 +940,7 @@ function initModeBar() {
     }
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
     if (typeof syncResetFab === 'function') syncResetFab();
+    if (typeof syncParishFilterPills === 'function') syncParishFilterPills();
     snapMainSheetToFull();
     syncURL();
   });
@@ -1505,6 +1506,7 @@ function initSocialFilter() {
     syncFiltersButton();
     snapMainSheetToFull();
     if (typeof renderInViewChip === 'function') renderInViewChip();
+    if (typeof syncParishFilterPills === 'function') syncParishFilterPills();
     syncURL();
   });
 }
@@ -1538,6 +1540,7 @@ function initEnglishFilter() {
     // The in-view chip pre-filters by parish — when the English filter
     // toggles, parish set changes too; recount.
     if (typeof renderInViewChip === 'function') renderInViewChip();
+    if (typeof syncParishFilterPills === 'function') syncParishFilterPills();
     syncURL();
   });
   syncEnglishButton();
@@ -2638,6 +2641,11 @@ function initParishSheet() {
   const scroll = document.getElementById('parish-sheet-scroll');
   const fab = document.getElementById('location-fab');
   const filterFab = document.getElementById('btn-filters');
+  // Share FAB (bottom-left) needs to track parish-sheet height too —
+  // earlier rounds added it to the main sheet's trackedFabs but the
+  // parish sheet had its own [fab, filterFab] iteration.
+  const shareFab = document.getElementById('mode-url');
+  const psTrackedFabs = [fab, filterFab, shareFab].filter(Boolean);
 
   let SNAP_FULL, SNAP_HALF, SNAP_PEEK, SNAP_HIDDEN;
   let currentY;
@@ -2694,11 +2702,10 @@ function initParishSheet() {
       settled = true;
       sheet.classList.remove('snapping');
       updateScrollLock();
-      // Follow parish sheet with the location + filter FABs — except while
-      // dismissed (onDone takes care of those cleanup cases).
+      // Follow parish sheet with the location + filter + share FABs.
+      // (onDone takes care of dismissal cleanup separately.)
       if (window.agoraParishSheetVisible) {
-        [fab, filterFab].forEach(f => {
-          if (!f) return;
+        psTrackedFabs.forEach(f => {
           f.style.top = (currentY - 52) + 'px';
           f.classList.remove('fading');
         });
@@ -2730,7 +2737,7 @@ function initParishSheet() {
     sheet.classList.remove('snapping');
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
-    [fab, filterFab].forEach(f => { if (f) f.classList.add('fading'); });
+    psTrackedFabs.forEach(f => f.classList.add('fading'));
   }
 
   function moveDrag(y) {
@@ -3044,6 +3051,35 @@ function initParishSheet() {
   window.agoraParishSheetSnapFull = () => snapTo(SNAP_FULL);
 }
 
+// Mirror main mode-bar pill state onto the parish-sheet's in-card pills.
+// Called after every parish-sheet pill click and after main mode-bar
+// pill clicks while the parish-sheet is visible.
+function syncParishFilterPills() {
+  const row = document.getElementById('ps-filter-row');
+  if (!row) return;
+  const f = window.agoraParishSheetVisible ? state.parishFilters : state.filters;
+  const services = state.mode === 'services';
+  const social = !!f.socialOnly;
+  const english = !!f.englishOnly;
+  const strict = !!f.englishStrict;
+  row.querySelectorAll('.ps-filter-pill').forEach(btn => {
+    const kind = btn.dataset.psFilter;
+    if (kind === 'services') btn.classList.toggle('active', services);
+    else if (kind === 'social') btn.classList.toggle('active', social);
+    else if (kind === 'english') {
+      btn.classList.toggle('active', english);
+      btn.classList.toggle('strict', strict);
+      const lbl = btn.querySelector('.ps-filter-en-label');
+      if (lbl) {
+        if (strict) lbl.textContent = 'English-only';
+        else if (english) lbl.textContent = 'Bilingual';
+        else lbl.textContent = 'English';
+      }
+    }
+  });
+}
+window.agoraSyncParishFilterPills = syncParishFilterPills;
+
 function openParishSheet(parishId, opts = {}) {
   if (_parishSheetAPI) _parishSheetAPI.open(parishId, opts);
   // Activate the matching parish pill (single-select) so the user gets a
@@ -3123,7 +3159,7 @@ function renderParishSheetContent(parishId, opts = {}) {
   const watchBtn = parish.live_url
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
     : '';
-  const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}">Share</button>`;
+  const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}"><img class="ps-btn-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt=""><span>Share</span></button>`;
 
   // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
   let parishAdminHtml = '';
@@ -3160,17 +3196,16 @@ function renderParishSheetContent(parishId, opts = {}) {
       </div>`;
   }
 
-  // Schedule section — drop entirely when there's nothing to show. Uses the
-  // same renderer as the main services list so the two views stay visually
-  // identical and share admin edit affordances.
+  // Schedule section now mirrors the main view's services-mode toggle: the
+  // schedules card surfaces only when the Schedules filter pill is active.
+  // (Was an always-on "Service times" section.)
   const scheds = (state.schedules || [])
     .filter(s => s.parish_id === parishId)
     .sort((a, b) => a.day_of_week - b.day_of_week);
   let schedSectionHtml = '';
-  if (scheds.length) {
+  if (state.mode === 'services' && scheds.length) {
     schedSectionHtml = `
       <div class="ps-section">
-        <div class="ps-section-title">Service times</div>
         <div class="ps-sched-card">
           ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
         </div>
@@ -3227,6 +3262,23 @@ function renderParishSheetContent(parishId, opts = {}) {
       ${parishAdminHtml}
     </div>
     ${parishEditFormHtml ? `<div class="ps-section">${parishEditFormHtml}</div>` : ''}
+    <!-- Sticky filter pill row above the events list — mirrors the main
+         mode-bar's Schedules / Social / English pills. Buttons are
+         live-synced with the main pills via syncParishFilterPills(). -->
+    <div class="ps-filter-row" id="ps-filter-row">
+      <button class="ps-filter-pill" data-ps-filter="services" type="button">
+        <img class="ps-filter-pill-icon" src="https://api.iconify.design/ph:church.svg" alt="">
+        <span>Schedules</span>
+      </button>
+      <button class="ps-filter-pill" data-ps-filter="social" type="button">
+        <img class="ps-filter-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
+        <span>Social</span>
+      </button>
+      <button class="ps-filter-pill ps-filter-en" data-ps-filter="english" type="button">
+        <span class="fm-en-badge">EN</span>
+        <span class="ps-filter-en-label">English</span>
+      </button>
+    </div>
     ${schedSectionHtml}
     <div class="ps-events-list"></div>
     ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}`;
@@ -3347,6 +3399,24 @@ function renderParishSheetContent(parishId, opts = {}) {
   // Schedule section shares the services-list markup — wire admin edit
   // handlers if the admin is viewing.
   if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
+
+  // Wire the in-card filter pill row. Each pill proxies clicks to its
+  // main mode-bar counterpart so the same handlers + state path drive
+  // both views. Visual state then mirrors via syncParishFilterPills.
+  contentEl.querySelectorAll('.ps-filter-pill').forEach(btn => {
+    const kind = btn.dataset.psFilter;
+    btn.addEventListener('click', () => {
+      const mainId = kind === 'services' ? 'btn-services'
+                   : kind === 'social' ? 'btn-social'
+                   : kind === 'english' ? 'btn-english' : null;
+      if (mainId) {
+        const mainBtn = document.getElementById(mainId);
+        if (mainBtn) mainBtn.click();
+      }
+      syncParishFilterPills();
+    });
+  });
+  syncParishFilterPills();
 
   // Upcoming events: use the main-sheet stream renderer (day headers, Sunday
   // clusters, month seam) against the parish-filtered slice minus any pinned
