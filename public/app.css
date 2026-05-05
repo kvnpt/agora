@@ -181,6 +181,21 @@ input, select, textarea {
   padding-top: env(safe-area-inset-top);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  /* Edge-fade mask. Default state has neither edge faded (banner content
+     fits). JS adds .scrolled-start / .scrolled-end to apply the
+     gradient mask when the user scrolls past the start / before the end. */
+}
+.jurisdiction-banner.scrolled-start {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+}
+.jurisdiction-banner.scrolled-end {
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+}
+.jurisdiction-banner.scrolled-start.scrolled-end {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
 }
 .jurisdiction-banner::-webkit-scrollbar { display: none; }
 
@@ -323,7 +338,25 @@ input, select, textarea {
 }
 .mode-bar-row-pills {
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mode-bar-row-pills::-webkit-scrollbar { display: none; }
+/* Edge-fade mask, applied via JS class when there's content off the
+   respective edge. Same pattern as the jurisdiction banner. */
+.mode-bar-row-pills.scrolled-start {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+}
+.mode-bar-row-pills.scrolled-end {
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+}
+.mode-bar-row-pills.scrolled-start.scrolled-end {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
 }
 /* English toggle in mode-bar — replaces the share pill's old slot. Pill
    button (NOT a filters-menu-item) so the menu's vertical-list layout
@@ -354,6 +387,10 @@ input, select, textarea {
   border-radius: 4px;
   line-height: 1;
 }
+/* Inactive English button is just the EN glyph — label is hidden so the
+   pill compacts down to icon-only. Becomes visible when active. */
+.mode-bar-en .mode-bar-en-label { display: none; }
+.mode-bar-en.active .mode-bar-en-label { display: inline; }
 .mode-bar-en.active {
   background: var(--text);
   color: var(--bg);

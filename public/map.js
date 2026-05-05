@@ -638,7 +638,12 @@ function updateMap(state, opts = {}) {
     for (const pid of state.filters.parishIds) activeSet.add(pid);
   }
 
-  const hardFilterOnEvents = state.filters.socialOnly || state.filters.englishOnly;
+  // Schedules / socials filters shape the events list, but parish dots stay
+  // visible on the map regardless — the user wants spatial context (where
+  // every parish is) even while a content filter is active. Only the English
+  // filter still hard-prunes parishes off the map (a non-English parish
+  // genuinely has no relevant content for the English-filter view).
+  const hardFilterOnEvents = state.filters.englishOnly;
 
   const focusId = state.parishSheetFocus || null;
   const selectedSet = (state.selectionMode && state.filters.parishIds)

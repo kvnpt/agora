@@ -114,6 +114,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFiltersMenu();
   initMultiParishToggle();
   initParishMultiToggle();
+  initScrollFade(document.getElementById('mode-bar-row-pills'));
+  initScrollFade(document.getElementById('jurisdiction-chips'));
   initResetFab();
   initLocationFab();
   initModeUrl();
@@ -1250,6 +1252,27 @@ function syncParishMultiToggle() {
 }
 window.agoraSyncParishMultiToggle = syncParishMultiToggle;
 
+// Toggle .scrolled-start / .scrolled-end on a horizontal-scroll container so
+// CSS edge-fade masks only paint when there's content beyond the visible
+// edge. Used by .jurisdiction-banner and .mode-bar-row-pills.
+function initScrollFade(el) {
+  if (!el) return;
+  const sync = () => {
+    const max = el.scrollWidth - el.clientWidth;
+    if (max <= 1) {
+      el.classList.remove('scrolled-start', 'scrolled-end');
+      return;
+    }
+    el.classList.toggle('scrolled-start', el.scrollLeft > 1);
+    el.classList.toggle('scrolled-end', el.scrollLeft < max - 1);
+  };
+  el.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+  // Defer one frame so layout has settled (juris banner adds chips after
+  // initFilters fires; pill row content varies with auth state).
+  requestAnimationFrame(() => requestAnimationFrame(sync));
+}
+
 function initParishMultiToggle() {
   const btn = document.getElementById('parish-multi-toggle');
   if (!btn) return;
@@ -1336,9 +1359,19 @@ function syncJurisBottomVar() {
 function showMapSelectOverlay() {
   const el = document.getElementById('map-select-overlay');
   if (!el) return;
+  // Ensure both vars the ring depends on are fresh BEFORE we unhide it.
+  // First-time activation otherwise renders the ring against a stale
+  // --juris-bottom (zero) and --sheet-cover (defaults), which sized the
+  // box wrong on initial show.
   syncJurisBottomVar();
+  if (typeof window.agoraSheetY === 'function') {
+    document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - window.agoraSheetY()) + 'px');
+  }
   el.classList.remove('hidden');
   el.setAttribute('aria-hidden', 'false');
+  // One more pass after the unhide so transformed/painted layout has
+  // measured itself fully (parish pill row may have just been mounted).
+  requestAnimationFrame(syncJurisBottomVar);
 }
 function hideMapSelectOverlay() {
   const el = document.getElementById('map-select-overlay');
@@ -1471,6 +1504,7 @@ function initSocialFilter() {
     renderCurrentView();
     syncFiltersButton();
     snapMainSheetToFull();
+    if (typeof renderInViewChip === 'function') renderInViewChip();
     syncURL();
   });
 }
@@ -1501,6 +1535,9 @@ function initEnglishFilter() {
     syncEnglishButton();
     renderCurrentView();
     syncFiltersButton();
+    // The in-view chip pre-filters by parish — when the English filter
+    // toggles, parish set changes too; recount.
+    if (typeof renderInViewChip === 'function') renderInViewChip();
     syncURL();
   });
   syncEnglishButton();
@@ -1515,10 +1552,12 @@ function syncEnglishButton() {
   // Label class changed when the English button moved from filter menu
   // (.fm-label) to mode-bar (.mode-bar-en-label). Match either so the
   // function works regardless of where the button is mounted.
+  // Three states: inactive shows just the EN glyph (label hidden via CSS),
+  // bilingual reads "Bilingual", strict reads "English-only".
   const label = btn.querySelector('.mode-bar-en-label, .fm-label');
   if (label) {
     if (f.englishStrict) label.textContent = 'English-only';
-    else if (f.englishOnly) label.textContent = 'English with bilingual';
+    else if (f.englishOnly) label.textContent = 'Bilingual';
     else label.textContent = 'English';
   }
 }
@@ -1906,7 +1945,11 @@ function syncFilterActiveStack() {
   const chips = [];
   if (state.filters.jurisdiction) chips.push({ kind: 'jurisdiction', label: capitalize(state.filters.jurisdiction) });
   if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Social' });
-  if (state.filters.englishOnly) chips.push({ kind: 'english', label: 'English' });
+  if (state.filters.englishOnly) {
+    // Mirror the English button's tri-state vocabulary: strict = "English",
+    // loose (any-bilingual) = "Bilingual".
+    chips.push({ kind: 'english', label: state.filters.englishStrict ? 'English' : 'Bilingual' });
+  }
   if (state.mode === 'services') chips.push({ kind: 'schedules', label: 'Schedules' });
   const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
   if (parishCount > 0) chips.push({ kind: 'parishes', label: `${parishCount} parish${parishCount === 1 ? '' : 'es'}` });
@@ -3016,6 +3059,19 @@ function openParishSheet(parishId, opts = {}) {
 }
 function closeParishSheet() {
   if (_parishSheetAPI) _parishSheetAPI.close();
+  // Closing the parish card also clears the implicit single-parish pill
+  // selection that opening it set. Multi-parish picker mode keeps its
+  // set intact (user is curating, not browsing one parish).
+  if (!state.filters.multiParish) {
+    if (state.filters.parishIds && state.filters.parishIds.size === 1) {
+      state.filters.parishIds = null;
+    }
+    state.parishFocus = null;
+    if (typeof renderParishPills === 'function') renderParishPills();
+    if (typeof syncFilterActiveStack === 'function') syncFilterActiveStack();
+    if (typeof syncResetFab === 'function') syncResetFab();
+    if (typeof syncURL === 'function') syncURL();
+  }
 }
 window.openParishSheet = openParishSheet;
 window.closeParishSheet = closeParishSheet;
