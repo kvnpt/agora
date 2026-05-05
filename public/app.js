@@ -2170,6 +2170,20 @@ function filterParishEventsBySession(events) {
   return out;
 }
 
+// Schedules counterpart for parishFilters EN filter — service-times card
+// should hide entries that don't match the chosen English mode, mirroring
+// the main schedules list's behaviour.
+function filterParishSchedulesBySession(schedules) {
+  const f = state.parishFilters;
+  if (!f.englishOnly) return schedules;
+  return schedules.filter(s => {
+    const langs = parseLangs(s.languages) || parseLangs(s.parish_languages);
+    if (!langs) return false;
+    if (f.englishStrict) return langs.every(l => /english/i.test(l));
+    return langs.some(l => /english/i.test(l));
+  });
+}
+
 // ── Bottom sheet ──
 function initBottomSheet() {
   const sheet = document.getElementById('bottom-sheet');
@@ -3139,11 +3153,91 @@ function closeParishSheet() {
 window.openParishSheet = openParishSheet;
 window.closeParishSheet = closeParishSheet;
 
+// Partial refresh for parish-sheet content: re-renders only the events
+// list and the schedule card (the bits that filter changes / async
+// fetches actually affect). Keeps the parish header, actions row,
+// pinned focused event, and ps-filter-row intact — so toggling a pill
+// doesn't blow away the user's expanded card or scroll position, and
+// async events/schedules fetch completions don't flash.
+function refreshParishContentPortion(parishId, opts = {}) {
+  const contentEl = document.getElementById('parish-sheet-content');
+  if (!contentEl) return;
+  const parish = state.parishes.find(p => p.id === parishId);
+  if (!parish) return;
+
+  // Snapshot scroll position so renderStream's innerHTML write doesn't
+  // jump the user's view.
+  const scrollEl = document.getElementById('parish-sheet-scroll');
+  const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
+
+  // Events list refresh
+  let parishEvents;
+  if (opts.parishEvents) {
+    parishEvents = opts.parishEvents;
+  } else {
+    parishEvents = (state.events || [])
+      .filter(e => e.parish_id === parishId || (e.extra_parishes && e.extra_parishes.includes(parishId)))
+      .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+  }
+  parishEvents = filterParishEventsBySession(parishEvents);
+  const streamEl = contentEl.querySelector('.ps-events-list');
+  if (streamEl) {
+    if (parishEvents.length) {
+      renderStream(streamEl, parishEvents, { parishMode: true, groupByParish: true, showCount: state._parishEventsShowCount || 30 });
+    } else {
+      streamEl.replaceChildren();
+    }
+  }
+
+  // Schedule card refresh — recompute scheds + EN filter, replace inner.
+  // Mount the section if it didn't exist; remove if no scheds left.
+  const scheds = filterParishSchedulesBySession(
+    (state.schedules || [])
+      .filter(s => s.parish_id === parishId)
+      .sort((a, b) => a.day_of_week - b.day_of_week)
+  );
+  const psJurisColor = getJurisdictionColor(parish.jurisdiction);
+  const existingSection = contentEl.querySelector('.ps-sched-section');
+  if (scheds.length) {
+    const innerHTML = `<div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
+      <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
+        ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+      </div>
+    </div>`;
+    if (existingSection) {
+      existingSection.innerHTML = innerHTML;
+    } else if (streamEl) {
+      const sec = document.createElement('div');
+      sec.className = 'ps-section ps-sched-section';
+      sec.innerHTML = innerHTML;
+      streamEl.parentNode.insertBefore(sec, streamEl);
+    }
+  } else if (existingSection) {
+    existingSection.remove();
+  }
+
+  if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
+
+  if (scrollEl) {
+    requestAnimationFrame(() => { scrollEl.scrollTop = savedScroll; });
+  }
+}
+window.agoraRefreshParishContentPortion = refreshParishContentPortion;
+
 function renderParishSheetContent(parishId, opts = {}) {
   const parish = state.parishes.find(p => p.id === parishId);
   if (!parish) return;
 
   const contentEl = document.getElementById('parish-sheet-content');
+  // Fast-path: same parish, no full-rebuild requested. Run partial refresh
+  // (events list + schedule card only) so async fetch completions and
+  // pill toggles don't blow away the header / pinned event / actions —
+  // which causes the focused-event flash and pill-click scroll-jump.
+  if (contentEl && contentEl._psParishId === parishId && !opts.fullRender) {
+    refreshParishContentPortion(parishId, opts);
+    return;
+  }
+  if (contentEl) contentEl._psParishId = parishId;
   // Prefer full canonical title ("St. Kassiani Antiochian Orthodox Church")
   // over the short nickname used on pills/cards ("St. Kassiani"). Long names
   // are shrunk to fit two lines by fitParishName() after insertion.
@@ -3223,20 +3317,25 @@ function renderParishSheetContent(parishId, opts = {}) {
       </div>`;
   }
 
-  // Service times — always shown when there are schedules. Renders inside
-  // the same .parish-schedule wrapper used by the main schedules list so
-  // visuals match (no more forked .ps-sched-card style). Avatar/name head
-  // is suppressed via .head-suppressed since the parish identity is
-  // already carried by .ps-header above.
-  const scheds = (state.schedules || [])
-    .filter(s => s.parish_id === parishId)
-    .sort((a, b) => a.day_of_week - b.day_of_week);
+  // Service times — always shown when there are schedules (after the
+  // parishFilters EN filter is applied). Wrapped in .jurisdiction-box so
+  // it picks up the same outer card styling as the main schedules list.
+  // Avatar/name head suppressed via .head-suppressed since the parish
+  // identity is already carried by .ps-header above.
+  const scheds = filterParishSchedulesBySession(
+    (state.schedules || [])
+      .filter(s => s.parish_id === parishId)
+      .sort((a, b) => a.day_of_week - b.day_of_week)
+  );
+  const psJurisColor = getJurisdictionColor(parish.jurisdiction);
   let schedSectionHtml = '';
   if (scheds.length) {
     schedSectionHtml = `
-      <div class="ps-section">
-        <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
-          ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+      <div class="ps-section ps-sched-section">
+        <div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
+          <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
+            ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+          </div>
         </div>
       </div>`;
   }
@@ -3442,15 +3541,10 @@ function renderParishSheetContent(parishId, opts = {}) {
         else { f.englishOnly = false; f.englishStrict = false; }
       }
       syncParishFilterPills();
-      // Snapshot scroll position before the re-render and restore after.
-      // Filter toggles only affect events list contents — preserve the
-      // user's scroll position rather than jumping to the top.
-      const scrollEl = document.getElementById('parish-sheet-scroll');
-      const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
-      if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus);
-      requestAnimationFrame(() => {
-        if (scrollEl) scrollEl.scrollTop = savedScroll;
-      });
+      // Partial refresh only — events list + schedule card. Header,
+      // pinned event, ps-filter-row stay in place; refresh handles its
+      // own scroll preservation.
+      if (state.parishSheetFocus) refreshParishContentPortion(state.parishSheetFocus);
     });
   });
   syncParishFilterPills();
@@ -3527,9 +3621,11 @@ function renderParishSheetContent(parishId, opts = {}) {
         const preferred = scopeEl.querySelector(
           '.ps-pinned-event .event-card[data-id="' + state._openEventId + '"]'
         );
-        requestAnimationFrame(() =>
-          expandEventCard(state._openEventId, { scope: scopeEl, card: preferred || undefined })
-        );
+        // Synchronous expand on first render — no rAF — so the user
+        // doesn't see the collapsed-card frame before the expand.
+        // Subsequent re-renders are routed through refreshParishContentPortion
+        // which keeps the pinned event intact (no destroy → re-expand cycle).
+        expandEventCard(state._openEventId, { scope: scopeEl, card: preferred || undefined });
       }
     }
   }
