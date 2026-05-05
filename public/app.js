@@ -3784,15 +3784,20 @@ function hexToRgba(hex, alpha) {
 }
 
 // Returns the fill color for the event-type dot (Google Calendar style).
+// Light/dark palettes mirror the .badge-* CSS rules so the small circle
+// badge in collapsed cards matches the rectangular LITURGY/PRAYER/etc.
+// badge in the expanded drawer.
 function eventTypeDotColor(type) {
-  // Badge box (background) colours — faded tint, matches badge fill.
-  const m = { liturgy: '#e8d5e8', feast: '#f5ecd0', prayer: '#d5e0f0', talk: '#f0e8d5', youth: '#d0e8f5', social: '#d5ead5', other: '#e8e8e8' };
-  return m[type] || '#e8e8e8';
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const light = { liturgy: '#e8d5e8', feast: '#f5ecd0', prayer: '#d5e0f0', talk: '#f0e8d5', youth: '#d0e8f5', social: '#d5ead5', other: '#e8e8e8' };
+  const dk    = { liturgy: '#3a2840', feast: '#3a3220', prayer: '#1f2a3a', talk: '#3a2f1c', youth: '#1c303d', social: '#1f2e1f', other: '#26272c' };
+  return (dark ? dk : light)[type] || (dark ? '#26272c' : '#e8e8e8');
 }
 function eventTypeDotTextColor(type) {
-  // Badge text colours — darker muted version, used for the letter inside the dot.
-  const m = { liturgy: '#6b2d6b', feast: '#7a6520', prayer: '#2d4a7a', talk: '#7a5a20', youth: '#2d5a8a', social: '#2d6a2d', other: '#555' };
-  return m[type] || '#555';
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const light = { liturgy: '#6b2d6b', feast: '#7a6520', prayer: '#2d4a7a', talk: '#7a5a20', youth: '#2d5a8a', social: '#2d6a2d', other: '#555' };
+  const dk    = { liturgy: '#d4a3d4', feast: '#d4c082', prayer: '#9bb8e0', talk: '#d4b682', youth: '#a8c8de', social: '#a3c8a3', other: '#aaaaaa' };
+  return (dark ? dk : light)[type] || (dark ? '#aaaaaa' : '#555');
 }
 
 function renderEventCard(evt) {
