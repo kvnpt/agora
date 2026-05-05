@@ -1009,7 +1009,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
      .ps-header + .ps-filter-row so day headers stick below them.
      Outside parish-sheet, the var resolves to 0 (default). */
   top: var(--ps-stack-h, 0);
-  z-index: 5;
+  z-index: 1;
   background: var(--bg);
   font-size: 13px;
   font-weight: 700;
@@ -1079,7 +1079,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
      parish-sheet add --ps-stack-h on top so it sits below the
      header + filter row + day-hdr. */
   top: calc(var(--ps-stack-h, 0px) + 37px);
-  z-index: 4;
+  z-index: 0;
   background: var(--bg);
   display: flex;
   align-items: center;
@@ -2737,7 +2737,14 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 .ps-header {
   position: sticky;
   top: 0;
-  z-index: 2;
+  /* z-index hierarchy inside parish-sheet:
+       .ps-header (3) → highest, paints over filter row + day-hdr
+       .ps-filter-row (2)
+       .day-hdr (1)
+       .time-card-head (default 0)
+     Even if --ps-stack-h is briefly 0 (before measurement), the day-hdr
+     stays beneath the header instead of floating over it. */
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2921,9 +2928,7 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
      JS measures header height after each render and writes the value
      to --ps-header-h on the parish-sheet root. */
   top: var(--ps-header-h, 80px);
-  /* Z-index sits below .ps-header (z=2) so the header always paints over
-     the filter row when both are sticky-stacked. */
-  z-index: 1;
+  z-index: 2;
   display: flex;
   gap: 6px;
   padding: 8px 16px;

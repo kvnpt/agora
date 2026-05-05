@@ -2491,6 +2491,20 @@ function initBottomSheet() {
   document.addEventListener('touchmove', onDocMove, { passive: false });
   document.addEventListener('mouseup', onDocEnd);
   document.addEventListener('touchend', onDocEnd);
+  // touchcancel fires when iOS's system gesture (e.g. home-indicator
+  // swipe-up to multitask) intercepts a touch sequence. Without this
+  // handler the sheet stays in dragging state and "finishes" the drag
+  // when the user returns to the app.
+  document.addEventListener('touchcancel', onDocEnd);
+  // Same protection for app backgrounding via the home indicator —
+  // visibilitychange fires before iOS suspends the page, giving us a
+  // last frame to release any pending drag.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && dragging) {
+      dragging = false;
+      sheet.classList.remove('dragging');
+    }
+  });
 
   // ── Scroll area touch handling ──
   // When sheet is NOT at full: all vertical touches drag the sheet (scroll is locked)
@@ -2886,6 +2900,16 @@ function initParishSheet() {
   document.addEventListener('touchmove', onDocMove, { passive: false });
   document.addEventListener('mouseup', onDocEnd);
   document.addEventListener('touchend', onDocEnd);
+  // iPhone home-indicator gesture (swipe-up-to-multitask) fires
+  // touchcancel mid-sequence — release any pending drag so the sheet
+  // doesn't keep dragging state when the user returns.
+  document.addEventListener('touchcancel', onDocEnd);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && dragging) {
+      dragging = false;
+      sheet.classList.remove('dragging');
+    }
+  });
 
   // Scroll-area drag handoff — mirror of main sheet.
   const DEAD_ZONE = 8;
@@ -3197,9 +3221,11 @@ function refreshParishContentPortion(parishId, opts = {}) {
       .sort((a, b) => a.day_of_week - b.day_of_week)
   );
   const psJurisColor = getJurisdictionColor(parish.jurisdiction);
+  const psJurisLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
   const existingSection = contentEl.querySelector('.ps-sched-section');
   if (scheds.length) {
     const innerHTML = `<div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
+      <div class="section-header jurisdiction-header">${esc(psJurisLabel)}</div>
       <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
         ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
       </div>
@@ -3328,11 +3354,13 @@ function renderParishSheetContent(parishId, opts = {}) {
       .sort((a, b) => a.day_of_week - b.day_of_week)
   );
   const psJurisColor = getJurisdictionColor(parish.jurisdiction);
+  const psJurisLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
   let schedSectionHtml = '';
   if (scheds.length) {
     schedSectionHtml = `
       <div class="ps-section ps-sched-section">
         <div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
+          <div class="section-header jurisdiction-header">${esc(psJurisLabel)}</div>
           <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
             ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
           </div>
@@ -3389,7 +3417,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
-    ${parishEditFormHtml ? `<div class="ps-section">${parishEditFormHtml}</div>` : ''}
+    ${parishEditFormHtml || ''}
     <!-- Sticky filter pill row above the events list. Operates on
          parishFilters (scoped local state, separate from main).
          Schedules pill removed — service times always render below. -->
