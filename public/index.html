@@ -200,6 +200,11 @@
   <!-- Jurisdiction banner -->
   <div class="jurisdiction-banner" id="jurisdiction-chips"></div>
 
+  <!-- Parish filter pills — sits as a floating FAB row right below the
+       jurisdiction banner. Was previously inside #bottom-sheet; promoted
+       out so it stays visible regardless of sheet snap position. -->
+  <div class="parish-filter-row" id="parish-filter-row"></div>
+
   <!-- Map (full-screen background) -->
   <div class="map-container" id="map-container">
     <div id="map"></div>
@@ -289,9 +294,6 @@
         <span class="in-view-chevron" aria-hidden="true"></span>
       </button>
     </div>
-
-    <!-- Parish filter pills (shown when a jurisdiction is selected) -->
-    <div class="parish-filter-row" id="parish-filter-row"></div>
 
     <!-- Archdiocese events banner (shown in services mode when jurisdiction selected) -->
     <a class="archdiocese-events-banner" id="archdiocese-events-banner" href="#" target="_blank" rel="noopener">

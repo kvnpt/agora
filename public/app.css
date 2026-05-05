@@ -552,14 +552,24 @@ input, select, textarea {
 }
 
 /* ── Parish filter pills ── */
+/* Promoted out of #bottom-sheet so it floats below the jurisdiction banner.
+   Pinned via position:fixed so it stays put while the sheet drags. JS still
+   toggles .visible to mount/unmount. */
 .parish-filter-row {
-  flex: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 600;
   display: none;
-  gap: 4px;
-  padding: 4px 12px 8px;
+  gap: 6px;
+  padding: 8px 12px;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  /* JS sets `top` to the bottom edge of the jurisdiction banner so the
+     row tracks the banner's height + safe-area-inset-top. */
 }
 .parish-filter-row::-webkit-scrollbar { display: none; }
 .parish-filter-row.visible { display: flex; }
@@ -594,21 +604,26 @@ input, select, textarea {
   opacity: 0.5;
 }
 
+/* Parish pill — FAB-row vocabulary now: surface fill, shadow, larger
+   tap target. Inline JS still stamps colour/border for active/in-view
+   states (see renderParishPills). */
 .parish-pill {
   flex: none;
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 6px 12px;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
-  background: none;
+  background: var(--fab-bg);
   border: 1px solid var(--border-light);
-  border-radius: 12px;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .parish-pill:hover { color: var(--text-secondary); border-color: var(--border); }
-.pill-dist { opacity: 0.45; font-weight: 500; }
+.pill-dist { opacity: 0.45; font-weight: 500; margin-left: 2px; }
 .parish-pill.active {
   color: var(--bg);
   border-color: transparent;

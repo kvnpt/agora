@@ -1299,15 +1299,25 @@ window.agoraRenderInViewChip = renderInViewChip;
 function syncParishRowVisibility() {
   const row = document.getElementById('parish-filter-row');
   if (!row) return;
-  const wasVisible = row.classList.contains('visible');
   row.classList.add('visible');
-  // First time the row becomes visible, recompute snaps — PEEK includes
-  // the pill row's height, but at init the row was display:none and
-  // measured zero. Defer one frame so layout reflects the class change.
-  if (!wasVisible && typeof window.agoraRecomputeSnaps === 'function') {
-    requestAnimationFrame(() => window.agoraRecomputeSnaps());
-  }
+  // Pin the row directly below the jurisdiction banner. Banner height
+  // varies with safe-area-inset-top, so measure live every visibility
+  // change rather than using a static offset.
+  positionParishFilterRow();
 }
+
+function positionParishFilterRow() {
+  const banner = document.getElementById('jurisdiction-chips');
+  const row = document.getElementById('parish-filter-row');
+  if (!banner || !row) return;
+  const rect = banner.getBoundingClientRect();
+  row.style.top = Math.max(0, rect.bottom) + 'px';
+}
+window.agoraPositionParishFilterRow = positionParishFilterRow;
+window.addEventListener('resize', positionParishFilterRow);
+// Banner height can change after fonts load / orientation change; refresh
+// the row position in the next paint frame on init too.
+requestAnimationFrame(positionParishFilterRow);
 window.agoraSyncParishRowVisibility = syncParishRowVisibility;
 
 function syncMultiParishButton() {
@@ -2025,12 +2035,12 @@ function initBottomSheet() {
     // Sheet z-index > banner z-index so it overlays cleanly.
     SNAP_FULL = 0;
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
-    // PEEK exposes grab handle + modal bar + parish pill row. Measure live so
-    // it tracks any future bar-height changes without a magic constant.
+    // PEEK exposes grab handle + mode bar. Parish pill row is no longer in
+    // the sheet (promoted to floating below the jurisdiction banner) so the
+    // measurement here is just handle + mode-bar height.
     const handleEl = sheet.querySelector('.map-grab-handle');
     const modeBarEl = document.getElementById('mode-bar');
-    const pillRowEl = document.getElementById('parish-filter-row');
-    const peekHeight = (handleEl?.offsetHeight || 14) + (modeBarEl?.offsetHeight || 38) + (pillRowEl?.offsetHeight || 0);
+    const peekHeight = (handleEl?.offsetHeight || 14) + (modeBarEl?.offsetHeight || 38);
     SNAP_PEEK = window.innerHeight - peekHeight;
     // Sheet total height = visible list area (innerHeight - SNAP_FULL) plus
     // the offscreen spacer. At SNAP_FULL, sheet bottom sits SHEET_SPACER_PX
@@ -2421,17 +2431,10 @@ function initBottomSheet() {
   window.agoraSnapHalf = () => SNAP_HALF;
   window.agoraSnapPeek = () => SNAP_PEEK;
   // Expose recompute so syncParishRowVisibility can re-measure once the
-  // pill row has actually been display:flex'd. Without this, computeSnaps
-  // runs at init while the row is still display:none → offsetHeight=0,
-  // PEEK lands too low and the parish pills hide behind the viewport.
-  window.agoraRecomputeSnaps = () => {
-    computeSnaps();
-    // If the sheet is currently parked at PEEK, snap it to the new value
-    // so the pill row visibly comes into view.
-    if (Math.abs(currentY - SNAP_PEEK) < 4 || currentY > SNAP_PEEK - 4) {
-      snapTo(SNAP_PEEK);
-    }
-  };
+  // Re-measurement hook for orientation / font-load changes. Parish pill
+  // row is no longer in the sheet so this only re-figures grab handle +
+  // mode-bar measurements.
+  window.agoraRecomputeSnaps = () => { computeSnaps(); };
 
   // Hide/restore for parish sheet overlay — stash current Y and scrollTop,
   // snap offscreen, restore both when overlay closes. snapTo itself resets
