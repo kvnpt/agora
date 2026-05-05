@@ -1657,6 +1657,11 @@ input, select, textarea {
   /* Detail-url copy glyph picks up the page text colour (light) instead of
      the hardcoded dark filter. */
   .detail-url-copy { filter: brightness(0) invert(1); }
+  /* Filter FAB sliders glyph + filter-menu list-item glyphs (Iconify imgs).
+     img.fm-icon — the EN badge is a span, no filter applied (it picks up
+     CSS color). */
+  #btn-filters .filters-btn-content img,
+  .filters-menu-item img.fm-icon { filter: brightness(0) invert(1); }
   /* Lift parish-coloured acronyms on event cards so dark hues stay legible. */
   .event-parish-acronym { filter: brightness(1.5); }
 
