@@ -1145,6 +1145,10 @@ function renderParishPills() {
   }
   list.innerHTML = html;
   if (row) row.classList.toggle('multi-parish', !!state.filters.multiParish);
+  // Snap the pill list back to the start — when the user toggles a filter
+  // or sort flips, the leading pill should be visible immediately rather
+  // than leaving the user mid-scroll.
+  if (list.scrollLeft) list.scrollLeft = 0;
 }
 
 // Use event delegation on the row (set up once)
