@@ -4311,6 +4311,15 @@ if (!window.__agoraSchemeRerender) {
     if (typeof scheduleRenderEvents === 'function') scheduleRenderEvents(0);
     if (typeof renderParishPills === 'function') renderParishPills();
     if (typeof renderServices === 'function' && state && state.mode === 'services') renderServices();
+    // Parish-sheet shares the event-card pool with the main list. Main's
+    // re-render moves pooled cards into its hosts, leaving the parish-
+    // sheet's hosts empty (the day-section frames remain because they're
+    // built from HTML, but the cards inside live in the pool). Refresh
+    // the parish-sheet's events list to repopulate its hosts.
+    if (window.agoraParishSheetVisible && state && state.parishSheetFocus
+        && typeof refreshParishContentPortion === 'function') {
+      refreshParishContentPortion(state.parishSheetFocus);
+    }
     // Re-style jurisdiction chips so the lifted colours stamp into inline
     // styles. applyChipColors lives in filters.js and reads from chip
     // dataset; we wrap the value at read-time below.

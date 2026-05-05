@@ -768,7 +768,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 /* ── Parish filter pills ──
    Wrapper carries fixed positioning + the multi-toggle FAB (sits OUTSIDE
    the scroll so it doesn't move with pills) + edge-fade overlays. Inner
-   .parish-filter-row is just the scrolling flex container. */
+   .parish-filter-row is just the scrolling flex container.
+   Background is transparent — pills carry their own --fab-bg + shadow
+   so they read like floating FABs over the map (matches the
+   location/share/multi-toggle vocabulary). */
 .parish-filter-row-wrap {
   position: fixed;
   left: 0;
@@ -780,13 +783,16 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   padding: 8px 12px;
   padding-left: max(12px, env(safe-area-inset-left));
   padding-right: max(12px, env(safe-area-inset-right));
-  background: var(--bg);
-  border-bottom: 1px solid var(--border-light);
+  background: transparent;
   overflow: hidden;
   /* JS sets `top` to the bottom edge of the jurisdiction banner so the
      wrap tracks the banner's height + safe-area-inset-top. */
 }
 .parish-filter-row-wrap.visible { display: flex; }
+/* Inner scroll uses mask-image to fade the pills themselves at the
+   edges — since the wrap is now transparent (no --bg strip), there's
+   nothing to gradient-paint to; instead the pills clip out as they
+   approach the edge so the map shows through cleanly. */
 .parish-filter-row {
   flex: 1;
   display: flex;
@@ -798,30 +804,18 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   min-width: 0;
 }
 .parish-filter-row::-webkit-scrollbar { display: none; }
-.parish-filter-row-wrap::before,
-.parish-filter-row-wrap::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 24px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 1;
+.parish-filter-row-wrap.scrolled-start .parish-filter-row {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black 100%);
 }
-.parish-filter-row-wrap::before {
-  /* Start fade sits to the right of the multi-toggle FAB so the FAB
-     stays clear; matches the visible scroll-edge of the inner row. */
-  left: calc(max(12px, env(safe-area-inset-left)) + 32px);
-  background: linear-gradient(to right, var(--bg) 0, transparent);
+.parish-filter-row-wrap.scrolled-end .parish-filter-row {
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
 }
-.parish-filter-row-wrap::after {
-  right: max(12px, env(safe-area-inset-right));
-  background: linear-gradient(to left, var(--bg) 0, transparent);
+.parish-filter-row-wrap.scrolled-start.scrolled-end .parish-filter-row {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
 }
-.parish-filter-row-wrap.scrolled-start::before { opacity: 1; }
-.parish-filter-row-wrap.scrolled-end::after { opacity: 1; }
 
 /* Multi-toggle FAB sits outside the scrolling pill row inside
    .parish-filter-row-wrap, so no sticky positioning needed. Active state
