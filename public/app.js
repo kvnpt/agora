@@ -3734,13 +3734,14 @@ function getJurisdictionColor(j) {
 // ::after pseudo can pick it up).
 // Single funnel for every inline-styled parish-colour site (acronym, pill,
 // avatar, glow, --parish-color CSS var, etc). Pass-through in light mode;
-// in dark, defers to window.solarizeColor (defined in map.js, so it loads
-// first per index.html script order). The matchMedia check means inline
-// HTML re-renders pick up scheme changes — see __agoraSchemeRerender below.
+// in dark, defers to window.liftParishColor (defined in map.js, so it
+// loads first per index.html script order). The matchMedia check means
+// inline HTML re-renders pick up scheme changes — see __agoraSchemeRerender
+// below.
 function getParishDisplayColor(hex) {
   if (!hex) return hex;
-  return (matchMedia('(prefers-color-scheme: dark)').matches && window.solarizeColor)
-    ? window.solarizeColor(hex)
+  return (matchMedia('(prefers-color-scheme: dark)').matches && window.liftParishColor)
+    ? window.liftParishColor(hex)
     : hex;
 }
 

@@ -38,56 +38,75 @@ function isDark() {
   return matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
-// Solarize transform — photographic-style lightness inversion in HSL space.
-// L → 1−L; hue and saturation untouched. A near-black parish becomes near-
-// white at the same hue, a navy becomes a sky blue, a bright pink becomes
-// a muted plum. Symmetric: applying twice returns the original. Used in
-// dark mode to flip parish identity colours into their light counterparts
-// so dots, labels, acronyms, pills, avatars and glows all read on charcoal.
-function solarizeColor(hex) {
+// Perceptual-luminance lift in OKLab space. If the input's OKLab L is
+// below FLOOR, raise it to FLOOR; otherwise pass through unchanged.
+// a/b chroma axes untouched so hue and saturation are preserved.
+//
+// Asymmetric (lift only) instead of symmetric (full L-flip). A flip
+// helps deep-purple parishes (St George Rose Bay) become bright, but
+// would also drag bright-green / yellow / pink parishes into dark muddy
+// versions on dark mode — wrong direction. Lifting to a floor preserves
+// already-bright colours and only intervenes on the dark end.
+//
+// Why OKLab and not HSL: HSL "L" weighs blue/violet incorrectly, so a
+// deep purple at HSL L=0.5 still reads as dim. OKLab L matches what
+// the eye actually sees.
+function _srgbToLinear(c) {
+  c /= 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+function _linearToSrgb(c) {
+  const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  return Math.max(0, Math.min(255, Math.round(v * 255)));
+}
+function _rgbToOklab(r, g, b) {
+  const lr = _srgbToLinear(r);
+  const lg = _srgbToLinear(g);
+  const lb = _srgbToLinear(b);
+  const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+  const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+  const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+  const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+  return [
+    0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+    1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+    0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+  ];
+}
+function _oklabToRgb(L, a, b) {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const lr = l_ ** 3, lm = m_ ** 3, ls = s_ ** 3;
+  return [
+    _linearToSrgb(+4.0767416621 * lr - 3.3077115913 * lm + 0.2309699292 * ls),
+    _linearToSrgb(-1.2684380046 * lr + 2.6097574011 * lm - 0.3413193965 * ls),
+    _linearToSrgb(-0.0041960863 * lr - 0.7034186147 * lm + 1.7076147010 * ls)
+  ];
+}
+// OKLab L floor for the dark-mode lift. 0.7 = bright pastel; matches
+// the perceptual luminance of a typical UI-friendly mid-pastel.
+const PARISH_DARK_FLOOR = 0.7;
+
+function liftParishColor(hex) {
   if (!hex) return '#aaaaaa';
   const m = String(hex).trim().replace(/^#/, '').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (!m) return hex;
   let s = m[1];
   if (s.length === 3) s = s.split('').map(c => c + c).join('');
-  const r = parseInt(s.slice(0, 2), 16) / 255;
-  const g = parseInt(s.slice(2, 4), 16) / 255;
-  const b = parseInt(s.slice(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0;
-  let sat = 0;
-  let l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h /= 6;
-  }
-  l = 1 - l;
-  let r2, g2, b2;
-  if (sat === 0) { r2 = g2 = b2 = l; }
-  else {
-    const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
-    const p = 2 * l - q;
-    const hue2rgb = (p, q, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-    r2 = hue2rgb(p, q, h + 1 / 3);
-    g2 = hue2rgb(p, q, h);
-    b2 = hue2rgb(p, q, h - 1 / 3);
-  }
-  const toHex = v => Math.round(v * 255).toString(16).padStart(2, '0');
+  const r = parseInt(s.slice(0, 2), 16);
+  const g = parseInt(s.slice(2, 4), 16);
+  const b = parseInt(s.slice(4, 6), 16);
+  const [L, A, B] = _rgbToOklab(r, g, b);
+  if (L >= PARISH_DARK_FLOOR) return '#' + s.toLowerCase();
+  const [r2, g2, b2] = _oklabToRgb(PARISH_DARK_FLOOR, A, B);
+  const toHex = v => v.toString(16).padStart(2, '0');
   return '#' + toHex(r2) + toHex(g2) + toHex(b2);
 }
-window.solarizeColor = solarizeColor;
+window.liftParishColor = liftParishColor;
+// Back-compat alias — earlier rev exposed this as solarizeColor; some
+// in-flight callers may still reference the old name.
+window.solarizeColor = liftParishColor;
 
 let map = null;
 let styleLoaded = false;
@@ -644,7 +663,7 @@ function updateMap(state, opts = {}) {
       // Single source for both circle-color and text-color paint expressions.
       // Solarized in dark so the dot, the label, and any feature-state-derived
       // visual all stay in lockstep with the inline-styled surfaces in app.js.
-      color: isDark() ? solarizeColor(baseColor) : baseColor,
+      color: isDark() ? liftParishColor(baseColor) : baseColor,
       jurisdiction: p.jurisdiction || '',
       focused: p.id === focusId,
       selected: selectedSet ? selectedSet.has(p.id) : false,

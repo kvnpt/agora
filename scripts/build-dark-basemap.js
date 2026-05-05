@@ -174,7 +174,48 @@ const liftedLayers = darkLayers.map(layer => {
   return { ...layer, paint: newPaint };
 });
 
-fs.writeFileSync(OUT_PATH, JSON.stringify(liftedLayers));
+// ── Hand-tune pass ──────────────────────────────────────────────────────
+// Override the global lift on specific layers where we want a deliberate
+// hue cast or a darker/brighter feel than the algorithm produces. Edit
+// these values directly when iterating with a designer; map ids here
+// match protomaps' upstream layer ids.
+const HAND_TUNES = {
+  // Land + buildings — neutral grey lifts to slate-blue. Keeps a similar
+  // luminance so the L hierarchy with water/parks survives, just adds a
+  // hue cast (Apple/Google dark land both lean blue).
+  'background':           { 'background-color': '#3a4458' },
+  'earth':                { 'fill-color': '#3a4458' },
+  'landuse_aerodrome':    { 'fill-color': '#3a4458' },
+  'landuse_pedestrian':   { 'fill-color': '#3a4458' },
+  'landuse_pier':         { 'fill-color': '#465062' },
+  'landuse_hospital':     { 'fill-color': '#3f4458' },
+  'landuse_industrial':   { 'fill-color': '#3c4458' },
+  'landuse_school':       { 'fill-color': '#3e4458' },
+  'landuse_beach':        { 'fill-color': '#48495a' },
+  'landuse_zoo':          { 'fill-color': '#3a4858' },
+  'buildings':            { 'fill-color': '#363f52' },
+
+  // Water — darker than land so it actually reads as water against the
+  // blue-shifted ground. Bumped saturation gives it identity beyond just
+  // "darker grey".
+  'water':                { 'fill-color': '#1f2c4a' },
+  'water_stream':         { 'line-color': '#1f2c4a' },
+  'water_river':          { 'line-color': '#1f2c4a' }
+};
+
+const tunedLayers = liftedLayers.map(layer => {
+  const tune = HAND_TUNES[layer.id];
+  if (!tune || !layer.paint) return layer;
+  const newPaint = { ...layer.paint };
+  for (const k of Object.keys(tune)) {
+    if (k in newPaint) newPaint[k] = tune[k];
+  }
+  return { ...layer, paint: newPaint };
+});
+const tunedCount = Object.keys(HAND_TUNES).filter(id => liftedLayers.some(l => l.id === id)).length;
+
+fs.writeFileSync(OUT_PATH, JSON.stringify(tunedLayers));
 const size = fs.statSync(OUT_PATH).size;
 console.log(`Lifted ${lifted} colour paint properties.`);
-console.log(`Wrote ${liftedLayers.length} layers to ${path.relative(ROOT, OUT_PATH)} (${(size / 1024).toFixed(1)} KB)`);
+console.log(`Hand-tuned ${tunedCount} layers (land blue-shift, water darker+saturated).`);
+console.log(`Wrote ${tunedLayers.length} layers to ${path.relative(ROOT, OUT_PATH)} (${(size / 1024).toFixed(1)} KB)`);
