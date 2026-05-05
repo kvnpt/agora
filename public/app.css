@@ -1988,7 +1988,12 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   .share-pill-icon { filter: brightness(0) invert(1); }
   /* Detail-url copy glyph picks up the page text colour (light) instead of
      the hardcoded dark filter. */
-  .detail-url-copy { filter: brightness(0) invert(1); }
+  /* Copy glyphs throughout — Iconify SVGs ship black, need invert to read
+     on dark surfaces. Cover detail-url, ps-url, ps-info-copy, mode-url. */
+  .detail-url-copy,
+  .mode-url-copy,
+  .ps-url-copy,
+  .ps-info-copy-icon { filter: brightness(0) invert(1); }
   /* Filter FAB sliders glyph + filter-menu list-item glyphs (Iconify imgs).
      img.fm-icon — the EN badge is a span, no filter applied (it picks up
      CSS color). The .active rule below at non-dark specificity sets
@@ -3064,9 +3069,9 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   text-decoration: none;
   cursor: pointer;
 }
-/* Parish share pill: in light mode keep neutral border so the parish
-   colour doesn't compete with the URL chip; in dark, follow the parish
-   colour like the other ps-btn entries (overridden below). */
+/* Parish share pill stays neutral in both modes — the parish colour is
+   already prominent on the avatar, dot, label, accent-glow; the share
+   action is a generic affordance and doesn't need to compete. */
 .ps-share-btn {
   color: var(--text);
   border-color: var(--border);
@@ -3081,12 +3086,6 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 }
 @media (prefers-color-scheme: dark) {
   .ps-btn-icon { filter: brightness(0) invert(1); }
-}
-@media (prefers-color-scheme: dark) {
-  .ps-share-btn {
-    color: var(--parish-color, var(--text));
-    border-color: var(--parish-color, var(--border));
-  }
 }
 .ps-btn:hover {
   background: var(--parish-color, var(--text));
