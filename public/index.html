@@ -233,44 +233,41 @@
     </svg>
   </button>
 
-  <!-- Filters FAB (bottom left, above sheet) + active filter label stack -->
+  <!-- Active filter label stack (×-able chips). The old filter FAB has
+       been removed; Share View FAB takes its bottom-left position. -->
   <div id="filter-active-stack" class="filter-active-stack">
-    <button id="filter-clear-btn" class="filter-clear-chip" type="button">&#x2715; Clear all</button>
+    <button id="filter-clear-btn" class="filter-clear-chip" type="button">Clear all</button>
     <div id="filter-chip-list" class="filter-chip-list"></div>
   </div>
-  <button id="btn-filters" class="map-fab filters-fab has-active" type="button" aria-haspopup="menu" aria-expanded="false" title="Filters">
-    <span class="filters-btn-content">
-      <img src="https://api.iconify.design/ph:sliders.svg" alt="">
-    </span>
-  </button>
 
-  <!-- Filters dropdown menu, anchored to #btn-filters via positionFiltersMenu -->
-  <div class="filters-menu hidden" id="filters-menu" role="menu">
-    <button class="filters-menu-item" id="btn-events" role="menuitemradio">
-      <img class="fm-icon" src="https://api.iconify.design/ph:list.svg" alt="">
-      <span class="fm-label">Events</span>
-    </button>
-    <button class="filters-menu-item fm-logout" id="btn-logout" role="menuitem" hidden>
-      <img class="fm-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-      <span class="fm-label">Log out</span>
-    </button>
-  </div>
-
-  <!-- Share FAB (was the mode-bar share pill). Sits next to the filter FAB.
-       Shows just the icon by default; reveals "Share" text when filters
-       are active (so the action gets emphasis at the moment it matters). -->
+  <!-- Share View FAB — bottom-left (took the filter FAB's X position).
+       Icon-only by default; reveals "Share View" text when filters are
+       active. -->
   <button class="map-fab share-fab" id="mode-url" type="button" aria-label="Share view">
     <img class="share-pill-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">
-    <span class="share-pill-label">Share</span>
+    <span class="share-pill-label">Share View</span>
   </button>
 
-  <!-- Map-selection overlay (visible when state.selectionMode is true) -->
+  <!-- Logout button kept off-screen via .filters-menu-item hidden flow.
+       Surfaces only after auth (whoami.method === 'phone'); user taps to
+       end session. Lives outside the now-removed filter menu. -->
+  <button class="filters-menu-item fm-logout" id="btn-logout" role="menuitem" hidden style="display:none">
+    <img class="fm-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+    <span class="fm-label">Log out</span>
+  </button>
+
+  <!-- Map-selection overlay (visible when state.selectionMode is true).
+       Toolbar sits inset in the dotted ring's top-left corner: label +
+       Done-pill side by side, same height. -->
   <div id="map-select-overlay" class="hidden" aria-hidden="true">
     <div class="map-select-ring"></div>
-    <div class="map-select-label">Select parishes</div>
-    <button id="map-select-confirm" class="map-fab confirm-fab" type="button" aria-label="Confirm selection">
-      <img src="https://api.iconify.design/ph:check-bold.svg" alt="">
-    </button>
+    <div class="map-select-toolbar">
+      <div class="map-select-label">Select parishes</div>
+      <button id="map-select-confirm" class="map-select-done" type="button" aria-label="Confirm selection">
+        <span class="map-select-done-label">Done</span>
+        <img class="map-select-done-icon" src="https://api.iconify.design/ph:check-bold.svg" alt="">
+      </button>
+    </div>
   </div>
 
   <div id="bottom-sheet">

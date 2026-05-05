@@ -359,7 +359,22 @@ input, select, textarea {
   color: var(--bg);
   border-color: var(--text);
 }
-.mode-bar-en.strict .fm-en-badge { background: currentColor; color: var(--bg); }
+/* Bilingual (active not strict): pill is filled in the inverse colour, so
+   the badge needs to read against that filled bg. Outline-style with a
+   thicker border + inverse-text — stands out against the filled pill. */
+.mode-bar-en.active .fm-en-badge {
+  background: transparent;
+  border: 1.5px solid var(--bg);
+  color: var(--bg);
+}
+/* Strict (active + strict): badge is fully filled inverse — the box itself
+   becomes the indicator. Text uses var(--text) so it reads against the
+   filled badge bg (not currentColor, which would match the bg → invisible). */
+.mode-bar-en.active.strict .fm-en-badge {
+  background: var(--bg);
+  border-color: var(--bg);
+  color: var(--text);
+}
 /* Mode-bar pill row — Schedules / Socials / Admin. Each pill is icon +
    label, FAB-styled like the parish pills. Standalone class (not
    filters-menu-item) so the menu's block-stacked-list layout never
@@ -424,14 +439,14 @@ input, select, textarea {
   border-color: var(--text);
 }
 
-/* ── Share FAB (was the mode-bar share pill) ──
-   Lives as a sibling of the location/filter FABs, sits to the right of
-   the filter FAB. Icon-only by default; label "Share" reveals when the
-   user has active filters (body.has-filters). */
+/* ── Share View FAB ──
+   Sits bottom-left where the old filter FAB used to be. Icon-only by
+   default; label "Share View" reveals + the FAB grows when filters are
+   active (body.has-filters), so the action gets emphasis at the moment
+   it matters. */
 .share-fab {
   position: fixed;
-  /* 16 (left edge) + 36 (filter FAB width) + 8 (gap) = 60 */
-  left: max(60px, calc(60px + env(safe-area-inset-left)));
+  left: max(16px, calc(16px + env(safe-area-inset-left)));
   top: calc(50vh - 52px);
   z-index: 600;
   display: none;
@@ -2472,40 +2487,51 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   border-radius: 14px;
   pointer-events: none;
 }
-#map-select-overlay .map-select-label {
+/* Toolbar sits inset in the ring's top-left corner; the inset matches the
+   ring's border-radius so the toolbar visually nestles into the rounded
+   corner instead of overlapping it. */
+.map-select-toolbar {
   position: absolute;
-  top: calc(var(--juris-bottom, 48px) + 12px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: #fff;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #4a86ff;
-  border: 1px solid #4a86ff;
+  top: calc(var(--juris-bottom, 48px) + 14px);
+  left: 30px;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 6px;
   pointer-events: none;
 }
-#map-select-confirm.map-fab {
-  position: fixed;
-  right: max(16px, calc(16px + env(safe-area-inset-right)));
-  z-index: 660;
-  display: flex;
+.map-select-label,
+.map-select-done {
+  height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 15px;
+  white-space: nowrap;
+}
+.map-select-label {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+.map-select-done {
   background: #4a86ff;
+  color: #ffffff;
   border: 1px solid #4a86ff;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  gap: 6px;
   cursor: pointer;
   pointer-events: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
-#map-select-confirm.map-fab img {
-  width: 22px;
-  height: 22px;
+.map-select-done-icon {
+  width: 14px;
+  height: 14px;
   filter: brightness(0) invert(1);
 }
 

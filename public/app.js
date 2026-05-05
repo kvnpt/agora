@@ -938,8 +938,21 @@ function initModeBar() {
     }
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
     if (typeof syncResetFab === 'function') syncResetFab();
+    snapMainSheetToFull();
     syncURL();
   });
+}
+
+// Snap the main bottom-sheet to FULL if it's currently below FULL. Used by
+// the mode-bar pill taps (Schedules / Socials) so a tap from PEEK/HALF
+// auto-expands into the list view that the tap implies.
+function snapMainSheetToFull() {
+  if (typeof window.agoraSnapTo !== 'function' || typeof window.agoraSnapFull !== 'function') return;
+  if (typeof window.agoraSheetY !== 'function') return;
+  if (window.agoraParishSheetVisible) return;
+  const y = window.agoraSheetY();
+  const full = window.agoraSnapFull();
+  if (y > full + 5) window.agoraSnapTo(full);
 }
 
 function showView(name) {
@@ -1457,6 +1470,7 @@ function initSocialFilter() {
     }
     renderCurrentView();
     syncFiltersButton();
+    snapMainSheetToFull();
     syncURL();
   });
 }
