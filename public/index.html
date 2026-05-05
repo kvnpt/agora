@@ -202,8 +202,16 @@
 
   <!-- Parish filter pills — sits as a floating FAB row right below the
        jurisdiction banner. Was previously inside #bottom-sheet; promoted
-       out so it stays visible regardless of sheet snap position. -->
-  <div class="parish-filter-row" id="parish-filter-row"></div>
+       out so it stays visible regardless of sheet snap position. The
+       leading multi-toggle FAB sits sticky at the row's start; pill
+       buttons render into the inner #parish-pills-list. -->
+  <div class="parish-filter-row" id="parish-filter-row">
+    <button class="parish-multi-toggle" id="parish-multi-toggle" type="button"
+            aria-label="Toggle multi-select" aria-pressed="false">
+      <img src="https://api.iconify.design/ph:list-checks.svg" alt="">
+    </button>
+    <div class="parish-pills-list" id="parish-pills-list"></div>
+  </div>
 
   <!-- Map (full-screen background) -->
   <div class="map-container" id="map-container">

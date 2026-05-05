@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initEnglishFilter();
   initFiltersMenu();
   initMultiParishToggle();
+  initParishMultiToggle();
   initResetFab();
   initLocationFab();
   initModeUrl();
@@ -1033,7 +1034,11 @@ function initParishFilter() {
 
 function renderParishPills() {
   const row = document.getElementById('parish-filter-row');
-  if (!row) return;
+  // Pill list is now an inner container so the leading multi-toggle FAB
+  // doesn't get wiped on re-render. Fall back to the row itself for
+  // backwards-compat in case the inner host hasn't been added yet.
+  const list = document.getElementById('parish-pills-list') || row;
+  if (!list) return;
   let relevant = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
@@ -1075,8 +1080,17 @@ function renderParishPills() {
     relevant = [...sel, ...unsel];
   }
 
-  const allActive = state.filters.parishIds === null;
+  // After selected pinning, sort in-view ahead of out-of-view (within each
+  // group). Keeps the user's spatial context — pills they can see on the
+  // map sit nearest the row's start, dimmed pills follow.
   const vp = state.viewportParishIds;
+  if (vp) {
+    const inView = relevant.filter(p => vp.has(p.id));
+    const outView = relevant.filter(p => !vp.has(p.id));
+    relevant = [...inView, ...outView];
+  }
+
+  const allActive = state.filters.parishIds === null;
 
   let html = '';
 
@@ -1092,18 +1106,21 @@ function renderParishPills() {
     if (allActive) {
       const inView = !vp || vp.has(p.id);
       style = inView
-        ? `color:${color};border-color:${color};background:none;`
-        : `color:var(--text-secondary);border-color:var(--border);background:none;opacity:0.7;`;
+        ? `color:${color};border-color:${color};background:var(--fab-bg);`
+        : `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);opacity:0.7;`;
     } else if (isSelected) {
       style = `background:${color};color:#fff;border-color:transparent;`;
     } else {
-      style = `color:var(--text-secondary);border-color:var(--border);background:none;opacity:0.7;`;
+      style = `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);opacity:0.7;`;
     }
     const activeClass = (allActive || isSelected) ? 'active' : '';
-    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}</button>`;
+    // Selected pills get an inline × so the user can dismiss the focus
+    // without re-tapping the pill (matches the filter-stack chip pattern).
+    const xHtml = isSelected ? `<span class="parish-pill-x" data-clear-parish="${esc(p.id)}" aria-hidden="true">✕</span>` : '';
+    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}${xHtml}</button>`;
   }
-  row.innerHTML = html;
-  row.classList.toggle('multi-parish', !!state.filters.multiParish);
+  list.innerHTML = html;
+  if (row) row.classList.toggle('multi-parish', !!state.filters.multiParish);
 }
 
 // Use event delegation on the row (set up once)
@@ -1111,6 +1128,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const row = document.getElementById('parish-filter-row');
 
   row.addEventListener('click', e => {
+    // X on a selected pill → clear that parish from the selection. Doesn't
+    // toggle the pill or open a parish card — just dismiss.
+    const x = e.target.closest('.parish-pill-x');
+    if (x) {
+      e.stopPropagation();
+      const pid = x.dataset.clearParish;
+      if (state.filters.parishIds) {
+        state.filters.parishIds.delete(pid);
+        if (state.filters.parishIds.size === 0) state.filters.parishIds = null;
+      }
+      if (state.parishFocus === pid) state.parishFocus = null;
+      if (typeof window.closeParishSheet === 'function' && state.parishSheetFocus === pid) {
+        window.closeParishSheet();
+      }
+      renderParishPills();
+      renderCurrentView({ fit: true });
+      syncURL();
+      return;
+    }
+
     const pill = e.target.closest('.parish-pill');
     if (!pill) return;
 
@@ -1118,12 +1155,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const multi = !!state.filters.multiParish;
 
     if (!multi) {
-      // Single-parish default: tapping focused pill clears focus,
-      // tapping any other pill replaces focus with that parish.
+      // Single-parish default: tapping a pill is equivalent to tapping that
+      // parish's marker — open the parish card and set the focus filter.
+      // Tapping the same pill again (when it's the sole selection) clears.
       if (state.filters.parishIds && state.filters.parishIds.has(pid) && state.filters.parishIds.size === 1) {
         state.filters.parishIds = null;
+        state.parishFocus = null;
+        if (typeof window.closeParishSheet === 'function') window.closeParishSheet();
       } else {
         state.filters.parishIds = new Set([pid]);
+        state.parishFocus = pid;
+        if (typeof window.openParishSheet === 'function') window.openParishSheet(pid);
       }
     } else {
       // Picker mode: pure toggle. No auto-collapse, no focus header — all
@@ -1136,17 +1178,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         state.filters.parishIds.add(pid);
       }
-    }
-
-    if (!multi) {
-      // Sync parish focus with single-pill selection (non-picker only)
-      if (state.filters.parishIds && state.filters.parishIds.size === 1) {
-        state.parishFocus = [...state.filters.parishIds][0];
-      } else if (state.parishFocus) {
-        state.parishFocus = null;
-      }
-    } else if (state.parishFocus) {
-      state.parishFocus = null;
+      if (state.parishFocus) state.parishFocus = null;
     }
 
     renderParishPills();
@@ -1167,9 +1199,17 @@ function setParishPicker(on) {
 // ── Selection mode (map-tap to toggle parish in filter set) ──
 function setSelectionMode(on) {
   state.selectionMode = !!on;
+  // Selection mode implies soft multi (pill-row multi-toggle is visually
+  // ON during map-tap-to-select, OFF after Done). selected parishIds
+  // persist across this transition; the next single-pill tap replaces
+  // the entire set, signalling "you've left selection mode".
+  state.filters.multiParish = !!on;
+  saveMultiParishPref(state.filters.multiParish);
   if (on) showMapSelectOverlay(); else hideMapSelectOverlay();
   syncMultiParishButton();
+  syncParishMultiToggle();
   closeFiltersMenuAnim();
+  renderParishPills();
   if (typeof window.updateMap === 'function') window.updateMap(state);
   if (!on) {
     renderCurrentView();
@@ -1178,6 +1218,37 @@ function setSelectionMode(on) {
     else window.agoraFetchEvents();
   }
 }
+
+// Visual sync for the parish-row multi-toggle FAB. Active when either the
+// soft multi-toggle is on OR Selection Mode is on (since selection mode
+// implies multi).
+function syncParishMultiToggle() {
+  const btn = document.getElementById('parish-multi-toggle');
+  if (!btn) return;
+  const active = !!state.filters.multiParish || !!state.selectionMode;
+  btn.classList.toggle('active', active);
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+}
+window.agoraSyncParishMultiToggle = syncParishMultiToggle;
+
+function initParishMultiToggle() {
+  const btn = document.getElementById('parish-multi-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    // Soft multi only — no map-tap ring overlay. Toggles the ability
+    // to keep adding/removing pill selections without single-tap-replace.
+    if (state.selectionMode) {
+      // Already in full Selection Mode — let the user step out via Done,
+      // but allow the multi-toggle to also act as an exit.
+      setSelectionMode(false);
+      return;
+    }
+    setParishPicker(!state.filters.multiParish);
+    syncParishMultiToggle();
+  });
+  syncParishMultiToggle();
+}
+window.agoraInitParishMultiToggle = initParishMultiToggle;
 
 function initMultiParishToggle() {
   const btn = document.getElementById('btn-multi-parish');
@@ -1231,11 +1302,20 @@ function initMultiParishToggle() {
 }
 
 function syncJurisBottomVar() {
-  // Push --juris-bottom to actual banner bottom-edge so the dotted ring
-  // doesn't overlap jurisdiction chips.
+  // Push --juris-bottom to the bottom of whatever sits at the top stack —
+  // jurisdiction banner alone, or banner + parish pill row when the row
+  // is mounted. Selection mode's dotted ring uses this to start below
+  // both, keeping the ring's bounds clean of the top UI.
   const banner = document.getElementById('jurisdiction-chips');
-  const h = banner ? banner.getBoundingClientRect().bottom : 48;
-  document.documentElement.style.setProperty('--juris-bottom', Math.round(h + 8) + 'px');
+  const pillRow = document.getElementById('parish-filter-row');
+  const pillVisible = pillRow && pillRow.classList.contains('visible');
+  let bottom = 48;
+  if (pillVisible) {
+    bottom = pillRow.getBoundingClientRect().bottom;
+  } else if (banner) {
+    bottom = banner.getBoundingClientRect().bottom;
+  }
+  document.documentElement.style.setProperty('--juris-bottom', Math.round(bottom + 8) + 'px');
 }
 function showMapSelectOverlay() {
   const el = document.getElementById('map-select-overlay');
@@ -2902,6 +2982,16 @@ function initParishSheet() {
 
 function openParishSheet(parishId, opts = {}) {
   if (_parishSheetAPI) _parishSheetAPI.open(parishId, opts);
+  // Activate the matching parish pill (single-select) so the user gets a
+  // consistent visual state regardless of how the card was opened (marker
+  // tap, pill tap, deep link). Skip when in multi-parish picker mode —
+  // there the user is curating a set, opening a card shouldn't reshape it.
+  if (!state.filters.multiParish) {
+    state.filters.parishIds = new Set([parishId]);
+    state.parishFocus = parishId;
+    if (typeof renderParishPills === 'function') renderParishPills();
+    if (typeof syncResetFab === 'function') syncResetFab();
+  }
 }
 function closeParishSheet() {
   if (_parishSheetAPI) _parishSheetAPI.close();
