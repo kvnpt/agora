@@ -180,9 +180,9 @@ const liftedLayers = darkLayers.map(layer => {
 // these values directly when iterating with a designer; map ids here
 // match protomaps' upstream layer ids.
 const HAND_TUNES = {
-  // Land + buildings — neutral grey lifts to slate-blue. Keeps a similar
-  // luminance so the L hierarchy with water/parks survives, just adds a
-  // hue cast (Apple/Google dark land both lean blue).
+  // Land + buildings — neutral grey → slate-blue. Same luminance band as
+  // protomaps' upstream so the L hierarchy with water/parks/roads survives,
+  // just adds a hue cast (Apple/Google dark land both lean blue).
   'background':           { 'background-color': '#3a4458' },
   'earth':                { 'fill-color': '#3a4458' },
   'landuse_aerodrome':    { 'fill-color': '#3a4458' },
@@ -196,11 +196,73 @@ const HAND_TUNES = {
   'buildings':            { 'fill-color': '#363f52' },
 
   // Water — darker than land so it actually reads as water against the
-  // blue-shifted ground. Bumped saturation gives it identity beyond just
-  // "darker grey".
-  'water':                { 'fill-color': '#1f2c4a' },
-  'water_stream':         { 'line-color': '#1f2c4a' },
-  'water_river':          { 'line-color': '#1f2c4a' }
+  // blue-shifted ground. Lifted from #1f2c4a (too inky) to #2b3d62.
+  'water':                { 'fill-color': '#2b3d62' },
+  'water_stream':         { 'line-color': '#2b3d62' },
+  'water_river':          { 'line-color': '#2b3d62' },
+
+  // Roads — slate-blue family, brighter than land so they stand out without
+  // looking white. Hierarchy preserved: casings darker (border), fills
+  // lighter, highways/links the lightest. Same hue family as land so the
+  // overall map still reads as one coherent palette.
+  // Casings (the dark border drawn under each road)
+  'roads_tunnels_other_casing':   { 'line-color': '#404a5e' },
+  'roads_tunnels_minor_casing':   { 'line-color': '#404a5e' },
+  'roads_tunnels_link_casing':    { 'line-color': '#404a5e' },
+  'roads_tunnels_major_casing':   { 'line-color': '#404a5e' },
+  'roads_tunnels_highway_casing': { 'line-color': '#404a5e' },
+  'roads_minor_service_casing':   { 'line-color': '#454f64' },
+  'roads_minor_casing':           { 'line-color': '#454f64' },
+  'roads_link_casing':            { 'line-color': '#454f64' },
+  'roads_major_casing_late':      { 'line-color': '#454f64' },
+  'roads_highway_casing_late':    { 'line-color': '#454f64' },
+  'roads_major_casing_early':     { 'line-color': '#454f64' },
+  'roads_highway_casing_early':   { 'line-color': '#454f64' },
+  'roads_bridges_other_casing':   { 'line-color': '#4d5670' },
+  'roads_bridges_minor_casing':   { 'line-color': '#454f64' },
+  'roads_bridges_link_casing':    { 'line-color': '#454f64' },
+  'roads_bridges_major_casing':   { 'line-color': '#454f64' },
+  'roads_bridges_highway_casing': { 'line-color': '#454f64' },
+  // Tunnels (under bridges) — slightly darker than open roads
+  'roads_tunnels_other':          { 'line-color': '#4a5670' },
+  'roads_tunnels_minor':          { 'line-color': '#4a5670' },
+  'roads_tunnels_link':           { 'line-color': '#4a5670' },
+  'roads_tunnels_major':          { 'line-color': '#4a5670' },
+  'roads_tunnels_highway':        { 'line-color': '#4a5670' },
+  // Standard roads — slate mid-tone
+  'roads_other':                  { 'line-color': '#525d76' },
+  'roads_minor_service':          { 'line-color': '#525d76' },
+  'roads_minor':                  { 'line-color': '#525d76' },
+  // Links + majors — lighter so the road network reads
+  'roads_link':                   { 'line-color': '#5b6783' },
+  'roads_major':                  { 'line-color': '#5b6783' },
+  'roads_highway':                { 'line-color': '#646f8b' },
+  // Bridges — match same tier as their open-road counterpart
+  'roads_bridges_other':          { 'line-color': '#525d76' },
+  'roads_bridges_minor':          { 'line-color': '#525d76' },
+  'roads_bridges_link':           { 'line-color': '#525d76' },
+  'roads_bridges_major':          { 'line-color': '#5b6783' },
+  'roads_bridges_highway':        { 'line-color': '#646f8b' },
+  // Special
+  'roads_runway':                 { 'line-color': '#525d76' },
+  'roads_taxiway':                { 'line-color': '#525d76' },
+  'roads_pier':                   { 'line-color': '#525c70' },
+  'roads_rail':                   { 'line-color': '#2d3848' },
+
+  // Place labels (suburbs, regions, country, road labels) — protomaps ships
+  // these around L≈0.47–0.55; on the brighter basemap they need to read as
+  // proper labels, not as ghosts of features. Lifted to mid-light grey
+  // with slight cool cast to harmonise with the slate basemap.
+  'places_subplace':              { 'text-color': '#a4a8b4' },
+  'places_locality':              { 'text-color': '#bcc0cc' },
+  'places_region':                { 'text-color': '#92969f' },
+  'places_country':               { 'text-color': '#aaaeba' },
+  'roads_labels_minor':           { 'text-color': '#9a9eaa' },
+  'roads_labels_major':           { 'text-color': '#a4a8b4' },
+  'address_label':                { 'text-color': '#92969f' },
+  'water_waterway_label':         { 'text-color': '#a8b2c4' },
+  'water_label_ocean':            { 'text-color': '#a8b2c4' },
+  'water_label_lakes':            { 'text-color': '#a8b2c4' }
 };
 
 const tunedLayers = liftedLayers.map(layer => {

@@ -63,18 +63,23 @@ function initFilters(state) {
 
 function applyChipColors(container) {
   const anyActive = container.querySelector('.jurisdiction-chip.active');
+  // Route colours through the parish/jurisdiction lift funnel — pass-through
+  // in light mode, OKLab L-floor lift in dark — so the chip text/underline
+  // matches the lifted parish-colour treatment elsewhere.
+  const lift = window.getParishDisplayColor || (h => h);
   container.querySelectorAll('.jurisdiction-chip').forEach(chip => {
+    const c = lift(chip.dataset.color);
     if (chip.classList.contains('active')) {
       // Selected: full color fill
-      chip.style.background = chip.dataset.color;
+      chip.style.background = c;
       chip.style.color = '#ffffff';
       chip.style.borderBottomColor = 'transparent';
       chip.style.opacity = '1';
     } else if (!anyActive) {
       // No filter active (all jurisdictions): colored underline
       chip.style.background = '';
-      chip.style.color = chip.dataset.color;
-      chip.style.borderBottomColor = chip.dataset.color;
+      chip.style.color = c;
+      chip.style.borderBottomColor = c;
       chip.style.opacity = '1';
     } else {
       // Another jurisdiction selected: dimmed
@@ -85,5 +90,6 @@ function applyChipColors(container) {
     }
   });
 }
+window.applyChipColors = applyChipColors;
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }

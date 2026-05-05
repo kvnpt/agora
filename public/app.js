@@ -3726,7 +3726,7 @@ function formatEventTime(date) {
 function getJurisdictionColor(j) {
   const key = j || state.filters.jurisdiction;
   const map = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
-  return map[key] || '#888888';
+  return getParishDisplayColor(map[key] || '#888888');
 }
 
 // Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
@@ -3744,6 +3744,9 @@ function getParishDisplayColor(hex) {
     ? window.liftParishColor(hex)
     : hex;
 }
+// Exposed so filters.js (jurisdiction chips) and any other module can route
+// colour through the same dark-mode lift funnel.
+window.getParishDisplayColor = getParishDisplayColor;
 
 // On scheme flip, re-render the events list so all the inline `style="..."`
 // strings re-stamp through getParishDisplayColor. CSS @media block flips
@@ -3753,6 +3756,12 @@ if (!window.__agoraSchemeRerender) {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (typeof scheduleRenderEvents === 'function') scheduleRenderEvents(0);
     if (typeof renderParishPills === 'function') renderParishPills();
+    if (typeof renderServices === 'function' && state && state.mode === 'services') renderServices();
+    // Re-style jurisdiction chips so the lifted colours stamp into inline
+    // styles. applyChipColors lives in filters.js and reads from chip
+    // dataset; we wrap the value at read-time below.
+    const chips = document.getElementById('jurisdiction-chips');
+    if (chips && typeof window.applyChipColors === 'function') window.applyChipColors(chips);
   });
 }
 

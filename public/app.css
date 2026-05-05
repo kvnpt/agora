@@ -72,14 +72,16 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* surfaces — softened from true black so sheets/banner read as charcoal,
-       not OLED-black. --bg stays slightly darker than --surface so cards
-       still pop against the page bg. */
-    --bg: #15161a;
-    --surface: #1c1d22;
-    --surface-2: #25272d;
-    --surface-raised: #2c2e35;
-    --bg-card: #1c1d22;
+    /* surfaces — bumped up to a charcoal floor so the sheet + jurisdiction
+       banner don't read as OLED black. Apple/Google ship dark UIs around
+       L≈0.13–0.18; we sit at the lower end of that range. --bg stays
+       slightly darker than --surface so cards still pop against the page
+       bg, with the same delta preserved across both themes. */
+    --bg: #20232a;
+    --surface: #272a32;
+    --surface-2: #30333b;
+    --surface-raised: #373a42;
+    --bg-card: #272a32;
     --backdrop: rgba(0, 0, 0, 0.7);
 
     /* text */
