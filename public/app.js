@@ -1700,7 +1700,8 @@ function initResetFab() {
 
   syncResetFab();
 }
-let _lastFilterCount = null; // null = not yet initialised; skip wave on first render
+let _lastFilterCount = null;      // null = not yet initialised; skip wave on first render
+let _lastJurisdiction = undefined; // track jurisdiction changes (A→B same count, still wave)
 
 function triggerFilterWave() {
   const elements = [];
@@ -1735,8 +1736,13 @@ function syncFilterActiveStack() {
   const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
   const totalCount = chips.length + (parishCount > 0 ? 1 : 0);
   const hasFilters = chips.length > 0 || parishCount > 0;
-  const wasAdded = _lastFilterCount !== null && totalCount > _lastFilterCount;
+  const juris = state.filters.jurisdiction || null;
+  const wasAdded = _lastFilterCount !== null && (
+    totalCount > _lastFilterCount ||
+    (juris !== null && juris !== _lastJurisdiction)
+  );
   _lastFilterCount = totalCount;
+  _lastJurisdiction = juris;
 
   stack.classList.toggle('visible', hasFilters);
   const list = document.getElementById('filter-chip-list');
