@@ -239,7 +239,7 @@ function matchParish(signal, parishes) {
   if (explicit_new) return { result: 'new' };
   if (!saint_name)  return { result: 'unknown' };
 
-  const core = normalizeTokens(expandSaints(saint_name)).filter(t => t !== 'st' && t !== 'sts');
+  const core = normalizeTokens(expandSaints(saint_name)).filter(t => t !== 'st' && t !== 'sts' && t !== 'ss');
   if (!core.length) return { result: 'unknown' };
 
   const suburbLc = suburb ? suburb.toLowerCase() : null;
