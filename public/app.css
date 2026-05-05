@@ -214,6 +214,29 @@ input, select, textarea {
 
 #map { height: 100%; width: 100%; touch-action: none; }
 
+/* PEEK state — sheet bg disappears so the mode-bar reads as a floating row
+   of FABs. The in-view chip and the mode-bar-en/-pill children all have
+   their own --fab-bg, so they stay visible while the sheet plate vanishes. */
+#bottom-sheet.peeking {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+#bottom-sheet.peeking .mode-bar { border-bottom-color: transparent; }
+#bottom-sheet.peeking #sheet-scroll { opacity: 0; pointer-events: none; }
+#bottom-sheet.peeking .map-grab-handle::after {
+  background: var(--text-muted);
+  opacity: 0.45;
+}
+/* In-view chip and mode-bar pills have their own backgrounds (--fab-bg)
+   so they stay visible when the sheet plate goes transparent. Bump
+   shadow at peek so they read as floating buttons. */
+#bottom-sheet.peeking .in-view-chip {
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+}
+
 /* ── Bottom sheet ── */
 #bottom-sheet {
   position: fixed;
@@ -277,16 +300,99 @@ input, select, textarea {
   background: var(--border);
 }
 
-/* ── Mode bar ── */
+/* ── Mode bar ──
+   Two-row layout. Top: English toggle + in-view chip. Bottom: pill row
+   with Schedules / Socials / Admin (Admin hidden until auth). */
 .mode-bar {
   flex: none;
   position: relative;
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+.mode-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mode-bar-row-top {
+  min-height: 32px;
+  position: relative;
+}
+.mode-bar-row-pills {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* English toggle in mode-bar — replaces the share pill's old slot. Inherits
+   .filters-menu-item base look but compacted to fit the row. */
+.mode-bar-en {
+  flex: none;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px 8px;
-  min-height: 44px;
-  border-bottom: 1px solid var(--border-light);
+  padding: 4px 10px;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mode-bar-en:hover { color: var(--text); }
+.mode-bar-en .fm-en-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  line-height: 1;
+}
+.mode-bar-en.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.mode-bar-en.strict .fm-en-badge { background: currentColor; color: var(--bg); }
+/* Mode-bar pill row — Schedules / Socials / Admin promoted from filter
+   menu. Each pill is icon + label, FAB-styled like the parish pills. */
+.mode-bar-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mode-bar-pill:hover { color: var(--text); }
+.mode-bar-pill .fm-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  opacity: 0.85;
+}
+.mode-bar-pill.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.mode-bar-pill.active .fm-icon { filter: brightness(0) invert(1); opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  /* Dark mode: --bg is charcoal, so .active bg=var(--text) means light-on-dark
+     is already correct; icon needs to flip to dark to match the inverse text. */
+  .mode-bar-pill.active .fm-icon { filter: brightness(0); }
 }
 
 .services-btn {
@@ -309,30 +415,49 @@ input, select, textarea {
   border-color: var(--text);
 }
 
-/* ── Mode-bar share pill ── */
-.mode-url.share-pill {
-  flex: none;
-  display: inline-flex;
+/* ── Share FAB (was the mode-bar share pill) ──
+   Lives as a sibling of the location/filter FABs, sits to the right of
+   the filter FAB. Icon-only by default; label "Share" reveals when the
+   user has active filters (body.has-filters). */
+.share-fab {
+  position: fixed;
+  /* 16 (left edge) + 36 (filter FAB width) + 8 (gap) = 60 */
+  left: max(60px, calc(60px + env(safe-area-inset-left)));
+  top: calc(50vh - 52px);
+  z-index: 600;
+  display: none;
   align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  background: none;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  min-width: 36px;
+  background: var(--fab-bg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 18px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
+  outline: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  outline: none;
-  transition: color 0.15s, border-color 0.15s;
+  transition: opacity 0.45s ease, color 0.15s, border-color 0.15s,
+              padding 0.25s ease, min-width 0.25s ease;
 }
-.mode-url.share-pill:hover { color: var(--text); border-color: var(--text-secondary); }
-.mode-url:focus, .mode-url:focus-visible, .mode-url:active { outline: none; box-shadow: none; }
-.share-pill-icon { width: 14px; height: 14px; opacity: 0.7; }
-.share-pill-label { font-size: 12px; }
+.share-fab:hover { color: var(--text); border-color: var(--text-secondary); }
+.share-fab:focus, .share-fab:focus-visible, .share-fab:active { outline: none; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); }
+body.map-expanded .share-fab { display: inline-flex; }
+.share-fab.fading { opacity: 0; pointer-events: none; }
+.share-pill-icon { width: 14px; height: 14px; opacity: 0.85; }
+/* Label hidden when no filters; reveals when filters become active. The
+   width transition above means the FAB grows from icon-only → icon + label
+   smoothly so attention lands on the new affordance. */
+.share-pill-label { font-size: 12px; display: none; }
+body.has-filters .share-fab .share-pill-label { display: inline; }
+body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 /* Long URL: fade whichever edge(s) currently hide content. JS sets
    .fade-left / .fade-right based on live scrollLeft so the hint only
    appears where there's actually something to reveal. */
@@ -2311,15 +2436,14 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
    Live count of parishes inside the current viewport; tap toggles the
    parish-picker pill drawer. Chevron rotates 90° when drawer is open. */
 .in-view-chip {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  flex: 1;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 7px 14px;
   background: none;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 16px;
   cursor: pointer;
   color: var(--text);

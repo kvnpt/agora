@@ -844,8 +844,12 @@ async function checkAdmin() {
   state.authMethod = whoami.method;
 
   if (state.isAdmin) {
-    document.getElementById('btn-admin').hidden = false;
-    document.querySelector('.fm-admin-sep').hidden = false;
+    const adminBtn = document.getElementById('btn-admin');
+    if (adminBtn) adminBtn.hidden = false;
+    // .fm-admin-sep was the filter-menu divider before Admin. Admin is now
+    // a mode-bar pill; selector may not exist anymore — guard.
+    const adminSep = document.querySelector('.fm-admin-sep');
+    if (adminSep) adminSep.hidden = false;
   }
   if (whoami.method === 'phone') {
     const logoutBtn = document.getElementById('btn-logout');
@@ -1818,6 +1822,9 @@ function syncFilterActiveStack() {
   _lastJurisdiction = juris;
 
   stack.classList.toggle('visible', hasFilters);
+  // Body class toggles the Share FAB's "Share" label reveal — affordance
+  // appears at the moment sharing is most useful (a filter view to share).
+  document.body.classList.toggle('has-filters', hasFilters);
   const list = document.getElementById('filter-chip-list');
   if (list) {
     list.textContent = '';
@@ -2014,10 +2021,11 @@ function initBottomSheet() {
   const fab = document.getElementById('location-fab');
   const resetFab = document.getElementById('reset-fab');
   const filterFab = document.getElementById('btn-filters');
+  const shareFab = document.getElementById('mode-url');
   // All sheet-following FABs share the lifecycle — fade during drag, snap
   // to (currentY - 52) on settle. Keeping them in an array lets the drag /
   // snap handlers iterate once instead of duplicating every touchpoint.
-  const trackedFabs = [fab, resetFab, filterFab].filter(Boolean);
+  const trackedFabs = [fab, resetFab, filterFab, shareFab].filter(Boolean);
   const filterStack = document.getElementById('filter-active-stack');
   function positionFilterStack(y) {
     if (filterStack) filterStack.style.bottom = (window.innerHeight - y + 60) + 'px';
@@ -2124,6 +2132,9 @@ function initBottomSheet() {
     if (!isAtFull()) scroll.scrollTop = 0;
     // Map is "expanded" (primary view) when sheet is not at full height.
     document.body.classList.toggle('map-expanded', y >= SNAP_HALF - 5);
+    // PEEK styling — sheet bg disappears so the mode-bar floats as a row of
+    // FABs. Threshold ~SNAP_PEEK (within 8px) so the class settles cleanly.
+    sheet.classList.toggle('peeking', y >= SNAP_PEEK - 8);
     updateScrollLock();
     const onDone = () => {
       sheet.classList.remove('snapping');
