@@ -48,14 +48,10 @@ console.log(`Loaded ${darkLayers.length} layers from protomaps_themes_base('prot
 // vividness — the L lift alone left features sitting at neutral grey.
 //
 // Per-paint-property tuning:
-//   FLOOR       = 0.22  — fills/lines/backgrounds. Apple/Google land floor
-//   SAT_BOOST   = 1.3   — multiplies saturation, clamped to 1.0
-//   LABEL_FLOOR = 0.60  — text-color: place names need to read against the
-//                         lifted basemap; protomaps ships them around
-//                         L≈0.4 (mid-grey), too dim against L=0.22 land.
+//   FLOOR     = 0.22  — fills/lines/backgrounds. Apple/Google land floor
+//   SAT_BOOST = 1.3   — multiplies saturation, clamped to 1.0
 const FLOOR = 0.22;
 const SAT_BOOST = 1.3;
-const LABEL_FLOOR = 0.60;
 
 function rgbToHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
@@ -154,14 +150,11 @@ function walkAndLift(value, opts) {
   return value;
 }
 
-// Per-paint-key tuning. text-color gets a much higher floor so place names
-// stay legible against the lifted land/road tones. text-halo-color stays
-// at the default floor so the halo is darker than the text — that's the
-// contrast that makes labels read (light text, darker outline).
+// Single tuning for every colour paint property. Earlier rev had a
+// dedicated LABEL_FLOOR for text-color but it overshot — protomaps' own
+// place-name colours sit fine at FLOOR.
 const DEFAULT_OPTS = { floor: FLOOR, sat: SAT_BOOST };
-const TEXT_OPTS = { floor: LABEL_FLOOR, sat: 1.0 };
-function optsForKey(key) {
-  if (key === 'text-color') return TEXT_OPTS;
+function optsForKey() {
   return DEFAULT_OPTS;
 }
 
