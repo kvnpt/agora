@@ -2074,7 +2074,14 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 // ── Render without server calls — purely client-side ──
 function renderCurrentView(opts = {}) {
   if (state.mode === 'services') {
+    // Services renders synchronously — orchestrate the pending→applied
+    // animation around the call so a filter toggle / mode change feels
+    // like the same flow the events list uses.
+    if (typeof markEventsPending === 'function') markEventsPending();
     renderServices();
+    if (typeof markEventsApplied === 'function') {
+      requestAnimationFrame(() => markEventsApplied());
+    }
   } else {
     scheduleRenderEvents(200);
   }
@@ -3193,6 +3200,10 @@ function refreshParishContentPortion(parishId, opts = {}) {
   const parish = state.parishes.find(p => p.id === parishId);
   if (!parish) return;
 
+  // Mark pending → render → applied so parish-sheet filter toggles get
+  // the same fade/glimmer flow as the main events list.
+  if (typeof markEventsPending === 'function') markEventsPending();
+
   // Snapshot scroll position so renderStream's innerHTML write doesn't
   // jump the user's view.
   const scrollEl = document.getElementById('parish-sheet-scroll');
@@ -3250,6 +3261,9 @@ function refreshParishContentPortion(parishId, opts = {}) {
 
   if (scrollEl) {
     requestAnimationFrame(() => { scrollEl.scrollTop = savedScroll; });
+  }
+  if (typeof markEventsApplied === 'function') {
+    requestAnimationFrame(() => markEventsApplied());
   }
 }
 window.agoraRefreshParishContentPortion = refreshParishContentPortion;
@@ -3776,14 +3790,52 @@ function pruneCardPool() {
 }
 
 // ── Render Events ──
+// Animation orchestrator for the events list. Two states stitched together:
+//   pending: events list dimmed + saturated-down, in-view chip prominent —
+//            "filter is about to commit, list will mutate". Triggered by
+//            map movestart, filter button clicks, mode toggles.
+//   applied: pending released, glimmer sweep top-to-bottom, chip relaxes.
+//            Fires after the renderEvents/renderServices commit.
+// Same animation applies to .ps-events-list inside the parish-sheet so
+// filter changes there feel connected to the same flow.
+let _glimmerTimer = null;
+function markEventsPending() {
+  document.querySelectorAll('.events-list, .services-list, .ps-events-list').forEach(l => {
+    l.classList.add('pending');
+    l.classList.remove('glimmer');
+  });
+  const chip = document.getElementById('in-view-chip');
+  if (chip) chip.classList.add('prominent');
+}
+function markEventsApplied() {
+  document.querySelectorAll('.events-list, .services-list, .ps-events-list').forEach(l => {
+    l.classList.remove('pending');
+    // Restart the glimmer animation by removing → reflow → re-adding.
+    l.classList.remove('glimmer');
+    void l.offsetWidth;
+    l.classList.add('glimmer');
+  });
+  if (_glimmerTimer) clearTimeout(_glimmerTimer);
+  _glimmerTimer = setTimeout(() => {
+    document.querySelectorAll('.events-list, .services-list, .ps-events-list').forEach(l => l.classList.remove('glimmer'));
+    _glimmerTimer = null;
+  }, 750);
+  const chip = document.getElementById('in-view-chip');
+  if (chip) chip.classList.remove('prominent');
+}
+window.agoraMarkEventsPending = markEventsPending;
+window.agoraMarkEventsApplied = markEventsApplied;
+
 let _renderEventsIdleCancel = null;
 function scheduleRenderEvents(timeout = 500) {
   if (_renderEventsIdleCancel) { _renderEventsIdleCancel(); _renderEventsIdleCancel = null; }
+  markEventsPending();
+  const commit = () => { _renderEventsIdleCancel = null; renderEvents(); markEventsApplied(); };
   if (window.requestIdleCallback) {
-    const id = requestIdleCallback(() => { _renderEventsIdleCancel = null; renderEvents(); }, { timeout });
+    const id = requestIdleCallback(commit, { timeout });
     _renderEventsIdleCancel = () => cancelIdleCallback(id);
   } else {
-    const id = setTimeout(() => { _renderEventsIdleCancel = null; renderEvents(); }, 16);
+    const id = setTimeout(commit, 16);
     _renderEventsIdleCancel = () => clearTimeout(id);
   }
 }

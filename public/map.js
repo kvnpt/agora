@@ -806,6 +806,10 @@ function setupViewportPhases() {
   map.on('movestart', () => {
     clearTimeout(mapPhase);
     clearTimeout(listPhase);
+    // Map is moving → events list will (likely) update once it stops.
+    // Mark pending so the list dims + the in-view chip grows prominent;
+    // signals the chip is the link between viewport and list.
+    if (window.agoraMarkEventsPending) window.agoraMarkEventsPending();
   });
   map.on('moveend', () => {
     clearTimeout(mapPhase);

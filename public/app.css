@@ -2476,6 +2476,125 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   animation: filter-wave-pop 0.42s cubic-bezier(0.34,1.4,0.64,1) both;
 }
 
+/* ── Event drawer expansion ────────────────────────────────────────────
+   Curve-eased open with subtle bounce. Children stagger-fade so the
+   reveal flows top-to-bottom. Share button sheens once on open. */
+@keyframes drawer-open {
+  0%   { transform: translateY(-6px) scale(0.98); opacity: 0; }
+  55%  { transform: translateY(2px)  scale(1.005); opacity: 1; }
+  100% { transform: translateY(0)    scale(1); opacity: 1; }
+}
+@keyframes drawer-child-in {
+  0%   { transform: translateY(-4px); opacity: 0; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+.event-card-drawer {
+  animation: drawer-open 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  transform-origin: top center;
+}
+.event-card-drawer > * {
+  animation: drawer-child-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: 0.06s;
+}
+.event-card-drawer > *:nth-child(2) { animation-delay: 0.10s; }
+.event-card-drawer > *:nth-child(3) { animation-delay: 0.14s; }
+.event-card-drawer > *:nth-child(4) { animation-delay: 0.18s; }
+.event-card-drawer > *:nth-child(5) { animation-delay: 0.22s; }
+.event-card-drawer > *:nth-child(6) { animation-delay: 0.26s; }
+
+/* Share button gets a one-shot sheen sweep — same vocabulary as the
+   filter-stack bounce + sheen, signals the action is the affordance to
+   complete the reveal. */
+@keyframes share-sheen {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(110%); }
+}
+@keyframes share-bounce {
+  0%, 100% { transform: scale(1); }
+  40%      { transform: scale(1.06); }
+  70%      { transform: scale(0.98); }
+}
+.event-card-drawer .btn-share-event {
+  position: relative;
+  overflow: hidden;
+  animation: share-bounce 0.5s 0.42s cubic-bezier(0.34, 1.5, 0.64, 1) both;
+}
+.event-card-drawer .btn-share-event::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  bottom: -50%;
+  left: 0;
+  width: 60%;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+  transform: translateX(-110%);
+  animation: share-sheen 0.7s 0.55s ease-out both;
+}
+@media (prefers-color-scheme: dark) {
+  .event-card-drawer .btn-share-event::after {
+    background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
+  }
+}
+
+/* ── Events list pending / glimmer ─────────────────────────────────────
+   Pending: dim the events list while a filter change or map move is
+   waiting to commit. The user knows the view is about to mutate.
+   Glimmer: top-to-bottom sweep on commit so the change reads as a
+   purposeful refresh. */
+.events-list.pending,
+.services-list.pending,
+.ps-events-list.pending {
+  opacity: 0.55;
+  filter: saturate(0.7);
+  transition: opacity 0.18s ease, filter 0.18s ease;
+}
+@keyframes events-glimmer {
+  0%   { background-position: 0% -100%; opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { background-position: 0% 200%; opacity: 0; }
+}
+.events-list.glimmer::after,
+.services-list.glimmer::after,
+.ps-events-list.glimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.10) 50%, transparent 100%);
+  background-size: 100% 60%;
+  background-repeat: no-repeat;
+  animation: events-glimmer 0.7s ease-out both;
+  z-index: 6;
+}
+.events-list,
+.services-list,
+.ps-events-list { position: relative; }
+@media (prefers-color-scheme: dark) {
+  .events-list.glimmer::after,
+  .services-list.glimmer::after,
+  .ps-events-list.glimmer::after {
+    background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+  }
+}
+
+/* In-view chip grows prominent during the pending window — signals the
+   chip is the connection between the map viewport (moving) and the
+   list (about to update). Relaxes back when commit lands. */
+.in-view-chip.prominent {
+  transform: scale(1.06);
+  background: var(--fab-bg);
+  border-color: var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+  transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1),
+              background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+.in-view-chip {
+  transition: transform 0.22s ease, background 0.22s ease,
+              border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
 /* Share event button in detail-actions */
 .btn-share-event {
   color: var(--text);
