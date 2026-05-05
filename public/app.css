@@ -110,10 +110,11 @@
     --evening: #8ba3d4;
 
     /* map */
-    /* Halo is a light grey so coloured parish labels lift off dark tiles
-       without a hard-black outline (which would make dark parish colours
-       blend into the basemap). */
-    --halo: #cfcfcf;
+    /* Dark outline around solarized parish labels + dot strokes — solarized
+       hues are light/pastel in dark mode, so a dark halo gives the strongest
+       lift off the dark protomaps tiles. Used by both text-halo-color
+       (parish labels) and circle-stroke-color (parish dots). */
+    --halo: #0b0b0d;
     --map-fade: #0b0b0d;
     --map-fade-opacity: 0.25;
 

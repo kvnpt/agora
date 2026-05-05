@@ -287,7 +287,10 @@ function addParishSourceAndLayers() {
         5
       ],
       'circle-color': ['get', 'color'],
-      'circle-stroke-color': '#ffffff',
+      // Same source as label halo so dot rings and label outlines flip
+      // together (white in light, dark in dark). User-loc dot keeps its
+      // hardcoded white ring — that's the universal "I am here" pin.
+      'circle-stroke-color': getHalo(),
       'circle-stroke-width': [
         'case',
         ['==', ['get', 'focused'], true], 2.5,
