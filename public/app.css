@@ -2503,10 +2503,35 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
    then adds .collapsing + sets max-height: 0px to start the transition. */
 .event-card-drawer.collapsing {
   transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.22s ease-out;
+              opacity 0.18s ease-out;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+}
+/* During collapse, fade the bottom accent glow quickly — feels off if
+   it lingers past the drawer. The ::after gradient is on the .expanded
+   card; with .collapsing also on the card the rule below overrides. */
+.event-card.expanded.collapsing::after {
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+/* While collapsing, restore the title row + parish row + poster so the
+   card stays at its natural row height during the squish. Without this
+   the drawer shrinks to 0, then the card jumps from "very thin" to
+   "row height" when .expanded is removed — visible snap. Fade them in
+   so the reveal coincides with the drawer's exit. */
+.event-card.expanded.collapsing .event-title-row,
+.event-card.expanded.collapsing .event-parish-row {
+  display: flex !important;
+  animation: card-row-reveal 0.22s ease-out both;
+}
+.event-card.expanded.collapsing .event-card-poster {
+  display: block !important;
+  animation: card-row-reveal 0.22s ease-out both;
+}
+@keyframes card-row-reveal {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
 }
 .event-card-drawer > * {
   animation: drawer-child-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;

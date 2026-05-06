@@ -3917,7 +3917,9 @@ function pruneCardPool() {
 // Same animation applies to .ps-events-list inside the parish-sheet so
 // filter changes there feel connected to the same flow.
 let _glimmerTimer = null;
+let _eventsPendingActive = false;
 function markEventsPending() {
+  _eventsPendingActive = true;
   document.querySelectorAll('.events-list, .services-list, .ps-events-list').forEach(l => {
     l.classList.add('pending');
     l.classList.remove('glimmer');
@@ -3926,6 +3928,13 @@ function markEventsPending() {
   if (chip) chip.classList.add('prominent');
 }
 function markEventsApplied() {
+  // No-op when pending was never set. Sheet snaps and drawer expands
+  // shouldn't trigger a glimmer animation just because the listPhase
+  // happens to fire afterwards — without this guard we were repainting
+  // the .glimmer/.unfading sweep every time onViewportListPhase ran,
+  // even though the parish set hadn't changed.
+  if (!_eventsPendingActive) return;
+  _eventsPendingActive = false;
   const lists = document.querySelectorAll('.events-list, .services-list, .ps-events-list');
   lists.forEach(l => {
     // Stagger the per-card unfade — each card animates from the pending
@@ -4947,18 +4956,17 @@ function collapseEventCardDOM(opts = {}) {
     if (drawer && !opts.instant) {
       // Squish the drawer's height down to zero so surrounding cards
       // flow up to fill the space — avoids the "pop" of a sudden
-      // height change. Steps:
-      //   1. Measure current height
-      //   2. Set max-height to that value inline (locks the height)
-      //   3. Force reflow so the browser registers the start state
-      //   4. Add .collapsing (transitions max-height/opacity)
-      //   5. Set max-height to 0 — transition runs
-      //   6. transitionend (or fallback timer) finalizes the DOM
+      // height change. Adding .collapsing to the CARD (not just the
+      // drawer) re-reveals the title/parish/poster rows during the
+      // animation so the card stays at its natural row height while
+      // the drawer shrinks; otherwise the layout would snap from "thin"
+      // to "row height" when .expanded is removed at the end.
       const h = drawer.getBoundingClientRect().height;
       drawer.style.maxHeight = h + 'px';
       drawer.style.overflow = 'hidden';
       // Force reflow so the start state is committed.
       void drawer.offsetWidth;
+      card.classList.add('collapsing');
       drawer.classList.add('collapsing');
       drawer.style.maxHeight = '0px';
       let done = false;
@@ -4967,6 +4975,7 @@ function collapseEventCardDOM(opts = {}) {
         if (e && e.propertyName !== 'max-height') return;
         if (done) return;
         done = true;
+        card.classList.remove('collapsing');
         finalize();
       };
       drawer.addEventListener('transitionend', onTrans, { once: false });
