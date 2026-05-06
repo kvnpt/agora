@@ -806,9 +806,10 @@ function setupViewportPhases() {
   map.on('movestart', () => {
     clearTimeout(mapPhase);
     clearTimeout(listPhase);
-    // Map is moving → events list will (likely) update once it stops.
-    // Mark pending so the list dims + the in-view chip grows prominent;
-    // signals the chip is the link between viewport and list.
+    // Skip the pending mark when the move is sheet-driven (sheet's own
+    // map.resize fires moveend). Sheet snaps don't change the parish
+    // set under our stable cutoff, so the list shouldn't fade.
+    if (window.__agoraSheetMoving) return;
     if (window.agoraMarkEventsPending) window.agoraMarkEventsPending();
   });
   map.on('moveend', () => {

@@ -2359,6 +2359,11 @@ function initBottomSheet() {
   }
 
   function snapTo(y) {
+    // Flag so the map-move event handler skips the pending-mark while
+    // the sheet's own map.resize() fires moveend. Sheet snaps don't
+    // change which parishes are in view (stable cutoff at HALF), so
+    // the events list shouldn't fade/glimmer during sheet motion.
+    window.__agoraSheetMoving = true;
     currentY = y;
     window.agoraSheetY = () => currentY;
     sheet.classList.remove('dragging');
@@ -2392,6 +2397,13 @@ function initBottomSheet() {
       if (typeof renderParishPills === 'function') renderParishPills();
       document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - currentY) + 'px');
       if (typeof updateInViewChevron === 'function') updateInViewChevron();
+      // Release the sheet-moving flag a tick later — the map's moveend
+      // (from resize) hasn't fired yet at this point. One more rAF gives
+      // the move-event chain time to land before user-driven moves can
+      // re-arm the pending mark.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.__agoraSheetMoving = false;
+      }));
     };
     sheet.addEventListener('transitionend', onDone, { once: true });
     // Fallback if transitionend doesn't fire
@@ -2794,6 +2806,10 @@ function initParishSheet() {
   }
 
   function snapTo(y, onDone) {
+    // Same flag the main sheet uses — gate the events-list pending mark
+    // so parish-sheet snaps don't make the events fade/glimmer when
+    // nothing about which events to show is changing.
+    window.__agoraSheetMoving = true;
     currentY = y;
     sheet.classList.remove('dragging');
     sheet.classList.add('snapping');
@@ -2806,6 +2822,9 @@ function initParishSheet() {
       settled = true;
       sheet.classList.remove('snapping');
       updateScrollLock();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.__agoraSheetMoving = false;
+      }));
       // Follow parish sheet with the location + filter + share FABs +
       // the filter-active stack. (onDone takes care of dismissal cleanup
       // separately.)
@@ -4907,12 +4926,26 @@ function collapseEventCardDOM(opts = {}) {
   // drawer in the hidden main list that re-appears when the parish sheet
   // closes.
   root.querySelectorAll('.event-card.expanded').forEach(card => {
-    card.classList.remove('expanded');
-    card.style.removeProperty('--accent-glow');
     const drawer = card.querySelector('.event-card-drawer');
-    if (drawer) drawer.remove();
     const closeBtn = card.querySelector('.event-card-close');
-    if (closeBtn) closeBtn.remove();
+    const finalize = () => {
+      card.classList.remove('expanded');
+      card.style.removeProperty('--accent-glow');
+      if (drawer && drawer.parentNode) drawer.remove();
+      if (closeBtn && closeBtn.parentNode) closeBtn.remove();
+    };
+    if (drawer && !opts.instant) {
+      // Animate the drawer's collapse via CSS keyframe drawer-close,
+      // then tear down the DOM. animationend fires on completion;
+      // setTimeout is the fallback if the event is missed.
+      drawer.classList.add('collapsing');
+      let done = false;
+      const onAnim = () => { if (done) return; done = true; finalize(); };
+      drawer.addEventListener('animationend', onAnim, { once: true });
+      setTimeout(onAnim, 280);
+    } else {
+      finalize();
+    }
   });
 }
 

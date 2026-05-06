@@ -2496,6 +2496,14 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   animation: drawer-open 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
   transform-origin: top center;
 }
+@keyframes drawer-close {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-4px) scale(0.99); opacity: 0; }
+}
+.event-card-drawer.collapsing {
+  animation: drawer-close 0.22s cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+}
 .event-card-drawer > * {
   animation: drawer-child-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
   animation-delay: 0.06s;
@@ -2549,30 +2557,31 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
 .events-list.pending,
 .services-list.pending,
 .ps-events-list.pending {
-  opacity: 0.55;
-  filter: saturate(0.7);
-  transition: opacity 0.18s ease, filter 0.18s ease;
+  /* Mid-move state: more faded so the change feels like a real
+     transition rather than a soft dim. */
+  opacity: 0.35;
+  filter: saturate(0.5);
+  transition: opacity 0.22s ease, filter 0.22s ease;
 }
-/* Top-to-bottom progressive unfade — when .unfading is present (set by
-   markEventsApplied for ~1s), each card animates from the dimmed state
-   back to full with a staggered delay derived from its index. JS writes
-   the index to --card-i on each card. Capped at 15 so very long lists
-   don't take forever. */
+/* Top-to-bottom progressive unfade — pure opacity/saturate ramp, no
+   bounce or translation. Pairs with the glimmer ::after sweep so the
+   reveal reads as light rolling top to bottom rather than cards
+   popping in. */
 @keyframes card-unfade {
-  0%   { opacity: 0.55; filter: saturate(0.7); transform: translateY(-3px); }
-  100% { opacity: 1; filter: saturate(1); transform: translateY(0); }
+  0%   { opacity: 0.35; filter: saturate(0.5); }
+  100% { opacity: 1;    filter: saturate(1); }
 }
 .events-list.unfading .event-card,
 .ps-events-list.unfading .event-card,
 .services-list.unfading .parish-schedule {
-  animation: card-unfade 0.42s cubic-bezier(0.34, 1.15, 0.64, 1) both;
-  animation-delay: calc(min(var(--card-i, 0), 15) * 28ms);
+  animation: card-unfade 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: calc(min(var(--card-i, 0), 15) * 30ms);
 }
 @keyframes events-glimmer {
-  0%   { background-position: 0% -100%; opacity: 0; }
-  20%  { opacity: 1; }
-  80%  { opacity: 1; }
-  100% { background-position: 0% 200%; opacity: 0; }
+  0%   { background-position: 0% -50%;  opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { background-position: 0% 150%; opacity: 0; }
 }
 .events-list.glimmer::after,
 .services-list.glimmer::after,
@@ -2581,11 +2590,11 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.10) 50%, transparent 100%);
-  background-size: 100% 60%;
+  background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
+  background-size: 100% 50%;
   background-repeat: no-repeat;
-  animation: events-glimmer 0.7s ease-out both;
-  z-index: 6;
+  animation: events-glimmer 1s ease-out both;
+  z-index: 7;
 }
 .events-list,
 .services-list,
@@ -2594,7 +2603,7 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   .events-list.glimmer::after,
   .services-list.glimmer::after,
   .ps-events-list.glimmer::after {
-    background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+    background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.10) 50%, transparent 100%);
   }
 }
 
