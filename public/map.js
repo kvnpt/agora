@@ -808,8 +808,11 @@ function setupViewportPhases() {
     clearTimeout(listPhase);
     // Skip the pending mark when the move is sheet-driven (sheet's own
     // map.resize fires moveend). Sheet snaps don't change the parish
-    // set under our stable cutoff, so the list shouldn't fade.
+    // set under our stable cutoff. Check both the live flag and the
+    // timestamp window — drag → release → snap can fire moveend
+    // multiple times across the snap settle.
     if (window.__agoraSheetMoving) return;
+    if (window.__agoraSheetSnapAt && (Date.now() - window.__agoraSheetSnapAt) < 1100) return;
     if (window.agoraMarkEventsPending) window.agoraMarkEventsPending();
   });
   map.on('moveend', () => {

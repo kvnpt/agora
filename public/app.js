@@ -603,6 +603,13 @@ function onViewportMapPhase() {
 // sheet snaps (sheet's map.resize fires moveend → 800ms list-phase).
 function onViewportListPhase() {
   recomputeViewportSet();
+  // Sheet snap → moveend → listPhase fires ~800ms later. The sheet
+  // didn't change the parish set (stable cutoff), so neither render
+  // nor applied-animation should fire. The flag is set on snap and
+  // checked here with a generous 1100ms window.
+  const recentSheetSnap = window.__agoraSheetSnapAt
+    && (Date.now() - window.__agoraSheetSnapAt) < 1100;
+  if (recentSheetSnap) return;
   // If a drawer is open we still need to release any pending state
   // markEventsPending fired on movestart — otherwise the list stays in
   // the dim/saturated state forever.
@@ -610,9 +617,8 @@ function onViewportListPhase() {
     if (typeof markEventsApplied === 'function') markEventsApplied();
     return;
   }
-  // If the parish set didn't actually change (sheet snap with stable
-  // viewport cutoff), skip the heavy re-render — but still release the
-  // pending lock so the list unfades.
+  // If the parish set didn't actually change, skip the heavy re-render
+  // but still release pending so the list unfades.
   const sig = state.viewportParishIds
     ? [...state.viewportParishIds].sort((a, b) => a - b).join(',')
     : '';
@@ -2359,10 +2365,12 @@ function initBottomSheet() {
   }
 
   function snapTo(y) {
-    // Flag so the map-move event handler skips the pending-mark while
-    // the sheet's own map.resize() fires moveend. Sheet snaps don't
-    // change which parishes are in view (stable cutoff at HALF), so
-    // the events list shouldn't fade/glimmer during sheet motion.
+    // Timestamp every sheet snap. Both the map's movestart handler
+    // (markEventsPending gate) and onViewportListPhase (markEventsApplied
+    // gate) check Date.now() - __agoraSheetSnapAt < window. listPhase
+    // fires ~800ms after the snap-driven moveend, so we need a window
+    // longer than that — use 1100ms for safety.
+    window.__agoraSheetSnapAt = Date.now();
     window.__agoraSheetMoving = true;
     currentY = y;
     window.agoraSheetY = () => currentY;
@@ -2397,10 +2405,10 @@ function initBottomSheet() {
       if (typeof renderParishPills === 'function') renderParishPills();
       document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - currentY) + 'px');
       if (typeof updateInViewChevron === 'function') updateInViewChevron();
-      // Release the sheet-moving flag a tick later — the map's moveend
-      // (from resize) hasn't fired yet at this point. One more rAF gives
-      // the move-event chain time to land before user-driven moves can
-      // re-arm the pending mark.
+      // Release the live "moving" flag two rAFs after settle so user
+      // movestarts immediately afterwards aren't mistaken for sheet
+      // motion. The timestamp keeps the wider gate (~1100ms) for the
+      // delayed listPhase.
       requestAnimationFrame(() => requestAnimationFrame(() => {
         window.__agoraSheetMoving = false;
       }));
@@ -2806,9 +2814,11 @@ function initParishSheet() {
   }
 
   function snapTo(y, onDone) {
-    // Same flag the main sheet uses — gate the events-list pending mark
-    // so parish-sheet snaps don't make the events fade/glimmer when
-    // nothing about which events to show is changing.
+    // Same flag + timestamp the main sheet uses — gate both the
+    // immediate movestart (pending-mark) and the delayed listPhase
+    // (applied-mark) so parish-sheet snaps don't make the events
+    // fade/glimmer when nothing about which events to show is changing.
+    window.__agoraSheetSnapAt = Date.now();
     window.__agoraSheetMoving = true;
     currentY = y;
     sheet.classList.remove('dragging');
@@ -4935,14 +4945,32 @@ function collapseEventCardDOM(opts = {}) {
       if (closeBtn && closeBtn.parentNode) closeBtn.remove();
     };
     if (drawer && !opts.instant) {
-      // Animate the drawer's collapse via CSS keyframe drawer-close,
-      // then tear down the DOM. animationend fires on completion;
-      // setTimeout is the fallback if the event is missed.
+      // Squish the drawer's height down to zero so surrounding cards
+      // flow up to fill the space — avoids the "pop" of a sudden
+      // height change. Steps:
+      //   1. Measure current height
+      //   2. Set max-height to that value inline (locks the height)
+      //   3. Force reflow so the browser registers the start state
+      //   4. Add .collapsing (transitions max-height/opacity)
+      //   5. Set max-height to 0 — transition runs
+      //   6. transitionend (or fallback timer) finalizes the DOM
+      const h = drawer.getBoundingClientRect().height;
+      drawer.style.maxHeight = h + 'px';
+      drawer.style.overflow = 'hidden';
+      // Force reflow so the start state is committed.
+      void drawer.offsetWidth;
       drawer.classList.add('collapsing');
+      drawer.style.maxHeight = '0px';
       let done = false;
-      const onAnim = () => { if (done) return; done = true; finalize(); };
-      drawer.addEventListener('animationend', onAnim, { once: true });
-      setTimeout(onAnim, 280);
+      const onTrans = (e) => {
+        if (e && e.target !== drawer) return;
+        if (e && e.propertyName !== 'max-height') return;
+        if (done) return;
+        done = true;
+        finalize();
+      };
+      drawer.addEventListener('transitionend', onTrans, { once: false });
+      setTimeout(() => onTrans(null), 320);
     } else {
       finalize();
     }
