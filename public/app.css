@@ -1005,7 +1005,9 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   top: var(--ps-stack-h, 0);
   /* Above expanded event cards AND above .time-card-head (which sits
      37px below it). When two day-sections meet during scroll, the
-     incoming day-hdr should paint over the outgoing time-card-head. */
+     incoming day-hdr should paint over the outgoing time-card-head.
+     Inside .parish-sheet-scroll, day-hdr drops below the sticky
+     .ps-header (z=6) and .ps-filter-row (z=5) — handled in override. */
   z-index: 5;
   background: var(--bg);
   font-size: 13px;
@@ -2935,6 +2937,13 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   min-height: 0;
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Inside the parish-sheet, .day-hdr sits below the sticky .ps-header (6)
+   and .ps-filter-row (5). Drop its z-index so it doesn't paint over the
+   filter pill row when scroll is at the boundary. .time-card-head drops
+   one further. */
+.parish-sheet-scroll .day-hdr { z-index: 3; }
+.parish-sheet-scroll .time-card-head { z-index: 2; }
 
 /* Parish sheet content */
 .ps-header {

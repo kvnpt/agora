@@ -4933,13 +4933,29 @@ function expandEventCard(id, opts = {}) {
   }
 
   requestAnimationFrame(() => {
-    // Scroll the containing scroller so the expanded card is in view.
+    // Bring the top of the just-expanded drawer into view. The drawer's
+    // top equals the card's top (drawer is the first child once
+    // .expanded is on); scrolling so the card top sits just below the
+    // sticky stack puts the drawer hero immediately in view.
     const scroller = card.closest('#parish-sheet-scroll, #sheet-scroll');
     if (!scroller) return;
+    // Account for any sticky stack at the top of the scroll container —
+    // parish-sheet has --ps-stack-h (header + filter row); main events
+    // list has the day-hdr at scroll-top.
+    const sheetEl = scroller.closest('.parish-sheet, #bottom-sheet');
+    let stickyOffset = 0;
+    if (sheetEl) {
+      const v = getComputedStyle(sheetEl).getPropertyValue('--ps-stack-h');
+      stickyOffset = parseFloat(v) || 0;
+    }
     const cardRect = card.getBoundingClientRect();
     const scrollRect = scroller.getBoundingClientRect();
-    if (cardRect.top < scrollRect.top) {
-      scroller.scrollTop += (cardRect.top - scrollRect.top);
+    const delta = cardRect.top - (scrollRect.top + stickyOffset + 8);
+    if (Math.abs(delta) > 4) {
+      scroller.scrollTo({
+        top: scroller.scrollTop + delta,
+        behavior: 'smooth'
+      });
     }
   });
 }
@@ -4961,37 +4977,29 @@ function collapseEventCardDOM(opts = {}) {
       if (closeBtn && closeBtn.parentNode) closeBtn.remove();
     };
     if (drawer && !opts.instant) {
-      // Crossfade collapse:
-      //   - Title rows + parish row + poster (.expanded compresses them
-      //     to max-height: 0 + opacity: 0 with built-in transitions)
-      //     fade back in the moment .expanded is removed.
-      //   - Drawer simultaneously transitions max-height + opacity to 0.
-      //   - .collapsing on the card keeps the bottom accent glow alive
-      //     (fading) for the duration so the visual lineage flows.
-      // No snap: card height never changes abruptly; rows + drawer
-      // trade places via overlapping transitions.
+      // Three-phase collapse:
+      //   Phase 1 (0–150ms):   drawer contents fade out (opacity 1→0)
+      //   Phase 2 (150–350ms): drawer max-height shrinks 100%→0
+      //                        + .expanded removed → padding/margin
+      //                          transitions on collapsed-row siblings
+      //                          adjust during this same window
+      //   Phase 3 (350–530ms): collapsed row (title/parish/poster) fades
+      //                        in via their built-in opacity transitions
+      // .collapsing on the card keeps the bottom accent glow alive
+      // (fading) across the whole sequence.
       const drawerH = drawer.getBoundingClientRect().height;
       drawer.style.maxHeight = drawerH + 'px';
       drawer.style.overflow = 'hidden';
-      drawer.style.opacity = '1';
-      // Force reflow so the start state is committed.
       void drawer.offsetWidth;
 
-      // Add .collapsing FIRST (preserves glow + sets up exit visuals),
-      // then remove .expanded — title rows transition out of compressed.
       card.classList.add('collapsing');
-      card.classList.remove('expanded');
 
-      // Drawer animates out. Inline transition + values guarantee both
-      // properties change in the next frame (no specificity surprises).
-      drawer.style.transition = 'max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease-out';
-      drawer.style.maxHeight = '0px';
+      // Phase 1 — fade contents
+      drawer.style.transition = 'opacity 0.15s ease-out';
       drawer.style.opacity = '0';
 
       let done = false;
-      const onTrans = (e) => {
-        if (e && e.target !== drawer) return;
-        if (e && e.propertyName !== 'max-height') return;
+      const finish = () => {
         if (done) return;
         done = true;
         card.classList.remove('collapsing');
@@ -4999,8 +5007,20 @@ function collapseEventCardDOM(opts = {}) {
         if (closeBtn && closeBtn.parentNode) closeBtn.remove();
         card.style.removeProperty('--accent-glow');
       };
-      drawer.addEventListener('transitionend', onTrans, { once: false });
-      setTimeout(() => onTrans(null), 320);
+
+      // Phase 2 — shrink height + reveal padding behind by removing
+      // .expanded (title rows / poster transition max-height/padding
+      // back to natural). Two animations run together.
+      setTimeout(() => {
+        drawer.style.transition = 'max-height 0.20s cubic-bezier(0.4, 0, 0.2, 1)';
+        drawer.style.maxHeight = '0px';
+        card.classList.remove('expanded');
+      }, 150);
+
+      // Phase 3 finalize — fade-in of the row already runs via the
+      // .event-title-row transition (opacity 0→1 over 0.22s); we just
+      // need to clean up DOM after it settles.
+      setTimeout(finish, 560);
     } else {
       finalize();
     }
