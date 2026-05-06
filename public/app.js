@@ -3838,7 +3838,12 @@ function renderParishSheetContent(parishId, opts = {}) {
           if (additions.length) state.events = [...state.events, ...additions];
         }
         const filtered = data
-          .filter(e => e.parish_id === parishId)
+          // Include cross-parish (Combined) events — events authored at
+          // another parish but absorbed here via event_parishes. Without
+          // this, the second render (with parishEvents: filtered) would
+          // override the initial render's correct filter and silently
+          // drop the combined event.
+          .filter(e => e.parish_id === parishId || (e.extra_parishes && e.extra_parishes.includes(parishId)))
           .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
         const sheetEl = document.getElementById('parish-sheet');
         if (sheetEl && !sheetEl.classList.contains('hidden')) {
