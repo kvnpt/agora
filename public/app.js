@@ -149,15 +149,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 150);
   }
 
-  // Re-render event cards every minute to keep LIVE countdowns current.
-  // Skip when a drawer is open: re-render rebuilds the list HTML and would
-  // wipe the user's in-drawer state (e.g. schedule toggled open).
-  setInterval(() => {
-    if (state.mode !== 'events') return;
-    if (!state.events.some(e => e.parish_live_url)) return;
-    if (document.querySelector('.event-card.expanded')) return;
-    scheduleRenderEvents();
-  }, 60000);
+  // Patch LIVE badges in place every minute. Was scheduleRenderEvents
+  // before — full list re-render fired the events-pending fade animation
+  // every 60s for any list with a parish_live_url event, which the user
+  // saw as a random refresh. Now just iterate cards and update the badge
+  // class + text. No render, no animation.
+  setInterval(updateLiveBadgesInPlace, 60000);
 
   // Browser back button: poster first, then legacy parish-detail modal (flag-based,
   // not URL-backed), then reconcile state from the current URL. Every URL-backed
@@ -3932,6 +3929,58 @@ function markEventsPending() {
   const chip = document.getElementById('in-view-chip');
   if (chip) chip.classList.add('prominent');
 }
+// Iterate every rendered .event-card and refresh just its LIVE badge
+// (class + label text) to match the current time. Replaces the old
+// minute-tick full re-render — same accuracy, no animation cost.
+function updateLiveBadgesInPlace() {
+  if (!state.events) return;
+  if (state.mode === 'services') return;
+  const now = Date.now();
+  const TODAY = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  document.querySelectorAll('.event-card[data-id]').forEach(cardEl => {
+    const id = parseInt(cardEl.dataset.id);
+    const evt = state.events.find(e => e.id === id);
+    if (!evt || !evt.parish_live_url || evt.hide_live) return;
+    const evtStart = new Date(evt.start_utc).getTime();
+    const evtEnd = evt.end_utc ? new Date(evt.end_utc).getTime() : evtStart + 3600000;
+    const sameDay = TODAY === new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(evt.start_utc));
+    let cls, label, hasDot;
+    if (sameDay && now >= evtStart - 900000 && now <= evtEnd + 3600000) {
+      cls = 'badge-live'; label = 'LIVE'; hasDot = true;
+    } else if (sameDay && now < evtStart - 900000) {
+      cls = 'badge-live-soon';
+      const mins = Math.round((evtStart - now) / 60000);
+      label = mins >= 60 ? `LIVE IN ${Math.round(mins / 60)}H` : `LIVE IN ${mins}M`;
+      hasDot = false;
+    } else {
+      cls = 'badge-live-soon'; label = 'LIVE AVAIL'; hasDot = false;
+    }
+    const badgeEl = cardEl.querySelector('.badge-live, .badge-live-soon');
+    if (!badgeEl) return;
+    if (!badgeEl.classList.contains(cls)) {
+      badgeEl.classList.remove('badge-live', 'badge-live-soon');
+      badgeEl.classList.add(cls);
+    }
+    // Reconcile contents: badge-live has a leading .live-dot + label;
+    // badge-live-soon is plain text.
+    const dotEl = badgeEl.querySelector('.live-dot');
+    if (hasDot) {
+      if (!dotEl) {
+        const dot = document.createElement('span');
+        dot.className = 'live-dot';
+        badgeEl.textContent = '';
+        badgeEl.appendChild(dot);
+        badgeEl.appendChild(document.createTextNode(label));
+      } else if (badgeEl.lastChild && badgeEl.lastChild.nodeType === 3 && badgeEl.lastChild.textContent !== label) {
+        badgeEl.lastChild.textContent = label;
+      }
+    } else {
+      if (dotEl) dotEl.remove();
+      if (badgeEl.textContent !== label) badgeEl.textContent = label;
+    }
+  });
+}
+
 function markEventsApplied() {
   // No-op when pending was never set. Sheet snaps and drawer expands
   // shouldn't trigger a glimmer animation just because the listPhase
