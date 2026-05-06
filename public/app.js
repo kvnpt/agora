@@ -1190,11 +1190,11 @@ function renderParishPills() {
       const inView = !vp || vp.has(p.id);
       style = inView
         ? `color:${color};border-color:${color};background:var(--fab-bg);`
-        : `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);opacity:0.7;`;
+        : `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);`;
     } else if (isSelected) {
       style = `background:${color};color:#fff;border-color:transparent;`;
     } else {
-      style = `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);opacity:0.7;`;
+      style = `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);`;
     }
     const activeClass = (allActive || isSelected) ? 'active' : '';
     // Selected pills get an inline × so the user can dismiss the focus
@@ -4987,50 +4987,15 @@ function collapseEventCardDOM(opts = {}) {
       if (closeBtn && closeBtn.parentNode) closeBtn.remove();
     };
     if (drawer && !opts.instant) {
-      // Three-phase collapse:
-      //   Phase 1 (0–150ms):   drawer contents fade out (opacity 1→0)
-      //   Phase 2 (150–350ms): drawer max-height shrinks 100%→0
-      //                        + .expanded removed → padding/margin
-      //                          transitions on collapsed-row siblings
-      //                          adjust during this same window
-      //   Phase 3 (350–530ms): collapsed row (title/parish/poster) fades
-      //                        in via their built-in opacity transitions
-      // .collapsing on the card keeps the bottom accent glow alive
-      // (fading) across the whole sequence.
-      const drawerH = drawer.getBoundingClientRect().height;
-      drawer.style.maxHeight = drawerH + 'px';
-      drawer.style.overflow = 'hidden';
-      void drawer.offsetWidth;
-
-      card.classList.add('collapsing');
-
-      // Phase 1 — fade contents
-      drawer.style.transition = 'opacity 0.15s ease-out';
-      drawer.style.opacity = '0';
-
+      // Animate the drawer's collapse via the @keyframes drawer-close
+      // CSS animation (mirror of drawer-open's curve), then tear down
+      // the DOM. animationend is the cleanup signal; setTimeout is the
+      // fallback if the event is missed.
+      drawer.classList.add('collapsing');
       let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        card.classList.remove('collapsing');
-        if (drawer && drawer.parentNode) drawer.remove();
-        if (closeBtn && closeBtn.parentNode) closeBtn.remove();
-        card.style.removeProperty('--accent-glow');
-      };
-
-      // Phase 2 — shrink height + reveal padding behind by removing
-      // .expanded (title rows / poster transition max-height/padding
-      // back to natural). Two animations run together.
-      setTimeout(() => {
-        drawer.style.transition = 'max-height 0.20s cubic-bezier(0.4, 0, 0.2, 1)';
-        drawer.style.maxHeight = '0px';
-        card.classList.remove('expanded');
-      }, 150);
-
-      // Phase 3 finalize — fade-in of the row already runs via the
-      // .event-title-row transition (opacity 0→1 over 0.22s); we just
-      // need to clean up DOM after it settles.
-      setTimeout(finish, 560);
+      const onAnim = () => { if (done) return; done = true; finalize(); };
+      drawer.addEventListener('animationend', onAnim, { once: true });
+      setTimeout(onAnim, 280);
     } else {
       finalize();
     }

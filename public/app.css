@@ -1255,28 +1255,8 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 /* Collapsed summary (time + title + parish row) yields to the drawer's
    promoted hero when expanded — keep the two states visually distinct. */
-/* Title rows + parish row stay in flow always so they can transition.
-   .expanded compresses them to zero height + opacity 0; removing the
-   class transitions them back smoothly during collapse. */
-.event-title-row,
-.event-parish-row {
-  max-height: 240px;
-  opacity: 1;
-  overflow: hidden;
-  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.22s ease-out,
-              padding 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-              margin 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-}
 .event-card.expanded .event-title-row,
-.event-card.expanded .event-parish-row {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-top: 0;
-  margin-bottom: 0;
-}
+.event-card.expanded .event-parish-row { display: none; }
 .event-card.event-cancelled { opacity: 0.5; }
 .event-card.event-cancelled .event-title { text-decoration: line-through; }
 
@@ -1295,20 +1275,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border: 1px solid var(--border-light);
   box-shadow: 0 2px 12px var(--ring);
 }
-/* Poster: same crossfade pattern. Always in flow, compressed when
-   expanded so the transition can run when .expanded is removed. */
-.event-card-poster {
-  max-height: 600px;
-  opacity: 1;
-  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.22s ease-out,
-              margin 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.event-card.expanded .event-card-poster {
-  max-height: 0;
-  opacity: 0;
-  margin: 0;
-}
+.event-card.expanded .event-card-poster { display: none; }
 
 .event-title-row {
   display: flex;
@@ -2534,34 +2501,16 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   animation: drawer-open 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
   transform-origin: top center;
 }
-/* Drawer collapse uses CSS transitions on max-height + opacity instead
-   of an animation, so the drawer's height squishes back to 0 smoothly
-   (the rest of the events list flows up to fill the gap, no "pop"). JS
-   measures natural height first, sets max-height inline, forces reflow,
-   then adds .collapsing + sets max-height: 0px to start the transition. */
+/* Simple close animation — mirrors the open's curve in reverse. The
+   drawer fades + lifts; .expanded is removed at the end. Surrounding
+   layout flows back to the collapsed row. */
+@keyframes drawer-close {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-4px) scale(0.99); opacity: 0; }
+}
 .event-card-drawer.collapsing {
-  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.18s ease-out;
-  overflow: hidden;
-  opacity: 0;
+  animation: drawer-close 0.22s cubic-bezier(0.4, 0, 0.2, 1) both;
   pointer-events: none;
-}
-/* During collapse, .expanded is removed early so title rows can fade
-   back in. .collapsing keeps the accent glow visible (fading out) and
-   re-asserts the .expanded → .collapsed crossfade so drawer + title
-   rows visibly trade places. */
-.event-card.collapsing::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 28px;
-  pointer-events: none;
-  background: radial-gradient(120% 100% at 50% 100%, var(--accent-glow, rgba(136, 136, 136, 0.32)), transparent 75%);
-  animation: card-glow-fade 0.18s ease-out forwards;
-}
-@keyframes card-glow-fade {
-  0%   { opacity: 1; }
-  100% { opacity: 0; }
 }
 .event-card-drawer > * {
   animation: drawer-child-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
