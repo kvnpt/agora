@@ -4933,24 +4933,34 @@ function expandEventCard(id, opts = {}) {
   }
 
   requestAnimationFrame(() => {
-    // Bring the top of the just-expanded drawer into view. The drawer's
-    // top equals the card's top (drawer is the first child once
-    // .expanded is on); scrolling so the card top sits just below the
-    // sticky stack puts the drawer hero immediately in view.
+    // Bring the top of the just-expanded drawer into view. The drawer
+    // sits at the top of the .expanded card; we want the drawer hero
+    // (which carries the type badge — liturgy/prayer/etc.) to land
+    // just below ALL sticky elements above the card, not just the
+    // parish-sheet's header stack.
     const scroller = card.closest('#parish-sheet-scroll, #sheet-scroll');
     if (!scroller) return;
-    // Account for any sticky stack at the top of the scroll container —
-    // parish-sheet has --ps-stack-h (header + filter row); main events
-    // list has the day-hdr at scroll-top.
-    const sheetEl = scroller.closest('.parish-sheet, #bottom-sheet');
+    // Sticky stack heights:
+    //   --ps-stack-h: parish-sheet's .ps-header + .ps-filter-row
+    //   .day-hdr: the closest day section's header (sticky to scroll top)
+    //   .time-card-head: the morning/evening label, if the card is
+    //                    inside a .time-card group
     let stickyOffset = 0;
+    const sheetEl = scroller.closest('.parish-sheet, #bottom-sheet');
     if (sheetEl) {
-      const v = getComputedStyle(sheetEl).getPropertyValue('--ps-stack-h');
-      stickyOffset = parseFloat(v) || 0;
+      stickyOffset += parseFloat(getComputedStyle(sheetEl).getPropertyValue('--ps-stack-h')) || 0;
     }
+    const daySection = card.closest('.day-section, .day-box');
+    const dayHdr = daySection ? daySection.querySelector(':scope > .day-hdr, :scope > .section-header') : null;
+    if (dayHdr) stickyOffset += dayHdr.offsetHeight;
+    const timeCard = card.closest('.time-card');
+    const timeCardHead = timeCard ? timeCard.querySelector(':scope > .time-card-head') : null;
+    if (timeCardHead) stickyOffset += timeCardHead.offsetHeight;
+
     const cardRect = card.getBoundingClientRect();
     const scrollRect = scroller.getBoundingClientRect();
-    const delta = cardRect.top - (scrollRect.top + stickyOffset + 8);
+    const targetTop = scrollRect.top + stickyOffset + 8;
+    const delta = cardRect.top - targetTop;
     if (Math.abs(delta) > 4) {
       scroller.scrollTo({
         top: scroller.scrollTop + delta,
