@@ -4961,31 +4961,32 @@ function collapseEventCardDOM(opts = {}) {
       if (closeBtn && closeBtn.parentNode) closeBtn.remove();
     };
     if (drawer && !opts.instant) {
-      // Squish drawer's max-height from its current height DOWN to the
-      // measured natural row height. When .expanded is removed at the
-      // end, the title rows take over at exactly that height — no snap.
-      //
-      // Measure the row height by temporarily flipping classes to
-      // "collapsed" state. This runs synchronously within one task, so
-      // the browser doesn't paint mid-swap; the user never sees the
-      // intermediate state.
+      // Crossfade collapse:
+      //   - Title rows + parish row + poster (.expanded compresses them
+      //     to max-height: 0 + opacity: 0 with built-in transitions)
+      //     fade back in the moment .expanded is removed.
+      //   - Drawer simultaneously transitions max-height + opacity to 0.
+      //   - .collapsing on the card keeps the bottom accent glow alive
+      //     (fading) for the duration so the visual lineage flows.
+      // No snap: card height never changes abruptly; rows + drawer
+      // trade places via overlapping transitions.
       const drawerH = drawer.getBoundingClientRect().height;
-      drawer.style.visibility = 'hidden';
-      const drawerHadDisplay = drawer.style.display;
-      drawer.style.display = 'none';
-      card.classList.remove('expanded');
-      const rowH = Math.max(40, card.getBoundingClientRect().height);
-      card.classList.add('expanded');
-      drawer.style.display = drawerHadDisplay;
-      drawer.style.visibility = '';
-
       drawer.style.maxHeight = drawerH + 'px';
       drawer.style.overflow = 'hidden';
+      drawer.style.opacity = '1';
       // Force reflow so the start state is committed.
       void drawer.offsetWidth;
+
+      // Add .collapsing FIRST (preserves glow + sets up exit visuals),
+      // then remove .expanded — title rows transition out of compressed.
       card.classList.add('collapsing');
-      drawer.classList.add('collapsing');
-      drawer.style.maxHeight = rowH + 'px';
+      card.classList.remove('expanded');
+
+      // Drawer animates out. Inline transition + values guarantee both
+      // properties change in the next frame (no specificity surprises).
+      drawer.style.transition = 'max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease-out';
+      drawer.style.maxHeight = '0px';
+      drawer.style.opacity = '0';
 
       let done = false;
       const onTrans = (e) => {
@@ -4994,7 +4995,9 @@ function collapseEventCardDOM(opts = {}) {
         if (done) return;
         done = true;
         card.classList.remove('collapsing');
-        finalize();
+        if (drawer && drawer.parentNode) drawer.remove();
+        if (closeBtn && closeBtn.parentNode) closeBtn.remove();
+        card.style.removeProperty('--accent-glow');
       };
       drawer.addEventListener('transitionend', onTrans, { once: false });
       setTimeout(() => onTrans(null), 320);

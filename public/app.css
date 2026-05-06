@@ -1003,9 +1003,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
      .ps-header + .ps-filter-row so day headers stick below them.
      Outside parish-sheet, the var resolves to 0 (default). */
   top: var(--ps-stack-h, 0);
-  /* Above expanded event cards (default no z-index) so the sticky
-     header stays in front when scrolling past an open drawer. */
-  z-index: 4;
+  /* Above expanded event cards AND above .time-card-head (which sits
+     37px below it). When two day-sections meet during scroll, the
+     incoming day-hdr should paint over the outgoing time-card-head. */
+  z-index: 5;
   background: var(--bg);
   font-size: 13px;
   font-weight: 700;
@@ -1075,9 +1076,11 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
      parish-sheet add --ps-stack-h on top so it sits below the
      header + filter row + day-hdr. */
   top: calc(var(--ps-stack-h, 0px) + 37px);
-  /* Above expanded event cards so the morning/evening label stays
-     visible when scrolling past an open drawer. */
-  z-index: 4;
+  /* Above expanded event cards (auto) so the morning/evening label
+     stays visible when scrolling past a drawer; below .day-hdr (z=5)
+     so the day header always paints over the time-of-day label when
+     they overlap during section transitions. */
+  z-index: 3;
   background: var(--bg);
   display: flex;
   align-items: center;
@@ -1250,8 +1253,28 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 /* Collapsed summary (time + title + parish row) yields to the drawer's
    promoted hero when expanded — keep the two states visually distinct. */
+/* Title rows + parish row stay in flow always so they can transition.
+   .expanded compresses them to zero height + opacity 0; removing the
+   class transitions them back smoothly during collapse. */
+.event-title-row,
+.event-parish-row {
+  max-height: 240px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.22s ease-out,
+              padding 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              margin 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
 .event-card.expanded .event-title-row,
-.event-card.expanded .event-parish-row { display: none; }
+.event-card.expanded .event-parish-row {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
 .event-card.event-cancelled { opacity: 0.5; }
 .event-card.event-cancelled .event-title { text-decoration: line-through; }
 
@@ -1270,7 +1293,20 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border: 1px solid var(--border-light);
   box-shadow: 0 2px 12px var(--ring);
 }
-.event-card.expanded .event-card-poster { display: none; }
+/* Poster: same crossfade pattern. Always in flow, compressed when
+   expanded so the transition can run when .expanded is removed. */
+.event-card-poster {
+  max-height: 600px;
+  opacity: 1;
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.22s ease-out,
+              margin 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.event-card.expanded .event-card-poster {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+}
 
 .event-title-row {
   display: flex;
@@ -2508,17 +2544,23 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   opacity: 0;
   pointer-events: none;
 }
-/* During collapse, fade the bottom accent glow quickly — feels off if
-   it lingers past the drawer. The ::after gradient is on the .expanded
-   card; with .collapsing also on the card the rule below overrides. */
-.event-card.expanded.collapsing::after {
-  opacity: 0;
-  transition: opacity 0.12s ease-out;
+/* During collapse, .expanded is removed early so title rows can fade
+   back in. .collapsing keeps the accent glow visible (fading out) and
+   re-asserts the .expanded → .collapsed crossfade so drawer + title
+   rows visibly trade places. */
+.event-card.collapsing::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 28px;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 100%, var(--accent-glow, rgba(136, 136, 136, 0.32)), transparent 75%);
+  animation: card-glow-fade 0.18s ease-out forwards;
 }
-/* No title-row/poster reveal during the collapse. Instead the drawer's
-   max-height animates DOWN to the measured row height (set inline by
-   collapseEventCardDOM), so when .expanded is removed at the end the
-   title rows take over at exactly that height — zero snap. */
+@keyframes card-glow-fade {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
 .event-card-drawer > * {
   animation: drawer-child-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
   animation-delay: 0.06s;
