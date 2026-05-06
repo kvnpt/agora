@@ -2515,24 +2515,10 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   opacity: 0;
   transition: opacity 0.12s ease-out;
 }
-/* While collapsing, restore the title row + parish row + poster so the
-   card stays at its natural row height during the squish. Without this
-   the drawer shrinks to 0, then the card jumps from "very thin" to
-   "row height" when .expanded is removed — visible snap. Fade them in
-   so the reveal coincides with the drawer's exit. */
-.event-card.expanded.collapsing .event-title-row,
-.event-card.expanded.collapsing .event-parish-row {
-  display: flex !important;
-  animation: card-row-reveal 0.22s ease-out both;
-}
-.event-card.expanded.collapsing .event-card-poster {
-  display: block !important;
-  animation: card-row-reveal 0.22s ease-out both;
-}
-@keyframes card-row-reveal {
-  0%   { opacity: 0; }
-  100% { opacity: 1; }
-}
+/* No title-row/poster reveal during the collapse. Instead the drawer's
+   max-height animates DOWN to the measured row height (set inline by
+   collapseEventCardDOM), so when .expanded is removed at the end the
+   title rows take over at exactly that height — zero snap. */
 .event-card-drawer > * {
   animation: drawer-child-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
   animation-delay: 0.06s;

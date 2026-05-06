@@ -3975,6 +3975,13 @@ function scheduleRenderEvents(timeout = 500) {
 }
 
 function renderEvents() {
+  // Skip the main events render entirely while the parish-sheet is
+  // visible. The card pool is shared — running renderEvents would
+  // diff-move the parish-sheet's currently-mounted cards into the
+  // main list's hosts (which is hidden behind the parish sheet anyway),
+  // emptying the parish-sheet's day-section frames. User sees event
+  // groups + headers with no cards inside.
+  if (window.agoraParishSheetVisible) return;
   const container = document.getElementById('events-list');
   pruneCardPool();
   const filtered = applyFilters(state.events);
@@ -4954,21 +4961,32 @@ function collapseEventCardDOM(opts = {}) {
       if (closeBtn && closeBtn.parentNode) closeBtn.remove();
     };
     if (drawer && !opts.instant) {
-      // Squish the drawer's height down to zero so surrounding cards
-      // flow up to fill the space — avoids the "pop" of a sudden
-      // height change. Adding .collapsing to the CARD (not just the
-      // drawer) re-reveals the title/parish/poster rows during the
-      // animation so the card stays at its natural row height while
-      // the drawer shrinks; otherwise the layout would snap from "thin"
-      // to "row height" when .expanded is removed at the end.
-      const h = drawer.getBoundingClientRect().height;
-      drawer.style.maxHeight = h + 'px';
+      // Squish drawer's max-height from its current height DOWN to the
+      // measured natural row height. When .expanded is removed at the
+      // end, the title rows take over at exactly that height — no snap.
+      //
+      // Measure the row height by temporarily flipping classes to
+      // "collapsed" state. This runs synchronously within one task, so
+      // the browser doesn't paint mid-swap; the user never sees the
+      // intermediate state.
+      const drawerH = drawer.getBoundingClientRect().height;
+      drawer.style.visibility = 'hidden';
+      const drawerHadDisplay = drawer.style.display;
+      drawer.style.display = 'none';
+      card.classList.remove('expanded');
+      const rowH = Math.max(40, card.getBoundingClientRect().height);
+      card.classList.add('expanded');
+      drawer.style.display = drawerHadDisplay;
+      drawer.style.visibility = '';
+
+      drawer.style.maxHeight = drawerH + 'px';
       drawer.style.overflow = 'hidden';
       // Force reflow so the start state is committed.
       void drawer.offsetWidth;
       card.classList.add('collapsing');
       drawer.classList.add('collapsing');
-      drawer.style.maxHeight = '0px';
+      drawer.style.maxHeight = rowH + 'px';
+
       let done = false;
       const onTrans = (e) => {
         if (e && e.target !== drawer) return;
