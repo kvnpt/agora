@@ -239,7 +239,20 @@ function matchParish(signal, parishes) {
   if (explicit_new) return { result: 'new' };
   if (!saint_name)  return { result: 'unknown' };
 
-  const core = normalizeTokens(expandSaints(saint_name)).filter(t => t !== 'st' && t !== 'sts' && t !== 'ss');
+  const direct = scoreCandidates(saint_name, suburb, jurisdiction, parishes, false);
+  if (direct.result !== 'new') return direct;
+
+  // Fallback: try once more with saint synonym expansion. Signals like
+  // "Archangel Michael" need this to match a parish stored as "St Michael";
+  // signals like "Dormition" generally already match verbatim, so the
+  // direct pass above succeeds and we never run the destructive replace.
+  const expanded = scoreCandidates(saint_name, suburb, jurisdiction, parishes, true);
+  return expanded;
+}
+
+function scoreCandidates(saintName, suburb, jurisdiction, parishes, useSynonyms) {
+  const source = useSynonyms ? expandSaints(saintName) : saintName;
+  const core = normalizeTokens(source).filter(t => t !== 'st' && t !== 'sts' && t !== 'ss');
   if (!core.length) return { result: 'unknown' };
 
   const suburbLc = suburb ? suburb.toLowerCase() : null;
@@ -247,21 +260,19 @@ function matchParish(signal, parishes) {
 
   for (const p of parishes) {
     if (p.id === '_unassigned') continue;
-    // Hard-exclude on explicit jurisdiction contradiction
     if (jurisdiction && p.jurisdiction !== jurisdiction) continue;
 
-    // All core patron tokens must appear in candidate name
     const nameTokens = new Set(
       normalizeTokens((p.name + ' ' + (p.full_name || '')).replace(/\bsaint\b/g, 'st'))
     );
     if (!core.every(t => nameTokens.has(t))) continue;
 
-    let score = 10; // patron matched
+    let score = 10;
     if (suburbLc) {
       const addr = (p.address || '').toLowerCase();
       if (addr.includes(suburbLc) || p.name.toLowerCase().includes(suburbLc)) score += 5;
     }
-    if (jurisdiction) score += 5; // explicit agreement (contradiction already excluded above)
+    if (jurisdiction) score += 5;
     scored.push({ parish: p, score });
   }
 
@@ -277,7 +288,7 @@ function matchParish(signal, parishes) {
   return {
     result: 'ambiguous',
     candidates: topGroup.map(s => s.parish),
-    question: buildClarifierQ(topGroup.map(s => s.parish), saint_name)
+    question: buildClarifierQ(topGroup.map(s => s.parish), saintName)
   };
 }
 function buildNewParish(signal) {
