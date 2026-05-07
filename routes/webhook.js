@@ -412,6 +412,12 @@ async function processBatch(sender, messages) {
 
     const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
 
+    // Persist Haiku I/O immediately so any crash in downstream DB writes still
+    // leaves the raw response visible in admin review for debugging.
+    db.prepare(`
+      UPDATE adapter_runs SET input_texts = ?, claude_response = ? WHERE id = ?
+    `).run(JSON.stringify(texts), result.rawResponse || null, runId);
+
     // Deterministic parish matching — Haiku extracted signals, code does lookup.
     const allParishes = db.prepare(
       "SELECT id, name, full_name, jurisdiction, address, acronym FROM parishes WHERE id != '_unassigned'"
@@ -570,6 +576,13 @@ async function processBatch(sender, messages) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const s of result.schedules) {
+        // Directory screenshots often say "Sunday Liturgy" without a time.
+        // Haiku returns the schedule with start_time:null; the column is NOT NULL,
+        // so inserting would crash the entire batch. Skip and warn instead.
+        if (!s.start_time || typeof s.day_of_week !== 'number') {
+          console.warn(`[webhook] Skipping schedule with missing start_time/day_of_week (parish=${parishId}, title=${s.title})`);
+          continue;
+        }
         const r = insertSched.run(parishId, s.day_of_week, s.start_time,
           s.end_time || null, s.title, s.event_type || 'liturgy',
           s.languages ? JSON.stringify(s.languages) : null,
@@ -705,9 +718,8 @@ async function processBatch(sender, messages) {
     db.prepare(`
       UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
       status = 'success', events_found = ?, events_created = ?,
-      input_texts = ?, claude_response = ?,
       parish_match_confidence = ?, parish_match_question = ? WHERE id = ?
-    `).run(result.events.length, eventsCreated, JSON.stringify(texts), result.rawResponse || null,
+    `).run(result.events.length, eventsCreated,
       parishMatchConfidence, parishMatchQuestion || null, runId);
 
     console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}, confidence=${parishMatchConfidence}`);
