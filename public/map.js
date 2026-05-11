@@ -241,8 +241,14 @@ async function initMap(state) {
     styleLoaded = true;
     if (window.lsLog) window.lsLog('✓ map ready');
 
+    // Deep-link path may have already aimed the camera at a parish before
+    // style.load finished its sprite/logo await — don't yank it back to
+    // Australia. Same applies to a single-parish URL whose openParishSheet
+    // is fired on a 150 ms setTimeout from init.
+    const cameraOwned = state.parishSheetFocus || state.parishFocus || state._openEventId;
+
     // Fresh session (no cached location): fit to all parishes.
-    if (!state.locationActive) {
+    if (!state.locationActive && !cameraOwned) {
       const pts = (state.parishes || []).filter(p => p.id !== '_unassigned' && p.lat != null && p.lng != null);
       if (pts.length) {
         const b = padBounds(boundsFromPoints(pts), 0.05);
@@ -250,11 +256,16 @@ async function initMap(state) {
       }
     }
 
-    // Drain pending update if any.
+    // Drain pending update if any. Strip fit when a deep-link already owns
+    // the camera — markers still need to render, but the queued fitBounds
+    // (from fetchEvents({fit:true})) would override the parish flyTo.
     if (pendingUpdate) {
       const { state: st, opts } = pendingUpdate;
       pendingUpdate = null;
-      updateMap(st, opts);
+      const drainOpts = (st.parishSheetFocus || st.parishFocus || st._openEventId)
+        ? { ...opts, fit: false }
+        : opts;
+      updateMap(st, drainOpts);
     }
 
     // Seed first viewport phase (matches old initMap behaviour).
