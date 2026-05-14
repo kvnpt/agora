@@ -3285,10 +3285,6 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   font-weight: 500;
 }
 
-@media (min-width: 640px) {
-  .parish-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }
-}
-
 /* ── Escalate modal (admin-only) ── */
 .escalate-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
 .escalate-backdrop.open { display: flex; }
@@ -3305,12 +3301,73 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 .escalate-empty { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
 .escalate-btn-row { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* ── Responsive ── */
-@media (min-width: 640px) {
-  #bottom-sheet { max-width: 420px; left: auto; right: 16px; border-radius: 12px 12px 0 0; }
-  .events-list, .services-list { max-width: none; }
-  .mode-bar { max-width: none; padding: 4px 12px 8px; }
-  .parish-filter-row { max-width: none; }
+/* ── Desktop layout (≥1024px) ──
+   Rules scoped under body[data-layout="desktop"] so a JS-driven layout flag
+   stays the single source of truth (set in initAgora via matchMedia). The
+   sheet's mobile gesture/translateY machinery is gated off in JS at the
+   same breakpoint. See: lets-plan-for-tweaking-steady-lollipop.md */
+@media (min-width: 1024px) {
+  body[data-layout="desktop"] #bottom-sheet,
+  body[data-layout="desktop"] .parish-sheet {
+    left: auto;
+    right: 0;
+    top: var(--banner-h, 0px);
+    bottom: 0;
+    width: 420px;
+    max-width: 420px;
+    height: auto;
+    transform: none !important;
+    border-radius: 16px 0 0 0;
+    box-shadow: -2px 0 16px rgba(0, 0, 0, 0.10), -1px 0 0 var(--border);
+  }
+  body[data-layout="desktop"] #sheet-scroll,
+  body[data-layout="desktop"] #parish-sheet-scroll {
+    overflow-y: auto !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  body[data-layout="desktop"] .sheet-spacer { display: none; }
+  body[data-layout="desktop"] .map-grab-handle,
+  body[data-layout="desktop"] .parish-sheet-grab-handle { display: none; }
+  body[data-layout="desktop"].main-sheet-hidden #bottom-sheet { display: none; }
+
+  body[data-layout="desktop"] #location-fab {
+    top: auto !important;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    right: calc(420px + 16px);
+    left: auto;
+  }
+  body[data-layout="desktop"] #btn-filters.map-fab {
+    top: auto !important;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: 16px;
+    right: auto;
+  }
+  body[data-layout="desktop"] #mode-url.share-fab {
+    top: auto !important;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: calc(16px + 44px);
+    right: auto;
+  }
+  body[data-layout="desktop"] #filter-active-stack {
+    left: 16px;
+    right: auto;
+    bottom: calc(max(20px, env(safe-area-inset-bottom)) + 60px) !important;
+    top: auto !important;
+  }
+  body[data-layout="desktop"] #reset-fab {
+    left: calc((100vw - 420px) / 2);
+    transform: translateX(-50%);
+  }
+
+  body[data-layout="desktop"] .events-list,
+  body[data-layout="desktop"] .services-list { max-width: none; }
+  body[data-layout="desktop"] .mode-bar { max-width: none; padding: 4px 12px 8px; }
+  body[data-layout="desktop"] .parish-filter-row { max-width: none; }
+
+  body[data-layout="desktop"] #map-select-overlay .map-select-ring {
+    right: calc(420px + 16px);
+  }
 }
 
 /* ── Loading screen ─────────────────────────────────────────

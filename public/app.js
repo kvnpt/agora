@@ -95,6 +95,14 @@ function saveMultiParishPref(on) {
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.lsLog) window.lsLog('» DOM ready');
+  const _layoutMql = window.matchMedia('(min-width: 1024px)');
+  document.body.dataset.layout = _layoutMql.matches ? 'desktop' : 'mobile';
+  window.agoraIsDesktop = () => _layoutMql.matches;
+  _layoutMql.addEventListener('change', () => {
+    document.body.dataset.layout = _layoutMql.matches ? 'desktop' : 'mobile';
+    document.dispatchEvent(new CustomEvent('agora:layoutchange', { detail: { isDesktop: _layoutMql.matches } }));
+    window.agoraMap?.resize?.();
+  });
   state.filters.multiParish = loadMultiParishPref();
   detectUrlState();
   disablePageZoom();
@@ -1437,7 +1445,8 @@ function showMapSelectOverlay() {
   // box wrong on initial show.
   syncJurisBottomVar();
   if (typeof window.agoraSheetY === 'function') {
-    document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - window.agoraSheetY()) + 'px');
+    const cover = window.agoraIsDesktop?.() ? 0 : (window.innerHeight - window.agoraSheetY());
+    document.documentElement.style.setProperty('--sheet-cover', cover + 'px');
   }
   el.classList.remove('hidden');
   el.setAttribute('aria-hidden', 'false');
@@ -2261,6 +2270,7 @@ function initBottomSheet() {
   const resetFab = document.getElementById('reset-fab');
   const filterFab = document.getElementById('btn-filters');
   const shareFab = document.getElementById('mode-url');
+  const isDesktop = () => window.agoraIsDesktop?.() ?? false;
   // All sheet-following FABs share the lifecycle — fade during drag, snap
   // to (currentY - 52) on settle. Keeping them in an array lets the drag /
   // snap handlers iterate once instead of duplicating every touchpoint.
@@ -2293,6 +2303,12 @@ function initBottomSheet() {
     const topReserved = pillVisible
       ? (pillWrap.getBoundingClientRect().bottom)
       : (bannerWrap ? bannerWrap.getBoundingClientRect().bottom : 0);
+    document.documentElement.style.setProperty('--banner-h', Math.round(topReserved) + 'px');
+    if (isDesktop()) {
+      SNAP_FULL = SNAP_HALF = SNAP_PEEK = 0;
+      sheet.style.height = '';
+      return;
+    }
     SNAP_FULL = Math.max(0, Math.round(topReserved + 6));
 
     // PEEK exposes grab handle + mode bar.
@@ -2310,21 +2326,24 @@ function initBottomSheet() {
     sheet.style.height = `${window.innerHeight - SNAP_FULL + SHEET_SPACER_PX}px`;
   }
   computeSnaps();
-  currentY = SNAP_HALF;
-  sheet.style.transform = `translateY(${currentY}px)`;
+  currentY = isDesktop() ? 0 : SNAP_HALF;
   document.body.classList.add('map-expanded');
-  trackedFabs.forEach(f => { f.style.top = (currentY - 52) + 'px'; });
-  positionFilterStack(currentY);
+  if (!isDesktop()) {
+    sheet.style.transform = `translateY(${currentY}px)`;
+    trackedFabs.forEach(f => { f.style.top = (currentY - 52) + 'px'; });
+    positionFilterStack(currentY);
+  }
 
   // Expose for map.js padding calculation
   window.agoraSheetY = () => currentY;
 
   // Lock scroll initially (sheet starts at half, not full)
-  scroll.style.overflowY = 'hidden';
+  scroll.style.overflowY = isDesktop() ? 'auto' : 'hidden';
 
   // Recalculate on resize/orientation change
   window.addEventListener('resize', () => {
     computeSnaps();
+    if (isDesktop()) return;
     currentY = nearestSnap(currentY, 0);
     sheet.style.transform = `translateY(${currentY}px)`;
   });
@@ -2357,7 +2376,7 @@ function initBottomSheet() {
   }
 
   function updateScrollLock() {
-    // Only allow list scrolling when sheet is fully expanded
+    if (isDesktop()) { scroll.style.overflowY = 'auto'; return; }
     scroll.style.overflowY = isAtFull() ? 'auto' : 'hidden';
   }
 
@@ -2371,6 +2390,16 @@ function initBottomSheet() {
     window.__agoraSheetMoving = true;
     currentY = y;
     window.agoraSheetY = () => currentY;
+    if (isDesktop()) {
+      document.documentElement.style.setProperty('--sheet-cover', '0px');
+      window.agoraMap?.resize?.();
+      if (typeof renderParishPills === 'function') renderParishPills();
+      if (typeof updateInViewChevron === 'function') updateInViewChevron();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.__agoraSheetMoving = false;
+      }));
+      return;
+    }
     sheet.classList.remove('dragging');
     sheet.classList.add('snapping');
     sheet.style.transform = `translateY(${y}px)`;
@@ -2435,6 +2464,7 @@ function initBottomSheet() {
   let dragging = false, startY = 0, sheetStartY = 0;
 
   function engageDrag(y) {
+    if (isDesktop()) return;
     dragging = true;
     startY = y;
     sheetStartY = currentY;
@@ -2448,6 +2478,7 @@ function initBottomSheet() {
   }
 
   function moveDrag(y) {
+    if (isDesktop()) return;
     const dy = y - startY;
     let newY = sheetStartY + dy;
     // Rubber-band past limits
@@ -2464,6 +2495,7 @@ function initBottomSheet() {
   }
 
   function endDrag() {
+    if (isDesktop()) return;
     if (!dragging) return;
     dragging = false;
     document.body.style.userSelect = '';
@@ -2475,6 +2507,7 @@ function initBottomSheet() {
 
   // ── Handle + mode bar drag (always drags sheet) ──
   function onHandleStart(e) {
+    if (isDesktop()) return;
     if (e.cancelable) e.preventDefault();
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     engageDrag(y);
@@ -2494,6 +2527,7 @@ function initBottomSheet() {
   const TRAY_DRAG_THRESHOLD = 8;
 
   function onTrayStart(e) {
+    if (isDesktop()) return;
     const onInteractive = e.target.closest('button, a, .pill');
     const t = e.touches ? e.touches[0] : e;
     // Empty mode-bar space (no button underneath): drag sheet immediately.
@@ -2511,6 +2545,7 @@ function initBottomSheet() {
   }
 
   function onDocMove(e) {
+    if (isDesktop()) return;
     if (trayPending) {
       const t = e.touches ? e.touches[0] : e;
       const dx = t.clientX - trayPendingX;
@@ -2538,6 +2573,7 @@ function initBottomSheet() {
   }
 
   function onDocEnd() {
+    if (isDesktop()) return;
     trayPending = false;
     trayLockedHoriz = false;
     if (dragging) endDrag();
@@ -2596,6 +2632,7 @@ function initBottomSheet() {
   let scrollLastY = 0;
 
   scroll.addEventListener('touchstart', e => {
+    if (isDesktop()) return;
     scrollStartY = e.touches[0].clientY;
     scrollStartX = e.touches[0].clientX;
     scrollStartTop = scroll.scrollTop;
@@ -2604,6 +2641,7 @@ function initBottomSheet() {
   }, { passive: true });
 
   scroll.addEventListener('touchmove', e => {
+    if (isDesktop()) return;
     if (scrollState === 'idle') return;
 
     const y = e.touches[0].clientY;
@@ -2710,6 +2748,7 @@ function initBottomSheet() {
   }, { passive: false });
 
   scroll.addEventListener('touchend', () => {
+    if (isDesktop()) return;
     if (scrollState === 'dragging') {
       endDrag();
     }
@@ -2733,12 +2772,20 @@ function initBottomSheet() {
   let _stashedY = null;
   let _stashedScroll = 0;
   window.agoraMainHide = () => {
+    if (isDesktop()) {
+      document.body.classList.add('main-sheet-hidden');
+      return;
+    }
     if (_stashedY != null) return;
     _stashedY = currentY;
     _stashedScroll = scroll.scrollTop;
     snapTo(window.innerHeight);
   };
   window.agoraMainRestore = () => {
+    if (isDesktop()) {
+      document.body.classList.remove('main-sheet-hidden');
+      return;
+    }
     if (_stashedY == null) return;
     const y = _stashedY;
     const s = _stashedScroll;
@@ -2750,6 +2797,37 @@ function initBottomSheet() {
     // beats the snapTo reset.
     requestAnimationFrame(() => { scroll.scrollTop = s; });
   };
+
+  // Breakpoint cross: end any in-flight drag, reset inline styles, reflow.
+  // body[data-layout] flip already happened in the boot-level MQL handler.
+  document.addEventListener('agora:layoutchange', () => {
+    if (dragging) {
+      dragging = false;
+      sheet.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+      trackedFabs.forEach(f => f.classList.remove('fading'));
+      if (filterStack) filterStack.classList.remove('fading');
+    }
+    computeSnaps();
+    if (isDesktop()) {
+      sheet.style.transform = '';
+      sheet.style.height = '';
+      sheet.classList.remove('peeking', 'snapping');
+      document.body.classList.add('map-expanded');
+      currentY = 0;
+      document.documentElement.style.setProperty('--sheet-cover', '0px');
+      scroll.style.overflowY = 'auto';
+    } else {
+      currentY = SNAP_HALF;
+      sheet.style.transform = `translateY(${currentY}px)`;
+      document.body.classList.add('map-expanded');
+      trackedFabs.forEach(f => { f.style.top = (currentY - 52) + 'px'; });
+      positionFilterStack(currentY);
+      updateScrollLock();
+      document.documentElement.style.setProperty('--sheet-cover', (window.innerHeight - currentY) + 'px');
+    }
+  });
 }
 
 // ── Parish sheet (secondary, opened from event drawer parish header) ──
@@ -2762,6 +2840,7 @@ function initParishSheet() {
   const scroll = document.getElementById('parish-sheet-scroll');
   const fab = document.getElementById('location-fab');
   const filterFab = document.getElementById('btn-filters');
+  const isDesktop = () => window.agoraIsDesktop?.() ?? false;
   // Share FAB (bottom-left) needs to track parish-sheet height too —
   // earlier rounds added it to the main sheet's trackedFabs but the
   // parish sheet had its own [fab, filterFab] iteration.
@@ -2774,6 +2853,11 @@ function initParishSheet() {
   let velSamples = [];
 
   function computeSnaps() {
+    if (isDesktop()) {
+      SNAP_FULL = SNAP_HALF = SNAP_PEEK = SNAP_HIDDEN = 0;
+      sheet.style.height = '';
+      return;
+    }
     SNAP_FULL = 0;
     SNAP_HALF = Math.round(window.innerHeight * 0.5);
     SNAP_PEEK = window.innerHeight - 180;
@@ -2781,11 +2865,12 @@ function initParishSheet() {
     sheet.style.height = `${window.innerHeight}px`;
   }
   computeSnaps();
-  currentY = SNAP_HIDDEN;
-  sheet.style.transform = `translateY(${currentY}px)`;
+  currentY = isDesktop() ? 0 : SNAP_HIDDEN;
+  if (!isDesktop()) sheet.style.transform = `translateY(${currentY}px)`;
 
   window.addEventListener('resize', () => {
     computeSnaps();
+    if (isDesktop()) return;
     if (currentY !== SNAP_HIDDEN && !sheet.classList.contains('hidden')) {
       currentY = nearestSnap(currentY, 0);
       sheet.style.transform = `translateY(${currentY}px)`;
@@ -2807,6 +2892,7 @@ function initParishSheet() {
   function isAtFull() { return Math.abs(currentY - SNAP_FULL) < 5; }
 
   function updateScrollLock() {
+    if (isDesktop()) { scroll.style.overflowY = 'auto'; return; }
     scroll.style.overflowY = isAtFull() ? 'auto' : 'hidden';
   }
 
@@ -2818,6 +2904,13 @@ function initParishSheet() {
     window.__agoraSheetSnapAt = Date.now();
     window.__agoraSheetMoving = true;
     currentY = y;
+    if (isDesktop()) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.__agoraSheetMoving = false;
+        if (onDone) onDone();
+      }));
+      return;
+    }
     sheet.classList.remove('dragging');
     sheet.classList.add('snapping');
     sheet.style.transform = `translateY(${y}px)`;
@@ -2865,6 +2958,7 @@ function initParishSheet() {
   }
 
   function engageDrag(y) {
+    if (isDesktop()) return;
     dragging = true;
     startY = y;
     sheetStartY = currentY;
@@ -2879,6 +2973,7 @@ function initParishSheet() {
   }
 
   function moveDrag(y) {
+    if (isDesktop()) return;
     const dy = y - startY;
     let newY = sheetStartY + dy;
     if (newY < SNAP_FULL) {
@@ -2892,6 +2987,7 @@ function initParishSheet() {
   }
 
   function endDrag() {
+    if (isDesktop()) return;
     if (!dragging) return;
     dragging = false;
     document.body.style.userSelect = '';
@@ -2910,6 +3006,7 @@ function initParishSheet() {
   }
 
   function onHandleStart(e) {
+    if (isDesktop()) return;
     if (e.cancelable) e.preventDefault();
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     engageDrag(y);
@@ -2924,6 +3021,7 @@ function initParishSheet() {
   const HEADER_THRESHOLD = 8;
 
   function onHeaderStart(e) {
+    if (isDesktop()) return;
     const headerEl = e.target.closest('.ps-header');
     if (!headerEl) return;
     const t = e.touches ? e.touches[0] : e;
@@ -2942,6 +3040,7 @@ function initParishSheet() {
   }
 
   function onDocMove(e) {
+    if (isDesktop()) return;
     if (headerPending) {
       const t = e.touches ? e.touches[0] : e;
       const dx = t.clientX - headerPX;
@@ -2961,6 +3060,7 @@ function initParishSheet() {
     moveDrag(y);
   }
   function onDocEnd() {
+    if (isDesktop()) return;
     headerPending = false;
     if (dragging) endDrag();
     if (headerSwallowClick) setTimeout(() => { headerSwallowClick = false; }, 400);
@@ -3007,6 +3107,7 @@ function initParishSheet() {
   let scrollStartY = 0, scrollStartX = 0, scrollStartTop = 0, scrollLastY = 0;
 
   scroll.addEventListener('touchstart', e => {
+    if (isDesktop()) return;
     scrollStartY = e.touches[0].clientY;
     scrollStartX = e.touches[0].clientX;
     scrollStartTop = scroll.scrollTop;
@@ -3015,6 +3116,7 @@ function initParishSheet() {
   }, { passive: true });
 
   scroll.addEventListener('touchmove', e => {
+    if (isDesktop()) return;
     if (scrollState === 'idle') return;
     const y = e.touches[0].clientY;
     const x = e.touches[0].clientX;
@@ -3090,6 +3192,7 @@ function initParishSheet() {
   }, { passive: false });
 
   scroll.addEventListener('touchend', () => {
+    if (isDesktop()) return;
     if (scrollState === 'dragging') endDrag();
     scrollState = 'idle';
   }, { passive: true });
@@ -3165,9 +3268,13 @@ function initParishSheet() {
       const targetZoom = radiusKm > 30 ? Math.max(currentZoom, 12) : currentZoom;
       const scale = Math.pow(2, targetZoom - currentZoom);
       const containerH = map.getContainer().clientHeight;
-      const dyAtTargetZoom = (containerH - SNAP_HALF) / 2;
+      const dxAtTargetZoom = isDesktop() ? 210 : 0;
+      const dyAtTargetZoom = isDesktop() ? 0 : (containerH - SNAP_HALF) / 2;
       const parishPx = map.project([parish.lng, parish.lat]);
-      const newCentre = map.unproject([parishPx.x, parishPx.y + dyAtTargetZoom / scale]);
+      const newCentre = map.unproject([
+        parishPx.x + dxAtTargetZoom / scale,
+        parishPx.y + dyAtTargetZoom / scale
+      ]);
 
       map.flyTo({
         center: [newCentre.lng, newCentre.lat],
@@ -3205,6 +3312,31 @@ function initParishSheet() {
   // FULL when an event inside it is tapped (matches the main sheet's
   // tap-to-full behaviour).
   window.agoraParishSheetSnapFull = () => snapTo(SNAP_FULL);
+
+  document.addEventListener('agora:layoutchange', () => {
+    if (dragging) {
+      dragging = false;
+      sheet.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+      psTrackedFabs.forEach(f => f.classList.remove('fading'));
+    }
+    computeSnaps();
+    if (isDesktop()) {
+      sheet.style.transform = '';
+      sheet.style.height = '';
+      sheet.classList.remove('snapping', 'dragging');
+      currentY = 0;
+      scroll.style.overflowY = 'auto';
+    } else if (window.agoraParishSheetVisible) {
+      currentY = SNAP_HALF;
+      sheet.style.transform = `translateY(${currentY}px)`;
+      updateScrollLock();
+    } else {
+      currentY = SNAP_HIDDEN;
+      sheet.style.transform = `translateY(${currentY}px)`;
+    }
+  });
 }
 
 // Mirror parishFilters state onto the in-card pills. parishFilters is

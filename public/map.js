@@ -709,10 +709,17 @@ function updateMap(state, opts = {}) {
         lng: f.geometry.coordinates[0]
       })));
       b = padBounds(b, 0.1);
-      const sheetY = (typeof window.agoraSheetY === 'function') ? window.agoraSheetY() : window.innerHeight * 0.5;
-      const sheetHeight = window.innerHeight - sheetY;
+      const isDesktop = window.agoraIsDesktop?.() ?? false;
+      let padding;
+      if (isDesktop) {
+        padding = { top: 50, right: 440, bottom: 50, left: 50 };
+      } else {
+        const sheetY = (typeof window.agoraSheetY === 'function') ? window.agoraSheetY() : window.innerHeight * 0.5;
+        const sheetHeight = window.innerHeight - sheetY;
+        padding = { top: 50, right: 30, bottom: sheetHeight + 20, left: 30 };
+      }
       map.fitBounds(b, {
-        padding: { top: 50, right: 30, bottom: sheetHeight + 20, left: 30 },
+        padding,
         maxZoom: 14,
         duration: 900
       });
@@ -768,13 +775,19 @@ function handleClusterClick(feature) {
     const targetZoom = Math.min(zoom, 16);
     const currentZoom = map.getZoom();
     const scale = Math.pow(2, targetZoom - currentZoom);
-    const sheetY = (typeof window.agoraSheetY === 'function')
-      ? window.agoraSheetY()
-      : (window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight);
-    const containerH = map.getContainer().clientHeight;
-    const dy = Math.max(0, (containerH - sheetY) / 2);
+    const isDesktop = window.agoraIsDesktop?.() ?? false;
+    let dx = 0, dy = 0;
+    if (isDesktop) {
+      dx = 210;
+    } else {
+      const sheetY = (typeof window.agoraSheetY === 'function')
+        ? window.agoraSheetY()
+        : (window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight);
+      const containerH = map.getContainer().clientHeight;
+      dy = Math.max(0, (containerH - sheetY) / 2);
+    }
     const clusterPx = map.project(feature.geometry.coordinates);
-    const newCentre = map.unproject([clusterPx.x, clusterPx.y + dy / scale]);
+    const newCentre = map.unproject([clusterPx.x + dx / scale, clusterPx.y + dy / scale]);
     map.flyTo({
       center: [newCentre.lng, newCentre.lat],
       zoom: targetZoom,
