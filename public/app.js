@@ -564,27 +564,46 @@ function recomputeViewportSet() {
   const container = m.getContainer();
   const w = container.clientWidth;
   const h = container.clientHeight;
-  // Choose the cutoff: parish-sheet HALF (its own 50%) when open, else
-  // the main bottom-sheet's HALF.
-  let cutoffY;
-  if (window.agoraParishSheetVisible) {
-    cutoffY = Math.round(h * 0.5);
-  } else if (typeof window.agoraSnapHalf === 'function') {
-    cutoffY = window.agoraSnapHalf();
-  } else {
-    cutoffY = Math.round(h * 0.5);
-  }
-  const ne = m.unproject([w, 0]);
-  const sw = m.unproject([0, cutoffY]);
+  const isDesktop = window.agoraIsDesktop?.() ?? false;
   const ids = new Set();
-  const minLat = Math.min(ne.lat, sw.lat);
-  const maxLat = Math.max(ne.lat, sw.lat);
-  const minLng = Math.min(ne.lng, sw.lng);
-  const maxLng = Math.max(ne.lng, sw.lng);
-  for (const p of state.parishes) {
-    if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
-    if (p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng) ids.add(p.id);
+
+  if (isDesktop) {
+    // Side-sheet covers the right 420px column. Map area = the rest.
+    // Pixel-space test handles any map projection cleanly.
+    const SHEET_W = 420;
+    const xMax = Math.max(1, w - SHEET_W);
+    for (const p of state.parishes) {
+      if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
+      const px = m.project([p.lng, p.lat]);
+      if (px.x >= 0 && px.x <= xMax && px.y >= 0 && px.y <= h) ids.add(p.id);
+    }
+  } else {
+    // Mobile: circle centred on the visible-map midpoint (above the
+    // sheet at HALF), radius reaches just past the visible corners.
+    // Pinning to HALF means snap drags between PEEK/HALF/FULL don't
+    // change the parish set — only actual map pans do.
+    let half;
+    if (window.agoraParishSheetVisible) {
+      half = Math.round(h * 0.5);
+    } else if (typeof window.agoraSnapHalf === 'function') {
+      half = window.agoraSnapHalf();
+    } else {
+      half = Math.round(h * 0.5);
+    }
+    if (half <= 0) half = Math.round(h * 0.5);
+    const cx = w / 2;
+    const cy = half / 2;
+    const radiusPx = Math.hypot(w / 2, half / 2) * 1.15;
+    const r2 = radiusPx * radiusPx;
+    for (const p of state.parishes) {
+      if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
+      const px = m.project([p.lng, p.lat]);
+      const dx = px.x - cx;
+      const dy = px.y - cy;
+      if (dx * dx + dy * dy <= r2) ids.add(p.id);
+    }
   }
+
   state.viewportParishIds = ids;
 }
 
@@ -1385,6 +1404,7 @@ function initMultiParishToggle() {
   const chip = document.getElementById('in-view-chip');
   if (chip) {
     chip.addEventListener('click', () => {
+      if (window.agoraIsDesktop?.()) return;
       if (!window.agoraSnapTo || !window.agoraSnapHalf) return;
       const y = window.agoraSheetY ? window.agoraSheetY() : null;
       const half = window.agoraSnapHalf();
@@ -1463,7 +1483,12 @@ function hideMapSelectOverlay() {
 
 function updateInViewChevron() {
   const chip = document.getElementById('in-view-chip');
-  if (!chip || !window.agoraSheetY || !window.agoraSnapHalf) return;
+  if (!chip) return;
+  if (window.agoraIsDesktop?.()) {
+    chip.classList.remove('chevron-down');
+    return;
+  }
+  if (!window.agoraSheetY || !window.agoraSnapHalf) return;
   const y = window.agoraSheetY();
   const half = window.agoraSnapHalf();
   // At FULL (y < half): pressing collapses → point DOWN
@@ -1474,38 +1499,39 @@ function updateInViewChevron() {
 function renderInViewChip() {
   const countEl = document.getElementById('in-view-count');
   if (!countEl) return;
+  const todayKey = isoDateSyd(new Date().toISOString());
+  const nowMs = Date.now();
+  const j = state.filters.jurisdiction;
+  const englishOnly = state.filters.englishOnly;
+  const englishStrict = state.filters.englishStrict;
+
   let n = 0;
-  if (state.viewportParishIds) {
-    // Build set of parish IDs that have at least one English-matching event
-    // (only needed when English filter is active)
-    let englishParishIds = null;
-    if (state.filters.englishOnly && state.events) {
-      englishParishIds = new Set();
-      for (const e of state.events) {
+  if (state.viewportParishIds && state.events) {
+    for (const e of state.events) {
+      if (!e.parish_id) continue;
+      const inView = state.viewportParishIds.has(e.parish_id)
+        || (Array.isArray(e.extra_parishes) && e.extra_parishes.some(id => state.viewportParishIds.has(id)));
+      if (!inView) continue;
+      if (j) {
+        const p = state.parishes.find(pa => pa.id === e.parish_id);
+        if (!p || p.jurisdiction !== j) continue;
+      }
+      if (englishOnly) {
         const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
         if (!langs) continue;
-        const ok = state.filters.englishStrict
-          ? langs.every(l => /english/i.test(l))
-          : langs.some(l => /english/i.test(l));
-        if (ok && e.parish_id != null) englishParishIds.add(e.parish_id);
+        const ok = englishStrict ? langs.every(l => /english/i.test(l)) : langs.some(l => /english/i.test(l));
+        if (!ok) continue;
       }
+      if (isoDateSyd(e.start_utc) !== todayKey) continue;
+      const endMs = e.end_utc ? new Date(e.end_utc).getTime() : new Date(e.start_utc).getTime() + 3600000;
+      if (endMs <= nowMs) continue;
+      n++;
     }
-    n = [...state.viewportParishIds].filter(id => {
-      const p = state.parishes.find(pa => pa.id === id);
-      if (!p) return false;
-      if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
-      if (englishParishIds && !englishParishIds.has(id)) return false;
-      return true;
-    }).length;
   }
-  // When a juris filter is active, brand the count with the juris name —
-  // "12 Russian parishes in view" reads as confirmation of the active scope
-  // rather than a generic count of "all visible".
-  const noun = n === 1 ? 'parish' : 'parishes';
-  const j = state.filters.jurisdiction;
-  countEl.textContent = j
-    ? `${n} ${capitalize(j)} ${noun} in view`
-    : `${n} ${noun} in view`;
+  const hour = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()));
+  const when = hour >= 16 ? 'tonight' : 'today';
+  const noun = n === 1 ? 'event' : 'events';
+  countEl.textContent = `${n} ${noun} ${when}`;
   updateInViewChevron();
 }
 window.agoraRenderInViewChip = renderInViewChip;
@@ -1920,31 +1946,37 @@ function initResetFab() {
   // "Show all" zooms the map to fit all parishes matching current filters,
   // accounting for how much of the map is visible above the bottom sheet.
   fab.addEventListener('click', () => {
+    // Close parish sheet first (no-op if already closed). closeParishSheet
+    // also deselects the implicit single-parish pill — clearAllFilters then
+    // wipes everything else.
+    if (window.agoraParishSheetVisible && typeof window.closeParishSheet === 'function') {
+      window.closeParishSheet();
+    }
+    clearAllFilters();
     const matching = state.parishes.filter(p =>
-      p.id !== '_unassigned' &&
-      p.lat != null && p.lng != null &&
-      (!state.filters.jurisdiction || p.jurisdiction === state.filters.jurisdiction) &&
-      (!state.filters.parishIds || state.filters.parishIds.has(p.id))
+      p.id !== '_unassigned' && p.lat != null && p.lng != null
     );
     if (matching.length && window.agoraMap) {
       const b = window.agoraPadBounds(window.agoraBoundsFromPoints(matching), 0.2);
-      // When sheet is at SNAP_HALF or lower, shrink the visible region by padding
-      // the bottom of the fit window so markers land above the sheet.
-      const sheetY = window.agoraSheetY ? window.agoraSheetY() : window.innerHeight;
-      const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
-      const snapPeek = window.agoraSnapPeek ? window.agoraSnapPeek() : window.innerHeight * 0.85;
+      const isDesktop = window.agoraIsDesktop?.() ?? false;
       let bottomPad = 0;
-      if (sheetY <= snapHalf + 10) {
-        // Sheet at HALF: visible map = top half; pad bottom to push fit up
-        bottomPad = window.innerHeight - sheetY + 20;
-      } else if (sheetY < snapPeek - 10) {
-        // Sheet between HALF and PEEK: proportional pad
-        const t = (sheetY - snapHalf) / (snapPeek - snapHalf);
-        bottomPad = Math.round((window.innerHeight - sheetY + 20) * (1 - t));
+      let rightPad = 0;
+      if (isDesktop) {
+        rightPad = 440;
+      } else {
+        const sheetY = window.agoraSheetY ? window.agoraSheetY() : window.innerHeight;
+        const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
+        const snapPeek = window.agoraSnapPeek ? window.agoraSnapPeek() : window.innerHeight * 0.85;
+        if (sheetY <= snapHalf + 10) {
+          bottomPad = window.innerHeight - sheetY + 20;
+        } else if (sheetY < snapPeek - 10) {
+          const t = (sheetY - snapHalf) / (snapPeek - snapHalf);
+          bottomPad = Math.round((window.innerHeight - sheetY + 20) * (1 - t));
+        }
       }
       window.agoraMap.fitBounds(b, {
         maxZoom: 13, duration: 700,
-        padding: { top: 0, right: 0, bottom: bottomPad, left: 0 }
+        padding: { top: 0, right: rightPad, bottom: bottomPad, left: 0 }
       });
     }
   });

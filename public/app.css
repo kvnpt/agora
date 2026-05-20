@@ -3368,6 +3368,14 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   body[data-layout="desktop"] #map-select-overlay .map-select-ring {
     right: calc(420px + 16px);
   }
+
+  body[data-layout="desktop"] .in-view-chip .in-view-chevron { display: none; }
+  body[data-layout="desktop"] .in-view-chip { cursor: default; }
+
+  body[data-layout="desktop"] .jurisdiction-banner-wrap,
+  body[data-layout="desktop"] .parish-filter-row-wrap {
+    right: 420px;
+  }
 }
 
 /* ── Loading screen ─────────────────────────────────────────
