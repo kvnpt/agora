@@ -1913,6 +1913,13 @@ function syncResetFab() {
 }
 
 function clearAllFilters() {
+  // Close parish sheet first — it owns the implicit single-parish pill
+  // selection and its own parishFilters state. Without this, the user's
+  // "Clear" tap leaves the parish card open and the parishFocus pin still
+  // selected, contradicting the action.
+  if (window.agoraParishSheetVisible && typeof closeParishSheet === 'function') {
+    closeParishSheet();
+  }
   const wasServices = state.mode === 'services';
   state.filters.jurisdiction = null;
   state.filters.parishIds = null;

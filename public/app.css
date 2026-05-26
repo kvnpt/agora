@@ -3376,6 +3376,13 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   body[data-layout="desktop"] .parish-filter-row-wrap {
     right: 420px;
   }
+
+  /* scrollbar gutter (~15px Chrome) was sitting on top of the X. Push it
+     past the scrollbar so it stays clickable; reserve the gutter so the
+     scrollbar appears even on short content for visual consistency. */
+  body[data-layout="desktop"] .parish-sheet-close { right: 22px; }
+  body[data-layout="desktop"] #parish-sheet-scroll,
+  body[data-layout="desktop"] #sheet-scroll { scrollbar-gutter: stable; }
 }
 
 /* ── Loading screen ─────────────────────────────────────────
