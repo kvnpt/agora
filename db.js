@@ -375,6 +375,70 @@ function migrate(db) {
     `).run();
     db.pragma('user_version = 23');
   }
+
+  if (version < 24) {
+    // ACL tier model: widen senders.role to 4 tiers, add tailscale_username for
+    // network-identity → sender mapping (via keycard /whoami). Adds rep_parishes
+    // join table for the rep tier's per-parish scope. Adds audit_log for write
+    // accountability across tiers. Drops orphan OAuth tables (users,
+    // event_submissions) left behind by the OAuth-retirement PR.
+    db.prepare(`DROP TABLE IF EXISTS users`).run();
+    db.prepare(`DROP TABLE IF EXISTS event_submissions`).run();
+
+    // SQLite can't ALTER CHECK — rebuild senders with widened role enum + new column.
+    db.prepare(`
+      CREATE TABLE senders_new (
+        phone              TEXT PRIMARY KEY,
+        name               TEXT,
+        tailscale_username TEXT UNIQUE,
+        status             TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('approved','review','blocked')),
+        created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        last_seen_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        role               TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','rep','admin','super_admin'))
+      )
+    `).run();
+    db.prepare(`
+      INSERT INTO senders_new (phone, name, status, created_at, last_seen_at, role)
+      SELECT phone, name, status, created_at, last_seen_at, role FROM senders
+    `).run();
+    // Seed: Kevin = super_admin; tailnet username 'paul' couples his desktop session
+    db.prepare(`
+      UPDATE senders_new SET role = 'super_admin', tailscale_username = 'paul'
+      WHERE phone = ?
+    `).run('61438342238');
+    db.prepare(`DROP TABLE senders`).run();
+    db.prepare(`ALTER TABLE senders_new RENAME TO senders`).run();
+
+    db.prepare(`
+      CREATE TABLE rep_parishes (
+        phone       TEXT NOT NULL,
+        parish_id   TEXT NOT NULL,
+        granted_by  TEXT,
+        granted_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        revoked_at  TEXT,
+        PRIMARY KEY (phone, parish_id),
+        FOREIGN KEY (phone)     REFERENCES senders(phone)  ON DELETE CASCADE,
+        FOREIGN KEY (parish_id) REFERENCES parishes(id)    ON DELETE CASCADE
+      )
+    `).run();
+    db.prepare(`CREATE INDEX idx_rep_parishes_phone ON rep_parishes(phone) WHERE revoked_at IS NULL`).run();
+
+    db.prepare(`
+      CREATE TABLE audit_log (
+        id           INTEGER PRIMARY KEY,
+        identity     TEXT NOT NULL,
+        action       TEXT NOT NULL,
+        target_type  TEXT,
+        target_id    TEXT,
+        payload_json TEXT,
+        at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      )
+    `).run();
+    db.prepare(`CREATE INDEX idx_audit_at       ON audit_log(at DESC)`).run();
+    db.prepare(`CREATE INDEX idx_audit_identity ON audit_log(identity, at DESC)`).run();
+
+    db.pragma('user_version = 24');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the
