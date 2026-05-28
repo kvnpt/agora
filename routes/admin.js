@@ -747,4 +747,17 @@ router.delete('/dropped/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/admin/adapters/:id/run — manually trigger an adapter (Caddy-gated)
+const registry = require('../adapters/registry');
+router.post('/adapters/:id/run', async (req, res) => {
+  const adapter = registry.get(req.params.id);
+  if (!adapter) return res.status(404).json({ error: 'Adapter not found' });
+  try {
+    const result = await adapter.run();
+    res.json({ status: 'success', ...result });
+  } catch (err) {
+    res.status(500).json({ status: 'failed', error: err.message });
+  }
+});
+
 module.exports = router;
