@@ -1,6 +1,5 @@
 const express = require('express');
 const path = require('path');
-const rateLimit = require('express-rate-limit');
 const { getDb } = require('./db');
 const { sessionMiddleware } = require('./auth');
 const { seed } = require('./seeds/parishes');
@@ -19,13 +18,6 @@ app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(sessionMiddleware());
-
-// Rate limiting on write endpoints
-const writeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { error: 'Too many requests, please try again later' }
-});
 
 // Static files — no-cache on JS/CSS so browsers always revalidate after deploys
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -55,11 +47,9 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/schedules', require('./routes/schedules'));
 app.use('/api/parishes', require('./routes/parishes'));
 app.use('/api/adapters', require('./routes/adapters'));
-app.use('/api/submissions', writeLimiter, require('./routes/submissions'));
 app.use('/api/webhooks/whatsapp', require('./routes/webhook'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/', require('./routes/magic-auth'));
-app.use('/auth', require('./routes/auth'));
 
 // Admin route — gated server-side; non-admin requests redirect to /
 const { requireAdmin } = require('./routes/magic-auth');
