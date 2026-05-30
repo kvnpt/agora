@@ -377,7 +377,7 @@ async function processBatch(sender, messages) {
     // specific event when the message announces a cancellation (otherwise
     // the model invents a new "CANCELLED" row that never dedupes).
     const upcomingEvents = db.prepare(`
-      SELECT id, parish_id, title, start_utc, event_type
+      SELECT id, parish_id, title, start_utc, event_type, languages
       FROM events
       WHERE status IN ('approved','pending_review')
         AND start_utc BETWEEN datetime('now','-1 day') AND datetime('now','+14 days')
@@ -421,10 +421,30 @@ async function processBatch(sender, messages) {
       }
     }
 
-    const result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
+    let result = await posterAdapter.parseMessage({ images, texts, upcomingEvents, clarifierContext });
+    let modelUsed = posterAdapter.defaultModel;
 
-    // Persist Haiku I/O immediately so any crash in downstream DB writes still
-    // leaves the raw response visible in admin review for debugging.
+    // Escalate complex batches to the larger model. The default model flags
+    // coupled multi-intent / ambiguous consolidations (and malformed output)
+    // via result.escalate; re-parse the same batch with Sonnet and use that
+    // richer result. Single `if`, not a loop — the escalation pass is told it
+    // is final, so it never re-escalates.
+    if (result.escalate) {
+      console.log(`[webhook] Batch from ${sender} flagged complex — escalating ${posterAdapter.defaultModel} → ${posterAdapter.escalationModel}`);
+      try {
+        result = await posterAdapter.parseMessage({
+          images, texts, upcomingEvents, clarifierContext,
+          model: posterAdapter.escalationModel, escalated: true
+        });
+        modelUsed = posterAdapter.escalationModel;
+      } catch (escErr) {
+        console.error(`[webhook] Escalation parse failed, keeping ${posterAdapter.defaultModel} result: ${escErr.message}`);
+      }
+    }
+
+    // Persist model I/O immediately so any crash in downstream DB writes still
+    // leaves the raw response visible in admin review for debugging. Stores the
+    // final model's response when escalation occurred.
     db.prepare(`
       UPDATE adapter_runs SET input_texts = ?, claude_response = ? WHERE id = ?
     `).run(JSON.stringify(texts), result.rawResponse || null, runId);
@@ -733,7 +753,7 @@ async function processBatch(sender, messages) {
     `).run(result.events.length, eventsCreated,
       parishMatchConfidence, parishMatchQuestion || null, runId);
 
-    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}, confidence=${parishMatchConfidence}`);
+    console.log(`[webhook] Batch from ${sender}: ${images.length} image(s), ${texts.length} text(s) → ${result.events.length} events, ${schedulesCreated} schedules, ${cancellationsApplied + cancellationsQueued} cancellations, parish=${parishId}, status=${eventStatus}, confidence=${parishMatchConfidence}, model=${modelUsed}`);
 
     // Result reply back to sender. Fire-and-forget — a Meta send failure must
     // not flip the already-processed batch to failed status.

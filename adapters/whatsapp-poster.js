@@ -5,9 +5,17 @@ const path = require('path');
 const crypto = require('crypto');
 const { localToUtc } = require('../schedule-generator');
 
+// Ingest model + escalation model. Haiku handles the common case cheaply;
+// genuinely complex messages (coupled multi-intent, ambiguous service
+// consolidations) are re-parsed once with Sonnet. Both overridable via env so
+// the pair can be tuned without a code change.
+const INGEST_MODEL = process.env.AGORA_INGEST_MODEL || 'claude-haiku-4-5-20251001';
+const ESCALATION_MODEL = process.env.AGORA_INGEST_ESCALATION_MODEL || 'claude-sonnet-4-6';
+
 /**
- * WhatsApp Poster adapter — uses Claude Haiku vision to extract event
- * details from uploaded poster images. Events go to pending_review.
+ * WhatsApp Poster adapter — uses Claude vision to extract event details from
+ * uploaded poster images / forwarded text. Events go to pending_review.
+ * Default model is Haiku; complex batches escalate to Sonnet (see parseMessage).
  */
 class WhatsAppPosterAdapter extends BaseAdapter {
   constructor() {
@@ -17,6 +25,8 @@ class WhatsAppPosterAdapter extends BaseAdapter {
       schedule: null, // triggered on-demand, not scheduled
       sourceType: 'whatsapp-poster'
     });
+    this.defaultModel = INGEST_MODEL;
+    this.escalationModel = ESCALATION_MODEL;
   }
 
   /**
@@ -45,7 +55,7 @@ class WhatsAppPosterAdapter extends BaseAdapter {
     const isPdf = mediaType === 'application/pdf';
 
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: INGEST_MODEL,
       max_tokens: 4096,
       messages: [{
         role: 'user',
@@ -120,7 +130,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
    * @param {string[]} opts.texts - Text messages and captions
    * @returns {{ events: Array, parishSignal: Object }}
    */
-  async parseMessage({ images = [], texts = [], upcomingEvents = [], clarifierContext = null }) {
+  async parseMessage({ images = [], texts = [], upcomingEvents = [], clarifierContext = null, model = this.defaultModel, escalated = false }) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
 
@@ -141,7 +151,13 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
               timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit',
               day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
             });
-            return `    - id=${e.id} ${localDate} ${e.event_type}: ${e.title}`;
+            // Languages let the model identify the bilingual service when a
+            // message consolidates several parallel services into one.
+            let langs = 'lang unspecified';
+            if (e.languages) {
+              try { langs = JSON.parse(e.languages).join('/'); } catch { langs = e.languages; }
+            }
+            return `    - id=${e.id} ${localDate} ${e.event_type} [${langs}]: ${e.title}`;
           }).join('\n');
           return `  ${pid}:\n${lines}`;
         }).join('\n')
@@ -185,7 +201,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. If the poster does no
 
 ${imageCount > 0 ? `${imageCount} poster image(s) attached above.` : 'No images were attached.'}
 ${textCount > 0 ? `${textCount} text message(s) shown above.` : 'No text was provided.'}
-
+${escalated ? '\nNOTE: A smaller model flagged this message as complex and could not resolve it confidently. You are the escalation pass — reason carefully about coupled changes (cancel + retime + merge in one message), service consolidations, and exactly which UPCOMING EVENT each change targets. Set "escalate": false in your output; you are the final pass.\n' : ''}
 These messages were sent together by the same person. Use ALL available context across images and text.
 
 UPCOMING EVENTS (next 14 days, Sydney local time):
@@ -210,6 +226,9 @@ TASKS:
 3. Extract any recurring SCHEDULES (weekly services like "Sunday Divine Liturgy 9:30am").
 4. Extract any parish info UPDATES (address, phone, website, languages).
 5. Detect CANCELLATIONS of upcoming events listed above. If the message announces that a specific upcoming service is cancelled, not happening, postponed, or moved (e.g. "no Liturgy tonight", "Vespers cancelled this week", "no mid-week Liturgy"), emit a cancellations[] entry referencing the exact id of the matching upcoming event. Do NOT also emit a duplicate row in events[] for the same service — either cancel it OR create it, never both.
+6. Detect SERVICE CONSOLIDATIONS / MERGES. When a message says several parallel services on one day are reduced to a single service (e.g. "only one Divine Liturgy", "combined service", "joint Liturgy", "the two liturgies will be one this Sunday"), resolve it as follows: the surviving service defaults to the BILINGUAL / multi-language one shown in UPCOMING EVENTS for that parish+date (each upcoming event lists its languages in [brackets]). Emit cancellations[] for the single-language sibling service(s) being absorbed, and — if the message also states new times — emit the surviving service in events[] at the new time. RULE: keep the survivor only when EXACTLY ONE upcoming service that day is multi-language. If none are multi-language, or more than one is, or the relevant upcoming events are missing from the list, do NOT guess — leave cancellations empty and set "escalate": true.
+
+ESCALATION: set "escalate": true when the message is too complex to resolve confidently — coupled multi-intent in one message (e.g. a cancellation AND a retime AND a merge together), consolidations where the surviving service is ambiguous per the rule above, or anything needing inference beyond the literal text. A larger model will then re-read it. Do NOT escalate simple single-intent messages (one event, one cancellation, one schedule, or a parish detail change) — those you handle directly with "escalate": false.
 
 Return ONLY valid JSON (no markdown fences) in this exact format:
 {
@@ -257,7 +276,8 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
     "website": "https://example.org",
     "phone": "0411 222 333"
   },
-  "parish_clears": []
+  "parish_clears": [],
+  "escalate": false
 }
 
 IMPORTANT type rules: "Vesperal Liturgy" and any service with "Liturgy" = liturgy. Vespers, Matins, Compline, Bridegroom, Holy Unction, Lamentations, Passion Gospels = prayer.
@@ -284,7 +304,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
     });
 
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model,
       max_tokens: 4096,
       messages: [{ role: 'user', content }]
     });
@@ -295,8 +315,10 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { parish_signal: null, events: [] };
     } catch {
-      console.error('[whatsapp-poster] Failed to parse Claude response:', responseText);
-      return { events: [], parishSignal: null };
+      console.error('[whatsapp-poster] Failed to parse model response:', responseText);
+      // Malformed output is itself a signal the message was hard — escalate to
+      // the larger model once (but not if we're already the escalation pass).
+      return { events: [], parishSignal: null, escalate: !escalated, rawResponse: response.content[0].text };
     }
 
     // Convert events to internal format. source_hash is computed by the
@@ -335,6 +357,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}. Timezone: Australia/S
       cancellations: Array.isArray(parsed.cancellations) ? parsed.cancellations : [],
       parish_updates: parsed.parish_updates || null,
       parish_clears: Array.isArray(parsed.parish_clears) ? parsed.parish_clears : [],
+      escalate: parsed.escalate === true,
       rawResponse: response.content[0].text
     };
   }
