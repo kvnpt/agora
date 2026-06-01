@@ -439,6 +439,17 @@ function migrate(db) {
 
     db.pragma('user_version = 24');
   }
+
+  if (version < 25) {
+    // Per-parish external donation URL (Stripe, GiveNow, parish portal, etc.).
+    // Surfaces as a Donate button on the parish card and powers the /donate
+    // deep-link dialog + /<acronym>/donate hard-redirect shortcut.
+    db.exec(`ALTER TABLE parishes ADD COLUMN donation_url TEXT`);
+    // Seed Sts Michael & Gabriel, Ryde (acronym SMG) — link supplied 2026-06-01.
+    db.prepare(`UPDATE parishes SET donation_url = ? WHERE id = ?`)
+      .run('https://donate.stripe.com/eVq9AL7eMa8n8593GkcIE00', 'antiochian-stmichaelgabriel-ryde');
+    db.pragma('user_version = 25');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the

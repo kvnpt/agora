@@ -112,6 +112,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   await Promise.all([fetchParishes(), checkAdmin()]);
   _initLogout();
   applyParishSlugs();
+  // Deep-link: /donate or /<juris>/donate opens the donation parish picker once
+  // parishes are loaded. A bare slug+donate that reached the SPA (no link on
+  // file) lands here too. Defer a tick so the first paint settles first.
+  if (state._donateIntent) {
+    delete state._donateIntent;
+    setTimeout(() => openDonateDialog(state.filters.jurisdiction || null), 0);
+  }
   initFilters(state);
   initModeBar();
   initBottomSheet();
@@ -288,6 +295,10 @@ function detectUrlState() {
     } else if (seg === 'bilingual') {
       state.filters.englishOnly = true;
       state.filters.englishStrict = false;
+    } else if (seg === 'donate') {
+      // /donate, /<juris>/donate, or /<acronym>/donate that fell through the
+      // server redirect (parish has no link on file) → open the picker dialog.
+      state._donateIntent = true;
     } else if (/^\d+$/.test(seg)) {
       state._openEventId = parseInt(seg, 10);
     } else if (seg.includes('+')) {
@@ -3610,6 +3621,9 @@ function renderParishSheetContent(parishId, opts = {}) {
   const watchBtn = parish.live_url
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
     : '';
+  const donateBtn = parish.donation_url
+    ? `<a class="ps-btn ps-donate-btn" href="${esc(parish.donation_url)}" target="_blank" rel="noopener"><img class="ps-btn-icon" src="https://api.iconify.design/ph:hand-heart.svg" alt=""><span>Donate</span></a>`
+    : '';
   const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}"><img class="ps-btn-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt=""><span>Share</span></button>`;
 
   // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
@@ -3638,6 +3652,7 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Website</label><input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}"></div>
         <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
         <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
+        <div class="edit-row"><label>Donation URL</label><input type="url" id="pse-donation-${pid}" value="${esc(parish.donation_url || '')}"></div>
         <div class="edit-row"><label>Color</label><input type="color" id="pse-color-${pid}" value="${esc(parish.color || '#666666')}"></div>
         <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
@@ -3718,7 +3733,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-section">
       ${addrHtml}
       ${webCopyHtml}
-      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${shareParishBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
     ${parishEditFormHtml || ''}
@@ -5586,6 +5601,7 @@ window.saveParish = async function(id) {
     website: document.getElementById(`pse-website-${pid}`).value || null,
     phone: document.getElementById(`pse-phone-${pid}`).value || null,
     live_url: document.getElementById(`pse-live-${pid}`).value || null,
+    donation_url: document.getElementById(`pse-donation-${pid}`).value || null,
     color: document.getElementById(`pse-color-${pid}`).value,
     acronym: document.getElementById(`pse-acro-${pid}`).value || null,
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
@@ -5711,6 +5727,60 @@ window.openPublicEscalateModal = function(id) {
 window.closePublicEscalateModal = function() {
   document.getElementById('escalate-backdrop').classList.remove('open');
   _escalatePubEventId = null;
+};
+
+// ── Donate parish-picker dialog ──
+// Opened by the /donate and /<juris>/donate deep links (and as a fallback when a
+// /<acronym>/donate slug reaches the SPA because no link is on file). Lists every
+// parish that has a donation_url; each row links straight out to that page.
+let _donateJurisFilter = '';
+
+function _renderDonateList() {
+  const listEl = document.getElementById('donate-list');
+  if (!listEl) return;
+  let donors = (state.parishes || []).filter(p => p.id !== '_unassigned' && p.donation_url);
+  if (_donateJurisFilter) donors = donors.filter(p => p.jurisdiction === _donateJurisFilter);
+  donors.sort((a, b) => a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name));
+  listEl.innerHTML = donors.length
+    ? donors.map(p => `
+        <a class="donate-item" href="${esc(p.donation_url)}" target="_blank" rel="noopener">
+          <span class="donate-item-dot" style="background:${esc(getParishDisplayColor(p.color || '#666'))}"></span>
+          <span class="donate-item-label">${esc(p.name)}<small>${esc(capitalize(p.jurisdiction))} Orthodox</small></span>
+          <img class="donate-item-arrow" src="https://api.iconify.design/ph:arrow-up-right.svg" alt="">
+        </a>`).join('')
+    : `<div class="escalate-empty">No parishes with donation links yet${_donateJurisFilter ? ' in this jurisdiction' : ''}.</div>`;
+}
+
+window._onDonateJurisChange = function(v) {
+  _donateJurisFilter = v || '';
+  _renderDonateList();
+};
+
+function _donateEsc(e) { if (e.key === 'Escape') closeDonateDialog(); }
+
+window.openDonateDialog = function(preselectJuris = null) {
+  const backdrop = document.getElementById('donate-backdrop');
+  if (!backdrop) return;
+  const donors = (state.parishes || []).filter(p => p.id !== '_unassigned' && p.donation_url);
+  const jurisSet = [...new Set(donors.map(p => p.jurisdiction))].sort();
+  // Only honour the preselected jurisdiction if a donor parish actually has it,
+  // otherwise the filtered list would render empty for no obvious reason.
+  _donateJurisFilter = (preselectJuris && jurisSet.includes(preselectJuris)) ? preselectJuris : '';
+  const sel = document.getElementById('donate-juris-filter');
+  if (sel) {
+    sel.innerHTML = `<option value="">All jurisdictions</option>` +
+      jurisSet.map(j => `<option value="${esc(j)}"${j === _donateJurisFilter ? ' selected' : ''}>${esc(capitalize(j))} Orthodox</option>`).join('');
+    sel.style.display = jurisSet.length > 1 ? '' : 'none';
+  }
+  _renderDonateList();
+  backdrop.classList.add('open');
+  document.addEventListener('keydown', _donateEsc);
+};
+
+window.closeDonateDialog = function() {
+  const backdrop = document.getElementById('donate-backdrop');
+  if (backdrop) backdrop.classList.remove('open');
+  document.removeEventListener('keydown', _donateEsc);
 };
 
 window.confirmPublicEscalate = async function() {

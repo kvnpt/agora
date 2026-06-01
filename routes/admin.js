@@ -209,7 +209,7 @@ router.post('/events/:id/escalate', (req, res) => {
 // POST /api/admin/parishes — create a new parish
 router.post('/parishes', (req, res) => {
   const db = getDb();
-  const { name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url } = req.body;
+  const { name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url, donation_url } = req.body;
 
   if (!name || !jurisdiction || lat == null || lng == null) {
     return res.status(400).json({ error: 'name, jurisdiction, lat, and lng are required' });
@@ -225,9 +225,9 @@ router.post('/parishes', (req, res) => {
   if (existing) return res.status(409).json({ error: 'Parish already exists', id });
 
   db.prepare(`
-    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]', live_url || null);
+    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url, donation_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]', live_url || null, donation_url || null);
 
   // Seed a generic inactive schedule so the parish appears in the schedules list
   db.prepare(`
@@ -248,7 +248,7 @@ router.patch('/parishes/:id', (req, res) => {
   const parish = db.prepare('SELECT * FROM parishes WHERE id = ?').get(id);
   if (!parish) return res.status(404).json({ error: 'Parish not found' });
 
-  const allowed = ['name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url'];
+  const allowed = ['name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url', 'donation_url'];
   const updates = [];
   const values = [];
   for (const key of allowed) {
@@ -541,7 +541,7 @@ router.post('/parish-updates/:id/approve', (req, res) => {
   // Accept new shape { sets, clears } or legacy flat blob (pre-split rows).
   // Legacy blobs mixed nulls-as-clears, but those nulls were Claude over-
   // emission not intent — strip them on apply to match the new model.
-  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url', 'languages'];
+  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url', 'languages', 'donation_url'];
   const isNewShape = changes && typeof changes === 'object' && (changes.sets || changes.clears);
   const rawSets = isNewShape ? (changes.sets || {}) : (changes || {});
   const rawClears = isNewShape ? (Array.isArray(changes.clears) ? changes.clears : []) : [];

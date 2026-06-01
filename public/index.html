@@ -381,5 +381,16 @@
       </div>
     </div>
   </div>
+
+  <!-- Donate parish-picker dialog (deep-linked via /donate, /<juris>/donate) -->
+  <div class="escalate-backdrop" id="donate-backdrop" onclick="if(event.target===this)closeDonateDialog()">
+    <div class="escalate-modal donate-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeDonateDialog()">&times;</button>
+      <h2>Support a parish</h2>
+      <div class="escalate-modal-sub">Pick a parish to open its donation page.</div>
+      <select id="donate-juris-filter" class="donate-juris-filter" onchange="_onDonateJurisChange(this.value)"></select>
+      <div class="donate-list" id="donate-list"></div>
+    </div>
+  </div>
 </body>
 </html>

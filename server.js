@@ -57,6 +57,23 @@ app.get('/admin', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// Donation deep links — /<slug>/donate.
+// A parish slug (acronym) that has a donation URL hard-redirects (302) straight
+// to it, so a shared /smg/donate link lands on the parish's payment page with no
+// SPA flash. Jurisdiction slugs and the bare /donate fall through to the SPA,
+// which opens the parish-picker dialog (jurisdiction preselected where present).
+const DONATE_JURISDICTIONS = new Set(['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian']);
+app.get('/:slug/donate', (req, res, next) => {
+  const slug = (req.params.slug || '').toLowerCase().replace(/\s+/g, '');
+  if (DONATE_JURISDICTIONS.has(slug)) return next(); // SPA dialog, juris preselected
+  const db = getDb();
+  const parish = db.prepare(
+    "SELECT donation_url FROM parishes WHERE id != '_unassigned' AND lower(replace(acronym, ' ', '')) = ?"
+  ).get(slug);
+  if (parish && parish.donation_url) return res.redirect(302, parish.donation_url);
+  return next(); // unknown slug or no link on file → SPA handles it
+});
+
 // SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
