@@ -3,7 +3,6 @@ const path = require('path');
 const { getDb } = require('./db');
 const { sessionMiddleware } = require('./auth');
 const { seed } = require('./seeds/parishes');
-const { generateEvents } = require('./schedule-generator');
 const registry = require('./adapters/registry');
 const scheduler = require('./scheduler');
 
@@ -81,10 +80,10 @@ app.get('*', (req, res) => {
 
 // Startup
 function start() {
-  // Init DB + seed + generate schedule events
+  // Init DB + seed. v26: schedule occurrences are computed on read
+  // (schedule-expand.js), never generated — no generateEvents() here.
   const db = getDb();
   seed();
-  generateEvents();
 
   // Seed known senders
   const seedSender = db.prepare("INSERT OR IGNORE INTO senders (phone, name, status) VALUES (?, ?, ?)");
