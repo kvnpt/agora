@@ -490,6 +490,34 @@ function migrate(db) {
     db.exec(`ALTER TABLE schedules ADD COLUMN effective_to   TEXT`);
     db.pragma('user_version = 26');
   }
+
+  if (version < 27) {
+    // pending_cancellations can target a schedule instance (synthetic id
+    // "scheduleId:YYYY-MM-DD") as well as a stored one-off event. Rebuild to
+    // relax event_id NOT NULL and add instance_id. See docs/schedule-overrides-v26.md.
+    db.exec(`
+      CREATE TABLE pending_cancellations_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+        instance_id TEXT,
+        reason TEXT,
+        sender_phone TEXT,
+        source_run_id INTEGER REFERENCES adapter_runs(id),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        reviewed_at TEXT,
+        CHECK (event_id IS NOT NULL OR instance_id IS NOT NULL)
+      );
+      INSERT INTO pending_cancellations_new
+        (id, event_id, reason, sender_phone, source_run_id, status, created_at, reviewed_at)
+        SELECT id, event_id, reason, sender_phone, source_run_id, status, created_at, reviewed_at
+        FROM pending_cancellations;
+      DROP TABLE pending_cancellations;
+      ALTER TABLE pending_cancellations_new RENAME TO pending_cancellations;
+      CREATE INDEX IF NOT EXISTS idx_pending_cancellations_status ON pending_cancellations(status);
+    `);
+    db.pragma('user_version = 27');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the

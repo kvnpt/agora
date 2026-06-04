@@ -5,6 +5,8 @@ const path = require('path');
 const { getDb, syncEventCoordsForParish } = require('../db');
 const { geocode } = require('../geocode');
 const { sendText } = require('../adapters/whatsapp-send');
+const { expandWindow, parseInstanceId } = require('../schedule-expand');
+const { applyAdminEdit, findInstanceOccurrence } = require('../schedule-overrides');
 
 // Public-facing admin URL for deep links in outbound replies.
 const ADMIN_BASE_URL = process.env.AGORA_ADMIN_URL || 'https://orthodoxy.au/admin';
@@ -373,16 +375,25 @@ async function processBatch(sender, messages) {
       }
     }
 
-    // Fetch upcoming events across all parishes so Claude can target a
-    // specific event when the message announces a cancellation (otherwise
-    // the model invents a new "CANCELLED" row that never dedupes).
-    const upcomingEvents = db.prepare(`
-      SELECT id, parish_id, title, start_utc, event_type, languages
-      FROM events
-      WHERE status IN ('approved','pending_review')
-        AND start_utc BETWEEN datetime('now','-1 day') AND datetime('now','+14 days')
-      ORDER BY parish_id, start_utc
-    `).all();
+    // Upcoming events across all parishes so Claude can target a specific event
+    // for a cancellation/consolidation (otherwise it invents a "CANCELLED" row).
+    // v26: schedule occurrences are computed, so the list is the expanded feed
+    // (instances with synthetic ids) UNION genuine one-offs — same as the public
+    // feed. The model echoes these ids back in cancellations[].
+    const upFrom = new Date(Date.now() - 86400000).toISOString();
+    const upTo = new Date(Date.now() + 14 * 86400000).toISOString();
+    const upcomingEvents = [
+      ...expandWindow(db, upFrom, upTo)
+        .filter(e => e.status === 'approved')
+        .map(e => ({ id: e.id, parish_id: e.parish_id, title: e.title, start_utc: e.start_utc, event_type: e.event_type, languages: e.languages })),
+      ...db.prepare(`
+        SELECT id, parish_id, title, start_utc, event_type, languages
+        FROM events
+        WHERE source_adapter != 'schedule'
+          AND status IN ('approved','pending_review')
+          AND start_utc BETWEEN ? AND ?
+      `).all(upFrom, upTo),
+    ].sort((a, b) => (a.parish_id < b.parish_id ? -1 : a.parish_id > b.parish_id ? 1 : new Date(a.start_utc) - new Date(b.start_utc)));
 
     // If this is a text-only batch, check for a recent low-confidence run
     // still unresolved (no output). The new texts are likely the sender's
@@ -630,6 +641,25 @@ async function processBatch(sender, messages) {
     let cancellationsQueued = 0;
     if (result.cancellations && result.cancellations.length && parishId !== '_unassigned') {
       for (const c of result.cancellations) {
+        // Schedule instance (synthetic id) → cancelled override.
+        const inst = parseInstanceId(c.event_id);
+        if (inst) {
+          const sched = db.prepare('SELECT parish_id FROM schedules WHERE id = ?').get(inst.scheduleId);
+          if (!sched) { console.warn(`[webhook] Cancellation references unknown schedule instance ${c.event_id}, skipping`); continue; }
+          if (sched.parish_id !== parishId) { console.warn(`[webhook] Cancellation instance ${c.event_id} belongs to ${sched.parish_id}, not ${parishId}, skipping`); continue; }
+          if (effectiveStatus === 'approved') {
+            const r = applyAdminEdit(db, inst.scheduleId, inst.date, { status: 'cancelled' });
+            if (!r.error) { cancellationsApplied++; console.log(`[webhook] Cancelled instance ${c.event_id} (${parishId}) from approved sender ${sender}`); }
+          } else {
+            const existing = db.prepare(`SELECT id FROM pending_cancellations WHERE instance_id = ? AND status = 'pending'`).get(String(c.event_id));
+            if (!existing) {
+              db.prepare(`INSERT INTO pending_cancellations (instance_id, reason, sender_phone, source_run_id) VALUES (?, ?, ?, ?)`)
+                .run(String(c.event_id), c.reason || null, sender, runId);
+              cancellationsQueued++;
+            }
+          }
+          continue;
+        }
         const eventId = Number(c.event_id);
         if (!Number.isInteger(eventId) || eventId <= 0) continue;
         const target = db.prepare('SELECT id, parish_id, status FROM events WHERE id = ?').get(eventId);
@@ -678,26 +708,8 @@ async function processBatch(sender, messages) {
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
-    // Adapted: find schedule occurrence at same parish/date within ±3h (trusted senders only)
-    const findScheduleOccurrence = db.prepare(`
-      SELECT id FROM events
-      WHERE parish_id = ?
-        AND source_adapter = 'schedule'
-        AND date(start_utc) = date(?)
-        AND status NOT IN ('replaced', 'rejected', 'cancelled')
-        AND ABS(CAST(strftime('%s', start_utc) AS INTEGER) - CAST(strftime('%s', ?) AS INTEGER)) <= 10800
-      ORDER BY ABS(CAST(strftime('%s', start_utc) AS INTEGER) - CAST(strftime('%s', ?) AS INTEGER))
-      LIMIT 2
-    `);
-
-    const adaptScheduleEvent = db.prepare(`
-      UPDATE events SET
-        title = ?, start_utc = ?, end_utc = ?, description = ?, event_type = ?,
-        languages = ?, hide_live = ?, parish_scoped = ?,
-        mutation_type = 'adapted', source_run_id = ?,
-        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-      WHERE id = ?
-    `);
+    // v26: the "adapt a schedule occurrence" match is computed, not a stored-row
+    // query — see findInstanceOccurrence + applyAdminEdit in the loop below.
 
     let eventsCreated = 0;
     const tx = db.transaction(() => {
@@ -706,21 +718,26 @@ async function processBatch(sender, messages) {
           .update(`wa-webhook-${parishId}-${evt.date_str}-${evt.title}`)
           .digest('hex');
 
-        // Adapted detection: only for trusted senders (approved) at a known parish
+        // Adapted detection (trusted senders, known parish): a message event that
+        // lands on a single schedule occurrence at the same parish (±3h) edits
+        // that occurrence via a 'modified' override instead of creating a
+        // duplicate one-off. 0 or 2+ matches → headless (admin can escalate).
         let adapted = false;
         if (eventStatus === 'approved' && parishId && parishId !== '_unassigned') {
-          const matches = findScheduleOccurrence.all(parishId, evt.start_utc, evt.start_utc, evt.start_utc);
-          if (matches.length === 1) {
-            const r = adaptScheduleEvent.run(
-              evt.title, evt.start_utc, evt.end_utc || null, evt.description || null, evt.event_type,
-              evt.languages ? JSON.stringify(evt.languages) : null,
-              evt.hide_live ? 1 : 0, evt.parish_scoped ? 1 : 0,
-              runId, matches[0].id
-            );
-            if (r.changes > 0) eventsCreated++;
-            adapted = true;
+          const occ = findInstanceOccurrence(db, parishId, evt.start_utc);
+          if (occ) {
+            const r = applyAdminEdit(db, occ.scheduleId, occ.date, {
+              title: evt.title,
+              start_utc: evt.start_utc,
+              end_utc: evt.end_utc || null,
+              description: evt.description || null,
+              event_type: evt.event_type,
+              languages: evt.languages ? JSON.stringify(evt.languages) : null,
+              hide_live: evt.hide_live ? 1 : 0,
+              parish_scoped: evt.parish_scoped ? 1 : 0,
+            });
+            if (!r.error) { eventsCreated++; adapted = true; }
           }
-          // 0 matches → headless; 2+ matches → headless (admin escalates to replace)
         }
 
         if (!adapted) {

@@ -2,7 +2,7 @@
 // Read side lives in schedule-expand.js. See docs/schedule-overrides-v26.md.
 
 const { Temporal } = require('@js-temporal/polyfill');
-const { expandOne, isValidOccurrence } = require('./schedule-expand');
+const { expandWindow, expandOne, parseInstanceId, isValidOccurrence } = require('./schedule-expand');
 
 const TZ = 'Australia/Sydney';
 
@@ -152,4 +152,21 @@ function clearCombined(db, scheduleId, date) {
   return { ok: true };
 }
 
-module.exports = { applyAdminEdit, hideInstance, setCombined, clearCombined };
+// Find the schedule instance at a parish nearest a given UTC start, within ±3h.
+// Returns { scheduleId, date } when EXACTLY ONE approved instance matches (so a
+// trusted WhatsApp event can adapt that occurrence via a modified override);
+// null for 0 or 2+ matches (caller falls back to a headless one-off). This
+// replaces the pre-v26 findScheduleOccurrence over stored schedule rows.
+function findInstanceOccurrence(db, parishId, startUtc) {
+  const t = Date.parse(startUtc);
+  const from = new Date(t - 12 * 3600000).toISOString();
+  const to = new Date(t + 12 * 3600000).toISOString();
+  const cands = expandWindow(db, from, to).filter(e =>
+    e.parish_id === parishId && e.status === 'approved' &&
+    Math.abs(Date.parse(e.start_utc) - t) <= 10800000
+  );
+  if (cands.length !== 1) return null;
+  return parseInstanceId(cands[0].id);
+}
+
+module.exports = { applyAdminEdit, hideInstance, setCombined, clearCombined, findInstanceOccurrence };

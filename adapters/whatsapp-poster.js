@@ -268,7 +268,7 @@ Return ONLY valid JSON (no markdown fences) in this exact format:
   ],
   "cancellations": [
     {
-      "event_id": 12345,
+      "event_id": "<copy the id EXACTLY from the list, e.g. 12345 or 42:2026-06-07>",
       "reason": "Short quote from the message, e.g. 'no mid-week Liturgy tonight'"
     }
   ],
@@ -289,7 +289,7 @@ hide_live: true if the message indicates the event will NOT be livestreamed (e.g
 parish_scoped: true for internal/operational entries that should only surface when a user has filtered the feed to this parish alone (e.g. "SETUP", "Pack-down", "Cleaning roster"). False by default. These are things the parish wants tracked but not broadcast to the general public feed.
 parish_updates: include ONLY keys for fields the message is setting to a new non-null value (name, address, contact details, acronym, chant style, languages, live stream URL, etc). OMIT keys entirely for fields the message does not mention. NEVER emit null inside parish_updates — null is not a meaningful value here.
 parish_clears: an array of field names. Include a field name here ONLY when the message explicitly states the parish no longer has that attribute — e.g. "we no longer livestream" → "live_url"; "stream has been discontinued" → "live_url"; "phone disconnected" → "phone"; "website closed" → "website". Valid field names: name, full_name, address, website, email, phone, acronym, chant_style, live_url, languages. Empty [] when no removal is requested. DO NOT add a field here just because the message didn't mention it — silence is not a removal.
-Only pick an event_id from the UPCOMING EVENTS list above. Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
+Only pick an event_id from the UPCOMING EVENTS list above, copied EXACTLY as shown (ids may be a number like 12345 or a string like "42:2026-06-07" — keep the full string). Do not invent ids. Only list a cancellation if you are confident about the specific event (matching date and title/type). If the message is ambiguous, leave cancellations empty and do not create a stand-in event row.
 When explicit_new=true, details has the same shape as parish_signal but with full fields: { name, full_name, jurisdiction, address, lat, lng, website, email, phone, acronym, chant_style, live_url, languages }.
 If you cannot extract anything, return: {"parish_signal": {"saint_name": null, "suburb": null, "jurisdiction": null, "explicit_new": false, "details": null}, "events": [], "schedules": [], "cancellations": [], "parish_updates": null, "parish_clears": []}
 

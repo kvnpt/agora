@@ -646,17 +646,31 @@ router.post('/parish-updates/:id/reject', (req, res) => {
 router.get('/cancellations', (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT pc.*, e.title as event_title, e.start_utc as event_start_utc,
-           e.event_type as event_type, e.parish_id as parish_id,
-           e.status as event_status, p.name as parish_name, ar.input_texts
+    SELECT pc.*, ar.input_texts
     FROM pending_cancellations pc
-    JOIN events e ON pc.event_id = e.id
-    JOIN parishes p ON e.parish_id = p.id
     LEFT JOIN adapter_runs ar ON pc.source_run_id = ar.id
     WHERE pc.status = 'pending'
     ORDER BY pc.created_at ASC
   `).all();
-  res.json(rows);
+  // Enrich with target details. Instance targets (synthetic id) resolve via the
+  // expander; one-off targets via the events table.
+  const out = rows.map(pc => {
+    if (pc.instance_id) {
+      const p = parseInstanceId(pc.instance_id);
+      const inst = p && expandOne(db, p.scheduleId, p.date);
+      return { ...pc, event_title: inst ? inst.title : '(instance unavailable)',
+        event_start_utc: inst ? inst.start_utc : null, event_type: inst ? inst.event_type : null,
+        parish_id: inst ? inst.parish_id : null, event_status: inst ? inst.status : null,
+        parish_name: inst ? inst.parish_name : null };
+    }
+    const e = db.prepare(`
+      SELECT e.title as event_title, e.start_utc as event_start_utc, e.event_type,
+             e.parish_id, e.status as event_status, p.name as parish_name
+      FROM events e JOIN parishes p ON e.parish_id = p.id WHERE e.id = ?
+    `).get(pc.event_id);
+    return { ...pc, ...(e || {}) };
+  });
+  res.json(out);
 });
 
 // POST /api/admin/cancellations/:id/approve — flip the target event to cancelled
@@ -665,6 +679,16 @@ router.post('/cancellations/:id/approve', (req, res) => {
   const pc = db.prepare('SELECT * FROM pending_cancellations WHERE id = ?').get(req.params.id);
   if (!pc) return res.status(404).json({ error: 'Not found' });
   if (pc.status !== 'pending') return res.status(400).json({ error: 'Already reviewed' });
+
+  if (pc.instance_id) {
+    const p = parseInstanceId(pc.instance_id);
+    if (!p) return res.status(400).json({ error: 'Invalid instance target' });
+    const r = applyAdminEdit(db, p.scheduleId, p.date, { status: 'cancelled' });
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    db.prepare(`UPDATE pending_cancellations SET status = 'approved', reviewed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`).run(req.params.id);
+    return res.json({ ok: true });
+  }
+
   const event = db.prepare('SELECT id FROM events WHERE id = ?').get(pc.event_id);
   if (!event) return res.status(404).json({ error: 'Target event no longer exists' });
   const tx = db.transaction(() => {
