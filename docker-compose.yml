@@ -5,7 +5,7 @@ services:
     container_name: agora
     restart: unless-stopped
     env_file:
-      - /srv/secrets/shared.env
+      - /srv/secrets/app-llm.env
       - /srv/secrets/agora.env
     environment:
       AGORA_DB_PATH: /app/data/agora.db
@@ -23,7 +23,7 @@ services:
     container_name: agora-dev
     restart: unless-stopped
     env_file:
-      - /srv/secrets/shared.env
+      - /srv/secrets/app-llm.env
       - /srv/secrets/agora.env
     environment:
       AGORA_DB_PATH: /app/data/agora.db
