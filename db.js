@@ -450,6 +450,46 @@ function migrate(db) {
       .run('https://donate.stripe.com/eVq9AL7eMa8n8593GkcIE00', 'antiochian-stmichaelgabriel-ryde');
     db.pragma('user_version = 25');
   }
+
+  if (version < 26) {
+    // Materialize-on-read: schedules become a lens, not a generator.
+    // schedule_overrides patches/cancels/combines a single occurrence,
+    // keyed by (schedule_id, the Sydney-local date the RULE produced).
+    // See docs/schedule-overrides-v26.md.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schedule_overrides (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id      INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+        occurrence_date  TEXT NOT NULL,            -- 'YYYY-MM-DD' Sydney-local; join key
+        kind             TEXT NOT NULL CHECK(kind IN ('modified','cancelled','combined','hidden')),
+
+        patch_title             TEXT,
+        patch_start_time        TEXT,              -- 'HH:MM' Sydney local
+        patch_end_time          TEXT,
+        patch_event_type        TEXT,
+        patch_languages         TEXT,
+        patch_feast             TEXT,
+        patch_description       TEXT,
+        patch_location_override TEXT,
+        patch_hide_live         INTEGER,
+        patch_parish_scoped     INTEGER,
+
+        combined_into_event_id  INTEGER REFERENCES events(id) ON DELETE CASCADE,
+
+        note           TEXT,
+        source_run_id  INTEGER REFERENCES adapter_runs(id),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        UNIQUE(schedule_id, occurrence_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_overrides_schedule ON schedule_overrides(schedule_id);
+      CREATE INDEX IF NOT EXISTS idx_overrides_combined ON schedule_overrides(combined_into_event_id);
+    `);
+    // Upgrade hook for historical accuracy (NULL = open-ended; unused in v26).
+    db.exec(`ALTER TABLE schedules ADD COLUMN effective_from TEXT`);
+    db.exec(`ALTER TABLE schedules ADD COLUMN effective_to   TEXT`);
+    db.pragma('user_version = 26');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the

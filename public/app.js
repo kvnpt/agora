@@ -2238,7 +2238,7 @@ function applyNonViewportFilters(events) {
     ? [...state.filters.parishIds][0]
     : null;
   filtered = filtered.filter(e => {
-    const scoped = e.parish_scoped || e.status === 'cancelled';
+    const scoped = e.parish_scoped || e.status === 'cancelled' || e.status === 'combined';
     return !scoped || e.parish_id === singleParishFilter;
   });
   if (state.filters.parishIds) {

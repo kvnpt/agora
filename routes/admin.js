@@ -1,7 +1,6 @@
 const { Router } = require('express');
 const { getDb, syncEventCoordsForParish } = require('../db');
 const { geocode } = require('../geocode');
-const { generateEvents } = require('../schedule-generator');
 const path = require('path');
 const fs = require('fs');
 
@@ -355,7 +354,7 @@ router.post('/schedules', (req, res) => {
   `).run(parish_id, day_of_week, start_time, end_time || null, title, event_type || 'liturgy', languages || null, week_of_month || null, hide_live ? 1 : 0, parish_scoped ? 1 : 0);
 
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
-  generateEvents(10, schedule.id);
+  // v26: no generation — instances are computed on read by schedule-expand.js.
   res.status(201).json(schedule);
 });
 
@@ -380,8 +379,8 @@ router.patch('/schedules/:id', (req, res) => {
 
   values.push(req.params.id);
   db.prepare(`UPDATE schedules SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-
-  generateEvents(10, Number(req.params.id));
+  // v26: the edit is now reflected instantly on read — no regeneration, no
+  // orphaned old-slot rows (this is the duplicate-bug fix).
 
   const updated = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   res.json(updated);
@@ -393,8 +392,7 @@ router.delete('/schedules/:id', (req, res) => {
   const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
 
-  // Clean up generated events for this schedule
-  db.prepare("DELETE FROM events WHERE schedule_id = ? AND source_adapter = 'schedule'").run(req.params.id);
+  // v26: no generated events to clean; schedule_overrides cascade via FK.
   db.prepare('DELETE FROM schedules WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
