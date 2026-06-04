@@ -5,7 +5,8 @@ services:
     container_name: agora
     restart: unless-stopped
     env_file:
-      - /home/ubuntu/.env
+      - /srv/secrets/shared.env
+      - /srv/secrets/agora.env
     environment:
       AGORA_DB_PATH: /app/data/agora.db
     volumes:
@@ -22,7 +23,8 @@ services:
     container_name: agora-dev
     restart: unless-stopped
     env_file:
-      - /home/ubuntu/.env
+      - /srv/secrets/shared.env
+      - /srv/secrets/agora.env
     environment:
       AGORA_DB_PATH: /app/data/agora.db
     ports:
