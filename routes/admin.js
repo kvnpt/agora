@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { getDb, syncEventCoordsForParish } = require('../db');
 const { geocode } = require('../geocode');
-const { parseInstanceId } = require('../schedule-expand');
-const { applyAdminEdit, hideInstance } = require('../schedule-overrides');
+const { parseInstanceId, expandWindow, expandOne } = require('../schedule-expand');
+const { applyAdminEdit, hideInstance, setCombined, clearCombined } = require('../schedule-overrides');
 const path = require('path');
 const fs = require('fs');
 
@@ -25,15 +25,24 @@ router.get('/events/candidates', (req, res) => {
   const [y, m, d] = date.split('-').map(Number);
   const utcFrom = new Date(Date.UTC(y, m - 1, d - 1, 13, 0, 0)).toISOString();
   const utcTo   = new Date(Date.UTC(y, m - 1, d,     14, 0, 0)).toISOString();
-  const events = db.prepare(`
+  // One-off events on the day…
+  const oneOffs = db.prepare(`
     SELECT e.id, e.title, e.start_utc, e.end_utc, e.parish_id, p.name as parish_name, e.mutation_type, e.status, e.event_type
     FROM events e
     JOIN parishes p ON e.parish_id = p.id
-    WHERE e.start_utc >= ? AND e.start_utc < ?
+    WHERE e.source_adapter != 'schedule'
+      AND e.start_utc >= ? AND e.start_utc < ?
       AND e.status NOT IN ('replaced', 'rejected', 'cancelled', 'hidden')
       AND e.id != COALESCE(?, -1)
     ORDER BY e.start_utc
-  `).all(utcFrom, utcTo, exclude_id ? Number(exclude_id) : null);
+  `).all(utcFrom, utcTo, exclude_id && /^\d+$/.test(String(exclude_id)) ? Number(exclude_id) : null);
+  // …plus schedule instances on the day (synthetic ids), excluding tombstones/hidden.
+  const instances = expandWindow(db, utcFrom, utcTo)
+    .filter(e => e.id !== exclude_id && e.status === 'approved')
+    .map(e => ({ id: e.id, title: e.title, start_utc: e.start_utc, end_utc: e.end_utc,
+      parish_id: e.parish_id, parish_name: e.parish_name, mutation_type: e.mutation_type,
+      status: e.status, event_type: e.event_type }));
+  const events = [...oneOffs, ...instances].sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
   res.json(events);
 });
 
@@ -155,6 +164,7 @@ router.get('/events/:id/escalation', (req, res) => {
   const additive_parish_ids = db.prepare(
     'SELECT parish_id FROM event_parishes WHERE event_id = ?'
   ).all(req.params.id).map(r => r.parish_id);
+  // Legacy one-off bases (event_replaces) …
   const replaced_events = db.prepare(`
     SELECT e.id, e.title, e.parish_id, p.name as parish_name, e.start_utc, e.end_utc
     FROM event_replaces er
@@ -162,6 +172,15 @@ router.get('/events/:id/escalation', (req, res) => {
     JOIN parishes p ON p.id = e.parish_id
     WHERE er.replacing_event_id = ?
   `).all(req.params.id);
+  // …plus schedule instances combined into this event (v26 override model).
+  const combinedRows = db.prepare(
+    "SELECT schedule_id, occurrence_date FROM schedule_overrides WHERE combined_into_event_id = ? AND kind = 'combined'"
+  ).all(req.params.id);
+  for (const r of combinedRows) {
+    const inst = expandOne(db, r.schedule_id, r.occurrence_date);
+    if (inst) replaced_events.push({ id: inst.id, title: inst.title, parish_id: inst.parish_id,
+      parish_name: inst.parish_name, start_utc: inst.start_utc, end_utc: inst.end_utc });
+  }
   res.json({ additive_parish_ids, replaced_events });
 });
 
@@ -183,9 +202,19 @@ router.post('/events/:id/escalate', (req, res) => {
     const currentReplaces = db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').all(event.id).map(r => r.replaced_event_id);
 
     const targetParishes = new Set(additive_parish_ids.filter(pid => typeof pid === 'string' && pid !== event.parish_id));
-    const targetReplaces = new Set(replaced_event_ids.map(Number));
+    // Replaced/combined targets: one-off integer ids (legacy event_replaces) or
+    // schedule-instance synthetic ids "sid:date" (v26 combined overrides).
+    const synthTargets = new Set();
+    const intTargets = new Set();
+    for (const rid of replaced_event_ids) {
+      if (parseInstanceId(rid)) synthTargets.add(String(rid));
+      else if (/^\d+$/.test(String(rid))) intTargets.add(Number(rid));
+    }
     const currentParishSet = new Set(currentParishes);
     const currentReplaceSet = new Set(currentReplaces);
+    const currentCombinedSet = new Set(db.prepare(
+      "SELECT schedule_id, occurrence_date FROM schedule_overrides WHERE combined_into_event_id = ? AND kind = 'combined'"
+    ).all(event.id).map(r => `${r.schedule_id}:${r.occurrence_date}`));
 
     for (const pid of targetParishes) {
       if (!currentParishSet.has(pid))
@@ -196,14 +225,15 @@ router.post('/events/:id/escalate', (req, res) => {
         db.prepare('DELETE FROM event_parishes WHERE event_id = ? AND parish_id = ?').run(event.id, pid);
     }
 
-    for (const rid of targetReplaces) {
+    // Integer one-off bases -> legacy event_replaces (status flip).
+    for (const rid of intTargets) {
       if (!currentReplaceSet.has(rid)) {
         db.prepare('INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?, ?)').run(event.id, rid);
         db.prepare(`UPDATE events SET status = 'replaced', mutation_type = 'replaced', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`).run(rid);
       }
     }
     for (const rid of currentReplaces) {
-      if (!targetReplaces.has(rid)) {
+      if (!intTargets.has(rid)) {
         db.prepare('DELETE FROM event_replaces WHERE replacing_event_id = ? AND replaced_event_id = ?').run(event.id, rid);
         // Restore status; infer mutation_type from schedule linkage
         db.prepare(`
@@ -214,6 +244,13 @@ router.post('/events/:id/escalate', (req, res) => {
           WHERE id = ? AND mutation_type = 'replaced'
         `).run(rid);
       }
+    }
+    // Schedule instances -> v26 combined overrides.
+    for (const sid of synthTargets) {
+      if (!currentCombinedSet.has(sid)) { const p = parseInstanceId(sid); setCombined(db, p.scheduleId, p.date, event.id); }
+    }
+    for (const sid of currentCombinedSet) {
+      if (!synthTargets.has(sid)) { const p = parseInstanceId(sid); clearCombined(db, p.scheduleId, p.date); }
     }
   });
   tx();

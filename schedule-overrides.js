@@ -131,4 +131,25 @@ function hideInstance(db, scheduleId, date) {
   return { ok: true };
 }
 
-module.exports = { applyAdminEdit, hideInstance };
+// Mark a schedule instance as combined into a one-off event (deanery/feast).
+function setCombined(db, scheduleId, date, combiningEventId) {
+  const s = db.prepare('SELECT * FROM schedules WHERE id=?').get(scheduleId);
+  if (!s) return { error: 'Schedule not found', code: 404 };
+  if (!isValidOccurrence(s, date)) return { error: 'Not a valid occurrence of this schedule', code: 400 };
+  const existing = db.prepare(
+    'SELECT * FROM schedule_overrides WHERE schedule_id=? AND occurrence_date=?'
+  ).get(scheduleId, date);
+  const cur = existing ? { ...existing } : {};
+  cur.combined_into_event_id = combiningEventId;
+  upsert(db, scheduleId, date, 'combined', cur);
+  return { ok: true };
+}
+
+// Un-combine: drop the combined override (the instance returns to the feed).
+function clearCombined(db, scheduleId, date) {
+  db.prepare("DELETE FROM schedule_overrides WHERE schedule_id=? AND occurrence_date=? AND kind='combined'")
+    .run(scheduleId, date);
+  return { ok: true };
+}
+
+module.exports = { applyAdminEdit, hideInstance, setCombined, clearCombined };

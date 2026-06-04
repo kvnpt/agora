@@ -5297,7 +5297,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>` : ''}
         ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
         <button class="btn-outline" onclick="toggleEditEvent(${eid})">Edit</button>
-        <button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Absorb…</button>
+        ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
       </div>
       <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
   }
@@ -5800,7 +5800,9 @@ window.closeDonateDialog = function() {
 window.confirmPublicEscalate = async function() {
   if (!_escalatePubEventId) return;
   const additive_parish_ids = [...document.querySelectorAll('#escalate-pub-parishes input:checked:not([data-own])')].map(cb => cb.value);
-  const replaced_event_ids = [...document.querySelectorAll('#escalate-pub-events input:checked')].map(cb => Number(cb.value));
+  // Keep ids as strings: a candidate may be a one-off (integer) or a schedule
+  // instance (synthetic "sid:date"). The backend classifies each.
+  const replaced_event_ids = [...document.querySelectorAll('#escalate-pub-events input:checked')].map(cb => cb.value);
   const btn = document.getElementById('escalate-pub-confirm');
   btn.disabled = true;
   try {
