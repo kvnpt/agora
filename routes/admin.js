@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const { getDb, syncEventCoordsForParish } = require('../db');
 const { geocode } = require('../geocode');
+const { parseInstanceId } = require('../schedule-expand');
+const { applyAdminEdit, hideInstance } = require('../schedule-overrides');
 const path = require('path');
 const fs = require('fs');
 
@@ -53,6 +55,16 @@ router.get('/events/pending', (req, res) => {
 // PATCH /api/admin/events/:id — update event fields (status, title, description, times, parish, type)
 router.patch('/events/:id', (req, res) => {
   const db = getDb();
+
+  // Schedule instance (synthetic id "scheduleId:YYYY-MM-DD") -> write an override
+  // instead of mutating a stored row. See docs/schedule-overrides-v26.md.
+  const inst = parseInstanceId(req.params.id);
+  if (inst) {
+    const result = applyAdminEdit(db, inst.scheduleId, inst.date, req.body);
+    if (result.error) return res.status(result.code || 400).json({ error: result.error });
+    return res.json(result.instance);
+  }
+
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
@@ -122,6 +134,15 @@ router.patch('/events/:id', (req, res) => {
 // DELETE /api/admin/events/:id — permanently remove an event
 router.delete('/events/:id', (req, res) => {
   const db = getDb();
+
+  // Schedule instance -> suppress with a 'hidden' override (the rule lives on).
+  const inst = parseInstanceId(req.params.id);
+  if (inst) {
+    const result = hideInstance(db, inst.scheduleId, inst.date);
+    if (result.error) return res.status(result.code || 400).json({ error: result.error });
+    return res.json({ ok: true });
+  }
+
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);

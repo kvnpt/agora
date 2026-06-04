@@ -38,6 +38,16 @@ function toScheduleDow(temporalDow) {
   return temporalDow === 7 ? 0 : temporalDow;
 }
 
+// Does `date` (YYYY-MM-DD, Sydney local) fall on an occurrence the rule produces?
+function isValidOccurrence(s, date) {
+  const pd = Temporal.PlainDate.from(date);
+  if (toScheduleDow(pd.dayOfWeek) !== s.day_of_week) return false;
+  if (!matchesWeekOfMonth(date, s.week_of_month)) return false;
+  if (s.effective_from && date < s.effective_from) return false;
+  if (s.effective_to && date > s.effective_to) return false;
+  return true;
+}
+
 // Build, once per window, an index of Sydney-local date strings bucketed by
 // day-of-week, plus the window's start/end date strings (for effective-range SQL).
 function buildDateIndex(fromUtc, toUtc) {
@@ -147,12 +157,7 @@ function expandOne(db, scheduleId, date) {
     WHERE s.id = ?
   `).get(scheduleId);
   if (!s || !s.active) return null;
-
-  const pd = Temporal.PlainDate.from(date);
-  if (toScheduleDow(pd.dayOfWeek) !== s.day_of_week) return null;
-  if (!matchesWeekOfMonth(date, s.week_of_month)) return null;
-  if (s.effective_from && date < s.effective_from) return null;
-  if (s.effective_to && date > s.effective_to) return null;
+  if (!isValidOccurrence(s, date)) return null;
 
   const o = db.prepare(
     'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
@@ -171,4 +176,4 @@ function parseInstanceId(id) {
   return { scheduleId, date };
 }
 
-module.exports = { expandWindow, expandOne, parseInstanceId, project, localToUtc };
+module.exports = { expandWindow, expandOne, parseInstanceId, project, localToUtc, isValidOccurrence };

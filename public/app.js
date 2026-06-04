@@ -299,8 +299,9 @@ function detectUrlState() {
       // /donate, /<juris>/donate, or /<acronym>/donate that fell through the
       // server redirect (parish has no link on file) → open the picker dialog.
       state._donateIntent = true;
-    } else if (/^\d+$/.test(seg)) {
-      state._openEventId = parseInt(seg, 10);
+    } else if (/^\d+$/.test(seg) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(seg)) {
+      // integer (one-off) or synthetic schedule-instance id ("scheduleId:date")
+      state._openEventId = seg;
     } else if (seg.includes('+')) {
       state._parishSlugs = seg.split('+').map(s => s.trim()).filter(Boolean);
     } else {
@@ -851,7 +852,10 @@ async function fetchEvents(opts = {}) {
   if (window.lsLog) window.lsLog(`GET /api/events?from=…&to=+${windowDays}d …`);
   try {
     const res = await fetch(`/api/events?${params}`);
-    state.events = await res.json();
+    // Normalise ids to strings: schedule instances use a synthetic string id
+    // ("scheduleId:YYYY-MM-DD"), one-offs use integers. Stringifying everywhere
+    // keeps DOM data-id round-trips and find()/=== comparisons type-consistent.
+    state.events = (await res.json()).map(e => ({ ...e, id: String(e.id) }));
     if (opts.extended) state._eventsExtended = true;
   } catch {
     state.events = [];
@@ -1110,7 +1114,7 @@ async function openEventFromUrl(id) {
   if (!evt) {
     try {
       const res = await fetch(`/api/events/${id}`);
-      if (res.ok) evt = await res.json();
+      if (res.ok) { evt = await res.json(); if (evt) evt.id = String(evt.id); }
     } catch {}
     if (evt && !state.events.some(e => e.id === evt.id)) {
       state.events = [...state.events, evt];
@@ -3936,7 +3940,7 @@ function renderParishSheetContent(parishId, opts = {}) {
         if (e.target.closest('.event-card-close')) return;
         const card = e.target.closest('.event-card');
         if (!card || !streamEl.contains(card)) return;
-        const id = parseInt(card.dataset.id);
+        const id = card.dataset.id;
         const scope = document.getElementById('parish-sheet-scroll');
         const alreadyOpen = card.classList.contains('expanded');
         if (alreadyOpen) {
@@ -4010,7 +4014,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     fetch(`/api/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
       .then(r => r.ok ? r.json() : [])
       .then(events => {
-        const data = events || [];
+        const data = (events || []).map(e => ({ ...e, id: String(e.id) }));
         // Merge into state.events so expandEventCard (which looks up events
         // by id in state.events) can find the card when the user tapped
         // straight from the services list into the parish card — otherwise
@@ -4124,7 +4128,7 @@ function updateLiveBadgesInPlace() {
   const now = Date.now();
   const TODAY = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   document.querySelectorAll('.event-card[data-id]').forEach(cardEl => {
-    const id = parseInt(cardEl.dataset.id);
+    const id = cardEl.dataset.id;
     const evt = state.events.find(e => e.id === id);
     if (!evt || !evt.parish_live_url || evt.hide_live) return;
     const evtStart = new Date(evt.start_utc).getTime();
@@ -4843,6 +4847,12 @@ function renderEventCard(evt) {
 
   const isCancelled = evt.status === 'cancelled';
   const cancelledBadge = isCancelled ? `<span class="event-badge badge-cancelled">CANCELLED</span>` : '';
+  // Combined tombstone: this parish's slot is folded into another event (deanery/
+  // feast). Shown struck-through, parish-page only (see app.js scoped filter).
+  const isCombined = evt.status === 'combined';
+  const combinedTombBadge = isCombined ? `<span class="event-badge badge-combined">COMBINED</span>` : '';
+  // Feast override surfaced for this occurrence (e.g. a normal Sunday that is a feast).
+  const feastHtml = evt.feast ? `<div class="event-feast-row" style="font-size:12px;opacity:.75;margin-top:2px;">✛ ${esc(evt.feast)}</div>` : '';
 
   // Posters always render for feasts, talks, socials, and youth events. Other
   // event types keep the compact text-only card.
@@ -4851,14 +4861,14 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
-  const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, cancelledBadge].filter(Boolean).join('');
+  const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, combinedTombBadge, cancelledBadge].filter(Boolean).join('');
 
   // Show event address only when it differs from the parish's own address.
   const altAddr = (evt.address && evt.address !== evt.parish_address) ? evt.address : null;
   const altAddrHtml = altAddr ? `<div class="event-address-row">${esc(altAddr)}</div>` : '';
 
   return `
-    <div class="event-card${isCancelled ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
+    <div class="event-card${(isCancelled || isCombined) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-time">${time}</span>
@@ -4868,6 +4878,7 @@ function renderEventCard(evt) {
           </div>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
+        ${feastHtml}
         ${altAddrHtml}
       </div>
       ${posterImg}
@@ -4885,7 +4896,7 @@ function bindEventCards(container) {
     if (e.target.closest('.event-card-close')) return;
     const card = e.target.closest('.event-card');
     if (!card || !container.contains(card)) return;
-    showEventDetail(parseInt(card.dataset.id));
+    showEventDetail(card.dataset.id);
   });
 }
 
@@ -5110,7 +5121,7 @@ function renderServices() {
 // open card's summary collapses it; any other id switches.
 function showEventDetail(id) {
   const curr = document.querySelector('.event-card.expanded');
-  if (curr && parseInt(curr.dataset.id) === id) {
+  if (curr && curr.dataset.id === String(id)) {
     closeDetail();
     return;
   }
@@ -5277,13 +5288,16 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const hiding = localStorage.getItem('hideAdminControls') === 'true';
     const isHeadless = evt.mutation_type === 'headless';
     const isScheduleOrigin = evt.source_adapter === 'schedule' || evt.mutation_type === 'scheduled' || evt.mutation_type === 'adapted';
+    // ids are quoted because schedule instances use a synthetic string id
+    // ("scheduleId:YYYY-MM-DD"), not an integer.
+    const eid = JSON.stringify(String(evt.id));
     adminActions = `
       <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
-        <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${evt.id},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
-        ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${evt.id},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>` : ''}
-        ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${evt.id})">Delete</button>` : ''}
-        <button class="btn-outline" onclick="toggleEditEvent(${evt.id})">Edit</button>
-        <button class="btn-outline" onclick="openPublicEscalateModal(${evt.id})">Absorb…</button>
+        <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${eid},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
+        ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>` : ''}
+        ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
+        <button class="btn-outline" onclick="toggleEditEvent(${eid})">Edit</button>
+        <button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Absorb…</button>
       </div>
       <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
   }
@@ -5313,7 +5327,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
         <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
         <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="btn-save" onclick="saveEvent(${evt.id})">Save</button>
+          <button class="btn-save" onclick="saveEvent(${JSON.stringify(String(evt.id))})">Save</button>
         </div>
       </div>`;
   }
