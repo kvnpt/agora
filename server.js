@@ -50,6 +50,15 @@ app.use('/api/webhooks/whatsapp', require('./routes/webhook'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/', require('./routes/magic-auth'));
 
+// Sentry smoke test — throws so the error lands in Sentry. Dev-only: 404s in
+// production (AGORA_ENV=production) so it can't be hit on the live site.
+app.get('/debug-sentry', (req, res) => {
+  if ((process.env.AGORA_ENV || 'production') === 'production') {
+    return res.status(404).end();
+  }
+  throw new Error('Sentry smoke test — agora-dev');
+});
+
 // Admin route — gated server-side; non-admin requests redirect to /
 const { requireAdmin } = require('./routes/magic-auth');
 app.get('/admin', requireAdmin, (req, res) => {
@@ -77,6 +86,11 @@ app.get('/:slug/donate', (req, res, next) => {
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// Sentry error handler — must come after all routes, before app.listen.
+// No-op when SENTRY_DSN_AGORA is unset (SDK initialised disabled in instrument.js).
+const Sentry = require('@sentry/node');
+Sentry.setupExpressErrorHandler(app);
 
 // Startup
 function start() {
