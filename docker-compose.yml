@@ -9,6 +9,7 @@ services:
       - /srv/secrets/agora.env
     environment:
       AGORA_DB_PATH: /app/data/agora.db
+      AGORA_ENV: production
     volumes:
       - /opt/agora/data:/app/data
       - /opt/agora/tiles:/app/tiles:ro
@@ -27,6 +28,7 @@ services:
       - /srv/secrets/agora.env
     environment:
       AGORA_DB_PATH: /app/data/agora.db
+      AGORA_ENV: development
     ports:
       - "3002:3000"
     volumes:
