@@ -1,0 +1,66 @@
+name: CI
+
+# Hardening phase 2 — machine gate that replaces human diff-review.
+# Runs on every PR into main and on direct pushes to main.
+# The smoke-boot job is the load-bearing check: if the server can't start and
+# serve /health, the change is broken regardless of which paths a tester walks.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel an in-progress run if the same branch/PR pushes again.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Clean, lockfile-exact install. Fails on a drifted package-lock.json
+      # or a native build break (better-sqlite3).
+      - name: Install (npm ci)
+        run: npm ci
+
+      # Boot the server exactly as production does (instrument.js preload) and
+      # prove /health returns 200. No real secrets needed: AGORA_DB_PATH points
+      # at a throwaway DB, Sentry DSN is unset (SDK no-op).
+      - name: Smoke boot + /health
+        env:
+          AGORA_DB_PATH: /tmp/ci-agora.db
+          AGORA_ENV: ci
+          PORT: "3000"
+        run: |
+          node --require ./instrument.js server.js &
+          SRV=$!
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3000/health >/dev/null; then
+              echo "health ok after ${i}s"
+              ok=1
+              break
+            fi
+            # bail early if the process already died
+            if ! kill -0 "$SRV" 2>/dev/null; then
+              echo "server process exited before /health came up"
+              break
+            fi
+            sleep 1
+          done
+          kill "$SRV" 2>/dev/null || true
+          if [ "$ok" != "1" ]; then
+            echo "::error::server failed to serve /health"
+            exit 1
+          fi
+
+      # Reserved: when TypeScript is introduced, add `npm run typecheck` here.
