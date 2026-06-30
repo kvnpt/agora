@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const path = require('path');
 const { getDb } = require('./db');
 const { sessionMiddleware } = require('./auth');
@@ -12,6 +13,10 @@ const PORT = process.env.PORT || 3000;
 // Trust Caddy's X-Forwarded-Proto so req.secure = true on HTTPS requests.
 // Required for express-session to send Secure cookies through a reverse proxy.
 app.set('trust proxy', 1);
+
+// gzip / brotli for any response above the default 1KB threshold.
+// Largest beneficiary is /api/events (~800KB JSON → ~80–120KB on the wire).
+app.use(compression());
 
 // Middleware
 app.use(express.json());
