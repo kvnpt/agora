@@ -5578,8 +5578,15 @@ window.saveEvent = async function(id) {
     body: JSON.stringify(data)
   });
   if (res.ok) {
-    closeDetail();
-    fetchEvents();
+    // Refresh state.events, then rebuild the open drawer in place so the
+    // user sees the new values immediately without closing the detail.
+    // collapseEventCardDOM only tears down the DOM; state._openEventId is
+    // preserved so renderEvents re-expands the same card with fresh data.
+    await fetchEvents();
+    if (state._openEventId) {
+      collapseEventCardDOM({ instant: true });
+      scheduleRenderEvents(0);
+    }
   }
 };
 
