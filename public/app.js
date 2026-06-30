@@ -851,7 +851,7 @@ async function fetchEvents(opts = {}) {
 
   if (window.lsLog) window.lsLog(`GET /api/events?from=…&to=+${windowDays}d …`);
   try {
-    const res = await fetch(`/api/events?${params}`);
+    const res = await fetch(`/api/events?${params}`, opts.fresh ? { cache: 'no-store' } : {});
     // Normalise ids to strings: schedule instances use a synthetic string id
     // ("scheduleId:YYYY-MM-DD"), one-offs use integers. Stringifying everywhere
     // keeps DOM data-id round-trips and find()/=== comparisons type-consistent.
@@ -5327,6 +5327,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
         <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
         <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
+        <div class="edit-row"><label>Address (override)</label><input id="edit-location-${evt.id}" placeholder="Leave blank to use parish address" value="${esc(evt.location_override || '')}"></div>
         ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
         <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
         <div style="margin-top:8px;display:flex;gap:8px;">
@@ -5569,14 +5570,25 @@ window.saveEvent = async function(id) {
   if (hideLiveEl) data.hide_live = hideLiveEl.checked;
   const parishScopedEl = document.getElementById(`edit-parish-scoped-${id}`);
   if (parishScopedEl) data.parish_scoped = parishScopedEl.checked;
+  const locationEl = document.getElementById(`edit-location-${id}`);
+  if (locationEl) data.location_override = locationEl.value;
   const res = await fetch(`/api/admin/events/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
   if (res.ok) {
-    closeDetail();
-    fetchEvents();
+    // Refresh state.events, then rebuild the open drawer in place so the
+    // user sees the new values immediately without closing the detail.
+    // collapseEventCardDOM only tears down the DOM; state._openEventId is
+    // preserved so renderEvents re-expands the same card with fresh data.
+    // { fresh: true } bypasses the 60s browser cache on /api/events so the
+    // just-written change is actually visible (otherwise stale read wins).
+    await fetchEvents({ fresh: true });
+    if (state._openEventId) {
+      collapseEventCardDOM({ instant: true });
+      scheduleRenderEvents(0);
+    }
   }
 };
 
@@ -5588,7 +5600,7 @@ window.setEventStatus = async function(id, status) {
   });
   if (res.ok) {
     closeDetail();
-    fetchEvents();
+    fetchEvents({ fresh: true });
   }
 };
 
@@ -5597,7 +5609,7 @@ window.deleteEvent = async function(id) {
   const res = await fetch(`/api/admin/events/${id}`, { method: 'DELETE' });
   if (res.ok) {
     closeDetail();
-    fetchEvents();
+    fetchEvents({ fresh: true });
   }
 };
 
