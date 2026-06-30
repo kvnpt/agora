@@ -5288,9 +5288,11 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const hiding = localStorage.getItem('hideAdminControls') === 'true';
     const isHeadless = evt.mutation_type === 'headless';
     const isScheduleOrigin = evt.source_adapter === 'schedule' || evt.mutation_type === 'scheduled' || evt.mutation_type === 'adapted';
-    // ids are quoted because schedule instances use a synthetic string id
-    // ("scheduleId:YYYY-MM-DD"), not an integer.
-    const eid = JSON.stringify(String(evt.id));
+    // ids are JSON-quoted so synthetic schedule instance ids ("13:2026-07-04")
+    // round-trip as JS string literals. &quot; lets the embedded double quotes
+    // survive the outer onclick="..." attribute (HTML parser would otherwise
+    // terminate the attribute at the first inner ").
+    const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
     adminActions = `
       <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
         <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${eid},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
@@ -5307,6 +5309,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const parishOpts = state.parishes.filter(p => p.id !== '_unassigned').map(p =>
       `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`
     ).join('');
+    const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
     editForm = `
       <div class="detail-edit-form" id="edit-form-${evt.id}" style="display:none;">
         <div class="edit-row"><label>Title</label><input id="edit-title-${evt.id}" value="${esc(evt.title)}"></div>
@@ -5327,7 +5330,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
         <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
         <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="btn-save" onclick="saveEvent(${JSON.stringify(String(evt.id))})">Save</button>
+          <button class="btn-save" onclick="saveEvent(${eid})">Save</button>
         </div>
       </div>`;
   }
