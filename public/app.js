@@ -851,7 +851,7 @@ async function fetchEvents(opts = {}) {
 
   if (window.lsLog) window.lsLog(`GET /api/events?from=…&to=+${windowDays}d …`);
   try {
-    const res = await fetch(`/api/events?${params}`);
+    const res = await fetch(`/api/events?${params}`, opts.fresh ? { cache: 'no-store' } : {});
     // Normalise ids to strings: schedule instances use a synthetic string id
     // ("scheduleId:YYYY-MM-DD"), one-offs use integers. Stringifying everywhere
     // keeps DOM data-id round-trips and find()/=== comparisons type-consistent.
@@ -5582,7 +5582,9 @@ window.saveEvent = async function(id) {
     // user sees the new values immediately without closing the detail.
     // collapseEventCardDOM only tears down the DOM; state._openEventId is
     // preserved so renderEvents re-expands the same card with fresh data.
-    await fetchEvents();
+    // { fresh: true } bypasses the 60s browser cache on /api/events so the
+    // just-written change is actually visible (otherwise stale read wins).
+    await fetchEvents({ fresh: true });
     if (state._openEventId) {
       collapseEventCardDOM({ instant: true });
       scheduleRenderEvents(0);
@@ -5598,7 +5600,7 @@ window.setEventStatus = async function(id, status) {
   });
   if (res.ok) {
     closeDetail();
-    fetchEvents();
+    fetchEvents({ fresh: true });
   }
 };
 
@@ -5607,7 +5609,7 @@ window.deleteEvent = async function(id) {
   const res = await fetch(`/api/admin/events/${id}`, { method: 'DELETE' });
   if (res.ok) {
     closeDetail();
-    fetchEvents();
+    fetchEvents({ fresh: true });
   }
 };
 
