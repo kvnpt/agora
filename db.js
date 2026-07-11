@@ -518,6 +518,15 @@ function migrate(db) {
     `);
     db.pragma('user_version = 27');
   }
+
+  if (version < 28) {
+    // Per-parish raffle + generic payment URLs, siblings of donation_url
+    // (v25). Power the /<acronym>/raffle and /<acronym>/payment hard-redirect
+    // shortcuts; set per parish from the /admin page.
+    db.exec(`ALTER TABLE parishes ADD COLUMN raffle_url TEXT`);
+    db.exec(`ALTER TABLE parishes ADD COLUMN payment_url TEXT`);
+    db.pragma('user_version = 28');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the

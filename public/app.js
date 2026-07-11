@@ -3657,6 +3657,8 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
         <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
         <div class="edit-row"><label>Donation URL</label><input type="url" id="pse-donation-${pid}" value="${esc(parish.donation_url || '')}"></div>
+        <div class="edit-row"><label>Raffle URL</label><input type="url" id="pse-raffle-${pid}" value="${esc(parish.raffle_url || '')}"></div>
+        <div class="edit-row"><label>Payment URL</label><input type="url" id="pse-payment-${pid}" value="${esc(parish.payment_url || '')}"></div>
         <div class="edit-row"><label>Color</label><input type="color" id="pse-color-${pid}" value="${esc(parish.color || '#666666')}"></div>
         <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
@@ -5631,6 +5633,8 @@ window.saveParish = async function(id) {
     phone: document.getElementById(`pse-phone-${pid}`).value || null,
     live_url: document.getElementById(`pse-live-${pid}`).value || null,
     donation_url: document.getElementById(`pse-donation-${pid}`).value || null,
+    raffle_url: document.getElementById(`pse-raffle-${pid}`).value || null,
+    payment_url: document.getElementById(`pse-payment-${pid}`).value || null,
     color: document.getElementById(`pse-color-${pid}`).value,
     acronym: document.getElementById(`pse-acro-${pid}`).value || null,
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
