@@ -266,7 +266,7 @@ router.post('/events/:id/escalate', (req, res) => {
 // POST /api/admin/parishes — create a new parish
 router.post('/parishes', (req, res) => {
   const db = getDb();
-  const { name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url, donation_url } = req.body;
+  const { name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url, donation_url, raffle_url, payment_url } = req.body;
 
   if (!name || !jurisdiction || lat == null || lng == null) {
     return res.status(400).json({ error: 'name, jurisdiction, lat, and lng are required' });
@@ -282,9 +282,9 @@ router.post('/parishes', (req, res) => {
   if (existing) return res.status(409).json({ error: 'Parish already exists', id });
 
   db.prepare(`
-    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url, donation_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]', live_url || null, donation_url || null);
+    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, email, phone, languages, live_url, donation_url, raffle_url, payment_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, full_name || null, jurisdiction, address || null, lat, lng, website || null, email || null, phone || null, languages || '["English"]', live_url || null, donation_url || null, raffle_url || null, payment_url || null);
 
   // Seed a generic inactive schedule so the parish appears in the schedules list
   db.prepare(`
@@ -305,7 +305,7 @@ router.patch('/parishes/:id', (req, res) => {
   const parish = db.prepare('SELECT * FROM parishes WHERE id = ?').get(id);
   if (!parish) return res.status(404).json({ error: 'Parish not found' });
 
-  const allowed = ['name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url', 'donation_url'];
+  const allowed = ['name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url', 'donation_url', 'raffle_url', 'payment_url'];
   const updates = [];
   const values = [];
   for (const key of allowed) {
@@ -575,6 +575,8 @@ router.get('/parish-updates', (req, res) => {
            p.phone as parish_phone, p.acronym as parish_acronym,
            p.chant_style as parish_chant_style, p.languages as parish_languages,
            p.live_url as parish_live_url, p.full_name as parish_full_name,
+           p.donation_url as parish_donation_url, p.raffle_url as parish_raffle_url,
+           p.payment_url as parish_payment_url,
            ar.input_texts
     FROM pending_parish_updates pu
     JOIN parishes p ON pu.parish_id = p.id
@@ -597,7 +599,7 @@ router.post('/parish-updates/:id/approve', (req, res) => {
   // Accept new shape { sets, clears } or legacy flat blob (pre-split rows).
   // Legacy blobs mixed nulls-as-clears, but those nulls were Claude over-
   // emission not intent — strip them on apply to match the new model.
-  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url', 'languages', 'donation_url'];
+  const allowed = ['name', 'full_name', 'address', 'website', 'email', 'phone', 'acronym', 'chant_style', 'live_url', 'languages', 'donation_url', 'raffle_url', 'payment_url'];
   const isNewShape = changes && typeof changes === 'object' && (changes.sets || changes.clears);
   const rawSets = isNewShape ? (changes.sets || {}) : (changes || {});
   const rawClears = isNewShape ? (Array.isArray(changes.clears) ? changes.clears : []) : [];
@@ -769,7 +771,9 @@ router.get('/runs/:id', (req, res) => {
            p.website AS parish_website, p.email AS parish_email,
            p.phone AS parish_phone, p.acronym AS parish_acronym,
            p.chant_style AS parish_chant_style, p.languages AS parish_languages,
-           p.live_url AS parish_live_url, p.full_name AS parish_full_name
+           p.live_url AS parish_live_url, p.full_name AS parish_full_name,
+           p.donation_url AS parish_donation_url, p.raffle_url AS parish_raffle_url,
+           p.payment_url AS parish_payment_url
     FROM pending_parish_updates pu
     JOIN parishes p ON pu.parish_id = p.id
     WHERE pu.source_run_id = ?

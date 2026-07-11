@@ -295,6 +295,9 @@
           <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
           <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
           <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
+          <div class="field full"><label>Donation URL</label><input name="donation_url" placeholder="https://donate.stripe.com/..."></div>
+          <div class="field full"><label>Raffle URL</label><input name="raffle_url" placeholder="https://buy.stripe.com/..."></div>
+          <div class="field full"><label>Payment URL</label><input name="payment_url" placeholder="https://..."></div>
         </div>
         <div class="btn-row">
           <button type="submit" class="btn btn-primary">Add Parish</button>
@@ -701,11 +704,13 @@
       c.innerHTML = pendingParishUpdates.map(pu => {
         let changes;
         try { changes = JSON.parse(pu.proposed_changes); } catch { changes = {}; }
-        const fieldLabels = { name: 'Name', full_name: 'Full Name', address: 'Address', website: 'Website', email: 'Email', phone: 'Phone', acronym: 'Acronym', chant_style: 'Chant Style', live_url: 'Live URL', languages: 'Languages' };
+        const fieldLabels = { name: 'Name', full_name: 'Full Name', address: 'Address', website: 'Website', email: 'Email', phone: 'Phone', acronym: 'Acronym', chant_style: 'Chant Style', live_url: 'Live URL', donation_url: 'Donation URL', raffle_url: 'Raffle URL', payment_url: 'Payment URL', languages: 'Languages' };
         const currentValues = {
           name: pu.parish_name, full_name: pu.parish_full_name, address: pu.parish_address, website: pu.parish_website,
           email: pu.parish_email, phone: pu.parish_phone, acronym: pu.parish_acronym,
           chant_style: pu.parish_chant_style, live_url: pu.parish_live_url,
+          donation_url: pu.parish_donation_url, raffle_url: pu.parish_raffle_url,
+          payment_url: pu.parish_payment_url,
           languages: parseLangs(pu.parish_languages)
         };
         // New shape: { sets, clears }. Legacy flat blob: treat as sets only and
@@ -1034,6 +1039,9 @@
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
+              <div class="field full"><label>Donation URL</label><input value="${esc(p.donation_url || '')}" data-field="donation_url" placeholder="https://donate.stripe.com/... (blank to clear)"></div>
+              <div class="field full"><label>Raffle URL</label><input value="${esc(p.raffle_url || '')}" data-field="raffle_url" placeholder="https://buy.stripe.com/... (blank to clear)"></div>
+              <div class="field full"><label>Payment URL</label><input value="${esc(p.payment_url || '')}" data-field="payment_url" placeholder="https://... (blank to clear)"></div>
               <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
               <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
               <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
@@ -1097,7 +1105,8 @@
       const data = { name: f.name.value.trim(), full_name: f.full_name.value.trim() || null, jurisdiction: f.jurisdiction.value,
         address: f.address.value.trim() || null, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         website: f.website.value.trim() || null, email: f.email.value.trim() || null, phone: f.phone.value.trim() || null,
-        live_url: f.live_url.value.trim() || null,
+        live_url: f.live_url.value.trim() || null, donation_url: f.donation_url.value.trim() || null,
+        raffle_url: f.raffle_url.value.trim() || null, payment_url: f.payment_url.value.trim() || null,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }

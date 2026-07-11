@@ -70,22 +70,27 @@ app.get('/admin', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// Donation deep links — /<slug>/donate.
-// A parish slug (acronym) that has a donation URL hard-redirects (302) straight
-// to it, so a shared /smg/donate link lands on the parish's payment page with no
-// SPA flash. Jurisdiction slugs and the bare /donate fall through to the SPA,
-// which opens the parish-picker dialog (jurisdiction preselected where present).
+// Payment deep links — /<slug>/donate, /<slug>/raffle, /<slug>/payment.
+// A parish slug (acronym) that has the matching URL on file hard-redirects
+// (302) straight to it, so a shared /smg/donate link lands on the parish's
+// payment page with no SPA flash. For /donate, jurisdiction slugs and the
+// bare /donate fall through to the SPA, which opens the parish-picker dialog
+// (jurisdiction preselected where present); raffle/payment have no dialog,
+// so an unknown slug or missing link just falls through to the SPA.
 const DONATE_JURISDICTIONS = new Set(['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian']);
-app.get('/:slug/donate', (req, res, next) => {
-  const slug = (req.params.slug || '').toLowerCase().replace(/\s+/g, '');
-  if (DONATE_JURISDICTIONS.has(slug)) return next(); // SPA dialog, juris preselected
-  const db = getDb();
-  const parish = db.prepare(
-    "SELECT donation_url FROM parishes WHERE id != '_unassigned' AND lower(replace(acronym, ' ', '')) = ?"
-  ).get(slug);
-  if (parish && parish.donation_url) return res.redirect(302, parish.donation_url);
-  return next(); // unknown slug or no link on file → SPA handles it
-});
+const PAY_LINK_COLUMNS = { donate: 'donation_url', raffle: 'raffle_url', payment: 'payment_url' };
+for (const [kind, column] of Object.entries(PAY_LINK_COLUMNS)) {
+  app.get(`/:slug/${kind}`, (req, res, next) => {
+    const slug = (req.params.slug || '').toLowerCase().replace(/\s+/g, '');
+    if (kind === 'donate' && DONATE_JURISDICTIONS.has(slug)) return next(); // SPA dialog, juris preselected
+    const db = getDb();
+    const parish = db.prepare(
+      `SELECT ${column} AS url FROM parishes WHERE id != '_unassigned' AND lower(replace(acronym, ' ', '')) = ?`
+    ).get(slug);
+    if (parish && parish.url) return res.redirect(302, parish.url);
+    return next(); // unknown slug or no link on file → SPA handles it
+  });
+}
 
 // SPA fallback
 app.get('*', (req, res) => {
