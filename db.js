@@ -527,6 +527,13 @@ function migrate(db) {
     db.exec(`ALTER TABLE parishes ADD COLUMN payment_url TEXT`);
     db.pragma('user_version = 28');
   }
+
+  if (version < 29) {
+    // Per-parish gala/event ticket URL, sibling of raffle_url (v28). Powers
+    // the /<acronym>/gala hard-redirect shortcut; set per parish from /admin.
+    db.exec(`ALTER TABLE parishes ADD COLUMN gala_url TEXT`);
+    db.pragma('user_version = 29');
+  }
 }
 
 // Resync all non-overridden event coords for a single parish to match the

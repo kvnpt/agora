@@ -70,15 +70,15 @@ app.get('/admin', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// Payment deep links — /<slug>/donate, /<slug>/raffle, /<slug>/payment.
-// A parish slug (acronym) that has the matching URL on file hard-redirects
-// (302) straight to it, so a shared /smg/donate link lands on the parish's
-// payment page with no SPA flash. For /donate, jurisdiction slugs and the
-// bare /donate fall through to the SPA, which opens the parish-picker dialog
-// (jurisdiction preselected where present); raffle/payment have no dialog,
+// Payment deep links — /<slug>/donate, /<slug>/raffle, /<slug>/payment,
+// /<slug>/gala. A parish slug (acronym) that has the matching URL on file
+// hard-redirects (302) straight to it, so a shared /smg/donate link lands on
+// the parish's payment page with no SPA flash. For /donate, jurisdiction slugs
+// and the bare /donate fall through to the SPA, which opens the parish-picker
+// dialog (jurisdiction preselected where present); the others have no dialog,
 // so an unknown slug or missing link just falls through to the SPA.
 const DONATE_JURISDICTIONS = new Set(['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian']);
-const PAY_LINK_COLUMNS = { donate: 'donation_url', raffle: 'raffle_url', payment: 'payment_url' };
+const PAY_LINK_COLUMNS = { donate: 'donation_url', raffle: 'raffle_url', payment: 'payment_url', gala: 'gala_url' };
 for (const [kind, column] of Object.entries(PAY_LINK_COLUMNS)) {
   app.get(`/:slug/${kind}`, (req, res, next) => {
     const slug = (req.params.slug || '').toLowerCase().replace(/\s+/g, '');
