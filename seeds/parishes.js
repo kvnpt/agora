@@ -142,4 +142,6 @@ function seed() {
   console.log(`Seeded ${parishCount} parishes, ${scheduleCount} schedules`);
 }
 
-module.exports = { seed };
+// parishes/schedules are exported so scripts/gen-seed-sql.js can emit the D1
+// seed from this same source — the two can't drift.
+module.exports = { seed, parishes, schedules };

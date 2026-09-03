@@ -73,7 +73,7 @@ into D1 — write one clean baseline schema for the end state, then import survi
 |---|---|---|
 | `parishes` | ALTER | Core. Drop `source_run_id` (see below); keep the four payment-link columns |
 | `schedules` | ALTER | Core. Drop `status`, `source_run_id` — both for WhatsApp-submitted schedules awaiting approval |
-| `events` | ALTER | Core. Drop `confidence`, `source_run_id`. `status` loses `pending_review` (no producer) but **keeps `replaced`** — the combine flow sets it. `mutation_type` enum preserved as-is |
+| `events` | ALTER | Core. Drop `confidence`, `source_run_id`. `status` loses `pending_review` (no producer) but **keeps `replaced`** — the combine flow sets it. `mutation_type` enum preserved as-is. **Phase 3 must drop `confidence` from `adapters/base.js`'s upsert** (`base.js:54,84`), which still writes it |
 | `schedule_overrides` | KEEP | The v26 materialize-on-read model, and half the combine feature. Central, 14 refs |
 | `event_parishes` | KEEP | Additive cross-parish combine. Read by the **public feed** (`routes/events.js:90`) |
 | `event_replaces` | KEEP | Combine-against-a-one-off-event. **Not** redundant with the v26 override path — see the combine contract below |
@@ -241,8 +241,8 @@ No import — the database starts empty and is rebuilt:
 
 ```bash
 wrangler d1 create agora
-wrangler d1 execute agora --remote --file=schema.sql
-wrangler d1 execute agora --remote --file=seed-parishes.sql   # from seeds/parishes.js
+wrangler d1 execute agora --remote --file=d1/schema.sql
+wrangler d1 execute agora --remote --file=d1/seed-parishes.sql
 ```
 
 Events then arrive by scraping. `source_hash` carries a UNIQUE index, so re-running a
@@ -328,13 +328,24 @@ and against a schedule instance. Last checkpoint where the old stack proves the 
 
 ### Phase 2 — Baseline schema into D1
 
-- Write `schema.sql`: the 8 surviving tables at final shape, with the indexes that
-  matter (`source_hash` unique, events date/parish/status, override join keys, the two
-  combine join tables).
+- Write `d1/schema.sql`: the **7** surviving tables at final shape, with the indexes
+  that matter (`source_hash` unique, events date/parish/status, override join keys, the
+  two combine join tables). (An earlier draft said 8 — miscounted.)
+- Generate `d1/seed-parishes.sql` from `seeds/parishes.js` via
+  `node scripts/gen-seed-sql.js`, so the D1 seed can't drift from the list the Node app
+  seeds.
 - `wrangler d1 create agora`, apply schema, load the parish seed.
 
 **Done when:** a hand-written `SELECT` returns a seeded parish, and the combine tables
 exist with their foreign keys intact.
+
+**Status: done, pending an actual D1 database.** Both files are written and validated
+against a fresh SQLite database — `foreign_key_check` and `integrity_check` clean, 8
+parishes and 9 rules seeded, and the real `schedule-expand.js` run against the new shape
+projects 36 instances over 30 days with all four override kinds resolving correctly
+(including `hidden` not being a tombstone). Deleting a combining event cascades
+`event_parishes`, `event_replaces` and the combined override with no orphans. Only the
+`wrangler` calls remain, and those need Cloudflare credentials.
 
 ### Phase 3 — Port the API to a Worker
 
