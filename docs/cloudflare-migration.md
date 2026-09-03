@@ -263,6 +263,18 @@ old VM.
 
 ---
 
+## Decided
+
+**The three unmerged June branches are abandoned.** `feat/event-edit-address`,
+`fix/save-event-rerender` and `fix/save-event-cache-bypass` are all admin inline-editing
+fixes on `public/app.js`. None will be merged: the behaviour they patch — cache bypass
+after a mutation, re-render of an open event detail after Save — is exactly what the
+port changes underneath. Diagnosing it against the Worker/D1 data path gives a more
+accurate answer than carrying forward a fix written for the synchronous Express one.
+
+The branches stay on the remote as reference. Nothing merges them, and Phase 1 does not
+wait on them.
+
 ## Open questions
 
 - **Does a database backup exist?** Everything downstream of Phase 0 assumes yes.
@@ -272,9 +284,6 @@ old VM.
   feed, so the display side stays regardless — but the admin UI for creating those links
   came from the WhatsApp escalation flow. Keeping the read path while dropping the write
   path is a coherent middle position.
-- **Three unmerged branches from June** hold small admin fixes
-  (`fix/save-event-cache-bypass` is the superset). Worth merging into `main` before
-  Phase 1, or consciously abandoning — they touch `public/app.js`, which survives intact.
 
 ---
 
