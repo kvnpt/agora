@@ -99,6 +99,26 @@ the WhatsApp webhook path. Post-cut it would be `NULL` on every row of `parishes
 `schedules`, `events` and `schedule_overrides` forever. Drop it from all four,
 independently of what happens to `adapter_runs` itself.
 
+### New in this version: parish provenance
+
+Parish records historically came from three places — hand-added via Claude Code, added
+over WhatsApp, and one bulk scrape of the Greek parishes — with no record of which. This
+version records it. Three columns on `parishes`, to go into `schema.sql` from the start:
+
+| Column | Type | Purpose |
+|---|---|---|
+| `info_source_type` | TEXT | `'website'` \| `'person'` \| `'import'` |
+| `info_source_ref` | TEXT | the URL, or a person as First name + last initial (`"Kevin P."`) |
+| `info_verified_at` | TEXT | ISO timestamp of the last *check*, not the row's creation |
+
+`info_verified_at` deliberately tracks verification rather than creation: a parish added
+two years ago but re-checked last month should read as fresh, and one added last week
+from a stale website should not.
+
+Frontend renders it as relative age ("checked 3 months ago") on the parish card, tappable:
+a `website` source opens the source; a `person` source shows attribution and offers a
+correction. Staleness becomes the invitation to contribute rather than a defect to hide.
+
 ### The combine contract
 
 Combining is a key feature and the most expensive thing in the schema to rebuild if
@@ -228,6 +248,13 @@ exist with their foreign keys intact.
   to their current shape.
 - Port in dependency order: `schedule-expand` → `schedule-overrides` → public routes
   → admin routes.
+- **Benchmark the date lens before trusting it.** `expandWindow()` is cheap on I/O (two
+  queries for a 180-day window) but O(schedules × days) on CPU — plausibly 10-20k
+  projected objects per request before the final `slice(0, 1000)`. Workers meter CPU
+  time, not I/O wait, so this is the one hot spot the VM never charged for. Two easy
+  wins while in there: `SELECT * FROM schedule_overrides` (`schedule-expand.js:134`)
+  loads every override ever written with no window filter, and the existing 60s
+  `Cache-Control` on `/api/events` already absorbs most repeat traffic.
 - Every `.prepare().get()/.all()/.run()` becomes `await`. Nothing catches a missed one —
   a forgotten `await` yields a Promise where a row was expected, which reads as "no
   data" rather than an error. Grep `.prepare(` at the end and check each has an `await`.
