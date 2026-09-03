@@ -1,0 +1,19 @@
+name = "agora"
+main = "worker/index.mjs"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The D1 binding. `env.DB` inside the Worker.
+[[d1_databases]]
+binding = "DB"
+database_name = "agora"
+database_id = "8e02890d-dc75-4dbe-a018-b64c7871dde9"
+
+# Replaces node-cron. One trigger, four-hourly, for the Google Calendar adapter.
+# node-cron ran an in-process timer in a long-lived server; a Cron Trigger
+# invokes the Worker's scheduled() handler instead.
+[triggers]
+crons = ["0 */4 * * *"]
+
+[observability]
+enabled = true

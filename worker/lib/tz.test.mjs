@@ -1,16 +1,16 @@
 // Verification for worker/lib/tz.js.
 //
-//   node --test worker/lib/
+//   npm test
 //
 // Ground truth is the Temporal polyfill — the implementation the Express app
 // used — so this proves the ported fast path is behaviourally identical, not
 // merely plausible. Temporal is only needed here; once the port lands it can
 // move to devDependencies.
 
-const test = require('node:test');
-const assert = require('node:assert');
-const { Temporal } = require('@js-temporal/polyfill');
-const { OffsetCache } = require('./tz.js');
+import test from 'node:test';
+import assert from 'node:assert';
+import { Temporal } from '@js-temporal/polyfill';
+import { OffsetCache } from './tz.mjs';
 
 const ref = (zone, d, t) =>
   Temporal.PlainDateTime.from(`${d}T${t}`).toZonedDateTime(zone).toInstant()

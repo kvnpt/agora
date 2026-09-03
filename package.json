@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --require ./instrument.js server.js",
     "dev": "node --watch --require ./instrument.js server.js",
-    "test": "node --test worker/lib/*.test.js"
+    "test": "node --test worker/lib/*.test.mjs"
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.1",

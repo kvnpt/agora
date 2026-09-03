@@ -135,4 +135,12 @@ class OffsetCache {
   get size() { return this.days.size; }
 }
 
-module.exports = { OffsetCache, offsetAt, exactLocalToEpoch, transitionLocalToEpoch };
+export { OffsetCache, offsetAt, exactLocalToEpoch, transitionLocalToEpoch };
+
+/** Local calendar date ('YYYY-MM-DD') of an instant in `zone`. */
+export function localDateOf(zone, epochMs) {
+  const p = formatter(zone).formatToParts(new Date(epochMs));
+  const v = {};
+  for (const { type, value } of p) if (type !== 'literal') v[type] = value;
+  return `${v.year}-${v.month}-${v.day}`;
+}
