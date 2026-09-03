@@ -146,6 +146,50 @@ ambiguous the moment a non-Sydney parish exists.
 `schema.sql` at baseline.** Free now; later it is a migration, a backfill, and an audit
 of every date path that assumed one zone.
 
+### Design principle: what gets stored local, what gets stored UTC
+
+Recorded because it looks like legacy cruft and is not. The next person to read
+`schedules.start_time` will assume it should have been UTC all along and "fix" it into a
+DST bug.
+
+| Table / column | Stores | Why |
+|---|---|---|
+| `schedules.start_time` | `'09:00'` local + parish zone | Recurrence rule — the **wall clock is the invariant** |
+| `schedule_overrides.patch_start_time` | `'10:00'` local + parish zone | "This week it's an hour later" — same reasoning |
+| `events.start_utc` | UTC instant | A one-off happens at a specific moment; the instant *is* the intent |
+
+**Why a recurring rule must not be normalised to UTC.** Store "Sundays 9am Sydney" as
+"Sundays 23:00Z" and on the first Sunday in October, when Sydney shifts to AEDT, the
+liturgy silently becomes 10am local. It would drift twice a year, forever. The parish
+does not reschedule in April; the clock moves under it.
+
+This is why iCal's `RRULE` pairs `DTSTART` with a `TZID` instead of normalising, and why
+Outlook and Apple Calendar store recurring events as zoned local time — a 9am standup
+stays 9am across the boundary. Only single instances get normalised.
+
+**The decisive reason is that the rule table is political, not astronomical.** A stored
+local time plus an IANA zone stays correct when a government changes the rules; you
+update tzdata and the projection yields new instants. A stored UTC instant computed
+against yesterday's rules becomes silently wrong, and every future row needs rewriting.
+This is not hypothetical — Fiji suspended DST, Turkey and Brazil abolished it, NSW
+shifted its boundary early for the 2000 Olympics, Lord Howe Island runs a 30-minute
+shift, and Samoa skipped a calendar day crossing the date line. Storing local + zone puts
+that volatility in a library you upgrade. Storing UTC puts it in your database as a
+migration.
+
+This is also the same decision as materialize-on-read, seen twice: because occurrences are
+projected at read time rather than written to rows, a tzdata change is absorbed
+automatically. The old nightly generator, writing UTC rows ahead of time, would have
+silently corrupted every future occurrence the next time a legislature moved a boundary.
+
+**What is missing is not UTC — it is the explicit zone.** `'09:00'` is meaningless alone;
+`'09:00' + 'Pacific/Auckland'` is a complete fact. `parishes.timezone` completes a value
+that is currently half-written, hardcoded across five files.
+
+**Admin input is a separate question, and should be local.** An admin types `9:00am`
+against a zone the form fills in from the parish — the Outlook/Apple model. Nobody enters
+offsets by hand. That is UX, independent of storage.
+
 ### Display time vs. comparison time
 
 These are different needs and only one of them requires timezone maths. Worth being
