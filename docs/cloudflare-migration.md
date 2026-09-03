@@ -38,14 +38,15 @@ before a request reaches the Worker. Deletes `auth.js`, `routes/magic-auth.js`, 
 `express-session` dependency and four tables outright — the biggest single
 simplification available here.
 
-### 2. Where is the data?
+### 2. Where is the data? — settled
 
-This plan assumes there is a database to migrate. Production data lived at
-`/opt/agora/data/agora.db` with nightly backups to `/opt/agora/backups/` — both on
-the VM that is gone. Confirm an off-box copy exists before starting.
+The old database is not being recovered. Production data lived at
+`/opt/agora/data/agora.db` with nightly backups to `/opt/agora/backups/`, both on the
+VM that is gone.
 
-Fallback if none does: `seeds/parishes.js` still holds the parish list; schedules and
-one-off events would need re-entering by hand.
+**Decision: start fresh.** `seeds/parishes.js` seeds the parish list, and events are
+rebuilt by scraping. This removes Phase 0's dependency on finding a backup and makes
+the adapter path load-bearing from day one — see the note on `adapter_runs` below.
 
 ---
 
@@ -70,13 +71,13 @@ into D1 — write one clean baseline schema for the end state, then import survi
 
 | Table | Fate | Reason |
 |---|---|---|
-| `parishes` | ALTER | Core. Drop `source_run_id` if `adapter_runs` goes; keep the four payment-link columns |
+| `parishes` | ALTER | Core. Drop `source_run_id` (see below); keep the four payment-link columns |
 | `schedules` | ALTER | Core. Drop `status`, `source_run_id` — both for WhatsApp-submitted schedules awaiting approval |
-| `events` | ALTER | Core. Drop `confidence`, `source_run_id`; `status` collapses to approved/hidden — `pending_review` has no producer |
-| `schedule_overrides` | KEEP | The v26 materialize-on-read model. Central, 14 refs |
-| `event_parishes` | KEEP | Read by the **public feed** (`routes/events.js:90`), not just admin |
-| `adapter_runs` | ALTER | Still used by `base.js` for gcal runs. Drop 5 WhatsApp-only columns: `input_texts`, `claude_response`, `sender_phone`, `parish_match_confidence`, `parish_match_question` |
-| `event_replaces` | DROP | Admin-only, marked "legacy", reachable only from the escalate/combine UI |
+| `events` | ALTER | Core. Drop `confidence`, `source_run_id`. `status` loses `pending_review` (no producer) but **keeps `replaced`** — the combine flow sets it. `mutation_type` enum preserved as-is |
+| `schedule_overrides` | KEEP | The v26 materialize-on-read model, and half the combine feature. Central, 14 refs |
+| `event_parishes` | KEEP | Additive cross-parish combine. Read by the **public feed** (`routes/events.js:90`) |
+| `event_replaces` | KEEP | Combine-against-a-one-off-event. **Not** redundant with the v26 override path — see the combine contract below |
+| `adapter_runs` | ALTER | Keep slimmed. Only surviving reader is `healthCheck()` → `/api/adapters/status`. Drop 5 WhatsApp-only columns: `input_texts`, `claude_response`, `sender_phone`, `parish_match_confidence`, `parish_match_question` |
 | `senders` | DROP | WhatsApp phone identity + 4-tier role model. Access replaces the concept |
 | `sessions` | DROP | express-session store |
 | `admin_magic_tokens` | DROP | Magic links delivered over WhatsApp |
@@ -90,27 +91,48 @@ into D1 — write one clean baseline schema for the end state, then import survi
 | `users` | DROP | Already dropped in v24 (OAuth retirement) |
 | `event_submissions` | DROP | Already dropped in v24 |
 
-### Import shape
+### The `source_run_id` columns go unconditionally
 
-Surviving tables lose columns rather than gain them, so the import is a
-column-projected copy, not a schema transform:
+This is not a judgement call. `adapters/base.js:53-65` — the upsert every adapter run
+goes through — **never writes `source_run_id`**. That column was only ever populated by
+the WhatsApp webhook path. Post-cut it would be `NULL` on every row of `parishes`,
+`schedules`, `events` and `schedule_overrides` forever. Drop it from all four,
+independently of what happens to `adapter_runs` itself.
+
+### The combine contract
+
+Combining is a key feature and the most expensive thing in the schema to rebuild if
+lost. It is **three** mechanisms, not one, and the escalate endpoint routes between them
+by the shape of the target id (`routes/admin.js:189-264`). All three must survive the
+port:
+
+| Capability | Mechanism | Target id shape |
+|---|---|---|
+| Additive cross-parish (one event under several parishes) | `event_parishes` | n/a — parish ids |
+| Replace a stored one-off event | `event_replaces` + `events.status='replaced'` + `mutation_type='replaced'` | integer |
+| Replace a materialized schedule occurrence | `schedule_overrides.kind='combined'` + `combined_into_event_id` | synthetic `"sid:date"` |
+
+`event_replaces` is described as "legacy" in the code, which is misleading: it is
+pre-v26, but it remains the **only** path for combining against a stored one-off event.
+The v26 override model handles schedule instances only. Dropping it removes half the
+feature. Both paths are live in the same transaction.
+
+Read side: `routes/events.js:90` attaches `extra_parishes` to every integer-id event in
+the public feed. That runs for anonymous visitors, so it survives regardless of what
+happens to the admin write UI.
+
+### Seeding and first scrape
+
+No import — the database starts empty and is rebuilt:
 
 ```bash
-# against the recovered agora.db, per table
-sqlite3 agora.db ".mode insert parishes" \
-  "SELECT id, name, full_name, jurisdiction, address, lat, lng,
-          website, phone, email, logo_path, acronym, chant_style,
-          languages, color, live_url, donation_url, raffle_url,
-          payment_url, gala_url
-   FROM parishes;" > parishes.sql
-
-# then, per file
-wrangler d1 execute agora --remote --file=parishes.sql
+wrangler d1 create agora
+wrangler d1 execute agora --remote --file=schema.sql
+wrangler d1 execute agora --remote --file=seed-parishes.sql   # from seeds/parishes.js
 ```
 
-`events` is the one to watch: `source_hash` carries a UNIQUE index, so a partial or
-twice-run import fails loudly rather than duplicating. That is the desired behaviour —
-let it fail and re-run cleanly.
+Events then arrive by scraping. `source_hash` carries a UNIQUE index, so re-running a
+scrape is idempotent by design — a second run updates rather than duplicates.
 
 ---
 
@@ -170,33 +192,35 @@ Sequenced so something is verifiable at every step, and the largest rewrite happ
 against data already proven to import cleanly. Pruning comes first for a reason: every
 file deleted in Phase 1 is a file not ported in Phase 3.
 
-### Phase 0 — Recover the database
+### Phase 0 — (removed)
 
-- Find any off-VM copy of `agora.db`.
-- Open it locally, check row counts for parishes, schedules, events.
-- If nothing surfaces, decide now whether to rebuild from `seeds/parishes.js`.
-
-**Done when:** a `.db` file opens locally with row counts you recognise.
+Was "recover the database". Settled: the old data is not being recovered, so there is
+nothing to find. Parishes come from `seeds/parishes.js`, events from scraping. Start at
+Phase 1.
 
 ### Phase 1 — Prune, still on Node
 
 - Delete the WhatsApp and Vision files; strip 22 moderation endpoints from
   `routes/admin.js` and matching tabs from `admin.html`.
+- Keep the escalate/combine endpoints — they are the combine feature's write path, not
+  moderation. Only their *entry points* were WhatsApp-driven.
 - Salvage `matchesWeekOfMonth` from `schedule-generator.js`, delete the rest.
 - Remove `@anthropic-ai/sdk` from `package.json`.
-- Run locally against the recovered DB, click through the real site.
+- Run locally against a freshly seeded DB, click through the real site.
 
 **Done when:** `node server.js` boots, `/health` 200, map + feed + admin CRUD all work
-with WhatsApp gone. Last checkpoint where the old stack proves the new scope.
+with WhatsApp gone — **and a combine still round-trips**, both against a one-off event
+and against a schedule instance. Last checkpoint where the old stack proves the new scope.
 
 ### Phase 2 — Baseline schema into D1
 
-- Write `schema.sql`: the 7 surviving tables at final shape, with the indexes that
-  matter (`source_hash` unique, events date/parish/status, override join keys).
-- `wrangler d1 create agora`, apply schema, import column-projected rows.
-- Compare row counts table by table against the source.
+- Write `schema.sql`: the 8 surviving tables at final shape, with the indexes that
+  matter (`source_hash` unique, events date/parish/status, override join keys, the two
+  combine join tables).
+- `wrangler d1 create agora`, apply schema, load the parish seed.
 
-**Done when:** counts match and a hand-written `SELECT` returns a parish with its schedules.
+**Done when:** a hand-written `SELECT` returns a seeded parish, and the combine tables
+exist with their foreign keys intact.
 
 ### Phase 3 — Port the API to a Worker
 
@@ -246,9 +270,16 @@ direct `curl` to an admin API route is refused.
 
 - Cron Trigger at `0 */4 * * *` calling the Google Calendar adapter through the
   Worker's `scheduled()` handler.
+- Fix the run counters while porting `base.js`. `events_updated` is declared
+  (`base.js:47`), passed to the UPDATE (line 100) and **never incremented** — always 0.
+  `events_created` counts updates too, because `result.changes > 0` is true for the
+  `ON CONFLICT DO UPDATE` branch. So "created" currently means "touched". D1 returns a
+  different result shape (`meta.changes`), so the port is the moment to make both
+  counters mean what they say — they are the scrape-health signal now.
 - Trigger manually once, confirm a row lands in `adapter_runs`.
 
-**Done when:** a scheduled run completes unattended and its events appear in the feed.
+**Done when:** a scheduled run completes unattended, its events appear in the feed, and
+the run row shows honest created/updated counts.
 
 ### Phase 8 — Cut over and clean up
 
@@ -265,6 +296,27 @@ old VM.
 
 ## Decided
 
+**Start the database fresh.** No recovery of the old `agora.db`. Parishes from
+`seeds/parishes.js`, events from scraping. Phase 0 is struck.
+
+**Combine / cross-parish is preserved in full.** All three mechanisms survive —
+`event_parishes`, `event_replaces`, and the v26 `schedule_overrides` combined path. An
+earlier draft of this plan proposed dropping `event_replaces` as legacy; that was wrong
+and would have removed combining against one-off events. See the combine contract above.
+
+**`adapter_runs` stays, slimmed.** Two separate calls, resolved separately:
+
+- *The `source_run_id` columns go* from `parishes`, `schedules`, `events` and
+  `schedule_overrides`. `base.js` never writes them; only the WhatsApp webhook did. They
+  would be `NULL` forever.
+- *The table stays*, minus the five WhatsApp columns. With scraping as the primary
+  ingestion path it is the only record that a scrape ran and what it produced — the
+  failure mode being a scrape that silently starts returning zero events, which errors
+  nowhere. A cron Worker has no `docker logs` to tail; free-tier dashboard logs are
+  short-retention and not queryable from the app. Cost is ~12 writes/day against D1's
+  100k/day. And its only reader, `healthCheck()` → `/api/adapters/status`, is code that
+  stays.
+
 **The three unmerged June branches are abandoned.** `feat/event-edit-address`,
 `fix/save-event-rerender` and `fix/save-event-cache-bypass` are all admin inline-editing
 fixes on `public/app.js`. None will be merged: the behaviour they patch — cache bypass
@@ -275,15 +327,20 @@ accurate answer than carrying forward a fix written for the synchronous Express 
 The branches stay on the remote as reference. Nothing merges them, and Phase 1 does not
 wait on them.
 
-## Open questions
+## Open question: what actually scrapes?
 
-- **Does a database backup exist?** Everything downstream of Phase 0 assumes yes.
-- **Keep `adapter_runs` at all?** With one adapter left, run history may not earn its
-  table. Dropping it also lets `source_run_id` go from three other tables.
-- **Do the combine/cross-parish features stay?** `event_parishes` is read by the public
-  feed, so the display side stays regardless — but the admin UI for creating those links
-  came from the WhatsApp escalation flow. Keeping the read path while dropping the write
-  path is a coherent middle position.
+Rebuilding by scraping assumes there are scrapers. There is currently **one** working
+adapter — `google-calendar.js`, instantiated once, for Good Shepherd Clayton
+(`gcal-good-shepherd-clayton.js`). Everything else came in through WhatsApp posters.
+
+So on the far side of this migration, ingestion covers one parish. The schema, the cron
+trigger and `adapter_runs` all support more, and `adapters/_template.js` exists for
+exactly this — but writing the additional adapters is work this plan does not cost, and
+it sits between "the port is done" and "the site is useful again".
+
+Worth deciding early, because it shapes how much the admin CRUD path matters in the
+interim: if adapters lag, manual entry through `/admin` is the only way events reach the
+site, which raises the priority of Phase 6 (Access) rather than lowering it.
 
 ---
 
