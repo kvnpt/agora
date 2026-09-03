@@ -248,13 +248,9 @@ exist with their foreign keys intact.
   to their current shape.
 - Port in dependency order: `schedule-expand` → `schedule-overrides` → public routes
   → admin routes.
-- **Benchmark the date lens before trusting it.** `expandWindow()` is cheap on I/O (two
-  queries for a 180-day window) but O(schedules × days) on CPU — plausibly 10-20k
-  projected objects per request before the final `slice(0, 1000)`. Workers meter CPU
-  time, not I/O wait, so this is the one hot spot the VM never charged for. Two easy
-  wins while in there: `SELECT * FROM schedule_overrides` (`schedule-expand.js:134`)
-  loads every override ever written with no window filter, and the existing 60s
-  `Cache-Control` on `/api/events` already absorbs most repeat traffic.
+- **The date lens will not fit in 10ms as written. Fix it during the port.** See the
+  section below — this is the one piece of the migration where the target platform
+  forces a code change rather than a port.
 - Every `.prepare().get()/.all()/.run()` becomes `await`. Nothing catches a missed one —
   a forgotten `await` yields a Promise where a row was expected, which reads as "no
   data" rather than an error. Grep `.prepare(` at the end and check each has an `await`.
@@ -320,6 +316,73 @@ the run row shows honest created/updated counts.
 old VM.
 
 ---
+
+## The date lens vs. the 10ms ceiling
+
+Workers Free allows **10ms of CPU per invocation** (I/O wait is never counted; a slow D1
+query or external fetch costs nothing). Exceeding it throws Error 1102. This is the one
+place where the platform forces a real code change rather than a port.
+
+### The arithmetic
+
+A 180-day window gives each weekly schedule ~26 occurrences. At ~25 parishes × ~4
+schedules ≈ 100 rules, that is **~2,600 projected instances** per cold request.
+
+The cost is not the object count. `project()` calls `localToUtc()` for the start time and
+again for the end time, and each call is a four-step **Temporal polyfill** chain doing a
+real IANA timezone resolution:
+
+```js
+Temporal.PlainDateTime.from(`${dateStr}T${timeStr}`)
+  .toZonedDateTime(TZ).toInstant().toString({ smallestUnit: 'millisecond' })
+```
+
+That is ~**5,200 polyfill timezone conversions in the innermost loop**. The polyfill is
+pure JS resolving tz rules — tens of microseconds each. At an optimistic 5µs that is
+~26ms; at a realistic 20µs, ~100ms. Then dedup, sort, and `JSON.stringify` over a payload
+`CLAUDE.md` records at ~800KB, itself low-single-digit ms.
+
+Estimated **3-10× over budget** on a cold miss. Edge caching does not rescue this: a 60s
+TTL makes misses rarer, but every miss must still clear 10ms or throw.
+
+### Fix 1 — hoist the timezone work out of the loop
+
+The real fix, and it leaves the architecture untouched. Sydney has exactly two offsets.
+Resolve the UTC offset **once per date** in `buildDateIndex()` — 180 lookups instead of
+5,200 — and carry it alongside the date string. `project()` then becomes string
+concatenation plus one cheap `Date` parse:
+
+```js
+// per date, once: offset = '+10:00' | '+11:00'
+`${date}T${time}:00.000${offset}`  →  new Date(...).toISOString()
+```
+
+Correctness holds because the offset is still IANA-derived; it simply stops re-deriving
+5,200 times what has 180 distinct answers. Roughly a 30× cut in the dominant cost, and a
+straight win on any hardware, metered or not.
+
+### Fix 2 — shrink the default window
+
+`DEFAULT_WINDOW_DAYS = 180` (`routes/events.js:9`) is far more liturgy than anyone
+scrolls, and the client's own parish sheet already fetches 28 days (`app.js:4017`).
+Dropping the default to ~35 days cuts instances ~5× *and* shrinks the payload, which cuts
+the serialize cost too. A product call as much as a technical one, and the cheapest single
+lever available.
+
+Fixes 1 and 2 compose, and together should bring an estimated ~100ms comfortably under
+10ms. Measure with `wrangler dev --remote` before assuming.
+
+### Held in reserve
+
+- **Client-side lens.** Ship `schedules` + `overrides` + one-offs and project in the
+  browser. Sidesteps the ceiling entirely. Costs: `GET /api/events/:id` still needs
+  server-side projection for deep links and share previews, so the dedup rules
+  (`partitionKey` / `preferenceCmp`) exist in two places and can drift; and the DST
+  problem moves to the browser, which is what Temporal was adopted to avoid.
+- **Materialize on change, not on clock.** Precompute the projected window into KV
+  whenever schedules or overrides change (rare), serve the blob. Honestly: this is the
+  nightly generator again, but keyed to change rather than a cron — arguably what that
+  paradigm should have been.
 
 ## Decided
 
