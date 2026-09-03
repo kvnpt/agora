@@ -119,6 +119,56 @@ Frontend renders it as relative age ("checked 3 months ago") on the parish card,
 a `website` source opens the source; a `person` source shows attribution and offers a
 correction. Staleness becomes the invitation to contribute rather than a defect to hide.
 
+### Oceania: parishes need their own timezone
+
+`orthodoxy.au` covers Oceania, but the app is structurally single-timezone.
+`Australia/Sydney` is a hardcoded module constant in **five files** —
+`schedule-expand.js:15`, `schedule-overrides.js:7`, `routes/events.js:8`,
+`public/app.js:1`, `scripts/backfill-v26.js:20` — and `parishes` has **no timezone
+column**.
+
+That is fine for Sydney and wrong for the region:
+
+| Zone | Offset | DST |
+|---|---|---|
+| Australia/Perth | +08:00 | none |
+| Australia/Brisbane | +10:00 | none |
+| Australia/Adelaide | +09:30 / +10:30 | first Sun Oct → first Sun Apr |
+| Australia/Sydney | +10:00 / +11:00 | first Sun Oct → first Sun Apr |
+| Pacific/Auckland | +12:00 / +13:00 | late Sep → early Apr |
+
+Sydney and Auckland do not switch on the same dates, so they are 2 hours apart for part
+of the year and 3 for the rest. No fixed offset works, and no single "start of today"
+exists across the region — which makes `sydneyTodayStartUtc()` (`routes/events.js:12`)
+ambiguous the moment a non-Sydney parish exists.
+
+**Add `parishes.timezone` (IANA name, `NOT NULL DEFAULT 'Australia/Sydney'`) to
+`schema.sql` at baseline.** Free now; later it is a migration, a backfill, and an audit
+of every date path that assumed one zone.
+
+### Display time vs. comparison time
+
+These are different needs and only one of them requires timezone maths. Worth being
+explicit, because the current code conflates them.
+
+- **Display** wants parish-local wall time — and that is already stored.
+  `schedules.start_time` is `'09:00'`; the date is `'2026-09-07'`. `project()` currently
+  converts that to UTC and the frontend converts it back to Sydney to render it: a round
+  trip returning the string it started from. Emit `start_local` plus the parish's zone
+  and the render path needs no conversion at all.
+- **Comparison** wants a real instant: stream ordering, current/future filtering, and
+  "happening now" all compare against `Date.now()`. This is the only consumer of the
+  offset, and it is what fix 1's per-date hoist (now keyed per *zone* and date) serves.
+
+The user's own location never enters either path. Times are shown in the parish's local
+time the way a map shows a venue's opening hours — a viewer in Perth reading about an
+Auckland liturgy sees Auckland time. Only "is it on right now" depends on the actual
+current moment, and the client is the party that knows it.
+
+Under a client-side lens this falls out cleanly: ship rules + overrides + one-offs with
+each parish's IANA zone attached, keep the window a generous UTC range, and let the
+client evaluate "now" per event against that event's own zone.
+
 ### The combine contract
 
 Combining is a key feature and the most expensive thing in the schema to rebuild if
@@ -360,6 +410,11 @@ concatenation plus one cheap `Date` parse:
 Correctness holds because the offset is still IANA-derived; it simply stops re-deriving
 5,200 times what has 180 distinct answers. Roughly a 30× cut in the dominant cost, and a
 straight win on any hardware, metered or not.
+
+With `parishes.timezone` in play the cache key becomes (zone, date) rather than date
+alone — still trivial, since Oceania is a handful of distinct zones: ~5 zones × 35 days
+≈ 175 lookups. And per **Display time vs. comparison time** above, only the ordering path
+consumes these at all; rendering uses the stored wall time directly.
 
 ### Fix 2 — shrink the default window
 
