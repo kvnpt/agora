@@ -10,7 +10,7 @@
 // Tombstones are scoped to the parish page client-side (public/app.js).
 
 const { Temporal } = require('@js-temporal/polyfill');
-const { matchesWeekOfMonth } = require('./schedule-generator');
+const { matchesWeekOfMonth } = require('./recurrence');
 
 const TZ = 'Australia/Sydney';
 

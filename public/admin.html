@@ -231,45 +231,11 @@
 
   <main>
     <div class="tabs">
-      <button class="tab active" data-tab="review">Review <span class="tab-count" id="count-review">0</span></button>
-      <button class="tab" data-tab="runs">By Message <span class="tab-count" id="count-runs">0</span></button>
-      <button class="tab" data-tab="senders">Senders <span class="tab-count" id="count-senders">0</span></button>
-      <button class="tab" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
+      <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
     </div>
 
-    <div id="section-review" class="section active">
-      <div class="review-section">
-        <div class="review-section-header">Events <span id="review-events-count"></span></div>
-        <div id="review-events-list"></div>
-      </div>
-      <div class="review-section">
-        <div class="review-section-header">Schedules <span id="review-schedules-count"></span></div>
-        <div id="review-schedules-list"></div>
-      </div>
-      <div class="review-section">
-        <div class="review-section-header">Parish Changes <span id="review-parishes-count"></span></div>
-        <div id="review-parishes-list"></div>
-      </div>
-      <div class="review-section">
-        <div class="review-section-header">Cancellations <span id="review-cancellations-count"></span></div>
-        <div id="review-cancellations-list"></div>
-      </div>
-      <div class="review-section">
-        <div class="review-section-header">Dropped <span id="review-dropped-count"></span></div>
-        <div id="review-dropped-list"></div>
-      </div>
-    </div>
-
-    <div id="section-runs" class="section">
-      <div id="runs-list"></div>
-    </div>
-
-    <div id="section-senders" class="section">
-      <div id="senders-list"></div>
-    </div>
-
-    <div id="section-parishes" class="section">
+    <div id="section-parishes" class="section active">
       <h3 class="expand-trigger" onclick="toggleExpand('add-parish-form')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Add Parish <span id="add-parish-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
       <div id="add-parish-form" class="expandable">
       <form id="parish-form" class="card" style="margin-top:8px;">
@@ -356,7 +322,7 @@
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    let parishes = [], pendingEvents = [], pendingSchedules = [], pendingParishUpdates = [], pendingCancellations = [], droppedRuns = [], schedules = [], senders = [], runs = [];
+    let parishes = [], schedules = [];
     let activeJurisdiction = '';
     const headers = { 'Content-Type': 'application/json' };
 
@@ -385,33 +351,19 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadPendingEvents(), loadPendingSchedules(), loadPendingParishUpdates(), loadPendingCancellations(), loadDroppedRuns(), loadSchedules(), loadSenders(), loadRuns()]);
+      await Promise.all([loadParishes(), loadSchedules()]);
       renderAll();
     }
 
     function renderAll() {
       renderStats();
-      renderReviewQueue();
-      renderPendingSchedules();
-      renderPendingParishUpdates();
-      renderPendingCancellations();
-      renderDropped();
       renderParishList();
       renderScheduleList();
-      renderSenders();
-      renderRuns();
       renderParishSelects();
     }
 
     async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); }
-    async function loadPendingEvents() { pendingEvents = await (await fetch('/api/admin/events/pending', { headers })).json(); }
-    async function loadPendingSchedules() { pendingSchedules = await (await fetch('/api/admin/schedules/pending', { headers })).json(); }
-    async function loadPendingParishUpdates() { pendingParishUpdates = await (await fetch('/api/admin/parish-updates', { headers })).json(); }
-    async function loadPendingCancellations() { pendingCancellations = await (await fetch('/api/admin/cancellations', { headers })).json(); }
-    async function loadDroppedRuns() { droppedRuns = await (await fetch('/api/admin/dropped', { headers })).json(); }
     async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); }
-    async function loadSenders() { senders = await (await fetch('/api/admin/senders', { headers })).json(); }
-    async function loadRuns() { runs = await (await fetch('/api/admin/runs?limit=100', { headers })).json(); }
 
     function filteredParishes() {
       if (!activeJurisdiction) return parishes;
@@ -421,32 +373,10 @@
       if (!activeJurisdiction) return schedules;
       return schedules.filter(s => s.parish_jurisdiction === activeJurisdiction);
     }
-    function filteredEvents() {
-      if (!activeJurisdiction) return pendingEvents;
-      return pendingEvents.filter(e => {
-        const p = parishes.find(p => p.id === e.parish_id);
-        return p && p.jurisdiction === activeJurisdiction;
-      });
-    }
 
     function renderStats() {
-      const evtCount = filteredEvents().length;
-      const totalReview = evtCount + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
-      document.getElementById('count-review').textContent = totalReview;
       document.getElementById('count-parishes').textContent = filteredParishes().length;
       document.getElementById('count-schedules').textContent = filteredSchedules().length;
-      document.getElementById('count-senders').textContent = senders.length;
-      document.getElementById('count-runs').textContent = runs.length || '';
-      const ec = document.getElementById('review-events-count');
-      if (ec) ec.textContent = evtCount ? `(${evtCount})` : '';
-      const sc = document.getElementById('review-schedules-count');
-      if (sc) sc.textContent = pendingSchedules.length ? `(${pendingSchedules.length})` : '';
-      const pc = document.getElementById('review-parishes-count');
-      if (pc) pc.textContent = pendingParishUpdates.length ? `(${pendingParishUpdates.length})` : '';
-      const cc = document.getElementById('review-cancellations-count');
-      if (cc) cc.textContent = pendingCancellations.length ? `(${pendingCancellations.length})` : '';
-      const dc = document.getElementById('review-dropped-count');
-      if (dc) dc.textContent = droppedRuns.length ? `(${droppedRuns.length})` : '';
     }
 
     function renderParishSelects() {
@@ -475,355 +405,6 @@
       return new Date(d.getTime() - offset * 3600000).toISOString();
     }
 
-    // ── Review Queue ──
-    function renderReviewQueue() {
-      const c = document.getElementById('review-events-list');
-      const evts = filteredEvents();
-      if (!evts.length) { c.innerHTML = '<div class="empty">No events pending review</div>'; return; }
-      const types = ['liturgy','prayer','feast','talk','youth','social','other'];
-      c.innerHTML = evts.map(evt => {
-        const start = new Date(evt.start_utc);
-        const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(start);
-        const isUn = evt.parish_id === '_unassigned';
-        const pOpts = parishes.map(p => `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-        const inputTexts = (() => { try { return JSON.parse(evt.input_texts || '[]'); } catch { return []; } })();
-        const posterHtml = evt.poster_path ? `<img src="${esc(evt.poster_path)}" class="review-poster" alt="poster" onclick="window.open('${esc(evt.poster_path)}','_blank')">` : '';
-        const msgText = inputTexts.filter(Boolean).join(' · ');
-        const sourceRow = (posterHtml || msgText) ? `
-          <div class="review-poster-row">
-            ${posterHtml}
-            ${msgText ? `<div class="source-msg">${esc(msgText)}</div>` : ''}
-          </div>` : '';
-        const mutationBadge = evt.mutation_type === 'adapted'
-          ? '<span class="mutation-adapted">adapted</span>'
-          : evt.mutation_type === 'replaced'
-          ? '<span class="mutation-replaced">replaced</span>'
-          : evt.mutation_type === 'headless'
-          ? '<span class="mutation-headless">headless</span>'
-          : '';
-        const adaptedNote = evt.mutation_type === 'adapted'
-          ? '<div class="run-question" style="background:#fef3c7;border-left-color:#f59e0b;">Adapts an existing schedule occurrence — approving will update that event in place.</div>'
-          : '';
-        return `
-          <div class="card ${isUn ? 'warn' : ''}" data-id="${evt.id}">
-            <div style="display:flex;justify-content:space-between;align-items:start;gap:6px;flex-wrap:wrap;">
-              <span class="card-title">${esc(evt.title)}</span>
-              <div style="display:flex;gap:4px;align-items:center;">${mutationBadge}<span class="badge badge-${evt.event_type}">${evt.event_type}</span></div>
-            </div>
-            <div class="card-meta">${dateFmt} &middot; ${esc(evt.parish_name || evt.source_adapter)}${evt.description ? ' &middot; ' + esc(evt.description) : ''}</div>
-            ${adaptedNote}
-            ${sourceRow}
-            <div class="field"><label>Title</label><input class="re-title" value="${esc(evt.title)}"></div>
-            <div class="field"><label>Description</label><input class="re-desc" value="${esc(evt.description || '')}"></div>
-            <div class="field-row">
-              <div class="field"><label>Type</label><select class="re-type">${types.map(t => `<option value="${t}" ${evt.event_type===t?'selected':''}>${t}</option>`).join('')}</select></div>
-              <div class="field"><label>Parish</label><select class="re-parish"><option value="_unassigned" ${isUn?'selected':''}>-- Unassigned --</option>${pOpts}</select></div>
-            </div>
-            <div class="field-row">
-              <div class="field"><label>Start (Sydney)</label><input type="datetime-local" class="re-start" value="${utcToLocalInput(evt.start_utc)}"></div>
-              <div class="field"><label>End (Sydney)</label><input type="datetime-local" class="re-end" value="${utcToLocalInput(evt.end_utc)}"></div>
-            </div>
-            <div class="field-row">
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="re-hide-live" ${evt.hide_live ? 'checked' : ''}> Hide live badge
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="re-parish-scoped" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)
-              </label>
-            </div>
-            <div class="btn-row">
-              <button class="btn btn-approve" onclick="approveEvent(${evt.id})">Approve</button>
-              <button class="btn btn-reject" onclick="rejectEvent(${evt.id})">Reject</button>
-              <button class="btn btn-outline"
-                data-eid="${evt.id}"
-                data-etitle="${esc(evt.title)}"
-                data-edate="${esc(new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc)))}"
-                data-eparish="${esc(evt.parish_id)}"
-                onclick="openEscalateModal(this)">Absorb…</button>
-            </div>
-          </div>`;
-      }).join('');
-    }
-
-    async function approveEvent(id) {
-      const c = document.querySelector(`.card[data-id="${id}"]`);
-      const data = { status: 'approved', parish_id: c.querySelector('.re-parish').value, title: c.querySelector('.re-title').value,
-        description: c.querySelector('.re-desc').value || null, event_type: c.querySelector('.re-type').value,
-        start_utc: localInputToUtc(c.querySelector('.re-start').value), end_utc: localInputToUtc(c.querySelector('.re-end').value),
-        hide_live: c.querySelector('.re-hide-live').checked,
-        parish_scoped: c.querySelector('.re-parish-scoped').checked };
-      const res = await fetch(`/api/admin/events/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Approved'); loadAll(); } else toast('Failed', 'error');
-    }
-    async function rejectEvent(id) {
-      const res = await fetch(`/api/admin/events/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'rejected' }) });
-      if (res.ok) { toast('Rejected'); loadAll(); } else toast('Failed', 'error');
-    }
-
-    // ── Escalate Modal ──
-    let escalateEventId = null;
-    let _escalateCandidates = [];
-    let _escalateCurrentReplacedIds = new Set();
-
-    function _renderEscalateEventList() {
-      const checked = new Set([...document.querySelectorAll('#escalate-parish-grid input:checked')].map(cb => cb.value));
-      const list = document.getElementById('escalate-event-list');
-      const visible = _escalateCandidates.filter(e => checked.has(e.parish_id));
-      if (!checked.size) {
-        list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Select parishes above to see replaceable events</div>';
-        return;
-      }
-      if (!visible.length) {
-        list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">No events at selected parishes on this date</div>';
-        return;
-      }
-      const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
-      list.innerHTML = visible.map(e => {
-        const pre = _escalateCurrentReplacedIds.has(e.id);
-        return `
-          <label class="modal-event-item">
-            <input type="checkbox" value="${e.id}"${pre ? ' checked' : ''}>
-            <span class="modal-event-label">${esc(e.title)}<small>${fmt(e.start_utc)} · ${esc(e.parish_name)}</small></span>
-          </label>`;
-      }).join('');
-    }
-
-    function openEscalateModal(btn) {
-      escalateEventId = Number(btn.dataset.eid);
-      const title = btn.dataset.etitle;
-      const date = btn.dataset.edate;
-      const primaryParish = btn.dataset.eparish;
-      _escalateCandidates = [];
-      _escalateCurrentReplacedIds = new Set();
-
-      document.getElementById('escalate-modal-subtitle').textContent = `"${title}" on ${date}`;
-
-      const grid = document.getElementById('escalate-parish-grid');
-      const homeJurisdiction = (parishes.find(p => p.id === primaryParish) || {}).jurisdiction || '';
-      const ownP = parishes.find(p => p.id === primaryParish);
-      const otherPs = parishes.filter(p => p.id !== primaryParish && p.id !== '_unassigned').sort((a, b) => {
-        const ah = a.jurisdiction === homeJurisdiction ? 0 : 1;
-        const bh = b.jurisdiction === homeJurisdiction ? 0 : 1;
-        return ah - bh || a.jurisdiction.localeCompare(b.jurisdiction) || a.name.localeCompare(b.name);
-      });
-      const allPs = ownP ? [{ ...ownP, _isOwn: true }, ...otherPs] : otherPs;
-      grid.innerHTML = allPs.map(p => `
-        <label class="modal-event-item">
-          <input type="checkbox" value="${esc(p.id)}"${p._isOwn ? ' checked data-own="1"' : ''} onchange="_renderEscalateEventList()">
-          <span class="modal-event-label">${esc(p.name)}${p._isOwn ? '<em class="own-tag">own</em>' : ''}<small>${esc(p.jurisdiction)}</small></span>
-        </label>`).join('');
-
-      const list = document.getElementById('escalate-event-list');
-      list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Loading…</div>';
-
-      Promise.all([
-        fetch(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&exclude_id=${escalateEventId}`, { headers }).then(r => r.json()),
-        fetch(`/api/admin/events/${escalateEventId}/escalation`, { headers }).then(r => r.json()),
-      ]).then(([candidates, current]) => {
-        const candidateIds = new Set(candidates.map(e => e.id));
-        _escalateCandidates = [...candidates, ...current.replaced_events.filter(e => !candidateIds.has(e.id))];
-        _escalateCurrentReplacedIds = new Set(current.replaced_events.map(e => e.id));
-        for (const pid of current.additive_parish_ids) {
-          const cb = grid.querySelector(`input[value="${CSS.escape(pid)}"]`);
-          if (cb) cb.checked = true;
-        }
-        _renderEscalateEventList();
-      }).catch(() => {
-        list.innerHTML = '<div class="empty" style="padding:8px;font-size:12px;">Failed to load</div>';
-      });
-
-      document.getElementById('escalate-modal').classList.add('open');
-    }
-
-    function closeEscalateModal() {
-      document.getElementById('escalate-modal').classList.remove('open');
-      escalateEventId = null;
-    }
-
-    async function confirmEscalate() {
-      if (!escalateEventId) return;
-      const additive_parish_ids = [...document.querySelectorAll('#escalate-parish-grid input:checked:not([data-own])')].map(cb => cb.value);
-      const replaced_event_ids = [...document.querySelectorAll('#escalate-event-list input:checked')].map(cb => Number(cb.value));
-
-      const btn = document.getElementById('escalate-confirm-btn');
-      btn.disabled = true;
-      try {
-        const res = await fetch(`/api/admin/events/${escalateEventId}/escalate`, {
-          method: 'POST', headers,
-          body: JSON.stringify({ additive_parish_ids, replaced_event_ids, approve: true })
-        });
-        if (res.ok) {
-          const parts = [];
-          if (additive_parish_ids.length) parts.push(`Added to ${additive_parish_ids.length} parish(es)`);
-          if (replaced_event_ids.length) parts.push(`Replaced ${replaced_event_ids.length} event(s)`);
-          toast(parts.length ? parts.join(', ') : 'Escalated');
-          closeEscalateModal();
-          loadAll();
-        } else {
-          toast('Escalation failed', 'error');
-        }
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    // ── Pending Schedules ──
-    function renderPendingSchedules() {
-      const c = document.getElementById('review-schedules-list');
-      if (!pendingSchedules.length) { c.innerHTML = '<div class="empty">No schedules pending review</div>'; return; }
-      const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
-      c.innerHTML = pendingSchedules.map(s => {
-        const inputTexts = (() => { try { return JSON.parse(s.input_texts || '[]'); } catch { return []; } })();
-        const msgText = inputTexts.filter(Boolean).join(' · ');
-        return `
-          <div class="card" data-sched-id="${s.id}">
-            <div class="card-title">${esc(s.title)}</div>
-            <div class="card-meta">${esc(s.parish_name)} &middot; ${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} &middot; ${esc(s.event_type)}${s.languages ? ' &middot; ' + esc(parseLangs(s.languages)) : ''}${s.week_of_month ? ' &middot; ' + esc(s.week_of_month) : ''}</div>
-            ${msgText ? `<div class="source-msg">${esc(msgText)}</div>` : ''}
-            <div class="btn-row">
-              <button class="btn btn-approve" onclick="approveSchedule(${s.id})">Approve</button>
-              <button class="btn btn-reject" onclick="rejectSchedule(${s.id})">Reject</button>
-            </div>
-          </div>`;
-      }).join('');
-    }
-
-    async function approveSchedule(id) {
-      const res = await fetch(`/api/admin/schedules/${id}/approve`, { method: 'POST', headers });
-      if (res.ok) { toast('Schedule approved'); loadAll(); } else toast('Failed', 'error');
-    }
-    async function rejectSchedule(id) {
-      const res = await fetch(`/api/admin/schedules/${id}/reject`, { method: 'POST', headers });
-      if (res.ok) { toast('Schedule rejected'); loadAll(); } else toast('Failed', 'error');
-    }
-
-    // ── Pending Parish Updates ──
-    function renderPendingParishUpdates() {
-      const c = document.getElementById('review-parishes-list');
-      if (!pendingParishUpdates.length) { c.innerHTML = '<div class="empty">No parish changes pending review</div>'; return; }
-      const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
-      c.innerHTML = pendingParishUpdates.map(pu => {
-        let changes;
-        try { changes = JSON.parse(pu.proposed_changes); } catch { changes = {}; }
-        const fieldLabels = { name: 'Name', full_name: 'Full Name', address: 'Address', website: 'Website', email: 'Email', phone: 'Phone', acronym: 'Acronym', chant_style: 'Chant Style', live_url: 'Live URL', donation_url: 'Donation URL', raffle_url: 'Raffle URL', payment_url: 'Payment URL', gala_url: 'Gala URL', languages: 'Languages' };
-        const currentValues = {
-          name: pu.parish_name, full_name: pu.parish_full_name, address: pu.parish_address, website: pu.parish_website,
-          email: pu.parish_email, phone: pu.parish_phone, acronym: pu.parish_acronym,
-          chant_style: pu.parish_chant_style, live_url: pu.parish_live_url,
-          donation_url: pu.parish_donation_url, raffle_url: pu.parish_raffle_url,
-          payment_url: pu.parish_payment_url, gala_url: pu.parish_gala_url,
-          languages: parseLangs(pu.parish_languages)
-        };
-        // New shape: { sets, clears }. Legacy flat blob: treat as sets only and
-        // silently drop null entries (matches apply-path so preview == effect).
-        const isNewShape = changes && typeof changes === 'object' && (changes.sets || changes.clears);
-        const setsObj = isNewShape ? (changes.sets || {}) : (changes || {});
-        const clearsArr = isNewShape ? (Array.isArray(changes.clears) ? changes.clears : []) : [];
-        const setRows = Object.entries(setsObj)
-          .filter(([, v]) => v != null && v !== '')
-          .map(([k, v]) => {
-            const label = fieldLabels[k] || k;
-            const oldVal = k === 'languages' ? parseLangs(pu.parish_languages) : (currentValues[k] || '—');
-            const newVal = Array.isArray(v) ? v.join(', ') : v;
-            return `<div><div style="font-size:11px;color:var(--muted);font-weight:500;">${esc(label)}</div>
-              <div class="diff-row"><span class="diff-old">${esc(String(oldVal))}</span><span class="diff-new">${esc(String(newVal))}</span></div></div>`;
-          }).join('');
-        const clearRows = clearsArr.map(k => {
-          const label = fieldLabels[k] || k;
-          const oldVal = k === 'languages' ? parseLangs(pu.parish_languages) : (currentValues[k] || '—');
-          return `<div><div style="font-size:11px;color:var(--muted);font-weight:500;">${esc(label)}</div>
-            <div class="diff-row"><span class="diff-old">${esc(String(oldVal))}</span><span class="diff-new">(cleared)</span></div></div>`;
-        }).join('');
-        const diffRows = setRows + clearRows;
-        const inputTexts = (() => { try { return JSON.parse(pu.input_texts || '[]'); } catch { return []; } })();
-        const msgText = inputTexts.filter(Boolean).join(' · ');
-        return `
-          <div class="card" data-pu-id="${pu.id}">
-            <div class="card-title">${esc(pu.parish_name)}</div>
-            <div class="card-meta">From +${esc(pu.sender_phone || '?')}</div>
-            ${msgText ? `<div class="source-msg">${esc(msgText)}</div>` : ''}
-            <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">${diffRows}</div>
-            <div class="btn-row">
-              <button class="btn btn-approve" onclick="approveParishUpdate(${pu.id})">Apply</button>
-              <button class="btn btn-reject" onclick="rejectParishUpdate(${pu.id})">Dismiss</button>
-            </div>
-          </div>`;
-      }).join('');
-    }
-
-    async function approveParishUpdate(id) {
-      const res = await fetch(`/api/admin/parish-updates/${id}/approve`, { method: 'POST', headers });
-      if (res.ok) { toast('Parish updated'); loadAll(); } else toast('Failed', 'error');
-    }
-    async function rejectParishUpdate(id) {
-      const res = await fetch(`/api/admin/parish-updates/${id}/reject`, { method: 'POST', headers });
-      if (res.ok) { toast('Dismissed'); loadAll(); } else toast('Failed', 'error');
-    }
-
-    // ── Pending Cancellations ──
-    function renderPendingCancellations() {
-      const c = document.getElementById('review-cancellations-list');
-      if (!pendingCancellations.length) { c.innerHTML = '<div class="empty">No cancellations pending review</div>'; return; }
-      c.innerHTML = pendingCancellations.map(pc => {
-        const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(pc.event_start_utc));
-        const inputTexts = (() => { try { return JSON.parse(pc.input_texts || '[]'); } catch { return []; } })();
-        const msgText = inputTexts.filter(Boolean).join(' · ');
-        const alreadyCancelled = pc.event_status === 'cancelled';
-        return `
-          <div class="card" data-pc-id="${pc.id}">
-            <div class="card-title">Cancel: ${esc(pc.event_title)}</div>
-            <div class="card-meta">${esc(pc.parish_name)} · ${esc(when)} · ${esc(pc.event_type)}${alreadyCancelled ? ' · already cancelled' : ''}</div>
-            <div class="card-meta">From +${esc(pc.sender_phone || '?')}</div>
-            ${pc.reason ? `<div class="source-msg">Reason: ${esc(pc.reason)}</div>` : ''}
-            ${msgText ? `<div class="source-msg">${esc(msgText)}</div>` : ''}
-            <div class="btn-row">
-              <button class="btn btn-approve" onclick="approveCancellation(${pc.id})">Cancel event</button>
-              <button class="btn btn-reject" onclick="rejectCancellation(${pc.id})">Dismiss</button>
-            </div>
-          </div>`;
-      }).join('');
-    }
-
-    async function approveCancellation(id) {
-      const res = await fetch(`/api/admin/cancellations/${id}/approve`, { method: 'POST', headers });
-      if (res.ok) { toast('Event cancelled'); loadAll(); } else toast('Failed', 'error');
-    }
-    async function rejectCancellation(id) {
-      const res = await fetch(`/api/admin/cancellations/${id}/reject`, { method: 'POST', headers });
-      if (res.ok) { toast('Dismissed'); loadAll(); } else toast('Failed', 'error');
-    }
-
-    // ── Dropped Runs ──
-    function renderDropped() {
-      const c = document.getElementById('review-dropped-list');
-      if (!droppedRuns.length) { c.innerHTML = '<div class="empty">No dropped inputs</div>'; return; }
-      c.innerHTML = droppedRuns.map(r => {
-        const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(r.started_at));
-        const inputTexts = (() => { try { return JSON.parse(r.input_texts || '[]'); } catch { return []; } })();
-        const msgText = inputTexts.filter(Boolean).join(' · ');
-        return `
-          <div class="card" data-run-id="${r.id}">
-            <div class="card-meta">${dateFmt}</div>
-            ${msgText ? `<div class="source-msg" style="max-height:none;">${esc(msgText)}</div>` : ''}
-            <div class="btn-row">
-              <button class="btn btn-outline" onclick="toggleRaw(${r.id})">View raw</button>
-              <button class="btn btn-reject" onclick="deleteDropped(${r.id})">Delete</button>
-            </div>
-            <div class="raw-response" id="raw-${r.id}">${esc(r.claude_response || '(no response logged)')}</div>
-          </div>`;
-      }).join('');
-    }
-
-    function toggleRaw(id) {
-      document.getElementById('raw-' + id).classList.toggle('open');
-    }
-
-    async function deleteDropped(id) {
-      const res = await fetch(`/api/admin/dropped/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Deleted'); loadAll(); } else toast('Failed', 'error');
-    }
-
-    // ── By Message (adapter_runs grouped view) ──
     function activateTab(tabName) {
       const btn = document.querySelector(`.tab[data-tab="${tabName}"]`);
       if (!btn) return;
@@ -831,185 +412,6 @@
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('section-' + tabName).classList.add('active');
-    }
-
-    function renderRuns() {
-      const c = document.getElementById('runs-list');
-      if (!runs.length) { c.innerHTML = '<div class="empty">No WhatsApp messages yet</div>'; return; }
-      c.innerHTML = runs.map(renderRunCard).join('');
-    }
-
-    function renderRunCard(r) {
-      const dateFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(r.started_at));
-      const inputTexts = (() => { try { return JSON.parse(r.input_texts || '[]'); } catch { return []; } })();
-      const msgText = inputTexts.filter(Boolean).join(' · ');
-      const senderLabel = r.sender_name ? `${esc(r.sender_name)} · +${esc(r.sender_phone || '?')}` : `+${esc(r.sender_phone || '?')}`;
-      const isLow = r.parish_match_confidence === 'low';
-      const confBadge = isLow ? '<span class="conf-low">ambiguous</span>' : '';
-      const statusBadge = r.status && r.status !== 'success' ? `<span class="run-status run-status-${esc(r.status)}">${esc(r.status)}</span>` : '';
-      const pendingN = (r.pending_events_n || 0) + (r.pending_schedules_n || 0) + (r.pending_parish_updates_n || 0) + (r.pending_cancellations_n || 0);
-      const pendingBadge = pendingN ? `<span class="run-pending">${pendingN} pending</span>` : '';
-
-      const parts = [];
-      if (r.events_n) parts.push(`${r.events_n} event${r.events_n > 1 ? 's' : ''}`);
-      if (r.schedules_n) parts.push(`${r.schedules_n} schedule${r.schedules_n > 1 ? 's' : ''}`);
-      if (r.pending_parish_updates_n) parts.push(`${r.pending_parish_updates_n} parish change${r.pending_parish_updates_n > 1 ? 's' : ''}`);
-      if (r.pending_cancellations_n) parts.push(`${r.pending_cancellations_n} cancellation${r.pending_cancellations_n > 1 ? 's' : ''}`);
-      if (r.new_parishes_n) parts.push(`${r.new_parishes_n} new parish${r.new_parishes_n > 1 ? 'es' : ''}`);
-      const summary = parts.length ? parts.join(' · ') : 'No actionable content';
-
-      return `
-        <div class="card run-card ${isLow ? 'warn' : ''}" data-run-id="${r.id}">
-          <div class="card-meta">${dateFmt} · ${senderLabel}</div>
-          <div class="run-badges">${confBadge}${statusBadge}${pendingBadge}</div>
-          ${msgText ? `<div class="source-msg" style="max-height:none;margin-top:6px;">${esc(msgText)}</div>` : ''}
-          <div class="run-summary">${esc(summary)}</div>
-          ${isLow && r.parish_match_question ? `<div class="run-question">${esc(r.parish_match_question)}</div>` : ''}
-          ${r.error_message ? `<div class="run-question" style="background:#fee2e2;color:#991b1b;border-left-color:#ef4444;">${esc(r.error_message)}</div>` : ''}
-          <div class="btn-row">
-            <button class="btn btn-outline" onclick="toggleRunDetail(${r.id})">View details</button>
-          </div>
-          <div class="run-detail" id="run-detail-${r.id}"></div>
-        </div>`;
-    }
-
-    async function toggleRunDetail(runId) {
-      const el = document.getElementById(`run-detail-${runId}`);
-      if (!el) return;
-      if (el.classList.contains('open')) { el.classList.remove('open'); return; }
-      if (!el.dataset.loaded) {
-        el.innerHTML = '<div class="empty" style="padding:12px;">Loading...</div>';
-        try {
-          const detail = await (await fetch(`/api/admin/runs/${runId}`, { headers })).json();
-          el.innerHTML = renderRunDetail(detail);
-          el.dataset.loaded = '1';
-        } catch {
-          el.innerHTML = '<div class="empty" style="padding:12px;">Failed to load</div>';
-        }
-      }
-      el.classList.add('open');
-    }
-
-    function renderRunDetail(d) {
-      const parts = [];
-      if (d.events && d.events.length) {
-        const items = d.events.map(e => {
-          const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(e.start_utc));
-          return `<div class="run-child"><div><strong>${esc(e.title)}</strong> <span class="status-${esc(e.status)}">${esc(e.status)}</span></div><div class="card-meta">${when} · ${esc(e.event_type)} · ${esc(e.parish_name)}</div></div>`;
-        }).join('');
-        parts.push(`<div class="run-child-group"><div class="run-child-header">Events (${d.events.length})</div>${items}</div>`);
-      }
-      if (d.schedules && d.schedules.length) {
-        const items = d.schedules.map(s => `<div class="run-child"><div><strong>${esc(s.title)}</strong> <span class="status-${esc(s.status || 'approved')}">${esc(s.status || 'approved')}</span></div><div class="card-meta">${DAYS[s.day_of_week]} ${esc(s.start_time)} · ${esc(s.parish_name)}</div></div>`).join('');
-        parts.push(`<div class="run-child-group"><div class="run-child-header">Schedules (${d.schedules.length})</div>${items}</div>`);
-      }
-      if (d.parish_updates && d.parish_updates.length) {
-        const items = d.parish_updates.map(pu => {
-          let changes = {}; try { changes = JSON.parse(pu.proposed_changes); } catch {}
-          const isNew = changes && (changes.sets || changes.clears);
-          const setsN = isNew
-            ? Object.keys(changes.sets || {}).length
-            : Object.keys(changes || {}).filter(k => changes[k] != null && changes[k] !== '').length;
-          const clearsN = isNew ? (Array.isArray(changes.clears) ? changes.clears.length : 0) : 0;
-          return `<div class="run-child"><div><strong>${esc(pu.parish_name)}</strong> <span class="status-${esc(pu.status)}">${esc(pu.status)}</span></div><div class="card-meta">${setsN} set${setsN !== 1 ? 's' : ''}${clearsN ? `, ${clearsN} clear${clearsN > 1 ? 's' : ''}` : ''}</div></div>`;
-        }).join('');
-        parts.push(`<div class="run-child-group"><div class="run-child-header">Parish Changes (${d.parish_updates.length})</div>${items}</div>`);
-      }
-      if (d.cancellations && d.cancellations.length) {
-        const items = d.cancellations.map(pc => {
-          const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(pc.event_start_utc));
-          return `<div class="run-child"><div><strong>Cancel: ${esc(pc.event_title)}</strong> <span class="status-${esc(pc.status)}">${esc(pc.status)}</span></div><div class="card-meta">${when} · ${esc(pc.parish_name)}</div></div>`;
-        }).join('');
-        parts.push(`<div class="run-child-group"><div class="run-child-header">Cancellations (${d.cancellations.length})</div>${items}</div>`);
-      }
-      if (d.new_parishes && d.new_parishes.length) {
-        const items = d.new_parishes.map(p => `<div class="run-child"><div><strong>${esc(p.name)}</strong> <span class="status-approved">created</span></div><div class="card-meta">${esc(p.jurisdiction)} · ${esc(p.address || 'No address')}</div></div>`).join('');
-        parts.push(`<div class="run-child-group"><div class="run-child-header">New Parishes (${d.new_parishes.length})</div>${items}</div>`);
-      }
-
-      const rawBlock = d.run && d.run.claude_response
-        ? `<div class="run-child-group"><div class="run-child-header">Raw Claude response</div><div class="raw-response open" style="max-height:none;">${esc(d.run.claude_response)}</div></div>`
-        : '';
-      const reviewHint = (d.events && d.events.some(e => e.status === 'pending_review'))
-        || (d.schedules && d.schedules.some(s => s.status === 'pending_review'))
-        || (d.parish_updates && d.parish_updates.some(pu => pu.status === 'pending'))
-        || (d.cancellations && d.cancellations.some(pc => pc.status === 'pending'))
-        ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">Approve or reject pending items in the <a href="#" onclick="activateTab('review');return false;" style="color:var(--text);text-decoration:underline;">Review</a> tab.</div>`
-        : '';
-      if (!parts.length && !rawBlock) return '<div class="empty" style="padding:12px;">No child rows</div>';
-      return parts.join('') + rawBlock + reviewHint;
-    }
-
-    // ── Senders ──
-    function renderSenders() {
-      const c = document.getElementById('senders-list');
-      if (!senders.length) { c.innerHTML = '<div class="empty">No senders recorded yet</div>'; return; }
-      c.innerHTML = senders.map(s => {
-        const seen = s.last_seen_at ? new Intl.DateTimeFormat('en-AU', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(s.last_seen_at)) : '';
-        return `
-          <div class="sender-row" data-phone="${esc(s.phone)}">
-            <span class="sender-phone">+${esc(s.phone)}</span>
-            <input class="sender-name-input" value="${esc(s.name || '')}" placeholder="Name" data-field="name">
-            <select class="sender-status-select" data-field="status">
-              <option value="approved" ${s.status==='approved'?'selected':''}>Auto-approve</option>
-              <option value="review" ${s.status==='review'?'selected':''}>Review</option>
-              <option value="blocked" ${s.status==='blocked'?'selected':''}>Blocked</option>
-            </select>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;">
-              <input type="checkbox" data-field="role" ${s.role==='admin'?'checked':''}> Admin
-            </label>
-            <button class="btn btn-outline" onclick="saveSender('${esc(s.phone)}')">Save</button>
-            <span class="sender-seen">${seen}</span>
-            <button class="btn btn-outline" style="font-size:11px;padding:3px 8px;" onclick="toggleSenderSessions('${esc(s.phone)}')">Sessions</button>
-            <div class="sender-sessions-panel" id="ss-${esc(s.phone)}" style="display:none;"></div>
-          </div>`;
-      }).join('');
-    }
-
-    async function saveSender(phone) {
-      const row = document.querySelector(`.sender-row[data-phone="${phone}"]`);
-      const data = {
-        name: row.querySelector('[data-field="name"]').value || null,
-        status: row.querySelector('[data-field="status"]').value,
-        role: row.querySelector('[data-field="role"]').checked ? 'admin' : 'user'
-      };
-      const res = await fetch(`/api/admin/senders/${phone}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Sender updated'); loadSenders().then(renderSenders); } else toast('Failed', 'error');
-    }
-
-    async function toggleSenderSessions(phone) {
-      const el = document.getElementById('ss-' + phone);
-      if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-      el.style.display = 'block';
-      el.textContent = 'Loading…';
-      const sessions = await fetch(`/api/admin/sessions?phone=${encodeURIComponent(phone)}`, { headers }).then(r => r.json()).catch(() => []);
-      if (!sessions.length) { el.textContent = 'No sessions recorded.'; return; }
-
-      const table = document.createElement('table');
-      const thead = table.createTHead();
-      const hrow = thead.insertRow();
-      ['Created', 'Last seen', ''].forEach(t => { const th = document.createElement('th'); th.textContent = t; hrow.appendChild(th); });
-      const tbody = table.createTBody();
-      const fmt = d => d ? new Intl.DateTimeFormat('en-AU', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(d)) : '-';
-      sessions.forEach(s => {
-        const tr = tbody.insertRow();
-        [fmt(s.created_at), fmt(s.last_seen_at)].forEach(t => { const td = tr.insertCell(); td.textContent = t; });
-        const tdBtn = tr.insertCell();
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-outline';
-        btn.style.cssText = 'font-size:10px;padding:2px 6px;';
-        if (s.revoked) { btn.textContent = 'Revoked'; btn.disabled = true; }
-        else {
-          btn.textContent = 'Revoke';
-          btn.onclick = async () => {
-            const res = await fetch(`/api/admin/sessions/${s.id}`, { method: 'DELETE', headers });
-            if (res.ok) { btn.textContent = 'Revoked'; btn.disabled = true; toast('Session revoked'); }
-            else toast('Failed', 'error');
-          };
-        }
-        tdBtn.appendChild(btn);
-      });
-      el.replaceChildren(table);
     }
 
     // ── Parishes ──
@@ -1319,114 +721,16 @@
       const pingResp = await fetch('/api/admin/ping', { headers });
       if (pingResp.status === 401) {
         const msg = document.createElement('p');
-        msg.textContent = 'Session expired. Text the bot "admin" to get a new access link.';
+        msg.textContent = 'Session expired. Sign in again to continue.';
         msg.style.cssText = 'padding:2rem;font-family:sans-serif;font-size:15px;';
         document.body.replaceChildren(msg);
         return;
       }
 
       await loadAll();
-      lastReviewTotal = pendingEvents.length + pendingSchedules.length + pendingParishUpdates.length + pendingCancellations.length + droppedRuns.length;
-      applyDeepLink();
     })();
 
-    function applyDeepLink() {
-      const runId = new URLSearchParams(location.search).get('run');
-      if (!runId) return;
-      activateTab('runs');
-      const card = document.querySelector(`[data-run-id="${runId}"]`);
-      if (!card) return;
-      setTimeout(() => {
-        card.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        card.classList.add('highlight');
-        setTimeout(() => card.classList.remove('highlight'), 2500);
-        toggleRunDetail(parseInt(runId, 10));
-      }, 150);
-    }
-
-    // ── Live-update: poll review endpoints; refresh when counts grow ──
-    let lastReviewTotal = -1;
-    let pendingAutoRefresh = false;
-
-    function reviewHasFocusedInput() {
-      const a = document.activeElement;
-      return a && document.getElementById('section-review').contains(a)
-        && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT');
-    }
-
-    async function pollReview() {
-      if (document.visibilityState !== 'visible') return;
-      try {
-        const [ev, sc, pu, pcl, dr, rn] = await Promise.all([
-          fetch('/api/admin/events/pending', { headers }).then(r => r.json()),
-          fetch('/api/admin/schedules/pending', { headers }).then(r => r.json()),
-          fetch('/api/admin/parish-updates', { headers }).then(r => r.json()),
-          fetch('/api/admin/cancellations', { headers }).then(r => r.json()),
-          fetch('/api/admin/dropped', { headers }).then(r => r.json()),
-          fetch('/api/admin/runs?limit=100', { headers }).then(r => r.json()),
-        ]);
-        // Refresh the By Message view independently — a new run should
-        // appear even if nothing is pending review.
-        if (rn.length !== runs.length) {
-          runs = rn;
-          renderRuns();
-          renderStats();
-        }
-        const total = ev.length + sc.length + pu.length + pcl.length + dr.length;
-        if (lastReviewTotal < 0) { lastReviewTotal = total; return; }
-        if (total > lastReviewTotal) {
-          const delta = total - lastReviewTotal;
-          lastReviewTotal = total;
-          if (reviewHasFocusedInput()) {
-            pendingAutoRefresh = true;
-            toast(`${delta} new review item${delta > 1 ? 's' : ''} — finishing edit first`);
-          } else {
-            pendingEvents = ev; pendingSchedules = sc; pendingParishUpdates = pu; pendingCancellations = pcl; droppedRuns = dr;
-            renderAll();
-            toast(`${delta} new review item${delta > 1 ? 's' : ''}`);
-          }
-        } else if (total !== lastReviewTotal) {
-          lastReviewTotal = total;
-        }
-      } catch {}
-    }
-
-    setInterval(pollReview, 8000);
-
-    // When a review-section input loses focus, apply any deferred refresh
-    document.getElementById('section-review').addEventListener('focusout', () => {
-      setTimeout(() => {
-        if (pendingAutoRefresh && !reviewHasFocusedInput()) {
-          pendingAutoRefresh = false;
-          loadAll();
-        }
-      }, 0);
-    });
   </script>
 
-  <!-- Escalate Modal -->
-  <div class="modal-backdrop" id="escalate-modal" onclick="if(event.target===this)closeEscalateModal()">
-    <div class="modal">
-      <h2>Extend event scope</h2>
-      <div class="modal-subtitle" id="escalate-modal-subtitle"></div>
-
-      <div class="modal-section">
-        <div class="modal-section-title">Appear at parishes</div>
-        <div class="modal-parish-grid" id="escalate-parish-grid"></div>
-      </div>
-
-      <div class="modal-section">
-        <div class="modal-section-title">Replace events at selected parishes (optional)</div>
-        <div id="escalate-event-list-wrap">
-          <div class="modal-event-list" id="escalate-event-list"><div class="empty" style="padding:8px;font-size:12px;">Loading…</div></div>
-        </div>
-      </div>
-
-      <div class="modal-btn-row">
-        <button class="btn btn-outline" onclick="closeEscalateModal()">Cancel</button>
-        <button class="btn btn-primary" id="escalate-confirm-btn" onclick="confirmEscalate()">Confirm</button>
-      </div>
-    </div>
-  </div>
 </body>
 </html>

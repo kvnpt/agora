@@ -14,7 +14,7 @@ class TemplateAdapter extends BaseAdapter {
       id: 'parish-slug',          // unique adapter slug
       parishId: 'parish-id',      // FK to parishes table
       schedule: '0 */6 * * *',    // cron: every 6 hours
-      sourceType: 'manual'        // whatsapp-poster | google-calendar | facebook | website | manual
+      sourceType: 'manual'        // google-calendar | facebook | website | manual
     });
   }
 

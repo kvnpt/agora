@@ -51,7 +51,6 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/schedules', require('./routes/schedules'));
 app.use('/api/parishes', require('./routes/parishes'));
 app.use('/api/adapters', require('./routes/adapters'));
-app.use('/api/webhooks/whatsapp', require('./routes/webhook'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/', require('./routes/magic-auth'));
 
