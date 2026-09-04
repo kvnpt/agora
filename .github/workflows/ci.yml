@@ -1,22 +1,24 @@
 name: CI
 
-# Hardening phase 2 — machine gate that replaces human diff-review.
-# Runs on every PR into main and on direct pushes to main.
-# The smoke-boot job is the load-bearing check: if the server can't start and
-# serve /health, the change is broken regardless of which paths a tester walks.
+# Machine gate on every PR into main and on direct pushes to main.
+#
+# The old gate booted server.js and curled /health — a reasonable check when the
+# app was a long-lived Express process. There is no process to boot now, so the
+# equivalent checks are: the test suite passes, the Worker actually builds, and
+# the D1 schema applies cleanly to an empty database.
+
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
 
-# Cancel an in-progress run if the same branch/PR pushes again.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-smoke:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,40 +29,50 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Clean, lockfile-exact install. Fails on a drifted package-lock.json
-      # or a native build break (better-sqlite3).
+      # Clean, lockfile-exact install. Fails on a drifted package-lock.json.
       - name: Install (npm ci)
         run: npm ci
 
-      # Boot the server exactly as production does (instrument.js preload) and
-      # prove /health returns 200. No real secrets needed: AGORA_DB_PATH points
-      # at a throwaway DB, Sentry DSN is unset (SDK no-op).
-      - name: Smoke boot + /health
-        env:
-          AGORA_DB_PATH: /tmp/ci-agora.db
-          AGORA_ENV: ci
-          PORT: "3000"
-        run: |
-          node --require ./instrument.js server.js &
-          SRV=$!
-          ok=0
-          for i in $(seq 1 30); do
-            if curl -fs http://localhost:3000/health >/dev/null; then
-              echo "health ok after ${i}s"
-              ok=1
-              break
-            fi
-            # bail early if the process already died
-            if ! kill -0 "$SRV" 2>/dev/null; then
-              echo "server process exited before /health came up"
-              break
-            fi
-            sleep 1
-          done
-          kill "$SRV" 2>/dev/null || true
-          if [ "$ok" != "1" ]; then
-            echo "::error::server failed to serve /health"
-            exit 1
-          fi
+      # The suite covers the date lens, the timezone fast path against the
+      # Temporal polyfill, override semantics, feed dedup, adapter bookkeeping
+      # and HTTP range parsing.
+      - name: Test
+        run: npm test
 
-      # Reserved: when TypeScript is introduced, add `npm run typecheck` here.
+      # The load-bearing check: if the Worker cannot be bundled, nothing else
+      # matters. Also proves every binding in wrangler.toml resolves.
+      - name: Build the Worker
+        run: npx wrangler deploy --dry-run --outdir=/tmp/agora-build
+
+      # The schema is the one artefact no test exercises end to end, since the
+      # tests apply it themselves. Prove it lands on an empty database with
+      # foreign keys on and no integrity complaints.
+      - name: Apply the D1 schema to a scratch database
+        run: |
+          node -e "
+            const Database = require('better-sqlite3');
+            const fs = require('fs');
+            const db = new Database('/tmp/ci-schema.db');
+            db.pragma('foreign_keys = ON');
+            db.exec(fs.readFileSync('d1/schema.sql', 'utf8'));
+            db.exec(fs.readFileSync('d1/seed-parishes.sql', 'utf8'));
+            const fk = db.pragma('foreign_key_check');
+            const ic = db.pragma('integrity_check');
+            if (fk.length) { console.error('foreign_key_check:', fk); process.exit(1); }
+            if (ic[0].integrity_check !== 'ok') { console.error('integrity_check:', ic); process.exit(1); }
+            const n = db.prepare(\"SELECT COUNT(*) n FROM parishes WHERE id != '_unassigned'\").get().n;
+            const s = db.prepare('SELECT COUNT(*) n FROM schedules').get().n;
+            if (!n || !s) { console.error('seed produced nothing:', { parishes: n, schedules: s }); process.exit(1); }
+            console.log('schema + seed ok:', n, 'parishes,', s, 'rules');
+          "
+
+      # The D1 seed is generated from seeds/parishes.js. If someone edits one
+      # without regenerating the other they diverge silently, so check here.
+      - name: Generated seed is up to date
+        run: |
+          node scripts/gen-seed-sql.js
+          node scripts/sql-for-console.js
+          git diff --exit-code d1/ || {
+            echo "::error::d1/ is stale — run 'npm run gen:seed' and commit the result"
+            exit 1
+          }

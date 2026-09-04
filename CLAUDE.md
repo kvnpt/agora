@@ -1,86 +1,152 @@
-# Agora — Orthodox Event Finder for Sydney
+# Agora — Orthodox Event Finder for Oceania
 
 ## Project
 
-Aggregates Orthodox parish events in Sydney into one location-aware feed.
-Core concept: **adapter system** — each parish gets a small JS module that knows how to pull events from that parish's unique source.
+Aggregates Orthodox parish services and events into one location-aware feed.
+
+The core idea is the **date lens**: parishes have recurring *rules*, not stored
+occurrences. "Sundays 9am" is one row. The hundreds of event cards a user scrolls are
+projected at read time and never written down. Only *exceptions* — this week it's at
+10am, this week it's cancelled, this week it's combined with the cathedral — are stored,
+one row per exception.
 
 ## Stack
 
-- **Backend:** Node.js + Express, SQLite (better-sqlite3), node-cron
-- **Frontend:** Vanilla JS, Leaflet maps, no build step
-- **AI:** Claude Haiku vision for poster parsing
-- **Auth:** Google OAuth (optional for browsing)
+Everything runs on Cloudflare. There is no server and no build step.
+
+| Piece | What |
+|---|---|
+| Frontend | `public/` — vanilla JS, MapLibre, served as Workers static assets |
+| API | `worker/` — a Worker, no third-party runtime dependencies |
+| Database | D1 (SQLite at the edge) |
+| Tiles, logos, posters | R2, served with HTTP range support |
+| Scrapes | A Cron Trigger every 4 hours |
+| Admin auth | Cloudflare Access (Zero Trust) |
 
 ## Run
 
 ```bash
 npm install
-node server.js        # http://localhost:3000
+npm run dev          # wrangler dev with local D1/R2 + the admin bypass
+npm test             # node --test
 ```
 
-Docker:
+First run needs a local database:
+
 ```bash
-docker build -t agora:latest .
-docker run -p 3000:3000 -v /opt/agora/data:/app/data -e AGORA_DB_PATH=/app/data/agora.db --env-file /home/ubuntu/.env agora:latest
+npx wrangler d1 execute agora --local --file=d1/schema.sql
+npx wrangler d1 execute agora --local --file=d1/seed-parishes.sql
 ```
 
-`AGORA_DB_PATH` is **required** — `db.js` throws at startup if it's unset. No silent fallback to a repo-local `./data/agora.db` (that footgun let dev & prod share a DB for a while).
+## Key patterns
 
-Data dirs (host-side):
-- Prod: `/opt/agora/data/agora.db` → mounted into `agora`
-- Dev:  `/opt/agora/data-dev/agora.db` → mounted into `agora-dev` (separate volume, isolated)
-- Backups: `/opt/agora/backups/` — nightly 03:15 via `/home/ubuntu/agora-backup.sh` (14-day retention, gzip)
+**The lens is pure and shared.** `public/shared/` holds the projection (`project.mjs`,
+`tz.mjs`, `recurrence.mjs`) and the feed assembly (`merge.mjs`). Those files are served
+to the browser *and* bundled into the Worker by the same import. There is one
+implementation of the projection and one of the dedup — they cannot drift.
 
-## Key Patterns
+**The client projects, not the server.** `GET /api/bundle` returns rules, overrides,
+one-off events and parishes; `public/bundle.js` expands them in the browser. This keeps
+the Worker's CPU near zero (it matters — Workers Free meters 10ms of CPU per request)
+and makes the response cacheable, since rules change rarely while a feed is stale the
+moment "now" moves.
 
-- **Adapters** live in `adapters/`. Auto-discovered by `registry.js`. Copy `_template.js` to add a new one.
-- **All timestamps UTC** in DB. Frontend converts to `Australia/Sydney` via `Intl.DateTimeFormat`.
-- **Dedup** via `source_hash` unique index on events table.
-- **AI-parsed events** go to `pending_review` status; manual/API events are auto-approved.
-- **Schema migrations** use SQLite `user_version` pragma in `db.js`.
+**Synthetic ids.** A projected occurrence has the id `"<scheduleId>:YYYY-MM-DD"`, e.g.
+`42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
+existed as a row resolves — client-side, from rules the browser already holds.
+
+**Nothing disappears.** Every occurrence in a window emits exactly one instance. A
+cancellation is a *tombstone* that still renders, so someone who would otherwise turn up
+at church sees "CANCELLED" rather than the service silently vanishing.
+
+**Recurrence rules store LOCAL time; one-off events store UTC.** This is deliberate and
+is documented at length in `d1/schema.sql`. For a recurring service the wall clock is the
+invariant — a 9am liturgy stays 9am across a DST boundary — so normalising it to UTC would
+make it drift an hour twice a year. Do not "fix" it.
+
+**Parishes carry their own IANA timezone.** Oceania spans Perth (+08:00, no DST) to
+Auckland (+12:00/+13:00, switching on different dates to Sydney). `parishes.timezone`
+is what makes `start_time` meaningful.
+
+**Times display in the PARISH's local time**, never the viewer's — the way a map shows a
+venue's opening hours. Only "is it on right now" depends on the viewer's actual moment.
+
+**Combine is three mechanisms**, routed by the shape of the target id
+(`POST /api/admin/events/:id/escalate`):
+
+| Capability | Mechanism | Target id |
+|---|---|---|
+| One event under several parishes | `event_parishes` | parish ids |
+| Replace a stored one-off | `event_replaces` + `status='replaced'` | integer |
+| Replace a schedule occurrence | `schedule_overrides` kind `combined` | `"sid:date"` |
+
+`event_replaces` is described as legacy in old comments. It is pre-v26 but **not**
+redundant: it is the only path for combining against a stored one-off.
+
+**Dedup decides which of two competing rows becomes one card** (`merge.mjs`): a
+`week_of_month` rule beats a generic weekly one, a stored one-off beats a schedule
+instance, then most-recently-updated. That middle rule is load-bearing — it is how a
+scraped event supersedes its recurring twin instead of showing twice.
+
+**Adapters** live in `worker/lib/adapters.mjs` as a static registry (Workers have no
+filesystem, so there is no directory scan). Add a parish by adding a line.
+`source_hash` makes a re-scrape idempotent.
 
 ## Deploy
 
-Container `agora` on `homelab` Docker network at 172.18.0.2. Caddy proxies `agora.orthodoxy.au` to `172.18.0.2:3000`. Dev is `agora-dev` at 172.18.0.3, host port 3002 (Tailscale only).
-
-| Branch push | Deploys to | URL |
-|-------------|-----------|-----|
-| `git push origin dev` | `agora-dev` container, port 3002 | `http://100.64.0.2:3002` (Tailscale only) |
-| `git push origin main` | `agora` container, port 3000 | `https://agora.orthodoxy.au` |
-
-To merge dev → production:
 ```bash
-git checkout main
-git merge dev
-git push origin main   # webhook auto-deploys
+npm run deploy
 ```
 
-## Deploy discipline — one path rule
+Secrets (set once, via `wrangler secret put`):
 
-There is exactly one way to (re)deploy agora or agora-dev:
+| Secret | For |
+|---|---|
+| `GOOGLE_API_KEY` | The Google Calendar adapter |
+| `ACCESS_TEAM_DOMAIN` | Cloudflare Access, e.g. `yourteam.cloudflareaccess.com` |
+| `ACCESS_AUD` | The Access application's audience tag |
 
-1. `git push origin main` → webhook rebuilds and restarts `agora` via compose
-2. `git push origin dev`  → webhook rebuilds and restarts `agora-dev` via compose
-3. Manual (only when debugging and you can't push):
-   - Prod: `cd /home/ubuntu/agora && docker compose up -d --build agora`
-   - Dev:  `cd /home/ubuntu/agora && docker compose --profile dev up -d --build agora-dev`
+**Admin fails closed.** With `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` unset, every
+`/api/admin/*` request is refused. The Access JWT's signature is verified against the
+team's published keys — a forged `Cf-Access-Jwt-Assertion` header gets nothing.
 
-The compose file at `docker-compose.yml` is the single source of truth for env vars, volumes, ports, and network. **Never** run `docker run` manually for these containers — a manual `docker run` that omits `AGORA_DB_PATH` or the data-dev volume will silently diverge and crash the next restart. This is how `agora-dev` went dark on 2026-04-13.
+`AGORA_DEV_ADMIN=true` bypasses that, and exists only for `wrangler dev`. It is
+deliberately absent from `wrangler.toml` so it cannot ship by accident.
 
-Enforcement: `hades-guard.sh` PreToolUse hook hard-blocks `docker run agora*` and raw `docker build agora*` (outside `docker compose build`). The error message includes the correct command — copy-paste and continue.
+## Database
 
-If you need a throwaway dev instance of a different shape, give it a different container name, different port, and tear it down yourself. Do not touch `agora` or `agora-dev`.
+The schema is one baseline file, `d1/schema.sql` — not a migration chain. Seven tables.
 
-## Email
+```bash
+npm run db:schema    # apply to remote D1
+npm run db:seed      # parishes + starting rules
+```
 
-To email rendered markdown: `render-md /path/to/file.md email "Subject"`
-Sends styled HTML to mail@kevinpaul.au via the mailserver container. No config needed.
+`d1/seed-parishes.sql` is **generated** from `seeds/parishes.js` by
+`npm run gen:seed`. Edit the JS, regenerate, commit both. CI fails if they diverge.
 
-## Env Vars
+The `*.console.sql` variants exist because the Cloudflare dashboard's SQL console
+collapses newlines on paste, which turns a leading `--` comment into one comment
+swallowing the whole file. Those have comments stripped and one statement per line.
 
-- `ANTHROPIC_API_KEY` — for Claude Vision poster parsing
-- `GOOGLE_API_KEY` — for Google Calendar adapter
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for OAuth
-- `GOOGLE_REDIRECT_URI` — OAuth callback URL
-- `AGORA_SESSION_SECRET` — session cookie signing
+## History worth knowing
+
+Agora ran on a Sydney VM until it was decommissioned: Express + better-sqlite3 +
+node-cron behind Caddy, with a WhatsApp ingestor that used Claude Vision to read parish
+posters, and a moderation queue because AI-parsed content needed approval.
+
+That is all gone. The WhatsApp and vision pipelines were cut deliberately (scope: "a
+database and a website"), which also removed the entire moderation subsystem. The old
+database was not recovered — parishes come from the seed, events from scraping.
+
+Two consequences still visible in the code:
+
+- `events.schedule_id` and the `source_adapter != 'schedule'` guard in the bundle query
+  are scar tissue from a nightly generator that wrote occurrence rows. It was replaced by
+  the date lens in schema v26.
+- Ingestion currently covers **one parish** (Good Shepherd Clayton, via Google Calendar).
+  Everything else used to arrive over WhatsApp. Writing more adapters is the gap between
+  "the port is done" and "the site is useful".
+
+`docs/cloudflare-migration.md` is the full migration record, including the reasoning
+behind decisions that look arbitrary from the outside.

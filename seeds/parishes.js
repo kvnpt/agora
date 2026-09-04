@@ -1,5 +1,4 @@
-const { getDb } = require('../db');
-
+// Seed data: the parishes and recurrence rules a fresh database starts with.
 const ANTIOCHIAN_BLUE = '#1e3a5f';
 
 const parishes = [
@@ -104,44 +103,6 @@ const schedules = [
   { parish_id: 'antiochian-stelias-wollongong', day_of_week: 0, start_time: '10:00', end_time: '12:00', title: 'Sunday Divine Liturgy', event_type: 'liturgy' },
 ];
 
-function seed() {
-  const db = getDb();
-
-  const insertParish = db.prepare(`
-    INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, website, languages, color)
-    VALUES (@id, @name, @full_name, @jurisdiction, @address, @lat, @lng, @website, @languages, @color)
-    ON CONFLICT(id) DO NOTHING
-  `);
-
-  const insertSchedule = db.prepare(`
-    INSERT OR IGNORE INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
-    VALUES (@parish_id, @day_of_week, @start_time, @end_time, @title, @event_type)
-  `);
-
-  const tx = db.transaction(() => {
-    for (const p of parishes) {
-      insertParish.run({
-        ...p,
-        full_name: p.full_name || null,
-        website: p.website || null,
-        languages: p.languages || '["English"]',
-        color: p.color || null
-      });
-    }
-    const count = db.prepare('SELECT COUNT(*) as n FROM schedules').get().n;
-    if (count === 0) {
-      for (const s of schedules) {
-        insertSchedule.run(s);
-      }
-    }
-  });
-  tx();
-
-  const parishCount = db.prepare('SELECT COUNT(*) as n FROM parishes WHERE id != ?').get('_unassigned').n;
-  const scheduleCount = db.prepare('SELECT COUNT(*) as n FROM schedules').get().n;
-  console.log(`Seeded ${parishCount} parishes, ${scheduleCount} schedules`);
-}
-
-// parishes/schedules are exported so scripts/gen-seed-sql.js can emit the D1
-// seed from this same source — the two can't drift.
-module.exports = { seed, parishes, schedules };
+// Pure data. The Node seeder that used to live here went with the Express app;
+// the D1 seed is generated from these arrays by scripts/gen-seed-sql.js.
+module.exports = { parishes, schedules };

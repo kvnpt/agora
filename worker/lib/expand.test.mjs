@@ -1,12 +1,12 @@
-// Equivalence test: the ported lens must produce the same instances as the
-// Express one it replaces.
+// The date lens against the D1 schema.
 //
 //   npm test
 //
-// Both lenses run over identically-seeded databases — the old one on the v29
-// migration schema with better-sqlite3 and the Temporal polyfill, the new one on
-// d1/schema.sql through a D1-shaped adapter and the OffsetCache. Any divergence
-// in the projected output is a port bug.
+// These began as an equivalence test diffing the ported lens against the
+// Express one, over identically-seeded databases, on 36 shared fields. That
+// test did its job at the moment of porting and died with the Express app —
+// there is nothing left to compare against. The assertions below are the same
+// properties stated directly instead of differentially.
 
 import test from 'node:test';
 import assert from 'node:assert';
@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { expandWindow, expandOne, parseInstanceId, isValidOccurrence } from './expand.mjs';
+import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -40,21 +41,6 @@ class D1Stmt {
 
 // ── Fixtures ──
 
-// Old world: db.js migrations + the Node seeder.
-function buildLegacy() {
-  const p = tmp();
-  process.env.AGORA_DB_PATH = p;
-  for (const m of ['../../db.js', '../../seeds/parishes.js', '../../schedule-expand.js']) {
-    delete require.cache[require.resolve(m)];
-  }
-  const { getDb } = require('../../db.js');
-  const { seed } = require('../../seeds/parishes.js');
-  const db = getDb();
-  seed();
-  return { db, legacyExpand: require('../../schedule-expand.js') };
-}
-
-// New world: d1/schema.sql + the generated seed.
 function buildD1() {
   const db = new Database(tmp());
   db.pragma('foreign_keys = ON');
@@ -66,41 +52,54 @@ function buildD1() {
 const FROM = '2026-09-01T00:00:00.000Z';
 const TO = '2026-12-01T00:00:00.000Z';
 
-// Fields the legacy projection also produces. start_local/end_local/timezone are
-// additions of the port and have no legacy counterpart.
+// Fields compared when two projections of the same occurrence must agree.
 const SHARED = [
   'id', 'parish_id', 'schedule_id', 'source_adapter', 'title', 'description', 'feast',
-  'start_utc', 'end_utc', 'location_override', 'lat', 'lng', 'event_type', 'languages',
-  'hide_live', 'parish_scoped', 'source_url', 'source_hash', 'confidence', 'mutation_type',
-  'status', 'is_tombstone', 'combined_into_event_id', 'created_at', 'updated_at',
-  'parish_name', 'jurisdiction', 'parish_address', 'parish_website', 'parish_logo',
-  'parish_languages', 'parish_acronym', 'parish_color', 'parish_live_url',
+  'start_utc', 'end_utc', 'start_local', 'end_local', 'timezone', 'location_override',
+  'lat', 'lng', 'event_type', 'languages', 'hide_live', 'parish_scoped', 'source_url',
+  'source_hash', 'confidence', 'mutation_type', 'status', 'is_tombstone',
+  'combined_into_event_id', 'created_at', 'updated_at', 'parish_name', 'jurisdiction',
   'concurrent', 'week_of_month',
 ];
 const pick = (o) => Object.fromEntries(SHARED.map(k => [k, o[k] === undefined ? null : o[k]]));
 
-test('ported lens matches the Express lens over a 3-month window', async () => {
-  const { db: legacyDb, legacyExpand } = buildLegacy();
-  const d1Db = buildD1();
+test('every rule emits exactly its occurrences in the window, and no others', async () => {
+  const raw = buildD1();
+  const db = new D1(raw);
 
-  const legacy = legacyExpand.expandWindow(legacyDb, FROM, TO)
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  const ported = (await expandWindow(new D1(d1Db), FROM, TO))
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const rules = raw.prepare('SELECT * FROM schedules WHERE active = 1').all();
+  const instances = await expandWindow(db, FROM, TO);
 
-  assert.ok(legacy.length > 100, `expected a substantial window, got ${legacy.length}`);
-  assert.strictEqual(ported.length, legacy.length, 'instance count differs');
-  for (let i = 0; i < legacy.length; i++) {
-    assert.deepStrictEqual(pick(ported[i]), pick(legacy[i]), `instance ${legacy[i].id} differs`);
+  // Derive the expectation from the calendar rather than hardcoding a total.
+  let expected = 0;
+  for (const r of rules) {
+    for (let t = Date.parse(FROM); t <= Date.parse(TO); t += 86400000) {
+      const d = new Date(t);
+      const date = d.toISOString().slice(0, 10);
+      if (d.getUTCDay() === r.day_of_week && matchesWeekOfMonth(date, r.week_of_month)) expected++;
+    }
+  }
+  // Window edges are compared on the projected instant, so allow one per rule.
+  assert.ok(Math.abs(instances.length - expected) <= rules.length,
+    `expected about ${expected} instances, got ${instances.length}`);
+
+  for (const inst of instances) {
+    const { scheduleId, date } = parseInstanceId(inst.id);
+    const rule = rules.find(r => r.id === scheduleId);
+    assert.ok(rule, `instance ${inst.id} references a live rule`);
+    assert.strictEqual(new Date(date + 'T00:00:00Z').getUTCDay(), rule.day_of_week,
+      `${inst.id} lands on the rule's weekday`);
+    assert.strictEqual(inst.source_adapter, 'schedule');
+    assert.strictEqual(inst.start_local, `${date}T${rule.start_time}`,
+      'the local wall clock is the rule\'s own, unconverted');
   }
 });
 
-test('ported lens matches with overrides of every kind applied', async () => {
-  const { db: legacyDb, legacyExpand } = buildLegacy();
-  const d1Db = buildD1();
+test('overrides of every kind change only how an instance renders', async () => {
+  const raw = buildD1();
+  const db = new D1(raw);
 
-  // Pick four real occurrences and override one of each kind, identically.
-  const base = legacyExpand.expandWindow(legacyDb, FROM, TO);
+  const base = await expandWindow(db, FROM, TO);
   const targets = [];
   const seen = new Set();
   for (const e of base) {
@@ -109,49 +108,50 @@ test('ported lens matches with overrides of every kind applied', async () => {
     targets.push(parseInstanceId(e.id));
     if (targets.length === 4) break;
   }
+
+  const p = raw.prepare("SELECT id, lat, lng FROM parishes WHERE id != '_unassigned' LIMIT 1").get();
+  raw.prepare(
+    "INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, source_hash, lat, lng)" +
+    " VALUES (?, 'manual', 'Combiner', '2026-09-20T00:00:00.000Z', 'feast', 'h-combine', ?, ?)"
+  ).run(p.id, p.lat, p.lng);
+  const combiner = raw.prepare("SELECT id FROM events WHERE source_hash = 'h-combine'").get().id;
+
   const kinds = ['modified', 'cancelled', 'combined', 'hidden'];
+  targets.forEach((t, i) => {
+    raw.prepare(
+      'INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind, patch_title,' +
+      ' patch_start_time, combined_into_event_id, updated_at) VALUES (?,?,?,?,?,?,?)'
+    ).run(t.scheduleId, t.date, kinds[i],
+      kinds[i] === 'modified' ? 'Patched Title' : null,
+      kinds[i] === 'modified' ? '18:45' : null,
+      kinds[i] === 'combined' ? combiner : null,
+      '2026-09-01T00:00:00Z');
+  });
 
-  for (const db of [legacyDb, d1Db]) {
-    // A combining event for the 'combined' override to point at.
-    const p = db.prepare("SELECT id, lat, lng FROM parishes WHERE id != '_unassigned' LIMIT 1").get();
-    db.prepare(
-      "INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, source_hash, lat, lng)" +
-      " VALUES (?, 'manual', 'Combiner', '2026-09-20T00:00:00.000Z', 'feast', 'h-combine', ?, ?)"
-    ).run(p.id, p.lat, p.lng);
-    const combiner = db.prepare("SELECT id FROM events WHERE source_hash = 'h-combine'").get().id;
+  const after = await expandWindow(db, FROM, TO);
+  assert.strictEqual(after.length, base.length,
+    'nothing disappears — an override changes rendering, not existence');
 
-    targets.forEach((t, i) => {
-      const kind = kinds[i];
-      db.prepare(
-        'INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind, patch_title,' +
-        ' patch_start_time, combined_into_event_id, updated_at) VALUES (?,?,?,?,?,?,?)'
-      ).run(
-        t.scheduleId, t.date, kind,
-        kind === 'modified' ? 'Patched Title' : null,
-        kind === 'modified' ? '18:45' : null,
-        kind === 'combined' ? combiner : null,
-        '2026-09-01T00:00:00Z',
-      );
-    });
-  }
+  const at = (t) => after.find(e => e.id === `${t.scheduleId}:${t.date}`);
 
-  const legacy = legacyExpand.expandWindow(legacyDb, FROM, TO)
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  const ported = (await expandWindow(new D1(d1Db), FROM, TO))
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const mod = at(targets[0]);
+  assert.strictEqual(mod.title, 'Patched Title');
+  assert.strictEqual(mod.mutation_type, 'adapted');
+  assert.strictEqual(mod.start_local, `${targets[0].date}T18:45`);
+  assert.strictEqual(mod.is_tombstone, 0);
 
-  assert.strictEqual(ported.length, legacy.length);
-  for (let i = 0; i < legacy.length; i++) {
-    assert.deepStrictEqual(pick(ported[i]), pick(legacy[i]), `instance ${legacy[i].id} differs`);
-  }
+  const can = at(targets[1]);
+  assert.strictEqual(can.status, 'cancelled');
+  assert.strictEqual(can.is_tombstone, 1, 'a cancellation is still visible, as a tombstone');
 
-  // The overrides actually took effect, so the comparison above wasn't vacuous.
-  const statuses = new Set(ported.map(e => e.status));
-  assert.ok(statuses.has('cancelled'), 'expected a cancelled tombstone');
-  assert.ok(statuses.has('combined'), 'expected a combined tombstone');
-  assert.ok(statuses.has('hidden'), 'expected a hidden instance');
-  assert.ok(ported.some(e => e.mutation_type === 'adapted' && e.title === 'Patched Title'),
-    'expected a modified instance');
+  const com = at(targets[2]);
+  assert.strictEqual(com.status, 'combined');
+  assert.strictEqual(com.is_tombstone, 1);
+  assert.strictEqual(com.combined_into_event_id, combiner);
+
+  const hid = at(targets[3]);
+  assert.strictEqual(hid.status, 'hidden');
+  assert.strictEqual(hid.is_tombstone, 0, 'hidden is suppressed, not a tombstone');
 });
 
 test('expandOne round-trips a synthetic id, and rejects a non-occurrence', async () => {
