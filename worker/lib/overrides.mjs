@@ -11,7 +11,7 @@
 // findInstanceOccurrence() is not ported — its only caller was the WhatsApp
 // webhook, which is gone.
 
-import { OffsetCache, offsetAt } from './tz.mjs';
+import { OffsetCache, offsetAt } from '../../public/shared/tz.mjs';
 import { expandOne, isValidOccurrence } from './expand.mjs';
 
 const PATCH_COLS = [

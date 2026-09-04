@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { expandFrom, expandWindow, fetchWindowRows } from './expand.mjs';
-import { buildFeed, dedupe, partitionKey, preferenceCmp, sortFeed } from './merge.mjs';
+import { buildFeed, dedupe, partitionKey, preferenceCmp, sortFeed } from '../../public/shared/merge.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');

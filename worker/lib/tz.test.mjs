@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { Temporal } from '@js-temporal/polyfill';
-import { OffsetCache } from './tz.mjs';
+import { OffsetCache } from '../../public/shared/tz.mjs';
 
 const ref = (zone, d, t) =>
   Temporal.PlainDateTime.from(`${d}T${t}`).toZonedDateTime(zone).toInstant()

@@ -59,8 +59,16 @@ export default {
     } catch (err) {
       return json({ error: 'Internal error', detail: err.message }, 500);
     }
-    // Unmatched: Pages serves the SPA. Reaching here directly means no such API route.
-    return json({ error: 'Not found' }, 404);
+
+    // Nothing matched. An unknown /api/ path is a real 404; anything else is a
+    // client route — a deep link like /102:2026-09-06 or /smg — and belongs to
+    // the SPA. The asset layer's not_found_handling does not apply once the
+    // Worker has been invoked, so hand it back explicitly.
+    const path = new URL(request.url).pathname;
+    if (path.startsWith('/api/') || path === '/health') {
+      return json({ error: 'Not found' }, 404);
+    }
+    return env.ASSETS.fetch(request);
   },
 
   // Cron Trigger — replaces node-cron's in-process timer.

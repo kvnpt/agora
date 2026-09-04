@@ -849,13 +849,17 @@ async function fetchEvents(opts = {}) {
   toDate.setUTCHours(23, 59, 59, 0);
   params.set('to', toDate.toISOString());
 
-  if (window.lsLog) window.lsLog(`GET /api/events?from=…&to=+${windowDays}d …`);
+  if (window.lsLog) window.lsLog(`GET /api/bundle (+${windowDays}d window, projected locally) …`);
   try {
-    const res = await fetch(`/api/events?${params}`, opts.fresh ? { cache: 'no-store' } : {});
-    // Normalise ids to strings: schedule instances use a synthetic string id
-    // ("scheduleId:YYYY-MM-DD"), one-offs use integers. Stringifying everywhere
-    // keeps DOM data-id round-trips and find()/=== comparisons type-consistent.
-    state.events = (await res.json()).map(e => ({ ...e, id: String(e.id) }));
+    // The API returns RULES, not instances. agoraBundle projects them here with
+    // the same /shared/ modules the Worker uses. state.events keeps its shape:
+    // one flat array, ids stringified — schedule instances carry a synthetic
+    // string id ("scheduleId:YYYY-MM-DD"), one-offs an integer — so DOM
+    // data-id round-trips and find()/=== comparisons stay type-consistent.
+    await window.agoraBundle.load({ fresh: opts.fresh });
+    state.events = window.agoraBundle.feed(params.get('from'), params.get('to'), {
+      lat: state.userLat, lng: state.userLng,
+    });
     if (opts.extended) state._eventsExtended = true;
   } catch {
     state.events = [];
@@ -915,8 +919,12 @@ async function fetchSchedules(opts = {}) {
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
   if (window.lsLog) window.lsLog('GET /api/schedules …');
   try {
-    const res = await fetch(`/api/schedules?${params}`);
-    state.schedules = await res.json();
+    await window.agoraBundle.load();
+    // The services view renders the RULES themselves, so the bundle's schedules
+    // are exactly what it wants — no separate request.
+    const juris = state.filters.jurisdiction;
+    state.schedules = window.agoraBundle.schedules()
+      .filter(s => !juris || s.parish_jurisdiction === juris || s.jurisdiction === juris);
   } catch {
     state.schedules = [];
   }
@@ -929,8 +937,8 @@ async function fetchSchedules(opts = {}) {
 async function fetchParishes() {
   if (window.lsLog) window.lsLog('GET /api/parishes …');
   try {
-    const res = await fetch('/api/parishes');
-    state.parishes = await res.json();
+    await window.agoraBundle.load();
+    state.parishes = window.agoraBundle.parishes();
   } catch {
     state.parishes = [];
   }
@@ -1113,8 +1121,10 @@ async function openEventFromUrl(id) {
   let evt = state.events.find(e => e.id === id);
   if (!evt) {
     try {
-      const res = await fetch(`/api/events/${id}`);
-      if (res.ok) { evt = await res.json(); if (evt) evt.id = String(evt.id); }
+      // Outside the loaded window: project it from the rules we already hold.
+      // A deep link no longer needs the server.
+      await window.agoraBundle.load();
+      evt = window.agoraBundle.resolveEvent(id);
     } catch {}
     if (evt && !state.events.some(e => e.id === evt.id)) {
       state.events = [...state.events, evt];
@@ -3986,8 +3996,8 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   // Lazy-fetch schedules when they haven't been loaded yet
   if (!state.schedules || !state.schedules.length) {
-    fetch('/api/schedules')
-      .then(r => r.ok ? r.json() : [])
+    window.agoraBundle.load()
+      .then(() => window.agoraBundle.schedules())
       .then(data => {
         state.schedules = data || [];
         const sheetEl = document.getElementById('parish-sheet');
@@ -4014,10 +4024,10 @@ function renderParishSheetContent(parishId, opts = {}) {
     const offsetMs = new Date(sydneyStr).getTime() - testDate.getTime();
     const from = new Date(startLocal.getTime() - offsetMs).toISOString();
     const to = new Date(now.getTime() + 28 * 86400000).toISOString();
-    fetch(`/api/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
-      .then(r => r.ok ? r.json() : [])
+    window.agoraBundle.load()
+      .then(() => window.agoraBundle.feed(from, to))
       .then(events => {
-        const data = (events || []).map(e => ({ ...e, id: String(e.id) }));
+        const data = events || [];
         // Merge into state.events so expandEventCard (which looks up events
         // by id in state.events) can find the card when the user tapped
         // straight from the services list into the parish card — otherwise

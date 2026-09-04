@@ -17,3 +17,15 @@ crons = ["0 */4 * * *"]
 
 [observability]
 enabled = true
+
+# Static frontend served by the Worker itself.
+#
+# The plan said Pages + a Worker on the same domain. Workers static assets does
+# the same job in one deployment: same origin (so every relative fetch in
+# app.js keeps working, and there is no CORS surface at all), SPA fallback
+# built in (replacing the _redirects file), and assets served free without
+# invoking the Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
