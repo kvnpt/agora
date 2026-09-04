@@ -5,9 +5,12 @@
 
 import { Router, json } from './lib/router.mjs';
 import { registerPublicRoutes } from './routes/public.mjs';
+import { registerAdminRoutes } from './routes/admin.mjs';
+import { ADAPTERS, runAdapter } from './lib/adapters.mjs';
 
 const router = new Router();
 registerPublicRoutes(router);
+registerAdminRoutes(router);
 
 // GET /health — proves the D1 binding, nothing more.
 router.get('/health', async ({ env }) => {
@@ -60,8 +63,20 @@ export default {
     return json({ error: 'Not found' }, 404);
   },
 
-  // Cron Trigger — replaces node-cron. Adapters land in phase 3d.
+  // Cron Trigger — replaces node-cron's in-process timer.
+  //
+  // node-cron kept one long-lived process with a timer per adapter; a Cron
+  // Trigger invokes this instead. One adapter failing must not stop the others,
+  // and the failure is already recorded in adapter_runs by runAdapter.
   async scheduled(event, env, ctx) {
-    console.log(`[cron] ${event.cron} fired at ${new Date(event.scheduledTime).toISOString()}`);
+    console.log(`[cron] ${event.cron} at ${new Date(event.scheduledTime).toISOString()}`);
+    const results = await Promise.allSettled(
+      ADAPTERS.map(a => runAdapter(a, env))
+    );
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error(`[cron] ${ADAPTERS[i].id} failed: ${r.reason?.message || r.reason}`);
+      }
+    });
   },
 };
