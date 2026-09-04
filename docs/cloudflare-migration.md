@@ -386,6 +386,21 @@ from the Worker.
 **Done when:** map renders tiles and parish avatars load, with no change to any stored
 `logo_path` value.
 
+**Status: code done; the tiles archive itself is missing.** `/tiles/*`, `/logos/*` and
+`/posters/*` serve from R2 with full HTTP range support, and the logo upload writes there.
+But `oceania.pmtiles` lived only on the VM, and nothing in the repo can regenerate it —
+`scripts/build-dark-basemap.js` bakes the *style JSON*, not the tile archive. It has to be
+sourced again (a Protomaps extract, or built with the `pmtiles` CLI from a Protomaps daily
+build) and uploaded:
+
+```bash
+wrangler r2 bucket create agora-assets
+wrangler r2 object put agora-assets/tiles/oceania.pmtiles --file=oceania.pmtiles
+```
+
+Until then the map requests ranges correctly and fails on the archive's magic number —
+transport working, content absent.
+
 ### Phase 5 — Frontend to Pages
 
 - New Pages project: root directory `public/`, no build command.

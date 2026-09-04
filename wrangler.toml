@@ -18,6 +18,15 @@ crons = ["0 */4 * * *"]
 [observability]
 enabled = true
 
+# Binary assets: map tiles, parish logos, event posters. These were files on the
+# VM's disk (/opt/agora/tiles read-only, /opt/agora/data/{logos,posters}
+# written by the admin panel). R2 charges no egress, which matters because the
+# PMTiles archive is the heaviest thing the site serves.
+[[r2_buckets]]
+binding = "ASSETS_BUCKET"
+bucket_name = "agora-assets"
+
+
 # Static frontend served by the Worker itself.
 #
 # The plan said Pages + a Worker on the same domain. Workers static assets does

@@ -450,6 +450,36 @@ export function registerAdminRoutes(router) {
     return json({ ok: true });
   }));
 
+  // POST /api/admin/parishes/:id/logo — raw image body, stored in R2.
+  //
+  // The Express version wrote to /opt/agora/data/logos on the VM's disk. The
+  // stored logo_path stays '/logos/<id>.<ext>', so nothing downstream changes.
+  router.post('/api/admin/parishes/:id/logo', guarded(async ({ env, params, request }) => {
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+    const id = params.id;
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
+      return json({ error: 'Parish not found' }, 404);
+    }
+
+    const contentType = request.headers.get('content-type') || '';
+    const ext = contentType.includes('png') ? 'png'
+              : contentType.includes('svg') ? 'svg'
+              : contentType.includes('webp') ? 'webp' : 'jpg';
+
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return json({ error: 'No data received' }, 400);
+    if (body.byteLength > 5 * 1024 * 1024) return json({ error: 'Logo too large (5 MB max)' }, 413);
+
+    const key = `logos/${id}.${ext}`;
+    await env.ASSETS_BUCKET.put(key, body, {
+      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
+    });
+
+    const logoPath = `/${key}`;
+    await env.DB.prepare('UPDATE parishes SET logo_path = ? WHERE id = ?').bind(logoPath, id).run();
+    return json({ logo_path: logoPath });
+  }));
+
   // ── adapters ──
 
   router.get('/api/admin/adapters', guarded(async () =>
