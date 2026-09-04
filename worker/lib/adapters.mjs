@@ -92,6 +92,26 @@ export const ADAPTERS = [
 
 export const getAdapter = (id) => ADAPTERS.find(a => a.id === id) || null;
 
+// Adapters whose parish is not in the seed yet, and so cannot run.
+//
+// Every adapter names a parish, and events.parish_id is a foreign key, so an
+// adapter whose parish does not exist fails on its first write. The old
+// production database had this parish — it was created through the admin panel,
+// not the seed — and that database was not recovered. Nothing in the repo can
+// recreate the row, because a parish needs a street address and coordinates
+// that have to be confirmed against the parish rather than guessed: the
+// archdiocese lists Good Shepherd as a mission at the Monash University
+// Religious Centre in Clayton, while other listings put it at Canterbury, and
+// putting the wrong pin on a map sends someone to the wrong building.
+//
+// Listing it here keeps the gap visible and keeps the registry honest: the
+// test asserts that every OTHER adapter's parish is seeded, so a new adapter
+// cannot drift in unnoticed. Delete the entry once the parish is seeded.
+export const PENDING_PARISHES = new Map([
+  ['gcal-antiochian-good-shepherd-antiochian-church',
+   'Good Shepherd, Clayton — needs a confirmed address and coordinates. See docs/deploy.md.'],
+]);
+
 /**
  * Run one adapter: fetch, upsert, log the run. Returns the run's counters.
  */
@@ -119,8 +139,19 @@ export async function runAdapter(adapter, env) {
       for (const r of q.results || []) existing.add(r.source_hash);
     }
 
+    // The adapter names its parish; the parish must already exist. Without this
+    // the first write dies on `FOREIGN KEY constraint failed`, which lands in
+    // adapter_runs.error_message and says nothing about which parish is missing
+    // or that the seed is the thing to fix. adapter_runs is the only visibility
+    // into scraping, so the message it stores has to be worth reading.
     const parish = await db.prepare('SELECT lat, lng FROM parishes WHERE id = ?')
       .bind(adapter.parishId).first();
+    if (!parish) {
+      throw new Error(
+        `${adapter.id} targets parish '${adapter.parishId}', which is not in the database. ` +
+        'Add it (seeds/parishes.js, then `npm run gen:seed` and `npm run db:seed`) before this adapter can run.'
+      );
+    }
 
     const upsert = db.prepare(`
       INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
@@ -140,7 +171,7 @@ export async function runAdapter(adapter, env) {
       return upsert.bind(
         adapter.parishId, adapter.id, e.title, e.description || null,
         e.start_utc, e.end_utc || null, e.location_override || null,
-        e.lat ?? parish?.lat ?? null, e.lng ?? parish?.lng ?? null,
+        e.lat ?? parish.lat, e.lng ?? parish.lng,
         e.event_type || 'other', e.source_url || null, e.source_hash || null,
         e.hide_live ? 1 : 0, e.parish_scoped ? 1 : 0,
       );

@@ -1,14 +1,10 @@
 // Emit d1/seed-parishes.sql from seeds/parishes.js.
 //
 // The D1 seed is generated rather than hand-written so it can't drift from the
-// list the Node app seeds. Re-run after adding a parish:
+// parish list. Re-run after adding a parish:
 //
-//   node scripts/gen-seed-sql.js
+//   npm run gen:seed
 //
-// AGORA_DB_PATH is set only because requiring seeds/parishes.js pulls in db.js,
-// which refuses to load without it. No database is opened.
-process.env.AGORA_DB_PATH = process.env.AGORA_DB_PATH || '/dev/null';
-
 const fs = require('fs');
 const path = require('path');
 const { parishes, schedules } = require('../seeds/parishes');
@@ -32,17 +28,21 @@ lines.push('-- Edit seeds/parishes.js and re-run; do not hand-edit this file.');
 lines.push('--');
 lines.push('--   wrangler d1 execute agora --remote --file=d1/seed-parishes.sql');
 lines.push('--');
-lines.push('-- Every seeded parish is in NSW, so the Australia/Sydney default applies.');
-lines.push('-- A parish outside that zone must set timezone explicitly.');
+lines.push("-- timezone is written explicitly rather than left to the column default.");
+lines.push('-- Oceania spans Perth (+08:00, no DST) to Auckland (+12:00/+13:00), and a');
+lines.push("-- schedule's start_time is local wall clock, so an inherited default is an");
+lines.push('-- hours-wrong service time waiting to happen the first time a parish is');
+lines.push('-- added outside NSW.');
 lines.push('');
 
 for (const p of parishes) {
   const pr = provenance(p);
   lines.push(
     'INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, ' +
-    'website, languages, color, info_source_type, info_source_ref) VALUES (\n' +
+    'timezone, website, languages, color, info_source_type, info_source_ref) VALUES (\n' +
     `  ${q(p.id)}, ${q(p.name)}, ${q(p.full_name)}, ${q(p.jurisdiction)}, ${q(p.address)},\n` +
-    `  ${p.lat}, ${p.lng}, ${q(p.website)}, ${q(p.languages || '["English"]')}, ${q(p.color)},\n` +
+    `  ${p.lat}, ${p.lng}, ${q(p.timezone || 'Australia/Sydney')},\n` +
+    `  ${q(p.website)}, ${q(p.languages || '["English"]')}, ${q(p.color)},\n` +
     `  ${q(pr.type)}, ${q(pr.ref)}\n) ON CONFLICT(id) DO NOTHING;`
   );
 }

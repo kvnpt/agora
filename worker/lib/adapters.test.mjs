@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { runAdapter, guessEventType, shouldHideLive, isParishScoped, sha256Hex } from './adapters.mjs';
+import { ADAPTERS, PENDING_PARISHES, runAdapter, guessEventType, shouldHideLive, isParishScoped, sha256Hex } from './adapters.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -137,4 +137,56 @@ test('source_hash is stable and hex', async () => {
   const b = await sha256Hex('gcal-cal@example.com-evt1');
   assert.strictEqual(a, b);
   assert.match(a, /^[0-9a-f]{64}$/);
+});
+
+test('an adapter naming a parish that does not exist fails with a useful message', async () => {
+  const { raw, env } = fresh();
+  const orphan = { ...fakeAdapter([evt('h1', 'Liturgy', '2026-09-06T00:00:00Z')]),
+    parishId: 'antiochian-nowhere-in-particular' };
+
+  await assert.rejects(() => runAdapter(orphan, env), /not in the database/);
+
+  // The point of the guard is what a human reads in adapter_runs weeks later,
+  // so assert on the stored message, not just the throw.
+  const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
+  assert.strictEqual(run.status, 'failed');
+  assert.match(run.error_message, /antiochian-nowhere-in-particular/);
+  assert.match(run.error_message, /seeds\/parishes\.js/,
+    'the message has to name the fix, not just the symptom');
+
+  assert.strictEqual(raw.prepare('SELECT COUNT(*) n FROM events').get().n, 0,
+    'nothing is written for a parish that does not exist');
+});
+
+test('every registered adapter targets a seeded parish, or says why not', () => {
+  // The registry and the seed are edited in different files and nothing links
+  // them. An adapter pointing at a parish the seed never creates cannot fail
+  // until the cron fires in production, four hours after the deploy that broke
+  // it. Catch it here instead.
+  //
+  // One adapter is knowingly in that state — see PENDING_PARISHES. The point of
+  // the exception being explicit is that it is the only one: anything else that
+  // drifts fails here.
+  const { raw } = fresh();
+  const seeded = new Set(raw.prepare('SELECT id FROM parishes').all().map(r => r.id));
+  for (const a of ADAPTERS) {
+    if (PENDING_PARISHES.has(a.id)) continue;
+    assert.ok(seeded.has(a.parishId),
+      `adapter '${a.id}' targets parish '${a.parishId}', which seeds/parishes.js does not create`);
+  }
+});
+
+test('PENDING_PARISHES lists only adapters that are really still pending', () => {
+  // The list is a TODO, and a stale TODO is worse than none: an entry left
+  // behind after the parish is seeded silently exempts that adapter from the
+  // check above forever.
+  const { raw } = fresh();
+  const seeded = new Set(raw.prepare('SELECT id FROM parishes').all().map(r => r.id));
+  for (const [adapterId, reason] of PENDING_PARISHES) {
+    const a = ADAPTERS.find(x => x.id === adapterId);
+    assert.ok(a, `PENDING_PARISHES names '${adapterId}', which is not a registered adapter`);
+    assert.ok(!seeded.has(a.parishId),
+      `'${adapterId}' is listed as pending but its parish is seeded now — delete the entry`);
+    assert.ok(reason && reason.length > 20, 'an entry has to say what is missing');
+  }
 });

@@ -315,6 +315,10 @@ scrape is idempotent by design — a second run updates rather than duplicates.
 
 ## Deployment order
 
+> The operational companion to this section is `docs/deploy.md`: the same order,
+> as commands, with the check that proves each step landed. This section is the
+> reasoning; that one is the runbook.
+
 Sequenced so something is verifiable at every step, and the largest rewrite happens
 against data already proven to import cleanly. Pruning comes first for a reason: every
 file deleted in Phase 1 is a file not ported in Phase 3.

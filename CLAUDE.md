@@ -98,6 +98,11 @@ filesystem, so there is no directory scan). Add a parish by adding a line.
 npm run deploy
 ```
 
+`docs/deploy.md` is the runbook for a first live deploy — the commands in order,
+the check that proves each one landed, and the two things that block a *useful*
+site rather than a working one (the missing basemap archive, and the one adapter
+whose parish is not in the seed).
+
 Secrets (set once, via `wrangler secret put`):
 
 | Secret | For |
@@ -144,9 +149,11 @@ Two consequences still visible in the code:
 - `events.schedule_id` and the `source_adapter != 'schedule'` guard in the bundle query
   are scar tissue from a nightly generator that wrote occurrence rows. It was replaced by
   the date lens in schema v26.
-- Ingestion currently covers **one parish** (Good Shepherd Clayton, via Google Calendar).
-  Everything else used to arrive over WhatsApp. Writing more adapters is the gap between
-  "the port is done" and "the site is useful".
+- Ingestion currently covers **one parish** (Good Shepherd Clayton, via Google Calendar),
+  and even that one cannot run yet: its parish row existed only in the lost database, so
+  it is listed in `PENDING_PARISHES` until someone confirms the address. Everything else
+  used to arrive over WhatsApp. Writing more adapters is the gap between "the port is
+  done" and "the site is useful".
 
 `docs/cloudflare-migration.md` is the full migration record, including the reasoning
 behind decisions that look arbitrary from the outside.

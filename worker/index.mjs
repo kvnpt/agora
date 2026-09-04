@@ -1,7 +1,8 @@
 // Worker entry.
 //
-// Replaces server.js. The static frontend is served by Pages; this handles the
-// API and the few paths that genuinely need server-side logic.
+// Replaces server.js. The frontend ships with this Worker as static assets
+// (see [assets] in wrangler.toml) and is served without invoking it; what runs
+// here is the API, the payment redirects, and the R2 asset proxy.
 
 import { Router, json } from './lib/router.mjs';
 import { registerPublicRoutes } from './routes/public.mjs';
