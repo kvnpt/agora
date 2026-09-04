@@ -495,35 +495,36 @@ lever available.
 Fixes 1 and 2 compose, and together should bring an estimated ~100ms comfortably under
 10ms. Measure with `wrangler dev --remote` before assuming.
 
-### Held in reserve
+### Resolved: the lens moved to the client
 
-- **Client-side lens.** Ship `schedules` + `overrides` + one-offs and project in the
-  browser. Sidesteps the ceiling entirely, and costs less than a first pass of this plan
-  claimed — both objections raised against it turned out to be soft:
+Elected during phase 3c. The Worker ships RULES, not instances: `GET /api/bundle`
+returns schedules, overrides, stored one-offs and parishes, and the browser projects
+them. Server-side projection does not disappear but shrinks to single-instance
+resolution — `applyAdminEdit` returns the edited occurrence, and `isValidOccurrence`
+must be checked server-side because a client cannot be trusted to assert that a date is
+a legal occurrence of a rule. That is two timezone conversions, not 5,200.
 
-  - *Deep links don't need the server.* The SPA fallback serves `index.html`, the client
-    already holds the rules, and it projects `42:2026-09-07` locally.
-    `openEventFromUrl()` (`app.js:1112`) only falls back to `GET /api/events/:id` for
-    events outside the loaded window — a gap a client-side lens closes by construction.
-    `expandOne()` server-side becomes unnecessary.
-  - *No Temporal polyfill needed in the browser.* Browsers have `Intl` natively, and
-    `app.js:4006-4013` already does Sydney date math with it. Combined with fix 1's
-    per-date approach, the client needs ~35 native offset lookups and no polyfill.
+The standing objection to this — two implementations that drift — is eliminated
+structurally rather than argued away. `expandFrom()` and the whole of `merge.mjs` are
+pure: no database, no runtime specifics. The Worker and the browser import the same
+modules. There is one implementation.
 
-  The one real residue is **share previews**, and they don't exist today:
-  `public/index.html` carries no Open Graph tags and `server.js:97` injects no per-route
-  meta, so every shared link already previews identically. Wanting rich previews later
-  means a Worker route rendering meta tags — but that projects *one* instance (two tz
-  conversions, nowhere near 10ms) and needs no dedup logic, so the duplication is
-  `project()` alone, not `partitionKey` / `preferenceCmp`.
+Measured under real workerd with real D1, at 100 rules and 60 one-offs:
 
-  Verdict: a genuine architectural choice, not a reluctant fallback. Fixes 1 and 2 are
-  still the cheaper first move — fix 1 is a win on any platform — but if measurement comes
-  back marginal, this is the cleaner destination.
-- **Materialize on change, not on clock.** Precompute the projected window into KV
-  whenever schedules or overrides change (rare), serve the blob. Honestly: this is the
-  nightly generator again, but keyed to change rather than a cron — arguably what that
-  paradigm should have been.
+| | |
+|---|---|
+| Bundle response | 121 KB raw, **4.7 KB gzipped**, 20ms total (mostly I/O) |
+| Worker CPU | two SELECTs and a serialize — the projection is gone |
+| Browser, 35-day window | 501 instances → 555 cards in 11.4ms |
+| Browser, 120-day window | 1,715 instances → 1,769 cards in 33.2ms |
+
+At today's 9 rules the bundle is 11.7 KB raw. For comparison the old `/api/events`
+shipped ~800 KB of expanded instances, and had to rebuild them on every request because
+the feed is stale as soon as "now" moves — whereas rules cache well.
+
+Fix 2 (shrinking the default window) is consequently moot for the Worker. The window now
+only bounds how many ROWS travel, and rows are far cheaper than instances; the client
+picks whatever window it renders.
 
 ## Decided
 

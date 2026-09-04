@@ -1,31 +1,67 @@
-// Worker entry point.
+// Worker entry.
 //
-// Phase 3b placeholder: the lens and the override write-path are ported and
-// tested (worker/lib/), but the routes are not yet. Phase 3c replaces this with
-// the real router and the scheduled() handler for the Google Calendar adapter.
+// Replaces server.js. The static frontend is served by Pages; this handles the
+// API and the few paths that genuinely need server-side logic.
+
+import { Router, json } from './lib/router.mjs';
+import { registerPublicRoutes } from './routes/public.mjs';
+
+const router = new Router();
+registerPublicRoutes(router);
+
+// GET /health — proves the D1 binding, nothing more.
+router.get('/health', async ({ env }) => {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM parishes WHERE id != '_unassigned'"
+    ).first();
+    return json({ status: 'ok', parishes: row.n, timestamp: new Date().toISOString() });
+  } catch (err) {
+    return json({ status: 'error', error: err.message }, 500);
+  }
+});
+
+// Payment deep links: /<slug>/donate|raffle|payment|gala.
 //
-// It exists now so wrangler.toml resolves and `wrangler dev` can boot.
+// One of the few things that cannot move to the client — it is a DB lookup and
+// a 302, and the whole point is that a shared /smg/donate link lands on the
+// parish's payment page with no SPA flash in between.
+const PAY_LINK_COLUMNS = {
+  donate: 'donation_url', raffle: 'raffle_url', payment: 'payment_url', gala: 'gala_url',
+};
+// For /donate only, a jurisdiction slug falls through to the SPA, which opens
+// the parish picker with that jurisdiction preselected.
+const DONATE_JURISDICTIONS = new Set([
+  'antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian',
+]);
+
+for (const [kind, column] of Object.entries(PAY_LINK_COLUMNS)) {
+  router.get(`/:slug/${kind}`, async ({ env, params }) => {
+    const slug = (params.slug || '').toLowerCase().replace(/\s+/g, '');
+    if (kind === 'donate' && DONATE_JURISDICTIONS.has(slug)) return null; // SPA handles it
+    const row = await env.DB.prepare(
+      `SELECT ${column} AS url FROM parishes
+       WHERE id != '_unassigned' AND lower(replace(acronym, ' ', '')) = ?`
+    ).bind(slug).first();
+    if (row && row.url) return Response.redirect(row.url, 302);
+    return null; // unknown slug or no link on file -> fall through to the SPA
+  });
+}
 
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-
-    if (url.pathname === '/health') {
-      // Proves the D1 binding is wired, which is the only thing worth asserting
-      // at this stage.
-      try {
-        const row = await env.DB.prepare(
-          "SELECT COUNT(*) AS n FROM parishes WHERE id != '_unassigned'"
-        ).first();
-        return Response.json({ status: 'ok', parishes: row.n, phase: '3b' });
-      } catch (err) {
-        return Response.json({ status: 'error', error: err.message }, { status: 500 });
-      }
+  async fetch(request, env, ctx) {
+    try {
+      const res = await router.handle(request, env, ctx);
+      if (res) return res;
+    } catch (err) {
+      return json({ error: 'Internal error', detail: err.message }, 500);
     }
+    // Unmatched: Pages serves the SPA. Reaching here directly means no such API route.
+    return json({ error: 'Not found' }, 404);
+  },
 
-    return Response.json(
-      { error: 'Not implemented yet — routes land in phase 3c' },
-      { status: 501 },
-    );
+  // Cron Trigger — replaces node-cron. Adapters land in phase 3d.
+  async scheduled(event, env, ctx) {
+    console.log(`[cron] ${event.cron} fired at ${new Date(event.scheduledTime).toISOString()}`);
   },
 };

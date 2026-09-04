@@ -121,40 +121,27 @@ export function isValidOccurrence(s, date) {
   return true;
 }
 
-/** Expand all active schedules into instances within [fromUtc, toUtc]. */
-export async function expandWindow(db, fromUtc, toUtc, { scheduleId = null, cache = new OffsetCache() } = {}) {
+/**
+ * PURE expansion — no database. Given rows already in hand, project every
+ * occurrence in [fromUtc, toUtc].
+ *
+ * This is the half that runs in the BROWSER. The client fetches the bundle
+ * (schedules + overrides, already joined to parish columns) and calls this;
+ * the Worker calls it too, via expandWindow below. One implementation, so the
+ * two can't drift — which was the standing objection to moving the lens
+ * client-side.
+ */
+export function expandFrom({ schedules, overrides }, fromUtc, toUtc, { cache = new OffsetCache() } = {}) {
   const fromMs = Date.parse(fromUtc);
   const toMs = Date.parse(toUtc);
 
-  // Widen the effective-range comparison by a day so no zone's local date is
-  // excluded by UTC skew (max real offset is under 15 hours).
-  const startStr = isoDate(fromMs - DAY_MS);
-  const endStr = isoDate(toMs + DAY_MS);
-
-  const schedSql = `
-    SELECT s.*, ${PARISH_COLS}
-    FROM schedules s JOIN parishes p ON s.parish_id = p.id
-    WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''}
-      AND (s.effective_from IS NULL OR s.effective_from <= ?)
-      AND (s.effective_to   IS NULL OR s.effective_to   >= ?)
-  `;
-  const schedArgs = scheduleId ? [scheduleId, endStr, startStr] : [endStr, startStr];
-  const schedules = (await db.prepare(schedSql).bind(...schedArgs).all()).results || [];
-  if (!schedules.length) return [];
-
-  // Window-filtered, unlike the Express version which loaded every override row.
-  const ovSql = scheduleId
-    ? 'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date BETWEEN ? AND ?'
-    : 'SELECT * FROM schedule_overrides WHERE occurrence_date BETWEEN ? AND ?';
-  const ovArgs = scheduleId ? [scheduleId, startStr, endStr] : [startStr, endStr];
-  const ovRows = (await db.prepare(ovSql).bind(...ovArgs).all()).results || [];
   const ov = {};
-  for (const r of ovRows) ov[`${r.schedule_id}:${r.occurrence_date}`] = r;
+  for (const r of overrides || []) ov[`${r.schedule_id}:${r.occurrence_date}`] = r;
 
   // One date index per distinct zone — a handful across Oceania, not one per rule.
   const indexes = new Map();
   const out = [];
-  for (const s of schedules) {
+  for (const s of schedules || []) {
     const zone = s.p_timezone || 'Australia/Sydney';
     let byDow = indexes.get(zone);
     if (!byDow) { byDow = dateIndexFor(zone, fromMs, toMs); indexes.set(zone, byDow); }
@@ -170,6 +157,48 @@ export async function expandWindow(db, fromUtc, toUtc, { scheduleId = null, cach
     }
   }
   return out;
+}
+
+/**
+ * Fetch the rows a window needs. Returns what expandFrom consumes, and is also
+ * exactly what the bundle endpoint ships to the client.
+ */
+export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null } = {}) {
+  // Widen by a day so no zone's local date is excluded by UTC skew (max real
+  // offset is under 15 hours).
+  const startStr = isoDate(Date.parse(fromUtc) - DAY_MS);
+  const endStr = isoDate(Date.parse(toUtc) + DAY_MS);
+
+  const schedSql = `
+    SELECT s.*, ${PARISH_COLS}
+    FROM schedules s JOIN parishes p ON s.parish_id = p.id
+    WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''}
+      AND (s.effective_from IS NULL OR s.effective_from <= ?)
+      AND (s.effective_to   IS NULL OR s.effective_to   >= ?)
+  `;
+  const schedArgs = scheduleId ? [scheduleId, endStr, startStr] : [endStr, startStr];
+
+  // Window-filtered, unlike the Express version which loaded every override row.
+  const ovSql = scheduleId
+    ? 'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date BETWEEN ? AND ?'
+    : 'SELECT * FROM schedule_overrides WHERE occurrence_date BETWEEN ? AND ?';
+  const ovArgs = scheduleId ? [scheduleId, startStr, endStr] : [startStr, endStr];
+
+  const [schedules, overrides] = await Promise.all([
+    db.prepare(schedSql).bind(...schedArgs).all(),
+    db.prepare(ovSql).bind(...ovArgs).all(),
+  ]);
+  return { schedules: schedules.results || [], overrides: overrides.results || [] };
+}
+
+/**
+ * Server-side expansion. Only the admin write-path needs this now — the public
+ * feed ships rows and expands in the browser.
+ */
+export async function expandWindow(db, fromUtc, toUtc, { scheduleId = null, cache = new OffsetCache() } = {}) {
+  const rows = await fetchWindowRows(db, fromUtc, toUtc, { scheduleId });
+  if (!rows.schedules.length) return [];
+  return expandFrom(rows, fromUtc, toUtc, { cache });
 }
 
 /** Resolve a single synthetic instance id — the deep-link path. */
