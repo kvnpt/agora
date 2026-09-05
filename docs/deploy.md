@@ -21,18 +21,20 @@ npx wrangler whoami        # confirm the account before touching anything
 Neither blocks the deploy. Both block the site being worth visiting, and both
 need something this repository cannot produce on its own.
 
-### 1. `oceania.pmtiles` does not exist anywhere
+### 1. `oceania.pmtiles` has to be built
 
-The basemap archive lived only on the VM's disk. Nothing in the repo regenerates
-it — `scripts/build-dark-basemap.js` bakes the *style JSON*, which is a
-description of how to colour tiles, not the tiles themselves.
+The basemap archive lived only on the VM's disk, and until now nothing in the
+repo could rebuild it — `scripts/build-dark-basemap.js` bakes the *style JSON*,
+which describes how to colour tiles, not the tiles themselves.
 
 Without it the map renders empty: `map.js` asks for
 `pmtiles:///tiles/oceania.pmtiles`, R2 returns 404, MapLibre shows a blank
 canvas. The feed still works.
 
-Source a new one — a [Protomaps](https://protomaps.com/) extract clipped to
-Oceania, or the `pmtiles` CLI against a planet file — then follow **Step 2**.
+`.github/workflows/basemap.yml` is the recipe. It runs `pmtiles extract`
+against a Protomaps daily planet build — which downloads only the bytes inside
+the bounding box, so no planet file ever touches a disk you own — and streams
+the result into R2. See **Step 2**.
 
 ### 2. The one working adapter has no parish to write to
 
@@ -96,15 +98,42 @@ The dry run is the load-bearing one: it bundles the Worker and resolves every
 binding in `wrangler.toml`. A missing D1 database or R2 bucket surfaces here
 rather than in production.
 
-## Step 2 — R2
+## Step 2 — R2 and the basemap
 
 ```bash
 npx wrangler r2 bucket create agora-assets
-npx wrangler r2 object put agora-assets/tiles/oceania.pmtiles --file=oceania.pmtiles
 ```
 
-The upload is large and slow; it is also once. Logos and posters are written at
-runtime by the admin panel, so the bucket starts otherwise empty.
+Logos and posters are written at runtime by the admin panel, so the bucket
+starts empty apart from the basemap.
+
+The basemap is built by **Actions → Build basemap tiles → Run workflow**. It
+needs three repository secrets (Settings → Secrets and variables → Actions),
+from an R2 API token scoped to *Object Read & Write* on `agora-assets`:
+
+| Secret | |
+|---|---|
+| `R2_ACCOUNT_ID` | Cloudflare account id |
+| `R2_ACCESS_KEY_ID` | the token's access key |
+| `R2_SECRET_ACCESS_KEY` | the token's secret |
+
+**Run it once with "Estimate only" left ticked.** That resolves the extract and
+reports the exact archive size without downloading a tile or writing anything,
+so you can see what it will cost before it costs anything. Then untick and
+re-run to build and upload.
+
+The defaults — bbox `110,-50,180,0`, max zoom 12 — cover Australia, New Zealand,
+PNG and Fiji west of the antimeridian. Zoom 12 is not arbitrary: the layers in
+`public/protomaps-dark.json` stop styling there, so deeper tiles are bytes
+nothing would draw. Tonga and Samoa sit east of 180 and would need a second
+extract merged in with `pmtiles merge`.
+
+The job refuses to upload anything over `budget_mb` (4 GB by default), checked
+twice — once against the estimate, once against the built file. R2's free tier
+is 10 GB in total, shared with logos and posters.
+
+Uploading uses R2's S3 API rather than `wrangler r2 object put`, which caps out
+around 300 MiB; the AWS CLI does multipart automatically at any size.
 
 ```bash
 npx wrangler r2 object get agora-assets/tiles/oceania.pmtiles --file=/dev/null   # exists?
@@ -222,7 +251,7 @@ proves.
 |---|---|---|
 | `/health` returns `status: error` | D1 binding or schema | Step 3; check `database_id` in `wrangler.toml` |
 | Feed empty, `/health` fine | Seed not applied | `npm run db:seed` |
-| Map blank, everything else fine | `oceania.pmtiles` not in R2 | Step 2 |
+| Map blank, everything else fine | `oceania.pmtiles` not in R2 | Step 2 — run the basemap workflow |
 | Map errors about content-length | Range requests not served | Check for `206`, not `200` |
 | Every service an hour out | Parish `timezone` wrong | `schedules.start_time` is **local** wall clock; the zone gives it meaning |
 | Admin returns 503 "not configured" | Access secrets unset | Step 4 — this is the fail-closed path, not a bug |

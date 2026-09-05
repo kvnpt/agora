@@ -1,0 +1,242 @@
+name: Build basemap tiles
+
+# Regenerate public/../tiles/oceania.pmtiles and put it in R2.
+#
+# The basemap archive used to exist only on the VM's disk, and nothing in the
+# repo could rebuild it — when the VM went, so did the map. This workflow is the
+# missing recipe.
+#
+# The trick that makes it cheap: `pmtiles extract` reads a REMOTE archive and
+# downloads only the bytes inside the bounding box. Protomaps publishes daily
+# planet builds, so nobody ever downloads a planet — the runner pulls the
+# Oceania slice straight out of it and streams the result into R2.
+#
+# Run it from the Actions tab. Start with "Estimate only" ticked to see the size
+# before spending the bandwidth.
+#
+# Secrets required (Settings → Secrets and variables → Actions):
+#   R2_ACCOUNT_ID          Cloudflare account id
+#   R2_ACCESS_KEY_ID       R2 API token, Object Read & Write on agora-assets
+#   R2_SECRET_ACCESS_KEY   the token's secret
+#
+# Not scheduled on purpose. A basemap goes stale over months, not days, and a
+# monthly job that quietly fails is worse than one you run when you mean to.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bbox:
+        description: 'min_lon,min_lat,max_lon,max_lat — default covers Australia, NZ, PNG and Fiji west of the antimeridian'
+        default: '110,-50,180,0'
+      maxzoom:
+        description: 'Highest zoom to include. protomaps-dark.json stops styling at 12, so deeper zooms are bytes nothing renders.'
+        default: '12'
+      build_date:
+        description: 'Protomaps daily build (YYYYMMDD). Leave blank to use the most recent one available.'
+        default: ''
+      budget_mb:
+        description: 'Refuse to build an archive larger than this. R2 free tier is 10 GB total, shared with logos and posters.'
+        default: '4000'
+      estimate_only:
+        description: 'Estimate the size and stop. Downloads nothing, uploads nothing.'
+        type: boolean
+        default: true
+
+concurrency:
+  group: basemap
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # goreleaser names these go-pmtiles_<version>_Linux_x86_64.tar.gz. Matching
+      # on the pattern rather than pinning a version means this keeps working
+      # across releases; the version actually used is printed below.
+      - name: Install the pmtiles CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo protomaps/go-pmtiles \
+            --pattern '*_Linux_x86_64.tar.gz' --output /tmp/pmtiles.tar.gz
+          tar -xzf /tmp/pmtiles.tar.gz -C /tmp pmtiles
+          sudo install /tmp/pmtiles /usr/local/bin/pmtiles
+          pmtiles version
+
+      # Builds are published daily and pruned, so "today" is not always there —
+      # the run might be early in the UTC day, or a build might have been skipped.
+      # Walk backwards until one answers.
+      - name: Resolve the Protomaps daily build
+        id: build
+        run: |
+          set -euo pipefail
+          requested='${{ inputs.build_date }}'
+          if [ -n "$requested" ]; then
+            candidates="$requested"
+          else
+            candidates=$(for i in $(seq 0 14); do date -u -d "-$i day" +%Y%m%d; done)
+          fi
+
+          for d in $candidates; do
+            url="https://build.protomaps.com/${d}.pmtiles"
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 30 "$url" || echo 000)
+            echo "  $url -> $code"
+            if [ "$code" = "200" ]; then
+              echo "url=$url"   >> "$GITHUB_OUTPUT"
+              echo "date=$d"    >> "$GITHUB_OUTPUT"
+              echo "Using build $d"
+              exit 0
+            fi
+          done
+          echo "::error::No Protomaps daily build found in the last 14 days. Check https://build.protomaps.com/"
+          exit 1
+
+      # The load-bearing step. --dry-run resolves the directories and computes
+      # the exact resulting archive size WITHOUT downloading a single tile, so
+      # the free-tier question is answered by measurement rather than by hope.
+      - name: Estimate the extract
+        id: estimate
+        run: |
+          set -euo pipefail
+          pmtiles extract '${{ steps.build.outputs.url }}' /tmp/estimate.pmtiles \
+            --bbox='${{ inputs.bbox }}' \
+            --maxzoom='${{ inputs.maxzoom }}' \
+            --dry-run 2>&1 | tee /tmp/estimate.log
+
+          # "Extract transferred 42 MB (overfetch 0.05) for an archive size of 853 MB"
+          line=$(grep -F 'for an archive size of' /tmp/estimate.log | tail -1)
+          [ -n "$line" ] || { echo "::error::Could not read the size estimate from pmtiles output"; exit 1; }
+
+          mb=$(python3 - "$line" <<'PY'
+          import re, sys
+          m = re.search(r'archive size of ([\d.]+)\s*([kMGT]?B)', sys.argv[1])
+          if not m:
+              sys.exit('unparseable: ' + sys.argv[1])
+          # humanize.Bytes uses SI units (base 1000).
+          scale = {'B': 1e-6, 'kB': 1e-3, 'MB': 1.0, 'GB': 1e3, 'TB': 1e6}[m.group(2)]
+          print(round(float(m.group(1)) * scale, 1))
+          PY
+          )
+
+          budget='${{ inputs.budget_mb }}'
+          free_mb=$(df -Pm --output=avail / | tail -1 | tr -d ' ')
+          echo "mb=$mb" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Basemap estimate"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Source build | \`${{ steps.build.outputs.date }}\` |"
+            echo "| Bounding box | \`${{ inputs.bbox }}\` |"
+            echo "| Max zoom | ${{ inputs.maxzoom }} |"
+            echo "| **Archive size** | **${mb} MB** |"
+            echo "| Budget | ${budget} MB |"
+            echo "| Runner disk free | ${free_mb} MB |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          over() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a>b)}'; }
+
+          if over "$mb" "$budget"; then
+            echo "::error::Estimated archive is ${mb} MB, over the ${budget} MB budget. Narrow the bbox, lower maxzoom, or raise budget_mb deliberately."
+            exit 1
+          fi
+          # extract preallocates the output file, so the runner needs the room twice over.
+          if over "$((${mb%.*} * 2))" "$free_mb"; then
+            echo "::error::Estimated ${mb} MB needs more scratch disk than the runner's ${free_mb} MB."
+            exit 1
+          fi
+          echo "Estimated ${mb} MB — within the ${budget} MB budget."
+
+      - name: Stop here (estimate only)
+        if: ${{ inputs.estimate_only }}
+        run: |
+          echo "Estimate only — nothing downloaded, nothing uploaded." >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run with 'Estimate only' unticked to build and upload."
+
+      # Everything below is skipped on an estimate run.
+      - name: Check the R2 credentials are present
+        if: ${{ !inputs.estimate_only }}
+        env:
+          ID: ${{ secrets.R2_ACCOUNT_ID }}
+          KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          SECRET: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          missing=
+          [ -n "$ID" ]     || missing="$missing R2_ACCOUNT_ID"
+          [ -n "$KEY" ]    || missing="$missing R2_ACCESS_KEY_ID"
+          [ -n "$SECRET" ] || missing="$missing R2_SECRET_ACCESS_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — set them before an upload run."
+            exit 1
+          fi
+
+      - name: Extract the region
+        if: ${{ !inputs.estimate_only }}
+        run: |
+          set -euo pipefail
+          time pmtiles extract '${{ steps.build.outputs.url }}' oceania.pmtiles \
+            --bbox='${{ inputs.bbox }}' \
+            --maxzoom='${{ inputs.maxzoom }}' \
+            --download-threads=8
+
+      # A truncated extract is a valid-looking file that renders a broken map, so
+      # confirm the header before it goes anywhere near production.
+      - name: Verify the archive
+        if: ${{ !inputs.estimate_only }}
+        run: |
+          set -euo pipefail
+          pmtiles verify oceania.pmtiles
+          pmtiles show oceania.pmtiles
+
+          actual_mb=$(( $(stat -c %s oceania.pmtiles) / 1000000 ))
+          budget='${{ inputs.budget_mb }}'
+          if [ "$actual_mb" -gt "$budget" ]; then
+            echo "::error::Built archive is ${actual_mb} MB, over the ${budget} MB budget. Not uploading."
+            exit 1
+          fi
+          echo "ACTUAL_MB=$actual_mb" >> "$GITHUB_ENV"
+
+      # wrangler's `r2 object put` refuses anything over ~300 MiB, which this
+      # will exceed. R2 speaks the S3 API, and the AWS CLI (preinstalled here)
+      # does multipart automatically, so it handles any size.
+      - name: Upload to R2
+        if: ${{ !inputs.estimate_only }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          # Newer AWS CLI versions send integrity headers R2 rejects. Only send
+          # them where the protocol actually requires them.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          aws s3 cp oceania.pmtiles s3://agora-assets/tiles/oceania.pmtiles \
+            --endpoint-url "$ENDPOINT" \
+            --content-type application/vnd.pmtiles \
+            --no-progress
+          aws s3 ls s3://agora-assets/tiles/ --endpoint-url "$ENDPOINT"
+
+      - name: Summary
+        if: ${{ !inputs.estimate_only }}
+        run: |
+          {
+            echo ""
+            echo "### Uploaded"
+            echo ""
+            echo "\`tiles/oceania.pmtiles\` — ${ACTUAL_MB} MB — from build \`${{ steps.build.outputs.date }}\`."
+            echo ""
+            echo "Confirm it serves ranged reads (a 200 here means a broken map):"
+            echo ""
+            echo '```'
+            echo "curl -sI https://agora.orthodoxy.au/tiles/oceania.pmtiles -H 'Range: bytes=0-99'"
+            echo "# expect: HTTP/2 206"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
