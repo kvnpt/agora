@@ -180,9 +180,15 @@ JWT's RS256 signature is verified against the team's published keys, so a forged
 is safe; it just means no admin panel.
 
 You also need the Access application itself, in the Zero Trust dashboard: a
-self-hosted application covering `agora.orthodoxy.au/api/admin/*` (and the admin
-UI path), with a policy allowing your own identity. `ACCESS_AUD` is that
-application's audience tag.
+self-hosted application with a policy allowing your own identity. `ACCESS_AUD`
+is that application's audience tag.
+
+**Cover `/admin.html` as well as `/api/admin/*`.** Access signs a user in by
+redirecting them to your identity provider, and a redirect only works on a page
+navigation — a `fetch()` cannot follow one usefully. If the application covers
+only the API, `/admin.html` loads for anyone, discovers it has no session, and
+has nowhere to send them. Covering the page means the login happens before the
+page runs, and the admin UI never sees an unauthenticated state at all.
 
 `AGORA_DEV_ADMIN=true` bypasses all of it and exists only for `wrangler dev`. It
 is deliberately absent from `wrangler.toml` so it cannot ship by accident — it

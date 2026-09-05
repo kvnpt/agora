@@ -184,7 +184,10 @@
     .mutation-headless { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
     .mutation-replaced { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
 
-    #logout-btn { font-size: 12px; padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: none; cursor: pointer; color: var(--muted); display: none; }
+    /* Visibility is the `hidden` attribute, not a display rule: the old rule set
+       display:none here, so clearing the inline style on sign-in fell straight
+       back to it and the button never appeared. */
+    #logout-btn { font-size: 12px; padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: none; cursor: pointer; color: var(--muted); }
     #logout-btn:hover { color: #ef4444; border-color: #ef4444; }
     .sender-sessions-panel { width: 100%; margin-top: 6px; }
     .sender-sessions-panel table { width: 100%; font-size: 11px; border-collapse: collapse; }
@@ -225,7 +228,7 @@
         <option value="other">Other</option>
       </select>
       <a href="/">Back to site</a>
-      <button id="logout-btn">Log out</button>
+      <button id="logout-btn" hidden>Log out</button>
     </div>
   </div>
 
@@ -341,6 +344,22 @@
         document.getElementById('section-' + btn.dataset.tab).classList.add('active');
       });
     });
+
+    // Why every admin failure goes through here.
+    //
+    // Cloudflare Access sits in front of /api/admin/*. When a session expires it
+    // answers a fetch with a redirect to the identity provider, so what comes
+    // back is an HTML login page, not our JSON — res.json() then throws and the
+    // caller's own error path never runs. The click just appears to do nothing.
+    //
+    // It also separates the two failures that look identical from the UI but
+    // have opposite fixes: 503 means the deployment has no Access secrets set
+    // (nobody can get in), 401 means this browser is not signed in.
+    async function adminError(res) {
+      if (res.status === 503) return 'Admin auth is not configured on this deployment.';
+      if (res.status === 401 || res.status === 403) return 'Signed out — reload to sign in again.';
+      try { return (await res.json()).error || 'Failed'; } catch { return `Failed (${res.status})`; }
+    }
 
     function toast(msg, type = 'success') {
       const el = document.createElement('div');
@@ -494,13 +513,13 @@
         data[field] = field === 'languages' ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : (val || null);
       });
       const res = await fetch(`/api/admin/parishes/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Saved'); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
+      if (res.ok) { toast('Saved'); loadAll(); } else toast(await adminError(res), 'error');
     }
 
     async function uploadLogo(id, input) {
       const file = input.files[0]; if (!file) return;
       const res = await fetch(`/api/admin/parishes/${id}/logo`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
-      if (res.ok) { toast('Logo uploaded'); loadAll(); } else toast('Upload failed', 'error');
+      if (res.ok) { toast('Logo uploaded'); loadAll(); } else toast(await adminError(res), 'error');
     }
 
     document.getElementById('parish-form').addEventListener('submit', async e => {
@@ -514,24 +533,24 @@
         gala_url: f.gala_url.value.trim() || null,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
+      if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
     });
 
     async function deleteParish(id) {
       const res = await fetch(`/api/admin/parishes/${id}`, { method: 'DELETE', headers });
       if (res.ok) { toast('Removed'); loadAll(); return; }
-      const err = await res.json();
-      if (!err.event_count) { toast(err.error || 'Failed', 'error'); return; }
+      const err = await res.json().catch(() => ({}));
+      if (!err.event_count) { toast(await adminError(res), 'error'); return; }
       const choice = prompt(`This parish has ${err.event_count} events.\n\nType a parish name to transfer events to it, or type DELETE to remove all events and the parish:`);
       if (!choice) return;
       if (choice.trim() === 'DELETE') {
         const r2 = await fetch(`/api/admin/parishes/${id}?delete_events=1`, { method: 'DELETE', headers });
-        if (r2.ok) { toast('Parish and events deleted'); loadAll(); } else toast('Failed', 'error');
+        if (r2.ok) { toast('Parish and events deleted'); loadAll(); } else toast(await adminError(r2), 'error');
       } else {
         const target = parishes.find(p => p.name.toLowerCase() === choice.trim().toLowerCase() || p.id === choice.trim());
         if (!target) { toast('Parish not found — use exact name or ID', 'error'); return; }
         const r2 = await fetch(`/api/admin/parishes/${id}?transfer_to=${encodeURIComponent(target.id)}`, { method: 'DELETE', headers });
-        if (r2.ok) { toast(`Events transferred to ${target.name}, parish deleted`); loadAll(); } else { const e2 = await r2.json(); toast(e2.error || 'Failed', 'error'); }
+        if (r2.ok) { toast(`Events transferred to ${target.name}, parish deleted`); loadAll(); } else toast(await adminError(r2), 'error');
       }
     }
 
@@ -640,7 +659,7 @@
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim()).filter(Boolean)) : null,
         hide_live: f.hide_live.checked, parish_scoped: f.parish_scoped.checked };
       const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
+      if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
     });
 
     async function saveSchedule(id) {
@@ -664,17 +683,17 @@
         }
       });
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Schedule saved'); loadAll(); } else { const e = await res.json(); toast(e.error || 'Failed', 'error'); }
+      if (res.ok) { toast('Schedule saved'); loadAll(); } else toast(await adminError(res), 'error');
     }
 
     async function toggleSchedule(id, active) {
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ active }) });
-      if (res.ok) { toast(active ? 'Enabled' : 'Disabled'); loadAll(); } else toast('Failed', 'error');
+      if (res.ok) { toast(active ? 'Enabled' : 'Disabled'); loadAll(); } else toast(await adminError(res), 'error');
     }
     async function deleteSchedule(id) {
       if (!confirm('Delete this schedule?')) return;
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Deleted'); loadAll(); } else toast('Failed', 'error');
+      if (res.ok) { toast('Deleted'); loadAll(); } else toast(await adminError(res), 'error');
     }
 
     async function geocodeParish(id) {
@@ -707,26 +726,57 @@
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
-    document.getElementById('logout-btn').addEventListener('click', async () => {
-      await fetch('/auth/logout', { method: 'POST', headers });
-      location.reload();
+    // Signing out is Cloudflare's to do, not ours: /cdn-cgi/access/logout is
+    // served by the edge on any Access-protected hostname and clears the
+    // CF_Authorization cookie. It replaces POST /auth/logout, which belonged to
+    // the Express session middleware and no longer exists.
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      location.href = '/cdn-cgi/access/logout';
     });
 
-    (async function init() {
-      const whoami = await fetch('/auth/whoami').then(r => r.json()).catch(() => ({ method: 'none' }));
-      if (whoami.method === 'phone') {
-        document.getElementById('logout-btn').style.display = '';
-      }
+    function blockPage(title, detail) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'padding:2rem;font-family:sans-serif;max-width:34rem;';
+      const h = document.createElement('p');
+      h.style.cssText = 'font-size:15px;font-weight:600;margin:0 0 .5rem;';
+      h.textContent = title;
+      const d = document.createElement('p');
+      d.style.cssText = 'font-size:14px;color:#666;margin:0 0 1rem;line-height:1.5;';
+      d.textContent = detail;
+      const btn = document.createElement('button');
+      btn.textContent = 'Reload';
+      btn.style.cssText = 'font-size:13px;padding:6px 14px;cursor:pointer;';
+      btn.addEventListener('click', () => location.reload());
+      wrap.append(h, d, btn);
+      document.body.replaceChildren(wrap);
+    }
 
-      const pingResp = await fetch('/api/admin/ping', { headers });
-      if (pingResp.status === 401) {
-        const msg = document.createElement('p');
-        msg.textContent = 'Session expired. Sign in again to continue.';
-        msg.style.cssText = 'padding:2rem;font-family:sans-serif;font-size:15px;';
-        document.body.replaceChildren(msg);
+    (async function init() {
+      // One source of truth. /api/admin/ping is the Worker verifying the Access
+      // JWT that Cloudflare injected, so it answers the only question worth
+      // asking. The old code also called /auth/whoami because magic-link phone
+      // auth could authenticate someone the Caddy gate had not seen yet; that
+      // endpoint and that whole subsystem went with the VM.
+      const ping = await fetch('/api/admin/ping', { headers }).catch(() => null);
+
+      // A 503 and a 401 look identical from a locked-out browser and have
+      // opposite fixes, so say which one it is.
+      if (!ping) {
+        blockPage('Cannot reach the server.', 'The admin API did not respond. Check your connection, then reload.');
+        return;
+      }
+      if (ping.status === 503) {
+        blockPage('Admin auth is not configured.',
+          'This deployment has no ACCESS_TEAM_DOMAIN or ACCESS_AUD set, so it refuses every admin request rather than allowing them. See docs/deploy.md, Step 4.');
+        return;
+      }
+      if (!ping.ok) {
+        blockPage('Not signed in.',
+          'Your Cloudflare Access session is missing or expired. Reloading will send you to sign in, provided the Access application covers this page as well as /api/admin/*.');
         return;
       }
 
+      document.getElementById('logout-btn').hidden = false;
       await loadAll();
     })();
 

@@ -952,14 +952,16 @@ async function fetchParishes() {
 }
 
 async function checkAdmin() {
-  // Ping the admin gate and also call whoami so phone-auth (magic link)
-  // users get the Admin button + Logout even before the Caddyfile gate flips.
-  const [pingRes, whoami] = await Promise.all([
-    fetch('/api/admin/ping').catch(() => ({ ok: false })),
-    fetch('/auth/whoami').then(r => r.json()).catch(() => ({ method: 'none' }))
-  ]);
-  state.isAdmin = pingRes.ok || whoami.method === 'phone';
-  state.authMethod = whoami.method;
+  // One source of truth. /api/admin/ping is the Worker verifying the Access JWT
+  // Cloudflare injected, so its answer IS whether this browser can administer.
+  //
+  // The old code also called /auth/whoami and OR'd the two, because magic-link
+  // phone auth could authenticate someone the Caddy gate had not seen yet. Both
+  // that endpoint and the whole phone-auth subsystem went with the VM, and
+  // /auth/* is not an API path — the Worker hands it to the SPA fallback, so it
+  // answered 200 with index.html and the OR was quietly reading a parse failure.
+  const ping = await fetch('/api/admin/ping').catch(() => null);
+  state.isAdmin = !!(ping && ping.ok);
 
   if (state.isAdmin) {
     const adminBtn = document.getElementById('btn-admin');
@@ -968,8 +970,8 @@ async function checkAdmin() {
     // a mode-bar pill; selector may not exist anymore — guard.
     const adminSep = document.querySelector('.fm-admin-sep');
     if (adminSep) adminSep.hidden = false;
-  }
-  if (whoami.method === 'phone') {
+    // Signing in is a redirect Cloudflare owns, so the only session control
+    // worth showing is the way out — and only to someone who is signed in.
     const logoutBtn = document.getElementById('btn-logout');
     if (logoutBtn) logoutBtn.hidden = false;
   }
@@ -989,9 +991,11 @@ function toggleAdminControlsVisibility() {
 function _initLogout() {
   const btn = document.getElementById('btn-logout');
   if (!btn) return;
-  btn.addEventListener('click', async () => {
-    await fetch('/auth/logout', { method: 'POST' });
-    location.reload();
+  // Cloudflare serves /cdn-cgi/access/logout at the edge on any Access-protected
+  // hostname; it clears the CF_Authorization cookie. This replaces POST
+  // /auth/logout, which was Express session middleware that no longer exists.
+  btn.addEventListener('click', () => {
+    location.href = '/cdn-cgi/access/logout';
   });
 }
 
