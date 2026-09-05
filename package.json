@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "wrangler dev --local --var AGORA_DEV_ADMIN:true",
-    "test": "node --test worker/lib/*.test.mjs",
+    "test": "node --test worker/lib/*.test.mjs d1/*.test.mjs",
     "deploy": "wrangler deploy",
     "db:schema": "wrangler d1 execute agora --remote --file=d1/schema.sql",
     "db:seed": "wrangler d1 execute agora --remote --file=d1/seed-parishes.sql",

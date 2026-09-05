@@ -28,6 +28,10 @@ lines.push('-- Edit seeds/parishes.js and re-run; do not hand-edit this file.');
 lines.push('--');
 lines.push('--   wrangler d1 execute agora --remote --file=d1/seed-parishes.sql');
 lines.push('--');
+lines.push('-- Safe to re-run: every statement creates a row only if it is missing.');
+lines.push('-- It does NOT update rows that already exist, so editing seeds/parishes.js');
+lines.push('-- and re-running changes nothing on a database that has been seeded.');
+lines.push('--');
 lines.push("-- timezone is written explicitly rather than left to the column default.");
 lines.push('-- Oceania spans Perth (+08:00, no DST) to Auckland (+12:00/+13:00), and a');
 lines.push("-- schedule's start_time is local wall clock, so an inherited default is an");
@@ -52,11 +56,40 @@ lines.push('-- Recurrence rules. start_time/end_time are LOCAL wall clock in the
 lines.push("-- parish's timezone — not UTC. See d1/schema.sql.");
 lines.push('');
 
+// Idempotent, the hard way. Parishes get ON CONFLICT(id) DO NOTHING because
+// they have a natural primary key; schedules have an AUTOINCREMENT id and no
+// natural one, so a second run of the seed would insert a second copy of every
+// rule — and a duplicated rule shows every service twice in the feed.
+//
+// A unique index would be the tidier fix and is the wrong one: week_of_month
+// makes "1st Saturday 9am Liturgy" and "3rd Saturday 9am Liturgy" genuinely
+// distinct rows that agree on parish, weekday, time and title. So the identity
+// of a seeded rule is those four columns PLUS week_of_month, tested here rather
+// than enforced by a constraint that would reject real data.
+//
+// Note what this does not do: it creates missing rules, it does not update
+// existing ones. Editing a time in seeds/parishes.js and re-running the seed
+// changes nothing — same as parishes. Edit the row, or drop it and re-seed.
+const SCHEDULE_COLUMNS = ['parish_id', 'day_of_week', 'start_time', 'end_time',
+  'title', 'event_type', 'week_of_month'];
+const IDENTITY = ['parish_id', 'day_of_week', 'start_time', 'title', 'week_of_month'];
+
 for (const s of schedules) {
+  const cols = SCHEDULE_COLUMNS.filter(c => s[c] !== undefined);
+  const val = (c) => (c === 'day_of_week' ? String(s[c]) : q(s[c]));
+
+  // `x IS NULL` rather than `x = NULL`, which is never true in SQL — get this
+  // wrong and every row looks absent, so the seed duplicates exactly as before.
+  const match = IDENTITY.map(c =>
+    (s[c] === undefined || s[c] === null)
+      ? `${c} IS NULL`
+      : `${c} = ${val(c)}`
+  ).join(' AND ');
+
   lines.push(
-    'INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) ' +
-    `VALUES (${q(s.parish_id)}, ${s.day_of_week}, ${q(s.start_time)}, ${q(s.end_time)}, ` +
-    `${q(s.title)}, ${q(s.event_type)});`
+    `INSERT INTO schedules (${cols.join(', ')})\n` +
+    `SELECT ${cols.map(val).join(', ')}\n` +
+    `WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE ${match});`
   );
 }
 lines.push('');

@@ -130,6 +130,14 @@ npm run db:seed      # parishes + starting rules
 `d1/seed-parishes.sql` is **generated** from `seeds/parishes.js` by
 `npm run gen:seed`. Edit the JS, regenerate, commit both. CI fails if they diverge.
 
+The seed is safe to re-run — every statement inserts only if the row is missing.
+Parishes get `ON CONFLICT(id) DO NOTHING`; schedules have an AUTOINCREMENT id and
+no natural key, so they use `WHERE NOT EXISTS` instead. A unique index would be
+the tidier guard and is the wrong one: `week_of_month` makes "1st Saturday 9am
+Liturgy" and "3rd Saturday 9am Liturgy" distinct rules that agree on parish,
+weekday, time and title. Re-running creates missing rows; it never updates
+existing ones.
+
 The `*.console.sql` variants exist because the Cloudflare dashboard's SQL console
 collapses newlines on paste, which turns a leading `--` comment into one comment
 swallowing the whole file. Those have comments stripped and one statement per line.

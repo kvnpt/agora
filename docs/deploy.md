@@ -146,10 +146,13 @@ npm run db:schema     # d1/schema.sql   — 7 tables, applied once
 npm run db:seed       # d1/seed-parishes.sql — 8 parishes, 9 recurrence rules
 ```
 
-Both are idempotent-ish rather than idempotent: the schema uses bare
-`CREATE TABLE` and will fail loudly on a second run (which is the point — it is
-a baseline, not a migration), while the seed's inserts are
-`ON CONFLICT(id) DO NOTHING` and can be re-run safely.
+The schema uses bare `CREATE TABLE` and will fail loudly on a second run, which
+is the point — it is a baseline, not a migration.
+
+The seed is safe to re-run: every statement creates a row only if it is missing.
+It does **not** update rows that already exist, so editing `seeds/parishes.js`
+and re-running changes nothing on a database that has already been seeded — edit
+the row through the admin panel, or delete it and re-seed.
 
 ```bash
 npx wrangler d1 execute agora --remote --command \

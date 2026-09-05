@@ -34,8 +34,8 @@ jobs:
         run: npm ci
 
       # The suite covers the date lens, the timezone fast path against the
-      # Temporal polyfill, override semantics, feed dedup, adapter bookkeeping
-      # and HTTP range parsing.
+      # Temporal polyfill, override semantics, feed dedup, adapter bookkeeping,
+      # HTTP range parsing, and that the D1 seed is safe to run twice.
       - name: Test
         run: npm test
 
@@ -44,9 +44,10 @@ jobs:
       - name: Build the Worker
         run: npx wrangler deploy --dry-run --outdir=/tmp/agora-build
 
-      # The schema is the one artefact no test exercises end to end, since the
-      # tests apply it themselves. Prove it lands on an empty database with
-      # foreign keys on and no integrity complaints.
+      # d1/seed.test.mjs applies the schema too, but only to assert things about
+      # the seed. This checks the schema on its own terms: that it lands on an
+      # empty database with foreign keys on and nothing for the integrity
+      # checker to complain about.
       - name: Apply the D1 schema to a scratch database
         run: |
           node -e "

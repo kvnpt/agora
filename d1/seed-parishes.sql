@@ -3,6 +3,10 @@
 --
 --   wrangler d1 execute agora --remote --file=d1/seed-parishes.sql
 --
+-- Safe to re-run: every statement creates a row only if it is missing.
+-- It does NOT update rows that already exist, so editing seeds/parishes.js
+-- and re-running changes nothing on a database that has been seeded.
+--
 -- timezone is written explicitly rather than left to the column default.
 -- Oceania spans Perth (+08:00, no DST) to Auckland (+12:00/+13:00), and a
 -- schedule's start_time is local wall clock, so an inherited default is an
@@ -61,12 +65,30 @@ INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, time
 -- Recurrence rules. start_time/end_time are LOCAL wall clock in the
 -- parish's timezone — not UTC. See d1/schema.sql.
 
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stgeorge-redfern', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stnicholas-punchbowl', 0, '09:30', '12:00', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stmary-mayshill', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stmichaelgabriel-ryde', 0, '09:00', '11:30', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stmichaelgabriel-ryde', 6, '17:00', '18:00', 'Saturday Vespers', 'prayer');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stnicholas-bankstown', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stspeterpaul-doonside', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stjohnbaptist-croydonpark', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy');
-INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type) VALUES ('antiochian-stelias-wollongong', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy');
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stgeorge-redfern', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stgeorge-redfern' AND day_of_week = 0 AND start_time = '10:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stnicholas-punchbowl', 0, '09:30', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stnicholas-punchbowl' AND day_of_week = 0 AND start_time = '09:30' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stmary-mayshill', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stmary-mayshill' AND day_of_week = 0 AND start_time = '10:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stmichaelgabriel-ryde', 0, '09:00', '11:30', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stmichaelgabriel-ryde' AND day_of_week = 0 AND start_time = '09:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stmichaelgabriel-ryde', 6, '17:00', '18:00', 'Saturday Vespers', 'prayer'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stmichaelgabriel-ryde' AND day_of_week = 6 AND start_time = '17:00' AND title = 'Saturday Vespers' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stnicholas-bankstown', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stnicholas-bankstown' AND day_of_week = 0 AND start_time = '10:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stspeterpaul-doonside', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stspeterpaul-doonside' AND day_of_week = 0 AND start_time = '10:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stjohnbaptist-croydonpark', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stjohnbaptist-croydonpark' AND day_of_week = 0 AND start_time = '10:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
+INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+SELECT 'antiochian-stelias-wollongong', 0, '10:00', '12:00', 'Sunday Divine Liturgy', 'liturgy'
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id = 'antiochian-stelias-wollongong' AND day_of_week = 0 AND start_time = '10:00' AND title = 'Sunday Divine Liturgy' AND week_of_month IS NULL);
