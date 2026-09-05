@@ -1,0 +1,82 @@
+name: Deploy
+
+# Ships the Worker — code, the public/ directory as static assets, and the cron
+# trigger — to Cloudflare.
+#
+# This exists because there is no other way to deploy this project without a
+# local terminal. `wrangler deploy` needs Node, and the dashboard's inline
+# editor is for single-file Workers: it cannot take the 1,000-odd static assets
+# that ship alongside the code. So merging to main is the deploy.
+#
+# Secrets are NOT set here. GOOGLE_API_KEY, ACCESS_TEAM_DOMAIN and ACCESS_AUD
+# live in the Cloudflare dashboard, set once and left alone; wrangler-action can
+# push secrets on every deploy, but that would mean a second copy of each one in
+# GitHub and two places to rotate them.
+#
+# Repository secret required:
+#   CLOUDFLARE_API_TOKEN   from the "Edit Cloudflare Workers" template
+#   CLOUDFLARE_ACCOUNT_ID  the account that owns the agora D1 database
+#
+# The zero-token alternative is Cloudflare Workers Builds — connect this repo
+# under Workers & Pages → agora → Settings → Build, and Cloudflare deploys on
+# push without any credential leaving its own dashboard. See docs/deploy.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Deploys are last-write-wins at the edge, so a queued older commit overwriting
+# a newer one is the failure to avoid. Never cancel a deploy mid-flight, but
+# never run two at once either.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      # CI already runs this on the pull request, but a deploy is the one moment
+      # where being wrong is expensive and irreversible-ish, and the suite takes
+      # two seconds. Run it again rather than trust that the PR check was green.
+      - name: Test
+        run: npm test
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # /health queries D1, so an "ok" here proves more than that the Worker
+      # booted: it proves the database binding resolved and the schema is
+      # applied. A deploy that succeeds and then cannot reach its data is the
+      # failure worth catching in the same minute it happens.
+      - name: Check the deployment is answering
+        run: |
+          set -euo pipefail
+          url="https://agora.orthodoxy.au/health"
+          for i in 1 2 3 4 5; do
+            body=$(curl -sS --max-time 20 "$url" || echo '')
+            echo "attempt $i: ${body:-<no response>}"
+            case "$body" in
+              *'"status":"ok"'*)
+                echo "$body" >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+            esac
+            sleep 10
+          done
+          echo "::warning::/health did not report ok. If the custom domain is not attached yet this is expected — check the workers.dev URL instead."

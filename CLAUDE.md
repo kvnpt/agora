@@ -94,14 +94,22 @@ filesystem, so there is no directory scan). Add a parish by adding a line.
 
 ## Deploy
 
+Deploying is automated, because it has to be: `wrangler deploy` needs Node, and
+the dashboard's inline editor cannot take the thousand-odd static assets that
+ship with the code. Either Cloudflare Workers Builds (connect the repo in the
+dashboard, no credential to store) or `.github/workflows/deploy.yml` (tests, then
+`wrangler deploy`, on every push to main). Pick one — running both races two
+deploys per push.
+
 ```bash
-npm run deploy
+npm run deploy       # the same thing, if you do have a terminal
 ```
 
-`docs/deploy.md` is the runbook for a first live deploy — the commands in order,
-the check that proves each one landed, and the two things that block a *useful*
-site rather than a working one (the missing basemap archive, and the one adapter
-whose parish is not in the seed).
+`docs/deploy.md` is the runbook, written for a browser and nothing else: the
+Cloudflare dashboard and the GitHub Actions tab, in order, with the check that
+proves each step landed. It also covers the two things that block a *useful* site
+rather than a working one — the missing basemap archive, and the one adapter
+whose parish is not in the seed.
 
 Secrets (set once, via `wrangler secret put`):
 
