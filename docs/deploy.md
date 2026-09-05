@@ -265,13 +265,15 @@ Only meaningful once the Good Shepherd parish exists (see the second blocker
 above). Until then this will record a failure naming the missing parish, which is
 the correct behaviour and worth seeing once.
 
-**There is no button for this.** `POST /api/admin/adapters/:id/run` exists in
-the Worker and nothing in the admin UI calls it, so without a terminal the only
-trigger is the cron — every four hours, on the hour. That is a gap worth closing
-if scraping ever needs babysitting; it is not one today, with a single adapter
-that cannot run yet anyway.
+Open **`/admin.html` → Scrapers**. Each registered adapter shows its parish,
+source, cron expression, when it last ran and what that run found, with a **Run
+now** button that triggers it immediately rather than waiting up to four hours.
 
-What you *can* open in a browser is the status, which needs no auth:
+An adapter that cannot run says so before you click: Good Shepherd shows
+*Cannot run* with the reason, and its button is disabled, because its parish is
+not in the seed yet.
+
+The same information without signing in, at `/api/adapters/status`:
 
 ```
 https://agora.orthodoxy.au/api/adapters/status

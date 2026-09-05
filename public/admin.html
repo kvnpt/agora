@@ -236,6 +236,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
+      <button class="tab" data-tab="adapters">Adapters <span class="tab-count" id="count-adapters">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -320,12 +321,22 @@
       <h3 style="margin-top: 20px;">Existing Schedules</h3>
       <div id="schedule-list"></div>
     </div>
+
+    <!-- Scraping. The cron fires every four hours; this is how you see what it
+         did and make it happen now. adapter_runs is the only record of a scrape,
+         so a source going quiet looks like a run finding zero events, not like
+         nothing happening. -->
+    <div id="section-adapters" class="section">
+      <h3>Scrapers</h3>
+      <p class="card-meta" style="margin:0 0 12px;">Registered in <code>worker/lib/adapters.mjs</code>. The cron runs them all every four hours; “Run now” runs one immediately.</p>
+      <div id="adapter-list"></div>
+    </div>
   </main>
 
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    let parishes = [], schedules = [];
+    let parishes = [], schedules = [], adapters = [];
     let activeJurisdiction = '';
     const headers = { 'Content-Type': 'application/json' };
 
@@ -370,7 +381,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadSchedules()]);
+      await Promise.all([loadParishes(), loadSchedules(), loadAdapters()]);
       renderAll();
     }
 
@@ -379,10 +390,25 @@
       renderParishList();
       renderScheduleList();
       renderParishSelects();
+      renderAdapterList();
     }
 
     async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); }
     async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); }
+
+    // Two sources, deliberately. /api/admin/adapters is the registry — what
+    // exists, whether it can run at all. /api/adapters/status is the run
+    // history, and only knows about adapters that have run at least once. The
+    // registry is the spine; status decorates it. Joining the other way round
+    // would hide a newly added scraper until its first run.
+    async function loadAdapters() {
+      const [reg, status] = await Promise.all([
+        fetch('/api/admin/adapters', { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/adapters/status').then(r => r.ok ? r.json() : []).catch(() => []),
+      ]);
+      const byId = new Map(status.map(s => [s.id, s]));
+      adapters = reg.map(a => ({ ...a, run: byId.get(a.id) || null }));
+    }
 
     function filteredParishes() {
       if (!activeJurisdiction) return parishes;
@@ -396,6 +422,9 @@
     function renderStats() {
       document.getElementById('count-parishes').textContent = filteredParishes().length;
       document.getElementById('count-schedules').textContent = filteredSchedules().length;
+      // Not filtered by jurisdiction: adapters belong to the deployment, not to
+      // whichever slice of parishes is on screen.
+      document.getElementById('count-adapters').textContent = adapters.length;
     }
 
     function renderParishSelects() {
@@ -723,6 +752,103 @@
         else toast('Not found', 'error');
       } catch { toast('Geocode failed', 'error'); }
     });
+
+    // ── Scrapers ──
+
+    function relativeTime(iso) {
+      if (!iso) return 'never';
+      const then = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+      if (Number.isNaN(then.getTime())) return esc(iso);
+      const mins = Math.round((Date.now() - then.getTime()) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins} min ago`;
+      const hrs = Math.round(mins / 60);
+      if (hrs < 48) return `${hrs} hr ago`;
+      return `${Math.round(hrs / 24)} days ago`;
+    }
+
+    function renderAdapterList() {
+      const c = document.getElementById('adapter-list');
+      if (!adapters.length) { c.innerHTML = '<div class="empty">No adapters registered</div>'; return; }
+
+      c.innerHTML = adapters.map(a => {
+        const r = a.run;
+        const parish = parishes.find(p => p.id === a.parishId);
+
+        // Three states worth telling apart: cannot run, has never run, and has
+        // run. A scraper that has never run is not the same as a broken one,
+        // and a run that found zero events is not the same as no run at all —
+        // that distinction is the whole reason adapter_runs was kept.
+        let status, tone;
+        if (a.pending)          { status = 'Cannot run'; tone = '#e67e22'; }
+        else if (!r)            { status = 'Never run';  tone = 'var(--muted)'; }
+        else if (!r.healthy)    { status = 'Failed';     tone = '#ef4444'; }
+        else                    { status = 'OK';         tone = '#22c55e'; }
+
+        const counts = r && r.healthy
+          ? `${r.eventsFound} found &middot; ${r.eventsCreated} new &middot; ${r.eventsUpdated} updated`
+          : '';
+
+        const detail = a.pending
+          ? `<div class="card-meta" style="color:#e67e22;margin-top:6px;">${esc(a.pending)}</div>`
+          : (r && r.lastError
+              ? `<div class="card-meta" style="color:#ef4444;margin-top:6px;word-break:break-word;">${esc(r.lastError)}</div>`
+              : '');
+
+        return `
+          <div class="card${a.pending || (r && !r.healthy) ? ' warn' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+              <div style="min-width:0;">
+                <div class="card-title">${esc(parish ? parish.name : a.parishId)}</div>
+                <div class="card-meta">${esc(a.sourceType)} &middot; <code>${esc(a.id)}</code></div>
+                <div class="card-meta" style="margin-top:4px;">
+                  <span style="color:${tone};font-weight:600;">${status}</span>
+                  &middot; last run ${relativeTime(r && r.lastRun)}
+                  ${counts ? ' &middot; ' + counts : ''}
+                  &middot; cron <code>${esc(a.schedule)}</code>
+                </div>
+                ${detail}
+              </div>
+              <button class="btn btn-outline" data-run-adapter="${esc(a.id)}"
+                      ${a.pending ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Run now</button>
+            </div>
+          </div>`;
+      }).join('');
+
+      c.querySelectorAll('[data-run-adapter]').forEach(btn => {
+        btn.addEventListener('click', () => runAdapterNow(btn.dataset.runAdapter, btn));
+      });
+    }
+
+    async function runAdapterNow(id, btn) {
+      // A scrape is a live fetch of somebody else's calendar; it can take a
+      // while, and a second click would start a second run against the same
+      // rows. Disable for the duration and say so.
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Running…';
+      try {
+        const res = await fetch(`/api/admin/adapters/${encodeURIComponent(id)}/run`, { method: 'POST', headers });
+        if (res.ok) {
+          const r = await res.json();
+          toast(`${r.eventsFound} found, ${r.eventsCreated} new, ${r.eventsUpdated} updated`);
+        } else {
+          // The Worker returns the run's real error here, which is the thing
+          // worth reading — a missing parish names itself.
+          const body = await res.json().catch(() => null);
+          toast(body && body.error ? body.error : await adminError(res), 'error');
+        }
+      } catch (err) {
+        toast('Could not reach the server', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+        // Re-read rather than patch state locally: the run wrote a row to
+        // adapter_runs and that row is what the panel is meant to show.
+        await loadAdapters();
+        renderAdapterList();
+      }
+    }
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 

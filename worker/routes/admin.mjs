@@ -11,7 +11,7 @@ import { requireAdmin } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
-import { ADAPTERS, getAdapter, runAdapter } from '../lib/adapters.mjs';
+import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter } from '../lib/adapters.mjs';
 
 // Wrap a handler so the guard runs first.
 const guarded = (fn) => async (c) => {
@@ -482,8 +482,13 @@ export function registerAdminRoutes(router) {
 
   // ── adapters ──
 
+  // `pending` is why the panel can say "this cannot run" before you click Run,
+  // instead of letting you discover it from a failed run's error message.
   router.get('/api/admin/adapters', guarded(async () =>
-    json(ADAPTERS.map(a => ({ id: a.id, parishId: a.parishId, sourceType: a.sourceType, schedule: a.schedule })))));
+    json(ADAPTERS.map(a => ({
+      id: a.id, parishId: a.parishId, sourceType: a.sourceType, schedule: a.schedule,
+      pending: PENDING_PARISHES.get(a.id) || null,
+    })))));
 
   router.post('/api/admin/adapters/:id/run', guarded(async ({ env, params }) => {
     const adapter = getAdapter(params.id);
