@@ -46,7 +46,7 @@ Without it the map renders empty: `map.js` asks for
 canvas. The feed still works.
 
 `.github/workflows/basemap.yml` is the recipe, and it runs on GitHub's machines,
-not yours. See **Step 3**.
+not yours. See **Step 4**.
 
 ### 2. The one working adapter has no parish to write to
 
@@ -127,7 +127,42 @@ to configure.
 Logos and posters are written at runtime by the admin panel, so the bucket starts
 empty apart from the basemap.
 
-## Step 3 — Build the basemap
+## Step 3 — Deploying the Worker
+
+`wrangler deploy` needs Node, and the dashboard's inline editor is for
+single-file Workers — it cannot take the thousand-odd static assets that ship
+alongside the code. So the deploy is automated, by **Cloudflare Workers Builds**.
+
+**Workers & Pages → agora → Settings → Build → Connect**. Authorise the GitHub
+app, choose this repository, and set the deploy branch to `main`.
+
+Cloudflare clones, builds and deploys on every push to that branch.
+Authorisation is the GitHub app you approve inside Cloudflare's own dashboard,
+so **no credential is ever created, copied, or stored by hand** — no API token
+to expire, leak, or under-scope. That is the whole argument for it.
+
+What it gives up is a test gate: Cloudflare deploys what you push, green or red.
+Pull requests are where that gate lives instead. CI runs on every PR into `main`,
+so open one and wait for the check rather than pushing to `main` directly.
+
+> A GitHub Actions workflow doing the same job — `wrangler-action` behind a
+> `CLOUDFLARE_API_TOKEN` secret, with `npm test` as a gate — was written and then
+> deleted. Both work, and running both means two deploys racing on every push.
+> Workers Builds won because it needs no credential, and a misconfigured token is
+> the failure mode hardest to diagnose from a browser: it surfaces as a deploy
+> error about the script or its bindings, nothing that says "token".
+> `git log --diff-filter=D -- .github/workflows/deploy.yml` has it if you ever
+> want it back.
+
+The deploy ships three things: the Worker code, `public/` as static assets, and
+the cron trigger from `wrangler.toml`.
+
+## Step 4 — Build the basemap
+
+**Step 3 has to be merged before this one can start.** GitHub only shows the
+**Run workflow** button for a workflow whose file is on the default branch, and
+`basemap.yml` arrives with this migration — until it lands on `main` there is
+nothing in the Actions tab to click.
 
 Three repository secrets first. In Cloudflare: **R2 → API → Manage API tokens →
 Create API token**, permission *Object Read & Write*, scoped to `agora-assets`.
@@ -158,45 +193,6 @@ extract merged in.
 The job refuses to upload anything over `budget_mb` (4 GB by default), checked
 twice — once against the estimate, once against the built file. R2's free tier is
 10 GB in total, shared with logos and posters.
-
-## Step 4 — Deploying the Worker
-
-`wrangler deploy` needs Node, and the dashboard's inline editor is for
-single-file Workers — it cannot take the thousand-odd static assets that ship
-alongside the code. So the deploy is automated. Pick one of two ways.
-
-### Option A — Cloudflare Workers Builds (no API token)
-
-**Workers & Pages → agora → Settings → Build → Connect**, then choose this
-repository and the branch to deploy from.
-
-Cloudflare clones, builds and deploys on every push. Authorisation is the GitHub
-app you approve in Cloudflare's own dashboard, so **no credential is ever created,
-copied, or stored by you** — which is the whole argument for it.
-
-### Option B — the deploy workflow in this repo
-
-`.github/workflows/deploy.yml` runs the test suite and then deploys, on every
-push to `main` and on demand from the Actions tab.
-
-Two more repository secrets:
-
-| Secret | Where it comes from |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | **My Profile → API Tokens → Create Token → "Edit Cloudflare Workers"** template |
-| `CLOUDFLARE_ACCOUNT_ID` | Workers & Pages overview, right-hand sidebar |
-
-Use the template rather than hand-picking permissions — a deploy touches the
-script, its bindings and its triggers, and an under-scoped token fails in ways
-that read like unrelated bugs. Set an expiry, and roll the token if it is ever
-pasted anywhere it should not be.
-
-Option A is fewer moving parts. Option B gives you the test gate and a deploy
-history in GitHub. They are not exclusive, but running both means two deploys
-per push racing each other — pick one.
-
-Either way, the deploy ships three things: the Worker code, `public/` as static
-assets, and the cron trigger from `wrangler.toml`.
 
 ## Step 5 — Custom domain
 

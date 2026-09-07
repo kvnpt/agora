@@ -96,10 +96,14 @@ filesystem, so there is no directory scan). Add a parish by adding a line.
 
 Deploying is automated, because it has to be: `wrangler deploy` needs Node, and
 the dashboard's inline editor cannot take the thousand-odd static assets that
-ship with the code. Either Cloudflare Workers Builds (connect the repo in the
-dashboard, no credential to store) or `.github/workflows/deploy.yml` (tests, then
-`wrangler deploy`, on every push to main). Pick one — running both races two
-deploys per push.
+ship with the code. **Cloudflare Workers Builds** does it — the repo is connected
+in the Cloudflare dashboard and every push to `main` deploys.
+
+There is no deploy workflow in `.github/workflows/`, deliberately. One existed
+(`wrangler-action` behind a `CLOUDFLARE_API_TOKEN`) and was deleted rather than
+kept alongside, because two deploy paths race on every push. Workers Builds needs
+no credential stored anywhere, which is worth more here than the test gate it
+gives up — CI still runs on every pull request, so the gate lives there instead.
 
 ```bash
 npm run deploy       # the same thing, if you do have a terminal
