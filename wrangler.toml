@@ -1,0 +1,40 @@
+name = "agora"
+main = "worker/index.mjs"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The D1 binding. `env.DB` inside the Worker.
+[[d1_databases]]
+binding = "DB"
+database_name = "agora"
+database_id = "8e02890d-dc75-4dbe-a018-b64c7871dde9"
+
+# Replaces node-cron. One trigger, four-hourly, for the Google Calendar adapter.
+# node-cron ran an in-process timer in a long-lived server; a Cron Trigger
+# invokes the Worker's scheduled() handler instead.
+[triggers]
+crons = ["0 */4 * * *"]
+
+[observability]
+enabled = true
+
+# Binary assets: map tiles, parish logos, event posters. These were files on the
+# VM's disk (/opt/agora/tiles read-only, /opt/agora/data/{logos,posters}
+# written by the admin panel). R2 charges no egress, which matters because the
+# PMTiles archive is the heaviest thing the site serves.
+[[r2_buckets]]
+binding = "ASSETS_BUCKET"
+bucket_name = "agora-assets"
+
+
+# Static frontend served by the Worker itself.
+#
+# The plan said Pages + a Worker on the same domain. Workers static assets does
+# the same job in one deployment: same origin (so every relative fetch in
+# app.js keeps working, and there is no CORS surface at all), SPA fallback
+# built in (replacing the _redirects file), and assets served free without
+# invoking the Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
