@@ -13,11 +13,27 @@
 //   wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. yourteam.cloudflareaccess.com
 //   wrangler secret put ACCESS_AUD           # the Access application's audience tag
 //
+// Either may arrive as a plain Worker secret (a string) or as a Secrets Store
+// binding (an object you have to await a .get() on). The dashboard's "Add
+// binding" list offers only the latter, so both shapes turn up in practice, and
+// a Secrets Store binding read as a string is silently truthy — it would pass
+// the not-configured check and then be interpolated into a URL as
+// "[object Object]". readSecret() collapses the difference at the one point
+// that matters.
+//
 // AGORA_DEV_ADMIN=true bypasses all of this and exists only for `wrangler dev`.
 // It is deliberately absent from wrangler.toml so it cannot be deployed by
 // accident — pass it with `wrangler dev --var AGORA_DEV_ADMIN:true`.
 
 import { json } from './router.mjs';
+
+/** A Worker secret is a string; a Secrets Store binding needs an awaited get(). */
+async function readSecret(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return v || null;
+  if (typeof v.get === 'function') return (await v.get()) || null;
+  return null;
+}
 
 const b64urlToBytes = (s) => {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=');
@@ -94,12 +110,18 @@ export async function verifyAccessJwt(token, { teamDomain, aud }) {
 export async function requireAdmin({ request, env }) {
   if (env.AGORA_DEV_ADMIN === 'true') return null;
 
-  const teamDomain = env.ACCESS_TEAM_DOMAIN;
-  const aud = env.ACCESS_AUD;
+  const teamDomain = await readSecret(env.ACCESS_TEAM_DOMAIN);
+  const aud = await readSecret(env.ACCESS_AUD);
   if (!teamDomain || !aud) {
+    // Name the missing one. These are identifiers, not secrets, and "one of
+    // these two is unset" is a much longer afternoon than "this one is".
+    const missing = [
+      !teamDomain && 'ACCESS_TEAM_DOMAIN',
+      !aud && 'ACCESS_AUD',
+    ].filter(Boolean);
     return json({
       error: 'Admin auth is not configured',
-      detail: 'Set ACCESS_TEAM_DOMAIN and ACCESS_AUD. Refusing rather than allowing.',
+      detail: `Unset or unreadable: ${missing.join(' and ')}. Refusing rather than allowing.`,
     }, 503);
   }
 
@@ -118,9 +140,12 @@ export async function requireAdmin({ request, env }) {
 export async function adminIdentity({ request, env }) {
   if (env.AGORA_DEV_ADMIN === 'true') return 'dev';
   const token = request.headers.get('Cf-Access-Jwt-Assertion');
-  if (!token || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return null;
+  if (!token) return null;
+  const teamDomain = await readSecret(env.ACCESS_TEAM_DOMAIN);
+  const aud = await readSecret(env.ACCESS_AUD);
+  if (!teamDomain || !aud) return null;
   try {
-    const c = await verifyAccessJwt(token, { teamDomain: env.ACCESS_TEAM_DOMAIN, aud: env.ACCESS_AUD });
+    const c = await verifyAccessJwt(token, { teamDomain, aud });
     return c.email || c.sub || null;
   } catch { return null; }
 }
