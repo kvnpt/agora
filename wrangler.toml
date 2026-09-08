@@ -38,3 +38,21 @@ bucket_name = "agora-assets"
 directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+
+# Which paths reach the Worker before the asset router.
+#
+# Without this the asset router answers first, and in SPA mode any request it
+# cannot match a file for gets index.html. That is right for client routes like
+# /smg or /102:2026-09-06, and wrong for the Worker's own paths: a browser tab
+# opened on /health was served the app, whose detectUrlState() then read
+# "health" as a parish slug. `fetch()` calls were unaffected, which is why the
+# feed worked while the same URL typed into the address bar did not.
+run_worker_first = [
+  "/health", "/api/*",
+  "/tiles/*", "/logos/*", "/posters/*",
+  # The pay-link redirects (/<acronym>/donate|raffle|payment|gala) are only
+  # ever reached by someone clicking a shared link — a navigation, and so
+  # exactly the request the asset router would swallow. A slug with no link
+  # on file still falls through to the SPA from inside the Worker.
+  "/*/donate", "/*/raffle", "/*/payment", "/*/gala",
+]
