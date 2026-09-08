@@ -264,14 +264,34 @@ to your identity provider, and a redirect only works on a page navigation — a
 `/admin.html` loads for anyone, discovers it has no session, and has nowhere to
 send them.
 
-Then the Worker's secrets, in **Workers & Pages → agora → Settings → Variables
-and Secrets**, type **Secret** (not plaintext):
+Then the Worker's secrets. There are **two places** the dashboard will take
+them, and both work:
+
+- **Settings → Variables and Secrets**, type **Secret** — a plain Worker secret,
+  which arrives in `env` as a string.
+- **Bindings → Add binding → Secrets Store** — an account-level secret, which
+  arrives as an *object* you have to `await .get()` on.
+
+`worker/lib/auth.mjs` reads either shape, which it has to: the "Add binding"
+list offers only Secrets Store, so that is where you land if you go looking for
+where bindings live. Getting this wrong used to be invisible — an object is
+truthy, so the not-configured check passed and the team domain went into a URL
+as `[object Object]`, producing a 401 that blamed your login.
 
 | Secret | For |
 |---|---|
-| `ACCESS_TEAM_DOMAIN` | e.g. `yourteam.cloudflareaccess.com` |
+| `ACCESS_TEAM_DOMAIN` | e.g. `yourteam.cloudflareaccess.com` — hostname only, no `https://` |
 | `ACCESS_AUD` | the Access application's audience tag |
 | `GOOGLE_API_KEY` | the Google Calendar adapter |
+
+**Saving a secret may not deploy anything.** On a Worker owned by Workers Builds,
+the build pipeline publishes versions, so a secret saved afterwards sits in
+storage while the running version predates it. Check **Deployments**: if no new
+version appeared, **Retry build** on the most recent one. Same commit, same
+code, one build — and only ever needed for the first set.
+
+If the panel still says not configured after that, read the message: it now
+names the variable that is unset rather than listing both.
 
 **Admin fails closed.** With `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` unset, every
 `/api/admin/*` request is refused — not "allowed for now", refused. The Access

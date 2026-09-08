@@ -115,13 +115,18 @@ proves each step landed. It also covers the two things that block a *useful* sit
 rather than a working one — the missing basemap archive, and the one adapter
 whose parish is not in the seed.
 
-Secrets (set once, via `wrangler secret put`):
+Secrets (set once, via `wrangler secret put` or the dashboard):
 
 | Secret | For |
 |---|---|
 | `GOOGLE_API_KEY` | The Google Calendar adapter |
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access, e.g. `yourteam.cloudflareaccess.com` |
 | `ACCESS_AUD` | The Access application's audience tag |
+
+A secret reaches `env` as a **string** (a Worker secret) or as an **object with
+`.get()`** (a Secrets Store binding). `readSecret()` in `worker/lib/auth.mjs`
+takes either. Do not compare a binding for truthiness and call it configured —
+an object always passes, and the value then renders as `[object Object]`.
 
 **Admin fails closed.** With `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` unset, every
 `/api/admin/*` request is refused. The Access JWT's signature is verified against the
