@@ -123,7 +123,9 @@ jobs:
           )
 
           budget='${{ inputs.budget_mb }}'
-          free_mb=$(df -Pm --output=avail / | tail -1 | tr -d ' ')
+          # -P and --output are mutually exclusive in GNU coreutils, and --output
+          # is GNU-only anyway; POSIX -P plus a column pick works everywhere.
+          free_mb=$(df -Pm / | tail -1 | awk '{print $4}')
           echo "mb=$mb" >> "$GITHUB_OUTPUT"
 
           {
