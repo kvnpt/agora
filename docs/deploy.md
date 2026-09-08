@@ -194,14 +194,41 @@ The job refuses to upload anything over `budget_mb` (4 GB by default), checked
 twice — once against the estimate, once against the built file. R2's free tier is
 10 GB in total, shared with logos and posters.
 
-## Step 5 — Custom domain
+## Step 5 — Domain
 
-**Workers & Pages → agora → Settings → Domains & Routes → Add → Custom domain**,
-`agora.orthodoxy.au`. Cloudflare provisions the certificate.
+Agora serves the whole zone: `orthodoxy.au` plus every jurisdiction subdomain.
+`public/app.js` reads the hostname before it reads the path, so
+`greek.orthodoxy.au` opens pre-filtered to Greek parishes — a feature that only
+works if those hostnames reach the Worker.
 
-Until this is attached the site is reachable at
-`agora.<your-subdomain>.workers.dev`, which is a fine place to do the checks
-below.
+That rules out Custom Domains, which cannot take a wildcard. Use **routes**:
+**the zone → Workers Routes → Connect Worker → `agora`**, then two patterns.
+
+| Route | Covers |
+|---|---|
+| `orthodoxy.au/*` | the apex |
+| `*.orthodoxy.au/*` | every subdomain, including ones added later |
+
+A route needs a **proxied** DNS record for each name to exist; it does not need
+that record to point anywhere real, because a matched route never contacts the
+origin. Point them all at `192.0.2.1` — TEST-NET-1, reserved by RFC 5737 and
+never routable. Pointing them at a decommissioned server's IP is the trap: that
+address gets reassigned, and any request that slips past a route would carry
+your visitors to a stranger.
+
+Keep every record **Proxied** (orange cloud). An unproxied record bypasses
+Workers entirely and goes straight to whatever the IP is.
+
+Universal SSL already covers `orthodoxy.au` and `*.orthodoxy.au`, so there is no
+certificate step.
+
+**More specific routes win.** To carve a subdomain back out — another app on
+`gorgon.orthodoxy.au`, say — add a route for that exact hostname and it beats
+the wildcard. No need to replace the wildcard with a list.
+
+`workers_dev = false` in `wrangler.toml` is the other half of this. Access binds
+to a hostname, so a live `agora.<subdomain>.workers.dev` would be a second way
+in that no Access policy covers. One hostname, one door.
 
 ## Step 6 — Verify
 
@@ -211,7 +238,7 @@ Three things, in a browser tab.
 schema is applied, not merely that the Worker booted.
 
 ```
-https://agora.orthodoxy.au/health
+https://orthodoxy.au/health
 {"status":"ok","parishes":8,"timestamp":"..."}
 ```
 
@@ -227,7 +254,7 @@ missing (Step 3).
 
 In **Zero Trust → Access → Applications → Add an application → Self-hosted**:
 
-- Application domain `agora.orthodoxy.au`
+- Application domain `orthodoxy.au`
 - **Two paths: `/admin.html` and `/api/admin/*`**
 - A policy allowing your own email
 
@@ -272,7 +299,7 @@ not in the seed yet.
 The same information without signing in, at `/api/adapters/status`:
 
 ```
-https://agora.orthodoxy.au/api/adapters/status
+https://orthodoxy.au/api/adapters/status
 ```
 
 `adapter_runs` is the only visibility into scraping, which is why the table was

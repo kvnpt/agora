@@ -3,6 +3,18 @@ main = "worker/index.mjs"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Serve only from the routes attached in the dashboard (orthodoxy.au/* and
+# *.orthodoxy.au/*), never from agora.<subdomain>.workers.dev.
+#
+# Cloudflare Access binds to a hostname. With workers.dev live, an Access policy
+# on orthodoxy.au leaves a second, unprotected way to reach the same Worker —
+# /admin.html would load there for anyone. The admin API still refuses (it
+# verifies the Access JWT's signature and audience itself, on every hostname),
+# so this closes a door rather than a hole. Preview URLs are on the same
+# subdomain and go with it.
+workers_dev = false
+preview_urls = false
+
 # The D1 binding. `env.DB` inside the Worker.
 [[d1_databases]]
 binding = "DB"
