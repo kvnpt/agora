@@ -68,3 +68,35 @@ run_worker_first = [
   # on file still falls through to the SPA from inside the Worker.
   "/*/donate", "/*/raffle", "/*/payment", "/*/gala",
 ]
+
+# Cloudflare Access, for /api/admin/*. Declared here rather than added in the
+# dashboard, because `wrangler deploy` treats this file as the complete set of
+# bindings: anything added through the dashboard and not written down here is
+# removed by the next deploy. Adding these by hand worked until a merge
+# redeployed the Worker and silently took them away again, twice.
+#
+# No secret is committed. A store id and a secret name are identifiers — the
+# same class of thing as database_id above — and the values live in the account
+# Secrets Store. These arrive in `env` as objects, not strings; readSecret() in
+# worker/lib/auth.mjs awaits .get() on them.
+#
+# To rotate: change the value in the Secrets Store. Nothing here changes.
+
+[[secrets_store_secrets]]
+binding = "ACCESS_TEAM_DOMAIN"
+store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+secret_name = "ACCESS_TEAM_DOMAIN"
+
+[[secrets_store_secrets]]
+binding = "ACCESS_AUD"
+store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+secret_name = "ACCESS_AUD"
+
+# GOOGLE_API_KEY, for the Google Calendar adapter, wants the same treatment
+# when you add it — put the value in the same store and add a third block:
+#
+# [[secrets_store_secrets]]
+# binding = "GOOGLE_API_KEY"
+# store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+# secret_name = "GOOGLE_API_KEY"
+
