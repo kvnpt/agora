@@ -30,12 +30,11 @@ and R2; everything else is rebuilt from the repository on every deploy.
 
 ---
 
-## Before you start: two things that block a useful site
+## Before you start: the thing that blocks a useful site
 
-Neither blocks the deploy. Both block the site being worth visiting, and both
-need something this repository cannot produce on its own.
+It does not block the deploy. It blocks the site being worth visiting.
 
-### 1. `oceania.pmtiles` has to be built
+### `oceania.pmtiles` has to be built
 
 The basemap archive lived only on the VM's disk, and until now nothing in the
 repo could rebuild it — `scripts/build-dark-basemap.js` bakes the *style JSON*,
@@ -48,46 +47,13 @@ canvas. The feed still works.
 `.github/workflows/basemap.yml` is the recipe, and it runs on GitHub's machines,
 not yours. See **Step 4**.
 
-### 2. The one working adapter has no parish to write to
-
-`ADAPTERS` contains a single Google Calendar adapter, for Good Shepherd,
-Clayton. `events.parish_id` is a foreign key, and that parish is **not in the
-seed** — it existed only in the old production database, created through the
-admin panel, and that database was not recovered.
-
-So the cron will fail every four hours until the parish exists. It fails
-*cleanly*: `runAdapter` checks for the parish before writing and records a
-message naming it in `adapter_runs`, so `/api/adapters/status` tells you exactly
-this. Nothing is corrupted; nothing is scraped either.
-
-The row cannot be generated because `parishes.lat`/`lng` are `NOT NULL` and the
-address needs confirming rather than guessing — the archdiocese lists Good
-Shepherd as a mission at the **Monash University Religious Centre, Clayton**,
-while other directories list a **Canterbury** address. A wrong pin sends someone
-to the wrong building on a Sunday morning.
-
-Once you have confirmed the address and its coordinates, add it to
-`seeds/parishes.js`:
-
-```js
-{
-  id: 'antiochian-good-shepherd-antiochian-church',   // must match the adapter
-  name: 'The Good Shepherd, Clayton',
-  full_name: 'The Good Shepherd Antiochian Orthodox Church',
-  jurisdiction: 'antiochian',
-  address: '<confirmed address>',
-  lat: <confirmed>, lng: <confirmed>,
-  timezone: 'Australia/Melbourne',                    // NOT the Sydney default
-  website: 'https://www.thegoodshepherd.org.au/',
-  languages: '["English"]',
-  color: '#1e3a5f'
-}
-```
-
-…then remove its entry from `PENDING_PARISHES` in `worker/lib/adapters.mjs`, and
-regenerate the seed with `npm run gen:seed`. **CI fails if you edit one without
-the other**, so you cannot get this half-done silently. If you have no terminal,
-ask for the regeneration in a session like this one.
+> **Resolved:** the Good Shepherd, Clayton parish used to be listed here too.
+> Its row existed only in the database the VM took with it, and the sole working
+> adapter writes into it, so the cron failed cleanly every four hours against a
+> foreign key. The address is confirmed — the Monash University Religious
+> Centre — and it is in `seeds/parishes.js` now, so `PENDING_PARISHES` is empty.
+> The mechanism stays: a registered adapter whose parish is missing still
+> refuses before writing and names itself in `adapter_runs`.
 
 ---
 
@@ -248,7 +214,7 @@ An empty `parishes` array with a healthy `/health` means the seed did not land.
 **The map.** Load the site itself. This is the one thing no status check proves:
 tiles are served by byte range, and a subtly wrong range serves a broken map
 rather than an error. If the map is blank but the feed works, the basemap is
-missing (Step 3).
+missing (Step 4).
 
 ## Step 7 — Admin access
 
@@ -314,17 +280,13 @@ is deliberately absent from `wrangler.toml` so it cannot ship by accident.
 
 ## Step 8 — First scrape
 
-Only meaningful once the Good Shepherd parish exists (see the second blocker
-above). Until then this will record a failure naming the missing parish, which is
-the correct behaviour and worth seeing once.
-
 Open **`/admin.html` → Scrapers**. Each registered adapter shows its parish,
 source, cron expression, when it last ran and what that run found, with a **Run
 now** button that triggers it immediately rather than waiting up to four hours.
 
-An adapter that cannot run says so before you click: Good Shepherd shows
-*Cannot run* with the reason, and its button is disabled, because its parish is
-not in the seed yet.
+An adapter that cannot run says so before you click, with the reason, and its
+button is disabled — that is `PENDING_PARISHES` in `worker/lib/adapters.mjs`,
+which is empty as of the Good Shepherd seed.
 
 The same information without signing in, at `/api/adapters/status`:
 

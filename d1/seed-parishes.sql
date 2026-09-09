@@ -20,6 +20,12 @@ INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, time
   'website', 'https://stgeorgecathedral.com.au/'
 ) ON CONFLICT(id) DO NOTHING;
 INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+  'antiochian-good-shepherd-antiochian-church', 'The Good Shepherd, Clayton', 'The Good Shepherd Antiochian Orthodox Church', 'antiochian', 'Religious Centre, 21 Chancellors Walk, Monash University, Clayton VIC 3800',
+  -37.9115, 145.133, 'Australia/Melbourne',
+  'https://www.thegoodshepherd.org.au/', '["English"]', '#1e3a5f',
+  'website', 'https://www.thegoodshepherd.org.au/'
+) ON CONFLICT(id) DO NOTHING;
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
   'antiochian-stnicholas-punchbowl', 'St Nicholas, Punchbowl', 'St Nicholas Antiochian Orthodox Church', 'antiochian', '11 Henry St, Punchbowl NSW 2196',
   -33.9222, 151.0546, 'Australia/Sydney',
   'https://stnicholaspunchbowl.org.au/', '["Arabic", "English"]', '#1e3a5f',
