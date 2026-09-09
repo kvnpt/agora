@@ -14,6 +14,22 @@ const parishes = [
     color: ANTIOCHIAN_BLUE
   },
   {
+    // Melbourne, not Sydney — a mission at the Monash University Religious
+    // Centre rather than a parish with its own building, which is why the
+    // address is a room on a campus. Its row existed only in the database the
+    // VM took with it; everything else here predates that.
+    id: 'antiochian-good-shepherd-antiochian-church',   // must match the adapter's parishId
+    name: 'The Good Shepherd, Clayton',
+    full_name: 'The Good Shepherd Antiochian Orthodox Church',
+    jurisdiction: 'antiochian',
+    address: 'Religious Centre, 21 Chancellors Walk, Monash University, Clayton VIC 3800',
+    lat: -37.9115, lng: 145.1330,
+    timezone: 'Australia/Melbourne',
+    website: 'https://www.thegoodshepherd.org.au/',
+    languages: '["English"]',
+    color: ANTIOCHIAN_BLUE
+  },
+  {
     id: 'antiochian-stnicholas-punchbowl',
     name: 'St Nicholas, Punchbowl',
     full_name: 'St Nicholas Antiochian Orthodox Church',

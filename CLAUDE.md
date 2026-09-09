@@ -174,11 +174,12 @@ Two consequences still visible in the code:
 - `events.schedule_id` and the `source_adapter != 'schedule'` guard in the bundle query
   are scar tissue from a nightly generator that wrote occurrence rows. It was replaced by
   the date lens in schema v26.
-- Ingestion currently covers **one parish** (Good Shepherd Clayton, via Google Calendar),
-  and even that one cannot run yet: its parish row existed only in the lost database, so
-  it is listed in `PENDING_PARISHES` until someone confirms the address. Everything else
-  used to arrive over WhatsApp. Writing more adapters is the gap between "the port is
-  done" and "the site is useful".
+- Ingestion currently covers **one parish** (Good Shepherd Clayton, via Google Calendar).
+  Its row existed only in the lost database and was re-seeded once the address was
+  confirmed, so `PENDING_PARISHES` is now empty — but the guard it feeds stays, because
+  an adapter pointed at a missing parish must refuse before writing rather than throw a
+  foreign-key error every four hours. Everything else used to arrive over WhatsApp.
+  Writing more adapters is the gap between "the port is done" and "the site is useful".
 
 `docs/cloudflare-migration.md` is the full migration record, including the reasoning
 behind decisions that look arbitrary from the outside.

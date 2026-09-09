@@ -26,14 +26,7 @@
 // accident — pass it with `wrangler dev --var AGORA_DEV_ADMIN:true`.
 
 import { json } from './router.mjs';
-
-/** A Worker secret is a string; a Secrets Store binding needs an awaited get(). */
-async function readSecret(v) {
-  if (v == null) return null;
-  if (typeof v === 'string') return v || null;
-  if (typeof v.get === 'function') return (await v.get()) || null;
-  return null;
-}
+import { readSecret } from './secrets.mjs';
 
 const b64urlToBytes = (s) => {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=');
@@ -52,8 +45,11 @@ async function keyFor(teamDomain, kid) {
   const stale = _keyCache.domain !== teamDomain || Date.now() - _keyCache.at > KEY_TTL_MS;
   if (!stale && _keyCache.keys.has(kid)) return _keyCache.keys.get(kid);
 
-  const res = await fetch(`https://${teamDomain}/cdn-cgi/access/certs`);
-  if (!res.ok) throw new Error(`Access certs unavailable: ${res.status}`);
+  const url = `https://${teamDomain}/cdn-cgi/access/certs`;
+  const res = await fetch(url);
+  // Name the URL. A 404 here means the team domain is wrong, and the value is
+  // an identifier rather than a secret — seeing it beats guessing at it.
+  if (!res.ok) throw new Error(`Access certs unavailable: ${res.status} for ${url}`);
   const { keys } = await res.json();
 
   const map = new Map();

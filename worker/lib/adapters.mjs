@@ -14,6 +14,8 @@
 //      signal, so they now mean what they say: existing source_hashes are
 //      looked up first and the two are counted separately.
 
+import { readSecret } from './secrets.mjs';
+
 async function sha256Hex(input) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -29,7 +31,7 @@ class GoogleCalendarAdapter {
   }
 
   async fetchEvents(env) {
-    const apiKey = env.GOOGLE_API_KEY;
+    const apiKey = await readSecret(env.GOOGLE_API_KEY);
     if (!apiKey) throw new Error('GOOGLE_API_KEY not set');
 
     const url = new URL(
@@ -108,8 +110,8 @@ export const getAdapter = (id) => ADAPTERS.find(a => a.id === id) || null;
 // test asserts that every OTHER adapter's parish is seeded, so a new adapter
 // cannot drift in unnoticed. Delete the entry once the parish is seeded.
 export const PENDING_PARISHES = new Map([
-  ['gcal-antiochian-good-shepherd-antiochian-church',
-   'Good Shepherd, Clayton — needs a confirmed address and coordinates. See docs/deploy.md.'],
+  // Empty, and a test keeps it honest: an entry here whose parish IS seeded
+  // fails, so a stale line cannot sit disabling a working adapter forever.
 ]);
 
 /**

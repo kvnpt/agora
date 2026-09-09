@@ -92,11 +92,8 @@ binding = "ACCESS_AUD"
 store_id = "caf2bffa59d544e88e6649b71c3e6c09"
 secret_name = "ACCESS_AUD"
 
-# GOOGLE_API_KEY, for the Google Calendar adapter, wants the same treatment
-# when you add it — put the value in the same store and add a third block:
-#
-# [[secrets_store_secrets]]
-# binding = "GOOGLE_API_KEY"
-# store_id = "caf2bffa59d544e88e6649b71c3e6c09"
-# secret_name = "GOOGLE_API_KEY"
+[[secrets_store_secrets]]
+binding = "GOOGLE_API_KEY"
+store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+secret_name = "GOOGLE_API_KEY"
 
