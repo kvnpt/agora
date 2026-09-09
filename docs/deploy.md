@@ -264,19 +264,29 @@ to your identity provider, and a redirect only works on a page navigation — a
 `/admin.html` loads for anyone, discovers it has no session, and has nowhere to
 send them.
 
-Then the Worker's secrets. There are **two places** the dashboard will take
-them, and both work:
+Then the Worker's secrets. **Put the values in the Secrets Store and leave the
+bindings to `wrangler.toml`** — do not add them in the dashboard.
 
-- **Settings → Variables and Secrets**, type **Secret** — a plain Worker secret,
-  which arrives in `env` as a string.
-- **Bindings → Add binding → Secrets Store** — an account-level secret, which
-  arrives as an *object* you have to `await .get()` on.
+**Zero Trust → Secrets Store** (or **Bindings → Add binding → Secrets Store**,
+which creates one) → add `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` as account
+secrets. `wrangler.toml` already declares the bindings that point at them.
 
-`worker/lib/auth.mjs` reads either shape, which it has to: the "Add binding"
-list offers only Secrets Store, so that is where you land if you go looking for
-where bindings live. Getting this wrong used to be invisible — an object is
-truthy, so the not-configured check passed and the team domain went into a URL
-as `[object Object]`, producing a 401 that blamed your login.
+The reason is the trap that cost an afternoon: **`wrangler deploy` treats
+`wrangler.toml` as the complete set of bindings**, so a binding added through
+the dashboard is removed by the next deploy. It works, then a merge redeploys
+and admin silently goes back to "not configured" — with the secret still sitting
+in the dashboard looking correct.
+
+A store id and a secret name are identifiers, not secrets, so they belong in the
+repo next to `database_id`. Only the values live in the Secrets Store, and
+rotating one changes nothing here.
+
+A Secrets Store binding arrives in `env` as an **object**, not a string —
+`readSecret()` in `worker/lib/auth.mjs` awaits `.get()` on it, and also accepts a
+plain string so a `wrangler secret put` still works. Getting that wrong was
+invisible: an object is truthy, so the not-configured check passed and the team
+domain went into a URL as `[object Object]`, producing a 401 that blamed your
+login.
 
 | Secret | For |
 |---|---|
