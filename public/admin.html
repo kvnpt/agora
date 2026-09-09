@@ -897,10 +897,42 @@
         return;
       }
       if (!ping.ok) {
+        // Send the browser to sign in rather than telling someone to reload.
+        //
+        // Workers static assets serves this page at the extensionless /admin
+        // and 307s /admin.html to it, so /admin is where you actually land —
+        // and an Access application written against "admin.html" does not
+        // cover it. Arriving at /admin therefore gets you the page with no
+        // session, and the ping that discovers this is a fetch(), which cannot
+        // usefully follow the redirect Access answers with. Hence a dead end.
+        //
+        // A top-level navigation can follow it. Going to /admin.html makes
+        // Access intercept, sign you in, and hand you back to /admin with a
+        // session. It works whether the application covers /admin.html, /admin,
+        // or both.
+        //
+        // Once only. If the ping still fails after signing in, the problem is
+        // not the session — a wrong ACCESS_AUD does this — and bouncing again
+        // would loop forever. sessionStorage is the flag because it is per-tab
+        // and survives the navigation; if it is unavailable we do not redirect
+        // at all, which fails safe.
+        let tried = true;
+        try {
+          tried = sessionStorage.getItem('agora-access-retry') === '1';
+          if (!tried) sessionStorage.setItem('agora-access-retry', '1');
+        } catch { /* storage blocked — show the message instead of looping */ }
+
+        if (!tried) {
+          location.replace('/admin.html');
+          return;
+        }
         blockPage('Not signed in.',
-          'Your Cloudflare Access session is missing or expired. Reloading will send you to sign in, provided the Access application covers this page as well as /api/admin/*.');
+          'Signing in did not produce a session this page can use. Check that the Access application covers /admin, /admin.html and /api/admin/*, and that ACCESS_AUD matches the application\u2019s audience tag.');
         return;
       }
+
+      // Signed in: forget the retry flag so the next expiry gets its own attempt.
+      try { sessionStorage.removeItem('agora-access-retry'); } catch { /* fine */ }
 
       document.getElementById('logout-btn').hidden = false;
       await loadAll();
