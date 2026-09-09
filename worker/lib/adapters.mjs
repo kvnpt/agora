@@ -21,6 +21,36 @@ async function sha256Hex(input) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Google says 403 for at least three unrelated things, and the reason is only
+// ever in the body:
+//
+//   ipRefererBlocked     the API key is restricted to HTTP referrers, and a
+//                        Worker sends none — restrict by API instead
+//   accessNotConfigured  the Calendar API is not enabled on the project
+//   forbidden            the calendar is not shared publicly, so an API key
+//                        (as opposed to OAuth) cannot read it
+//
+// Same status, same message without this, and three different places to go.
+// adapter_runs is the only record of a scrape, so what lands there has to be
+// enough to act on.
+async function googleError(res, apiKey) {
+  // Read the body ONCE. res.json() consumes it, so a res.text() fallback after
+  // a parse failure gets nothing — which is exactly the case this exists for.
+  const raw = await res.text().catch(() => '');
+  let detail;
+  try {
+    const e = JSON.parse(raw)?.error;
+    const reason = e?.errors?.[0]?.reason;
+    detail = [e?.message, reason && `(${reason})`].filter(Boolean).join(' ');
+  } catch {
+    detail = raw.slice(0, 200);
+  }
+  // The key is in the query string, so it can appear in an echoed URL. Never
+  // let it reach adapter_runs, which /api/adapters/status serves unauthenticated.
+  if (apiKey) detail = detail.split(apiKey).join('<redacted>');
+  return `Google Calendar API error: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`;
+}
+
 class GoogleCalendarAdapter {
   constructor({ parishId, calendarId, schedule }) {
     this.id = `gcal-${parishId}`;
@@ -45,7 +75,7 @@ class GoogleCalendarAdapter {
     url.searchParams.set('maxResults', '100');
 
     const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`Google Calendar API error: ${res.status} ${res.statusText}`);
+    if (!res.ok) throw new Error(await googleError(res, apiKey));
     const data = await res.json();
 
     return Promise.all((data.items || []).map(async (item) => {
