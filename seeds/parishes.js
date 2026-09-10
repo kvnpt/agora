@@ -22,7 +22,13 @@ const parishes = [
     name: 'The Good Shepherd, Clayton',
     full_name: 'The Good Shepherd Antiochian Orthodox Church',
     jurisdiction: 'antiochian',
-    address: 'Religious Centre, 21 Chancellors Walk, Monash University, Clayton VIC 3800',
+    // From the parish's own published listings, which give the street address
+    // on every entry. Replaces a guess at "21 Chancellors Walk ... 3800" made
+    // when no source could be reached — wrong street and wrong postcode.
+    // Services run in two rooms at this address: the Religious Centre and the
+    // Monash Orthodox Chaplaincy. The parish pin is the building; which room
+    // rides on each event as location_override.
+    address: 'Religious Centre, 38 Exhibition Walk, Clayton VIC 3168',
     lat: -37.9115, lng: 145.1330,
     timezone: 'Australia/Melbourne',
     website: 'https://www.thegoodshepherd.org.au/',

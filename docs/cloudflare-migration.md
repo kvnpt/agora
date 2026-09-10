@@ -595,5 +595,148 @@ site, which raises the priority of Phase 6 (Access) rather than lowering it.
 
 ---
 
+# What the deploy actually cost
+
+Everything above is the plan. This is what happened when it met Cloudflare, written
+down because almost none of it was guessable from the documentation and all of it
+will look obvious in six months.
+
+**One thread runs through every item here: each failure looked like success.** The
+dashboard listed the secrets. The branch contained the code. The build was green.
+The error said "not configured" when the truth was "your deploy removed it". A
+failure that announces itself costs minutes; these cost hours precisely because
+every visible signal agreed that things were fine.
+
+## `wrangler deploy` erases bindings it does not know about
+
+The single most expensive one. **`wrangler.toml` is the complete set of bindings**,
+not a set of additions — anything added through the dashboard and not written down
+there is removed by the next deploy.
+
+The loop this produces is vicious. Add a binding in the dashboard, it works. Merge
+anything at all, Workers Builds runs `wrangler deploy`, the binding is gone. The
+dashboard still lists the secret, encrypted, correct. Only `env` disagrees, and all
+it can say is that the variable is unset — which reads as *you did not set this*
+rather than *your deploy deleted it*.
+
+Everything the Worker needs is declared in `wrangler.toml` now, including
+`[[secrets_store_secrets]]`. A store id and a secret name are identifiers, not
+secrets — the same class as `database_id` — so they belong in the repo. Only values
+live in the Secrets Store, and rotating one changes nothing in git.
+
+## A secret is a string or an object, and nothing tells you which
+
+| Set as | Arrives as | Read with |
+|---|---|---|
+| Worker secret | a string | `env.X` |
+| Secrets Store binding | an object | `await env.X.get()` |
+
+The dashboard's "Add binding" list offers only Secrets Store, so that is where you
+land looking for where bindings live — beside `DB` and `ASSETS_BUCKET`, which is
+exactly where you would expect them.
+
+An object is truthy. So `if (!env.X) throw` passes, and the value is then
+interpolated into a URL as `[object Object]`. The Worker fetched
+`https://[object Object]/cdn-cgi/access/certs` and returned 401 — a *login* error,
+several layers from the mistake. `readSecret()` in `worker/lib/secrets.mjs` resolves
+either shape; `GOOGLE_API_KEY` had the identical bug lying in wait behind
+`if (!apiKey) throw`, found only by looking for it.
+
+## Static assets answer before the Worker, and split by request kind
+
+Workers static assets serves first, and in SPA mode anything it cannot match a file
+for becomes `index.html`. That is right for client routes and wrong for the Worker's
+own paths — and it splits by **request kind**, not by URL, which is why it hid so
+well: `fetch()` from `app.js` fell through to the Worker and worked, so the feed
+populated, while the same URL typed into the address bar served the app. Opening
+`/health` in a tab got `detectUrlState()` reading `health` as a parish slug.
+
+On the VM this was never ambiguous: Express matched in source order, and
+`app.get('/:slug/donate')` sat above `app.get('*')`. Cloudflare has no such ordering.
+`run_worker_first` restores it, and the pay-link redirects are the case that matters
+— they exist only to be reached from a shared link, which is always a navigation,
+which is always the request the asset router swallows.
+
+## `/admin` and `/admin.html` are different URLs
+
+Static assets serves HTML at the **extensionless** path and answers `307` for the
+`.html` one. So `/admin` is where a browser lands and what anyone bookmarks, while an
+Access application written against `admin.html` covers the doormat and not the door.
+
+The two entry points produced two halves of a working flow: `/admin.html` signed you
+in and redirected; `/admin` loaded with no session and dead-ended on a `fetch()` that
+cannot follow the redirect Access answers with. The page now navigates to
+`/admin.html` on a 401 — once, flagged in `sessionStorage`, because if the ping still
+fails after signing in then the session is not the problem and bouncing again loops
+forever.
+
+## Saving a secret does not deploy it
+
+On a Worker owned by Workers Builds, the build pipeline publishes versions. A secret
+saved afterwards sits in storage while the running version predates it, and no new
+deployment appears. Retry the last build. Only ever needed for the first set — but
+indistinguishable, at the time, from the secret being wrong.
+
+## The first deploy shipped an empty shell
+
+Connecting the repo before the migration was merged meant `main` had no
+`wrangler.toml`. Cloudflare detected a static site, found `public/`, and shipped 1,047
+files behind a generated no-op script. **The build was green.** Two numbers gave it
+away: `Total Upload: 0.33 KiB` for a Worker whose source is ~125 KB, and no bindings
+block in the log. A real deploy prints `Your Worker has access to the following
+bindings:`; that one went straight from upload to triggers.
+
+## Smaller traps, same shape
+
+- **`workflow_dispatch` needs the file on the default branch.** A workflow only shows
+  a "Run workflow" button once it is on `main`, so the basemap could not be built
+  until the deploy was merged. The runbook's original order asked for the impossible
+  first.
+- **Custom Domains cannot take a wildcard.** Agora serves the whole zone —
+  `app.js` reads the hostname before the path, so `greek.orthodoxy.au` opens
+  pre-filtered — so it needs routes (`orthodoxy.au/*`, `*.orthodoxy.au/*`), not a
+  Custom Domain. A route needs a proxied DNS record to exist but not to point
+  anywhere real; `192.0.2.1` (RFC 5737) rather than a decommissioned VM's IP, which
+  gets reassigned.
+- **A route that exists but is not attached gives 522**, not a DNS error.
+- **`df -Pm --output=avail` is invalid** — GNU coreutils rejects `-P` with
+  `--output`. The basemap job died on its own disk guard *after* the extract had
+  reported a good answer.
+
+## Two bugs the port introduced, found by looking
+
+- **The Good Shepherd calendar id was retyped.** The VM asked for
+  `australianorthodox.org.au_...@group.calendar.google.com`; the port asked for
+  `goodshepherdclayton@gmail.com` — plausible, being the parish's name, and not a
+  published calendar. Google answers 404 for a calendar an API key cannot see rather
+  than admitting one exists, so it read as a permissions problem and hid behind an IP
+  restriction left over from the VM.
+- **Geocoding was `countrycodes: 'au'`** — a hard filter, not a bias. Every New
+  Zealand address would have returned no result, and the caller treats null as *leave
+  the coordinates alone*, so the address would save, the pin would not move, and
+  nothing would say why. For a project whose own notes name Auckland, that was
+  waiting to happen. The list now matches the basemap bbox, and the Sydney viewbox is
+  gone: with `limit=1` a near-miss in Sydney can outrank the real answer in Clayton.
+
+## What this changed about the runbook
+
+`docs/deploy.md` was rewritten repeatedly during the deploy, and every rewrite came
+from something that had just gone wrong. It now says Secrets Store plus config rather
+than offering the dashboard as an equivalent option — it is not equivalent, it is the
+one that gets undone — and asks for three Access paths rather than two.
+
+The Good Shepherd parish, listed here as a blocker, is seeded: Monash University
+Religious Centre, Clayton, with an explicit `Australia/Melbourne` timezone since it is
+the first parish outside Sydney. `PENDING_PARISHES` is empty, and the guard it feeds
+stays, because an adapter pointed at a missing parish must refuse before writing
+rather than throw a foreign-key error every four hours.
+
+## What is still true
+
+Ingestion covers one parish. The open question above is still open, and it is now the
+whole remaining project rather than a footnote to it.
+
+---
+
 *Assessed against `kvnpt/agora` at `main`, schema `user_version = 29`. Line counts and
 reference counts are from the working tree, not estimates.*

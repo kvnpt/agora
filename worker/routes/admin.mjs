@@ -12,6 +12,7 @@ import { geocode } from '../lib/geocode.mjs';
 import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter } from '../lib/adapters.mjs';
+import { inferSchedules } from '../lib/infer.mjs';
 
 // Wrap a handler so the guard runs first.
 const guarded = (fn) => async (c) => {
@@ -380,6 +381,99 @@ export function registerAdminRoutes(router) {
     return json({ ok: true });
   }));
 
+  const VALID_WEEKS = new Set(['first', 'second', 'third', 'fourth', 'last']);
+
+  // ── schedule proposals ──
+  //
+  // Scraped events say what is on inside whatever window the source covered.
+  // Rules say what is on afterwards. This is the bridge, and it is deliberately
+  // two endpoints rather than one: inference proposes, a person accepts.
+  //
+  // Nothing here writes on its own. A proposal that turns out wrong becomes a
+  // rule the feed projects indefinitely and — once reconciliation lands —
+  // absence from a scrape starts marking real services cancelled. That is not
+  // a decision to make on a cron.
+
+  router.get('/api/admin/parishes/:id/schedule-proposals', guarded(async ({ env, params, query }) => {
+    const parish = await env.DB.prepare(
+      'SELECT id, name, timezone FROM parishes WHERE id = ?'
+    ).bind(params.id).first();
+    if (!parish) return json({ error: 'Parish not found' }, 404);
+
+    // Only what was ingested. source_adapter='schedule' is scar tissue from the
+    // nightly generator: those rows ARE projections, so inferring rules from
+    // them would be reading our own output back in.
+    const where = ["parish_id = ?", "source_adapter != 'schedule'", "status = 'approved'"];
+    const binds = [params.id];
+    if (query.get('from')) { where.push('start_utc >= ?'); binds.push(query.get('from')); }
+    if (query.get('to'))   { where.push('start_utc <= ?'); binds.push(query.get('to')); }
+
+    const { results: events = [] } = await env.DB.prepare(
+      `SELECT title, start_utc, end_utc, event_type, location_override
+       FROM events WHERE ${where.join(' AND ')} ORDER BY start_utc`
+    ).bind(...binds).all();
+
+    const { proposals, unexplained } = inferSchedules(events, {
+      timezone: parish.timezone || 'Australia/Sydney',
+      minSupport: Number(query.get('min_support')) || 3,
+    });
+
+    // Flag anything already on file. Rules have an AUTOINCREMENT id and no
+    // natural key, so accepting twice would silently double a parish's feed —
+    // the same trap the seed had before WHERE NOT EXISTS.
+    const { results: existing = [] } = await env.DB.prepare(
+      'SELECT id, day_of_week, start_time, title, week_of_month FROM schedules WHERE parish_id = ?'
+    ).bind(params.id).all();
+    const key = (r) => `${r.day_of_week}|${r.start_time}|${r.title}|${r.week_of_month || ''}`;
+    const onFile = new Map(existing.map(r => [key(r), r.id]));
+
+    return json({
+      parish: { id: parish.id, name: parish.name, timezone: parish.timezone },
+      events_considered: events.length,
+      proposals: proposals.map(p => ({ ...p, existing_schedule_id: onFile.get(key(p.rule)) ?? null })),
+      unexplained,
+    });
+  }));
+
+  router.post('/api/admin/parishes/:id/schedule-proposals/accept', guarded(async ({ env, params, request }) => {
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(params.id).first()) {
+      return json({ error: 'Parish not found' }, 404);
+    }
+    const { rules } = await readJson(request);
+    if (!Array.isArray(rules) || !rules.length) return json({ error: 'rules[] is required' }, 400);
+
+    const created = [], skipped = [];
+    for (const r of rules) {
+      if (r.day_of_week == null || !r.start_time || !r.title) {
+        return json({ error: 'each rule needs day_of_week, start_time and title' }, 400);
+      }
+      if (r.week_of_month && !r.week_of_month.split(',').every(w => VALID_WEEKS.has(w.trim()))) {
+        return json({ error: `invalid week_of_month: ${r.week_of_month}` }, 400);
+      }
+
+      // Idempotent by the same identity the seed uses. `x IS NULL` rather than
+      // `x = NULL`, which is never true in SQL — get that wrong and every rule
+      // looks absent, so accepting twice doubles the feed.
+      const dup = await env.DB.prepare(
+        `SELECT id FROM schedules WHERE parish_id = ? AND day_of_week = ? AND start_time = ?
+           AND title = ? AND (week_of_month IS ? OR week_of_month = ?)`
+      ).bind(params.id, r.day_of_week, r.start_time, r.title,
+             r.week_of_month || null, r.week_of_month || '').first();
+      if (dup) { skipped.push({ title: r.title, existing_schedule_id: dup.id }); continue; }
+
+      const row = await env.DB.prepare(
+        `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title,
+           event_type, week_of_month, languages)
+         VALUES (?,?,?,?,?,?,?,?) RETURNING *`
+      ).bind(
+        params.id, r.day_of_week, r.start_time, r.end_time || null, r.title,
+        r.event_type || 'liturgy', r.week_of_month || null, r.languages || null,
+      ).first();
+      created.push(row);
+    }
+    return json({ created, skipped }, created.length ? 201 : 200);
+  }));
+
   // ── schedules ──
 
   router.get('/api/admin/schedules', guarded(async ({ env }) => {
@@ -390,8 +484,6 @@ export function registerAdminRoutes(router) {
     ).all();
     return json(r.results || []);
   }));
-
-  const VALID_WEEKS = new Set(['first', 'second', 'third', 'fourth', 'last']);
 
   router.post('/api/admin/schedules', guarded(async ({ env, request }) => {
     const b = await readJson(request);
