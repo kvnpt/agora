@@ -35,20 +35,19 @@ test('the four weekly services are proposed as weekly', () => {
 test('a service on alternate Sundays is never proposed as weekly', () => {
   // The whole point. "Every Sunday with four absences" fits a frequency count
   // and would later mark four real services CANCELLED.
-  const p = byTitle(run(), 'FOUNDATIONS Course');
-  assert.ok(p);
-  assert.notEqual(p.rule.week_of_month, null);
-  assert.equal(p.rule.week_of_month, 'second,last');
+  assert.equal(byTitle(run(), 'FOUNDATIONS Course'), undefined);
 });
 
-test('the fortnightly reading is reported, not silently discarded', () => {
-  const p = byTitle(run(), 'FOUNDATIONS Course');
-  assert.ok(p.ambiguity, 'expected an ambiguity');
-  // Sep and Oct 2026 both have four Sundays, so the two readings agree across
-  // the whole sample. November has five, and that is where they part.
-  assert.equal(p.ambiguity.firstDivergence, '2026-11-22');
-  assert.match(p.ambiguity.wantedBy, /every 2 weeks/);
-  assert.equal(p.confidence, 'low', 'an unresolved fork is not high confidence');
+test('a fortnightly series is withheld rather than bent into month positions', () => {
+  // 'second,last' fits the sample exactly, and is wrong: the course was
+  // confirmed to run on 22 November 2026, which that rule omits while also
+  // inventing one on the 29th. Both readings fit; they disagree about a real
+  // Sunday; the data cannot settle it. So neither is written down.
+  const u = run().unexplained.find(x => x.title === 'FOUNDATIONS Course');
+  assert.ok(u, 'expected FOUNDATIONS to be withheld');
+  assert.match(u.why, /every 2 weeks/);
+  assert.match(u.why, /2026-11-22/);
+  assert.match(u.why, /cannot express an interval/);
 });
 
 test('thin evidence is held back rather than guessed at', () => {

@@ -66,7 +66,8 @@ function qualifierFor(dates, from, to, dow) {
 }
 
 /**
- * Is this equally well explained as "every N weeks"?
+ * Is this equally well explained as "every N weeks"? Returns the reading, or
+ * null when no interval fits or when the two agree everywhere that matters.
  *
  * schedules has no interval column — week_of_month is the only way to say
  * anything other than weekly — so a fortnightly series can only be written as a
@@ -75,7 +76,7 @@ function qualifierFor(dates, from, to, dow) {
  * first time one has five. That divergence is a real fork about a real service,
  * and the data cannot settle it, so it gets reported rather than guessed.
  */
-function intervalAmbiguity(dates, qualifier, dow) {
+function intervalReading(dates, qualifier, dow) {
   if (dates.length < 3) return null;
   const gaps = [];
   for (let i = 1; i < dates.length; i++) {
@@ -99,8 +100,7 @@ function intervalAmbiguity(dates, qualifier, dow) {
   if (!divergesOn) return null;
 
   return {
-    reason: `every ${weeks} weeks fits the sample as well as '${qualifier}' does, ` +
-            'and schedules cannot express an interval',
+    label: `every ${weeks} weeks`,
     firstDivergence: divergesOn,
     wantedBy: matchesWeekOfMonth(divergesOn, qualifier) ? qualifier : `every ${weeks} weeks`,
   };
@@ -169,16 +169,32 @@ export function inferSchedules(occurrences, {
 
     const qualifier = qualifierFor(dates, from, to, g.dow);
     if (qualifier) {
-      const ambiguity = intervalAmbiguity(dates, qualifier, g.dow);
+      const interval = intervalReading(dates, qualifier, g.dow);
+      if (interval) {
+        // Withheld, not offered at low confidence. Both readings fit the sample
+        // and they disagree about a real date, so proposing one is a coin flip
+        // that renders as fact — and the coin came up wrong when we checked:
+        // Good Shepherd's fortnightly course runs on 22 November 2026, which
+        // 'second,last' omits while also inventing one on the 29th.
+        //
+        // schedules has no interval column and is not getting one; fortnightly
+        // services are rare enough that leaving them as scraped one-off events
+        // costs less than a rule that can express them wrongly.
+        unexplained.push({
+          ...base, support,
+          why: `${interval.label} fits these dates as well as '${qualifier}' does, and ` +
+               `schedules cannot express an interval. They disagree first on ` +
+               `${interval.firstDivergence}, so neither is safe to assume.`,
+        });
+        continue;
+      }
       proposals.push({
         rule: { ...base, week_of_month: qualifier },
         support,
         // Month positions need to be seen repeating before they mean much: two
-        // first-Sundays is also two 28-day gaps. And an unresolved fork is never
-        // high confidence, whatever the sample size — the rule fits, and so does
-        // a different one that disagrees about a real Sunday.
-        confidence: (dates.length >= 4 && !ambiguity) ? 'high' : 'low',
-        ambiguity,
+        // first-Sundays is also two 28-day gaps.
+        confidence: dates.length >= 4 ? 'high' : 'low',
+        ambiguity: null,
       });
       continue;
     }
