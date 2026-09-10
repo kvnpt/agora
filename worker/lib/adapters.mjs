@@ -118,7 +118,13 @@ function guessEventType(title) {
 export const ADAPTERS = [
   new GoogleCalendarAdapter({
     parishId: 'antiochian-good-shepherd-antiochian-church',
-    calendarId: 'goodshepherdclayton@gmail.com',
+    // Verbatim from the VM's adapters/gcal-good-shepherd-clayton.js (6e57231),
+    // which is the only place this value has ever been known to work. The port
+    // replaced it with goodshepherdclayton@gmail.com — a plausible-looking
+    // address that is not a published calendar, so Google answered 404, which
+    // is what it returns for a calendar an API key cannot see rather than
+    // admitting one exists. Do not "tidy" this into something more readable.
+    calendarId: 'australianorthodox.org.au_q9qd8e01360qb3210pkb0ql160@group.calendar.google.com',
   }),
 ];
 
