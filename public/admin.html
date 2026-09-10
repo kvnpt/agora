@@ -281,6 +281,24 @@
     </div>
 
     <div id="section-schedules" class="section">
+
+      <!-- Rules inferred from what has actually been scraped.
+           Scraped events say what is on inside whatever window the source
+           covered; rules say what is on afterwards. This is the bridge, and it
+           asks rather than acts: an accepted rule projects indefinitely, and
+           once absence drives tombstoning a wrong one starts marking real
+           services cancelled. -->
+      <h3 class="expand-trigger" onclick="toggleExpand('infer-panel')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Infer rules from scraped events <span id="infer-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
+      <div id="infer-panel" class="expandable">
+        <div class="card" style="margin-top:8px;">
+          <div class="grid">
+            <div class="field"><label>Parish</label><select id="infer-parish-select"></select></div>
+            <div class="field" style="align-self:end;"><button type="button" id="infer-btn" class="btn">Find rules</button></div>
+          </div>
+          <div id="infer-results" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
       <h3 class="expand-trigger" onclick="toggleExpand('add-schedule-form')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Add Schedule <span id="add-schedule-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
       <div id="add-schedule-form" class="expandable">
       <form id="schedule-form" class="card" style="margin-top:8px;">
@@ -391,6 +409,133 @@
       renderScheduleList();
       renderParishSelects();
       renderAdapterList();
+      renderInferSelect();
+    }
+
+    // ── inferred rules ──
+
+    let inferResult = null;
+
+    function renderInferSelect() {
+      const sel = document.getElementById('infer-parish-select');
+      if (!sel) return;
+      const keep = sel.value;
+      sel.replaceChildren(...parishes
+        .filter(p => p.id !== '_unassigned')
+        .map(p => new Option(p.name, p.id)));
+      if (keep) sel.value = keep;
+    }
+
+    const DOW_NAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const ruleLine = (r) =>
+      `${DOW_NAME[r.day_of_week]} ${r.start_time}` +
+      (r.week_of_month ? ` \u00b7 ${r.week_of_month}` : ' \u00b7 every week');
+
+    async function findRules() {
+      const id = document.getElementById('infer-parish-select').value;
+      const out = document.getElementById('infer-results');
+      if (!id) return;
+      out.textContent = 'Looking\u2026';
+      const res = await fetch(`/api/admin/parishes/${encodeURIComponent(id)}/schedule-proposals`, { headers });
+      if (!res.ok) { out.textContent = await adminError(res); return; }
+      inferResult = await res.json();
+      renderInferResults();
+    }
+
+    function renderInferResults() {
+      const out = document.getElementById('infer-results');
+      const r = inferResult;
+      out.replaceChildren();
+
+      const head = document.createElement('div');
+      head.style.cssText = 'font-size:12px;color:#666;margin-bottom:8px;';
+      head.textContent = `${r.events_considered} scraped event(s) considered, in ${r.parish.timezone}.`;
+      out.append(head);
+
+      if (!r.proposals.length && !r.unexplained.length) {
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:13px;color:#666;';
+        p.textContent = 'Nothing to infer. This parish has no scraped events yet.';
+        out.append(p);
+        return;
+      }
+
+      for (const prop of r.proposals) {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #eee;font-size:13px;cursor:pointer;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'infer-pick';
+        cb.dataset.rule = JSON.stringify(prop.rule);
+        cb.style.marginTop = '3px';
+        // Already on file: nothing to accept, and ticking it would be a no-op.
+        cb.disabled = prop.existing_schedule_id != null;
+        cb.checked = !cb.disabled && prop.confidence === 'high';
+
+        const text = document.createElement('div');
+        const t = document.createElement('div');
+        t.style.fontWeight = '600';
+        t.textContent = prop.rule.title;
+        const d = document.createElement('div');
+        d.style.cssText = 'color:#666;font-size:12px;';
+        d.textContent = `${ruleLine(prop.rule)} \u00b7 seen ${prop.support.count}\u00d7` +
+          (prop.confidence === 'low' ? ' \u00b7 low confidence' : '') +
+          (prop.existing_schedule_id != null ? ' \u00b7 already on file' : '');
+        text.append(t, d);
+        row.append(cb, text);
+        out.append(row);
+      }
+
+      // Withheld, with the reason. A parish that publishes a fortnightly course
+      // will never see a rule for it, and the reason says why rather than
+      // leaving it looking like the scrape missed something.
+      if (r.unexplained.length) {
+        const h = document.createElement('div');
+        h.style.cssText = 'margin-top:12px;font-size:12px;font-weight:600;color:#666;';
+        h.textContent = 'No rule proposed';
+        out.append(h);
+        for (const u of r.unexplained) {
+          const row = document.createElement('div');
+          row.style.cssText = 'padding:6px 0;border-bottom:1px solid #f2f2f2;font-size:12px;color:#666;';
+          const t = document.createElement('span');
+          t.style.color = '#333';
+          t.textContent = `${u.title} \u2014 ${ruleLine(u)}: `;
+          row.append(t, document.createTextNode(u.why));
+          out.append(row);
+        }
+      }
+
+      if (r.proposals.some(p => p.existing_schedule_id == null)) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn';
+        btn.style.marginTop = '10px';
+        btn.textContent = 'Accept ticked rules';
+        btn.addEventListener('click', () => acceptRules(btn));
+        out.append(btn);
+      }
+    }
+
+    async function acceptRules(btn) {
+      const rules = [...document.querySelectorAll('.infer-pick:checked')]
+        .map(cb => JSON.parse(cb.dataset.rule));
+      if (!rules.length) { toast('Nothing ticked', 'error'); return; }
+
+      const label = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Accepting\u2026';
+      try {
+        const res = await fetch(
+          `/api/admin/parishes/${encodeURIComponent(inferResult.parish.id)}/schedule-proposals/accept`,
+          { method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+            body: JSON.stringify({ rules }) });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        const { created, skipped } = await res.json();
+        toast(`${created.length} rule(s) added` + (skipped.length ? `, ${skipped.length} already on file` : ''));
+        await loadAll();
+        await findRules();
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
     }
 
     async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); }
@@ -876,6 +1021,8 @@
       wrap.append(h, d, btn);
       document.body.replaceChildren(wrap);
     }
+
+    document.getElementById('infer-btn').addEventListener('click', findRules);
 
     (async function init() {
       // One source of truth. /api/admin/ping is the Worker verifying the Access
