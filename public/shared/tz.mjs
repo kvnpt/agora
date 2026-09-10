@@ -144,3 +144,25 @@ export function localDateOf(zone, epochMs) {
   for (const { type, value } of p) if (type !== 'literal') v[type] = value;
   return `${v.year}-${v.month}-${v.day}`;
 }
+
+/**
+ * Local date, wall-clock time and weekday of an instant in `zone`.
+ *
+ * Recurrence inference works in the units schedules are written in — a weekday
+ * and an 'HH:MM' local time — so it needs the whole triple, not just the date.
+ * Weekday comes from the local date rather than the instant: near midnight
+ * those disagree, and the schedule's day_of_week means the local one.
+ *
+ * @returns {{date: string, time: string, dow: number}} dow 0=Sunday
+ */
+export function localPartsOf(zone, epochMs) {
+  const p = formatter(zone).formatToParts(new Date(epochMs));
+  const v = {};
+  for (const { type, value } of p) if (type !== 'literal') v[type] = value;
+  const date = `${v.year}-${v.month}-${v.day}`;
+  return {
+    date,
+    time: `${v.hour}:${v.minute}`,
+    dow: new Date(date + 'T00:00:00Z').getUTCDay(),
+  };
+}
