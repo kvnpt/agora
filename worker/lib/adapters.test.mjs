@@ -190,3 +190,62 @@ test('PENDING_PARISHES lists only adapters that are really still pending', () =>
     assert.ok(reason && reason.length > 20, 'an entry has to say what is missing');
   }
 });
+
+
+// ── The Google 403s, told apart ────────────────────────────────────────────
+//
+// One status, three causes, three different places to go and fix it. The
+// reason only ever appears in the response body, and adapter_runs is the only
+// record a scrape leaves.
+
+const KEY = 'AIzaSy-not-a-real-key';
+
+/** Runs the registered Google adapter against a stubbed googleapis response. */
+async function fetchWith(reply) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => reply();
+  try {
+    const adapter = ADAPTERS.find(a => a.sourceType === 'google-calendar');
+    return await adapter.fetchEvents({ GOOGLE_API_KEY: KEY }).then(() => null, e => e.message);
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+const googleErr = (status, message, reason) => () => new Response(
+  JSON.stringify({ error: { code: status, message, errors: [{ reason }] } }),
+  { status, statusText: 'Forbidden' },
+);
+
+test('a referrer-restricted key names itself', async () => {
+  const msg = await fetchWith(googleErr(403, 'Requests from referer <empty> are blocked.', 'ipRefererBlocked'));
+  assert.match(msg, /403/);
+  assert.match(msg, /referer <empty> are blocked/);
+  assert.match(msg, /ipRefererBlocked/);
+});
+
+test('a disabled API is distinguishable from a private calendar', async () => {
+  const disabled = await fetchWith(googleErr(403, 'Calendar API has not been used in project 123 before or it is disabled.', 'accessNotConfigured'));
+  const private_ = await fetchWith(googleErr(403, 'The requested identity cannot be found.', 'forbidden'));
+  assert.match(disabled, /accessNotConfigured/);
+  assert.match(private_, /forbidden/);
+  assert.notEqual(disabled, private_);
+});
+
+test('the API key never reaches the message', async () => {
+  // adapter_runs is served unauthenticated at /api/adapters/status, and the key
+  // travels in the query string — so an echoed URL would publish it.
+  const echoed = () => new Response(
+    JSON.stringify({ error: { message: `Bad request to ...?key=${KEY}`, errors: [{ reason: 'badRequest' }] } }),
+    { status: 400, statusText: 'Bad Request' },
+  );
+  const msg = await fetchWith(echoed);
+  assert.doesNotMatch(msg, new RegExp(KEY));
+  assert.match(msg, /<redacted>/);
+});
+
+test('a non-JSON body still yields something to act on', async () => {
+  const msg = await fetchWith(() => new Response('<html>502 upstream</html>', { status: 502, statusText: 'Bad Gateway' }));
+  assert.match(msg, /502/);
+  assert.match(msg, /upstream/);
+});

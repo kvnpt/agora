@@ -221,14 +221,22 @@ missing (Step 4).
 In **Zero Trust → Access → Applications → Add an application → Self-hosted**:
 
 - Application domain `orthodoxy.au`
-- **Two paths: `/admin.html` and `/api/admin/*`**
+- **Three paths: `/admin`, `/admin.html`, and `/api/admin/*`**
 - A policy allowing your own email
 
 **Cover the page, not just the API.** Access signs a user in by redirecting them
 to your identity provider, and a redirect only works on a page navigation — a
 `fetch()` cannot follow one usefully. If the application covers only the API,
-`/admin.html` loads for anyone, discovers it has no session, and has nowhere to
+the admin page loads for anyone, discovers it has no session, and has nowhere to
 send them.
+
+**And cover `/admin`, not only `/admin.html`.** Workers static assets serves the
+page at the **extensionless** URL: `/admin.html` answers `307 → /admin`, so
+`/admin` is where a browser actually ends up and what anyone will bookmark. An
+application written against `admin.html` alone protects the doormat and not the
+door — you get signed in on the way through `/admin.html`, but arriving at
+`/admin` directly skips Access entirely and the page dead-ends on a `fetch` it
+cannot authenticate. Both paths, and the API.
 
 Then the Worker's secrets. **Put the values in the Secrets Store and leave the
 bindings to `wrangler.toml`** — do not add them in the dashboard.
