@@ -69,7 +69,9 @@ usually right; a hash of the title and time is not, because both change.
 
 `events.parish_id` is a foreign key. `runAdapter` checks before writing and fails
 with a message naming the missing parish, because a bare `FOREIGN KEY constraint
-failed` in `adapter_runs` tells you nothing. Add the parish to `seeds/parishes.js`,
+failed` in `adapter_runs` tells you nothing. Adding parishes in bulk — a whole
+jurisdiction's directory at once — is its own job with its own traps, and
+`docs/parish-ingestion.md` covers it. For one parish: add it to `seeds/parishes.js`,
 run `npm run gen:seed`, and paste `d1/seed-parishes.console.sql` into the D1
 console. If the address genuinely cannot be confirmed, add the adapter to
 `PENDING_PARISHES` so the panel disables it with a reason rather than failing
