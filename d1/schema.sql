@@ -172,8 +172,23 @@ CREATE TABLE schedule_overrides (
   combined_into_event_id  INTEGER REFERENCES events(id) ON DELETE CASCADE,
 
   note                    TEXT,
+
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   updated_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+
+  -- Who decided this. 'human' or 'adapter:<id>'.
+  --
+  -- An adapter may cancel an occurrence a source has stopped publishing, and
+  -- must withdraw that cancellation when it reappears — so its own rows have to
+  -- be findable. A person's never are: UNIQUE below means writing over one
+  -- replaces it, and a deliberate cancellation silently undone by a scrape is
+  -- the worst outcome this table has.
+  --
+  -- Last, not beside the other metadata, because ALTER TABLE ADD COLUMN can
+  -- only append: a database migrated with d1/migrations/001 and one created
+  -- from this file must come out identical, down to column order.
+  source                  TEXT NOT NULL DEFAULT 'human',
+
   UNIQUE(schedule_id, occurrence_date)
 );
 
@@ -224,7 +239,20 @@ CREATE TABLE adapter_runs (
   events_found   INTEGER NOT NULL DEFAULT 0,
   events_created INTEGER NOT NULL DEFAULT 0,
   events_updated INTEGER NOT NULL DEFAULT 0,
-  error_message  TEXT
+  error_message  TEXT,
+
+  -- What the run actually asked the source about, as local dates.
+  --
+  -- Absence is only evidence inside this. Without it a later run cannot tell
+  -- whether a date was reported missing or simply never requested, and every
+  -- tombstone written from absence becomes unauditable.
+  window_from    TEXT,
+  window_to      TEXT,
+
+  -- Set when the guards refused to act on absence: 'empty-scrape',
+  -- 'too-many'. A refusal is a result, not a failure — status stays 'success'
+  -- because the scrape worked; this says why nothing was cancelled.
+  tombstones_refused TEXT
 );
 
 -- healthCheck() reads the newest run for one adapter.

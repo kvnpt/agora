@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { localPartsOf } from '../../public/shared/tz.mjs';
-import { reconcile, titlesMatch } from './reconcile.mjs';
+import { reconcile, titlesMatch, coveredLocalDates } from './reconcile.mjs';
 import { GOOD_SHEPHERD } from './infer.fixture.mjs';
 
 const TZ = 'Australia/Melbourne';
@@ -107,4 +107,46 @@ test('a DST boundary does not fabricate a cancellation', () => {
   assert.ok(r.matched.some(m => day(m.instance) === '2026-09-13'), 'before');
   assert.ok(r.matched.some(m => day(m.instance) === '2026-11-01'), 'after');
   assert.equal(r.missing.length, 0);
+});
+
+
+// ── the window edge ────────────────────────────────────────────────────────
+//
+// Found by running the thing rather than reasoning about it: a CLEAN scrape
+// cancelled two real services, because naming the local dates at each end of
+// an instant range widens it, and the days it adds were never covered.
+
+test('a partly covered day is not part of the window', () => {
+  // Google asks [now, now+90d]. A scrape at 15:00 cannot speak for that
+  // morning's liturgy, nor for the evening of the ninetieth day.
+  const w = coveredLocalDates('Australia/Melbourne',
+    '2026-09-12T04:00:00Z',    // 14:00 Melbourne on the 12th
+    '2026-11-08T04:00:00Z');   // 15:00 Melbourne on the 8th (AEDT)
+  assert.equal(w.windowFrom, '2026-09-13', 'the 12th was only half watched');
+  assert.equal(w.windowTo, '2026-11-07', 'the 8th was only half watched');
+});
+
+test('a range on exact local midnights keeps its whole days', () => {
+  const w = coveredLocalDates('Australia/Melbourne',
+    '2026-09-11T14:00:00Z',    // 2026-09-12T00:00 Melbourne
+    '2026-11-07T13:00:00Z');   // 2026-11-08T00:00 Melbourne (AEDT)
+  assert.equal(w.windowFrom, '2026-09-12');
+  assert.equal(w.windowTo, '2026-11-07');
+});
+
+test('a window too short to cover a whole day proves nothing', () => {
+  assert.equal(coveredLocalDates('Australia/Melbourne',
+    '2026-09-12T04:00:00Z', '2026-09-12T09:00:00Z'), null);
+});
+
+test('the narrowed window is what stops a clean scrape cancelling anything', () => {
+  // The fixture's last published service is Saturday 7 November. Judged
+  // against a window naming the 8th, Sunday's two services read as absent.
+  const naive = reconcile({ projected: PROJECTED, scraped: GOOD_SHEPHERD, timezone: TZ,
+    windowFrom: '2026-09-12', windowTo: '2026-11-08' });
+  assert.equal(naive.missing.length, 2, 'the bug, reproduced');
+
+  const w = coveredLocalDates(TZ, '2026-09-12T04:00:00Z', '2026-11-08T04:00:00Z');
+  const narrowed = reconcile({ projected: PROJECTED, scraped: GOOD_SHEPHERD, timezone: TZ, ...w });
+  assert.equal(narrowed.missing.length, 0, 'the fix');
 });

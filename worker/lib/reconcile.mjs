@@ -21,6 +21,39 @@
 import { localPartsOf } from '../../public/shared/tz.mjs';
 
 const MIN_MS = 60000;
+const DAY_MS = 86400000;
+
+const addDays = (date, n) =>
+  new Date(Date.parse(date + 'T00:00:00Z') + n * DAY_MS).toISOString().slice(0, 10);
+
+/**
+ * The local dates a source's instant range FULLY covers.
+ *
+ * Sources ask in instants — Google's timeMin is "now" and timeMax is "now plus
+ * ninety days" — and absence is judged per local date. Converting one to the
+ * other by naming the dates at each end WIDENS the range, and every day it adds
+ * is a day the source never had the chance to report on. Those days then read
+ * as absent, and absence writes tombstones: a clean scrape marking real
+ * services cancelled at both edges, on every run. It did exactly that the first
+ * time this was run end to end.
+ *
+ * So round inward. A scrape starting at 3pm cannot speak for that morning's
+ * liturgy, and one ending at 3pm on day ninety cannot speak for that evening's
+ * vespers. Both days are dropped.
+ *
+ * @returns {{windowFrom: string, windowTo: string}|null} null if nothing is
+ *          fully covered — a window shorter than a day proves nothing.
+ */
+export function coveredLocalDates(timezone, fromIso, toIso) {
+  const f = localPartsOf(timezone, Date.parse(fromIso));
+  const t = localPartsOf(timezone, Date.parse(toIso));
+  // Start: a day is covered only if the range began at or before its midnight.
+  const windowFrom = f.time === '00:00' ? f.date : addDays(f.date, 1);
+  // End: the day the range stops inside is never complete, whatever the time —
+  // ending at 00:00 covers none of it, ending at 23:59 still misses a minute.
+  const windowTo = addDays(t.date, -1);
+  return windowFrom > windowTo ? null : { windowFrom, windowTo };
+}
 
 const norm = (t) => String(t || '').trim().replace(/\s+/g, ' ').toLowerCase();
 

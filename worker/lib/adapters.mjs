@@ -15,6 +15,9 @@
 //      looked up first and the two are counted separately.
 
 import { readSecret } from './secrets.mjs';
+import { expandFrom } from '../../public/shared/project.mjs';
+import { reconcile, coveredLocalDates } from './reconcile.mjs';
+import { decideTombstones, adapterSource } from './tombstone.mjs';
 
 async function sha256Hex(input) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -68,8 +71,15 @@ class GoogleCalendarAdapter {
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(this.calendarId)}/events`
     );
     url.searchParams.set('key', apiKey);
-    url.searchParams.set('timeMin', new Date().toISOString());
-    url.searchParams.set('timeMax', new Date(Date.now() + 90 * 86400000).toISOString());
+    // Reported alongside the events, because absence only means anything
+    // inside the range actually asked for. A PDF adapter reports whatever
+    // month its table covers; the shape is the same.
+    const window = {
+      from: new Date().toISOString(),
+      to: new Date(Date.now() + 90 * 86400000).toISOString(),
+    };
+    url.searchParams.set('timeMin', window.from);
+    url.searchParams.set('timeMax', window.to);
     url.searchParams.set('singleEvents', 'true');
     url.searchParams.set('orderBy', 'startTime');
     url.searchParams.set('maxResults', '100');
@@ -78,7 +88,7 @@ class GoogleCalendarAdapter {
     if (!res.ok) throw new Error(await googleError(res, apiKey));
     const data = await res.json();
 
-    return Promise.all((data.items || []).map(async (item) => {
+    const events = await Promise.all((data.items || []).map(async (item) => {
       const start = item.start?.dateTime || item.start?.date;
       const end = item.end?.dateTime || item.end?.date;
       const title = item.summary || 'Untitled Event';
@@ -95,6 +105,8 @@ class GoogleCalendarAdapter {
         parish_scoped: isParishScoped(title) ? 1 : 0,
       };
     }));
+
+    return { events, window };
   }
 }
 
@@ -153,6 +165,72 @@ export const PENDING_PARISHES = new Map([
 /**
  * Run one adapter: fetch, upsert, log the run. Returns the run's counters.
  */
+/**
+ * Act on what the source did NOT publish.
+ *
+ * Absence is the only signal here, and it is a dangerous one — so the policy
+ * that reads it lives in tombstone.mjs where every guard is visible at once,
+ * and this function does nothing but fetch what that policy needs and carry
+ * out what it decides.
+ *
+ * Projection deliberately ignores existing overrides: the question is what the
+ * RULES say should be on, not what the rules plus last week's tombstones say.
+ * Feeding our own output back in would make a tombstone self-justifying.
+ */
+async function applyTombstones(db, adapter, events, window) {
+  const parish = await db.prepare('SELECT timezone FROM parishes WHERE id = ?')
+    .bind(adapter.parishId).first();
+  const timezone = parish?.timezone || 'Australia/Sydney';
+  // Only whole local days the source actually covered — see coveredLocalDates.
+  const covered = coveredLocalDates(timezone, window.from, window.to);
+  if (!covered) return { windowFrom: null, windowTo: null, created: 0, withdrawn: 0, refused: null };
+  const { windowFrom, windowTo } = covered;
+  const blank = { windowFrom, windowTo, created: 0, withdrawn: 0, refused: null };
+
+  const { results: schedules = [] } = await db.prepare(
+    `SELECT s.*, p.timezone AS p_timezone, p.lat AS p_lat, p.lng AS p_lng
+     FROM schedules s JOIN parishes p ON s.parish_id = p.id
+     WHERE s.parish_id = ? AND s.active = 1`
+  ).bind(adapter.parishId).all();
+  if (!schedules.length) return blank;   // nothing projected, nothing to cancel
+
+  const ids = schedules.map(s => s.id);
+  const { results: existing = [] } = await db.prepare(
+    `SELECT schedule_id, occurrence_date, kind, source FROM schedule_overrides
+     WHERE occurrence_date BETWEEN ? AND ?
+       AND schedule_id IN (${ids.map(() => '?').join(',')})`
+  ).bind(windowFrom, windowTo, ...ids).all();
+
+  const projected = expandFrom({ schedules, overrides: [] }, window.from, window.to);
+  const diff = reconcile({ projected, scraped: events, timezone, windowFrom, windowTo });
+  const decision = decideTombstones({
+    diff, projectedCount: projected.length, scrapedCount: events.length,
+    existing, adapterId: adapter.id,
+  });
+
+  if (decision.refused) {
+    console.warn(`[${adapter.id}] tombstones refused: ${decision.refused.detail}`);
+    return { ...blank, refused: decision.refused };
+  }
+
+  const source = adapterSource(adapter.id);
+  const stmts = [
+    ...decision.create.map(c => db.prepare(
+      `INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind, note, source)
+       VALUES (?,?,'cancelled',?,?)`
+    ).bind(c.schedule_id, c.occurrence_date, c.note, source)),
+    // Scoped to our own rows twice over — by source and by kind — so a person's
+    // cancellation can never be undone by a scrape that disagrees with it.
+    ...decision.withdraw.map(w => db.prepare(
+      `DELETE FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?
+         AND source = ? AND kind = 'cancelled'`
+    ).bind(w.schedule_id, w.occurrence_date, source)),
+  ];
+  if (stmts.length) await db.batch(stmts);
+
+  return { ...blank, created: decision.create.length, withdrawn: decision.withdraw.length };
+}
+
 export async function runAdapter(adapter, env) {
   const db = env.DB;
   const started = await db.prepare(
@@ -161,7 +239,13 @@ export async function runAdapter(adapter, env) {
   const runId = started.id;
 
   try {
-    const events = await adapter.fetchEvents(env);
+    // An adapter returns either a bare array or { events, window }. The window
+    // is what makes absence mean anything, so it is worth having — but an
+    // adapter that cannot say what range it covered is still a valid adapter;
+    // it just gets no tombstoning.
+    const fetched = await adapter.fetchEvents(env);
+    const events = Array.isArray(fetched) ? fetched : (fetched.events || []);
+    const window = Array.isArray(fetched) ? null : (fetched.window || null);
     const eventsFound = events.length;
 
     // Classify before writing, so created/updated are honest. The old code
@@ -216,13 +300,23 @@ export async function runAdapter(adapter, env) {
     });
     if (writes.length) await db.batch(writes);
 
+    // Only now, with the events written, is absence meaningful — and only
+    // inside the window the source was actually asked about.
+    const tomb = window
+      ? await applyTombstones(db, adapter, events, window)
+      : { windowFrom: null, windowTo: null, created: 0, withdrawn: 0, refused: null };
+
     await db.prepare(
       `UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
-       status='success', events_found=?, events_created=?, events_updated=? WHERE id=?`
-    ).bind(eventsFound, eventsCreated, eventsUpdated, runId).run();
+       status='success', events_found=?, events_created=?, events_updated=?,
+       window_from=?, window_to=?, tombstones_refused=? WHERE id=?`
+    ).bind(eventsFound, eventsCreated, eventsUpdated,
+           tomb.windowFrom, tomb.windowTo, tomb.refused?.reason || null, runId).run();
 
-    console.log(`[${adapter.id}] found=${eventsFound} created=${eventsCreated} updated=${eventsUpdated}`);
-    return { eventsFound, eventsCreated, eventsUpdated };
+    console.log(`[${adapter.id}] found=${eventsFound} created=${eventsCreated} updated=${eventsUpdated}` +
+      (tomb.refused ? ` tombstones=refused(${tomb.refused.reason})`
+                    : ` cancelled=${tomb.created} restored=${tomb.withdrawn}`));
+    return { eventsFound, eventsCreated, eventsUpdated, tombstones: tomb };
   } catch (err) {
     await db.prepare(
       `UPDATE adapter_runs SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
