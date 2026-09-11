@@ -90,7 +90,8 @@ scraped event supersedes its recurring twin instead of showing twice.
 
 **Adapters** live in `worker/lib/adapters.mjs` as a static registry (Workers have no
 filesystem, so there is no directory scan). Add a parish by adding a line.
-`source_hash` makes a re-scrape idempotent.
+`source_hash` makes a re-scrape idempotent. `docs/adapters.md` is the guide —
+the contract, what comes free, and the constraints that bite.
 
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and
