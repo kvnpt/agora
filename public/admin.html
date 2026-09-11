@@ -950,12 +950,31 @@
                   <span style="color:${tone};font-weight:600;">${status}</span>
                   &middot; last run ${relativeTime(r && r.lastRun)}
                   ${counts ? ' &middot; ' + counts : ''}
-                  &middot; cron <code>${esc(a.schedule)}</code>
+                  ${a.enabled ? `&middot; every ${intervalLabel(a.intervalMinutes)}` : '&middot; <span style="color:#e67e22;font-weight:600;">paused</span>'}
+                  ${a.enabled && a.next ? ' &middot; ' + esc(a.next) : ''}
+                  ${window_(r)}
                 </div>
                 ${detail}
               </div>
               <button class="btn btn-outline" data-run-adapter="${esc(a.id)}"
                       ${a.pending ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Run now</button>
+            </div>
+
+            <!-- Pacing. The Cron Trigger is fixed at deploy time and fires
+                 hourly; these decide what an hour is allowed to do, so they
+                 take effect at the next tick with no deploy. "Run now" ignores
+                 both — asking explicitly is not a timer going off. -->
+            <div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #eee;font-size:12px;">
+              <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
+                <input type="checkbox" data-adapter-enabled="${esc(a.id)}" ${a.enabled ? 'checked' : ''}>
+                Scrape automatically
+              </label>
+              <label style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+                Every
+                <select data-adapter-interval="${esc(a.id)}" ${a.enabled ? '' : 'disabled'}>
+                  ${INTERVALS.map(m => `<option value="${m}"${m === a.intervalMinutes ? ' selected' : ''}>${intervalLabel(m)}</option>`).join('')}
+                </select>
+              </label>
             </div>
           </div>`;
       }).join('');
@@ -963,6 +982,43 @@
       c.querySelectorAll('[data-run-adapter]').forEach(btn => {
         btn.addEventListener('click', () => runAdapterNow(btn.dataset.runAdapter, btn));
       });
+      c.querySelectorAll('[data-adapter-enabled]').forEach(cb => {
+        cb.addEventListener('change', () =>
+          saveAdapterSettings(cb.dataset.adapterEnabled, { enabled: cb.checked }, cb));
+      });
+      c.querySelectorAll('[data-adapter-interval]').forEach(sel => {
+        sel.addEventListener('change', () =>
+          saveAdapterSettings(sel.dataset.adapterInterval, { intervalMinutes: Number(sel.value) }, sel));
+      });
+    }
+
+    // Hourly is the floor: the trigger cannot fire more often than wrangler.toml
+    // says, so offering anything shorter would be a control that does nothing.
+    const INTERVALS = [60, 120, 240, 480, 720, 1440, 4320, 10080];
+    const intervalLabel = (m) =>
+      m < 1440 ? `${m / 60}h` : (m === 1440 ? 'day' : `${m / 1440} days`);
+
+    // What the last run could speak for. Absence outside it means nothing, so
+    // a tombstone can only ever have come from inside these dates.
+    const window_ = (r) => (r && r.window)
+      ? ` &middot; covered ${esc(r.window.from)} to ${esc(r.window.to)}` : '';
+
+    async function saveAdapterSettings(id, patch, el) {
+      el.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/adapters/${encodeURIComponent(id)}/settings`, {
+          method: 'PATCH',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        const saved = await res.json();
+        toast(saved.enabled ? `Scraping every ${intervalLabel(saved.intervalMinutes)}` : 'Scraping paused');
+        await loadAdapters();
+        renderAdapterList();
+      } finally {
+        el.disabled = false;
+      }
     }
 
     async function runAdapterNow(id, btn) {

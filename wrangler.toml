@@ -21,11 +21,19 @@ binding = "DB"
 database_name = "agora"
 database_id = "8e02890d-dc75-4dbe-a018-b64c7871dde9"
 
-# Replaces node-cron. One trigger, four-hourly, for the Google Calendar adapter.
-# node-cron ran an in-process timer in a long-lived server; a Cron Trigger
-# invokes the Worker's scheduled() handler instead.
+# Replaces node-cron. node-cron ran an in-process timer in a long-lived server;
+# a Cron Trigger invokes the Worker's scheduled() handler instead.
+#
+# HOURLY, and that is a heartbeat rather than a schedule. A Cron Trigger is
+# fixed at deploy time — the Worker cannot change its own — so pacing lives in
+# the adapter_settings table instead, where the admin panel can reach it. Each
+# tick asks which adapters are due and usually answers "none", which costs one
+# invocation and no requests to anybody's calendar.
+#
+# This is the ceiling on resolution: an adapter can be paced slower than hourly
+# but never faster. Nothing wants faster.
 [triggers]
-crons = ["0 */4 * * *"]
+crons = ["0 * * * *"]
 
 [observability]
 enabled = true

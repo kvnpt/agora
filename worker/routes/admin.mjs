@@ -11,7 +11,8 @@ import { requireAdmin } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
-import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter } from '../lib/adapters.mjs';
+import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
+         adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
 
 // Wrap a handler so the guard runs first.
@@ -576,11 +577,68 @@ export function registerAdminRoutes(router) {
 
   // `pending` is why the panel can say "this cannot run" before you click Run,
   // instead of letting you discover it from a failed run's error message.
-  router.get('/api/admin/adapters', guarded(async () =>
-    json(ADAPTERS.map(a => ({
-      id: a.id, parishId: a.parishId, sourceType: a.sourceType, schedule: a.schedule,
-      pending: PENDING_PARISHES.get(a.id) || null,
-    })))));
+  router.get('/api/admin/adapters', guarded(async ({ env }) => {
+    const pacing = await adapterPacing(env.DB);
+    const now = Date.now();
+    return json(ADAPTERS.map(a => {
+      const setting = pacing.setting(a.id);
+      return {
+        id: a.id, parishId: a.parishId, sourceType: a.sourceType, schedule: a.schedule,
+        pending: PENDING_PARISHES.get(a.id) || null,
+        // No row means enabled at the default. Absence should never be the
+        // thing that stops a scrape happening.
+        enabled: setting ? setting.enabled === 1 : true,
+        intervalMinutes: setting?.interval_minutes ?? DEFAULT_INTERVAL_MINUTES,
+        next: isDue(setting, pacing.lastSuccess(a.id), now).why,
+      };
+    }));
+  }));
+
+  // Pacing lives in the database because a Cron Trigger cannot be changed by
+  // the Worker that it fires. wrangler.toml ticks hourly; this decides what an
+  // hour is allowed to do.
+  const MIN_INTERVAL = 60;      // the heartbeat — asking for less has no effect
+  const MAX_INTERVAL = 20160;   // a fortnight; past that, the adapter is off
+
+  router.patch('/api/admin/adapters/:id/settings', guarded(async ({ env, params, request }) => {
+    if (!getAdapter(params.id)) return json({ error: 'Adapter not found' }, 404);
+    const b = await readJson(request);
+
+    let interval;
+    if (b.intervalMinutes !== undefined) {
+      interval = Number(b.intervalMinutes);
+      if (!Number.isInteger(interval) || interval < MIN_INTERVAL || interval > MAX_INTERVAL) {
+        return json({ error: `intervalMinutes must be between ${MIN_INTERVAL} and ${MAX_INTERVAL}` }, 400);
+      }
+    }
+    if (b.enabled === undefined && interval === undefined) {
+      return json({ error: 'enabled or intervalMinutes is required' }, 400);
+    }
+
+    const row = await env.DB.prepare(
+      'SELECT enabled, interval_minutes FROM adapter_settings WHERE adapter_id = ?'
+    ).bind(params.id).first();
+
+    const enabled = b.enabled === undefined ? (row ? row.enabled : 1) : (b.enabled ? 1 : 0);
+    const minutes = interval ?? (row ? row.interval_minutes : DEFAULT_INTERVAL_MINUTES);
+
+    await env.DB.prepare(
+      `INSERT INTO adapter_settings (adapter_id, enabled, interval_minutes)
+       VALUES (?,?,?)
+       ON CONFLICT(adapter_id) DO UPDATE SET
+         enabled = excluded.enabled,
+         interval_minutes = excluded.interval_minutes,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')`
+    ).bind(params.id, enabled, minutes).run();
+
+    const pacing = await adapterPacing(env.DB);
+    return json({
+      id: params.id,
+      enabled: enabled === 1,
+      intervalMinutes: minutes,
+      next: isDue(pacing.setting(params.id), pacing.lastSuccess(params.id), Date.now()).why,
+    });
+  }));
 
   router.post('/api/admin/adapters/:id/run', guarded(async ({ env, params }) => {
     const adapter = getAdapter(params.id);

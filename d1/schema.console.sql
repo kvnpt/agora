@@ -16,5 +16,6 @@ CREATE INDEX idx_overrides_date ON schedule_overrides(occurrence_date);
 CREATE TABLE event_parishes ( event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, parish_id TEXT NOT NULL REFERENCES parishes(id), PRIMARY KEY (event_id, parish_id) );
 CREATE TABLE event_replaces ( replacing_event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, replaced_event_id INTEGER NOT NULL REFERENCES events(id), PRIMARY KEY (replacing_event_id, replaced_event_id) );
 CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);
+CREATE TABLE adapter_settings ( adapter_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, interval_minutes INTEGER NOT NULL DEFAULT 240, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')) );
 CREATE TABLE adapter_runs ( id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), finished_at TEXT, status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','success','failed')), events_found INTEGER NOT NULL DEFAULT 0, events_created INTEGER NOT NULL DEFAULT 0, events_updated INTEGER NOT NULL DEFAULT 0, error_message TEXT, window_from TEXT, window_to TEXT, tombstones_refused TEXT );
 CREATE INDEX idx_adapter_runs_lookup ON adapter_runs(adapter_id, started_at DESC);

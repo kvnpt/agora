@@ -142,6 +142,47 @@ export const ADAPTERS = [
 
 export const getAdapter = (id) => ADAPTERS.find(a => a.id === id) || null;
 
+export const DEFAULT_INTERVAL_MINUTES = 240;
+
+/**
+ * Should this adapter run on this tick?
+ *
+ * PURE, so the pacing rule is testable without a clock or a database.
+ *
+ * A missing settings row means enabled at the default interval: adding an
+ * adapter needs no accompanying row, and forgetting one cannot quietly disable
+ * a scrape. Absence should never be the thing that stops work happening.
+ *
+ * Paced from the last SUCCESS, not the last attempt. A failing adapter that
+ * reset the clock on every attempt would wait out its whole interval before
+ * retrying, which is backwards — a broken scrape is the one you want to retry
+ * soonest.
+ */
+export function isDue(setting, lastSuccessAtIso, nowMs) {
+  if (setting && setting.enabled === 0) return { due: false, why: 'disabled' };
+  const interval = (setting && setting.interval_minutes) || DEFAULT_INTERVAL_MINUTES;
+  if (!lastSuccessAtIso) return { due: true, why: 'never-run' };
+  const since = (nowMs - Date.parse(lastSuccessAtIso)) / 60000;
+  if (Number.isNaN(since)) return { due: true, why: 'never-run' };
+  return since >= interval
+    ? { due: true, why: 'due' }
+    : { due: false, why: `next in ${Math.ceil(interval - since)}m` };
+}
+
+/** Settings and last success for every adapter, in two queries rather than 2N. */
+export async function adapterPacing(db) {
+  const [{ results: settings = [] }, { results: last = [] }] = await Promise.all([
+    db.prepare('SELECT adapter_id, enabled, interval_minutes FROM adapter_settings').all(),
+    db.prepare(
+      `SELECT adapter_id, MAX(finished_at) AS last_success FROM adapter_runs
+       WHERE status = 'success' GROUP BY adapter_id`
+    ).all(),
+  ]);
+  const byId = new Map(settings.map(r => [r.adapter_id, r]));
+  const lastById = new Map(last.map(r => [r.adapter_id, r.last_success]));
+  return { setting: (id) => byId.get(id) || null, lastSuccess: (id) => lastById.get(id) || null };
+}
+
 // Adapters whose parish is not in the seed yet, and so cannot run.
 //
 // Every adapter names a parish, and events.parish_id is a foreign key, so an

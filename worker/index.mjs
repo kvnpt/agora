@@ -8,7 +8,7 @@ import { Router, json } from './lib/router.mjs';
 import { registerPublicRoutes } from './routes/public.mjs';
 import { registerAdminRoutes } from './routes/admin.mjs';
 import { registerAssetRoutes } from './routes/assets.mjs';
-import { ADAPTERS, runAdapter } from './lib/adapters.mjs';
+import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 
 const router = new Router();
 registerPublicRoutes(router);
@@ -81,12 +81,24 @@ export default {
   // and the failure is already recorded in adapter_runs by runAdapter.
   async scheduled(event, env, ctx) {
     console.log(`[cron] ${event.cron} at ${new Date(event.scheduledTime).toISOString()}`);
-    const results = await Promise.allSettled(
-      ADAPTERS.map(a => runAdapter(a, env))
-    );
+
+    // The trigger fires hourly; adapter_settings decides what that means. A
+    // Cron Trigger is fixed at deploy time, so this is the only place pacing
+    // can live if the admin panel is to change it without a deploy.
+    const pacing = await adapterPacing(env.DB);
+    const now = event.scheduledTime || Date.now();
+    const due = [];
+    for (const a of ADAPTERS) {
+      const verdict = isDue(pacing.setting(a.id), pacing.lastSuccess(a.id), now);
+      if (verdict.due) due.push(a);
+      else console.log(`[cron] ${a.id} skipped: ${verdict.why}`);
+    }
+    if (!due.length) return;
+
+    const results = await Promise.allSettled(due.map(a => runAdapter(a, env)));
     results.forEach((r, i) => {
       if (r.status === 'rejected') {
-        console.error(`[cron] ${ADAPTERS[i].id} failed: ${r.reason?.message || r.reason}`);
+        console.error(`[cron] ${due[i].id} failed: ${r.reason?.message || r.reason}`);
       }
     });
   },

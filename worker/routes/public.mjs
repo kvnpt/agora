@@ -119,7 +119,7 @@ export function registerPublicRoutes(router) {
   router.get('/api/adapters/status', async ({ env }) => {
     const r = await env.DB.prepare(
       `SELECT adapter_id, started_at, finished_at, status, events_found, events_created,
-              events_updated, error_message
+              events_updated, error_message, window_from, window_to, tombstones_refused
        FROM adapter_runs r
        WHERE started_at = (SELECT MAX(started_at) FROM adapter_runs WHERE adapter_id = r.adapter_id)
        ORDER BY adapter_id`
@@ -127,12 +127,19 @@ export function registerPublicRoutes(router) {
     return json((r.results || []).map(run => ({
       id: run.adapter_id,
       healthy: run.status !== 'failed',
-      message: `Last run: ${run.status}`,
+      message: `Last run: ${run.status}` +
+        (run.tombstones_refused ? ` (cancellations held back: ${run.tombstones_refused})` : ''),
       lastRun: run.finished_at,
       lastError: run.error_message,
       eventsFound: run.events_found,
       eventsCreated: run.events_created,
       eventsUpdated: run.events_updated,
+      // What the run could speak for, and whether it was allowed to act on
+      // silence. A refusal is not a failure — the scrape worked — but it is
+      // the difference between "nothing was cancelled" and "nothing needed
+      // cancelling", and only one of those is worth looking into.
+      window: run.window_from ? { from: run.window_from, to: run.window_to } : null,
+      tombstonesRefused: run.tombstones_refused,
     })));
   });
 }

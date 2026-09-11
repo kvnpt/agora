@@ -230,6 +230,26 @@ CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);
 -- silently returning zero events, which errors nowhere. Read by
 -- BaseAdapter.healthCheck() behind GET /api/adapters/status.
 -- ─────────────────────────────────────────────────────────────────────────
+-- Per-adapter scrape control.
+--
+-- Cloudflare's Cron Trigger is fixed at deploy time and cannot be changed by
+-- the Worker, so wrangler.toml fires hourly and this table decides what that
+-- hour is allowed to do. An adapter runs when it is enabled and its last
+-- success is older than interval_minutes; otherwise the tick passes it by.
+--
+-- A missing row means enabled at the default interval, so adding an adapter
+-- needs no accompanying row and forgetting one cannot silently disable a
+-- scrape.
+--
+-- "Run now" in the admin panel ignores all of this. Asking explicitly is not
+-- the same as a timer going off.
+CREATE TABLE adapter_settings (
+  adapter_id       TEXT PRIMARY KEY,
+  enabled          INTEGER NOT NULL DEFAULT 1,
+  interval_minutes INTEGER NOT NULL DEFAULT 240,
+  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
 CREATE TABLE adapter_runs (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   adapter_id     TEXT NOT NULL,

@@ -20,7 +20,7 @@ Everything runs on Cloudflare. There is no server and no build step.
 | API | `worker/` — a Worker, no third-party runtime dependencies |
 | Database | D1 (SQLite at the edge) |
 | Tiles, logos, posters | R2, served with HTTP range support |
-| Scrapes | A Cron Trigger every 4 hours |
+| Scrapes | An hourly Cron Trigger; `adapter_settings` decides which are due |
 | Admin auth | Cloudflare Access (Zero Trust) |
 
 ## Run
@@ -91,6 +91,23 @@ scraped event supersedes its recurring twin instead of showing twice.
 **Adapters** live in `worker/lib/adapters.mjs` as a static registry (Workers have no
 filesystem, so there is no directory scan). Add a parish by adding a line.
 `source_hash` makes a re-scrape idempotent.
+
+**The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
+time and a Worker cannot change its own, so `wrangler.toml` fires hourly and
+`adapter_settings` decides what an hour is allowed to do — enable, disable and
+pace each adapter from `/admin` with no deploy. A missing row means enabled at
+the default interval, because absence should never be the thing that stops a
+scrape. Pacing is measured from the last *success*: a failing adapter that reset
+the clock on every attempt would wait out its whole interval before retrying.
+**Run now** ignores all of it.
+
+**Absence is a signal, under guards.** `infer.mjs` proposes recurrence rules from
+scraped occurrences, and only when a rule reproduces the observed dates exactly —
+every occurrence explained and every gap explained. `reconcile.mjs` then compares
+projected rules against what a source published, and `tombstone.mjs` decides
+whether a gap may become a cancellation. The asymmetry drives every choice in
+those files: a missed cancellation leaves a stale card the next scrape fixes; a
+false one keeps someone away from a service that is running.
 
 ## Deploy
 
