@@ -93,6 +93,14 @@ filesystem, so there is no directory scan). Add a parish by adding a line.
 `source_hash` makes a re-scrape idempotent. `docs/adapters.md` is the guide —
 the contract, what comes free, and the constraints that bite.
 
+A parish that publishes a PDF instead of a calendar keeps its source — URL,
+publishing cadence, layout quirks — in `worker/lib/pdf-sources.mjs`, which is
+imported by both the registry and the GitHub Action that does the extraction, so
+the two cannot disagree about what to fetch. Getting text out of a PDF happens in
+that Action, never in the Worker; `scripts/extract-parish-pdf.mjs` says why at
+length, and the short version is that one of the surveyed parish schedules is a
+photograph of a piece of paper.
+
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and
 `adapter_settings` decides what an hour is allowed to do — enable, disable and
@@ -192,12 +200,19 @@ Two consequences still visible in the code:
 - `events.schedule_id` and the `source_adapter != 'schedule'` guard in the bundle query
   are scar tissue from a nightly generator that wrote occurrence rows. It was replaced by
   the date lens in schema v26.
-- Ingestion currently covers **one parish** (Good Shepherd Clayton, via Google Calendar).
+- Ingestion started from **one parish** (Good Shepherd Clayton, via Google Calendar).
   Its row existed only in the lost database and was re-seeded once the address was
   confirmed, so `PENDING_PARISHES` is now empty — but the guard it feeds stays, because
   an adapter pointed at a missing parish must refuse before writing rather than throw a
   foreign-key error every four hours. Everything else used to arrive over WhatsApp.
-  Writing more adapters is the gap between "the port is done" and "the site is useful".
+  Two PDF parishes have since been added (Buderim and Blacktown), and writing more
+  adapters is still the gap between "the port is done" and "the site is useful".
 
 `docs/cloudflare-migration.md` is the full migration record, including the reasoning
 behind decisions that look arbitrary from the outside.
+
+`docs/parish-ingestion.md` is the brief for the step *before* adapters: adding
+parishes in bulk from a jurisdiction's directory. It records the schema
+constraints that bite a few hundred rows at once, the geocoding trap that put one
+pin 730m off, and the three public endpoints that let you read production without
+any credential at all.
