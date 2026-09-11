@@ -62,6 +62,12 @@ INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, time
   'website', 'https://stjohnthebaptist.church/'
 ) ON CONFLICT(id) DO NOTHING;
 INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+  'greek-gopssc-buderim', 'Sunshine Coast, Buderim', 'Greek Orthodox Parish of the Sunshine Coast', 'greek', 'St Mark''s Anglican Church, 7 Main Street, Buderim QLD 4556',
+  -26.6851, 153.0527, 'Australia/Brisbane',
+  'https://orthodoxsunshinecoast.org/', '["English", "Greek"]', '#0d5eaf',
+  'website', 'https://orthodoxsunshinecoast.org/'
+) ON CONFLICT(id) DO NOTHING;
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
   'antiochian-stelias-wollongong', 'St Elias, Wollongong', 'St Elias Antiochian Orthodox Church', 'antiochian', '86 Kenny Street, Wollongong NSW 2500',
   -34.4364, 150.8905, 'Australia/Sydney',
   'https://www.saintelias.org.au/', '["Arabic", "English"]', '#1e3a5f',

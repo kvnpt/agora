@@ -1,0 +1,154 @@
+name: Extract parish PDFs
+
+# Fetch each parish's published schedule PDF, pull the text out of it, and put
+# the result in R2 as JSON. The Worker's parish-pdf adapters read that.
+#
+# WHY THIS IS A WORKFLOW AND NOT PART OF THE WORKER
+#
+# Getting text out of a PDF is the whole problem; parsing it afterwards is
+# easy. Of the five parish schedules surveyed for docs/adapters.md, every one
+# with a text layer used subsetted fonts needing its /ToUnicode map resolved,
+# one carried no such map at all, and one was a 2480x3504 JPEG of a printed
+# sheet with no text in it whatsoever. pdf.js is bigger than this repo's entire
+# Worker bundle and would still not read the scan.
+#
+# Workers Free also meters 10ms of CPU per request. So the heavy, fragile half
+# runs here — where poppler is one apt-get away and the logs are visible — and
+# the Worker reads a small JSON document. Same division as the basemap
+# workflow, for the same reason.
+#
+# Which parishes run is decided by worker/lib/pdf-sources.mjs, NOT by this file.
+# Adding a parish there adds it to the Worker's adapter registry and to this
+# job at the same time, so the URL the adapter thinks it is reading and the URL
+# actually fetched cannot drift apart.
+#
+# Secrets required (Settings -> Secrets and variables -> Actions), the same
+# three the basemap workflow uses:
+#   R2_ACCOUNT_ID          Cloudflare account id
+#   R2_ACCESS_KEY_ID       R2 API token, Object Read & Write on agora-assets
+#   R2_SECRET_ACCESS_KEY   the token's secret
+
+on:
+  workflow_dispatch:
+    inputs:
+      key:
+        description: 'Extract one source only, by its key in pdf-sources.mjs. Blank does all of them.'
+        default: ''
+      dry_run:
+        description: 'Extract and report, upload nothing.'
+        type: boolean
+        default: false
+  schedule:
+    # Weekly, Sunday 17:00 UTC — Monday morning in Oceania, so a parish that
+    # posts a new sheet over the weekend is live before anyone looks.
+    #
+    # Weekly rather than nightly because of what the survey found: these files
+    # are published monthly at best and yearly at worst. What weekly buys over
+    # a person uploading by hand is the REVISION — the current Sunshine Coast
+    # sheet is titled "REVISED LIST INCLUDING DETAILS FOR HOLY WEEK", an edit
+    # in place at the same URL that no upload prompt would ever catch.
+    - cron: '0 17 * * 0'
+
+concurrency:
+  group: parish-pdf
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # poppler-utils is the heavy tool this whole workflow exists to be able to
+      # use. -layout keeps the columns as runs of spaces, which is what the
+      # parser splits a service row on.
+      - name: Install poppler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          pdftotext -v
+
+      # No `npm ci`: the extractor imports two Worker modules and nothing else.
+      # The repo has no runtime dependencies and this job should not invent one.
+      # The log is the product of this step as much as the JSON is — it is where
+      # "0 occurrences, refused: column-grid" shows up. So it is written to the
+      # summary whether the run succeeded or not, which means NOT letting
+      # pipefail take the step out before the summary is written.
+      - name: Extract
+        id: extract
+        run: |
+          set -uo pipefail
+          node scripts/extract-parish-pdf.mjs \
+            --out dist/pdf-schedules \
+            ${{ inputs.key && format('--key {0}', inputs.key) || '' }} \
+            > /tmp/extract.log 2>&1
+          status=$?
+          cat /tmp/extract.log
+
+          {
+            echo "### Parish PDF extraction"
+            echo ""
+            echo '```'
+            cat /tmp/extract.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit $status
+
+      - name: Check the R2 credentials are present
+        if: ${{ !inputs.dry_run }}
+        env:
+          ID: ${{ secrets.R2_ACCOUNT_ID }}
+          KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          SECRET: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          missing=
+          [ -n "$ID" ]     || missing="$missing R2_ACCOUNT_ID"
+          [ -n "$KEY" ]    || missing="$missing R2_ACCESS_KEY_ID"
+          [ -n "$SECRET" ] || missing="$missing R2_SECRET_ACCESS_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — set them before an upload run."
+            exit 1
+          fi
+
+      # Only the files this run actually produced are copied, so a source that
+      # failed keeps whatever text is already in R2 rather than having it
+      # replaced by nothing. A stale schedule still shows the right services for
+      # the days it covers; an empty one reads as a parish that cancelled
+      # everything.
+      - name: Upload to R2
+        if: ${{ !inputs.dry_run }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          # Newer AWS CLI versions send integrity headers R2 rejects. Only send
+          # them where the protocol actually requires them.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          aws s3 cp dist/pdf-schedules s3://agora-assets/pdf-schedules/ \
+            --recursive \
+            --endpoint-url "$ENDPOINT" \
+            --content-type application/json \
+            --no-progress
+          aws s3 ls s3://agora-assets/pdf-schedules/ --endpoint-url "$ENDPOINT"
+
+      - name: Next step
+        if: ${{ !inputs.dry_run }}
+        run: |
+          {
+            echo ""
+            echo "Uploaded. The adapters read these on their next run; **Run now** in"
+            echo "/admin -> Adapters does it immediately, and Schedules -> *Infer rules"
+            echo "from scraped events* turns the occurrences into recurrence rules."
+          } >> "$GITHUB_STEP_SUMMARY"

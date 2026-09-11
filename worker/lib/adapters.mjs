@@ -18,6 +18,9 @@ import { readSecret } from './secrets.mjs';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { reconcile, coveredLocalDates } from './reconcile.mjs';
 import { decideTombstones, adapterSource } from './tombstone.mjs';
+import { parseSchedulePdfText } from './pdf-schedule.mjs';
+import { PDF_SOURCES, r2KeyFor } from './pdf-sources.mjs';
+import { OffsetCache } from '../../public/shared/tz.mjs';
 
 async function sha256Hex(input) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -110,6 +113,120 @@ class GoogleCalendarAdapter {
   }
 }
 
+// A parish that publishes a PDF instead of a calendar.
+//
+// The PDF is never opened here. A GitHub Action fetches it, runs it through
+// poppler and leaves the text in R2 as JSON; this reads that document and hands
+// the text to the pure parser. See scripts/extract-parish-pdf.mjs for why the
+// split is where it is — in short, one of the surveyed files is a photograph of
+// a piece of paper, and nothing a Worker can do reaches it.
+//
+// One instance per entry in PDF_SOURCES, so each parish keeps its own source
+// URL, publishing cadence and layout quirks rather than sharing a guess.
+class ParishPdfAdapter {
+  constructor(source) {
+    this.id = `pdf-${source.key}`;
+    this.parishId = source.parishId;
+    this.sourceType = 'parish-pdf';
+    this.source = source;
+    // Informational, like every other adapter's: pacing is adapter_settings'
+    // job. Worth pacing slowly from /admin — the Worker is reading an R2 object
+    // that only changes when the Action runs, and the Action is what actually
+    // touches the parish's website.
+    this.schedule = '0 */12 * * *';
+  }
+
+  async fetchEvents(env) {
+    const key = r2KeyFor(this.source.key);
+    if (!env.ASSETS_BUCKET) throw new Error('ASSETS_BUCKET is not bound; cannot read extracted PDF text');
+
+    const object = await env.ASSETS_BUCKET.get(key);
+    if (!object) {
+      throw new Error(
+        `No extracted text at ${key}. Run the "Extract parish PDFs" GitHub Action ` +
+        `(.github/workflows/parish-pdf.yml) — the Worker cannot read the PDF itself.`
+      );
+    }
+    const doc = await object.json();
+    const parsed = parseSchedulePdfText(doc.text, this.source.parse || {});
+
+    // A layout the parser will not guess at. Fail loudly: this lands in
+    // adapter_runs.error_message, which is the only record anyone sees, and a
+    // parish that has changed their layout needs a person, not a retry.
+    if (parsed.refused) {
+      throw new Error(
+        `${doc.source_url || this.source.sourceUrl} is a ${parsed.refused.reason} ` +
+        `(${parsed.refused.detail}), which this parser does not read. See docs/adapters.md.`
+      );
+    }
+
+    // parishes.timezone is what makes a wall clock an instant. Falling back to
+    // the source's own declaration keeps the error that matters — "that parish
+    // is not in the database" — coming from runAdapter, which says it properly.
+    const parish = await env.DB.prepare('SELECT timezone FROM parishes WHERE id = ?')
+      .bind(this.parishId).first();
+    const timezone = parish?.timezone || this.source.timezone || 'Australia/Sydney';
+
+    const events = [];
+    const seen = new Map();
+    const cache = new OffsetCache();
+
+    for (const o of parsed.occurrences) {
+      // Identity is date + start time, NOT the title. Parishes decorate titles
+      // on the day — "Divine Liturgy" becomes "Divine Liturgy, Sunday of the
+      // Prodigal Son" — and reconcile.mjs already reasons this way. Hashing the
+      // title would file every decorated liturgy as a brand new event and leave
+      // the old one behind as a duplicate card.
+      const identity = `${this.source.key}|${o.date}|${o.start}`;
+      const n = (seen.get(identity) || 0) + 1;
+      seen.set(identity, n);
+
+      events.push({
+        title: o.title,
+        description: null,
+        start_utc: cache.toUtcISO(timezone, o.date, o.start),
+        end_utc: o.end ? cache.toUtcISO(timezone, endDateOf(o), o.end) : null,
+        event_type: guessEventType(o.title),
+        source_url: doc.source_url || this.source.sourceUrl,
+        source_hash: await sha256Hex(n === 1 ? identity : `${identity}#${n}`),
+        location_override: o.location || null,
+        hide_live: shouldHideLive(o.title) ? 1 : 0,
+        parish_scoped: isParishScoped(o.title) ? 1 : 0,
+      });
+    }
+
+    // No coverage means nothing was read, and a window claimed over text we did
+    // not understand would tombstone every service in it. Report the events —
+    // there are none — and no window, which costs this adapter its tombstoning
+    // and is exactly the trade docs/adapters.md describes.
+    if (!parsed.coverage) {
+      console.warn(`[${this.id}] no dates parsed from ${key}; reporting no window`);
+      return { events };
+    }
+
+    // Local midnight at both ends, and the END is the midnight AFTER the last
+    // covered day: coveredLocalDates() rounds inward, dropping the day a range
+    // stops inside, so naming the last day itself would silently give up on it.
+    return {
+      events,
+      window: {
+        from: cache.toUtcISO(timezone, parsed.coverage.from, '00:00'),
+        to: cache.toUtcISO(timezone, addLocalDay(parsed.coverage.to), '00:00'),
+      },
+    };
+  }
+}
+
+// A service that ends earlier than it starts has run past midnight — the
+// paschal vigil is 11pm to 2.30am. Without this its end lands twenty and a half
+// hours before its start and the card renders as a negative-length service.
+function endDateOf(o) {
+  return o.end && o.end < o.start ? addLocalDay(o.date) : o.date;
+}
+
+const addLocalDay = (date) =>
+  new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+
 // Services never livestreamed at any parish.
 const shouldHideLive = (t) => /confession|setup|prayer ministry|retreat|camp/i.test(t);
 // Operational entries that should only surface when filtered to the parish.
@@ -138,6 +255,11 @@ export const ADAPTERS = [
     // admitting one exists. Do not "tidy" this into something more readable.
     calendarId: 'australianorthodox.org.au_q9qd8e01360qb3210pkb0ql160@group.calendar.google.com',
   }),
+
+  // One per parish that publishes a PDF. The list of parishes is data, in
+  // pdf-sources.mjs, because the same list drives the GitHub Action that does
+  // the extraction — adding a parish there adds both halves at once.
+  ...PDF_SOURCES.map(source => new ParishPdfAdapter(source)),
 ];
 
 export const getAdapter = (id) => ADAPTERS.find(a => a.id === id) || null;
