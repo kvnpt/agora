@@ -257,3 +257,112 @@ test('a non-JSON body still yields something to act on', async () => {
   assert.match(msg, /502/);
   assert.match(msg, /upstream/);
 });
+
+// ── pacing ─────────────────────────────────────────────────────────────────
+//
+// A Cron Trigger is fixed at deploy time, so wrangler.toml ticks hourly and
+// this decides what an hour is allowed to do.
+
+import { isDue, DEFAULT_INTERVAL_MINUTES } from './adapters.mjs';
+
+const T0 = Date.parse('2026-09-11T12:00:00Z');
+const ago = (min) => new Date(T0 - min * 60000).toISOString();
+
+test('no settings row means enabled at the default interval', () => {
+  // Adding an adapter must not require a row, and forgetting one must not
+  // quietly disable a scrape. Absence never stops work happening.
+  assert.equal(isDue(null, ago(DEFAULT_INTERVAL_MINUTES + 1), T0).due, true);
+  assert.equal(isDue(null, ago(DEFAULT_INTERVAL_MINUTES - 1), T0).due, false);
+});
+
+test('disabled means disabled, however long it has been', () => {
+  const d = isDue({ enabled: 0, interval_minutes: 60 }, ago(100000), T0);
+  assert.equal(d.due, false);
+  assert.equal(d.why, 'disabled');
+});
+
+test('an adapter that has never run is always due', () => {
+  assert.equal(isDue({ enabled: 1, interval_minutes: 1440 }, null, T0).why, 'never-run');
+  assert.equal(isDue(null, undefined, T0).due, true);
+});
+
+test('the interval is honoured, and the wait is reported', () => {
+  const soon = isDue({ enabled: 1, interval_minutes: 240 }, ago(100), T0);
+  assert.equal(soon.due, false);
+  assert.match(soon.why, /next in 140m/);
+  assert.equal(isDue({ enabled: 1, interval_minutes: 240 }, ago(240), T0).due, true, 'exactly due counts');
+});
+
+test('pacing is from the last SUCCESS, not the last attempt', () => {
+  // adapterPacing only ever looks at successful runs. A failing adapter that
+  // reset the clock on every attempt would wait out its whole interval before
+  // retrying — backwards, since a broken scrape is the one to retry soonest.
+  const sql = 'SELECT adapter_id, MAX(finished_at) AS last_success FROM adapter_runs';
+  const src = fs.readFileSync('worker/lib/adapters.mjs', 'utf8');
+  assert.ok(src.includes(sql), 'adapterPacing should query adapter_runs');
+  assert.match(src.slice(src.indexOf(sql)), /^[\s\S]{0,120}status = 'success'/);
+});
+
+test('an unparseable timestamp is treated as never run, not as now', () => {
+  // Failing open: a corrupt row should make the adapter run, not silently
+  // stall it forever.
+  assert.equal(isDue({ enabled: 1, interval_minutes: 60 }, 'not-a-date', T0).due, true);
+});
+
+// ── the cron glue ──────────────────────────────────────────────────────────
+//
+// wrangler dev's /__scheduled route cannot be used here: run_worker_first
+// means the asset router claims it before the Worker sees it. So the handler
+// is called directly, which is faster and does not depend on a dev server.
+
+import worker from '../index.mjs';
+
+/** Fire scheduled() and report how many runs it started. */
+async function tick({ raw, env }) {
+  const before = raw.prepare('SELECT COUNT(*) n FROM adapter_runs').get().n;
+  await worker.scheduled({ cron: '0 * * * *', scheduledTime: Date.now() }, env, {});
+  return raw.prepare('SELECT COUNT(*) n FROM adapter_runs').get().n - before;
+}
+
+test('a paused adapter is skipped by the cron entirely', async () => {
+  const db = fresh();
+  for (const a of ADAPTERS) {
+    db.raw.prepare('INSERT INTO adapter_settings (adapter_id, enabled) VALUES (?, 0)').run(a.id);
+  }
+  assert.strictEqual(await tick(db), 0, 'a paused adapter should not even open a run');
+});
+
+test('an adapter inside its interval is skipped', async () => {
+  const db = fresh();
+  for (const a of ADAPTERS) {
+    db.raw.prepare(
+      'INSERT INTO adapter_settings (adapter_id, enabled, interval_minutes) VALUES (?, 1, 240)'
+    ).run(a.id);
+    db.raw.prepare(
+      "INSERT INTO adapter_runs (adapter_id, status, finished_at) VALUES (?, 'success', ?)"
+    ).run(a.id, new Date(Date.now() - 60 * 60000).toISOString());  // an hour ago
+  }
+  assert.strictEqual(await tick(db), 0, 'an hour into a four-hour interval is not due');
+});
+
+test('an adapter past its interval runs', async () => {
+  const db = fresh();
+  for (const a of ADAPTERS) {
+    db.raw.prepare(
+      'INSERT INTO adapter_settings (adapter_id, enabled, interval_minutes) VALUES (?, 1, 60)'
+    ).run(a.id);
+    db.raw.prepare(
+      "INSERT INTO adapter_runs (adapter_id, status, finished_at) VALUES (?, 'success', ?)"
+    ).run(a.id, new Date(Date.now() - 120 * 60000).toISOString());
+  }
+  // It will fail for want of an API key — that is fine. A row appearing proves
+  // the tick decided to run it, which is the thing under test.
+  assert.strictEqual(await tick(db), ADAPTERS.length);
+});
+
+test('no settings rows at all means the cron still runs', async () => {
+  // The failure that would be worst: a fresh deploy where nobody has touched
+  // the settings, silently scraping nothing forever.
+  const db = fresh();
+  assert.strictEqual(await tick(db), ADAPTERS.length);
+});

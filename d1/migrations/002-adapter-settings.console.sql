@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS adapter_settings (adapter_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, interval_minutes INTEGER NOT NULL DEFAULT 240, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));

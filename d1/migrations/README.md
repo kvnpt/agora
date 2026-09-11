@@ -23,4 +23,5 @@ applied and nothing is wrong.
 
 | File | Adds | For |
 |---|---|---|
+| `002-adapter-settings.console.sql` | `adapter_settings` | Enabling, disabling and pacing each scrape from the admin panel, since a Cron Trigger is fixed at deploy time |
 | `001-tombstone-provenance.console.sql` | `schedule_overrides.source`; `adapter_runs.window_from`, `window_to`, `tombstones_refused` | Auto-tombstoning: telling an adapter's cancellations from a person's, and recording what window a run's absence actually covered |
