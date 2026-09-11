@@ -1,5 +1,6 @@
 // Seed data: the parishes and recurrence rules a fresh database starts with.
 const ANTIOCHIAN_BLUE = '#1e3a5f';
+const GREEK_BLUE = '#0d5eaf';
 
 const parishes = [
   {
@@ -99,6 +100,40 @@ const parishes = [
     website: 'https://stjohnthebaptist.church/',
     languages: '["Arabic", "English"]',
     color: ANTIOCHIAN_BLUE
+  },
+  {
+    // Queensland, and the first parish here outside the Antiochian
+    // archdiocese. It publishes its year's liturgies as a PDF rather than a
+    // calendar, which is what worker/lib/pdf-sources.mjs points at.
+    //
+    // Like Good Shepherd, a parish without its own building: a visiting priest
+    // serves roughly fortnightly in a borrowed Anglican church, so the venue is
+    // somebody else's address. Both come from the parish's own published
+    // programme, which prints them on every sheet.
+    //
+    // ABOUT THE PIN. -26.6851, 153.0527 is what Nominatim returns for "7 Main
+    // Street, Buderim QLD 4556" — the centroid of Main Street, not the church
+    // door, because St Mark's is not in OpenStreetMap under any name. That is
+    // the same answer worker/lib/geocode.mjs would store if this parish were
+    // added through the admin panel, and Main Street is about 400m end to end,
+    // so the marker lands within sight of the building. It is still worth
+    // replacing with a confirmed position: unlike the parish's address, nobody
+    // has checked this against the place itself.
+    //
+    // Australia/Brisbane, NOT Australia/Sydney. Queensland does not observe
+    // daylight saving, so for half the year the default would render an 11:30am
+    // liturgy as 12:30pm.
+    id: 'greek-gopssc-buderim',
+    name: 'Sunshine Coast, Buderim',
+    full_name: 'Greek Orthodox Parish of the Sunshine Coast',
+    jurisdiction: 'greek',
+    address: "St Mark's Anglican Church, 7 Main Street, Buderim QLD 4556",
+    lat: -26.6851, lng: 153.0527,
+    timezone: 'Australia/Brisbane',
+    website: 'https://orthodoxsunshinecoast.org/',
+    // The programme is published twice over, English and Greek, in one file.
+    languages: '["English", "Greek"]',
+    color: GREEK_BLUE
   },
   {
     id: 'antiochian-stelias-wollongong',

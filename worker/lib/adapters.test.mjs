@@ -12,7 +12,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { ADAPTERS, PENDING_PARISHES, runAdapter, guessEventType, shouldHideLive, isParishScoped, sha256Hex } from './adapters.mjs';
+import { ADAPTERS, PENDING_PARISHES, runAdapter, getAdapter, guessEventType, shouldHideLive, isParishScoped, sha256Hex } from './adapters.mjs';
+import { PDF_SOURCES } from './pdf-sources.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -365,4 +366,182 @@ test('no settings rows at all means the cron still runs', async () => {
   // the settings, silently scraping nothing forever.
   const db = fresh();
   assert.strictEqual(await tick(db), ADAPTERS.length);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// The parish-PDF adapter
+//
+// The PDF never appears here, which is the design: a GitHub Action turns it
+// into text and leaves it in R2, so the end-to-end path the Worker owns starts
+// at a JSON document. That makes it testable with no network and no poppler.
+// ─────────────────────────────────────────────────────────────────────────
+
+// R2's get() returns null for a missing key; the object it returns for a
+// present one has .json(). That is the whole surface this adapter uses.
+const fakeR2 = (objects) => ({
+  async get(key) {
+    if (!(key in objects)) return null;
+    const body = objects[key];
+    return { async json() { return body; } };
+  },
+});
+
+const extracted = (text, over = {}) => ({
+  key: 'gopssc-buderim',
+  parish_id: 'greek-gopssc-buderim',
+  source_url: 'https://orthodoxsunshinecoast.org/hubfs/Liturgy%20Dates%20-%202026%20GOPSSC.pdf',
+  fetched_at: '2026-09-11T00:00:00.000Z',
+  extractor: 'pdftotext -layout',
+  text,
+  ...over,
+});
+
+const pdfEnv = (base, text, over) => ({
+  ...base,
+  ASSETS_BUCKET: fakeR2({ 'pdf-schedules/gopssc-buderim.json': extracted(text, over) }),
+});
+
+const JULY = [
+  'PROGRAM OF SERVICES',
+  'JULY 2026',
+  '',
+  'Sunday 5 July',
+  '   Divine Liturgy                            9.30 am',
+  'Sunday 26 July',
+  '   Divine Liturgy                            9.30 am',
+].join('\n');
+
+test('a PDF adapter turns extracted text into events at parish-local time', async () => {
+  const { raw, env } = fresh();
+  const adapter = getAdapter('pdf-gopssc-buderim');
+  assert.ok(adapter, 'the PDF adapter is registered');
+
+  const r = await runAdapter(adapter, pdfEnv(env, JULY));
+  assert.strictEqual(r.eventsFound, 2);
+
+  const rows = raw.prepare('SELECT * FROM events ORDER BY start_utc').all();
+  assert.deepStrictEqual(rows.map(e => [e.title, e.start_utc]), [
+    // Queensland does not observe daylight saving, so 9.30am local is +10:00
+    // all year. Under the Australia/Sydney column default this would be an hour
+    // out for half the year.
+    ['Divine Liturgy', '2026-07-04T23:30:00.000Z'],
+    ['Divine Liturgy', '2026-07-25T23:30:00.000Z'],
+  ]);
+  assert.strictEqual(rows[0].event_type, 'liturgy');
+  assert.strictEqual(rows[0].parish_id, 'greek-gopssc-buderim');
+  // The rows name no room, so the venue comes from the source's defaultLocation
+  // — this parish meets in a borrowed building, so it is not the parish pin.
+  assert.match(rows[0].location_override, /St Mark's Anglican Church/);
+});
+
+test('the reported window is the span the file covers, to the local day', async () => {
+  const { raw, env } = fresh();
+  await runAdapter(getAdapter('pdf-gopssc-buderim'), pdfEnv(env, JULY));
+
+  const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
+  assert.strictEqual(run.status, 'success');
+  // coveredLocalDates() rounds inward, dropping the day a range stops inside.
+  // The adapter therefore ends its window at midnight AFTER the last covered
+  // day, so the last day survives the round trip rather than being given up.
+  assert.strictEqual(run.window_from, '2026-07-05');
+  assert.strictEqual(run.window_to, '2026-07-26');
+});
+
+test('re-running a PDF scrape updates in place, including a retitled service', async () => {
+  const { raw, env } = fresh();
+  const adapter = getAdapter('pdf-gopssc-buderim');
+  await runAdapter(adapter, pdfEnv(env, JULY));
+
+  // Parishes decorate a title with the day's feast. Identity is the date and
+  // the start time, so this is the same service, not a second one.
+  const decorated = JULY.replace(
+    'Sunday 5 July\n   Divine Liturgy',
+    'Sunday 5 July\n   Divine Liturgy, Sunday of the Prodigal Son');
+  const r = await runAdapter(adapter, pdfEnv(env, decorated));
+
+  assert.deepStrictEqual(
+    { found: r.eventsFound, created: r.eventsCreated, updated: r.eventsUpdated },
+    { found: 2, created: 0, updated: 2 });
+  assert.strictEqual(raw.prepare('SELECT COUNT(*) n FROM events').get().n, 2,
+    'a decorated title must not leave the undecorated one behind as a duplicate card');
+  assert.match(raw.prepare('SELECT title FROM events ORDER BY start_utc').get().title,
+    /Prodigal Son/);
+});
+
+test('a service running past midnight ends on the next day', async () => {
+  const { raw, env } = fresh();
+  const vigil = [
+    'Liturgy Dates – 2026',
+    'Saturday 11th April',
+    '   Vigil of the Resurrection            11.00 pm to 2.30am',
+  ].join('\n');
+  await runAdapter(getAdapter('pdf-gopssc-buderim'), pdfEnv(env, vigil));
+
+  const e = raw.prepare('SELECT * FROM events').get();
+  // 11pm on 11 April and 2.30am on the 12th, both Brisbane. Brisbane is +10, so
+  // the local rollover is invisible in UTC — which is exactly why the end date
+  // has to be worked out in local terms before it is converted, not after.
+  assert.strictEqual(e.start_utc, '2026-04-11T13:00:00.000Z');
+  assert.strictEqual(e.end_utc, '2026-04-11T16:30:00.000Z');
+  assert.ok(e.end_utc > e.start_utc,
+    'the paschal vigil ends after midnight, not twenty hours before it started');
+});
+
+test('a layout the parser will not read fails the run and names the layout', async () => {
+  const { raw, env } = fresh();
+  const grid = [
+    '  DATE        FEAST              SERVICE                      TIME',
+    'Wednesday   Holy Unmercenaries   Matins & Divine Liturgy   7:30-9:30 am',
+    '  01/07      Cosmas & Damian     Vespers & Paraklesis      5:00-6:00 pm',
+  ].join('\n');
+
+  await assert.rejects(
+    () => runAdapter(getAdapter('pdf-gopssc-buderim'), pdfEnv(env, grid)),
+    /column-grid/);
+
+  const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
+  assert.strictEqual(run.status, 'failed');
+  assert.match(run.error_message, /docs\/adapters\.md/,
+    'adapter_runs is the only record anyone reads — it has to say where to look');
+  assert.strictEqual(raw.prepare('SELECT COUNT(*) n FROM events').get().n, 0,
+    'a refused layout writes nothing rather than writing what it half-understood');
+});
+
+test('text with no dates in it claims no window at all', async () => {
+  // The scanned-schedule case, and the one that matters most: an empty or
+  // unreadable extract must not be reported as a covered window, because a
+  // covered window with no events in it is an instruction to cancel everything.
+  const { raw, env } = fresh();
+  const r = await runAdapter(getAdapter('pdf-gopssc-buderim'),
+    pdfEnv(env, 'GREEK ORTHODOX PARISH OF THE SUNSHINE COAST\n\n(no services listed)'));
+
+  assert.strictEqual(r.eventsFound, 0);
+  const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
+  assert.strictEqual(run.status, 'success');
+  assert.strictEqual(run.window_from, null);
+  assert.strictEqual(run.window_to, null);
+});
+
+test('a missing R2 document says which workflow produces it', async () => {
+  const { raw, env } = fresh();
+  await assert.rejects(
+    () => runAdapter(getAdapter('pdf-gopssc-buderim'), { ...env, ASSETS_BUCKET: fakeR2({}) }),
+    /parish-pdf\.yml/);
+
+  const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
+  assert.match(run.error_message, /pdf-schedules\/gopssc-buderim\.json/);
+});
+
+test('every PDF source has an adapter, and every PDF adapter has a source', () => {
+  // The registry is built from PDF_SOURCES, so these cannot drift — but the
+  // mapping is what lets the GitHub Action and the Worker agree on a URL, and
+  // it is worth a test that says so out loud.
+  const pdfAdapters = ADAPTERS.filter(a => a.sourceType === 'parish-pdf');
+  assert.deepStrictEqual(
+    pdfAdapters.map(a => a.id).sort(),
+    PDF_SOURCES.map(s => `pdf-${s.key}`).sort());
+  for (const s of PDF_SOURCES) {
+    assert.match(s.sourceUrl, /^https:\/\//, `${s.key} must name an https source`);
+    assert.ok(s.parishId, `${s.key} must name a parish`);
+  }
 });

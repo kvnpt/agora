@@ -97,7 +97,7 @@ Trigger is an hourly heartbeat. No settings row means enabled at four-hourly.
 Nothing needs the network:
 
 ```bash
-npm test                     # node --test, ~125 tests
+npm test                     # node --test, ~156 tests
 npm run dev                  # wrangler dev, local D1 and R2, admin bypass
 ```
 
@@ -109,7 +109,7 @@ over `better-sqlite3` you can reuse.
 ## Constraints that will bite
 
 **No third-party runtime dependencies.** `package.json` has none outside
-`devDependencies`, and the deployed bundle is ~85 KB. This is a real constraint,
+`devDependencies`, and the deployed bundle is ~99 KB. This is a real constraint,
 not a preference: see the PDF note below.
 
 **10ms CPU per invocation on Workers Free.** The date lens is client-side for
@@ -128,54 +128,183 @@ navigating to it gets the app instead.
 
 # The PDF case, specifically
 
-A parish publishing a monthly PDF of services is the second common shape, and it
-converges on the same `fetchEvents`. The table looks like this — real, from Good
-Shepherd's published listing:
+A parish publishing its schedule as a PDF is the second common shape, and it
+converges on the same `fetchEvents`. It is **built** — `worker/lib/pdf-schedule.mjs`
+is the parser, `worker/lib/pdf-sources.mjs` is the list of parishes, and
+`.github/workflows/parish-pdf.yml` does the extraction. What follows is what the
+survey found and why the pieces sit where they do.
+
+## A parish's source is remembered, not discovered
+
+Nobody crawls a parish website looking for a link. Somebody who knows the parish
+supplies the URL once and it lives in `worker/lib/pdf-sources.mjs`, next to
+everything else specific to reading that parish's file:
+
+```js
+{
+  key: 'gopssc-buderim',                       // adapter id and R2 object name
+  parishId: 'greek-gopssc-buderim',
+  sourceUrl: 'https://…/Liturgy%20Dates%20-%202026%20GOPSSC.pdf',
+  timezone: 'Australia/Brisbane',
+  publishes: 'yearly, revised in place',       // observed, and why the cron is weekly
+  parse: { defaultLocation: "St Mark's…", locationColumn: false },
+  notes: '…',
+}
+```
+
+That list is imported by **two** things — the adapter registry and the GitHub
+Action that does the extraction — so the URL the Action downloads and the URL the
+adapter believes it is reading cannot drift apart. Same trick as `public/shared/`.
+Adding a parish is adding an entry.
+
+Deriving next year's URL from last year's is not an option, and that is
+measured rather than assumed: the Sunshine Coast parish's 2025 sheet is
+`2025 GOP SSC Service Sheet Eng|Gr.pdf` and its 2026 sheet is
+`Liturgy Dates - 2026 GOPSSC.pdf`. The parish at Blacktown publishes
+`programme_july_2026_en.pdf` — and `programme_june_2026_en.pdf` is a 404,
+because that month was never posted.
+
+## What five real parish schedules actually look like
+
+The shape is **not** stable across parishes. This was the question worth
+answering first, and the answer changed the design.
+
+| Parish | Shape | Text layer | Outcome |
+|---|---|---|---|
+| Good Shepherd, Clayton | listing, time first | — | publishes a **Google Calendar**; the gcal adapter already covers it |
+| Sunshine Coast, 2025 | listing, time last | subsetted fonts + ToUnicode | 23 liturgies |
+| Sunshine Coast, 2026 | listing, time last | same | 26 Sundays, 3 with a clock, 1 parsable |
+| St Paraskevi, Blacktown | bordered grid | clean | **refused** — see below |
+| St Nicholas, Wallsend | scan | **none at all** | needs OCR |
+
+Two things in that table decide everything else.
+
+**The Wallsend schedule has no text in it.** It is a single 2480×3504 JPEG — a
+photograph of a printed sheet — and the parish has published them that way since
+2003. `pdftotext` returns zero characters. No parser reaches that file; only OCR
+does.
+
+**Even the readable ones are not readable cheaply.** Every PDF with a text layer
+used subsetted fonts, where `<0033>` is a glyph id in that font's own numbering
+and means "P" only after its `/ToUnicode` CMap is resolved. One file surveyed
+(orthodox.net) ships no such map at all, so the embedded font *program* has to be
+parsed to recover the characters.
+
+## The extraction route, decided
+
+**A GitHub Action extracts, the Worker reads.** `.github/workflows/parish-pdf.yml`
+installs poppler, runs `pdftotext -layout` over each source's PDF and puts the
+text in R2 as `pdf-schedules/<key>.json`. The adapter fetches that — small, fast,
+dependency-free — and hands the text to the pure parser.
+
+The other two options were weighed against what the survey found:
+
+- *The parish publishes HTML too.* Checked, and for one parish it is the right
+  answer: Good Shepherd's "events calendar" page is a Google Calendar embed
+  pointing at the calendar `gcal-…` already reads. There was no PDF adapter to
+  write there. The other parishes publish PDFs and nothing else.
+- *An extraction service.* Rejected. It buys nothing the Action does not, and
+  costs a key and somebody else's uptime.
+
+Doing it inside the Worker was never on: `pdf.js` is larger than this entire
+bundle before it opens a file, Workers Free meters 10ms of CPU per invocation,
+and none of it would read the scan.
+
+Putting the fragile half in an Action has a second benefit that was not the
+reason for it but matters: the parish's own server is hit on the **Action's**
+weekly schedule, not on the Worker's. An hourly heartbeat never touches anybody's
+website.
+
+## Was it worth automating at all?
+
+The doc's own advice is to check, because "a scraper is elaborate machinery for a
+file that changes eleven times a year". The check:
+
+- Blacktown publishes monthly, **irregularly** — May and July 2026 exist, June
+  and August do not, and the page still linked July in September.
+- The Sunshine Coast publishes **yearly**.
+
+So: barely, on republication alone. What tips it is the **revision in place**.
+The current Sunshine Coast sheet is titled *"REVISED LIST INCLUDING DETAILS FOR
+HOLY WEEK"* — the same URL, edited. That is precisely the change a person
+re-uploading by hand never notices, and a weekly re-fetch catches for free. The
+cron is weekly for that reason and not a shorter one.
+
+## The grid the parser refuses
+
+`parseSchedulePdfText` reads a **listing**: a date header owns every service row
+beneath it until the next date header. Both column orders are handled, because
+both are real — Good Shepherd writes `5pm  Vespers  Religious Centre…` and the
+Sunshine Coast writes `Liturgy of John Chrysostom      11.30 am`.
+
+A `DATE | FEAST | SERVICE | TIME` grid is refused outright, and the refusal is the
+interesting part. In the Blacktown file the date cell is drawn **once and centred**
+over its block of services, so once the layout is flattened to lines the date
+lands in the middle of its own block:
 
 ```
-12
-SEP, SAT
-5pm     Vespers             Religious Centre, 38 Exhibition Walk, Clayton VIC 3168
-6pm     Confession          Religious Centre, 38 Exhibition Walk, Clayton VIC 3168
-13
-SEP, SUN
-9am     Matins (Orthros)    Monash Orthodox Chaplaincy, 38 Exhibition Walk…
-10am    Divine Liturgy      Monash Orthodox Chaplaincy, 38 Exhibition Walk…
-12:30pm FOUNDATIONS Course  Religious Centre…
+  01/07      Cosmas & Damian     Vespers & Paraklesis…      5:00-6:00 pm
+                                 Matins & Divine Liturgy    7:30-9:30 am   <- 2 July
+              Deposition of the
+ Thursday
+            Robe of the Most     Vespers & Paraklesis…      5:00-6:00 pm
+  02/07
 ```
 
-A day number, a month/weekday header, then time / title / location rows until the
-next date. Parsing that text is straightforward and testable.
+That "Matins" belongs to 2 July and sits three lines *above* the `02/07` cell.
+What separates the two days is a ruled line in the PDF's vector layer, which no
+text extractor emits. Attaching the row to the nearest date above it advertises a
+liturgy on the wrong morning **and** tells `reconcile.mjs` the right one was
+cancelled — both halves of the asymmetry this codebase is built around, in one
+mistake.
 
-## The part that needs deciding first
+So the parser names the shape and refuses the file, and the run fails with the
+layout in `adapter_runs.error_message`. Supporting it means teaching the
+**extractor** to emit rows — it has the geometry, and the rules are there to be
+read: the Blacktown PDF draws its row borders as 41 thin filled rectangles per
+page. It does not mean teaching the parser to guess.
 
-**Getting text out of a PDF inside a Worker is the problem, not parsing it.**
-`pdf.js` and friends are far larger than this entire bundle and would blow the
-CPU limit besides. Do not start by npm-installing one.
+## What the parser will not invent
 
-Three shapes that fit the constraints, roughly in order of preference:
+- A date with no time yields **nothing**. Most of the 2026 Sunshine Coast sheet is
+  dates only, and that parish's usual hour is well known — but writing 11.30am
+  onto a date the parish did not put a time against is how someone ends up
+  outside a locked church.
+- A time whose service is on a *different* line yields nothing. Holy Week in that
+  same sheet puts the service above its time on 10 April and below it on
+  11 April; either guess is wrong half the time.
+- `NO SERVICE AT BUDERIM` yields nothing — deliberately. The occurrence is then
+  simply absent from the window, `reconcile.mjs` notices, and `tombstone.mjs`
+  decides with all its guards whether that absence may become a visible
+  CANCELLED card. An adapter has no way to write a tombstone directly and should
+  not have one.
 
-1. **A GitHub Action extracts, the Worker reads.** The basemap workflow is the
-   precedent: a scheduled Action fetches the PDF, extracts text with whatever
-   heavy tool it likes, and uploads the result to R2 as JSON. The adapter then
-   fetches that JSON — small, fast, dependency-free. Keeps the Worker clean and
-   puts the fragile part somewhere with a full toolchain and visible logs.
-2. **The parish publishes HTML too.** Many do, and it is usually the same table.
-   Check before building anything: an HTML source makes this a normal adapter.
-3. **An extraction service.** A fetch to something that returns text. Adds a
-   dependency on someone else's uptime and possibly a key; weigh against (1).
+## Coverage, and why it is clamped
 
-**Verify the PDF actually changes month to month** before automating. If it is
-published once and edited rarely, a manual upload through the admin panel may be
-the honest answer, and a scraper is elaborate machinery for a file that changes
-eleven times a year.
+The window an adapter reports decides which dates a missing service is allowed to
+be read as a cancellation on, which makes it the most dangerous value here.
 
-## Suggested order
+It is clamped to the dates actually parsed, never widened to the period the file
+declares. A monthly programme really does cover its whole month, so clamping
+gives up real signal at the edges. That is the cheap direction. The expensive one
+is claiming a month, having extraction quietly deliver half of it, and cancelling
+every service in the half nobody saw — and that is not hypothetical when one of
+the files in the corpus yields zero characters.
 
-1. Look at two or three real parish PDFs. Confirm the shape is stable across
-   parishes, or find out how it differs.
-2. Write the text → occurrences parser as a pure function with a fixture. No
-   network, no PDF handling.
-3. Decide the extraction route above, with the evidence from (1).
-4. Wire `fetchEvents`, returning the month the PDF covers as the window.
-5. Seed the parish, run it, accept the inferred rules, confirm the feed.
+If nothing parses, the adapter reports **no window at all**, which costs it
+tombstoning and is exactly the trade the contract describes above.
+
+## Adding the next parish
+
+1. Confirm the parish exists in `seeds/parishes.js` with a real address, a
+   confirmed pin and the right IANA timezone. Queensland is `Australia/Brisbane`,
+   not `Australia/Sydney` — no daylight saving, so the default is an hour out for
+   half the year.
+2. Add an entry to `PDF_SOURCES` in `worker/lib/pdf-sources.mjs` with the URL
+   somebody has actually opened, and whatever `parse` options its layout needs.
+3. Run the workflow with **Dry run** ticked. The log reports occurrences, skips
+   and coverage per source, so a layout the parser cannot read shows up there
+   rather than when the feed empties.
+4. Untick it and run for real, then **Run now** in `/admin` → Adapters.
+5. `/admin` → Schedules → *Infer rules from scraped events* to turn the
+   occurrences into recurrence rules.
