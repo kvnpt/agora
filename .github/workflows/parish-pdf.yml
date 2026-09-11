@@ -87,6 +87,7 @@ jobs:
           node scripts/extract-parish-pdf.mjs \
             --out dist/pdf-schedules \
             ${{ inputs.key && format('--key {0}', inputs.key) || '' }} \
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
             > /tmp/extract.log 2>&1
           status=$?
           cat /tmp/extract.log
@@ -100,6 +101,20 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit $status
+
+      # Says so on the run's own page, rather than leaving three skipped steps
+      # as the only clue that nothing was uploaded. Same shape as the basemap
+      # workflow's "Stop here (estimate only)".
+      - name: Stop here (dry run)
+        if: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo ""
+            echo "**Dry run** — extracted and reported only. Nothing was uploaded to R2,"
+            echo "and the adapters still read whatever text was already there."
+            echo ""
+            echo "Re-run with **Dry run** unticked to upload."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check the R2 credentials are present
         if: ${{ !inputs.dry_run }}
