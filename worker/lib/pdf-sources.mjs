@@ -30,6 +30,7 @@
  * @property {string} sourceUrl    the PDF itself — supplied by a person, not found
  * @property {string} timezone     fallback only; parishes.timezone wins when set
  * @property {string} publishes    observed cadence, and why the cron is what it is
+ * @property {'layout'|'grid'} [extract]  how the file has to be read; default 'layout'
  * @property {object} parse        options for parseSchedulePdfText
  * @property {string} [notes]      anything the next person will wish they knew
  */
@@ -65,6 +66,41 @@ export const PDF_SOURCES = [
       'with no clock, so it yields far fewer events — that is the file, not a bug. ' +
       'Dates with no time are skipped rather than given the parish\'s usual 11.30am, ' +
       'because inventing an instant puts someone outside a locked church.',
+  },
+
+  {
+    key: 'stparaskevi-blacktown',
+    parishId: 'greek-stparaskevi-blacktown',
+    // The URL carries the month, and the parish does not post every month —
+    // programme_june_2026_en.pdf and programme_august_2026_en.pdf are both 404s
+    // while May and July exist. So there is no pattern to follow forward and no
+    // crawl that would find the next one reliably: somebody updates this line
+    // when the parish posts. That is the cost of a remembered source, and it is
+    // the one the extractor's log makes visible, since a stale month still
+    // extracts cleanly and simply stops moving.
+    sourceUrl: 'https://www.stparaskevi.au/uploads/4/2/1/2/42128533/programme_july_2026_en.pdf',
+    timezone: 'Australia/Sydney',
+    publishes: 'monthly, irregularly',
+    // A bordered DATE | FEAST | SERVICE | TIME table. `pdftotext -layout`
+    // flattens it and loses which day each service belongs to — the date cell
+    // is drawn once and centred over its block — so the ruled lines have to be
+    // read out of the vector layer instead. scripts/pdf-grid.mjs does that, and
+    // worker/lib/pdf-schedule.mjs refuses the flattened form outright rather
+    // than guessing at it.
+    extract: 'grid',
+    parse: {
+      // One building, and the table names no venue, so every service is at the
+      // parish's own address. Unlike the two missions in this list, this is the
+      // parish pin — but location_override keeps the card self-describing.
+      defaultLocation: 'Sts Paraskevi & Barbara, 47-51 Balmoral St, Blacktown NSW 2148',
+      locationColumn: false,
+    },
+    notes:
+      'The richest source here by a wide margin: ~75-78 services a month, every ' +
+      'day of the month, including daily Matins and Vespers. Titles carry real ' +
+      'detail ("Matins & Divine Liturgy in the English language") and a service ' +
+      'title can wrap around its own time in the PDF, which is why cells are ' +
+      'joined by rule rather than by line.',
   },
 ];
 

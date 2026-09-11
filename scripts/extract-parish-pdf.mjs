@@ -17,7 +17,7 @@
 //     table cell drawn once and centred over its block lands in the middle of
 //     the rows it labels.
 //
-// A Worker gets 10ms of CPU on the free plan and this repo ships an ~85 KB
+// A Worker gets 10ms of CPU on the free plan and this repo ships a ~99 KB
 // bundle with no third-party runtime dependencies. pdf.js alone is larger than
 // that before it has opened a file, and none of it would help with the scan.
 //
@@ -31,7 +31,7 @@
 //   node scripts/extract-parish-pdf.mjs --out dist/pdf-schedules
 //   node scripts/extract-parish-pdf.mjs --out dist/pdf-schedules --key gopssc-buderim
 //
-// Requires `pdftotext` (poppler-utils) on PATH.
+// Requires `pdftotext` (poppler-utils) and `mutool` (mupdf-tools) on PATH.
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -40,6 +40,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PDF_SOURCES, r2KeyFor } from '../worker/lib/pdf-sources.mjs';
 import { parseSchedulePdfText } from '../worker/lib/pdf-schedule.mjs';
+import { reflowTraceXml } from './pdf-grid.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback = null) => {
@@ -62,18 +63,39 @@ if (!sources.length) {
   process.exit(1);
 }
 
-// `pdftotext -layout` keeps the columns as runs of spaces, which is what the
-// parser splits a row on. Without -layout the columns are concatenated and the
-// venue runs into the title.
-function pdfToText(bytes) {
+// Two ways to get text out, chosen per source because it is a property of how
+// that parish draws its schedule, not something to sniff at runtime.
+//
+//   layout  `pdftotext -layout` — keeps columns as runs of spaces, which is
+//           what the parser splits a service row on. Right for a listing.
+//
+//   grid    `mutool draw -F trace` plus scripts/pdf-grid.mjs — reads the ruled
+//           lines out of the vector layer and rebuilds the table as a listing.
+//           Needed when the date cell is drawn once and centred over its block
+//           of services, because flattening that loses which day a service is
+//           on and no amount of parsing gets it back.
+const EXTRACTORS = {
+  layout: (scratch) => {
+    execFileSync('pdftotext', ['-layout', '-enc', 'UTF-8', scratch, `${scratch}.out`]);
+    return readFileSync(`${scratch}.out`, 'utf8');
+  },
+  grid: (scratch) => {
+    execFileSync('mutool', ['draw', '-F', 'trace', '-o', `${scratch}.out`, scratch],
+      { stdio: ['ignore', 'ignore', 'ignore'] });
+    return reflowTraceXml(readFileSync(`${scratch}.out`, 'utf8'));
+  },
+};
+
+function pdfToText(bytes, mode) {
+  const extractor = EXTRACTORS[mode];
+  if (!extractor) throw new Error(`unknown extract mode '${mode}' — expected ${Object.keys(EXTRACTORS).join(' or ')}`);
   const scratch = path.join(tmpdir(), `agora-pdf-${process.pid}-${Date.now()}.pdf`);
   try {
     writeFileSync(scratch, bytes);
-    execFileSync('pdftotext', ['-layout', '-enc', 'UTF-8', scratch, `${scratch}.txt`]);
-    return readFileSync(`${scratch}.txt`, 'utf8');
+    return extractor(scratch);
   } finally {
     rmSync(scratch, { force: true });
-    rmSync(`${scratch}.txt`, { force: true });
+    rmSync(`${scratch}.out`, { force: true });
   }
 }
 
@@ -98,7 +120,8 @@ for (const source of sources) {
       throw new Error(`not a PDF (starts with ${JSON.stringify(bytes.subarray(0, 16).toString('latin1'))})`);
     }
 
-    const text = pdfToText(bytes);
+    const mode = source.extract || 'layout';
+    const text = pdfToText(bytes, mode);
 
     // Parse here too. Nothing downstream depends on it — the Worker re-parses
     // the text itself — but a workflow that says "0 occurrences, refused:
@@ -127,7 +150,7 @@ for (const source of sources) {
       // it read last time, without diffing the text.
       pdf_sha256: createHash('sha256').update(bytes).digest('hex'),
       pdf_bytes: bytes.length,
-      extractor: 'pdftotext -layout',
+      extractor: mode === 'grid' ? 'mutool trace + pdf-grid' : 'pdftotext -layout',
       text,
     };
 

@@ -118,8 +118,15 @@ export function parseTime(line) {
  * @param {{year: number|null, month: number|null}} ctx  what earlier lines established
  */
 export function parseDateHeader(line, ctx = {}) {
-  const text = line.trimStart();
-  if (!text) return null;
+  const full = line.trimStart();
+  if (!full) return null;
+
+  // A weekday in front of the date is decoration, in every spelling: "Sunday 12
+  // January" and "Wednesday 01/07" both occur in the sample. Strip it once, up
+  // front, so each form does not have to remember to allow it.
+  const lead = /^([A-Za-z]+)\.?,?\s+/.exec(full);
+  const hadWeekday = Boolean(lead) && WEEKDAY.test(lead[1]);
+  const text = hadWeekday ? full.slice(lead[0].length) : full;
 
   // 01/07 or 01/07/2026 — day first, which is the Australian convention and the
   // only one the sample uses. Never month-first: reading 01/07 as 7 January
@@ -134,8 +141,6 @@ export function parseDateHeader(line, ctx = {}) {
   }
 
   const words = text.split(/\s+/);
-  let i = 0;
-  if (WEEKDAY.test(words[0] || '')) i = 1;          // "Sunday 12 January" — weekday is decoration
 
   const dayAt = (w) => {
     const d = /^(\d{1,2})(st|nd|rd|th)?[.,]?$/i.exec(w || '');
@@ -143,14 +148,14 @@ export function parseDateHeader(line, ctx = {}) {
   };
 
   let day = null, month = null, used = 0;
-  const a = words[i], b = words[i + 1];
+  const [a, b] = words;
 
   if (MONTH_WORD.test(a || '') && dayAt(b) !== null) {
-    month = monthNumber(a); day = dayAt(b); used = i + 2;      // "July 12th"
+    month = monthNumber(a); day = dayAt(b); used = 2;          // "July 12th"
   } else if (dayAt(a) !== null && MONTH_WORD.test(b || '')) {
-    day = dayAt(a); month = monthNumber(b); used = i + 2;      // "12 January", "12 SEP,"
-  } else if (dayAt(a) !== null && i === 1) {
-    day = dayAt(a); month = ctx.month; used = i + 1;           // "Sunday 12" under a month heading
+    day = dayAt(a); month = monthNumber(b); used = 2;          // "12 January", "12 SEP,"
+  } else if (dayAt(a) !== null && hadWeekday) {
+    day = dayAt(a); month = ctx.month; used = 1;               // "Sunday 12" under a month heading
   } else {
     return null;
   }

@@ -14,6 +14,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { ADAPTERS, PENDING_PARISHES, runAdapter, getAdapter, guessEventType, shouldHideLive, isParishScoped, sha256Hex } from './adapters.mjs';
 import { PDF_SOURCES } from './pdf-sources.mjs';
+import { BLACKTOWN_REFLOWED } from './pdf-schedule.fixture.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -543,5 +544,42 @@ test('every PDF source has an adapter, and every PDF adapter has a source', () =
   for (const s of PDF_SOURCES) {
     assert.match(s.sourceUrl, /^https:\/\//, `${s.key} must name an https source`);
     assert.ok(s.parishId, `${s.key} must name a parish`);
+  }
+});
+
+test('the grid parish is registered, seeded, and reads its own R2 document', async () => {
+  // A second PDF source, and the one whose file needs the grid extractor. What
+  // reaches the Worker is still just text, so nothing about the adapter differs.
+  const { raw, env } = fresh();
+  const adapter = getAdapter('pdf-stparaskevi-blacktown');
+  assert.ok(adapter, 'the Blacktown adapter is registered');
+  assert.strictEqual(adapter.parishId, 'greek-stparaskevi-blacktown');
+
+  const doc = { ...extracted(BLACKTOWN_REFLOWED), key: 'stparaskevi-blacktown',
+                parish_id: 'greek-stparaskevi-blacktown',
+                extractor: 'mutool trace + pdf-grid' };
+  const r = await runAdapter(adapter, {
+    ...env,
+    ASSETS_BUCKET: fakeR2({ 'pdf-schedules/stparaskevi-blacktown.json': doc }),
+  });
+
+  assert.strictEqual(r.eventsFound, 8);
+  const rows = raw.prepare('SELECT title, start_utc FROM events ORDER BY start_utc').all();
+  // Sydney in July is AEST, +10:00 — 7:30 local is 21:30Z the day before.
+  assert.deepStrictEqual(rows[0], { title: 'Matins & Divine Liturgy', start_utc: '2026-06-30T21:30:00.000Z' });
+
+  // The row the flattened grid would have filed under 1 July.
+  const secondJuly = raw.prepare(
+    "SELECT COUNT(*) n FROM events WHERE start_utc >= '2026-07-01T14:00:00.000Z' AND start_utc < '2026-07-02T14:00:00.000Z'"
+  ).get().n;
+  assert.strictEqual(secondJuly, 3, '2 July has three services, not two');
+});
+
+test('every PDF source names an extract mode the extractor implements', () => {
+  // The mode is read by scripts/extract-parish-pdf.mjs, which the Worker never
+  // runs, so a typo there would surface as an empty feed rather than an error.
+  for (const s of PDF_SOURCES) {
+    assert.ok(s.extract === undefined || ['layout', 'grid'].includes(s.extract),
+      `${s.key} has extract='${s.extract}'`);
   }
 });
