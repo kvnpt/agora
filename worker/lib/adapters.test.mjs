@@ -62,7 +62,9 @@ test('first run counts every event as created, none as updated', async () => {
     evt('h2', 'B', '2026-09-07T00:00:00.000Z'),
   ]), env);
 
-  assert.deepStrictEqual(r, { eventsFound: 2, eventsCreated: 2, eventsUpdated: 0 });
+  assert.deepStrictEqual(
+    { eventsFound: r.eventsFound, eventsCreated: r.eventsCreated, eventsUpdated: r.eventsUpdated },
+    { eventsFound: 2, eventsCreated: 2, eventsUpdated: 0 });
   const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
   assert.strictEqual(run.status, 'success');
   assert.strictEqual(run.events_created, 2);
@@ -80,7 +82,9 @@ test('re-running the same scrape counts updates, not creations', async () => {
     evt('h2', 'B', '2026-09-07T00:00:00.000Z'),
   ]), env);
 
-  assert.deepStrictEqual(r, { eventsFound: 2, eventsCreated: 0, eventsUpdated: 2 },
+  assert.deepStrictEqual(
+    { eventsFound: r.eventsFound, eventsCreated: r.eventsCreated, eventsUpdated: r.eventsUpdated },
+    { eventsFound: 2, eventsCreated: 0, eventsUpdated: 2 },
     'the Express version would have reported created=2, updated=0 here');
   assert.strictEqual(raw.prepare('SELECT COUNT(*) n FROM events').get().n, 2,
     'idempotent: source_hash prevents duplication');
@@ -94,7 +98,9 @@ test('a mixed run splits the counters correctly', async () => {
     evt('h1', 'A', '2026-09-06T00:00:00.000Z'),   // existing
     evt('h9', 'New', '2026-09-09T00:00:00.000Z'), // new
   ]), env);
-  assert.deepStrictEqual(r, { eventsFound: 2, eventsCreated: 1, eventsUpdated: 1 });
+  assert.deepStrictEqual(
+    { eventsFound: r.eventsFound, eventsCreated: r.eventsCreated, eventsUpdated: r.eventsUpdated },
+    { eventsFound: 2, eventsCreated: 1, eventsUpdated: 1 });
 });
 
 test('a failing fetch is recorded on the run and rethrown', async () => {
@@ -112,7 +118,9 @@ test('a failing fetch is recorded on the run and rethrown', async () => {
 test('a zero-event scrape succeeds loudly rather than silently', async () => {
   const { raw, env } = fresh();
   const r = await runAdapter(fakeAdapter([]), env);
-  assert.deepStrictEqual(r, { eventsFound: 0, eventsCreated: 0, eventsUpdated: 0 });
+  assert.deepStrictEqual(
+    { eventsFound: r.eventsFound, eventsCreated: r.eventsCreated, eventsUpdated: r.eventsUpdated },
+    { eventsFound: 0, eventsCreated: 0, eventsUpdated: 0 });
   const run = raw.prepare('SELECT * FROM adapter_runs ORDER BY id DESC LIMIT 1').get();
   assert.strictEqual(run.status, 'success');
   assert.strictEqual(run.events_found, 0,
