@@ -30,7 +30,7 @@ every question worth asking before or after an ingestion run:
 
 | | |
 |---|---|
-| `/api/parishes` | every parish row, all columns |
+| `/api/parishes` | every real parish, all columns (`_unassigned` is excluded) |
 | `/api/bundle` | parishes, schedules, overrides, events, in one response |
 | `/api/adapters/status` | per-adapter last run: status, counts, window, error |
 
@@ -47,18 +47,36 @@ needed to *write*.
 10 parishes · 13 schedules · 68 events · 0 overrides
 ```
 
-- **All 68 events are Good Shepherd's**, from the Google Calendar adapter.
+Those are the numbers `/api/bundle` returns, and the endpoint is a view rather
+than a row count — worth keeping straight before anything diffs against it.
+`parishes` hides `_unassigned`, which `d1/schema.sql` inserts itself, so the
+table holds eleven rows and ten real parishes. `events` is windowed and
+filtered to `source_adapter != 'schedule'`. `schedules` is `active = 1` and
+inside its effective dates; `overrides` is window-scoped.
+
+- **All 68 events in the window are Good Shepherd's**, from the Google Calendar
+  adapter.
 - **`greek-gopssc-buderim` is seeded**; its adapter runs clean but yields one
   event, because the 2026 sheet that parish publishes is a list of dates with
-  almost no times on it. That is the file, not a bug.
-- **`greek-stparaskevi-blacktown` is NOT seeded yet.** Its adapter and source
-  are on `main` (PR #22) and will fail until the parish row exists — the error
-  names the missing parish and says to run the seed.
-- **13 schedules live, but `d1/seed-parishes.sql` creates only 9.** Four rules
-  were added after seeding, presumably accepted from */admin* → Schedules →
-  *Infer rules from scraped events*. Worth knowing before anything reasons
-  about drift between the seed file and production: they have already diverged,
-  legitimately.
+  almost no times on it. That is the file, not a bug. The event is Holy
+  Thursday, 2026-04-09, which is behind the bundle's window — hence 68 above
+  and 69 rows in the table.
+- **`greek-stparaskevi-blacktown` is in the seed but not in production.**
+  `seeds/parishes.js` and `d1/seed-parishes.sql` both carry it, and
+  `PENDING_PARISHES` is empty with a test asserting that every adapter's parish
+  is seeded. What has not happened is `npm run db:seed` against remote D1. Add
+  the row a second time and you have a conflict to unpick, not a fix.
+- **Seeding it will not by itself make its adapter green.** Today
+  `pdf-stparaskevi-blacktown` fails on *No extracted text at
+  `pdf-schedules/stparaskevi-blacktown.json`*, because `fetchEvents()` runs
+  before the missing-parish guard and never reaches it. The extraction Action
+  (`.github/workflows/parish-pdf.yml`) has to run as well.
+- **13 schedules live, but `d1/seed-parishes.sql` creates only 9.** The four
+  extra are all Good Shepherd's, for which the seed writes no rules at all —
+  accepted from */admin* → Schedules → *Infer rules from scraped events*, and
+  it is the only parish with scraped events to infer from. Worth knowing before
+  anything reasons about drift between the seed file and production: they have
+  already diverged, legitimately.
 
 ## Constraints that will bite a directory scrape
 
@@ -110,7 +128,8 @@ candidate for caching results to disk so a re-run costs nothing.
 **A pin nobody has checked is worth marking as such.** `parishes` carries
 `info_source_type`, `info_source_ref` and `info_verified_at` for exactly this.
 Use them; a scraped pin and a confirmed one should not be indistinguishable six
-months later.
+months later. `info_source_type` is a CHECK too — `'website'`, `'person'` or
+`'import'` — and a directory scrape is `'import'`.
 
 ## Writing the rows
 
