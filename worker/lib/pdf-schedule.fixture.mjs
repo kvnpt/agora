@@ -147,3 +147,40 @@ Wednesday   Holy Unmercenaries           Matins & Divine Liturgy                
 // for keeping extraction out of the Worker. No parser improvement reaches this
 // file; only OCR does, and OCR is not something a Worker can do.
 export const WALLSEND_SCAN = '';
+
+// ── 4b. The same Blacktown file, after scripts/pdf-grid.mjs ──────────────────
+// What the grid extractor makes of the table above, by reading the ruled lines
+// out of the PDF's vector layer instead of the flattened text. Verbatim from a
+// real run over programme_july_2026_en.pdf.
+//
+// Compare it with BLACKTOWN_GRID. The 02/07 block now has its three services —
+// including the "Matins & Divine Liturgy" that the flattened form printed
+// three lines above the 02/07 cell and would have filed under 1 July. The
+// letterhead survives, because "JULY 2026" is the only thing in the file that
+// says which year "01/07" is in. The table's own DATE | FEAST | SERVICE | TIME
+// header is gone, because it is furniture.
+export const BLACKTOWN_REFLOWED = `
+HELLENIC ORTHODOX PARISH AND COMMUNITY OF BLACKTOWN DISTRICTS LIMITED
+SAINTS PARASKEVI AND BARBARA
+47-51 Balmoral St. Blacktown N.S.W. 2148 - PO BOX 341, Blacktown N.S.W 2148
+ABN: 66 001 846 840  (02) 9611 5311 www.stparaskevi.au
+Parish Priest:
+PROGRAM OF SERVICES Father Alexios Kapandritis
+Mobile: 0439 221 982
+JULY 2026
+Email: fatheralexios@stparaskevi.au
+Wednesday 01/07
+Holy Unmercenaries Cosmas & Damian
+Matins & Divine Liturgy  7:30-9:30 am
+Vespers & Paraklesis to Saint Paraskevi  5:00-6:00 pm
+Thursday 02/07
+Deposition of the Robe of the Most Holy Theotokos
+Matins & Divine Liturgy  7:30-9:30 am
+Vespers & Paraklesis to Saint Paraskevi  5:00-6:00 pm
+Bible Studies and Q&A in the English language  6:00-7:15 pm
+Friday 03/07
+Hyacinthus
+Matins & Divine Liturgy  7:30-9:30 am
+Vespers & Paraklesis to Saint Paraskevi  5:00-6:00 pm
+Catechism Course & Reception into the Orthodox Church for adults who wish to enter the Orthodox Faith  6:00 pm
+`;

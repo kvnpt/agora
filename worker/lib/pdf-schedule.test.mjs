@@ -9,7 +9,7 @@ import assert from 'node:assert';
 import { parseSchedulePdfText, parseTime, parseDateHeader } from './pdf-schedule.mjs';
 import {
   GOOD_SHEPHERD_LISTING, SUNSHINE_COAST_2025, SUNSHINE_COAST_2026,
-  BLACKTOWN_GRID, WALLSEND_SCAN,
+  BLACKTOWN_GRID, BLACKTOWN_REFLOWED, WALLSEND_SCAN,
 } from './pdf-schedule.fixture.mjs';
 
 // ── times ────────────────────────────────────────────────────────────────────
@@ -267,4 +267,60 @@ test('the parser is pure: the same text parses the same twice', () => {
   const a = parseSchedulePdfText(SUNSHINE_COAST_2025);
   const b = parseSchedulePdfText(SUNSHINE_COAST_2025);
   assert.deepStrictEqual(a, b);
+});
+
+// ── the same grid, once the ruled lines have been read ───────────────────────
+
+test('the reflowed grid parses, and 02/07 keeps all three of its services', () => {
+  // The payoff for scripts/pdf-grid.mjs, and the exact row the flattened form
+  // gets wrong: "Matins & Divine Liturgy" printed above the 02/07 cell is a
+  // 2 July service, and here it is filed as one.
+  const { occurrences, refused, skipped } = parseSchedulePdfText(BLACKTOWN_REFLOWED, {
+    locationColumn: false,
+  });
+  assert.strictEqual(refused, null, 'reflowed text is a listing, not a grid');
+  assert.strictEqual(skipped.length, 0);
+
+  assert.deepStrictEqual(
+    occurrences.map(o => `${o.date} ${o.start}-${o.end} ${o.title}`),
+    [
+      '2026-07-01 07:30-09:30 Matins & Divine Liturgy',
+      '2026-07-01 17:00-18:00 Vespers & Paraklesis to Saint Paraskevi',
+      '2026-07-02 07:30-09:30 Matins & Divine Liturgy',
+      '2026-07-02 17:00-18:00 Vespers & Paraklesis to Saint Paraskevi',
+      '2026-07-02 18:00-19:15 Bible Studies and Q&A in the English language',
+      '2026-07-03 07:30-09:30 Matins & Divine Liturgy',
+      '2026-07-03 17:00-18:00 Vespers & Paraklesis to Saint Paraskevi',
+      '2026-07-03 18:00-null Catechism Course & Reception into the Orthodox Church for adults who wish to enter the Orthodox Faith',
+    ]);
+});
+
+test('"Wednesday 01/07" is a date header — the weekday is decoration', () => {
+  // The reflowed date cell carries both, because the table prints both.
+  assert.strictEqual(parseDateHeader('Wednesday 01/07', { year: 2026 }).date, '2026-07-01');
+  assert.strictEqual(parseDateHeader('Thursday 02/07', { year: 2026 }).date, '2026-07-02');
+  // And a weekday that disagrees with the date is still not our problem to
+  // adjudicate: the date is what the parish printed against the services.
+  assert.strictEqual(parseDateHeader('Monday 02/07', { year: 2026 }).date, '2026-07-02');
+});
+
+test('the feast line between a date and its services is ignored, not titled', () => {
+  const { occurrences } = parseSchedulePdfText(BLACKTOWN_REFLOWED, { locationColumn: false });
+  assert.ok(!occurrences.some(o => /Hyacinthus|Deposition of the Robe|Unmercenaries/.test(o.title)),
+    'a feast name has no time and must not become a service');
+});
+
+test('the reflowed month declares and covers that month', () => {
+  const { declared, coverage } = parseSchedulePdfText(BLACKTOWN_REFLOWED, { locationColumn: false });
+  // "JULY 2026" survives in the letterhead, which is the only thing in the file
+  // that says which year "01/07" belongs to.
+  assert.deepStrictEqual(declared, { from: '2026-07-01', to: '2026-07-31' });
+  assert.deepStrictEqual(coverage, { from: '2026-07-01', to: '2026-07-03' });
+});
+
+test('flattened and reflowed are the same file with opposite outcomes', () => {
+  // Worth asserting together: this is the whole argument for the grid
+  // extractor, and for the parser refusing rather than guessing without it.
+  assert.strictEqual(parseSchedulePdfText(BLACKTOWN_GRID, { year: 2026 }).refused.reason, 'column-grid');
+  assert.strictEqual(parseSchedulePdfText(BLACKTOWN_REFLOWED).refused, null);
 });

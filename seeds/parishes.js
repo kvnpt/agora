@@ -102,6 +102,32 @@ const parishes = [
     color: ANTIOCHIAN_BLUE
   },
   {
+    // Publishes a monthly programme as a bordered PDF table — the source
+    // worker/lib/pdf-sources.mjs reads with the grid extractor.
+    //
+    // ABOUT THE PIN, because it is the counter-example to the one below.
+    // OpenStreetMap has this church as a place_of_worship node named "St
+    // Paraskevi" on Balmoral Street, and two bus stops either side of it are
+    // named "Greek Orthodox Church" and "Balmoral St opp Greek Orthodox
+    // Church", which is independent confirmation of the same spot.
+    //
+    // Geocoding the street address instead lands about 730m north, on a
+    // different stretch of the same long street. Both answers look equally
+    // plausible in a result list and only one is the church, which is the whole
+    // argument for checking a pin by name before trusting it.
+    id: 'greek-stparaskevi-blacktown',
+    name: 'Sts Paraskevi & Barbara, Blacktown',
+    full_name: 'Hellenic Orthodox Parish and Community of Blacktown Districts',
+    jurisdiction: 'greek',
+    address: '47-51 Balmoral St, Blacktown NSW 2148',
+    lat: -33.7748, lng: 150.9017,
+    timezone: 'Australia/Sydney',
+    website: 'https://www.stparaskevi.au/',
+    // The programme marks which services are in English; the rest are Greek.
+    languages: '["Greek", "English"]',
+    color: GREEK_BLUE
+  },
+  {
     // Queensland, and the first parish here outside the Antiochian
     // archdiocese. It publishes its year's liturgies as a PDF rather than a
     // calendar, which is what worker/lib/pdf-sources.mjs points at.

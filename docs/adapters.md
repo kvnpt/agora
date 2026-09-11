@@ -97,7 +97,7 @@ Trigger is an hourly heartbeat. No settings row means enabled at four-hourly.
 Nothing needs the network:
 
 ```bash
-npm test                     # node --test, ~156 tests
+npm test                     # node --test, ~171 tests
 npm run dev                  # wrangler dev, local D1 and R2, admin bypass
 ```
 
@@ -109,7 +109,7 @@ over `better-sqlite3` you can reuse.
 ## Constraints that will bite
 
 **No third-party runtime dependencies.** `package.json` has none outside
-`devDependencies`, and the deployed bundle is ~99 KB. This is a real constraint,
+`devDependencies`, and the deployed bundle is ~101 KB. This is a real constraint,
 not a preference: see the PDF note below.
 
 **10ms CPU per invocation on Workers Free.** The date lens is client-side for
@@ -147,6 +147,7 @@ everything else specific to reading that parish's file:
   sourceUrl: 'https://…/Liturgy%20Dates%20-%202026%20GOPSSC.pdf',
   timezone: 'Australia/Brisbane',
   publishes: 'yearly, revised in place',       // observed, and why the cron is weekly
+  extract: 'layout',                           // or 'grid' — see below
   parse: { defaultLocation: "St Mark's…", locationColumn: false },
   notes: '…',
 }
@@ -174,7 +175,7 @@ answering first, and the answer changed the design.
 | Good Shepherd, Clayton | listing, time first | — | publishes a **Google Calendar**; the gcal adapter already covers it |
 | Sunshine Coast, 2025 | listing, time last | subsetted fonts + ToUnicode | 23 liturgies |
 | Sunshine Coast, 2026 | listing, time last | same | 26 Sundays, 3 with a clock, 1 parsable |
-| St Paraskevi, Blacktown | bordered grid | clean | **refused** — see below |
+| St Paraskevi, Blacktown | bordered grid | clean | 75–78 services a month, via the grid extractor |
 | St Nicholas, Wallsend | scan | **none at all** | needs OCR |
 
 Two things in that table decide everything else.
@@ -193,9 +194,10 @@ parsed to recover the characters.
 ## The extraction route, decided
 
 **A GitHub Action extracts, the Worker reads.** `.github/workflows/parish-pdf.yml`
-installs poppler, runs `pdftotext -layout` over each source's PDF and puts the
-text in R2 as `pdf-schedules/<key>.json`. The adapter fetches that — small, fast,
-dependency-free — and hands the text to the pure parser.
+installs poppler and mupdf, reads each source's PDF with whichever of the two its
+`extract` mode calls for, and puts the text in R2 as `pdf-schedules/<key>.json`.
+The adapter fetches that — small, fast, dependency-free — and hands the text to
+the pure parser.
 
 The other two options were weighed against what the survey found:
 
@@ -230,17 +232,17 @@ HOLY WEEK"* — the same URL, edited. That is precisely the change a person
 re-uploading by hand never notices, and a weekly re-fetch catches for free. The
 cron is weekly for that reason and not a shorter one.
 
-## The grid the parser refuses
+## The grid, and where it is actually solved
 
 `parseSchedulePdfText` reads a **listing**: a date header owns every service row
 beneath it until the next date header. Both column orders are handled, because
 both are real — Good Shepherd writes `5pm  Vespers  Religious Centre…` and the
 Sunshine Coast writes `Liturgy of John Chrysostom      11.30 am`.
 
-A `DATE | FEAST | SERVICE | TIME` grid is refused outright, and the refusal is the
-interesting part. In the Blacktown file the date cell is drawn **once and centred**
-over its block of services, so once the layout is flattened to lines the date
-lands in the middle of its own block:
+A `DATE | FEAST | SERVICE | TIME` grid is a different problem, and the parser
+**refuses** one rather than guessing at it. In the Blacktown file the date cell is
+drawn **once and centred** over its block of services, so once the layout is
+flattened to lines the date lands in the middle of its own block:
 
 ```
   01/07      Cosmas & Damian     Vespers & Paraklesis…      5:00-6:00 pm
@@ -252,17 +254,40 @@ lands in the middle of its own block:
 ```
 
 That "Matins" belongs to 2 July and sits three lines *above* the `02/07` cell.
-What separates the two days is a ruled line in the PDF's vector layer, which no
-text extractor emits. Attaching the row to the nearest date above it advertises a
-liturgy on the wrong morning **and** tells `reconcile.mjs` the right one was
-cancelled — both halves of the asymmetry this codebase is built around, in one
-mistake.
+Attaching it to the nearest date above advertises a liturgy on the wrong morning
+**and** tells `reconcile.mjs` the right one was cancelled — both halves of the
+asymmetry in one mistake. Nothing left in the text can tell you otherwise.
 
-So the parser names the shape and refuses the file, and the run fails with the
-layout in `adapter_runs.error_message`. Supporting it means teaching the
-**extractor** to emit rows — it has the geometry, and the rules are there to be
-read: the Blacktown PDF draws its row borders as 41 thin filled rectangles per
-page. It does not mean teaching the parser to guess.
+**But the information is not gone.** It is in the ruled lines, which live in the
+PDF's vector layer where no text extractor looks. So the grid is solved in the
+**extractor**, where the geometry still exists, and the parser stays a pure
+text-to-occurrences function that never guesses:
+
+```
+extract: 'grid'   →   mutool draw -F trace   →   scripts/pdf-grid.mjs   →   a listing
+```
+
+`mutool` reports the drawn paths alongside the glyphs, in one coordinate system.
+`scripts/pdf-grid.mjs` reads the rules back into a table and emits the listing the
+parser already understands. Nothing is inferred.
+
+The observation that makes it general: **a merged cell has no rule across it, so
+a column's rule count is its granularity.** In the Blacktown file DATE and FEAST
+have 19 boundaries per page and SERVICE and TIME have 39–48. The coarse columns
+describe a day, the fine ones describe a service, and no part of this needs to
+know that a column is called "FEAST". The table's own header row is dropped
+because its first cell has no digits in it; the letterhead is kept, because
+"JULY 2026" is the only thing in the file that says which year `01/07` is in.
+
+The result on the real files: **78 services for July, 75 for May, none skipped,
+every day of the month covered** — where the same files flattened to text are
+refused outright. `worker/lib/pdf-schedule.fixture.mjs` holds both forms of the
+same page so the contrast stays tested.
+
+Two things this does not reach. A PDF whose table is drawn without rules has
+nothing to read, and a scan has nothing at all — that one needs OCR, which is a
+tool the Action could gain and the Worker never will.
+
 
 ## What the parser will not invent
 
@@ -302,9 +327,11 @@ tombstoning and is exactly the trade the contract describes above.
    half the year.
 2. Add an entry to `PDF_SOURCES` in `worker/lib/pdf-sources.mjs` with the URL
    somebody has actually opened, and whatever `parse` options its layout needs.
+   Leave `extract` alone for a listing; set it to `'grid'` for a bordered table.
 3. Run the workflow with **Dry run** ticked. The log reports occurrences, skips
    and coverage per source, so a layout the parser cannot read shows up there
-   rather than when the feed empties.
+   rather than when the feed empties — a `REFUSED column-grid` in that log
+   usually just means the source wants `extract: 'grid'`.
 4. Untick it and run for real, then **Run now** in `/admin` → Adapters.
 5. `/admin` → Schedules → *Infer rules from scraped events* to turn the
    occurrences into recurrence rules.

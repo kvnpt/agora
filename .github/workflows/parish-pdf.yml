@@ -65,14 +65,19 @@ jobs:
         with:
           node-version: 22
 
-      # poppler-utils is the heavy tool this whole workflow exists to be able to
-      # use. -layout keeps the columns as runs of spaces, which is what the
-      # parser splits a service row on.
-      - name: Install poppler
+      # The heavy tools this whole workflow exists to be able to use.
+      #
+      # poppler's -layout keeps columns as runs of spaces, which is what the
+      # parser splits a service row on. mupdf's `mutool draw -F trace` reports
+      # the drawn paths alongside the glyphs, which is the only way to recover
+      # a bordered table's rows — poppler reports text and nothing else, and a
+      # table flattened to text has lost which day each service is on.
+      - name: Install poppler and mupdf
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends poppler-utils
+          sudo apt-get install -y --no-install-recommends poppler-utils mupdf-tools
           pdftotext -v
+          mutool -v
 
       # No `npm ci`: the extractor imports two Worker modules and nothing else.
       # The repo has no runtime dependencies and this job should not invent one.
