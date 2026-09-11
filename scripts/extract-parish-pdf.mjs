@@ -49,6 +49,12 @@ const arg = (name, fallback = null) => {
 
 const outDir = arg('out', 'dist/pdf-schedules');
 const only = arg('key');
+// Whether the workflow will go on to upload. This script never uploads either
+// way — it writes JSON to disk and the workflow's next step copies it to R2 —
+// but it is the thing writing the log, so it is the thing that has to say
+// which happened. Without this the dry run still printed "-> pdf-schedules/…",
+// which reads exactly like an upload that did not occur.
+const dryRun = args.includes('--dry-run');
 const sources = only ? PDF_SOURCES.filter(s => s.key === only) : PDF_SOURCES;
 
 if (!sources.length) {
@@ -128,7 +134,9 @@ for (const source of sources) {
     const file = path.join(outDir, `${source.key}.json`);
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(doc, null, 2));
-    console.log(`${label} wrote ${file} -> ${r2KeyFor(source.key)}`);
+    console.log(dryRun
+      ? `${label} wrote ${file} — dry run, ${r2KeyFor(source.key)} left as it was`
+      : `${label} wrote ${file} -> ${r2KeyFor(source.key)}`);
   } catch (err) {
     failures++;
     // Never fail the whole run on one parish. A parish that reorganises its
@@ -137,7 +145,8 @@ for (const source of sources) {
   }
 }
 
-console.log(`\n${sources.length - failures}/${sources.length} sources extracted.`);
+console.log(`\n${sources.length - failures}/${sources.length} sources extracted.` +
+  (dryRun ? ' Dry run — nothing was uploaded to R2.' : ''));
 // Only a total loss is worth failing on: a partial run still has something
 // worth uploading, and the per-source ::error:: annotations say what is missing.
 if (failures === sources.length) process.exit(1);
