@@ -172,7 +172,7 @@ npm run db:export    # dump production to backups/ (gitignored)
 ```
 
 **The seed is a dev fixture, not a picture of production.** It holds 11 parishes
-and 9 rules; production serves 196 parishes and 69 schedules, because three
+and 9 rules; production serves 196 parishes and 68 schedules, because three
 jurisdiction directories — Greek, ROCOR and Antiochian — were scraped and
 written straight to D1 rather than through the repo.
 `/api/parishes` is the answer to "what parishes exist" — `seeds/parishes.js` is

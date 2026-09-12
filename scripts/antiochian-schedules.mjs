@@ -7,7 +7,7 @@
 // every automated client on every path, so the Worker could never reach it and
 // an adapter would fail every four hours forever. The pages are fetched by a
 // person into `cache/antiochian/` and imported once, which is also why the
-// rules carry `source_updated_at` — nothing here will notice when they change,
+// rules carry `source_checked_at` — nothing here will notice when they change,
 // so the row has to say how old it is.
 //
 // WHAT THE PAGES LOOK LIKE. Each parish's PRAYER SERVICES tab is a set of day
@@ -257,10 +257,11 @@ const sql = (v) => (v === null || v === undefined || v === ''
   ? 'NULL'
   : `'${String(v).replace(/'/g, "''")}'`);
 
-// What to CALL the source in the UI. Short on purpose: it renders directly
-// under a jurisdiction header that already says "Antiochian Orthodox", and a
-// schedule line has room for a relative date and a name, not a full legal title.
-export const SOURCE_NAME = 'Archdiocese';
+// What to CALL the source in the UI. Short, but not so short it stops being
+// specific: the line renders under a jurisdiction header that already says
+// "Antiochian Orthodox", so "Archdiocese" alone reads fine there — and stops
+// reading fine the moment a Greek or Serbian schedule carries one too.
+export const SOURCE_NAME = 'Antiochian Archdiocese';
 
 /**
  * Plan the write: which rules update a row that already exists, and which are new.
@@ -303,7 +304,7 @@ export function planWrite(rules, existing) {
 }
 
 const COLS = ['parish_id', 'day_of_week', 'start_time', 'title', 'event_type',
-  'languages', 'week_of_month', 'concurrent', 'source_name', 'source_ref', 'source_updated_at'];
+  'languages', 'week_of_month', 'concurrent', 'source_name', 'source_ref', 'source_checked_at'];
 
 const valueOf = (r, c) => (c === 'languages'
   ? sql(r.languages ? JSON.stringify(r.languages).replace(/","/g, '", "') : null)

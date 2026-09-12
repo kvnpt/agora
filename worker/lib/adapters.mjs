@@ -66,6 +66,19 @@ class GoogleCalendarAdapter {
     this.schedule = schedule || '0 */4 * * *';
   }
 
+  // What a RULE inferred from this adapter's events should cite.
+  //
+  // Not an event's own `source_url`: that is a deep link to one occurrence, and
+  // a rule is inferred from dozens of them, so citing the first would point a
+  // reader at an arbitrary Sunday rather than at the calendar that says it
+  // happens every Sunday. The human-facing calendar page, not the API endpoint,
+  // because the ref is meant to be opened.
+  get sourceName() { return 'Parish calendar'; }
+
+  get sourceUrl() {
+    return `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(this.calendarId)}`;
+  }
+
   async fetchEvents(env) {
     const apiKey = await readSecret(env.GOOGLE_API_KEY);
     if (!apiKey) throw new Error('GOOGLE_API_KEY not set');
@@ -135,6 +148,12 @@ class ParishPdfAdapter {
     // touches the parish's website.
     this.schedule = '0 */12 * * *';
   }
+
+  // The parish's own PDF, which is what a rule inferred from it should cite —
+  // pdf-sources.mjs already remembers the URL for the fetching half.
+  get sourceName() { return 'Parish schedule (PDF)'; }
+
+  get sourceUrl() { return this.source.sourceUrl || null; }
 
   async fetchEvents(env) {
     const key = r2KeyFor(this.source.key);

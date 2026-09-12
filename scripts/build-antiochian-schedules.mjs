@@ -24,7 +24,12 @@ const scraped = JSON.parse(await readFile(process.argv[2] || './antiochian-scrap
 const index = JSON.parse(await readFile(process.argv[3] || './cache/antiochian/index.json', 'utf8'));
 const output = process.argv[4] || './antiochian-schedules.sql';
 
-const modifiedBySlug = new Map(index.posts.map((p) => [p.slug, p.modified || null]));
+// When we read the source. NOT the page's own last-modified date, which the
+// directory does publish: that is the publisher asserting something about
+// itself, and a parish that changes its times without touching the page would
+// carry a date saying the times are current. The read is the weaker claim and
+// the only one we can make — it records freshness, never veracity.
+const checkedAt = scraped.scraped_at || new Date().toISOString();
 const parishes = await get(PARISHES);
 const byRef = new Map(parishes.filter((p) => p.info_source_ref).map((p) => [p.info_source_ref, p]));
 const existing = (await get(SCHEDULES)).filter((s) => byRef.has(
@@ -45,7 +50,7 @@ for (const p of scraped.parishes) {
       parish_id: parish.id,
       source_name: SOURCE_NAME,
       source_ref: p.source_ref,
-      source_updated_at: modifiedBySlug.get(p.slug) || null,
+      source_checked_at: checkedAt,
     });
   }
 }
@@ -85,10 +90,7 @@ for (const [pid, rs] of byParish) {
 console.log(`\nDROPPED (${dropped.length}) — published without a time, so no rule is invented:`);
 for (const d of dropped) console.log(`  ${d.parish} [${d.day}] ${JSON.stringify(d.line)}\n      ${d.why}`);
 
-const stale = rules.map((r) => r.source_updated_at).filter(Boolean).sort();
-if (stale.length) {
-  console.log(`\nsource dates run ${stale[0].slice(0, 10)} .. ${stale[stale.length - 1].slice(0, 10)}`);
-}
+console.log(`\nevery rule is stamped read ${checkedAt}`);
 
 await writeFile(output, `${buildScheduleSql({ updates, inserts })}\n`);
 console.log(`\nwrote ${updates.length + inserts.length} statements to ${output}`);

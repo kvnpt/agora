@@ -109,27 +109,29 @@ CREATE TABLE schedules (
   effective_from TEXT,   -- 'YYYY-MM-DD' local; NULL = open-ended
   effective_to   TEXT,
 
-  -- Where this rule came from, and when that source last said so.
+  -- Where this rule came from, and when we last read it there.
   --
   -- A recurrence rule is a claim about the FUTURE, and unlike a scraped event it
   -- never expires on its own: "Sundays 9am" keeps projecting cards forever,
   -- looking exactly as current on the day the parish changes its times as it did
   -- the day it was entered. There is no signal in the row itself that anyone has
-  -- looked since. These three are that signal, and the reason all three are
-  -- needed is that each answers a different question: the name is who says so,
-  -- the ref is where to check, and the timestamp is how old the claim is.
+  -- looked since. These three are that signal, and each answers a different
+  -- question: the name is who says so, the ref is where to check, and the
+  -- timestamp is how long ago we looked.
   --
-  -- `source_updated_at` is the SOURCE's own last-modified date, not when we
-  -- scraped it. Re-reading an unchanged page tells you nothing about whether the
-  -- times are current, so recording the read would manufacture a freshness the
-  -- data does not have.
+  -- `source_checked_at` is OUR READ, not the source's own last-modified date.
+  -- That is the weaker claim and the only honest one: a page's modified date is
+  -- the publisher's assertion about itself, and a parish that changes its times
+  -- without touching the page would carry a date saying the times are current.
+  -- What we can actually vouch for is when we looked. This records freshness,
+  -- never veracity.
   --
   -- Parishes carry the same three as info_source_name/_ref/_verified_at. They
   -- are separate here on purpose: a parish's address and its service times go
   -- stale independently and are very often published in different places.
   source_name       TEXT,
   source_ref        TEXT,
-  source_updated_at TEXT,   -- ISO 8601, as the source publishes it
+  source_checked_at TEXT,   -- ISO 8601 UTC, when WE last read the source
 
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );

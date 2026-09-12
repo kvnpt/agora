@@ -183,16 +183,16 @@ test('the SQL updates by id and guards every insert', () => {
     updates: [{
       id: 4, parish_id: 'p', day_of_week: 0, start_time: '09:00', title: 'Matins',
       event_type: 'prayer', languages: ['English'], week_of_month: null, concurrent: 0,
-      source_name: 'Archdiocese', source_ref: 'https://x/', source_updated_at: '2024-07-11T19:21:02+10:00',
+      source_name: 'Antiochian Archdiocese', source_ref: 'https://x/', source_checked_at: '2026-09-12T11:00:00Z',
     }],
     inserts: [{
       parish_id: 'p', day_of_week: 0, start_time: '18:00', title: "St Elias' Liturgy",
       event_type: 'liturgy', languages: null, week_of_month: 'first', concurrent: 1,
-      source_name: 'Archdiocese', source_ref: 'https://x/', source_updated_at: null,
+      source_name: 'Antiochian Archdiocese', source_ref: 'https://x/', source_checked_at: null,
     }],
   });
   assert.match(sql, /UPDATE schedules SET .*title='Matins'.*WHERE id=4;/);
-  assert.match(sql, /source_updated_at='2024-07-11T19:21:02\+10:00'/);
+  assert.match(sql, /source_checked_at='2026-09-12T11:00:00Z'/);
   assert.match(sql, /active=1/);
   // An apostrophe in a title must not end the string literal.
   assert.match(sql, /'St Elias'' Liturgy'/);

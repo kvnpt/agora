@@ -49,7 +49,7 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-196 parishes · 69 schedules · 68 events · 0 overrides
+196 parishes · 68 schedules · 68 events · 0 overrides
 ```
 
 135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 24
@@ -84,7 +84,7 @@ inside its effective dates; `overrides` is window-scoped.
   `pdf-schedules/stparaskevi-blacktown.json`*, because `fetchEvents()` runs
   before the missing-parish guard and never reaches it. The extraction Action
   (`.github/workflows/parish-pdf.yml`) has to run as well.
-- **69 schedules live, but `d1/seed-parishes.sql` creates only 9.** 67 of them
+- **68 schedules live, but `d1/seed-parishes.sql` creates only 9.** 67 of them
   are the Antiochian service-time import described at the end of this file; of
   the rest, four
   extra are all Good Shepherd's, for which the seed writes no rules at all —
@@ -660,20 +660,24 @@ automated client, so a Worker adapter would fail every four hours forever. The
 pages are fetched by a person and imported once — which is exactly why the rules
 had to start carrying their own provenance.
 
-**`schedules` gained `source_name`, `source_ref` and `source_updated_at`.** A
+**`schedules` gained `source_name`, `source_ref` and `source_checked_at`.** A
 recurrence rule is a claim about the FUTURE and, unlike a scraped event, never
 expires on its own: "Sundays 9am" keeps projecting cards forever and looks
 exactly as current on the day the parish changes its times as it did the day it
 was entered. Nothing in the row said how old the claim was. The three columns
-answer three different questions — who says so, where to check, and how old it
-is — and the parish sheet now renders them under the timetable as
-*"Updated 11 months ago · Archdiocese ↗"*.
+answer three different questions — who says so, where to check, and how long ago
+we looked — and the parish sheet renders them under the timetable as
+*"Updated 3 months ago · Antiochian Archdiocese ↗"*.
 
-`source_updated_at` is the SOURCE's own last-modified date, not when we scraped
-it. Re-reading an unchanged page tells you nothing about whether the times are
-still right, so recording the read would manufacture a freshness the data does
-not have. These 24 pages were last touched between July 2024 and May 2026, and
-the line says so honestly.
+**The timestamp is OUR READ, not the source's own last-modified date.** The
+first cut of this stored the page's published modified date, on the reasoning
+that re-reading an unchanged page proves nothing. That is true and it is the
+wrong conclusion: a publisher's modified date is an assertion about itself, and
+a parish that changes its service times without touching the page carries a date
+saying the times are current. The column takes on **freshness, not veracity** —
+when we last looked is a fact we can actually vouch for, and how long ago that
+was is the question a reader is really asking. It is named `source_checked_at`
+so it cannot be read as the other thing.
 
 **Match on parish + weekday + time, never on title.** The nine rules seeded by
 hand before any scraping are all called "Sunday Divine Liturgy" with no
@@ -689,10 +693,16 @@ the Liturgy is at 10:00 — so that row's title, type and languages were all
 corrected, and a second rule inserted for the Liturgy it had displaced.
 
 **A rule the directory does not mention is left alone.** A page omitting a
-service is weak evidence that it has stopped. Ryde's Saturday Vespers and Good
-Shepherd's Confession are both absent from the directory, both plausibly still
-happen, and both survive — with no source, which is the honest answer for a row
-whose origin nobody recorded.
+service is weak evidence that it has stopped, so Ryde's Saturday Vespers and
+Good Shepherd's Confession both survived the import untouched. Review then
+settled the two in OPPOSITE directions, which is the argument for leaving them
+to a person rather than to a rule about absence:
+
+- **Ryde do not hold Saturday Vespers.** That rule came from the hand-written
+  seed, not from the parish, and has been deleted. The directory's silence
+  turned out to be right; it still was not evidence.
+- **Good Shepherd's Confession is real**, and was inferred from the parish's
+  Google Calendar — so it now cites that calendar rather than nothing.
 
 **Two parishes hold genuinely simultaneous services and the dedup nearly ate
 one.** Punchbowl runs an Arabic liturgy in the church and an English one in the
@@ -721,7 +731,22 @@ Magdalene serves Pomona and Gympie from Elimbah, and `schedules` has no location
 column, so "Vespers at 23 Hill Street POMONA QLD 4568" is the title. Dropping it
 would put those services at the wrong church.
 
-**Final: 67 rules across 23 parishes** — 36 liturgies, 32 offices, 1 other; 11
-updates in place, 56 inserts, 2 rows left untouched, 4 lines dropped. St George
-Mission, Auckland is the twenty-fourth parish and publishes no times at all,
-which is not an error and is reported as zero rather than skipped silently.
+**Inference now records its own provenance too.** */admin* → Schedules → *Infer
+rules from scraped events* was writing rules with all three columns null, which
+on the parish sheet reads as "nobody knows" rather than "a calendar said so". It
+now asks the ADAPTER for the source — not the events, because an event's
+`source_url` is a deep link to one occurrence, and a rule inferred from dozens of
+them would cite an arbitrary Sunday instead of the calendar that says it happens
+every Sunday. Adapters therefore carry `sourceName` and `sourceUrl`: the Google
+Calendar one derives its public calendar page from the id it already holds, and
+the PDF ones return the URL `pdf-sources.mjs` already remembers. Accepting a
+proposal that is already on file re-stamps `source_checked_at` rather than
+skipping silently — a person has just confirmed the source still publishes it,
+which is exactly what the column records.
+
+**Final: 68 schedules** — 67 from the directory across 23 parishes (36 liturgies,
+32 offices, 1 other; 11 updates in place, 56 inserts, 4 lines dropped) plus Good
+Shepherd's Confession from its calendar. Every rule in the table now carries a
+source. St George Mission, Auckland is the twenty-fourth parish and publishes no
+times at all, which is not an error and is reported as zero rather than skipped
+silently.

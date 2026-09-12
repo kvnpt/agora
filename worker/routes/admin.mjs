@@ -443,6 +443,26 @@ export function registerAdminRoutes(router) {
     const { rules } = await readJson(request);
     if (!Array.isArray(rules) || !rules.length) return json({ error: 'rules[] is required' }, 400);
 
+    // Where these rules came from. An inferred rule IS a claim about the
+    // future, exactly like an imported one, so it needs the same three columns
+    // — otherwise the parish sheet shows a timetable with no provenance beside
+    // the ones that have it, which reads as "nobody knows" rather than "a
+    // calendar said so".
+    //
+    // The adapter is asked, not the events: an event's own source_url is a
+    // deep link to ONE occurrence, and a rule inferred from dozens of them
+    // would end up citing an arbitrary Sunday instead of the calendar that
+    // says it happens every Sunday.
+    //
+    // `source_checked_at` is now, because accepting a proposal IS the read:
+    // a person has just looked at what the source published and said yes.
+    const adapter = ADAPTERS.find(a => a.parishId === params.id);
+    const source = {
+      name: adapter?.sourceName || null,
+      ref: adapter?.sourceUrl || null,
+    };
+    const checkedAt = new Date().toISOString();
+
     const created = [], skipped = [];
     for (const r of rules) {
       if (r.day_of_week == null || !r.start_time || !r.title) {
@@ -460,15 +480,27 @@ export function registerAdminRoutes(router) {
            AND title = ? AND (week_of_month IS ? OR week_of_month = ?)`
       ).bind(params.id, r.day_of_week, r.start_time, r.title,
              r.week_of_month || null, r.week_of_month || '').first();
-      if (dup) { skipped.push({ title: r.title, existing_schedule_id: dup.id }); continue; }
+      if (dup) {
+        // Already on file — but the person has just confirmed the source still
+        // publishes it, which is precisely what this timestamp records. Leaving
+        // it stale would make re-running the inference look like it did
+        // nothing, when what it actually did was re-check.
+        await env.DB.prepare(
+          'UPDATE schedules SET source_name = ?, source_ref = ?, source_checked_at = ? WHERE id = ?'
+        ).bind(source.name, source.ref, checkedAt, dup.id).run();
+        skipped.push({ title: r.title, existing_schedule_id: dup.id, rechecked: true });
+        continue;
+      }
 
       const row = await env.DB.prepare(
         `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title,
-           event_type, week_of_month, languages)
-         VALUES (?,?,?,?,?,?,?,?) RETURNING *`
+           event_type, week_of_month, languages,
+           source_name, source_ref, source_checked_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
       ).bind(
         params.id, r.day_of_week, r.start_time, r.end_time || null, r.title,
         r.event_type || 'liturgy', r.week_of_month || null, r.languages || null,
+        source.name, source.ref, checkedAt,
       ).first();
       created.push(row);
     }
