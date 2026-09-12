@@ -3425,24 +3425,32 @@ button.ps-avatar { cursor: pointer; }
 }
 .ps-info-copy:last-of-type { margin-bottom: 10px; }
 
-/* Where a parish's details came from. Muted and small on purpose: it is
-   provenance, not content — there for somebody checking the row, not competing
-   with the address above it. */
-.sched-source {
-  margin: 8px 2px 2px;
+/* Where a parish's details and its service times came from. Muted and small on
+   purpose: it is provenance, not content — there for somebody checking the row,
+   not competing with the address above it.
+
+   One rule for both lines, because they say the same thing in the same words
+   and only their spacing differs: .ps-source sits under the parish's details,
+   .sched-source under its timetable. */
+.sched-source,
+.ps-source {
   font-size: 11px;
   line-height: 1.4;
   color: var(--text-muted);
 }
-.sched-source a {
+.sched-source { margin: 8px 2px 2px; }
+.ps-source { margin: 0 0 10px; }
+.sched-source a,
+.ps-source a {
   color: inherit;
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 2px;
   white-space: nowrap;
 }
-.sched-source a:hover { color: var(--text); }
-.sched-source-icon {
+.sched-source a:hover,
+.ps-source a:hover { color: var(--text); }
+.source-link-icon {
   /* inline-block, because `width` does nothing on an inline span and the glyph
      collapses to zero. */
   display: inline-block;
@@ -3459,19 +3467,6 @@ button.ps-avatar { cursor: pointer; }
   mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
   -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
 }
-.ps-source {
-  margin: 0 0 10px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-muted);
-}
-.ps-source a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 2px;
-}
-.ps-source a:hover { color: var(--text); }
 .ps-info-copy-text {
   min-width: 0;
   white-space: normal;

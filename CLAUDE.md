@@ -55,6 +55,17 @@ moment "now" moves.
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.
 
+**A source line says when we last looked, never that it is right.** A parish's
+details and a parish's service times are the same kind of claim — something a
+source published, which nothing in the row expires — so both carry
+name/ref/checked_at (`info_source_*`/`info_checked_at`, `source_*`) and both
+render through one function as "Updated 3 months ago · Antiochian Archdiocese".
+No date renders no date. `info_verified_at` looks like the same field and is
+not: it means a *person* confirmed the row against the place itself, nothing
+renders it, and it is what stops a re-import moving a pin somebody checked. A
+scrape stamps the first and never the second — a guard on the checked date
+would freeze every row at its first import.
+
 **Nothing disappears.** Every occurrence in a window emits exactly one instance. A
 cancellation is a *tombstone* that still renders, so someone who would otherwise turn up
 at church sees "CANCELLED" rather than the service silently vanishing.
@@ -100,6 +111,16 @@ the two cannot disagree about what to fetch. Getting text out of a PDF happens i
 that Action, never in the Worker; `scripts/extract-parish-pdf.mjs` says why at
 length, and the short version is that one of the surveyed parish schedules is a
 photograph of a piece of paper.
+
+**A jurisdiction's colour is written down once**, in
+`public/shared/jurisdiction-colors.js`, which the app, the map and the seed all
+read — it exists because that table was three tables and two of them disagreed
+about Greek. `jurisdiction_colors` in D1 does not make it four: it holds only
+the rows */admin* → Colours has deliberately changed, absence means the file's
+value, and a reset deletes the row rather than writing the default into it.
+Changing a jurisdiction's colour does not touch `parishes.color`, which is a
+per-parish identity mark; the panel offers that as a separate, counted repaint
+of the rows still carrying the old colour.
 
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and
@@ -163,7 +184,7 @@ deliberately absent from `wrangler.toml` so it cannot ship by accident.
 
 ## Database
 
-The schema is one baseline file, `d1/schema.sql` — not a migration chain. Seven tables.
+The schema is one baseline file, `d1/schema.sql` — not a migration chain. Eight tables.
 
 ```bash
 npm run db:schema    # apply to remote D1

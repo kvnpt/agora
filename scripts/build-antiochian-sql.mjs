@@ -26,9 +26,13 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { reconcile, buildUpsert } from './parish-import.mjs';
+// One label for one source. The service-time import reads the same pages and
+// already names them; spelling it out in full here gave a parish sheet two
+// names for one archdiocese, on two lines of 11px muted text, one of which
+// wrapped to three. Migration 005 cut the stored rows back to this one.
+import { SOURCE_NAME } from './antiochian-schedules.mjs';
 
 const LIVE = 'https://agora.orthodoxy.au/api/parishes';
-const SOURCE_NAME = 'Antiochian Orthodox Archdiocese of Australia, New Zealand and the Philippines';
 
 /**
  * The parish row the database wants, from the row the scrape produced.
@@ -42,7 +46,7 @@ const SOURCE_NAME = 'Antiochian Orthodox Archdiocese of Australia, New Zealand a
  * way. `info_source_ref` is each parish's OWN page rather than the directory
  * index, so a row points at the page its address actually came from.
  */
-function toRow(p) {
+function toRow(p, checkedAt) {
   // The directory already names every entry "<dedication>, <suburb>", so the
   // suburb has to come OFF before it is put back on — otherwise the stored name
   // reads "St. Mary's, Mays Hill, Mays Hill".
@@ -81,6 +85,12 @@ function toRow(p) {
     info_source_type: 'import',
     info_source_ref: p.source_ref,
     info_source_name: SOURCE_NAME,
+    // When the directory was READ, which is the scrape's own timestamp and not
+    // this build's: the pages came out of cache/antiochian and re-running the
+    // SQL builder does not make them any fresher. The parish sheet renders it
+    // as "Updated 3 months ago", beside the service times taken from the same
+    // read and carrying the same instant.
+    info_checked_at: checkedAt || null,
     // carried for the report, stripped before the SQL
     _confidence: p.confidence,
     _suburb: p.suburb,
@@ -131,7 +141,7 @@ const km = (a, b) => {
 };
 
 export async function build(geocoded, existing, { includeSuburb = false } = {}) {
-  const rows = geocoded.parishes.map(toRow);
+  const rows = geocoded.parishes.map((p) => toRow(p, geocoded.scraped_at));
 
   const placed = rows.filter((r) => r.lat != null && r.lng != null);
   const unplaced = rows.filter((r) => r.lat == null || r.lng == null);

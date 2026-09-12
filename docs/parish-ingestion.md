@@ -141,11 +141,19 @@ an address-only result as provisional rather than confirmed.
 candidate for caching results to disk so a re-run costs nothing.
 
 **A pin nobody has checked is worth marking as such.** `parishes` carries
-`info_source_type`, `info_source_ref`, `info_source_name` and
-`info_verified_at` for exactly this. Use all four; a scraped pin and a confirmed
-one should not be indistinguishable six months later. `info_source_type` is a
-CHECK too — `'website'`, `'person'` or `'import'` — and a directory scrape is
-`'import'`.
+`info_source_type`, `info_source_ref`, `info_source_name` and `info_checked_at`
+for exactly this. Use all four; a scraped pin and a confirmed one should not be
+indistinguishable six months later. `info_source_type` is a CHECK too —
+`'website'`, `'person'` or `'import'` — and a directory scrape is `'import'`.
+
+`info_checked_at` is the moment the scrape **read** the source, and the only one
+of the four a re-run must rewrite. It is the same field `schedules` carries as
+`source_checked_at` and it renders the same way, so a parish's details and its
+service times both say how old they are in the same words. A fifth column,
+`info_verified_at`, looks like it and is not: it means a *person* confirmed the
+row against the place itself, it is what the upsert's guard reads, and a scrape
+never writes it. Guarding on the checked date instead would freeze every row
+the moment it was first imported.
 
 `info_source_name` is what to CALL the source, because the ref is a URL and a
 URL is not a name: an imported parish's ref is a hundred characters of directory
@@ -153,8 +161,12 @@ path, which answers "where did this come from" only for somebody who reads URLs
 for a living. Name the source, not the parish, so a jurisdiction's whole import
 shares one label — "Greek Orthodox Archdiocese of Australia", "Parish website",
 "OpenStreetMap" — which makes the import legible at a glance and a stale source
-findable in one query. The parish sheet renders it under the address, linked to
-the ref when the ref is a URL, with `unverified` shown rather than implied.
+findable in one query. Keep it SHORT: the parish sheet renders it under the
+address as "Updated 3 months ago · Antiochian Archdiocese", linked to the ref
+when the ref is a URL, in the same 11px muted line the service times use. The
+Antiochian import's 74-character official title had to be cut back to the short
+label its own service-time rules already carried, because one source spelled two
+ways reads as two sources.
 
 ## Writing the rows
 

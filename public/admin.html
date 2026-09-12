@@ -211,6 +211,45 @@
     .modal-parish-grid { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
     .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
     .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+    /* ── Archdiocese colours ────────────────────────────────────────────
+       Two comparison strips and a grid of editors. The strips are the point
+       of the tab: swatches edge to edge with no gap between them, because a
+       gap is what makes two colours that are hard to tell apart on a map look
+       distinct on a settings page. Both schemes are drawn at once — the site
+       follows the viewer's, and a hue that separates on white can collapse on
+       near-black. */
+    .color-compare { display: grid; gap: 8px; margin-bottom: 16px; }
+    .color-strip { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .color-strip[data-scheme=light] { background: #fff; }
+    .color-strip[data-scheme=dark] { background: #0b0b0d; }
+    .color-strip-cell { flex: 1; padding: 10px 6px 8px; display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; }
+    /* Drawn at the size the map draws them: a 10px dot is the whole of what
+       distinguishes two jurisdictions on a screen holding two hundred. */
+    .color-strip-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    .color-strip-bar { width: 100%; height: 18px; border-radius: 2px; }
+    .color-strip-name { font-size: 9px; letter-spacing: 0.02em; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .color-strip[data-scheme=light] .color-strip-name { color: #555; }
+    .color-strip[data-scheme=dark] .color-strip-name { color: #bbb; }
+
+    .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .color-cell { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 7px; }
+    .color-cell.changed { border-color: var(--text); }
+    .color-cell-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .color-cell-name { font-size: 12px; font-weight: 600; text-transform: capitalize; }
+    .color-cell-count { font-size: 10px; color: var(--muted); }
+    .color-cell input[type=color] { width: 100%; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 2px; background: none; cursor: pointer; }
+    .color-cell input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+    .color-cell input[type=color]::-webkit-color-swatch { border: none; border-radius: 1px; }
+    .color-cell input[type=text] { width: 100%; padding: 5px 7px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px !important; text-transform: lowercase; border: 1px solid var(--border); border-radius: 2px; background: var(--bg); color: var(--text); }
+    .color-cell input[type=text].invalid { border-color: #c0392b; }
+    .color-cell-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 16px; }
+    .color-cell-state { font-size: 10px; color: var(--muted); }
+    .color-cell-reset { font-size: 10px; background: none; border: none; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 0; }
+    .color-cell-reset:hover { color: var(--text); }
+    .color-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+    .color-repaint { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+    .color-repaint input { width: auto; }
   </style>
 </head>
 <body>
@@ -237,6 +276,7 @@
       <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
       <button class="tab" data-tab="adapters">Adapters <span class="tab-count" id="count-adapters">0</span></button>
+      <button class="tab" data-tab="colors">Colours <span class="tab-count" id="count-colors">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -349,11 +389,51 @@
       <p class="card-meta" style="margin:0 0 12px;">Registered in <code>worker/lib/adapters.mjs</code>. The cron runs them all every four hours; “Run now” runs one immediately.</p>
       <div id="adapter-list"></div>
     </div>
+
+    <!-- The archdiocese colours, together.
+         Six hues picked one at a time in code and never seen next to each
+         other; the map shows all of them at once, which is the only place the
+         question "can I tell these apart" is actually asked. So: edit them on
+         one screen, against both backgrounds, at the two sizes they are drawn
+         at — a 10px map dot and a card's accent bar.
+
+         public/shared/jurisdiction-colors.js stays the default table. Saving
+         writes an override row; Reset deletes it and the file's colour comes
+         back. -->
+    <div id="section-colors" class="section">
+      <h3>Archdiocese colours</h3>
+      <p class="card-meta" style="margin:0 0 12px;">
+        Map dots and labels always draw these. A parish card draws the parish's own colour,
+        which starts as its jurisdiction's — tick <em>repaint</em> below to carry a change
+        through to the cards that have not been given a colour of their own.
+      </p>
+
+      <div class="color-compare">
+        <div class="color-strip" id="color-strip-light" data-scheme="light"></div>
+        <div class="color-strip" id="color-strip-dark" data-scheme="dark"></div>
+      </div>
+
+      <div id="color-grid" class="color-grid"></div>
+
+      <div class="color-actions">
+        <label class="color-repaint">
+          <input type="checkbox" id="color-repaint" checked>
+          <span>Repaint parish cards still using the old colour</span>
+        </label>
+        <div class="btn-row" style="margin:0;">
+          <button type="button" class="btn btn-primary" id="color-save">Save colours</button>
+          <button type="button" class="btn btn-outline" id="color-revert">Discard changes</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- The reserved-link list, and the locations it is built from. Same files
        the Worker bundles, so the warning shown here and the 409 returned on
        save cannot disagree about what is available. -->
+  <!-- The colour table itself, so this page edits the same defaults the site
+       draws rather than a second list that would drift from them. -->
+  <script src="/shared/jurisdiction-colors.js"></script>
   <script src="/shared/locations.js"></script>
   <script src="/shared/services.js"></script>
   <script src="/shared/slugs.js"></script>
@@ -405,7 +485,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadSchedules(), loadAdapters()]);
+      await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors()]);
       renderAll();
     }
 
@@ -416,7 +496,218 @@
       renderParishSelects();
       renderAdapterList();
       renderInferSelect();
+      renderColors();
     }
+
+    // ── Archdiocese colours ──
+    //
+    // Three values per jurisdiction and they are not the same thing:
+    //   default   what public/shared/jurisdiction-colors.js says (the file)
+    //   override  what somebody saved here, if anything (the row)
+    //   draft     what is on screen right now, unsaved
+    // Effective is override ?? default, and "Reset" means delete the row, not
+    // write the default into it — so a later change to the file reaches a
+    // jurisdiction nobody has overridden.
+
+    const JURISDICTIONS = ['antiochian', 'greek', 'serbian', 'russian',
+      'romanian', 'macedonian', 'other'];
+    let jurisOverrides = {};   // jurisdiction -> hex, only where one is saved
+    let jurisDraft = {};       // jurisdiction -> hex, what is on screen
+    const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+    const jurisDefault = j => (window.AGORA_JURISDICTION_COLORS || {})[j] || '#888888';
+    const jurisEffective = j => jurisOverrides[j] || jurisDefault(j);
+
+    async function loadJurisColors() {
+      jurisOverrides = await fetch('/api/jurisdiction-colors')
+        .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+      jurisDraft = Object.fromEntries(JURISDICTIONS.map(j => [j, jurisEffective(j)]));
+    }
+
+    // How many parish cards a change would actually move. A parish given its
+    // own colour is not counted, which is the same rule the repaint applies —
+    // so the number on screen is the number that will change.
+    function followingCount(j) {
+      const cur = jurisEffective(j).toLowerCase();
+      return parishes.filter(p => p.id !== '_unassigned' && p.jurisdiction === j
+        && String(p.color || '').toLowerCase() === cur).length;
+    }
+
+    function renderColors() {
+      renderColorCount();
+
+      for (const id of ['color-strip-light', 'color-strip-dark']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.innerHTML = JURISDICTIONS.map(j => {
+          const hex = HEX_RE.test(jurisDraft[j] || '') ? jurisDraft[j] : jurisEffective(j);
+          return `<div class="color-strip-cell">
+            <span class="color-strip-dot" style="background:${esc(hex)}"></span>
+            <span class="color-strip-bar" style="background:${esc(hex)}"></span>
+            <span class="color-strip-name">${esc(j)}</span>
+          </div>`;
+        }).join('');
+      }
+
+      const grid = document.getElementById('color-grid');
+      if (!grid) return;
+      grid.innerHTML = JURISDICTIONS.map(j => {
+        const draft = jurisDraft[j] || jurisEffective(j);
+        const valid = HEX_RE.test(draft);
+        const isChanged = valid && draft.toLowerCase() !== jurisEffective(j).toLowerCase();
+        const overridden = !!jurisOverrides[j];
+        const n = followingCount(j);
+        const state = isChanged ? `was ${esc(jurisEffective(j))}`
+          : overridden ? `file says ${esc(jurisDefault(j))}`
+            : 'default';
+        return `
+        <div class="color-cell${isChanged ? ' changed' : ''}">
+          <div class="color-cell-head">
+            <span class="color-cell-name">${esc(j)}</span>
+            <span class="color-cell-count">${n} parish${n === 1 ? '' : 'es'}</span>
+          </div>
+          <input type="color" value="${esc(valid ? expandHex(draft) : expandHex(jurisEffective(j)))}"
+                 oninput="setJurisColor('${j}', this.value)">
+          <input type="text" class="${valid ? '' : 'invalid'}" value="${esc(draft)}" spellcheck="false"
+                 oninput="setJurisColor('${j}', this.value, true)">
+          <div class="color-cell-foot">
+            <span class="color-cell-state">${state}</span>
+            ${overridden || isChanged ? `<button type="button" class="color-cell-reset" onclick="resetJurisColor('${j}')">Reset</button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // <input type=color> only accepts #rrggbb, so a three-digit hex typed into
+    // the text field has to be expanded before it is handed over — otherwise
+    // the swatch silently reverts to black and takes the draft with it.
+    function expandHex(hex) {
+      const h = String(hex || '').trim();
+      if (/^#[0-9a-fA-F]{3}$/.test(h)) return '#' + h.slice(1).split('').map(c => c + c).join('');
+      return HEX_RE.test(h) ? h : '#888888';
+    }
+
+    // Nothing here re-renders the grid, in either direction.
+    //
+    // `oninput` on a colour well fires continuously while the picker is open,
+    // and rebuilding the grid would replace the very input the picker is
+    // attached to — the dialog closes mid-drag and the drag is lost. The text
+    // field has the same problem for a different reason: replacing it moves
+    // the caret to the end on every keystroke. So each edit updates the strips
+    // and patches its own cell, and the full render is left to load and save.
+    window.setJurisColor = function (j, value, fromText) {
+      jurisDraft[j] = String(value || '').trim().toLowerCase();
+      renderColorStripsOnly();
+      patchColorCell(j, fromText);
+      renderColorCount();
+    };
+
+    function patchColorCell(j, fromText) {
+      const cell = document.querySelectorAll('.color-cell')[JURISDICTIONS.indexOf(j)];
+      if (!cell) return;
+      const draft = jurisDraft[j];
+      const valid = HEX_RE.test(draft);
+      const isChanged = valid && draft !== jurisEffective(j).toLowerCase();
+      cell.classList.toggle('changed', isChanged);
+      cell.querySelector('input[type=text]').classList.toggle('invalid', !valid);
+      // Mirror the edit into the OTHER control, never into the one being used.
+      if (fromText && valid) cell.querySelector('input[type=color]').value = expandHex(draft);
+      if (!fromText) cell.querySelector('input[type=text]').value = draft;
+      cell.querySelector('.color-cell-state').textContent = isChanged
+        ? `was ${jurisEffective(j)}`
+        : jurisOverrides[j] ? `file says ${jurisDefault(j)}` : 'default';
+      const foot = cell.querySelector('.color-cell-foot');
+      const hasReset = !!foot.querySelector('.color-cell-reset');
+      if ((isChanged || jurisOverrides[j]) && !hasReset) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'color-cell-reset'; b.textContent = 'Reset';
+        b.addEventListener('click', () => resetJurisColor(j));
+        foot.appendChild(b);
+      } else if (!isChanged && !jurisOverrides[j] && hasReset) {
+        foot.querySelector('.color-cell-reset').remove();
+      }
+    }
+
+    function renderColorCount() {
+      const changed = JURISDICTIONS.filter(j => HEX_RE.test(jurisDraft[j] || '')
+        && jurisDraft[j].toLowerCase() !== jurisEffective(j).toLowerCase());
+      document.getElementById('count-colors').textContent = String(changed.length);
+    }
+
+    function renderColorStripsOnly() {
+      for (const id of ['color-strip-light', 'color-strip-dark']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        [...el.children].forEach((cell, i) => {
+          const j = JURISDICTIONS[i];
+          const hex = HEX_RE.test(jurisDraft[j] || '') ? jurisDraft[j] : jurisEffective(j);
+          cell.querySelector('.color-strip-dot').style.background = hex;
+          cell.querySelector('.color-strip-bar').style.background = hex;
+        });
+      }
+    }
+
+    // Reset drafts the FILE's colour and marks the override for deletion on
+    // save, rather than deleting it now: nothing on this tab changes anything
+    // until Save, including undoing.
+    window.resetJurisColor = function (j) {
+      jurisDraft[j] = jurisDefault(j);
+      renderColors();
+    };
+
+    document.getElementById('color-revert').addEventListener('click', () => {
+      jurisDraft = Object.fromEntries(JURISDICTIONS.map(j => [j, jurisEffective(j)]));
+      renderColors();
+    });
+
+    document.getElementById('color-save').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const bad = JURISDICTIONS.filter(j => !HEX_RE.test(jurisDraft[j] || ''));
+      if (bad.length) { toast(`Not a colour: ${bad.join(', ')}`, 'error'); return; }
+
+      // Only what actually changed travels. Two people with this tab open
+      // would otherwise each save all seven and the second would undo the
+      // first's change to a jurisdiction they never touched.
+      const changed = JURISDICTIONS.filter(j => jurisDraft[j].toLowerCase() !== jurisEffective(j).toLowerCase());
+      if (!changed.length) { toast('Nothing changed'); return; }
+
+      // The old colour has to be read before the save, because the repaint
+      // asks "which parishes still carry THIS" and after the save it is gone.
+      const was = Object.fromEntries(changed.map(j => [j, jurisEffective(j)]));
+      const colors = Object.fromEntries(changed.map(j => [
+        // Back to the file's colour = no row at all, so a later change to the
+        // file reaches this jurisdiction again.
+        j, jurisDraft[j].toLowerCase() === jurisDefault(j).toLowerCase() ? null : jurisDraft[j],
+      ]));
+
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = 'Saving…';
+      try {
+        const res = await fetch('/api/admin/jurisdiction-colors', {
+          method: 'PATCH', headers, body: JSON.stringify({ colors }),
+        });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        jurisOverrides = await res.json();
+
+        let repainted = 0;
+        if (document.getElementById('color-repaint').checked) {
+          for (const j of changed) {
+            const r = await fetch('/api/admin/parishes/repaint', {
+              method: 'POST', headers,
+              body: JSON.stringify({ jurisdiction: j, from: was[j], to: jurisEffective(j) }),
+            });
+            if (r.ok) repainted += (await r.json()).repainted || 0;
+          }
+        }
+        await loadAll();
+        toast(repainted
+          ? `Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}, ${repainted} parish${repainted === 1 ? '' : 'es'} repainted`
+          : `Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}`);
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    });
 
     // ── inferred rules ──
 

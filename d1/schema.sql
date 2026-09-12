@@ -2,7 +2,8 @@
 --
 -- Replaces the 29 sequential user_version migrations in db.js with the end
 -- state they arrived at, minus everything the WhatsApp ingestor and the AI
--- vision pipeline needed. Seven tables survive.
+-- vision pipeline needed. Seven tables survive, and an eighth has since been
+-- added for the jurisdiction colour overrides.
 --
 -- Apply with:
 --   wrangler d1 execute agora --remote --file=d1/schema.sql
@@ -55,10 +56,10 @@ CREATE TABLE parishes (
   payment_url      TEXT,
   gala_url         TEXT,
 
-  -- Provenance: where this parish's details came from, and when they were last
-  -- checked. verified_at tracks the CHECK, not the row's creation — a parish
-  -- added years ago but re-checked last month is fresh; one added last week off
-  -- a stale website is not. NULL = never verified since import.
+  -- Provenance: where this parish's details came from, when WE last read that
+  -- source, and — separately — whether a person has ever confirmed the row.
+  -- The first three are the same trio `schedules` carries, and are shown the
+  -- same way: see info_checked_at below.
   info_source_type TEXT CHECK(info_source_type IN ('website','person','import')),
   info_source_ref  TEXT,   -- the URL, or a person as "First L."
 
@@ -74,6 +75,29 @@ CREATE TABLE parishes (
   -- legible at a glance and a stale source findable in one query.
   info_source_name TEXT,
 
+  -- When WE last read that source. Not when the source last changed, and not a
+  -- claim that the details are right — `schedules.source_checked_at` carries the
+  -- same reasoning at length, and this is deliberately the same field for the
+  -- same reason. A parish's address is a claim about the present that nothing
+  -- in the row expires: an address entered in 2019 renders exactly as
+  -- confidently as one read this morning unless something says how old it is.
+  -- This is that something, and the sheet renders it as "Updated 3 months ago
+  -- · Greek Archdiocese" under the parish's details.
+  --
+  -- Every writer stamps it: a directory import writes the moment it read the
+  -- directory, and an admin editing the source in the parish sheet writes the
+  -- date they looked.
+  info_checked_at TEXT,
+
+  -- When a PERSON confirmed this row against the place itself — not a scrape,
+  -- however recent. It is deliberately NOT info_checked_at: every import
+  -- stamps that one, so a guard on it would freeze every row after the first
+  -- run. This is the guard scripts/parish-import.mjs uses to refuse to move a
+  -- pin somebody has stood in front of, which is what stopped a re-geocode
+  -- shifting a confirmed parish 784m (docs/parish-ingestion.md).
+  --
+  -- Nothing renders it. It is a fact about the row, not about the source, and
+  -- the provenance line above speaks only for the source.
   info_verified_at TEXT
 );
 
@@ -273,6 +297,34 @@ CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);
 -- silently returning zero events, which errors nowhere. Read by
 -- BaseAdapter.healthCheck() behind GET /api/adapters/status.
 -- ─────────────────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────
+-- jurisdiction_colors — what /admin has changed about the colour table
+--
+-- public/shared/jurisdiction-colors.js holds the colours, is read by the app,
+-- the map, the seed and this repo's tests, and stays the one place a colour is
+-- WRITTEN DOWN. This table is not a second copy of it: it holds only the rows
+-- somebody deliberately changed, and absence means the file's value — the same
+-- arrangement adapter_settings has, for the same reason. A jurisdiction's hue
+-- is a judgement made by looking at six of them side by side against a map,
+-- and a deploy per adjustment is how that never gets done.
+--
+-- `color` is validated as #rgb or #rrggbb on the way in AND on the way out:
+-- the value is painted into inline styles and into a MapLibre paint
+-- expression, so a malformed row falls back to the file rather than reaching
+-- either. See setJurisdictionColors() in the shared file.
+--
+-- Changing a jurisdiction's colour here does NOT rewrite parishes.color, which
+-- is a per-parish identity mark that a jurisdiction-wide choice has no business
+-- overwriting — the admin panel offers that as a separate, counted action, and
+-- only for rows still carrying the colour being replaced.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE jurisdiction_colors (
+  jurisdiction TEXT PRIMARY KEY CHECK(jurisdiction IN
+                 ('antiochian','greek','serbian','russian','romanian','macedonian','other')),
+  color        TEXT NOT NULL,
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
 -- Per-adapter scrape control.
 --
 -- Cloudflare's Cron Trigger is fixed at deploy time and cannot be changed by

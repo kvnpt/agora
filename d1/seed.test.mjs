@@ -53,6 +53,25 @@ for (const path of SEEDS) {
   });
 }
 
+// "Updated 3 months ago" is a claim, and the seed is only allowed to make it
+// where somebody actually read the source. Two rows say when; the rest say
+// nothing, which renders as the source's name alone rather than as a date
+// nobody can point at.
+test('a seeded parish dates its source only where the date is real', () => {
+  const db = fresh();
+  db.exec(fs.readFileSync('d1/seed-parishes.sql', 'utf8'));
+  const dated = db.prepare(
+    'SELECT id, info_checked_at FROM parishes WHERE info_checked_at IS NOT NULL ORDER BY id').all();
+  assert.deepStrictEqual(dated.map((r) => r.id),
+    ['greek-gopssc-buderim', 'greek-stparaskevi-blacktown']);
+  for (const r of dated) {
+    assert.ok(!Number.isNaN(Date.parse(r.info_checked_at)), `${r.id}: ${r.info_checked_at}`);
+  }
+  // And the seed never claims a person has confirmed a row, because none has.
+  assert.equal(db.prepare(
+    'SELECT COUNT(*) n FROM parishes WHERE info_verified_at IS NOT NULL').get().n, 0);
+});
+
 test('a rule that differs only by week_of_month is not treated as a duplicate', () => {
   // This is why the guard is a WHERE NOT EXISTS and not a unique index. A
   // parish can genuinely hold "1st Saturday 9am Liturgy" and "3rd Saturday 9am

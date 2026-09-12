@@ -31,17 +31,54 @@
   // it. Same answer for a value the table has never heard of.
   const JURISDICTION_COLOR_FALLBACK = '#888888';
 
+  // What /admin has changed, layered over the table above at runtime.
+  //
+  // The table stays the DEFAULT and the file stays the one place a colour is
+  // written down in code — this is not a second copy of it. It is the same
+  // arrangement adapter_settings has: absence means the default, and a row
+  // exists only where somebody deliberately chose otherwise. The alternative
+  // was a deploy per hue, which is how six colours nobody has seen side by
+  // side stay unexamined for a year.
+  //
+  // Overrides arrive with /api/bundle, so they are applied once at load and
+  // every reader — cards, map dots, chips, the parish sheet — picks them up
+  // through jurisdictionColor() below without knowing they exist.
+  const OVERRIDES = {};
+
+  const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+  /**
+   * Replace the override layer wholesale.
+   *
+   * Validated rather than trusted: these values are painted straight into
+   * inline styles and a map paint expression, so a row holding "red; }" or an
+   * empty string has to fall back to the default instead of reaching either.
+   * A key the table has never heard of is kept — the schema's CHECK is the
+   * authority on what a jurisdiction is, not this file.
+   */
+  function setJurisdictionColors(next) {
+    for (const k of Object.keys(OVERRIDES)) delete OVERRIDES[k];
+    for (const [k, v] of Object.entries(next || {})) {
+      if (typeof v === 'string' && HEX.test(v.trim())) OVERRIDES[k] = v.trim();
+    }
+    return OVERRIDES;
+  }
+
   function jurisdictionColor(j) {
-    return JURISDICTION_COLORS[j] || JURISDICTION_COLOR_FALLBACK;
+    return OVERRIDES[j] || JURISDICTION_COLORS[j] || JURISDICTION_COLOR_FALLBACK;
   }
 
   // CommonJS gets exports; a browser classic script gets globals. Never both:
   // the Worker bundles this file too (esbuild resolves the CJS branch), and a
   // module that writes to globalThis on the way past is a surprise there.
-  const api = { JURISDICTION_COLORS, JURISDICTION_COLOR_FALLBACK, jurisdictionColor };
+  const api = {
+    JURISDICTION_COLORS, JURISDICTION_COLOR_FALLBACK, jurisdictionColor,
+    setJurisdictionColors,
+  };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) {
     root.AGORA_JURISDICTION_COLORS = JURISDICTION_COLORS;
     root.agoraJurisdictionColor = jurisdictionColor;
+    root.agoraSetJurisdictionColors = setJurisdictionColors;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -161,7 +161,7 @@ const ROW = {
   address: '1 Example St, Darwin NT 0800', lat: -12.46, lng: 130.84,
   timezone: 'Australia/Darwin', feast_day: '6th December',
   info_source_type: 'import', info_source_ref: 'https://example.org/',
-  info_source_name: 'Example Directory',
+  info_source_name: 'Example Directory', info_checked_at: '2026-09-12T10:42:12.084Z',
 };
 
 test('the upsert refuses to overwrite a pin somebody has checked', () => {
@@ -213,6 +213,22 @@ test('the cap never reduces a dedication to a bare qualifier', () => {
   // "All Saints" is a dedication that is nothing but qualifier and honorific,
   // and the rule must not strip it to nothing.
   assert.equal(parishId('greek', 'All Saints', 'Belmore'), 'greek-allsaints-belmore');
+});
+
+// The two dates are one keystroke apart and mean opposite things, so the
+// difference is pinned here rather than left to whoever reads the column names
+// next: one is written by every scrape, the other by no scrape ever.
+test('a scrape stamps when it READ the source, never that a person checked it', () => {
+  const out = buildUpsert([ROW]);
+  assert.match(out, /'2026-09-12T10:42:12\.084Z'/);
+  assert.match(out, /info_checked_at/);
+  // ...and a re-run must move it. A second read that left the date alone would
+  // keep telling readers the row is as old as the first import.
+  assert.match(out, /info_checked_at=excluded\.info_checked_at/);
+  // The guard is the other column, and stays untouched and unstamped.
+  assert.match(out, /info_verified_at\) VALUES/);
+  assert.match(out, /NULL\)/);
+  assert.doesNotMatch(out, /info_verified_at=excluded/);
 });
 
 test('provenance is refreshed as a pair, and human work still is not', () => {

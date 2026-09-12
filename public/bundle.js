@@ -44,6 +44,14 @@ window.agoraBundle = (function () {
       const res = await fetch(`/api/bundle?${params}`, opts.fresh ? { cache: 'no-store' } : {});
       if (!res.ok) throw new Error(`bundle ${res.status}`);
       raw = await res.json();
+      // Jurisdiction colour overrides ride along with the rules, and are
+      // applied here rather than by a caller: every reader of a colour — cards,
+      // map dots, chips, the parish sheet — runs during the render this load
+      // triggers, so a caller that forgot the call would draw the old hue and
+      // nothing would say why.
+      if (window.agoraSetJurisdictionColors) {
+        window.agoraSetJurisdictionColors(raw.jurisdiction_colors);
+      }
       loadedAt = Date.now();
       return raw;
     })();

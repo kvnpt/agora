@@ -142,6 +142,14 @@ The upsert is guarded by `WHERE parishes.info_verified_at IS NULL`, so a re-run
 refreshes what nobody has checked and cannot overwrite what somebody has. Do not
 stamp `info_verified_at` yourself — a scrape has not verified anything.
 
+**Do stamp `info_checked_at`**, with the moment the scrape read the source —
+the `scraped_at` your first pass wrote into its JSON, not the moment the SQL
+was built. It is the date the parish sheet renders as "Updated 3 months ago",
+so a row without one shows a source and no idea how old it is. The two columns
+look alike and are not: one says a person confirmed the row, the other says
+when anyone last looked at the source, and only the second is a scrape's to
+write.
+
 Do not make `seeds/parishes.js` authoritative. It is a dev fixture; adding
 deletes or a sync would destroy rows it never held. See CLAUDE.md.
 
@@ -172,10 +180,13 @@ Verified while writing this, so it should still hold:
 ## Done means
 
 - Every row has a pin, an IANA timezone derived from its geocoded location, and
-  a recorded source — `info_source_type`, `info_source_ref` **and**
-  `info_source_name`. The name is what the parish sheet actually shows, so a row
-  without one is a row whose provenance nobody can see. Name the *source*, not
-  the parish, so a jurisdiction's whole import shares one label.
+  a recorded source — `info_source_type`, `info_source_ref`, `info_source_name`
+  **and** `info_checked_at`. The name and the date are what the parish sheet
+  actually shows ("Updated 3 months ago · Serbian Metropolitanate"), so a row
+  missing either is a row whose provenance nobody can see. Name the *source*,
+  not the parish, so a jurisdiction's whole import shares one label — and use
+  the short form of that name, because it sits in a line of 11px muted text
+  beside the same source's service times.
 - `reconcile`'s pin list has been read by a person; nothing ambiguous was
   resolved automatically.
 - Parishes that could not be placed are listed with the reason, not guessed.

@@ -43,7 +43,7 @@ const sourceLabel = (ref) => (SOURCE_NAMES.find(([re]) => re.test(ref || ''))?.[
   || (/^https?:/.test(ref || '') ? 'Parish website' : null);
 
 // The parish row the database wants, from the row the scrape produced.
-function toRow(p) {
+function toRow(p, checkedAt) {
   // Existing rows read "<dedication>, <suburb>", and reconcile recovers the
   // suburb from that comma on the next import. Keep the shape.
   const dedication = p.name.replace(/\s*,\s*$/, '');
@@ -74,6 +74,10 @@ function toRow(p) {
     info_source_type: fromOwnSite ? 'website' : 'import',
     info_source_ref: p.address_source || DIRECTORY,
     info_source_name: sourceName,
+    // When the sources were READ — the scrape's own timestamp, carried through
+    // the geocoding pass. One run read the diocese, the world directory and
+    // seventeen parish sites, so they share one date, which is true.
+    info_checked_at: checkedAt || null,
     // carried through for the report, stripped before the SQL
     _confidence: p.confidence,
     _suburb: p.suburb,
@@ -87,7 +91,7 @@ function toRow(p) {
 const strip = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_')));
 
 export async function build(geocoded, existing, { includeSuburb = false } = {}) {
-  const rows = geocoded.parishes.map(toRow);
+  const rows = geocoded.parishes.map((p) => toRow(p, geocoded.scraped_at));
 
   const placed = rows.filter((r) => r.lat != null && r.lng != null);
   const unplaced = rows.filter((r) => r.lat == null || r.lng == null);

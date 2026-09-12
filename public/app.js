@@ -4113,23 +4113,11 @@ function renderParishSheetContent(parishId, opts = {}) {
       </button>`
     : '';
 
-  // Where these details came from. The name is the readable half and the ref is
-  // the checkable half, so the name links to the ref when the ref is a URL —
-  // some are not ("seeds/parishes.js", a person's initials), and those render as
-  // plain text rather than a dead link.
-  //
-  // "unverified" is shown rather than implied. A scraped pin and a pin somebody
-  // has stood in front of should not look the same, and info_verified_at is the
-  // only thing that tells them apart.
-  const srcName = parish.info_source_name;
-  const srcRef = parish.info_source_ref || '';
-  const srcHtml = srcName
-    ? `<div class="ps-source">Info from ${/^https?:/.test(srcRef)
-      ? `<a href="${esc(srcRef)}" target="_blank" rel="noopener">${esc(srcName)}</a>`
-      : esc(srcName)}${parish.info_verified_at
-      ? ` · checked ${esc(String(parish.info_verified_at).slice(0, 10))}`
-      : ' · unverified'}</div>`
-    : '';
+  // Where these details came from and how old they are, in the same words the
+  // service-times line below uses — one source line, rendered once, so the two
+  // halves of a parish sheet stop describing their provenance differently.
+  const srcHtml = sourceLineHTML(
+    parish.info_source_name, parish.info_source_ref, parish.info_checked_at, 'ps-source');
 
   const dirBtn = parish.lat && parish.lng
     ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
@@ -4207,6 +4195,11 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
         <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
         <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
+        <div class="edit-row">
+          <label>Source checked</label>
+          <input type="date" id="pse-srcchecked-${pid}" value="${esc(String(parish.info_checked_at || '').slice(0, 10))}">
+          <div class="edit-row-hint">The day somebody last read that source. It is what the sheet shows as "Updated 3 months ago" — not a claim the details are still right.</div>
+        </div>
         <div class="edit-form-actions">
           <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
           <button class="ps-btn ps-btn-ghost" type="button" onclick="toggleParishEdit('${pid}')">Cancel</button>
@@ -6247,6 +6240,9 @@ window.saveParish = async function(id) {
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
     info_source_name: document.getElementById(`pse-srcname-${pid}`).value || null,
     info_source_ref: document.getElementById(`pse-srcref-${pid}`).value || null,
+    info_checked_at: checkedAtFromInput(
+      document.getElementById(`pse-srcchecked-${pid}`).value,
+      (state.parishes.find(p => p.id === pid) || {}).info_checked_at),
   };
   const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
     method: 'PATCH',
@@ -6264,6 +6260,23 @@ window.saveParish = async function(id) {
     alert(err.error || 'Save failed');
   }
 };
+
+/**
+ * A date the admin picked, back into the ISO instant the column stores.
+ *
+ * The stored value is a full timestamp — a scrape knows the second it read a
+ * page — while a person editing the row knows a day. So an untouched field
+ * keeps the timestamp it came from rather than rounding it to midnight and
+ * throwing away what the scrape recorded; only a day the admin actually
+ * changed is written, and it is written as UTC midnight because a provenance
+ * date has no time of day to be wrong about.
+ */
+function checkedAtFromInput(dayValue, current) {
+  if (!dayValue) return null;
+  if (current && String(current).slice(0, 10) === dayValue) return current;
+  return `${dayValue}T00:00:00Z`;
+}
+window.checkedAtFromInput = checkedAtFromInput;
 
 window.deleteParish = async function(id) {
   const parish = state.parishes.find(p => p.id === id);
@@ -7092,21 +7105,40 @@ function scheduleSourceHTML(items) {
       bySource.set(key, { name: s.source_name, ref: s.source_ref || '', checked: s.source_checked_at || '' });
     }
   }
-  if (!bySource.size) return '';
+  return [...bySource.values()]
+    .map(({ name, ref, checked }) => sourceLineHTML(name, ref, checked, 'sched-source'))
+    .join('');
+}
+
+/**
+ * "Updated 3 months ago · Antiochian Archdiocese ↗" — one provenance line.
+ *
+ * Shared, because a parish's details and its service times are the same kind
+ * of claim and were being rendered as two different kinds. The service times
+ * said how old they were; the details said "unverified", which reads as a
+ * warning about the data and was in fact a statement about a column no scrape
+ * ever writes (see parishes.info_verified_at in d1/schema.sql). Both lines now
+ * answer the one question a reader is asking — when did anyone last look —
+ * in the one form of words.
+ *
+ * No date renders no date: the name alone, never "unverified". We do not know
+ * when the source was read, and saying so as a verdict on the parish would be
+ * the same mistake in quieter language.
+ */
+function sourceLineHTML(name, ref, checked, cls) {
+  if (!name) return '';
+  const age = relativeAge(checked);
   // A span, not an img: the icon is painted by a CSS mask over `currentColor`
   // so it follows the line's muted colour and its hover state. An <img> would
   // paint its own black pixels over the mask and stay black in dark mode.
-  const icon = '<span class="sched-source-icon" aria-hidden="true"></span>';
-  return [...bySource.values()].map(({ name, ref, checked }) => {
-    const age = relativeAge(checked);
-    // The name is the readable half and the ref the checkable half, so the name
-    // is what links — and only when the ref is actually a URL, since a source
-    // can be a person or a file path and those must not render as dead links.
-    const label = /^https?:/.test(ref)
-      ? `<a href="${esc(ref)}" target="_blank" rel="noopener">${esc(name)}${icon}</a>`
-      : esc(name);
-    return `<div class="sched-source">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
-  }).join('');
+  const icon = '<span class="source-link-icon" aria-hidden="true"></span>';
+  // The name is the readable half and the ref the checkable half, so the name
+  // is what links — and only when the ref is actually a URL, since a source
+  // can be a person or a file path and those must not render as dead links.
+  const label = /^https?:/.test(ref || '')
+    ? `<a href="${esc(ref)}" target="_blank" rel="noopener">${esc(name)}${icon}</a>`
+    : esc(name);
+  return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
 }
 
 function formatTime12(hhmm) {

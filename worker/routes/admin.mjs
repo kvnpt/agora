@@ -14,6 +14,7 @@ import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
+import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
@@ -300,6 +301,77 @@ export function registerAdminRoutes(router) {
     });
   }));
 
+  // ── jurisdiction colours ──
+  //
+  // Six colours chosen one at a time, in code, that had never been looked at
+  // together. The admin panel shows them side by side; these two endpoints are
+  // what lets an adjustment be a save rather than a deploy.
+
+  // PATCH /api/admin/jurisdiction-colors
+  //
+  // Body { colors: { greek: '#00508f', russian: null, ... } }. A hex sets an
+  // override; null clears one, and clearing is how a jurisdiction goes back to
+  // the colour in public/shared/jurisdiction-colors.js — that file stays the
+  // default table and this endpoint never writes to it.
+  //
+  // PATCH and not PUT, and the distinction is the point: only named keys are
+  // written. Two admins with the page open would each send the six colours
+  // they last loaded, and a whole-table replace would let the second silently
+  // undo the first's change to a jurisdiction they never touched.
+  router.patch('/api/admin/jurisdiction-colors', guarded(async ({ env, request }) => {
+    const b = await readJson(request);
+    const colors = b && b.colors;
+    if (!colors || typeof colors !== 'object') return json({ error: 'colors is required' }, 400);
+
+    const stmts = [];
+    for (const [jurisdiction, value] of Object.entries(colors)) {
+      if (!JURISDICTIONS.has(jurisdiction)) {
+        return json({ error: `Not a jurisdiction: ${jurisdiction}` }, 400);
+      }
+      if (value === null || value === '') {
+        stmts.push(env.DB.prepare('DELETE FROM jurisdiction_colors WHERE jurisdiction = ?')
+          .bind(jurisdiction));
+        continue;
+      }
+      const hex = String(value).trim();
+      if (!HEX.test(hex)) return json({ error: `Not a colour: ${value}`, field: jurisdiction }, 400);
+      stmts.push(env.DB.prepare(
+        `INSERT INTO jurisdiction_colors (jurisdiction, color, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(jurisdiction) DO UPDATE SET color = excluded.color, updated_at = excluded.updated_at`
+      ).bind(jurisdiction, hex, new Date().toISOString()));
+    }
+    if (!stmts.length) return json({ error: 'No colours to write' }, 400);
+    await env.DB.batch(stmts);
+    return json(await jurisdictionColorOverrides(env.DB));
+  }));
+
+  // POST /api/admin/parishes/repaint
+  //
+  // A jurisdiction's colour and a parish's own colour are different things —
+  // the map draws the first, a card draws the second — so changing one does
+  // not change the other, and migration 004 is the only reason they currently
+  // agree for almost every row.
+  //
+  // This is that migration as an explicit, counted action: only rows still
+  // carrying the colour being replaced are repainted, so a parish somebody
+  // gave its own hue keeps it. `from` is what the admin panel just had on
+  // screen, which is why it is a parameter rather than something re-derived
+  // here: the answer to "what am I replacing" belongs to the page that showed
+  // it, and a mismatch repaints nothing rather than the wrong rows.
+  router.post('/api/admin/parishes/repaint', guarded(async ({ env, request }) => {
+    const b = await readJson(request);
+    const { jurisdiction, from, to } = b || {};
+    if (!JURISDICTIONS.has(jurisdiction)) return json({ error: 'jurisdiction is required' }, 400);
+    if (!HEX.test(String(from || '')) || !HEX.test(String(to || ''))) {
+      return json({ error: 'from and to must both be colours' }, 400);
+    }
+    const r = await env.DB.prepare(
+      `UPDATE parishes SET color = ?
+       WHERE jurisdiction = ? AND id != '_unassigned' AND lower(color) = lower(?)`
+    ).bind(to, jurisdiction, from).run();
+    return json({ jurisdiction, from, to, repainted: r.meta ? r.meta.changes : 0 });
+  }));
+
   // ── parishes ──
 
   router.post('/api/admin/parishes', guarded(async ({ env, request }) => {
@@ -323,7 +395,7 @@ export function registerAdminRoutes(router) {
       env.DB.prepare(
         `INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone,
           website, email, phone, acronym, languages, live_url, donation_url, raffle_url, payment_url, gala_url,
-          info_source_type, info_source_ref, info_source_name, info_verified_at)
+          info_source_type, info_source_ref, info_source_name, info_checked_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         id, name, b.full_name || null, jurisdiction, b.address || null, lat, lng,
@@ -335,7 +407,11 @@ export function registerAdminRoutes(router) {
         b.live_url || null, b.donation_url || null, b.raffle_url || null,
         b.payment_url || null, b.gala_url || null,
         b.info_source_type || null, b.info_source_ref || null, b.info_source_name || null,
-        b.info_verified_at || new Date().toISOString(),
+        // Adding a parish by hand IS reading its source, so the row is stamped
+        // now unless the caller says when they actually looked. It stamps the
+        // CHECK, never info_verified_at — nobody has stood in front of the
+        // place because somebody typed its address into a form.
+        b.info_checked_at || new Date().toISOString(),
       ),
       // A generic inactive rule so the parish shows up in the schedules list.
       env.DB.prepare(
@@ -351,7 +427,8 @@ export function registerAdminRoutes(router) {
     'name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone',
     'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url',
     'donation_url', 'raffle_url', 'payment_url', 'gala_url', 'timezone',
-    'info_source_type', 'info_source_ref', 'info_source_name', 'info_verified_at',
+    'info_source_type', 'info_source_ref', 'info_source_name', 'info_checked_at',
+    'info_verified_at',
   ];
 
   router.patch('/api/admin/parishes/:id', guarded(async ({ env, params, request }) => {

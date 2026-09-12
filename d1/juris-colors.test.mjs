@@ -17,9 +17,11 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 
+import { JURISDICTIONS, HEX, jurisdictionColorOverrides } from '../worker/lib/juris-colors.mjs';
+
 const require = createRequire(import.meta.url);
-const { JURISDICTION_COLORS, JURISDICTION_COLOR_FALLBACK, jurisdictionColor } =
-  require('../public/shared/jurisdiction-colors.js');
+const { JURISDICTION_COLORS, JURISDICTION_COLOR_FALLBACK, jurisdictionColor,
+  setJurisdictionColors } = require('../public/shared/jurisdiction-colors.js');
 const { parishes } = require('../seeds/parishes.js');
 
 test('every seeded parish carries its jurisdiction colour', () => {
@@ -81,4 +83,78 @@ test('app.js reads the shared table rather than its own copy', () => {
   const html = fs.readFileSync('public/index.html', 'utf8');
   assert.ok(html.includes('/shared/jurisdiction-colors.js'),
     'index.html does not load the shared colour table');
+});
+
+// ── the override layer ──────────────────────────────────────────────────
+//
+// /admin can change a jurisdiction's colour without a deploy. That is one more
+// place a colour can come from, which is exactly what this file exists to keep
+// honest: the file is still the default, an override is still a row, and
+// clearing the row still gives the file's colour back.
+
+test('an override wins, and clearing it gives the file back', () => {
+  try {
+    setJurisdictionColors({ greek: '#123456' });
+    assert.equal(jurisdictionColor('greek'), '#123456');
+    // Untouched jurisdictions are unaffected — the layer is per key.
+    assert.equal(jurisdictionColor('serbian'), JURISDICTION_COLORS.serbian);
+    // 'other' has no default at all and can still be overridden.
+    setJurisdictionColors({ other: '#abc' });
+    assert.equal(jurisdictionColor('other'), '#abc');
+    setJurisdictionColors({});
+    assert.equal(jurisdictionColor('greek'), JURISDICTION_COLORS.greek);
+    assert.equal(jurisdictionColor('other'), JURISDICTION_COLOR_FALLBACK);
+  } finally {
+    setJurisdictionColors({});
+  }
+});
+
+test('a colour that is not a colour is ignored, not painted', () => {
+  try {
+    // These reach inline styles and a MapLibre paint expression. Falling back
+    // to the default is the only safe answer; passing them through is not.
+    setJurisdictionColors({ greek: 'red; }', serbian: '', russian: null, romanian: 'rgb(1,2,3)' });
+    assert.equal(jurisdictionColor('greek'), JURISDICTION_COLORS.greek);
+    assert.equal(jurisdictionColor('serbian'), JURISDICTION_COLORS.serbian);
+    assert.equal(jurisdictionColor('russian'), JURISDICTION_COLORS.russian);
+    assert.equal(jurisdictionColor('romanian'), JURISDICTION_COLORS.romanian);
+  } finally {
+    setJurisdictionColors({});
+  }
+});
+
+test('the Worker and the browser agree on what a colour is', () => {
+  for (const good of ['#fff', '#FFFFFF', '#1e3a5f']) assert.ok(HEX.test(good), good);
+  for (const bad of ['fff', '#ffff', 'red', '#12345g', '']) assert.ok(!HEX.test(bad), bad);
+});
+
+test('the jurisdictions the API accepts are the ones the schema allows', () => {
+  // A 400 the schema would have rejected anyway is a better error than a D1
+  // constraint failure surfacing as a 500 — but only while the two agree.
+  const schema = fs.readFileSync('d1/schema.sql', 'utf8');
+  const check = /jurisdiction\s+TEXT NOT NULL CHECK\(jurisdiction IN\s*\(([^)]*)\)/.exec(schema);
+  const allowed = [...check[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+  assert.deepEqual([...JURISDICTIONS].sort(), allowed.sort());
+});
+
+test('a missing overrides table reads as no overrides, not as an error', () => {
+  // Migration 006 can land either side of the deploy that reads it. The bundle
+  // is the site's whole feed; a 500 here is the site being down.
+  const throwing = { prepare() { throw new Error('no such table: jurisdiction_colors'); } };
+  return jurisdictionColorOverrides(throwing).then((r) => assert.deepEqual(r, {}));
+});
+
+test('a row holding something that is not a colour never reaches the browser', () => {
+  const db = {
+    prepare: () => ({
+      all: async () => ({ results: [
+        { jurisdiction: 'greek', color: '  #00508f ' },
+        { jurisdiction: 'serbian', color: 'red; }' },
+        { jurisdiction: 'russian', color: null },
+      ] }),
+    }),
+  };
+  return jurisdictionColorOverrides(db).then((r) => {
+    assert.deepEqual(r, { greek: '#00508f' });
+  });
 });

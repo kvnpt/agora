@@ -13,16 +13,21 @@ const q = (v) => (v === null || v === undefined || v === '')
   ? 'NULL'
   : `'${String(v).replace(/'/g, "''")}'`;
 
-// Provenance: we know where each parish came from, but not when it was last
-// checked — so verified_at stays NULL rather than inventing a date. The UI
-// reads that as "never verified", which is both true and the call to action.
+// Provenance: where each parish came from, and when somebody last read that.
 // `name` is what to CALL the source, because a URL is not a name — see
 // parishes.info_source_name in d1/schema.sql. A seeded parish either points at
 // its own site or at this repo, and both are worth saying out loud.
+//
+// `checked` is optional and stays NULL unless the parish's entry says when its
+// source was actually read. A date nobody can point at is worse than no date:
+// the sheet renders it as "Updated 3 months ago", which is a claim, and the
+// alternative is simply not making one. Where it IS set, the entry names the
+// day somebody sat with that parish's published programme.
 function provenance(p) {
-  return p.website
+  const base = p.website
     ? { type: 'website', ref: p.website, name: 'Parish website' }
     : { type: 'import', ref: 'seeds/parishes.js', name: 'Repo seed' };
+  return { ...base, checked: p.source_checked || null };
 }
 
 const lines = [];
@@ -47,11 +52,11 @@ for (const p of parishes) {
   lines.push(
     'INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, ' +
     'timezone, website, languages, color, info_source_type, info_source_ref,\n' +
-    '        info_source_name) VALUES (\n' +
+    '        info_source_name, info_checked_at) VALUES (\n' +
     `  ${q(p.id)}, ${q(p.name)}, ${q(p.full_name)}, ${q(p.jurisdiction)}, ${q(p.address)},\n` +
     `  ${p.lat}, ${p.lng}, ${q(p.timezone || 'Australia/Sydney')},\n` +
     `  ${q(p.website)}, ${q(p.languages || '["English"]')}, ${q(p.color)},\n` +
-    `  ${q(pr.type)}, ${q(pr.ref)}, ${q(pr.name)}\n) ON CONFLICT(id) DO NOTHING;`
+    `  ${q(pr.type)}, ${q(pr.ref)}, ${q(pr.name)}, ${q(pr.checked)}\n) ON CONFLICT(id) DO NOTHING;`
   );
 }
 

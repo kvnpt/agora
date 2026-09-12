@@ -165,7 +165,7 @@ const sql = (v) => (v === null || v === undefined || v === ''
 
 const COLUMNS = ['id', 'name', 'jurisdiction', 'address', 'lat', 'lng', 'timezone',
   'website', 'phone', 'email', 'languages', 'color', 'feast_day',
-  'info_source_type', 'info_source_ref', 'info_source_name'];
+  'info_source_type', 'info_source_ref', 'info_source_name', 'info_checked_at'];
 
 // Columns a re-run may refresh. id and jurisdiction are identity; languages,
 // color and info_verified_at are set by people, not by scrapes.
@@ -176,9 +176,14 @@ const COLUMNS = ['id', 'name', 'jurisdiction', 'address', 'lat', 'lng', 'timezon
 // the classification was corrected the re-run silently could not apply it:
 // twenty-two rows kept asserting the parish had told us something it had not.
 // The pair describes one fact, so it is refreshed as one fact.
+//
+// `info_checked_at` refreshes for the same reason and more plainly: a re-run IS
+// a fresh read of the source, and the parish sheet renders the date as how old
+// the details are. A re-run that left it alone would scrape a directory again
+// and keep telling readers the row is six months stale.
 const REFRESHABLE = ['name', 'address', 'lat', 'lng', 'timezone', 'website',
   'phone', 'email', 'feast_day', 'info_source_type', 'info_source_ref',
-  'info_source_name'];
+  'info_source_name', 'info_checked_at'];
 
 /**
  * The upsert, guarded so a re-run cannot undo human work.
@@ -187,6 +192,13 @@ const REFRESHABLE = ['name', 'address', 'lat', 'lng', 'timezone', 'website',
  * re-geocoding a parish that already had a confirmed pin moved it 784m, so once
  * somebody checks a pin and stamps the row, a later scrape must leave it alone.
  * Rows arrive here with an explicit id — from `reconcile`, not from derivation.
+ *
+ * It guards on `info_verified_at` and NEVER on `info_checked_at`, which is the
+ * whole reason those are two columns rather than one. Every import stamps the
+ * checked date — that is what it is for — so a guard on it would freeze each
+ * row the moment it was first written and no re-run could ever correct
+ * anything. `info_verified_at` is set by a person and by nothing else, so it is
+ * the only one that can mean "hands off".
  */
 export function buildUpsert(rows) {
   if (rows.some((r) => !r.id)) throw new Error('every row needs an explicit id — run reconcile first');

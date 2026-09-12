@@ -12,6 +12,7 @@
 
 import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
+import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
 
 // A generous default. The client picks the window it actually renders; this only
 // bounds how many rows travel, and rows are far cheaper than instances.
@@ -27,14 +28,15 @@ function windowFrom(query) {
 const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
   website, phone, email, logo_path, acronym, chant_style, languages, color, live_url,
   donation_url, raffle_url, payment_url, gala_url, feast_day,
-  info_source_type, info_source_ref, info_source_name, info_verified_at`;
+  info_source_type, info_source_ref, info_source_name, info_checked_at,
+  info_verified_at`;
 
 export function registerPublicRoutes(router) {
   // GET /api/bundle — everything the client needs to build the feed itself.
   router.get('/api/bundle', async ({ env, query }) => {
     const { from, to } = windowFrom(query);
 
-    const [rows, parishes, oneOffs, cross] = await Promise.all([
+    const [rows, parishes, oneOffs, cross, jurisColors] = await Promise.all([
       fetchWindowRows(env.DB, from, to),
       env.DB.prepare(`SELECT ${PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
       env.DB.prepare(
@@ -47,6 +49,7 @@ export function registerPublicRoutes(router) {
          WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?`
       ).bind(from, to).all(),
       env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all(),
+      jurisdictionColorOverrides(env.DB),
     ]);
 
     return json({
@@ -57,6 +60,11 @@ export function registerPublicRoutes(router) {
       overrides: rows.overrides,
       events: oneOffs.results || [],
       event_parishes: cross.results || [],
+      // Carried in the bundle rather than fetched separately: every reader of a
+      // jurisdiction colour runs during the first render, so a second round
+      // trip would mean drawing the map once in the old colours and again in
+      // the new ones.
+      jurisdiction_colors: jurisColors,
     }, 200, {
       // Rules change rarely. The client re-derives "now" locally, so a stale-ish
       // bundle is still correct — only newly-added events are missed, briefly.
@@ -77,6 +85,12 @@ export function registerPublicRoutes(router) {
     const row = await env.DB.prepare(`SELECT ${PARISH_COLS} FROM parishes WHERE id = ?`)
       .bind(params.id).first();
     return row ? json(row) : json({ error: 'Parish not found' }, 404);
+  });
+
+  // GET /api/jurisdiction-colors — the overrides alone, for anything that does
+  // not want the whole bundle (the admin panel's colours tab).
+  router.get('/api/jurisdiction-colors', async ({ env }) => {
+    return json(await jurisdictionColorOverrides(env.DB));
   });
 
   // GET /api/schedules — the raw weekly timetable, as the services view renders it.

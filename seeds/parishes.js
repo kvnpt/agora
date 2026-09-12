@@ -129,6 +129,9 @@ const parishes = [
     lat: -33.7748, lng: 150.9017,
     timezone: 'Australia/Sydney',
     website: 'https://www.stparaskevi.au/',
+    // When somebody last read that site — 4837a39, the commit that took this
+    // parish's programme apart. See provenance() in scripts/gen-seed-sql.js.
+    source_checked: '2026-09-11T08:49:48Z',
     // The programme marks which services are in English; the rest are Greek.
     languages: '["Greek", "English"]',
     color: GREEK_BLUE
@@ -163,6 +166,7 @@ const parishes = [
     lat: -26.6851, lng: 153.0527,
     timezone: 'Australia/Brisbane',
     website: 'https://orthodoxsunshinecoast.org/',
+    source_checked: '2026-09-11T06:04:04Z',
     // The programme is published twice over, English and Greek, in one file.
     languages: '["English", "Greek"]',
     color: GREEK_BLUE
