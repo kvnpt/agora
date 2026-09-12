@@ -8,7 +8,7 @@ that pipeline has to get right.
 
 This began as a brief for work that had not been done. Two directories have
 since been ingested — the Greek Archdiocese, 135 parishes, and the ROCOR
-Australian and New Zealand Diocese, 33 of 37 — so the constraints below are now
+Australian and New Zealand Diocese, all 37 — so the constraints below are now
 field notes rather than predictions, and the two sections at the end record what
 each run actually cost. They cost different things: the Greek directory
 published addresses that were sometimes wrong, and the Russian one publishes no
@@ -49,10 +49,10 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-177 parishes · 13 schedules · 68 events · 0 overrides
+181 parishes · 13 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import, 33 the ROCOR one, and 9
+135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 9
 the Antiochian seed. Schedules and events are untouched by both — neither
 directory publishes service times at all, so adapters remain the only route to
 those.
@@ -301,15 +301,31 @@ tunnel to drop on long Overpass queries and keep them small.
 ## What the ROCOR run actually cost
 
 37 places of worship, scraped from the Australian and New Zealand Diocese of the
-Russian Orthodox Church Outside Russia, geocoded, and written to D1 — 33 of
-them; the other four are held back below. Three scripts, run in order, each
-writing a file that can be read before the next one runs:
+Russian Orthodox Church Outside Russia, geocoded, and written to D1 — 33 on the
+first pass and the remaining four as suburb centroids on the second, for their
+owner to verify. Three scripts, run in order, each writing a file that can be
+read before the next one runs:
 
 ```bash
 node scripts/scrape-rocor.mjs   cache/ rocor-scraped.json
 node scripts/geocode-rocor.mjs  rocor-scraped.json cache/geo/ rocor-geocoded.json
 node scripts/build-rocor-sql.mjs rocor-geocoded.json rocor-parishes.sql
 ```
+
+The third step refuses to write a row whose pin is only a suburb centroid.
+`--include-suburb` overrides that, and is how the last four got in — it is a
+deliberate act with a person's name on it, not a default:
+
+```bash
+node scripts/build-rocor-sql.mjs rocor-geocoded.json rocor-all37.sql --include-suburb
+```
+
+Re-running it against a database that already holds the rows is safe and is
+worth doing: `reconcile` matched all 33 back to their existing ids with no
+derivation mismatch, so the second pass inserted four rows and corrected
+twenty-two rather than duplicating anything. Diff the regenerated SQL against
+what was applied before running it — that diff is what caught the provenance
+bug below.
 
 **The diocese's homepage is compromised; the diocese is fine.** `rocor.org.au/`
 serves cloaked Turkish casino spam to some user agents. Everything else on the
@@ -396,18 +412,39 @@ monastery, convent, skete, chapel, mission and institute joined `church` and
 `cathedral` as generic. A second rule stops the cap reducing a name to a bare
 qualifier — "Holy Transfiguration Monastery" was becoming `holy`.
 
-**Final confidence: 15 pins on a building, 18 street-level, 4 held back.**
-`info_verified_at` is NULL on all of them — these are researched, not confirmed. The four held back are the ones with
-no published address anywhere, and they are held back on purpose: `lat` and
-`lng` are NOT NULL, so the temptation is to drop a pin in the middle of the
-suburb, and a marker where there is no church is worse than an absent parish.
+**Final confidence: 15 pins on a building, 18 street-level, 4 suburb centroids.**
+`info_verified_at` is NULL on all 37 — these are researched, not confirmed.
 
-| held back | why |
-|---|---|
-| Sts Cyril & Methodius / St Xenia, Tweed Heads | moved to South Tweed Heads; no address published for the new site |
-| Holy Trinity, Hobart | in the Huon district, an hour from Hobart, on family land; no address published |
-| Holy Ascension Mission, Williamstown | in no directory |
-| St Mary's, Bunbury | in no directory; its website is a JavaScript shell |
+The four centroids were held back on the first pass and written on the second,
+at the owner's direction and for him to check. They are the parishes with no
+published address anywhere, so the pin is the middle of the locality and there
+is demonstrably no church at it. `address` is left NULL on exactly those four,
+which is the only signal the schema has to offer: there is no column for how
+good a pin is, so an absent address is what marks one as unchecked. Write a
+street into it and the row becomes indistinguishable from the 33 that were
+actually placed.
+
+| suburb centroid | why there is nothing better | pin |
+|---|---|---|
+| Sts Cyril & Methodius / St Xenia, Tweed Heads | moved to South Tweed Heads; no address published for the new site | -28.178664, 153.536999 |
+| Holy Trinity, Hobart | in the Huon district, an hour from Hobart, on family land; no address published | -42.882509, 147.328123 |
+| Holy Ascension Mission, Williamstown | in no directory | -37.861179, 144.889857 |
+| St Mary's, Bunbury | in no directory; its website is a JavaScript shell | -33.326780, 115.636698 |
+
+Tweed Heads is the one to look at first. Its centroid is Tweed Heads proper and
+the parish has moved to South Tweed Heads, so the pin is a couple of kilometres
+out — but it is in New South Wales, which is the part that decides the timezone.
+
+**`info_source_type` and `info_source_ref` describe one fact and must move
+together.** This run wrote `'website'` for addresses it had taken from a
+third-party directory, which asserts the parish told us something it had not.
+The classification was corrected in the same session — and the correction could
+not reach the rows, because `info_source_type` was missing from the upsert's
+refreshable columns while `info_source_ref` was in it. Twenty-two rows sat in
+production quietly overstating their own provenance until the pair was refreshed
+as a pair. Leaving it out was safe-looking and wrong: the `WHERE
+info_verified_at IS NULL` guard is what protects a human's answer here, exactly
+as it does for the address and the pin beside it.
 
 **Two entries in the directory are not places of worship** — the Diocesan
 Administration at Croydon and the Sts Cyril and Methodius Orthodox Institute —

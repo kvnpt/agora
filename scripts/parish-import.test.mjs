@@ -213,3 +213,18 @@ test('the cap never reduces a dedication to a bare qualifier', () => {
   // and the rule must not strip it to nothing.
   assert.equal(parishId('greek', 'All Saints', 'Belmore'), 'greek-allsaints-belmore');
 });
+
+test('provenance is refreshed as a pair, and human work still is not', () => {
+  const out = buildUpsert([ROW]);
+  // A corrected classification has to be able to reach rows already written.
+  // The ROCOR run wrote 'website' for addresses taken from a third-party
+  // directory; with only the ref refreshable, the fix could never land.
+  assert.match(out, /info_source_type=excluded\.info_source_type/);
+  assert.match(out, /info_source_ref=excluded\.info_source_ref/);
+  // ...but the guard is what makes that safe, and it is still there.
+  assert.match(out, /WHERE parishes\.info_verified_at IS NULL;/);
+  assert.doesNotMatch(out, /info_verified_at=excluded/);
+  assert.doesNotMatch(out, /languages=excluded/);
+  assert.doesNotMatch(out, /color=excluded/);
+  assert.doesNotMatch(out, /jurisdiction=excluded/);
+});
