@@ -49,14 +49,15 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-144 parishes · 13 schedules · 68 events · 0 overrides
+177 parishes · 13 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import; 9 are the Antiochian
-seed. Schedules and events are untouched by it — the directory publishes no
-service times at all, so adapters remain the only route to those.
+135 of those parishes are the Greek Archdiocese import, 33 the ROCOR one, and 9
+the Antiochian seed. Schedules and events are untouched by both — neither
+directory publishes service times at all, so adapters remain the only route to
+those.
 
-The numbers below describe the database *before* that import, and are kept
+The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
 
 Those are the numbers `/api/bundle` returns, and the endpoint is a view rather
@@ -300,9 +301,9 @@ tunnel to drop on long Overpass queries and keep them small.
 ## What the ROCOR run actually cost
 
 37 places of worship, scraped from the Australian and New Zealand Diocese of the
-Russian Orthodox Church Outside Russia, geocoded, and built into a guarded
-upsert. Three scripts, run in order, each writing a file that can be read before
-the next one runs:
+Russian Orthodox Church Outside Russia, geocoded, and written to D1 — 33 of
+them; the other four are held back below. Three scripts, run in order, each
+writing a file that can be read before the next one runs:
 
 ```bash
 node scripts/scrape-rocor.mjs   cache/ rocor-scraped.json
@@ -396,7 +397,7 @@ monastery, convent, skete, chapel, mission and institute joined `church` and
 qualifier — "Holy Transfiguration Monastery" was becoming `holy`.
 
 **Final confidence: 15 pins on a building, 18 street-level, 4 held back.**
-`info_verified_at` is NULL on all of them. The four held back are the ones with
+`info_verified_at` is NULL on all of them — these are researched, not confirmed. The four held back are the ones with
 no published address anywhere, and they are held back on purpose: `lat` and
 `lng` are NOT NULL, so the temptation is to drop a pin in the middle of the
 suburb, and a marker where there is no church is worse than an absent parish.
