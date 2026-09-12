@@ -18,6 +18,7 @@ Scrape a jurisdiction's parish directory, and for each parish produce a row:
 
 ```
 id  name  full_name  jurisdiction  address  lat  lng  timezone  website  languages
+      feast_day
 ```
 
 The directory gives you a name, an address and usually a website. Everything
