@@ -6,9 +6,10 @@ parishes that is a line in `seeds/parishes.js`. With an archdiocese directory �
 a few hundred names and addresses at once — it is a pipeline, and this is what
 that pipeline has to get right.
 
-Nothing here is built yet. This is the brief, the constraints that will bite,
-and the state of the database as at 11 September 2026, written down so the next
-session does not have to rediscover any of it.
+This began as a brief for work that had not been done. The Greek Archdiocese
+directory has since been ingested — 135 parishes, 12 September 2026 — so the
+constraints below are now field notes rather than predictions, and the section
+at the end records what the run actually cost.
 
 ---
 
@@ -42,11 +43,18 @@ curl -sS https://agora.orthodoxy.au/api/adapters/status
 Reach for those before reaching for a token. A `D1:Edit` credential is only
 needed to *write*.
 
-## State as at 11 September 2026
+## State as at 12 September 2026
 
 ```
-10 parishes · 13 schedules · 68 events · 0 overrides
+144 parishes · 13 schedules · 68 events · 0 overrides
 ```
+
+135 of those parishes are the Greek Archdiocese import; 9 are the Antiochian
+seed. Schedules and events are untouched by it — the directory publishes no
+service times at all, so adapters remain the only route to those.
+
+The numbers below describe the database *before* that import, and are kept
+because the reasoning attached to them still holds.
 
 Those are the numbers `/api/bundle` returns, and the endpoint is a view rather
 than a row count — worth keeping straight before anything diffs against it.
@@ -190,3 +198,54 @@ The database is `agora`, `8e02890d-dc75-4dbe-a018-b64c7871dde9`, also in
 Doing (1) and (2) as separate files that can be eyeballed is the whole point.
 A directory scrape that geocodes and writes in one pass gives you a few hundred
 rows and no way to tell which of them are wrong.
+
+---
+
+## What the Greek Archdiocese run actually cost
+
+135 parishes, scraped from `greekorthodox.org.au`, geocoded, and written
+straight to D1. Notes worth keeping for the next jurisdiction:
+
+**The directory is a WordPress site whose church post type is not in the REST
+API.** Only the `churches_locations` taxonomy is exposed, so the listing pages
+have to be walked. Caching every page to disk first made the parsing iterative
+and cost the site exactly one pass.
+
+**Field labels are not a schema.** 43 distinct labels across 135 pages, for
+about a dozen real fields: `Website` / `Parish Website` / `Church Website`,
+nine spellings of email, and typos (`Parish Deason`, `Parish Email:`). Keep
+every label verbatim alongside the normalised view; the normalisation will be
+wrong somewhere.
+
+**Timezone must come from the address, never the region.** The Archdiocese's
+own regions span zones — "Adelaide & Darwin" covers SA and NT, "Canberra &
+Tasmania" covers ACT, NSW and TAS. Derived from the address the 135 parishes
+land in seven zones, and `Australia/Sydney` would have been wrong for 92.
+
+**Geocoding took three passes and the addresses were the problem, not the
+geocoder.** Free-form Nominatim left 28 parishes unplaced: `St` reads as Saint,
+house-number ranges miss, `Cnr X & Y` is not an address, and several addresses
+carry PO boxes, parentheticals or dotted `N.S.W`. Structured queries recovered
+25. Of the nine that needed research, *seven had something wrong in the
+published address* — a street spelled `Holterman` for Holtermann and `McAlister`
+for Macalister, and four parishes filed under a suburb they are not in
+(Willesden Rd is in Hughesdale, O'Connell Rd in Merrimu, the Tamworth church in
+North Tamworth, the "Noarlunga" parish in Christie Downs). Budget for research,
+not just for rate limits.
+
+**Re-geocoding a parish that already had a confirmed pin moved it 784m.** The
+same class of error as the 730m one above, on the same parish. It is the reason
+the write leaves rows with `info_verified_at` set alone: `ON CONFLICT(id) DO
+UPDATE ... WHERE parishes.info_verified_at IS NULL`. A re-run refreshes what
+nobody has checked and cannot overwrite what somebody has.
+
+**Final confidence: 37 pins on a building, 95 street-level, 2 previously
+verified, 1 suburb-level.** `info_verified_at` is NULL on all 135 — these are
+researched, not confirmed. The one suburb-level pin is St Athanasios inside
+Rookwood Necropolis, which is absent from OSM along with the necropolis's
+internal roads; the locality centroid at least falls inside the cemetery.
+
+**OSM is a better source than Nominatim for a known church.** Overpass found
+buildings tagged `denomination=greek_orthodox` that a name search could not,
+including one OSM files under its parish rather than its dedication. Expect the
+tunnel to drop on long Overpass queries and keep them small.
