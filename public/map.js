@@ -608,6 +608,23 @@ async function bakeAndRegisterLogo(parish) {
   logoRegistered.add(parish.id);
 }
 
+// Re-bake one parish's focus sprite after its logo changed. logoRegistered
+// is keyed by parish id, so without this an admin who replaces or clears a
+// logo keeps seeing the old one baked into the map until a reload.
+window.agoraRefreshParishLogo = async function (parishId) {
+  if (!map) return;
+  const id = `focus_${parishId}`;
+  logoRegistered.delete(parishId);
+  if (map.hasImage(id)) map.removeImage(id);
+  const parish = (window.agoraStateRef && window.agoraStateRef.parishes || [])
+    .find(p => p.id === parishId);
+  if (parish && parish.logo_path) {
+    try { await bakeAndRegisterLogo(parish); } catch { /* falls back to the circle */ }
+  }
+  const st = window.agoraStateRef;
+  if (st && typeof updateMap === 'function') updateMap(st);
+};
+
 function loadHtmlImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -622,7 +639,11 @@ function loadHtmlImage(src) {
 function updateMap(state, opts = {}) {
   if (!map) return;
   if (!styleLoaded) {
-    pendingUpdate = { state, opts };
+    // One slot, last write wins — except for `fit`, which is sticky. A request
+    // to frame something is a one-off intent, and the render that lands behind
+    // it (a filter's own refetch, say) would otherwise drop it silently and
+    // leave the camera where it started.
+    pendingUpdate = { state, opts: { ...opts, fit: opts.fit || !!(pendingUpdate && pendingUpdate.opts.fit) } };
     return;
   }
 
@@ -656,6 +677,10 @@ function updateMap(state, opts = {}) {
   // genuinely has no relevant content for the English-filter view).
   const hardFilterOnEvents = state.filters.englishOnly;
 
+  const locFilter = (state.filters.location && window.AgoraLocations)
+    ? window.AgoraLocations.resolveLocation(state.filters.location)
+    : null;
+
   const focusId = state.parishSheetFocus || null;
   const selectedSet = (state.selectionMode && state.filters.parishIds)
     ? state.filters.parishIds
@@ -669,14 +694,27 @@ function updateMap(state, opts = {}) {
     if (p.id === '_unassigned') continue;
     if (p.lat == null || p.lng == null) continue;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) continue;
+    // A location filter prunes the map, unlike the content filters above it:
+    // asking for Queensland and still seeing every Melbourne dot would be the
+    // filter not working. Same reasoning as the English filter below.
+    if (locFilter && !window.AgoraLocations.locationMatchesParish(locFilter, p)) continue;
     if (hardFilterOnEvents && !activeSet.has(p.id)) continue;
     const parts = (p.name || '').split(',');
     const label = (parts[0] || p.name || '').trim();
-    // Juris filter active → render every parish as the one juris colour
-    // (matches the inline-style funnel in app.js getParishDisplayColor).
-    const jurisOverride = state.filters && state.filters.jurisdiction;
-    const baseColor = jurisOverride && window.rawJurisColor
-      ? window.rawJurisColor(jurisOverride)
+    // The map reads jurisdiction, never the parish's own colour.
+    //
+    // A custom parish colour is an identity mark and belongs where a parish
+    // is the subject: its card, its feed lines, its event groups. On the map
+    // the parish is one dot among two hundred, and what a reader is asking
+    // there is "which of these is mine" — jurisdiction, not parish. Letting
+    // custom hues through would make the answer unreadable the moment two
+    // parishes a suburb apart pick unrelated colours, and there is no legend
+    // on a map to recover it from.
+    //
+    // A juris filter changes nothing here: every surviving feature is that
+    // jurisdiction already, so its colour is the same either way.
+    const baseColor = window.rawJurisColor
+      ? window.rawJurisColor(p.jurisdiction)
       : (p.color || '#000');
     const props = {
       parish_id: p.id,
@@ -702,29 +740,57 @@ function updateMap(state, opts = {}) {
   if (src) src.setData({ type: 'FeatureCollection', features });
 
   if (opts.fit) {
+    // Prefer the parishes actually in scope — a region with three parishes in
+    // one city is better framed on those three than on the whole state. The
+    // region's own box is the fallback, and it is what a location filter that
+    // matches nothing still frames, so /nt reads as "the Territory, and
+    // nothing here" rather than leaving the map wherever it was.
     const activeFeatures = features.filter(f => f.properties.active);
-    if (activeFeatures.length) {
-      let b = boundsFromPoints(activeFeatures.map(f => ({
+    // Under a location filter, every remaining feature is in the region, so a
+    // region whose parishes have nothing on this week still frames its
+    // parishes rather than jumping out to the whole state.
+    const fitFeatures = activeFeatures.length ? activeFeatures
+      : (locFilter ? features : []);
+    let b = null;
+    if (fitFeatures.length) {
+      b = padBounds(boundsFromPoints(fitFeatures.map(f => ({
         lat: f.geometry.coordinates[1],
         lng: f.geometry.coordinates[0]
-      })));
-      b = padBounds(b, 0.1);
-      const isDesktop = window.agoraIsDesktop?.() ?? false;
-      let padding;
-      if (isDesktop) {
-        padding = { top: 50, right: 440, bottom: 50, left: 50 };
-      } else {
-        const sheetY = (typeof window.agoraSheetY === 'function') ? window.agoraSheetY() : window.innerHeight * 0.5;
-        const sheetHeight = window.innerHeight - sheetY;
-        padding = { top: 50, right: 30, bottom: sheetHeight + 20, left: 30 };
-      }
-      map.fitBounds(b, {
-        padding,
-        maxZoom: 14,
-        duration: 900
-      });
+      }))), 0.1);
+    } else if (locFilter) {
+      const [w, s, e, n] = window.AgoraLocations.locationBbox(locFilter);
+      b = [[w, s], [e, n]];
     }
+    if (b) map.fitBounds(b, { padding: fitPadding(), maxZoom: 14, duration: 900 });
   }
+}
+
+// Sheet-aware padding for fitBounds: on mobile the bottom sheet covers the
+// lower half of the map, so the visible window is the strip above it.
+//
+// Clamped, because MapLibre answers a fitBounds it cannot satisfy by doing
+// nothing at all — no move, no throw, one console warning. With the sheet
+// dragged to full height the bottom inset alone exceeds the canvas, and the
+// camera then silently stays wherever it was. That is how a location deep
+// link came up showing the whole country instead of the state it named.
+function fitPadding() {
+  const h = window.innerHeight, w = window.innerWidth;
+  const isDesktop = window.agoraIsDesktop?.() ?? false;
+  const pad = isDesktop
+    ? { top: 50, right: 440, bottom: 50, left: 50 }
+    : (() => {
+      const sheetY = (typeof window.agoraSheetY === 'function') ? window.agoraSheetY() : h * 0.5;
+      return { top: 50, right: 30, bottom: Math.max(0, h - sheetY) + 20, left: 30 };
+    })();
+  // Leave at least a 120 px window on each axis to fit into.
+  const shrink = (a, b, limit) => {
+    if (a + b <= limit) return [a, b];
+    const k = Math.max(0, limit) / (a + b);
+    return [Math.floor(a * k), Math.floor(b * k)];
+  };
+  [pad.top, pad.bottom] = shrink(pad.top, pad.bottom, h - 120);
+  [pad.left, pad.right] = shrink(pad.left, pad.right, w - 120);
+  return pad;
 }
 
 // ── Click handlers ─────────────────────────────────────────────────────

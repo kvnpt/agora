@@ -73,14 +73,14 @@ INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, time
         info_source_name) VALUES (
   'greek-stparaskevi-blacktown', 'Sts Paraskevi & Barbara, Blacktown', 'Hellenic Orthodox Parish and Community of Blacktown Districts', 'greek', '47-51 Balmoral St, Blacktown NSW 2148',
   -33.7748, 150.9017, 'Australia/Sydney',
-  'https://www.stparaskevi.au/', '["Greek", "English"]', '#0d5eaf',
+  'https://www.stparaskevi.au/', '["Greek", "English"]', '#00508f',
   'website', 'https://www.stparaskevi.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
 INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
         info_source_name) VALUES (
   'greek-gopssc-buderim', 'Sunshine Coast, Buderim', 'Greek Orthodox Parish of the Sunshine Coast', 'greek', 'St Mark''s Anglican Church, 7 Main Street, Buderim QLD 4556',
   -26.6851, 153.0527, 'Australia/Brisbane',
-  'https://orthodoxsunshinecoast.org/', '["English", "Greek"]', '#0d5eaf',
+  'https://orthodoxsunshinecoast.org/', '["English", "Greek"]', '#00508f',
   'website', 'https://orthodoxsunshinecoast.org/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
 INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,

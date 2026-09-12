@@ -27,7 +27,9 @@ const state = {
   _eventsExtended: false,
   _eventsShowCount: 30,
   _parishEventsShowCount: 30,
-  filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
+  // `location` is a region slug from /shared/locations.js ('qld', 'syd', 'nz'),
+  // not the viewer's own position — that is locationActive/userLat below.
+  filters: { jurisdiction: null, location: null, service: null, day: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   parishFilters: { socialOnly: false, englishOnly: false, englishStrict: false },
   selectionMode: false,
   subdomainJurisdiction: null,
@@ -35,6 +37,12 @@ const state = {
   nearPillActive: false,  // true when Near pill is toggled on (sorts parish pills)
   eventsSort: 'time',  // 'time' | 'nearby'
   parishFocus: null,  // parish ID when focused, null when browsing
+  // Rule focus inside the parish sheet: { scheduleId, slug }. Set by
+  // /<acronym>/<service> and by tapping a schedule row; the sheet then pins
+  // that rule's next occurrence and lists only its future recurrences. Kept
+  // apart from filters.service, which is the feed-wide filter /liturgy sets —
+  // one is "this rule at this parish", the other is "this kind of service".
+  parishScheduleFocus: null,
   viewportParishIds: null,  // Set of parish IDs inside current map bounds; null until first moveend
   _dateFocus: null          // 'YYYY-MM-DD' when user has jumped to a specific date
 };
@@ -126,6 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initParishFilter();
   initSocialFilter();
   initEnglishFilter();
+  initScheduleRowTaps();
   initFiltersMenu();
   initMultiParishToggle();
   initParishMultiToggle();
@@ -270,6 +279,55 @@ function disablePullToRefresh() {
 // ── URL state detection (subdomain soft-fallback + path parser) ──
 const JURISDICTION_KEYS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
 
+// ── Location filter ──
+// The registry is /shared/locations.js, loaded before this file. These three
+// wrappers are all the rest of app.js needs, and they no-op safely if the
+// script failed to load rather than taking the whole page down with a
+// ReferenceError on the first parish drawn.
+function resolveLocationSlug(slug) {
+  const L = window.AgoraLocations;
+  return L ? L.resolveLocation(slug) : null;
+}
+function activeLocation() {
+  return state.filters.location ? resolveLocationSlug(state.filters.location) : null;
+}
+/** Is this parish inside the active location filter? True when none is set. */
+function parishPassesLocation(parish) {
+  const loc = activeLocation();
+  if (!loc || !parish) return !loc;
+  return window.AgoraLocations.locationMatchesParish(loc, parish);
+}
+/** Same question, for a row that carries a parish_id rather than a parish. */
+function parishIdPassesLocation(parishId) {
+  if (!state.filters.location) return true;
+  const p = state.parishes.find(x => x.id === parishId);
+  return p ? parishPassesLocation(p) : false;
+}
+function locationLabel() {
+  const loc = activeLocation();
+  return loc ? loc.label : '';
+}
+
+// ── Service filter ──
+// Registry is /shared/services.js. Same guarded-wrapper shape as the location
+// helpers above, for the same reason.
+function resolveServiceSlug(slug) {
+  const S = window.AgoraServices;
+  return S ? S.resolveService(slug) : null;
+}
+function serviceOfRow(row) {
+  const S = window.AgoraServices;
+  return S ? S.serviceOf(row) : null;
+}
+function rowIsService(slug, row) {
+  const S = window.AgoraServices;
+  return S ? S.serviceMatches(slug, row) : true;
+}
+function serviceLabelFor(slug) {
+  const S = window.AgoraServices;
+  return S ? S.serviceLabel(slug) : String(slug || '');
+}
+
 function detectUrlState() {
   // Subdomain fallback — honoured while <juris>.orthodoxy.au redirects roll out
   const host = window.location.hostname;
@@ -302,6 +360,22 @@ function detectUrlState() {
     } else if (/^\d+$/.test(seg) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(seg)) {
       // integer (one-off) or synthetic schedule-instance id ("scheduleId:date")
       state._openEventId = seg;
+    } else if (resolveDaySlug(seg) !== null) {
+      // /wed, /wednesday — narrows a service to one day (/sgr/wed/liturgy) or
+      // stands on its own (/wed, /wed/liturgy across the whole feed).
+      state._daySlug = resolveDaySlug(seg);
+    } else if (resolveServiceSlug(seg)) {
+      // /liturgy on its own filters the feed. /smg/liturgy means the rule at
+      // that parish instead — applyServiceFocus sorts out which once the
+      // parish slug beside it has resolved.
+      state._serviceSlug = resolveServiceSlug(seg).slug;
+    } else if (resolveLocationSlug(seg)) {
+      // /qld, /queensland, /syd, /nz … — composes with the jurisdiction, so
+      // /qld/greek and /greek/queensland are the same view. Checked before the
+      // parish-slug fallback below, which is why an acronym may not collide
+      // with a location slug (the Worker refuses one that would).
+      state.filters.location = resolveLocationSlug(seg).slug;
+      state._fitLocation = true;
     } else if (seg.includes('+')) {
       state._parishSlugs = seg.split('+').map(s => s.trim()).filter(Boolean);
     } else {
@@ -313,7 +387,154 @@ function detectUrlState() {
   if (state._startMode === 'services' && state.filters.socialOnly) {
     state.filters.socialOnly = false;
   }
+
+  // A day or a service beside a parish is a schedule focus, not a feed
+  // filter. The parish is still a slug at this point (ids arrive with the
+  // parish list), so both are parked and applyServiceFocus finishes the job.
+  const atOneParish = state._parishSlugs && state._parishSlugs.length === 1;
+  if (state._serviceSlug || state._daySlug != null) {
+    if (atOneParish) {
+      state._pendingServiceFocus = state._serviceSlug || null;
+      state._pendingDayFocus = state._daySlug != null ? state._daySlug : null;
+    } else {
+      if (state._serviceSlug) state.filters.service = state._serviceSlug;
+      if (state._daySlug != null) state.filters.day = state._daySlug;
+    }
+  }
+  delete state._serviceSlug;
+  delete state._daySlug;
 }
+
+// The rules, loaded once. The events view never asks for them — only the
+// services view and the parish sheet do — so anything that needs a rule
+// outside those two has to say so.
+let _schedulesPromise = null;
+function ensureSchedulesLoaded() {
+  if (state.schedules && state.schedules.length) return Promise.resolve(state.schedules);
+  if (!_schedulesPromise) {
+    _schedulesPromise = window.agoraBundle.load()
+      .then(() => { state.schedules = window.agoraBundle.schedules() || []; return state.schedules; })
+      .catch(() => [])
+      .finally(() => { _schedulesPromise = null; });
+  }
+  return _schedulesPromise;
+}
+
+// Resolve /<acronym>/<day?>/<service?> to the rules it names, once parishes
+// and schedules are both in hand.
+//
+// The URL names a KIND, so it focuses every rule of that kind: a parish with
+// three liturgy rules under one /liturgy link shows all three, and the banner
+// says "Showing Liturgies". A tapped row names one rule and focuses that one.
+// Adding a day narrows the kind — /sgr/wed/liturgy is the Wednesday liturgy,
+// and at most parishes that resolves to a single rule and reads back as the
+// full sentence.
+function applyServiceFocus() {
+  const slug = state._pendingServiceFocus || null;
+  const dow = state._pendingDayFocus != null ? state._pendingDayFocus : null;
+  delete state._pendingServiceFocus;
+  delete state._pendingDayFocus;
+  if (!slug && dow == null) return;
+
+  const parishId = state.parishFocus || state.parishSheetFocus;
+  const rules = parishId ? matchingRules(parishId, slug, dow) : [];
+  if (!rules.length) {
+    // Nothing of that kind here, or no parish at all. Fall back to the
+    // feed-wide reading rather than dropping the segments silently —
+    // /sgr/vespers at a parish with no vespers rule should still say what it
+    // was asked for.
+    if (slug) state.filters.service = slug;
+    if (dow != null) state.filters.day = dow;
+    return;
+  }
+  setParishScheduleFocus(parishId, {
+    ruleIds: rules.map(r => r.id), slug, dow, scope: 'kind',
+  }, { silent: true });
+}
+
+/** This parish's rules of this kind, on this day. Either filter may be absent. */
+function matchingRules(parishId, slug, dow) {
+  return (state.schedules || []).filter(s =>
+    s.parish_id === parishId
+    && (!slug || rowIsService(slug, s))
+    && (dow == null || s.day_of_week === dow));
+}
+
+/** Projected instances from now on, in time order. */
+function upcomingOccurrences() {
+  const now = Date.now();
+  return (state.events || [])
+    .filter(e => e.schedule_id != null && Date.parse(e.end_utc || e.start_utc) >= now)
+    .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+}
+
+/** The soonest occurrence of any of these rules. */
+function nextOccurrenceOfRules(ruleIds) {
+  const ids = new Set(ruleIds);
+  return upcomingOccurrences().find(e => ids.has(e.schedule_id)) || null;
+}
+
+// Enter the focus. Opens the parish sheet if it is not already the one
+// showing, pins the next occurrence, narrows the sheet's feed and puts the
+// "Showing …" banner between the service times and the list.
+function setParishScheduleFocus(parishId, spec, opts = {}) {
+  const ruleIds = (spec.ruleIds || []).filter(id => id != null);
+  if (!parishId || !ruleIds.length) return;
+  const only = ruleIds.length === 1 ? ruleIds[0] : null;
+  const rule = only != null ? (state.schedules || []).find(s => s.id === only) : null;
+  state.parishScheduleFocus = {
+    ruleIds,
+    // Set only when the focus is one rule — it is what the banner describes
+    // in full and what the schedule panel emphasises.
+    scheduleId: only,
+    // The slug and the day are what the URL carries, and they record what was
+    // ASKED, not what it happened to resolve to. /sgr/matins resolving to one
+    // Sunday rule must not rewrite itself to /sgr/sun/matins: the parish
+    // could add a Saturday matins tomorrow, and the link someone shared was
+    // for matins, not for Sunday. A tapped row is the exception — that IS a
+    // request for one rule, so its day and kind are written out so the link
+    // comes back to the same row.
+    //
+    // A rule whose title names nothing the registry knows still focuses fine;
+    // it just has no slug to write, so the URL falls back to the day alone
+    // and the banner reads the rule's own title.
+    slug: spec.slug || (spec.scope === 'rule' && rule ? serviceOfRow(rule) : null),
+    dow: spec.dow != null ? spec.dow
+      : (spec.scope === 'rule' && rule ? rule.day_of_week : null),
+    scope: spec.scope || 'rule',
+    title: rule ? (rule.title || '') : '',
+  };
+  const next = nextOccurrenceOfRules(ruleIds);
+  state._openEventId = next ? next.id : null;
+  if (state.parishSheetFocus !== parishId) {
+    if (typeof openParishSheet === 'function') {
+      openParishSheet(parishId, { focusEventId: state._openEventId, noServiceFocus: true });
+    }
+  } else if (typeof renderParishSheetContent === 'function') {
+    renderParishSheetContent(parishId, { fullRender: true, focusEventId: state._openEventId });
+  }
+  if (!opts.silent && typeof syncURL === 'function') syncURL();
+}
+
+/** Focus exactly one rule — what tapping a schedule row means. */
+function focusScheduleRule(parishId, scheduleId) {
+  setParishScheduleFocus(parishId, { ruleIds: [scheduleId], scope: 'rule' });
+}
+
+/** Leave the focus, keeping the parish sheet open. */
+function clearParishScheduleFocus(opts = {}) {
+  if (!state.parishScheduleFocus) return;
+  state.parishScheduleFocus = null;
+  state._openEventId = null;
+  const pid = state.parishSheetFocus;
+  if (pid && typeof renderParishSheetContent === 'function') {
+    renderParishSheetContent(pid, { fullRender: true });
+  }
+  if (!opts.silent && typeof syncURL === 'function') syncURL();
+}
+window.focusScheduleRule = focusScheduleRule;
+window.setParishScheduleFocus = setParishScheduleFocus;
+window.clearParishScheduleFocus = clearParishScheduleFocus;
 
 // Back-compat shim — older call sites may still reference detectSubdomain
 function detectSubdomain() { return detectUrlState(); }
@@ -370,12 +591,24 @@ function buildPathSegs(opts = {}) {
   if (state.filters.jurisdiction && state.filters.jurisdiction !== state.subdomainJurisdiction) {
     segs.push(state.filters.jurisdiction);
   }
+  // Always the canonical short slug, so /greek/queensland reads back as
+  // /greek/qld and a shared link has one spelling.
+  if (state.filters.location) segs.push(state.filters.location);
+  // The feed-wide service filter. A rule focus writes its slug after the
+  // parish instead — see below — because /smg/liturgy has to read in that
+  // order to mean "the liturgy at St Michael & Gabriel".
+  if (state.filters.day != null && !state.parishScheduleFocus) {
+    segs.push(daySlugFor(state.filters.day));
+  }
+  if (state.filters.service && !state.parishScheduleFocus) segs.push(state.filters.service);
   if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
   else if (state.filters.socialOnly) segs.push('social');
   const psfId = state.parishSheetFocus;
   const psfParish = psfId ? state.parishes.find(x => x.id === psfId) : null;
+  let parishSegWritten = false;
   if (psfParish && psfParish.acronym) {
     segs.push(psfParish.acronym.toLowerCase().replace(/\s+/g, ''));
+    parishSegWritten = true;
   } else if (state.filters.parishIds && state.filters.parishIds.size) {
     const acrs = [...state.filters.parishIds].map(pid => {
       const p = state.parishes.find(x => x.id === pid);
@@ -384,10 +617,27 @@ function buildPathSegs(opts = {}) {
     if (acrs.length === 1) segs.push(acrs[0]);
     else if (acrs.length > 1) segs.push(acrs.join('+'));
   }
+  // Schedule focus, immediately after the parish it belongs to, day first:
+  // /sgr/wed/liturgy reads in the order it is spoken.
+  // Only when the parish itself made it into the path. Most parishes have no
+  // acronym yet, and /sun/matins without one in front does not mean "this
+  // parish's Sunday matins" — it means every Sunday matins in the country.
+  if (state.parishScheduleFocus && parishSegWritten) {
+    const f = state.parishScheduleFocus;
+    // There is no segment for "rule 24", so a focus is written as the day and
+    // service that name it. A tapped row whose title the registry does not
+    // recognise writes only its day, and comes back as every rule that day.
+    const daySeg = f.dow != null ? daySlugFor(f.dow) : null;
+    if (daySeg) segs.push(daySeg);
+    if (f.slug) segs.push(f.slug);
+  }
   if (state.filters.englishOnly) {
     segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
   }
-  if (opts.includeEventId && state._openEventId) {
+  // The focused occurrence is already named by the parish + service pair, and
+  // appending its id as well would make the shared link point at one date
+  // rather than at "the next one" — which is the thing being linked to.
+  if (opts.includeEventId && state._openEventId && !state.parishScheduleFocus) {
     segs.push(String(state._openEventId));
   }
   return segs;
@@ -430,6 +680,10 @@ async function reconcileStateFromUrl() {
   try {
     // 1) Reset URL-driven state (preserve location, time range, sort — not in URL)
     state.filters.jurisdiction = null;
+    state.filters.location = null;
+    state.filters.service = null;
+    state.filters.day = null;
+    state.parishScheduleFocus = null;
     state.filters.parishIds = null;
     state.filters.multiParish = loadMultiParishPref();
     state.filters.socialOnly = false;
@@ -442,10 +696,17 @@ async function reconcileStateFromUrl() {
     delete state._openEventId;
     delete state._startMode;
     delete state._parishSlugs;
+    delete state._fitLocation;
+    delete state._serviceSlug;
+    delete state._daySlug;
+    delete state._pendingServiceFocus;
+    delete state._pendingDayFocus;
 
     // 2) Re-parse URL into state
     detectUrlState();
     applyParishSlugs();
+    if (state._pendingServiceFocus || state._pendingDayFocus != null) await ensureSchedulesLoaded();
+    applyServiceFocus();
     const targetMode = state._startMode === 'services' ? 'services' : 'events';
     delete state._startMode;
 
@@ -503,9 +764,14 @@ async function reconcileStateFromUrl() {
     const panelOpen = modalOpen || inlineOpen;
     const nextOpenId = state._openEventId || null;
 
-    // 8) Refetch data (URL filter change → different result set)
-    if (state.mode === 'services') window.agoraFetchSchedules();
-    else window.agoraFetchEvents();
+    // 8) Refetch data (URL filter change → different result set). A URL that
+    // carries a location re-frames the map on it, so stepping back to
+    // /greek/qld puts Queensland in view again rather than leaving the map
+    // wherever the forward navigation left it.
+    const refit = !!state._fitLocation;
+    delete state._fitLocation;
+    if (state.mode === 'services') window.agoraFetchSchedules({ fit: refit });
+    else window.agoraFetchEvents({ fit: refit });
 
     if (nextOpenId && nextOpenId !== prevOpenId) {
       // Show the requested event. showEventDetail will re-set state._openEventId
@@ -984,7 +1250,13 @@ function toggleAdminControlsVisibility() {
     el.style.display = hiding ? '' : 'none';
   });
   document.querySelectorAll('.btn-admin-controls-pill').forEach(el => {
-    el.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+    // The pill carries a masked glyph alongside its label now, so relabel
+    // the label span rather than assigning textContent over both.
+    const label = el.querySelector('.btn-admin-controls-label');
+    if (label) label.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+    else el.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+    const g = el.querySelector('.ps-btn-glyph');
+    if (g) g.style.setProperty('--glyph', `url(https://api.iconify.design/ph:${hiding ? 'eye-slash' : 'eye'}.svg)`);
   });
 }
 
@@ -1098,6 +1370,14 @@ async function applyStartMode() {
     await fetchEvents({ fit: true });
   }
   delete state._startMode;
+  // Frame the region explicitly rather than relying on the fetch above having
+  // done it. The fit rides on the events path, and a region whose parishes
+  // have no events in the window takes the services branch instead — which is
+  // exactly the case where the user most needs to be shown where they are.
+  if (state._fitLocation) {
+    delete state._fitLocation;
+    if (typeof updateMap === 'function') updateMap(state, { fit: true });
+  }
   syncFiltersButton();
 
   if (state._openEventId) {
@@ -1109,6 +1389,20 @@ async function applyStartMode() {
     syncURL({ replace: true });
     await openEventFromUrl(pendingId);
   } else if (typeof syncURL === 'function') {
+    syncURL({ replace: true });
+  }
+  // Last, because it needs the schedules and the projected occurrences the
+  // fetch above brought in, and because it sets _openEventId of its own —
+  // which the block above would otherwise have opened as a drawer instead of
+  // pinning it in the parish sheet where it belongs.
+  //
+  // Schedules first: the events path does not load them (only the services
+  // view and the parish sheet do, the latter lazily), and a rule focus that
+  // asked before they arrived would find no rule and quietly downgrade itself
+  // to the feed-wide filter.
+  if (state._pendingServiceFocus || state._pendingDayFocus != null) {
+    await ensureSchedulesLoaded();
+    applyServiceFocus();
     syncURL({ replace: true });
   }
   state._initialLoad = false;
@@ -1178,6 +1472,7 @@ function renderParishPills() {
   let relevant = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+    if (!parishPassesLocation(p)) return false;
     return true;
   });
 
@@ -1896,16 +2191,17 @@ function syncFiltersButton() {
 
 // ── Reset FAB (top center) ──
 function hasActiveFilters() {
-  return state.filters.jurisdiction || state.filters.parishIds ||
-    state.filters.socialOnly || state.filters.englishOnly || state.parishFocus ||
-    state.filters.multiParish;
+  return state.filters.jurisdiction || state.filters.location || state.filters.service ||
+    state.filters.day != null || state.filters.parishIds || state.filters.socialOnly ||
+    state.filters.englishOnly || state.parishFocus || state.filters.multiParish;
 }
 
 // "Show all" FAB clears two things only: jurisdiction chip + current parish
 // selection (while staying in multi-parish mode). It's visible whenever either
 // is set — social/English/focus toggles don't count.
 function hasResettableScope() {
-  return !!(state.filters.jurisdiction || (state.filters.parishIds && state.filters.parishIds.size));
+  return !!(state.filters.jurisdiction || state.filters.location
+    || (state.filters.parishIds && state.filters.parishIds.size));
 }
 
 function syncResetFab() {
@@ -1925,6 +2221,7 @@ function syncResetFab() {
         .filter(p =>
           p.id !== '_unassigned' && p.lat != null && p.lng != null &&
           (!state.filters.jurisdiction || p.jurisdiction === state.filters.jurisdiction) &&
+          parishPassesLocation(p) &&
           (!state.filters.parishIds || state.filters.parishIds.has(p.id))
         )
         .every(p => vp.has(p.id));
@@ -1951,6 +2248,10 @@ function clearAllFilters() {
   }
   const wasServices = state.mode === 'services';
   state.filters.jurisdiction = null;
+  state.filters.location = null;
+  state.filters.service = null;
+  state.filters.day = null;
+  state.parishScheduleFocus = null;
   state.filters.parishIds = null;
   state.filters.showAllParishes = null;
   state.filters.socialOnly = false;
@@ -2058,6 +2359,15 @@ function clearOneFilter(kind) {
     state.filters.jurisdiction = null;
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
+  } else if (kind === 'location') {
+    state.filters.location = null;
+    // Dropping the region should show what dropping it revealed, so re-frame
+    // on whatever is now in scope rather than leaving the map over one state.
+    if (typeof updateMap === 'function') updateMap(state, { fit: true });
+  } else if (kind === 'service') {
+    state.filters.service = null;
+  } else if (kind === 'day') {
+    state.filters.day = null;
   } else if (kind === 'social') {
     state.filters.socialOnly = false;
     document.getElementById('btn-social')?.classList.remove('active');
@@ -2096,6 +2406,9 @@ function syncFilterActiveStack() {
   // clearer wired to its specific filter key.
   const chips = [];
   if (state.filters.jurisdiction) chips.push({ kind: 'jurisdiction', label: capitalize(state.filters.jurisdiction) });
+  if (state.filters.location) chips.push({ kind: 'location', label: locationLabel() || state.filters.location });
+  if (state.filters.day != null) chips.push({ kind: 'day', label: dayNameFor(state.filters.day) });
+  if (state.filters.service) chips.push({ kind: 'service', label: serviceLabelFor(state.filters.service) });
   if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Socials' });
   if (state.filters.englishOnly) {
     // Mirror the English button's tri-state vocabulary: strict = "English",
@@ -2265,6 +2578,20 @@ function applyNonViewportFilters(events) {
       (e.extra_parishes && e.extra_parishes.some(pid => state.filters.parishIds.has(pid)))
     );
   }
+  if (state.filters.location) {
+    // An event is in the location if any parish showing it is — a combined
+    // service listed under a Sydney and a Wollongong parish belongs in both.
+    filtered = filtered.filter(e =>
+      parishIdPassesLocation(e.parish_id) ||
+      (e.extra_parishes && e.extra_parishes.some(pid => parishIdPassesLocation(pid)))
+    );
+  }
+  if (state.filters.service) {
+    filtered = filtered.filter(e => rowIsService(state.filters.service, e));
+  }
+  if (state.filters.day != null) {
+    filtered = filtered.filter(e => eventLocalDow(e) === state.filters.day);
+  }
   if (state.filters.socialOnly) {
     // Social = youth, social, talk, other, festival, fundraiser (everything NOT liturgical)
     filtered = filtered.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
@@ -2300,6 +2627,26 @@ function applyFilters(events) {
 function filterParishEventsBySession(events) {
   const f = state.parishFilters;
   let out = events;
+  // A rule focus narrows the sheet to that one rule, from now on. "Now on"
+  // rather than the usual whole window: the focus is a standing answer to
+  // "when is the next one and the ones after it", and last Sunday's is not
+  // part of that. An occurrence still running counts as now.
+  const focus = state.parishScheduleFocus;
+  if (focus) {
+    const now = Date.now();
+    const ids = new Set(focus.ruleIds || []);
+    out = out.filter(e => {
+      if (Date.parse(e.end_utc || e.start_utc) < now) return false;
+      if (e.schedule_id != null) return ids.has(e.schedule_id);
+      // A stored one-off belongs under a KIND focus but not under a rule
+      // one: "Showing Liturgies" should include a Vesperal Liturgy that no
+      // rule produces, while "Sunday morning Liturgy" is about that rule.
+      if (focus.scope !== 'kind') return false;
+      if (focus.slug && !rowIsService(focus.slug, e)) return false;
+      if (focus.dow != null && eventLocalDow(e) !== focus.dow) return false;
+      return true;
+    });
+  }
   if (f.socialOnly) {
     out = out.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
   }
@@ -3407,6 +3754,111 @@ function initParishSheet() {
   });
 }
 
+// The banner a schedule focus spawns, between the service times and the
+// events list it has narrowed. It says what is being shown in words rather
+// than as a pill, because the answer has three parts that a pill cannot hold
+// — which day, which service, in which language — and because the list under
+// it would otherwise look like the parish's whole feed with most of it
+// missing.
+function scheduleFocusBannerHtml(parish) {
+  const focus = state.parishScheduleFocus;
+  if (!focus) return '';
+  const accent = getParishDisplayColor((parish && parish.color) || rawJurisColor(parish && parish.jurisdiction));
+  return `<div class="ps-focus-banner" style="--parish-color:${esc(accent)}">
+      <span class="ps-focus-banner-text">Showing ${esc(scheduleFocusLabel(focus))}</span>
+      <button class="ps-focus-banner-x" type="button" data-schedule-focus-clear aria-label="Show everything at this parish">&times;</button>
+    </div>`;
+}
+
+// "Sunday morning Liturgy in English" / "Tuesday evening Bible studies" /
+// "Liturgies".
+//
+// One rule can be described exactly; a kind that covers several cannot, since
+// they differ on the very things the sentence would name. So a multi-rule
+// focus falls back to the plural alone and lets the list say the rest.
+function scheduleFocusLabel(focus) {
+  const rule = focus.scheduleId != null
+    ? (state.schedules || []).find(s => s.id === focus.scheduleId)
+    : null;
+  if (!rule) {
+    // Several rules: name the day if they share one, then the plural.
+    const day = focus.dow != null ? dayNameFor(focus.dow) : '';
+    const kind = focus.slug ? servicePluralFor(focus.slug) : 'services';
+    return [day, kind].filter(Boolean).join(' ');
+  }
+  const day = womDescribeDay(rule);
+  const part = partOfDay(rule.start_time);
+  const title = rule.title || (focus.slug ? serviceLabelFor(focus.slug) : 'service');
+  const langs = describeLanguages(rule.languages);
+  return [day, part, title].filter(Boolean).join(' ') + (langs ? ` in ${langs}` : '');
+}
+
+/** "Sunday", or "1st and 3rd Saturday" when the rule is week-of-month. */
+function womDescribeDay(rule) {
+  const day = DAYS[rule.day_of_week] || '';
+  if (!rule.week_of_month) return day;
+  const map = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
+  const parts = String(rule.week_of_month).split(',').map(w => map[w.trim()] || w.trim());
+  const joined = parts.length > 1
+    ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
+    : parts[0];
+  return `${joined} ${day}`;
+}
+
+// Evening rather than night for a 7pm service: it is what a vespers or a
+// weeknight study is actually called. Night is kept for genuinely late ones
+// — a Paschal liturgy at 11pm is not an evening service.
+function partOfDay(startTime) {
+  const h = Number(String(startTime || '').slice(0, 2));
+  if (!Number.isFinite(h)) return '';
+  if (h < 12) return 'morning';
+  if (h < 17) return 'afternoon';
+  if (h < 21) return 'evening';
+  return 'night';
+}
+
+/** "English", "Arabic and English", or '' when it adds nothing. */
+function describeLanguages(raw) {
+  const langs = parseLangs(raw);
+  if (!langs || !langs.length) return '';
+  if (langs.length === 1) return langs[0];
+  return langs.slice(0, -1).join(', ') + ' and ' + langs[langs.length - 1];
+}
+
+function servicePluralFor(slug) {
+  const S = window.AgoraServices;
+  return S ? S.servicePlural(slug) : String(slug || '');
+}
+
+function resolveDaySlug(seg) {
+  const S = window.AgoraServices;
+  return S ? S.resolveDay(seg) : null;
+}
+function daySlugFor(dow) {
+  const S = window.AgoraServices;
+  return S ? S.daySlug(dow) : null;
+}
+function dayNameFor(dow) {
+  const S = window.AgoraServices;
+  return S ? S.dayName(dow) : (DAYS[dow] || '');
+}
+
+// A row's weekday in the PARISH's own time, which is the only reading that
+// makes /wed mean what it says: a 7pm Wednesday service in Perth is Wednesday
+// there whatever the clock says where it is being read. Projected instances
+// already carry the local wall time; a stored one-off is converted through
+// its own zone.
+function eventLocalDow(e) {
+  if (!e) return null;
+  const local = e.start_local
+    ? String(e.start_local).slice(0, 10)
+    : (e.start_utc
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: e.timezone || TZ }).format(new Date(e.start_utc))
+      : null);
+  if (!local) return null;
+  return new Date(local + 'T00:00:00Z').getUTCDay();
+}
+
 // Mirror parishFilters state onto the in-card pills. parishFilters is
 // the parish-sheet's local scoped filter state (separate from the main
 // mode-bar's state.filters). The EN badge text widens to "EN+BILINGUAL"
@@ -3437,6 +3889,28 @@ window.agoraSyncParishFilterPills = syncParishFilterPills;
 
 function openParishSheet(parishId, opts = {}) {
   if (_parishSheetAPI) _parishSheetAPI.open(parishId, opts);
+  // Opening a parish while a service filter is on narrows to that parish's
+  // own rule of that kind. Otherwise the URL and the view disagree: the path
+  // reads /sgr/liturgy either way, and re-opening it would give the rule
+  // focus while the live view still showed every liturgy at the parish.
+  // filters.service survives, so closing the sheet returns to /liturgy.
+  if ((state.filters.service || state.filters.day != null) && !state.parishScheduleFocus
+      && !opts.noServiceFocus && state.parishSheetFocus === parishId) {
+    // Schedules are only loaded by the services view and (lazily) by the
+    // sheet itself, so the events view reaches here with none — hence the
+    // wait, and the re-check afterwards in case the user moved on meanwhile.
+    ensureSchedulesLoaded().then(() => {
+      if (state.parishSheetFocus !== parishId || state.parishScheduleFocus) return;
+      const rules = matchingRules(parishId, state.filters.service, state.filters.day);
+      if (!rules.length) return;
+      setParishScheduleFocus(parishId, {
+        ruleIds: rules.map(r => r.id),
+        slug: state.filters.service,
+        dow: state.filters.day,
+        scope: 'kind',
+      });
+    });
+  }
   // Activate the matching parish pill (single-select) so the user gets a
   // consistent visual state regardless of how the card was opened (marker
   // tap, pill tap, deep link). Skip when in multi-parish picker mode —
@@ -3449,6 +3923,14 @@ function openParishSheet(parishId, opts = {}) {
   }
 }
 function closeParishSheet() {
+  // The schedule focus belongs to the sheet — it is "this rule at this
+  // parish", and there is nowhere to show it once the parish is gone. The
+  // pinned occurrence goes with it: it was the focus's, not the user's, and
+  // leaving it behind writes an event id into a URL nobody asked for.
+  if (state.parishScheduleFocus) {
+    state.parishScheduleFocus = null;
+    state._openEventId = null;
+  }
   if (_parishSheetAPI) _parishSheetAPI.close();
   // Closing the parish card also clears the implicit single-parish pill
   // selection that opening it set. Multi-parish picker mode keeps its
@@ -3539,7 +4021,11 @@ function refreshParishContentPortion(parishId, opts = {}) {
       const sec = document.createElement('div');
       sec.className = 'ps-section ps-sched-section';
       sec.innerHTML = innerHTML;
-      streamEl.parentNode.insertBefore(sec, streamEl);
+      // Above the filter row, which sits between the service times and the
+      // events list — mounting before the stream instead would drop it on the
+      // wrong side of the pills.
+      const anchor = contentEl.querySelector('.ps-filter-row') || streamEl;
+      anchor.parentNode.insertBefore(sec, anchor);
     }
   } else if (existingSection) {
     existingSection.remove();
@@ -3668,19 +4154,35 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (state.isAdmin) {
     const hiding = localStorage.getItem('hideAdminControls') === 'true';
     const pid = esc(parishId);
+    // Admin row is its own .ps-actions so Edit / Delete / the visibility
+    // toggle sit in the same pill geometry as Directions / Website / Call
+    // directly above them. --parish-color is not set here on purpose: the
+    // public actions carry the parish's hue, and the admin ones staying
+    // neutral is what keeps the two rows telling apart at a glance.
     parishAdminHtml = `
-      <div class="admin-actions-group ps-admin-actions" style="${hiding ? 'display:none' : ''}">
-        <button class="ps-btn btn-outline" onclick="toggleParishEdit('${pid}')">Edit</button>
-        <button class="btn-danger" onclick="deleteParish('${pid}')">Delete</button>
-      </div>
-      <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
-    const jurisdictionOpts = ['antiochian','ecumenical','greek','macedonian','russian','serbian','other']
+      <div class="ps-actions ps-admin-actions">
+        <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
+          <button class="ps-btn ps-btn-admin" type="button" onclick="toggleParishEdit('${pid}')">${glyph('ph:pencil-simple')}Edit</button>
+          <button class="ps-btn ps-btn-danger" type="button" onclick="deleteParish('${pid}')">${glyph('ph:trash')}Delete</button>
+        </div>
+        ${adminVisibilityPill(hiding, 'ps-btn ps-btn-ghost')}
+      </div>`;
+    // Mirrors the jurisdiction CHECK in d1/schema.sql. It listed
+    // 'ecumenical', which the constraint rejects, and omitted 'romanian',
+    // which it allows — so one option could only ever fail the save and one
+    // valid jurisdiction was unreachable from this form.
+    const jurisdictionOpts = ['antiochian','greek','macedonian','romanian','russian','serbian','other']
       .map(j => `<option value="${j}"${parish.jurisdiction === j ? ' selected' : ''}>${capitalize(j)}</option>`)
       .join('');
     let langsVal = '';
     try { langsVal = parish.languages ? JSON.parse(parish.languages).join(', ') : ''; } catch { langsVal = parish.languages || ''; }
     parishEditFormHtml = `
       <div class="detail-edit-form" id="ps-edit-form-${pid}" style="display:none;">
+        <div class="edit-row">
+          <label>Logo</label>
+          <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLogoEditor('${pid}')">${glyph('ph:image-square')}${parish.logo_path ? 'Change logo' : 'Add logo'}</button>
+          <div class="edit-row-hint">Or tap the pencil on the avatar above.</div>
+        </div>
         <div class="edit-row"><label>Short name</label><input id="pse-name-${pid}" value="${esc(parish.name || '')}"></div>
         <div class="edit-row"><label>Full name</label><input id="pse-fullname-${pid}" value="${esc(parish.full_name || '')}"></div>
         <div class="edit-row"><label>Jurisdiction</label><select id="pse-jurisdiction-${pid}">${jurisdictionOpts}</select></div>
@@ -3692,13 +4194,22 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Raffle URL</label><input type="url" id="pse-raffle-${pid}" value="${esc(parish.raffle_url || '')}"></div>
         <div class="edit-row"><label>Payment URL</label><input type="url" id="pse-payment-${pid}" value="${esc(parish.payment_url || '')}"></div>
         <div class="edit-row"><label>Gala URL</label><input type="url" id="pse-gala-${pid}" value="${esc(parish.gala_url || '')}"></div>
-        <div class="edit-row"><label>Color</label><input type="color" id="pse-color-${pid}" value="${esc(parish.color || '#666666')}"></div>
-        <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
+        <div class="edit-row">
+          <label>Color</label>
+          <input type="color" id="pse-color-${pid}" value="${esc(parish.color || rawJurisColor(parish.jurisdiction))}">
+          <div class="edit-row-hint">Cards, feed lines and event groups only — map dots and labels always draw the jurisdiction's colour.</div>
+        </div>
+        <div class="edit-row">
+          <label>Acronym</label>
+          <input id="pse-acro-${pid}" data-acronym-field value="${esc(parish.acronym || '')}">
+          <div class="edit-row-hint" data-acronym-hint>The parish's short link: orthodoxy.au/<span data-acronym-preview>${esc((parish.acronym || 'acronym').toLowerCase().replace(/\s+/g, ''))}</span></div>
+        </div>
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
         <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
         <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="btn-save" onclick="saveParish('${pid}')">Save</button>
+        <div class="edit-form-actions">
+          <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
+          <button class="ps-btn ps-btn-ghost" type="button" onclick="toggleParishEdit('${pid}')">Cancel</button>
         </div>
       </div>`;
   }
@@ -3760,7 +4271,7 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   contentEl.innerHTML = `
     <div class="ps-header">
-      <div class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}</div>
+      <${state.isAdmin ? 'button type="button" data-logo-edit' : 'div'} class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}${state.isAdmin ? `<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span>` : ''}</${state.isAdmin ? 'button' : 'div'}>
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
@@ -3780,7 +4291,9 @@ function renderParishSheetContent(parishId, opts = {}) {
     </div>
     ${parishEditFormHtml || ''}
     <!-- Sticky filter pill row above the events list. Operates on
-         parishFilters (scoped local state, separate from main).
+         parishFilters (scoped local state, separate from main). It sits
+         ABOVE the service times because the English pill prunes rows from
+         that panel too — it is not only the events list it acts on.
          Schedules pill removed — service times always render below. -->
     <div class="ps-filter-row" id="ps-filter-row">
       <button class="ps-filter-pill" data-ps-filter="social" type="button">
@@ -3792,6 +4305,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       </button>
     </div>
     ${schedSectionHtml}
+    ${scheduleFocusBannerHtml(parish)}
     <div class="ps-events-list"></div>
     ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}`;
 
@@ -3824,6 +4338,15 @@ function renderParishSheetContent(parishId, opts = {}) {
       closeBtn.addEventListener('click', e => {
         e.stopPropagation();
         const pid = state.parishSheetFocus;
+        // Under a rule focus this X is the exit from the focus, not just from
+        // the card: the card IS the focus, and closing it while the feed
+        // stayed narrowed to one rule would leave no way back out except the
+        // pill. clearParishScheduleFocus re-renders and rewrites the URL.
+        if (state.parishScheduleFocus) {
+          collapseEventCardDOM();
+          clearParishScheduleFocus();
+          return;
+        }
         delete state._openEventId;
         collapseEventCardDOM();
         syncURL();
@@ -3838,6 +4361,30 @@ function renderParishSheetContent(parishId, opts = {}) {
   // keeps clientHeight fixed; scrollHeight reports true content height.
   const nameEl = contentEl.querySelector('.ps-name');
   if (nameEl) fitParishName(nameEl);
+
+  // Avatar doubles as the logo control while the edit form is open. The
+  // .editing class is owned by toggleParishEdit; re-apply it here because a
+  // full re-render (a save, a scheme flip) rebuilds the header from HTML and
+  // would otherwise drop the pencil while the form is still showing.
+  const avatarBtn = contentEl.querySelector('.ps-avatar[data-logo-edit]');
+  if (avatarBtn) {
+    const form = contentEl.querySelector('.detail-edit-form');
+    if (form && form.style.display !== 'none') avatarBtn.classList.add('editing');
+    avatarBtn.addEventListener('click', () => {
+      if (avatarBtn.classList.contains('editing')) openParishLogoEditor(parishId);
+      else toggleParishEdit(parishId);
+    });
+  }
+
+  // The "Showing …" banner's X drops the schedule focus and widens the feed
+  // back to everything at this parish.
+  const focusX = contentEl.querySelector('[data-schedule-focus-clear]');
+  if (focusX) focusX.addEventListener('click', e => { e.stopPropagation(); clearParishScheduleFocus(); });
+
+  // Acronym field says, as you type, whether the link it would make is
+  // available. The Worker refuses a reserved or taken one on save either way
+  // — this is so you find out before the round-trip rather than after it.
+  wireAcronymHint(contentEl, parishId);
 
   // Address + website copy chips. Click copies the value to clipboard and
   // flashes a "Copied" label in place of the text for ~1.2s.
@@ -4021,16 +4568,12 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   // Lazy-fetch schedules when they haven't been loaded yet
   if (!state.schedules || !state.schedules.length) {
-    window.agoraBundle.load()
-      .then(() => window.agoraBundle.schedules())
-      .then(data => {
-        state.schedules = data || [];
-        const sheetEl = document.getElementById('parish-sheet');
-        if (sheetEl && !sheetEl.classList.contains('hidden')) {
-          renderParishSheetContent(parishId, opts);
-        }
-      })
-      .catch(() => {});
+    ensureSchedulesLoaded().then(() => {
+      const sheetEl = document.getElementById('parish-sheet');
+      if (sheetEl && !sheetEl.classList.contains('hidden')) {
+        renderParishSheetContent(parishId, opts);
+      }
+    });
   }
 
   // Async: fetch the same 28-day window as the main list so the parish
@@ -4733,11 +5276,12 @@ function formatEventTime(date) {
   return `${hour}${minHtml}${merHtml}`;
 }
 
-// Single source for jurisdiction hex values. Used both for direct juris
-// rendering (via getJurisdictionColor below, no substitution) and as the
+// Jurisdiction hex values come from /shared/jurisdiction-colors.js, which
+// index.html loads before this file — the table is also read by the seed, and
+// the two copies it used to have disagreed about Greek. Used both for direct
+// juris rendering (via getJurisdictionColor below, no substitution) and as the
 // override target when a juris filter is active (in getParishDisplayColor).
-const _JURIS_RAW_COLORS = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
-function rawJurisColor(j) { return _JURIS_RAW_COLORS[j] || '#888888'; }
+function rawJurisColor(j) { return window.agoraJurisdictionColor(j); }
 window.rawJurisColor = rawJurisColor;
 
 function getJurisdictionColor(j) {
@@ -4960,8 +5504,13 @@ function renderScheduleDaysHTML(items, opts = {}) {
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
       const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
       const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
-      html += `<div class="schedule-item">`;
-      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${editBtn}</div>`;
+      // The row is the way into the rule: tapping it focuses that rule's next
+      // occurrence at that parish. data-sched-focus carries both halves
+      // because the main services panel renders rows for every parish at once.
+      const focused = state.parishScheduleFocus
+        && (state.parishScheduleFocus.ruleIds || []).includes(s.id);
+      html += `<div class="schedule-item${focused ? ' focused' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}" role="button" tabindex="0">`;
+      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${editBtn}<img class="si-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt=""></div>`;
       if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
       html += `</div>`;
       if (isAdmin) {
@@ -5047,6 +5596,15 @@ function wireScheduleAdminHandlers(container) {
 function renderServices() {
   const container = document.getElementById('services-list');
   let schedules = state.schedules;
+  if (state.filters.location) {
+    schedules = schedules.filter(s => parishIdPassesLocation(s.parish_id));
+  }
+  if (state.filters.service) {
+    schedules = schedules.filter(s => rowIsService(state.filters.service, s));
+  }
+  if (state.filters.day != null) {
+    schedules = schedules.filter(s => s.day_of_week === state.filters.day);
+  }
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));
   } else if (state.viewportParishIds) {
@@ -5342,7 +5900,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         <button class="btn-outline" onclick="toggleEditEvent(${eid})">Edit</button>
         ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
       </div>
-      <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
+      ${adminVisibilityPill(hiding, '')}`;
   }
 
   let editForm = '';
@@ -5555,7 +6113,9 @@ function showParishDetail(parishId) {
   for (const [day, items] of byDay) {
     schedHtml += `<div class="schedule-day">${DAYS[day]}</div>`;
     for (const s of items) {
-      schedHtml += `<div class="schedule-item">${esc(s.title)} <span class="schedule-item-time">— ${formatTime12(s.start_time)}</span></div>`;
+      // "any schedule panel" includes this one — the legacy desktop detail
+      // panel. Same attributes, so initScheduleRowTaps picks it up too.
+      schedHtml += `<div class="schedule-item" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}" role="button" tabindex="0">${esc(s.title)} <span class="schedule-item-time">— ${formatTime12(s.start_time)}</span></div>`;
     }
   }
 
@@ -5656,7 +6216,14 @@ window.deleteEvent = async function(id) {
 
 window.toggleParishEdit = function(id) {
   const form = document.getElementById(`ps-edit-form-${id}`);
-  if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (!form) return;
+  const opening = form.style.display === 'none';
+  form.style.display = opening ? '' : 'none';
+  // The avatar is only a logo control while the form is open — see the
+  // .ps-avatar-edit note in app.css.
+  const avatar = document.querySelector('#parish-sheet-content .ps-avatar[data-logo-edit]');
+  if (avatar) avatar.classList.toggle('editing', opening);
+  if (opening) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
 window.saveParish = async function(id) {
@@ -5717,6 +6284,268 @@ window.deleteParish = async function(id) {
     scheduleRenderEvents();
   }
 };
+
+// ── Parish logo editor (admin) ────────────────────────────────────────
+//
+// One dialog, two panes. The chooser offers upload / crop / clear against
+// the logo as it stands; picking a file or hitting Crop moves to the
+// cropper, which is a canvas the source image is drawn into under a
+// circular mask, pannable by drag and zoomable by slider.
+//
+// Cropping is client-side because there is nowhere else for it to happen:
+// a Worker has no image pipeline, and adding one for this would be a
+// dependency and a CPU bill for something a canvas already does. The
+// export is a square 512px PNG, which also means a 4 MB photograph off a
+// phone reaches R2 as ~100 KB — the avatar it becomes is 44px wide.
+const LOGO_EXPORT_SIZE = 512;
+
+const _logo = {
+  parishId: null,
+  img: null,          // HTMLImageElement of the source
+  scale: 1,           // fitted scale × zoom
+  fitScale: 1,        // scale at which the image just covers the stage
+  offsetX: 0,         // top-left of the drawn image, in stage px
+  offsetY: 0,
+  stage: 0,           // stage side length in CSS px
+  dragging: false,
+  lastX: 0,
+  lastY: 0,
+  wired: false,
+};
+
+window.openParishLogoEditor = function(parishId) {
+  const parish = state.parishes.find(p => p.id === parishId);
+  if (!parish) return;
+  _logo.parishId = parishId;
+  _wireLogoEditor();
+
+  document.getElementById('logo-modal-sub').textContent = parish.name || parishId;
+  _showLogoPane('choose');
+
+  const preview = document.getElementById('logo-preview');
+  if (parish.logo_path) {
+    preview.innerHTML = `<img src="${esc(parish.logo_path)}" alt="">`;
+  } else {
+    const color = getParishDisplayColor(parish.color || rawJurisColor(parish.jurisdiction));
+    preview.innerHTML = `<span class="logo-preview-initial" style="background:${esc(color)}">${esc((parish.full_name || parish.name || '?')[0].toUpperCase())}</span>`;
+  }
+
+  // Crop only offers itself when there is something to crop, and clear only
+  // when there is something to clear — a dialog whose buttons are all live
+  // says less about the current state than one whose buttons are not.
+  const actions = document.getElementById('logo-choose-actions');
+  actions.innerHTML =
+    `<button class="ps-btn ps-btn-admin" type="button" id="logo-act-upload">${glyph('ph:upload-simple')}${parish.logo_path ? 'Upload new' : 'Upload'}</button>`
+    + (parish.logo_path ? `<button class="ps-btn ps-btn-admin" type="button" id="logo-act-crop">${glyph('ph:crop')}Crop</button>` : '')
+    + (parish.logo_path ? `<button class="ps-btn ps-btn-danger" type="button" id="logo-act-clear">${glyph('ph:trash')}Clear</button>` : '');
+  actions.querySelector('#logo-act-upload').onclick = () => document.getElementById('logo-file-input').click();
+  const cropBtn = actions.querySelector('#logo-act-crop');
+  if (cropBtn) cropBtn.onclick = () => _startLogoCrop(parish.logo_path);
+  const clearBtn = actions.querySelector('#logo-act-clear');
+  if (clearBtn) clearBtn.onclick = _clearParishLogo;
+
+  document.getElementById('logo-backdrop').classList.add('open');
+};
+
+window.closeParishLogoEditor = function() {
+  document.getElementById('logo-backdrop').classList.remove('open');
+  const input = document.getElementById('logo-file-input');
+  if (input) input.value = '';
+  _logo.img = null;
+};
+
+function _showLogoPane(which) {
+  document.getElementById('logo-pane-choose').hidden = which !== 'choose';
+  document.getElementById('logo-pane-crop').hidden = which !== 'crop';
+}
+
+function _wireLogoEditor() {
+  if (_logo.wired) return;
+  _logo.wired = true;
+
+  document.getElementById('logo-file-input').addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    // An SVG is already the right thing: resolution-independent, tiny, and
+    // rasterising it into a 512px PNG to crop would be a downgrade. Send it
+    // as-is and skip the cropper.
+    if (file.type === 'image/svg+xml') { _uploadParishLogo(file, file.type); return; }
+    _startLogoCrop(URL.createObjectURL(file));
+  });
+
+  document.getElementById('logo-zoom').addEventListener('input', e => {
+    _setLogoZoom(Number(e.target.value) / 100);
+  });
+
+  const stage = document.getElementById('logo-crop-stage');
+  const down = (x, y) => { _logo.dragging = true; _logo.lastX = x; _logo.lastY = y; };
+  const move = (x, y) => {
+    if (!_logo.dragging) return;
+    _logo.offsetX += x - _logo.lastX;
+    _logo.offsetY += y - _logo.lastY;
+    _logo.lastX = x;
+    _logo.lastY = y;
+    _clampLogoOffset();
+    _drawLogoCrop();
+  };
+  const up = () => { _logo.dragging = false; };
+
+  stage.addEventListener('pointerdown', e => { stage.setPointerCapture(e.pointerId); down(e.clientX, e.clientY); });
+  stage.addEventListener('pointermove', e => { if (_logo.dragging) { e.preventDefault(); move(e.clientX, e.clientY); } });
+  stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointercancel', up);
+}
+
+function _startLogoCrop(src) {
+  const img = new Image();
+  // Same-origin for a stored /logos/... path and a blob: URL alike, so the
+  // canvas stays untainted and toBlob works. crossOrigin is set anyway so a
+  // logo ever served from another host fails loudly here rather than at
+  // export time with a SecurityError.
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    _logo.img = img;
+    _showLogoPane('crop');
+    // Stage size is only knowable once the pane is visible.
+    const stage = document.getElementById('logo-crop-stage');
+    const side = Math.round(stage.getBoundingClientRect().width);
+    _logo.stage = side;
+    const canvas = document.getElementById('logo-crop-canvas');
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = side * dpr;
+    canvas.height = side * dpr;
+    canvas.style.width = side + 'px';
+    canvas.style.height = side + 'px';
+    // Cover, not contain: the crop circle should never open onto empty
+    // canvas, so the smaller dimension is the one that fills the stage.
+    _logo.fitScale = Math.max(side / img.naturalWidth, side / img.naturalHeight);
+    document.getElementById('logo-zoom').value = 100;
+    _setLogoZoom(1, { centre: true });
+  };
+  img.onerror = () => alert('Could not load that image.');
+  img.src = src;
+}
+
+function _setLogoZoom(zoom, opts = {}) {
+  if (!_logo.img) return;
+  const side = _logo.stage;
+  const prev = _logo.scale || _logo.fitScale;
+  const next = _logo.fitScale * zoom;
+  if (opts.centre) {
+    _logo.scale = next;
+    _logo.offsetX = (side - _logo.img.naturalWidth * next) / 2;
+    _logo.offsetY = (side - _logo.img.naturalHeight * next) / 2;
+  } else {
+    // Zoom about the stage centre, so the part of the image the user is
+    // looking at is the part that stays put.
+    const cx = (side / 2 - _logo.offsetX) / prev;
+    const cy = (side / 2 - _logo.offsetY) / prev;
+    _logo.scale = next;
+    _logo.offsetX = side / 2 - cx * next;
+    _logo.offsetY = side / 2 - cy * next;
+  }
+  _clampLogoOffset();
+  _drawLogoCrop();
+}
+
+// Keep the image covering the stage on both axes — panning should never be
+// able to drag a transparent edge into the crop circle.
+function _clampLogoOffset() {
+  if (!_logo.img) return;
+  const side = _logo.stage;
+  const w = _logo.img.naturalWidth * _logo.scale;
+  const h = _logo.img.naturalHeight * _logo.scale;
+  _logo.offsetX = Math.min(0, Math.max(side - w, _logo.offsetX));
+  _logo.offsetY = Math.min(0, Math.max(side - h, _logo.offsetY));
+}
+
+function _drawLogoCrop() {
+  const canvas = document.getElementById('logo-crop-canvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = canvas.width / _logo.stage;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, _logo.stage, _logo.stage);
+  ctx.drawImage(
+    _logo.img,
+    _logo.offsetX, _logo.offsetY,
+    _logo.img.naturalWidth * _logo.scale,
+    _logo.img.naturalHeight * _logo.scale
+  );
+  ctx.restore();
+}
+
+window.saveParishLogoCrop = async function() {
+  if (!_logo.img) return;
+  const out = document.createElement('canvas');
+  out.width = LOGO_EXPORT_SIZE;
+  out.height = LOGO_EXPORT_SIZE;
+  const ctx = out.getContext('2d');
+  // The stage is the crop: same framing, scaled up to the export size.
+  const k = LOGO_EXPORT_SIZE / _logo.stage;
+  ctx.drawImage(
+    _logo.img,
+    _logo.offsetX * k, _logo.offsetY * k,
+    _logo.img.naturalWidth * _logo.scale * k,
+    _logo.img.naturalHeight * _logo.scale * k
+  );
+  // Square, not circular: every surface that shows a logo already rounds it
+  // (border-radius in the sheet, an arc clip on the map sprite). Baking the
+  // circle in would only lose the corners for whatever renders it flat.
+  const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+  if (!blob) { alert('Could not render the crop.'); return; }
+  await _uploadParishLogo(blob, 'image/png');
+};
+
+async function _uploadParishLogo(body, contentType) {
+  const id = _logo.parishId;
+  const btn = document.getElementById('logo-crop-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  const res = await fetch(`/api/admin/parishes/${encodeURIComponent(id)}/logo`, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body,
+  });
+  if (btn) { btn.disabled = false; btn.textContent = 'Save logo'; }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Logo upload failed');
+    return;
+  }
+  const { logo_path } = await res.json();
+  _applyParishLogo(id, logo_path);
+}
+
+async function _clearParishLogo() {
+  const id = _logo.parishId;
+  if (!confirm('Remove this parish’s logo?')) return;
+  const res = await fetch(`/api/admin/parishes/${encodeURIComponent(id)}/logo`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Could not clear the logo');
+    return;
+  }
+  _applyParishLogo(id, null);
+}
+
+// One place to land a logo change: state, the map's baked sprite, and the
+// open sheet. The sheet re-render is a full one because the avatar lives in
+// the header, which the partial refresh deliberately leaves alone.
+function _applyParishLogo(id, logoPath) {
+  const idx = state.parishes.findIndex(p => p.id === id);
+  if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], logo_path: logoPath };
+  if (typeof window.agoraRefreshParishLogo === 'function') window.agoraRefreshParishLogo(id);
+  closeParishLogoEditor();
+  if (state.parishSheetFocus === id) {
+    renderParishSheetContent(id, { fullRender: true });
+    // The header rebuild dropped the pencil; put it back if the form the
+    // user opened it from is still showing.
+    const form = document.getElementById(`ps-edit-form-${id}`);
+    const avatar = document.querySelector('#parish-sheet-content .ps-avatar[data-logo-edit]');
+    if (form && avatar && form.style.display !== 'none') avatar.classList.add('editing');
+  }
+  scheduleRenderEvents();
+}
 
 let _escalatePubEventId = null;
 let _escalatePubCandidates = [];
@@ -6319,6 +7148,80 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = str || '';
   return div.innerHTML;
+}
+
+// Live availability hint under the acronym field. Two ways an acronym fails:
+// it spells a reserved link (/greek, /qld, /services), or another parish
+// already answers to it. Both are checked again in the Worker on save — see
+// acronymConflict there; this only shortens the feedback loop.
+// Schedule rows, wherever they are rendered — the parish sheet, the main
+// services panel, the parish-schedule blocks inside it. One delegated
+// listener rather than a wiring pass per render, since every one of those
+// panels rebuilds its HTML on any filter change.
+function initScheduleRowTaps() {
+  const activate = (e) => {
+    const row = e.target.closest('[data-sched-focus]');
+    if (!row) return;
+    // The admin ✎ and its form live inside the row and own their own taps.
+    if (e.target.closest('.schedule-edit-btn, .schedule-edit-form')) return;
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    const sid = Number(row.dataset.schedFocus);
+    const pid = row.dataset.schedParish
+      || row.closest('[data-parish-id]')?.dataset.parishId
+      || state.parishSheetFocus;
+    if (!pid || !Number.isFinite(sid)) return;
+    // Tapping the focused row again is the third way out, alongside the
+    // banner's X and the pinned card's.
+    if (state.parishScheduleFocus && state.parishScheduleFocus.scheduleId === sid) {
+      clearParishScheduleFocus();
+      return;
+    }
+    focusScheduleRule(pid, sid);
+  };
+  document.addEventListener('click', activate);
+  document.addEventListener('keydown', activate);
+}
+
+function wireAcronymHint(root, parishId) {
+  const input = root.querySelector('[data-acronym-field]');
+  const hint = root.querySelector('[data-acronym-hint]');
+  if (!input || !hint || !window.AgoraSlugs) return;
+  const { normaliseSlug, reservedSlugReason } = window.AgoraSlugs;
+  const paint = () => {
+    const slug = normaliseSlug(input.value);
+    let problem = reservedSlugReason(slug);
+    if (!problem && slug) {
+      const clash = state.parishes.find(p =>
+        p.id !== parishId && p.id !== '_unassigned' && normaliseSlug(p.acronym) === slug);
+      if (clash) problem = `"${slug}" is already the acronym for ${clash.name}.`;
+    }
+    hint.classList.toggle('edit-row-hint-bad', !!problem);
+    hint.textContent = problem
+      || (slug ? `The parish's short link: orthodoxy.au/${slug}` : "The parish's short link.");
+  };
+  input.addEventListener('input', paint);
+  paint();
+}
+
+// An Iconify glyph that follows its button's text colour. The <img>+invert
+// pattern the public action pills use is fine while a glyph is only ever
+// black or white; it cannot follow a pill that is red at rest and white on
+// hover, which the admin row needs. .ps-btn-glyph masks currentColor, so
+// one element covers every state in both schemes. See app.css.
+function glyph(name) {
+  return `<span class="ps-btn-glyph" style="--glyph:url(https://api.iconify.design/${esc(name)}.svg)" aria-hidden="true"></span>`;
+}
+
+// The show/hide toggle is rendered in two places (parish sheet, event
+// drawer) and relabelled in a third (toggleAdminControlsVisibility), so the
+// label and glyph live here rather than in three literals that can drift.
+// The label is its own span because the button now has a glyph child that a
+// textContent assignment would wipe out.
+function adminVisibilityPill(hiding, extraClass) {
+  return `<button class="${extraClass} btn-admin-controls-pill" type="button" onclick="toggleAdminControlsVisibility()">`
+    + glyph(hiding ? 'ph:eye' : 'ph:eye-slash')
+    + `<span class="btn-admin-controls-label">${hiding ? 'Show admin controls' : 'Hide admin controls'}</span></button>`;
 }
 
 // Returns a readable schedule-item label for week_of_month, e.g. "1st, 3rd Sunday"

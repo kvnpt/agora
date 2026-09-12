@@ -1,6 +1,12 @@
 // Seed data: the parishes and recurrence rules a fresh database starts with.
-const ANTIOCHIAN_BLUE = '#1e3a5f';
-const GREEK_BLUE = '#0d5eaf';
+//
+// Colours come from the shared jurisdiction table rather than constants here.
+// The local GREEK_BLUE was #0d5eaf against the app's #00508f, so a seeded Greek
+// parish carried one blue in the database and the app drew another wherever it
+// asked the table directly. See public/shared/jurisdiction-colors.js.
+const { jurisdictionColor } = require('../public/shared/jurisdiction-colors.js');
+const ANTIOCHIAN_BLUE = jurisdictionColor('antiochian');
+const GREEK_BLUE = jurisdictionColor('greek');
 
 const parishes = [
   {

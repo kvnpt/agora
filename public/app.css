@@ -33,6 +33,15 @@
   --accent: #2c6cb4;
   --accent-bg: #e8eaff;
   --accent-text: #4455cc;
+  /* Focus ring for form fields — the accent at low alpha, so a focused
+     input reads as lifted rather than outlined twice. */
+  --accent-ring: rgba(44, 108, 180, 0.22);
+
+  /* Destructive. --danger is the fill and the text colour of a danger
+     control; --danger-soft is the resting border, tinted enough to read as
+     "this one is different" without shouting before it is hovered. */
+  --danger: #dc3545;
+  --danger-soft: #f0a6ae;
 
   /* semantic */
   --now-dot: #22c55e;
@@ -102,6 +111,11 @@
     --accent: #5b8fd6;
     --accent-bg: #1f2540;
     --accent-text: #9aaef0;
+    --accent-ring: rgba(91, 143, 214, 0.3);
+
+    /* Lifted off #dc3545, which reads muddy against the charcoal floor. */
+    --danger: #f4677a;
+    --danger-soft: #7d3843;
 
     /* semantic */
     --now-dot: #4ade80;
@@ -1708,6 +1722,38 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 13.5px;
   padding: 0;
 }
+/* A schedule row is the way into its rule — tapping one focuses that rule's
+   next occurrence. The chevron says so; it stays low-contrast because the
+   time and title are what the row is for. */
+.schedule-item[data-sched-focus] {
+  cursor: pointer;
+  border-radius: 8px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  transition: background-color 140ms ease-out;
+}
+.schedule-item[data-sched-focus]:hover,
+.schedule-item[data-sched-focus]:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+/* "Emphasised a little bit" — a tint and a left rule in the parish's colour,
+   not a full selection state. The banner below the panel is what announces
+   the focus; this only points at the row it came from. */
+.schedule-item[data-sched-focus].focused {
+  background: color-mix(in srgb, var(--juris-color, var(--accent)) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--juris-color, var(--accent));
+}
+.si-chev {
+  width: 11px;
+  height: 11px;
+  margin-left: auto;
+  align-self: center;
+  opacity: 0.35;
+  flex: none;
+}
+.schedule-item[data-sched-focus]:hover .si-chev { opacity: 0.7; }
+@media (prefers-color-scheme: dark) { .si-chev { filter: brightness(0) invert(1); } }
 .si-main {
   display: flex;
   align-items: baseline;
@@ -2092,55 +2138,179 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .btn-cancel-event { color: var(--live-soon-text); border-color: #fca5a5; }
 .btn-hide-event { color: #6b7280; border-color: #d1d5db; }
 .admin-actions-group { display: contents; }
+
+/* Admin controls are pills like everything else they sit beside. The row
+   they live in (parish sheet, event drawer) is already a row of rounded
+   actions — Directions / Website / Call, Directions / Share — and a strip
+   of square buttons under it reads as a different, half-finished part of
+   the page rather than as the admin half of the same one.
+
+   Same shape, not the same weight: .ps-btn-danger keeps a red tint that
+   only fills on hover, and the visibility toggle stays muted, so matching
+   the pills doesn't flatten the difference between editing a parish and
+   deleting one. */
 .btn-admin-controls-pill {
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-color: var(--border);
   background: none;
-  cursor: pointer;
-  color: var(--muted);
   white-space: nowrap;
-  align-self: center;
 }
-.btn-save {
-  background: #28a745;
+.btn-admin-controls-pill:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+/* Event drawer: .detail-actions gives its buttons a 4px radius, so the
+   admin ones need the pill geometry restated at higher specificity to sit
+   level with the .btn-action pills in the same row. */
+.detail-actions .admin-actions-group > button,
+.detail-actions .btn-admin-controls-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.detail-actions .btn-admin-controls-pill {
+  background: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.detail-actions .btn-danger {
+  background: none;
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+.detail-actions .btn-danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
   color: #fff;
-  border: none;
+  opacity: 1;
+}
+
+/* Save is the one committing action in the form, so it reads as the one
+   filled pill — sized to the 44px tap target the form's inputs use. */
+.btn-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
-  padding: 10px 20px;
-  font-size: 16px;
+  padding: 11px 24px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #fff;
+  background: var(--success);
+  border: 1px solid var(--success);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: filter 150ms ease-out, box-shadow 150ms ease-out;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.btn-save:hover { filter: brightness(1.08); }
+.btn-save:active { filter: brightness(0.94); box-shadow: none; }
+.edit-form-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
 }
 
 /* ── Admin edit form in detail panel ── */
 .detail-edit-form {
   margin-top: 16px;
-  padding-top: 16px;
+  padding: 16px;
   border-top: 1px solid var(--border-light);
+  background: var(--surface);
 }
 .detail-edit-form .edit-row {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .detail-edit-form label {
   display: block;
   font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-weight: 600;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  margin-bottom: 2px;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
 }
-.detail-edit-form input:not([type=checkbox]):not([type=radio]),
+/* 16px is the floor: iOS Safari zooms the viewport on focus for anything
+   smaller, and this form is edited on a phone. The rest is a rounded,
+   padded field on --surface-2 — the bare inputs inherited the UA's black
+   box in dark mode, which is where the "whack" reading came from. */
+.detail-edit-form input:not([type=checkbox]):not([type=radio]):not([type=color]),
 .detail-edit-form textarea,
 .detail-edit-form select {
   width: 100%;
-  padding: 6px 8px;
-  font-size: 13px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 11px 14px;
   font-family: inherit;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.detail-edit-form textarea { resize: vertical; min-height: 60px; }
+.detail-edit-form select {
+  /* appearance:none removed the native chevron; draw one back in so the
+     field still says "this opens a list". */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  padding-right: 38px;
+}
+.detail-edit-form input:focus,
+.detail-edit-form textarea:focus,
+.detail-edit-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.detail-edit-form input::placeholder,
+.detail-edit-form textarea::placeholder { color: var(--text-muted); }
+.detail-edit-form textarea { resize: vertical; min-height: 84px; }
+/* A colour well, not a text field: swatch-shaped, and the UA-drawn swatch
+   inside it gets the same rounding so it doesn't sit as a square in a
+   rounded frame. */
+.detail-edit-form input[type=color] {
+  width: 100%;
+  height: 44px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.detail-edit-form input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.detail-edit-form input[type=color]::-webkit-color-swatch {
+  border: none;
+  border-radius: 8px;
+}
+.detail-edit-form input[type=color]::-moz-color-swatch {
+  border: none;
+  border-radius: 8px;
+}
+.edit-row-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.edit-row-hint-bad { color: var(--danger); font-weight: 600; }
 
 /* ── Location-active distance indicators ── */
 .distance-blue { color: #2196f3; }
@@ -2924,10 +3094,14 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 }
 .ps-avatar {
   flex: none;
+  position: relative;
   width: 44px;
   height: 44px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   color: #fff;
+  font-family: inherit;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2941,6 +3115,23 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
     inset 0 1px 0 rgba(255, 255, 255, 0.25),
     inset 0 -1px 2px rgba(0, 0, 0, 0.2);
 }
+/* Pencil-over-the-logo, the way a profile picture is changed everywhere
+   else. Hidden until the edit form is open: an admin reading a parish is
+   not editing it, and a permanent scrim over every avatar would dull the
+   one surface that carries the parish's identity. */
+button.ps-avatar { cursor: pointer; }
+.ps-avatar-edit {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
+}
+.ps-avatar-edit .ps-btn-glyph { width: 18px; height: 18px; }
+.ps-avatar.editing .ps-avatar-edit { display: flex; }
+.ps-avatar.editing:hover .ps-avatar-edit { background: rgba(0, 0, 0, 0.64); }
 .ps-header-info {
   flex: 1;
   min-width: 0;
@@ -3135,6 +3326,42 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   border-color: var(--text);
 }
 .ps-filter-pill.active .ps-filter-pill-icon { filter: brightness(0) invert(1); opacity: 1; }
+/* "Showing Sunday morning Liturgy in English" — the banner a schedule focus
+   spawns between the service times and the events list it has narrowed.
+   A sentence rather than a pill: the answer has three parts (which day, which
+   service, in which language) that a pill cannot hold, and without it the
+   list below reads as the parish's whole feed with most of it missing.
+   Parish-coloured, because the parish is what it is scoped to. */
+.ps-focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 2px;
+  padding: 9px 6px 9px 12px;
+  border-left: 3px solid var(--parish-color, var(--accent));
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--parish-color, var(--accent)) 12%, transparent);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.ps-focus-banner-text { flex: 1; min-width: 0; }
+.ps-focus-banner-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ps-focus-banner-x:hover { color: var(--text); background: var(--surface-2); }
 .ps-filter-en .fm-en-badge {
   display: inline-block;
   font-size: 10px;
@@ -3318,6 +3545,61 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   color: #fff;
 }
 
+/* Glyph that takes the button's own colour. The action pills elsewhere use
+   an <img> of a black Iconify SVG plus a dark-mode invert filter, which
+   works while the colour is only ever black-or-white — it cannot follow a
+   pill whose text is red at rest and white on hover. Masking currentColor
+   can, in both schemes and every state, from one rule. */
+.ps-btn-glyph {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--glyph) center / contain no-repeat;
+  mask: var(--glyph) center / contain no-repeat;
+}
+
+/* ── Admin controls in the parish sheet ──────────────────────────────
+   Its own row under the public actions, in the same pill vocabulary. See
+   the .btn-admin-controls-pill block above for why. */
+.ps-admin-actions {
+  margin-top: 8px;
+  align-items: center;
+}
+.ps-btn-admin {
+  gap: 6px;
+  color: var(--text);
+  border-color: var(--border);
+}
+.ps-btn-admin:hover {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+.ps-btn-danger {
+  gap: 6px;
+  color: var(--danger);
+  background: var(--surface);
+  border-color: var(--danger-soft);
+}
+.ps-btn-danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.ps-btn-ghost {
+  gap: 6px;
+  color: var(--text-secondary);
+  background: none;
+  border-color: var(--border);
+  font-weight: 500;
+}
+.ps-btn-ghost:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
 
 .ps-sched-card {
   background: var(--bg);
@@ -3395,6 +3677,82 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 .donate-item-label small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
 .donate-item-arrow { width: 15px; height: 15px; opacity: 0.4; flex-shrink: 0; }
 @media (prefers-color-scheme: dark) { .donate-item-arrow { filter: brightness(0) invert(1); opacity: 0.45; } }
+
+/* ── Parish logo editor (admin-only) ──────────────────────────────────
+   Reuses .escalate-backdrop / .escalate-modal for the frame; everything
+   below is the two panes inside it. */
+.logo-modal { position: relative; max-width: 420px; }
+.logo-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0 18px;
+}
+.logo-preview img,
+.logo-preview-initial {
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 42px;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16), 0 0 0 3px var(--surface);
+}
+.logo-choose-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+/* Square stage, circle mask. The canvas holds the whole visible frame and
+   the mask is a ring drawn over it with a huge inset shadow, so the crop
+   circle needs no second canvas and no compositing. */
+.logo-crop-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 320px;
+  margin: 4px auto 14px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface-2);
+  touch-action: none;
+  cursor: grab;
+}
+.logo-crop-stage:active { cursor: grabbing; }
+.logo-crop-canvas { display: block; }
+.logo-crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.logo-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.logo-zoom-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.logo-zoom-row input[type=range] { flex: 1; accent-color: var(--accent); }
+.logo-crop-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.logo-modal .escalate-btn-row { align-items: center; }
 
 /* ── Desktop layout (≥1024px) ──
    Rules scoped under body[data-layout="desktop"] so a JS-driven layout flag
