@@ -271,8 +271,14 @@
     <div class="map-grab-handle"></div>
 
     <!-- Mode bar: English toggle (left, was share pill), in-view chip (centred),
-         then a second row with Schedules / Socials / Admin promoted from the
-         filter menu. Share button is now a FAB next to the filter FAB. -->
+         then a second row with Schedules / Socials promoted from the filter
+         menu, and Admin as a round icon locked to the right. Share button is
+         now a FAB next to the filter FAB.
+
+         Admin and Log out are `hidden` until /api/admin/ping says this browser
+         can administer, and they are hidden to everyone else — which took a
+         CSS rule as well as the attribute, because a pill's own
+         `display: inline-flex` outranks the UA's [hidden]. -->
     <div class="mode-bar" id="mode-bar">
       <div class="mode-bar-row mode-bar-row-top">
         <button class="mode-bar-en" id="btn-english" type="button" role="checkbox" aria-checked="false">
@@ -293,14 +299,20 @@
           <img class="mode-bar-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
           <span class="mode-bar-pill-label">Socials</span>
         </button>
-        <a class="mode-bar-pill fm-admin" id="btn-admin" href="/admin" role="menuitem" hidden>
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:shield-check.svg" alt="">
-          <span class="mode-bar-pill-label">Admin</span>
-        </a>
-        <button class="mode-bar-pill fm-logout" id="btn-logout" type="button" role="menuitem" hidden>
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-          <span class="mode-bar-pill-label">Log out</span>
-        </button>
+        <!-- The signed-in half of the row, grouped so the group can be pinned
+             right and Admin stays its last item whether or not Log out is
+             showing. Two pills each with `margin-left: auto` would split the
+             free space between them instead. -->
+        <div class="mode-bar-pill-group">
+          <button class="mode-bar-pill fm-logout" id="btn-logout" type="button" role="menuitem" hidden>
+            <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+            <span class="mode-bar-pill-label">Log out</span>
+          </button>
+          <a class="mode-bar-pill fm-admin" id="btn-admin" href="/admin" role="menuitem" aria-label="Admin" title="Admin" hidden>
+            <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
+            <span class="mode-bar-pill-label">Admin</span>
+          </a>
+        </div>
       </div>
     </div>
 

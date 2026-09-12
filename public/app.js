@@ -138,7 +138,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFiltersMenu();
   initMultiParishToggle();
   initParishMultiToggle();
-  initScrollFade(document.getElementById('mode-bar-row-pills'));
+  // The pill row no longer scrolls — two labelled pills and a round Admin fit
+  // any phone — so there are no edges left to fade.
+
   // Juris banner + parish-pill row use a wrapper-with-overlays pattern;
   // classes go on the wrap, scroll listener attaches to the inner row.
   initScrollFade(

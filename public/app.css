@@ -364,42 +364,27 @@ input, select, textarea {
   min-height: 32px;
   position: relative;
 }
+/* Two labelled pills and one round one. It used to scroll sideways, with
+   edge fades, because it carried Schedules, Socials, Admin and Log out — four
+   labelled pills that did not fit a phone. Admin is an icon now and Log out
+   only exists for somebody signed in, so what is left fits, and a row that
+   fits must not scroll: a horizontal scroller inside a vertical sheet steals
+   the drag that closes the sheet. */
 .mode-bar-row-pills {
   gap: 6px;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
 }
-.mode-bar-row-pills::-webkit-scrollbar { display: none; }
-/* Edge fades with sticky pseudo-elements painting var(--bg)→transparent
-   so map doesn't show through. Same pattern as .jurisdiction-banner. */
-.mode-bar-row-pills::before,
-.mode-bar-row-pills::after {
-  content: '';
-  position: sticky;
-  top: 0;
-  flex: none;
-  width: 24px;
-  align-self: stretch;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 1;
+/* The signed-in pills, locked to the right and away from the two mode
+   toggles: they leave the app rather than changing what it is showing, and a
+   destination that moves as its neighbours change width is one people
+   mis-tap. Grouped rather than given a margin each — two auto margins split
+   the free space between them and put Log out in the middle of the row. */
+.mode-bar-pill-group {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.mode-bar-row-pills::before {
-  left: 0;
-  margin-right: -24px;
-  background: linear-gradient(to right, var(--bg) 0, transparent);
-  order: -1;
-}
-.mode-bar-row-pills::after {
-  right: 0;
-  margin-left: -24px;
-  background: linear-gradient(to left, var(--bg) 0, transparent);
-}
-.mode-bar-row-pills.scrolled-start::before { opacity: 1; }
-.mode-bar-row-pills.scrolled-end::after { opacity: 1; }
 /* English toggle in mode-bar — replaces the share pill's old slot. Pill
    button (NOT a filters-menu-item) so the menu's vertical-list layout
    doesn't override the inline-flex pill look. */
@@ -477,6 +462,29 @@ input, select, textarea {
   white-space: nowrap;
 }
 .mode-bar-pill:hover { color: var(--text); }
+/* [hidden] is a UA `display: none`, which `.mode-bar-pill { display:
+   inline-flex }` above quietly outranks — so Admin and Log out were shown to
+   everybody, signed in or not, for as long as both have existed. Same fix the
+   filter menu already carries for its own items. */
+.mode-bar-pill[hidden] { display: none; }
+/* Admin is icon-only and round: a 34px circle the size of the row, with the
+   label kept in the markup for a screen reader rather than deleted. */
+.mode-bar-pill.fm-admin {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.mode-bar-pill.fm-admin .mode-bar-pill-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.mode-bar-pill.fm-admin .mode-bar-pill-icon { width: 17px; height: 17px; }
 .mode-bar-pill-icon {
   width: 16px;
   height: 16px;
