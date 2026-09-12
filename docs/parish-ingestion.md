@@ -6,13 +6,15 @@ parishes that is a line in `seeds/parishes.js`. With an archdiocese directory �
 a few hundred names and addresses at once — it is a pipeline, and this is what
 that pipeline has to get right.
 
-This began as a brief for work that had not been done. Two directories have
-since been ingested — the Greek Archdiocese, 135 parishes, and the ROCOR
-Australian and New Zealand Diocese, all 37 — so the constraints below are now
-field notes rather than predictions, and the two sections at the end record what
-each run actually cost. They cost different things: the Greek directory
-published addresses that were sometimes wrong, and the Russian one publishes no
-addresses at all.
+This began as a brief for work that had not been done. Four directories have
+since been ingested — the Greek Archdiocese (135), the ROCOR Australian and New
+Zealand Diocese (37), the Antiochian Archdiocese (24) and the Serbian
+Metropolitanate (44 of 49) — so the constraints below are now field notes rather
+than predictions, and the sections at the end record what each run actually
+cost. They cost different things: the Greek directory published addresses that
+were sometimes wrong, the Russian one publishes no addresses at all, the
+Antiochian site cannot be fetched by anything automated, and the Serbian one
+publishes everything and names no suburbs.
 
 ---
 
@@ -49,13 +51,15 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-196 parishes · 68 schedules · 68 events · 0 overrides
+240 parishes · 68 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 24
-the Antiochian one. Schedules and events are untouched by both — neither
-directory publishes service times at all, so adapters remain the only route to
-those.
+135 of those parishes are the Greek Archdiocese import, 44 the Serbian one, 37
+the ROCOR one, and 24 the Antiochian one. Every one of the 240 now carries an
+acronym — its short link, `orthodoxy.au/<acronym>` — and a recorded read date
+(`info_checked_at`), which is what the parish sheet renders as "Updated 3 months
+ago". Schedules are untouched by three of the four imports: only the Antiochian
+site publishes service times, so adapters remain the only route to the rest.
 
 The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
@@ -141,11 +145,19 @@ an address-only result as provisional rather than confirmed.
 candidate for caching results to disk so a re-run costs nothing.
 
 **A pin nobody has checked is worth marking as such.** `parishes` carries
-`info_source_type`, `info_source_ref`, `info_source_name` and
-`info_verified_at` for exactly this. Use all four; a scraped pin and a confirmed
-one should not be indistinguishable six months later. `info_source_type` is a
-CHECK too — `'website'`, `'person'` or `'import'` — and a directory scrape is
-`'import'`.
+`info_source_type`, `info_source_ref`, `info_source_name` and `info_checked_at`
+for exactly this. Use all four; a scraped pin and a confirmed one should not be
+indistinguishable six months later. `info_source_type` is a CHECK too —
+`'website'`, `'person'` or `'import'` — and a directory scrape is `'import'`.
+
+`info_checked_at` is the moment the scrape **read** the source, and the only one
+of the four a re-run must rewrite. It is the same field `schedules` carries as
+`source_checked_at` and it renders the same way, so a parish's details and its
+service times both say how old they are in the same words. A fifth column,
+`info_verified_at`, looks like it and is not: it means a *person* confirmed the
+row against the place itself, it is what the upsert's guard reads, and a scrape
+never writes it. Guarding on the checked date instead would freeze every row
+the moment it was first imported.
 
 `info_source_name` is what to CALL the source, because the ref is a URL and a
 URL is not a name: an imported parish's ref is a hundred characters of directory
@@ -153,8 +165,12 @@ path, which answers "where did this come from" only for somebody who reads URLs
 for a living. Name the source, not the parish, so a jurisdiction's whole import
 shares one label — "Greek Orthodox Archdiocese of Australia", "Parish website",
 "OpenStreetMap" — which makes the import legible at a glance and a stale source
-findable in one query. The parish sheet renders it under the address, linked to
-the ref when the ref is a URL, with `unverified` shown rather than implied.
+findable in one query. Keep it SHORT: the parish sheet renders it under the
+address as "Updated 3 months ago · Antiochian Archdiocese", linked to the ref
+when the ref is a URL, in the same 11px muted line the service times use. The
+Antiochian import's 74-character official title had to be cut back to the short
+label its own service-time rules already carried, because one source spelled two
+ways reads as two sources.
 
 ## Writing the rows
 
@@ -759,3 +775,127 @@ Good Shepherd's calendar; 36 liturgies, 32 offices, 1 other; 4 lines dropped.
 Every rule in the table carries a source. St George Mission, Auckland is the twenty-fourth parish and publishes no
 times at all, which is not an error and is reported as zero rather than skipped
 silently.
+
+---
+
+## What the Serbian run actually cost
+
+49 places of worship — 45 parishes and 4 monasteries — scraped from the Serbian
+Orthodox Metropolitanate of Australia and New Zealand, geocoded, and written to
+D1. 44 of them; five are held back, and the reasons are below.
+
+```bash
+node scripts/scrape-serbian.mjs     cache/serbian serbian-scraped.json
+node scripts/geocode-serbian.mjs    serbian-scraped.json cache/geo-serbian serbian-geocoded.json
+node scripts/build-serbian-sql.mjs  serbian-geocoded.json serbian-parishes.sql
+```
+
+**The first directory that needs no aggregator at all.** `soc.org.au` is the
+Metropolitanate's own site, it exposes the real post types through the
+WordPress REST API (`/wp-json/wp/v2/parish`, `monastery`, `state`), and it
+publishes a street address for 45 of 49. Every field written here came from the
+jurisdiction itself, which is what the rule about sources asks for and what the
+ROCOR run could not do.
+
+**`per_page` defaults to 2.** The list endpoint answers `x-wp-total: 45` and
+returns two rows. A run that trusts the default imports two parishes and
+reports success.
+
+**The titles carry no suburb, and that shapes everything.** Five parishes are
+"ST SAVA SERBIAN ORTHODOX CHURCH" and four are "ST NICHOLAS"; the ids that
+separate them are their suburbs, and the suburb only exists inside the address
+on each parish's page. So the address is not just the pin here — it is the
+identity. A page that failed to parse would not produce a badly named parish,
+it would produce a collision.
+
+**Four PO boxes.** Cairns, Canberra, Mawson and Moree publish a postal address
+and nothing else. They are marked `address_vague` by the scrape, which keeps
+them away from the geocoder and out of the stored `address` — a PO box pins the
+post office and says nothing. Canberra was then found by name anyway; the other
+three were not.
+
+**Two localities in one address.** "852 Caoura Rd, Tallong, Marulan NSW 2579"
+is the monastery at Tallong written with the larger town beside it, and the
+Australia Post shape — street, suburb, state, postcode — reads Marulan as the
+suburb. The title says Tallong and so does the address, so the component both
+sources name wins. Two sources agreeing beats a positional rule.
+
+**One building, two parishes, again.** Keysborough and Carrum Downs are 10km
+apart and their dedications share the word Stephen, so the first one asked took
+the church that is 400m from the second — the Croydon/Strathfield error from
+the ROCOR run, in a new suburb. The fix is in `scripts/geocode-parish.mjs`:
+OSM buildings are now assigned **globally**, every (parish, building) pair
+scored and sorted by score then distance, rather than parish by parish in
+directory order. "Best building for this parish" and "best parish for this
+building" are different questions and only the second one is safe to answer
+greedily.
+
+**A church OSM knows by its jurisdiction and not its dedication.** The monastery
+at Wallaroo is in OSM as "Free Serbian Orthodox Church - Diocese For Australia
+& New Zealand" — not one token of "St Sava – New Kalenich" in it, so neither the
+dedication match nor the name search can see it. A tier that asks for
+"<Jurisdiction> Orthodox Church, <suburb>" and accepts the answer **only when
+the suburb has exactly one** found it and two others. Where a suburb has two
+parishes of the same jurisdiction the query cannot tell them apart, so it must
+answer neither.
+
+**`dormitionmost`.** Four Serbian dedications are long enough that the 16-char
+id cap cut "Most Holy" in half: "Dormition of the Most Holy Theotokos" minted
+`serbian-dormitionmost-arundel`, which reads as a typo and says nothing
+`dormition` does not. `parishId` now drops a qualifier the cap stranded, the
+same way it already dropped a stranded honorific. Four existing production ids
+would derive differently under the new rule — `reconcile` matches on content,
+not derivation, so they still pin to themselves.
+
+**Where the pins came from:**
+
+| | |
+|---|---|
+| 26 | a building — 13 from the Oceania-wide `denomination=serbian_orthodox` query, 9 by name, 3 by jurisdiction |
+| 18 | street level, from the published address, structured |
+| 1 | street level, free-form |
+| 5 | a locality centroid, and **not written** |
+
+OSM knows this jurisdiction far better than it knows the Antiochians: 18
+buildings tagged `serbian_orthodox` across Oceania, against one. Three of them
+are named nothing more specific than "Serbian Orthodox Church", which is what
+the jurisdiction tier is for.
+
+**The five held back**, all for the same reason — no church in OSM, and no
+street that geocodes:
+
+| | |
+|---|---|
+| St Elijah the Prophet, Cairns | PO box only |
+| Entrance of the Most Holy Theotokos, Mawson | PO box only |
+| Sts Simeon and Ana, Moree | PO box only |
+| St John the Baptist, Dapto | "20 Dale St, Penrose, Dapto NSW 2530" — no Dale St in OSM near Dapto |
+| Nativity of the Most Holy Theotokos Skete, Inglewood | "61 Chapmans Rd, Inglewood SA 5133" — no Chapmans Rd in OSM |
+
+`--include-suburb` writes them as locality centroids with a NULL address, which
+is a deliberate act with a person's name on it rather than a default.
+
+**One parish is not Serbian-speaking.** St Ignatius of Antioch and St Aidan of
+Lindisfarne, Wendouree, is the Metropolitanate's Western Rite parish and the
+only entry whose title omits the word "Serbian" — which is what the import keys
+on to give it `["English"]` where every other row gets `["Serbian", "English"]`.
+
+**New rows carry their jurisdiction's colour.** The Greek, ROCOR and Antiochian
+imports wrote `color: null` on the reasoning that a colour is a person's choice,
+and migration 004 then had to paint 51 rows that had been rendering grey. It is
+a person's choice, but the jurisdiction's colour is the baseline every card
+already draws, so the import writes it and `color` stays out of `REFRESHABLE` —
+the insert sets it, a re-run never touches it.
+
+**What was written, 12 September 2026.** 44 rows, taking production from 196
+parishes to 240: `changes: 45`, no conflicts, nothing pinned (production held no
+Serbian parish at all, so every row was an insert). Then
+`scripts/parish-acronyms.mjs` against the live endpoint, which gave the 232
+parishes without one a short link — the Serbian 44 included — and left the eight
+typed by hand alone.
+
+**Regenerate before writing, even hours later.** The acronym file built that
+morning would have given `SGR` to St George, Robinvale; between generating it
+and applying it somebody had typed `SGR` on the Redfern cathedral. Re-running
+against `/api/parishes` seeded the taken-set from the live rows and moved
+Robinvale to `SRO`. The generated SQL is not the artefact — the script is.

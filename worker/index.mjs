@@ -54,6 +54,27 @@ for (const [kind, column] of Object.entries(PAY_LINK_COLUMNS)) {
   });
 }
 
+// The same thing for a parish's OWN links (parish_links) — a festival, a
+// building fund, anything the four columns above do not name.
+//
+// Registered after them, so a parish that somehow has a `donate` row cannot
+// shadow the column. It answers only when BOTH halves resolve to a real row,
+// which is what makes a catch-all two-segment route safe here: /smg/liturgy,
+// /greek/queensland and /wed/liturgy are all client routes of exactly this
+// shape, and every one of them falls through untouched. The slug is refused at
+// save time if it spells one of those (reservedSlugReason), so the two cannot
+// come to mean different things.
+router.get('/:slug/:link', async ({ env, params }) => {
+  const slug = (params.slug || '').toLowerCase().replace(/\s+/g, '');
+  const link = (params.link || '').toLowerCase().replace(/\s+/g, '');
+  if (!slug || !link) return null;
+  const row = await env.DB.prepare(
+    `SELECT l.url FROM parish_links l JOIN parishes p ON p.id = l.parish_id
+     WHERE p.id != '_unassigned' AND lower(replace(p.acronym, ' ', '')) = ? AND l.slug = ?`
+  ).bind(slug, link).first().catch(() => null);   // table may predate migration 008
+  return row && row.url ? Response.redirect(row.url, 302) : null;
+});
+
 export default {
   async fetch(request, env, ctx) {
     try {

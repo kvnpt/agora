@@ -70,11 +70,26 @@ not_found_handling = "single-page-application"
 run_worker_first = [
   "/health", "/api/*",
   "/tiles/*", "/logos/*", "/posters/*",
-  # The pay-link redirects (/<acronym>/donate|raffle|payment|gala) are only
-  # ever reached by someone clicking a shared link — a navigation, and so
-  # exactly the request the asset router would swallow. A slug with no link
-  # on file still falls through to the SPA from inside the Worker.
-  "/*/donate", "/*/raffle", "/*/payment", "/*/gala",
+  # Every /<acronym>/<something> link a parish hands out — the four payment
+  # kinds (/donate, /raffle, /payment, /gala) and its own parish_links rows.
+  # These are only ever reached by someone clicking a shared link, which is a
+  # NAVIGATION and so exactly the request the asset router would swallow and
+  # answer with the SPA. A slug with no link on file still falls through to
+  # the SPA, from inside the Worker.
+  #
+  # The four were listed one by one until parish_links arrived; a custom slug
+  # is whatever the parish called it, so there is nothing left to enumerate
+  # and the shape has to be matched instead. (wrangler refuses the four
+  # alongside it — "rule '/*/*' makes it redundant" — which is the same
+  # observation.)
+  #
+  # Which makes the exclusions load-bearing: without them every sprite, glyph
+  # and shared module the map fetches would invoke the Worker just to be told
+  # it is an asset. They are the static directories under public/, which is
+  # also why none of them can be a parish acronym (SITE_PATHS in slugs.js).
+  "/*/*",
+  "!/shared/*", "!/lib/*", "!/glyphs/*", "!/sprites/*", "!/eucalyptus/*",
+  "!/assets/*", "!/static/*", "!/cdn-cgi/*",
 ]
 
 # Cloudflare Access, for /api/admin/*. Declared here rather than added in the

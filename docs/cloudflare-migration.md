@@ -119,6 +119,13 @@ Frontend renders it as relative age ("checked 3 months ago") on the parish card,
 a `website` source opens the source; a `person` source shows attribution and offers a
 correction. Staleness becomes the invitation to contribute rather than a defect to hide.
 
+**Since then, that split into two columns** (migration 005). Relative age is what the
+sheet renders and it comes from `info_checked_at` — when *we* last read the source,
+which every import stamps. `info_verified_at` kept the narrower meaning it had always
+been used for and nothing else: a person confirmed this row against the place itself.
+One column could not do both, because the upsert guards on "leave this row alone" and
+an import that stamped that column would freeze every row it ever wrote.
+
 ### Oceania: parishes need their own timezone
 
 `orthodoxy.au` covers Oceania, but the app is structurally single-timezone.

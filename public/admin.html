@@ -211,6 +211,61 @@
     .modal-parish-grid { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
     .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
     .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+    /* Short links, one row each. The slug is shown as the URL it makes,
+       because the question being answered is "what happens when somebody types
+       orthodoxy.au/smg/raffle" and a field holding only the destination does
+       not answer it. */
+    .link-row { padding: 9px 0; border-bottom: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 5px; }
+    .link-row:last-of-type { border-bottom: none; }
+    .link-row-head { display: flex; align-items: center; gap: 8px; }
+    .link-row-name { font-size: 12px; font-weight: 600; }
+    .link-row-slug, .link-row-preview { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .link-row-slug { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .link-row-preview b { color: var(--text); }
+    .link-row input { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+    .link-row-slug-input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .link-row-del { flex: none; width: 26px; height: 26px; border: none; border-radius: 50%; background: none; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; }
+    .link-row-del:hover { color: #c0392b; background: var(--surface-2); }
+
+    /* ── Archdiocese colours ────────────────────────────────────────────
+       Two comparison strips and a grid of editors. The strips are the point
+       of the tab: swatches edge to edge with no gap between them, because a
+       gap is what makes two colours that are hard to tell apart on a map look
+       distinct on a settings page. Both schemes are drawn at once — the site
+       follows the viewer's, and a hue that separates on white can collapse on
+       near-black. */
+    .color-compare { display: grid; gap: 8px; margin-bottom: 16px; }
+    .color-strip { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .color-strip[data-scheme=light] { background: #fff; }
+    .color-strip[data-scheme=dark] { background: #0b0b0d; }
+    .color-strip-cell { flex: 1; padding: 10px 6px 8px; display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; }
+    /* Drawn at the size the map draws them: a 10px dot is the whole of what
+       distinguishes two jurisdictions on a screen holding two hundred. */
+    .color-strip-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    .color-strip-bar { width: 100%; height: 18px; border-radius: 2px; }
+    .color-strip-name { font-size: 9px; letter-spacing: 0.02em; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .color-strip[data-scheme=light] .color-strip-name { color: #555; }
+    .color-strip[data-scheme=dark] .color-strip-name { color: #bbb; }
+
+    .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .color-cell { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 7px; }
+    .color-cell.changed { border-color: var(--text); }
+    .color-cell-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .color-cell-name { font-size: 12px; font-weight: 600; text-transform: capitalize; }
+    .color-cell-count { font-size: 10px; color: var(--muted); }
+    .color-cell input[type=color] { width: 100%; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 2px; background: none; cursor: pointer; }
+    .color-cell input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+    .color-cell input[type=color]::-webkit-color-swatch { border: none; border-radius: 1px; }
+    .color-cell input[type=text] { width: 100%; padding: 5px 7px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px !important; text-transform: lowercase; border: 1px solid var(--border); border-radius: 2px; background: var(--bg); color: var(--text); }
+    .color-cell input[type=text].invalid { border-color: #c0392b; }
+    .color-cell-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 16px; }
+    .color-cell-state { font-size: 10px; color: var(--muted); }
+    .color-cell-reset { font-size: 10px; background: none; border: none; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 0; }
+    .color-cell-reset:hover { color: var(--text); }
+    .color-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+    .color-repaint { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+    .color-repaint input { width: auto; }
   </style>
 </head>
 <body>
@@ -237,6 +292,7 @@
       <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
       <button class="tab" data-tab="adapters">Adapters <span class="tab-count" id="count-adapters">0</span></button>
+      <button class="tab" data-tab="colors">Colours <span class="tab-count" id="count-colors">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -265,10 +321,10 @@
           <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
           <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
           <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
-          <div class="field full"><label>Donation URL</label><input name="donation_url" placeholder="https://donate.stripe.com/..."></div>
-          <div class="field full"><label>Raffle URL</label><input name="raffle_url" placeholder="https://buy.stripe.com/..."></div>
-          <div class="field full"><label>Payment URL</label><input name="payment_url" placeholder="https://..."></div>
-          <div class="field full"><label>Gala URL</label><input name="gala_url" placeholder="https://antiochian.breezechms.com/form/..."></div>
+          <!-- Donate / payment / raffle / gala and any custom link live in the
+               Links editor on the parish's own card below, not here: a parish
+               is added with a name and a pin, and its links are set once it
+               exists and has an acronym for them to hang off. -->
         </div>
         <div class="btn-row">
           <button type="submit" class="btn btn-primary">Add Parish</button>
@@ -320,6 +376,7 @@
             </select>
           </div>
           <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic, Greek"></div>
+          <div class="field full"><label>Address</label><input name="location_override" placeholder="Blank — meets at the parish's own address"></div>
         </div>
         <div class="field" style="margin-top:8px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
@@ -349,11 +406,68 @@
       <p class="card-meta" style="margin:0 0 12px;">Registered in <code>worker/lib/adapters.mjs</code>. The cron runs them all every four hours; “Run now” runs one immediately.</p>
       <div id="adapter-list"></div>
     </div>
+
+    <!-- The archdiocese colours, together.
+         Six hues picked one at a time in code and never seen next to each
+         other; the map shows all of them at once, which is the only place the
+         question "can I tell these apart" is actually asked. So: edit them on
+         one screen, against both backgrounds, at the two sizes they are drawn
+         at — a 10px map dot and a card's accent bar.
+
+         public/shared/jurisdiction-colors.js stays the default table. Saving
+         writes an override row; Reset deletes it and the file's colour comes
+         back. -->
+    <div id="section-colors" class="section">
+      <h3>Archdiocese colours</h3>
+      <p class="card-meta" style="margin:0 0 12px;">
+        Map dots and labels always draw these. A parish card draws the parish's own colour,
+        which starts as its jurisdiction's — tick <em>repaint</em> below to carry a change
+        through to the cards that have not been given a colour of their own.
+      </p>
+
+      <div class="color-compare">
+        <div class="color-strip" id="color-strip-light" data-scheme="light"></div>
+        <div class="color-strip" id="color-strip-dark" data-scheme="dark"></div>
+      </div>
+
+      <div id="color-grid" class="color-grid"></div>
+
+      <div class="color-actions">
+        <label class="color-repaint">
+          <input type="checkbox" id="color-repaint" checked>
+          <span>Repaint parish cards still using the old colour</span>
+        </label>
+        <div class="btn-row" style="margin:0;">
+          <button type="button" class="btn btn-primary" id="color-save">Save colours</button>
+          <button type="button" class="btn btn-outline" id="color-revert">Discard changes</button>
+        </div>
+      </div>
+    </div>
   </main>
+
+  <!-- Every short link a parish hands out. The four with columns of their own
+       (donate, payment, raffle, gala) and the ones without, edited together
+       because that is how they are thought about, and split on save because
+       that is how they are stored. -->
+  <div class="modal-backdrop" id="links-backdrop" onclick="if(event.target===this)closeLinksEditor()">
+    <div class="modal">
+      <h2>Short links</h2>
+      <div class="modal-subtitle" id="links-modal-sub"></div>
+      <div id="links-rows"></div>
+      <button type="button" class="btn btn-outline" id="links-add" style="margin-top:10px;">Add a link</button>
+      <div class="modal-btn-row">
+        <button type="button" class="btn btn-outline" onclick="closeLinksEditor()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="links-save">Save links</button>
+      </div>
+    </div>
+  </div>
 
   <!-- The reserved-link list, and the locations it is built from. Same files
        the Worker bundles, so the warning shown here and the 409 returned on
        save cannot disagree about what is available. -->
+  <!-- The colour table itself, so this page edits the same defaults the site
+       draws rather than a second list that would drift from them. -->
+  <script src="/shared/jurisdiction-colors.js"></script>
   <script src="/shared/locations.js"></script>
   <script src="/shared/services.js"></script>
   <script src="/shared/slugs.js"></script>
@@ -405,7 +519,8 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadSchedules(), loadAdapters()]);
+      await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
+        loadParishLinks()]);
       renderAll();
     }
 
@@ -416,7 +531,335 @@
       renderParishSelects();
       renderAdapterList();
       renderInferSelect();
+      renderColors();
     }
+
+    // ── A parish's short links ──
+    //
+    // Four of them are columns on `parishes` and the rest are parish_links
+    // rows; the dialog edits both together because "the links we hand out" is
+    // one idea, and splits them on save because they are two stores.
+
+    const PAY_LINKS = [
+      ['donate', 'donation_url', 'Donate'],
+      ['payment', 'payment_url', 'Payment'],
+      ['raffle', 'raffle_url', 'Raffle'],
+      ['gala', 'gala_url', 'Gala'],
+    ];
+    let parishLinks = [];              // every parish's custom links
+    let linksEditing = { id: null, custom: [] };
+
+    async function loadParishLinks() {
+      parishLinks = await fetch('/api/admin/parish-links', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
+
+    function linkCountLabel(pid) {
+      const n = parishLinks.filter(l => l.parish_id === pid).length;
+      return n ? ` (${n} custom)` : '';
+    }
+
+    const linkBase = (p) => `orthodoxy.au/${(p.acronym || p.id).toLowerCase().replace(/\s+/g, '')}/`;
+
+    function renderLinkRows() {
+      const p = parishes.find(x => x.id === linksEditing.id);
+      if (!p) return;
+      const base = linkBase(p);
+      const fixed = PAY_LINKS.map(([slug, column, label]) => `
+        <div class="link-row">
+          <div class="link-row-head"><span class="link-row-name">${esc(label)}</span><span class="link-row-slug">${esc(base + slug)}</span></div>
+          <input type="url" data-link-col="${column}" placeholder="https://… (blank to clear)" value="${esc(p[column] || '')}">
+        </div>`).join('');
+      const custom = linksEditing.custom.map((l, i) => `
+        <div class="link-row">
+          <div class="link-row-head">
+            <input class="link-row-slug-input" data-link-slug="${i}" value="${esc(l.slug || '')}" placeholder="name" spellcheck="false">
+            <button type="button" class="link-row-del" data-link-del="${i}" aria-label="Remove">&times;</button>
+          </div>
+          <div class="link-row-preview">${esc(base)}<b>${esc(l.slug || 'name')}</b></div>
+          <input type="url" data-link-url="${i}" placeholder="https://…" value="${esc(l.url || '')}">
+          <input data-link-label="${i}" placeholder="Label (what to call it)" value="${esc(l.label || '')}">
+        </div>`).join('');
+      const rows = document.getElementById('links-rows');
+      rows.innerHTML = fixed + custom;
+      // Held in the model on every keystroke: adding or removing a row
+      // re-renders, and a re-render would otherwise discard the others.
+      rows.querySelectorAll('[data-link-del]').forEach(b => {
+        b.onclick = () => { linksEditing.custom.splice(+b.dataset.linkDel, 1); renderLinkRows(); };
+      });
+      rows.querySelectorAll('[data-link-slug]').forEach(el => {
+        el.oninput = () => {
+          const i = +el.dataset.linkSlug;
+          linksEditing.custom[i].slug = el.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const b = el.closest('.link-row').querySelector('.link-row-preview b');
+          if (b) b.textContent = linksEditing.custom[i].slug || 'name';
+        };
+      });
+      rows.querySelectorAll('[data-link-url]').forEach(el => {
+        el.oninput = () => { linksEditing.custom[+el.dataset.linkUrl].url = el.value.trim(); };
+      });
+      rows.querySelectorAll('[data-link-label]').forEach(el => {
+        el.oninput = () => { linksEditing.custom[+el.dataset.linkLabel].label = el.value; };
+      });
+    }
+
+    window.openLinksEditor = function (pid) {
+      const p = parishes.find(x => x.id === pid);
+      if (!p) return;
+      linksEditing = {
+        id: pid,
+        custom: parishLinks.filter(l => l.parish_id === pid)
+          .map(l => ({ slug: l.slug, url: l.url, label: l.label || '' })),
+      };
+      document.getElementById('links-modal-sub').textContent =
+        `${p.name} — ${p.acronym ? linkBase(p) + '…' : 'no acronym yet, so these have no short link'}`;
+      renderLinkRows();
+      document.getElementById('links-backdrop').classList.add('open');
+    };
+
+    window.closeLinksEditor = function () {
+      document.getElementById('links-backdrop').classList.remove('open');
+    };
+
+    document.getElementById('links-add').addEventListener('click', () => {
+      linksEditing.custom.push({ slug: '', url: '', label: '' });
+      renderLinkRows();
+    });
+
+    document.getElementById('links-save').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const pid = linksEditing.id;
+      const patch = {};
+      document.querySelectorAll('#links-rows [data-link-col]').forEach(el => {
+        patch[el.dataset.linkCol] = el.value.trim() || null;
+      });
+      btn.disabled = true;
+      try {
+        // The columns first: a link list refused for a slug that spells a
+        // route should not also cost the four the admin just edited.
+        const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`,
+          { method: 'PATCH', headers, body: JSON.stringify(patch) });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        const res2 = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/links`,
+          { method: 'PUT', headers, body: JSON.stringify({ links: linksEditing.custom.filter(l => l.slug && l.url) }) });
+        if (!res2.ok) { toast(await adminError(res2), 'error'); return; }
+        closeLinksEditor();
+        toast('Links saved');
+        await loadAll();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ── Archdiocese colours ──
+    //
+    // Three values per jurisdiction and they are not the same thing:
+    //   default   what public/shared/jurisdiction-colors.js says (the file)
+    //   override  what somebody saved here, if anything (the row)
+    //   draft     what is on screen right now, unsaved
+    // Effective is override ?? default, and "Reset" means delete the row, not
+    // write the default into it — so a later change to the file reaches a
+    // jurisdiction nobody has overridden.
+
+    const JURISDICTIONS = ['antiochian', 'greek', 'serbian', 'russian',
+      'romanian', 'macedonian', 'other'];
+    let jurisOverrides = {};   // jurisdiction -> hex, only where one is saved
+    let jurisDraft = {};       // jurisdiction -> hex, what is on screen
+    const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+    const jurisDefault = j => (window.AGORA_JURISDICTION_COLORS || {})[j] || '#888888';
+    const jurisEffective = j => jurisOverrides[j] || jurisDefault(j);
+
+    async function loadJurisColors() {
+      jurisOverrides = await fetch('/api/jurisdiction-colors')
+        .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+      jurisDraft = Object.fromEntries(JURISDICTIONS.map(j => [j, jurisEffective(j)]));
+    }
+
+    // How many parish cards a change would actually move. A parish given its
+    // own colour is not counted, which is the same rule the repaint applies —
+    // so the number on screen is the number that will change.
+    function followingCount(j) {
+      const cur = jurisEffective(j).toLowerCase();
+      return parishes.filter(p => p.id !== '_unassigned' && p.jurisdiction === j
+        && String(p.color || '').toLowerCase() === cur).length;
+    }
+
+    function renderColors() {
+      renderColorCount();
+
+      for (const id of ['color-strip-light', 'color-strip-dark']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.innerHTML = JURISDICTIONS.map(j => {
+          const hex = HEX_RE.test(jurisDraft[j] || '') ? jurisDraft[j] : jurisEffective(j);
+          return `<div class="color-strip-cell">
+            <span class="color-strip-dot" style="background:${esc(hex)}"></span>
+            <span class="color-strip-bar" style="background:${esc(hex)}"></span>
+            <span class="color-strip-name">${esc(j)}</span>
+          </div>`;
+        }).join('');
+      }
+
+      const grid = document.getElementById('color-grid');
+      if (!grid) return;
+      grid.innerHTML = JURISDICTIONS.map(j => {
+        const draft = jurisDraft[j] || jurisEffective(j);
+        const valid = HEX_RE.test(draft);
+        const isChanged = valid && draft.toLowerCase() !== jurisEffective(j).toLowerCase();
+        const overridden = !!jurisOverrides[j];
+        const n = followingCount(j);
+        const state = isChanged ? `was ${esc(jurisEffective(j))}`
+          : overridden ? `file says ${esc(jurisDefault(j))}`
+            : 'default';
+        return `
+        <div class="color-cell${isChanged ? ' changed' : ''}">
+          <div class="color-cell-head">
+            <span class="color-cell-name">${esc(j)}</span>
+            <span class="color-cell-count">${n} parish${n === 1 ? '' : 'es'}</span>
+          </div>
+          <input type="color" value="${esc(valid ? expandHex(draft) : expandHex(jurisEffective(j)))}"
+                 oninput="setJurisColor('${j}', this.value)">
+          <input type="text" class="${valid ? '' : 'invalid'}" value="${esc(draft)}" spellcheck="false"
+                 oninput="setJurisColor('${j}', this.value, true)">
+          <div class="color-cell-foot">
+            <span class="color-cell-state">${state}</span>
+            ${overridden || isChanged ? `<button type="button" class="color-cell-reset" onclick="resetJurisColor('${j}')">Reset</button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // <input type=color> only accepts #rrggbb, so a three-digit hex typed into
+    // the text field has to be expanded before it is handed over — otherwise
+    // the swatch silently reverts to black and takes the draft with it.
+    function expandHex(hex) {
+      const h = String(hex || '').trim();
+      if (/^#[0-9a-fA-F]{3}$/.test(h)) return '#' + h.slice(1).split('').map(c => c + c).join('');
+      return HEX_RE.test(h) ? h : '#888888';
+    }
+
+    // Nothing here re-renders the grid, in either direction.
+    //
+    // `oninput` on a colour well fires continuously while the picker is open,
+    // and rebuilding the grid would replace the very input the picker is
+    // attached to — the dialog closes mid-drag and the drag is lost. The text
+    // field has the same problem for a different reason: replacing it moves
+    // the caret to the end on every keystroke. So each edit updates the strips
+    // and patches its own cell, and the full render is left to load and save.
+    window.setJurisColor = function (j, value, fromText) {
+      jurisDraft[j] = String(value || '').trim().toLowerCase();
+      renderColorStripsOnly();
+      patchColorCell(j, fromText);
+      renderColorCount();
+    };
+
+    function patchColorCell(j, fromText) {
+      const cell = document.querySelectorAll('.color-cell')[JURISDICTIONS.indexOf(j)];
+      if (!cell) return;
+      const draft = jurisDraft[j];
+      const valid = HEX_RE.test(draft);
+      const isChanged = valid && draft !== jurisEffective(j).toLowerCase();
+      cell.classList.toggle('changed', isChanged);
+      cell.querySelector('input[type=text]').classList.toggle('invalid', !valid);
+      // Mirror the edit into the OTHER control, never into the one being used.
+      if (fromText && valid) cell.querySelector('input[type=color]').value = expandHex(draft);
+      if (!fromText) cell.querySelector('input[type=text]').value = draft;
+      cell.querySelector('.color-cell-state').textContent = isChanged
+        ? `was ${jurisEffective(j)}`
+        : jurisOverrides[j] ? `file says ${jurisDefault(j)}` : 'default';
+      const foot = cell.querySelector('.color-cell-foot');
+      const hasReset = !!foot.querySelector('.color-cell-reset');
+      if ((isChanged || jurisOverrides[j]) && !hasReset) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'color-cell-reset'; b.textContent = 'Reset';
+        b.addEventListener('click', () => resetJurisColor(j));
+        foot.appendChild(b);
+      } else if (!isChanged && !jurisOverrides[j] && hasReset) {
+        foot.querySelector('.color-cell-reset').remove();
+      }
+    }
+
+    function renderColorCount() {
+      const changed = JURISDICTIONS.filter(j => HEX_RE.test(jurisDraft[j] || '')
+        && jurisDraft[j].toLowerCase() !== jurisEffective(j).toLowerCase());
+      document.getElementById('count-colors').textContent = String(changed.length);
+    }
+
+    function renderColorStripsOnly() {
+      for (const id of ['color-strip-light', 'color-strip-dark']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        [...el.children].forEach((cell, i) => {
+          const j = JURISDICTIONS[i];
+          const hex = HEX_RE.test(jurisDraft[j] || '') ? jurisDraft[j] : jurisEffective(j);
+          cell.querySelector('.color-strip-dot').style.background = hex;
+          cell.querySelector('.color-strip-bar').style.background = hex;
+        });
+      }
+    }
+
+    // Reset drafts the FILE's colour and marks the override for deletion on
+    // save, rather than deleting it now: nothing on this tab changes anything
+    // until Save, including undoing.
+    window.resetJurisColor = function (j) {
+      jurisDraft[j] = jurisDefault(j);
+      renderColors();
+    };
+
+    document.getElementById('color-revert').addEventListener('click', () => {
+      jurisDraft = Object.fromEntries(JURISDICTIONS.map(j => [j, jurisEffective(j)]));
+      renderColors();
+    });
+
+    document.getElementById('color-save').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const bad = JURISDICTIONS.filter(j => !HEX_RE.test(jurisDraft[j] || ''));
+      if (bad.length) { toast(`Not a colour: ${bad.join(', ')}`, 'error'); return; }
+
+      // Only what actually changed travels. Two people with this tab open
+      // would otherwise each save all seven and the second would undo the
+      // first's change to a jurisdiction they never touched.
+      const changed = JURISDICTIONS.filter(j => jurisDraft[j].toLowerCase() !== jurisEffective(j).toLowerCase());
+      if (!changed.length) { toast('Nothing changed'); return; }
+
+      // The old colour has to be read before the save, because the repaint
+      // asks "which parishes still carry THIS" and after the save it is gone.
+      const was = Object.fromEntries(changed.map(j => [j, jurisEffective(j)]));
+      const colors = Object.fromEntries(changed.map(j => [
+        // Back to the file's colour = no row at all, so a later change to the
+        // file reaches this jurisdiction again.
+        j, jurisDraft[j].toLowerCase() === jurisDefault(j).toLowerCase() ? null : jurisDraft[j],
+      ]));
+
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = 'Saving…';
+      try {
+        const res = await fetch('/api/admin/jurisdiction-colors', {
+          method: 'PATCH', headers, body: JSON.stringify({ colors }),
+        });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        jurisOverrides = await res.json();
+
+        let repainted = 0;
+        if (document.getElementById('color-repaint').checked) {
+          for (const j of changed) {
+            const r = await fetch('/api/admin/parishes/repaint', {
+              method: 'POST', headers,
+              body: JSON.stringify({ jurisdiction: j, from: was[j], to: jurisEffective(j) }),
+            });
+            if (r.ok) repainted += (await r.json()).repainted || 0;
+          }
+        }
+        await loadAll();
+        toast(repainted
+          ? `Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}, ${repainted} parish${repainted === 1 ? '' : 'es'} repainted`
+          : `Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}`);
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    });
 
     // ── inferred rules ──
 
@@ -641,10 +1084,10 @@
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
-              <div class="field full"><label>Donation URL</label><input value="${esc(p.donation_url || '')}" data-field="donation_url" placeholder="https://donate.stripe.com/... (blank to clear)"></div>
-              <div class="field full"><label>Raffle URL</label><input value="${esc(p.raffle_url || '')}" data-field="raffle_url" placeholder="https://buy.stripe.com/... (blank to clear)"></div>
-              <div class="field full"><label>Payment URL</label><input value="${esc(p.payment_url || '')}" data-field="payment_url" placeholder="https://... (blank to clear)"></div>
-              <div class="field full"><label>Gala URL</label><input value="${esc(p.gala_url || '')}" data-field="gala_url" placeholder="https://antiochian.breezechms.com/form/... (blank to clear)"></div>
+              <div class="field full">
+                <label>Short links</label>
+                <button type="button" class="btn btn-outline" onclick="openLinksEditor('${esc(p.id)}')">Donate, pay, raffle, gala &amp; custom${linkCountLabel(p.id)}</button>
+              </div>
               <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
               <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
               <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
@@ -719,9 +1162,7 @@
       const data = { name: f.name.value.trim(), full_name: f.full_name.value.trim() || null, jurisdiction: f.jurisdiction.value,
         address: f.address.value.trim() || null, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         website: f.website.value.trim() || null, email: f.email.value.trim() || null, phone: f.phone.value.trim() || null,
-        live_url: f.live_url.value.trim() || null, donation_url: f.donation_url.value.trim() || null,
-        raffle_url: f.raffle_url.value.trim() || null, payment_url: f.payment_url.value.trim() || null,
-        gala_url: f.gala_url.value.trim() || null,
+        live_url: f.live_url.value.trim() || null,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
@@ -790,6 +1231,7 @@
                     <select data-field="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
                   </div>
                   <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages"></div>
+                  <div class="field full"><label>Address</label><input value="${esc(s.location_override || '')}" data-field="location_override" placeholder="Blank — meets at the parish's own address"></div>
                 </div>
                 <div class="field" style="margin-top:8px;">
                   <label>Weeks (blank = every week)</label>
@@ -848,7 +1290,10 @@
       const data = { parish_id: f.parish_id.value, day_of_week: parseInt(f.day_of_week.value), start_time: f.start_time.value,
         end_time: f.end_time.value || null, title: f.title.value.trim(), event_type: f.event_type.value,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim()).filter(Boolean)) : null,
-        hide_live: f.hide_live.checked, parish_scoped: f.parish_scoped.checked };
+        hide_live: f.hide_live.checked, parish_scoped: f.parish_scoped.checked,
+        // Blank means the parish's address, which is what NULL means in the
+        // column — an empty string would render as an address that is nothing.
+        location_override: f.location_override.value.trim() || null };
       const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
     });

@@ -2,7 +2,8 @@
 --
 -- Replaces the 29 sequential user_version migrations in db.js with the end
 -- state they arrived at, minus everything the WhatsApp ingestor and the AI
--- vision pipeline needed. Seven tables survive.
+-- vision pipeline needed. Seven tables survive; two have since been added,
+-- for the jurisdiction colour overrides and a parish's own short links.
 --
 -- Apply with:
 --   wrangler d1 execute agora --remote --file=d1/schema.sql
@@ -50,15 +51,18 @@ CREATE TABLE parishes (
   live_url         TEXT,
 
   -- Payment deep links: /<acronym>/donate|raffle|payment|gala 302 to these.
+  -- Any OTHER short link a parish hands out is a `parish_links` row instead —
+  -- these four have columns because they were the four every parish was asked
+  -- for, not because the list is closed.
   donation_url     TEXT,
   raffle_url       TEXT,
   payment_url      TEXT,
   gala_url         TEXT,
 
-  -- Provenance: where this parish's details came from, and when they were last
-  -- checked. verified_at tracks the CHECK, not the row's creation — a parish
-  -- added years ago but re-checked last month is fresh; one added last week off
-  -- a stale website is not. NULL = never verified since import.
+  -- Provenance: where this parish's details came from, when WE last read that
+  -- source, and — separately — whether a person has ever confirmed the row.
+  -- The first three are the same trio `schedules` carries, and are shown the
+  -- same way: see info_checked_at below.
   info_source_type TEXT CHECK(info_source_type IN ('website','person','import')),
   info_source_ref  TEXT,   -- the URL, or a person as "First L."
 
@@ -74,6 +78,29 @@ CREATE TABLE parishes (
   -- legible at a glance and a stale source findable in one query.
   info_source_name TEXT,
 
+  -- When WE last read that source. Not when the source last changed, and not a
+  -- claim that the details are right — `schedules.source_checked_at` carries the
+  -- same reasoning at length, and this is deliberately the same field for the
+  -- same reason. A parish's address is a claim about the present that nothing
+  -- in the row expires: an address entered in 2019 renders exactly as
+  -- confidently as one read this morning unless something says how old it is.
+  -- This is that something, and the sheet renders it as "Updated 3 months ago
+  -- · Greek Archdiocese" under the parish's details.
+  --
+  -- Every writer stamps it: a directory import writes the moment it read the
+  -- directory, and an admin editing the source in the parish sheet writes the
+  -- date they looked.
+  info_checked_at TEXT,
+
+  -- When a PERSON confirmed this row against the place itself — not a scrape,
+  -- however recent. It is deliberately NOT info_checked_at: every import
+  -- stamps that one, so a guard on it would freeze every row after the first
+  -- run. This is the guard scripts/parish-import.mjs uses to refuse to move a
+  -- pin somebody has stood in front of, which is what stopped a re-geocode
+  -- shifting a confirmed parish 784m (docs/parish-ingestion.md).
+  --
+  -- Nothing renders it. It is a fact about the row, not about the source, and
+  -- the provenance line above speaks only for the source.
   info_verified_at TEXT
 );
 
@@ -108,6 +135,25 @@ CREATE TABLE schedules (
   parish_scoped  INTEGER NOT NULL DEFAULT 0,
   effective_from TEXT,   -- 'YYYY-MM-DD' local; NULL = open-ended
   effective_to   TEXT,
+
+  -- Where this rule meets, when that is not the parish's own address.
+  --
+  -- NULL means the parish address, which is the usual case and the reason this
+  -- is not NOT NULL. A parish without its own building is the reason it exists
+  -- at all: Good Shepherd serves in a university religious centre and the
+  -- Sunshine Coast parish in a borrowed Anglican church, and a parish that has
+  -- a building still holds a weekday service in a hall down the road, a
+  -- monthly liturgy at a cemetery chapel, or a Vespers at another parish.
+  --
+  -- It is the same field `events.location_override` is, and an occurrence-level
+  -- `schedule_overrides.patch_location_override` still wins over it: the rule
+  -- says where the service normally is, the override says where it is this
+  -- once. project.mjs resolves the three in that order.
+  --
+  -- Text, not coordinates. The pin stays the parish's — an address here is for
+  -- a reader to find the door, and geocoding every rule would put a second
+  -- class of unverified pin on the map for no gain.
+  location_override TEXT,
 
   -- Where this rule came from, and when we last read it there.
   --
@@ -273,6 +319,61 @@ CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);
 -- silently returning zero events, which errors nowhere. Read by
 -- BaseAdapter.healthCheck() behind GET /api/adapters/status.
 -- ─────────────────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────
+-- parish_links — a parish's own short links, beyond the four it has columns for
+--
+-- /<acronym>/donate|raffle|payment|gala are columns on `parishes` because they
+-- are the four every parish was asked for. They are not the four every parish
+-- HAS: a festival, a building fund, a bookstall, a Facebook group, a form for
+-- a baptism enquiry. A column each would be a migration each, and the answer
+-- would still be no the next time somebody asks.
+--
+-- So: one row per extra link, resolved by worker/index.mjs after the four
+-- fixed kinds. `slug` is the second segment of the URL and shares a namespace
+-- with everything else the router reads, so it is checked against the same
+-- reserved list an acronym is (public/shared/slugs.js) — /smg/liturgy has to
+-- keep meaning the service.
+--
+-- `label` is what the parish sheet calls the link; a slug is a URL, not a name.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE parish_links (
+  parish_id  TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  slug       TEXT NOT NULL,
+  label      TEXT,
+  url        TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  PRIMARY KEY (parish_id, slug)
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- jurisdiction_colors — what /admin has changed about the colour table
+--
+-- public/shared/jurisdiction-colors.js holds the colours, is read by the app,
+-- the map, the seed and this repo's tests, and stays the one place a colour is
+-- WRITTEN DOWN. This table is not a second copy of it: it holds only the rows
+-- somebody deliberately changed, and absence means the file's value — the same
+-- arrangement adapter_settings has, for the same reason. A jurisdiction's hue
+-- is a judgement made by looking at six of them side by side against a map,
+-- and a deploy per adjustment is how that never gets done.
+--
+-- `color` is validated as #rgb or #rrggbb on the way in AND on the way out:
+-- the value is painted into inline styles and into a MapLibre paint
+-- expression, so a malformed row falls back to the file rather than reaching
+-- either. See setJurisdictionColors() in the shared file.
+--
+-- Changing a jurisdiction's colour here does NOT rewrite parishes.color, which
+-- is a per-parish identity mark that a jurisdiction-wide choice has no business
+-- overwriting — the admin panel offers that as a separate, counted action, and
+-- only for rows still carrying the colour being replaced.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE jurisdiction_colors (
+  jurisdiction TEXT PRIMARY KEY CHECK(jurisdiction IN
+                 ('antiochian','greek','serbian','russian','romanian','macedonian','other')),
+  color        TEXT NOT NULL,
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
 -- Per-adapter scrape control.
 --
 -- Cloudflare's Cron Trigger is fixed at deploy time and cannot be changed by

@@ -271,8 +271,14 @@
     <div class="map-grab-handle"></div>
 
     <!-- Mode bar: English toggle (left, was share pill), in-view chip (centred),
-         then a second row with Schedules / Socials / Admin promoted from the
-         filter menu. Share button is now a FAB next to the filter FAB. -->
+         then a second row with Schedules / Socials promoted from the filter
+         menu, and Admin as a round icon locked to the right. Share button is
+         now a FAB next to the filter FAB.
+
+         Admin and Log out are `hidden` until /api/admin/ping says this browser
+         can administer, and they are hidden to everyone else — which took a
+         CSS rule as well as the attribute, because a pill's own
+         `display: inline-flex` outranks the UA's [hidden]. -->
     <div class="mode-bar" id="mode-bar">
       <div class="mode-bar-row mode-bar-row-top">
         <button class="mode-bar-en" id="btn-english" type="button" role="checkbox" aria-checked="false">
@@ -293,14 +299,20 @@
           <img class="mode-bar-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
           <span class="mode-bar-pill-label">Socials</span>
         </button>
-        <a class="mode-bar-pill fm-admin" id="btn-admin" href="/admin" role="menuitem" hidden>
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:shield-check.svg" alt="">
-          <span class="mode-bar-pill-label">Admin</span>
-        </a>
-        <button class="mode-bar-pill fm-logout" id="btn-logout" type="button" role="menuitem" hidden>
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-          <span class="mode-bar-pill-label">Log out</span>
-        </button>
+        <!-- The signed-in half of the row, grouped so the group can be pinned
+             right and Admin stays its last item whether or not Log out is
+             showing. Two pills each with `margin-left: auto` would split the
+             free space between them instead. -->
+        <div class="mode-bar-pill-group">
+          <button class="mode-bar-pill fm-logout" id="btn-logout" type="button" role="menuitem" hidden>
+            <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+            <span class="mode-bar-pill-label">Log out</span>
+          </button>
+          <a class="mode-bar-pill fm-admin" id="btn-admin" href="/admin" role="menuitem" aria-label="Admin" title="Admin" hidden>
+            <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
+            <span class="mode-bar-pill-label">Admin</span>
+          </a>
+        </div>
       </div>
     </div>
 
@@ -440,6 +452,26 @@
       </div>
 
       <input type="file" id="logo-file-input" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+    </div>
+  </div>
+
+  <!-- Every short link a parish hands out, in one dialog.
+       The four with columns of their own (donate, payment, raffle, gala) and
+       the ones without, edited the same way and shown beside the URL each
+       actually resolves to — because the question being answered is "what
+       happens when somebody types orthodoxy.au/smg/raffle", and a form that
+       shows only the destination does not answer it. -->
+  <div class="escalate-backdrop" id="links-backdrop" onclick="if(event.target===this)closeParishLinks()">
+    <div class="escalate-modal links-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishLinks()">&times;</button>
+      <h2>Short links</h2>
+      <div class="escalate-modal-sub" id="links-modal-sub"></div>
+      <div id="links-rows"></div>
+      <button class="ps-btn ps-btn-admin links-add" type="button" id="links-add">Add a link</button>
+      <div class="escalate-btn-row">
+        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishLinks()">Cancel</button>
+        <button class="btn-save" type="button" id="links-save">Save links</button>
+      </div>
     </div>
   </div>
 </body>

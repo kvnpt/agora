@@ -138,7 +138,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFiltersMenu();
   initMultiParishToggle();
   initParishMultiToggle();
-  initScrollFade(document.getElementById('mode-bar-row-pills'));
+  // The pill row no longer scrolls — two labelled pills and a round Admin fit
+  // any phone — so there are no edges left to fade.
+
   // Juris banner + parish-pill row use a wrapper-with-overlays pattern;
   // classes go on the wrap, scroll listener attaches to the inner row.
   initScrollFade(
@@ -1205,8 +1207,11 @@ async function fetchParishes() {
   try {
     await window.agoraBundle.load();
     state.parishes = window.agoraBundle.parishes();
+    // A parish's own short links ride along in the same bundle.
+    state.parishLinks = (window.agoraBundle.raw && window.agoraBundle.raw.parish_links) || [];
   } catch {
     state.parishes = [];
+    state.parishLinks = [];
   }
   if (window.lsLog) window.lsLog('✓ parishes loaded (' + state.parishes.length + ')');
   if (window.lsProgress) window.lsProgress(0.35);
@@ -4113,23 +4118,11 @@ function renderParishSheetContent(parishId, opts = {}) {
       </button>`
     : '';
 
-  // Where these details came from. The name is the readable half and the ref is
-  // the checkable half, so the name links to the ref when the ref is a URL —
-  // some are not ("seeds/parishes.js", a person's initials), and those render as
-  // plain text rather than a dead link.
-  //
-  // "unverified" is shown rather than implied. A scraped pin and a pin somebody
-  // has stood in front of should not look the same, and info_verified_at is the
-  // only thing that tells them apart.
-  const srcName = parish.info_source_name;
-  const srcRef = parish.info_source_ref || '';
-  const srcHtml = srcName
-    ? `<div class="ps-source">Info from ${/^https?:/.test(srcRef)
-      ? `<a href="${esc(srcRef)}" target="_blank" rel="noopener">${esc(srcName)}</a>`
-      : esc(srcName)}${parish.info_verified_at
-      ? ` · checked ${esc(String(parish.info_verified_at).slice(0, 10))}`
-      : ' · unverified'}</div>`
-    : '';
+  // Where these details came from and how old they are, in the same words the
+  // service-times line below uses — one source line, rendered once, so the two
+  // halves of a parish sheet stop describing their provenance differently.
+  const srcHtml = sourceLineHTML(
+    parish.info_source_name, parish.info_source_ref, parish.info_checked_at, 'ps-source');
 
   const dirBtn = parish.lat && parish.lng
     ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
@@ -4147,6 +4140,13 @@ function renderParishSheetContent(parishId, opts = {}) {
     ? `<a class="ps-btn ps-donate-btn" href="${esc(parish.donation_url)}" target="_blank" rel="noopener"><img class="ps-btn-icon" src="https://api.iconify.design/ph:hand-heart.svg" alt=""><span>Donate</span></a>`
     : '';
   const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}"><img class="ps-btn-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt=""><span>Share</span></button>`;
+  // A parish's own links, beside the buttons the four columns produce. Named
+  // by their label and not by their slug: the slug is a URL and a URL is not a
+  // name, which is the same reasoning info_source_name carries.
+  const customLinkBtns = (state.parishLinks || [])
+    .filter(l => l.parish_id === parishId && l.url)
+    .map(l => `<a class="ps-btn" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.slug)}</a>`)
+    .join('');
 
   // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
   let parishAdminHtml = '';
@@ -4190,10 +4190,11 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Website</label><input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}"></div>
         <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
         <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
-        <div class="edit-row"><label>Donation URL</label><input type="url" id="pse-donation-${pid}" value="${esc(parish.donation_url || '')}"></div>
-        <div class="edit-row"><label>Raffle URL</label><input type="url" id="pse-raffle-${pid}" value="${esc(parish.raffle_url || '')}"></div>
-        <div class="edit-row"><label>Payment URL</label><input type="url" id="pse-payment-${pid}" value="${esc(parish.payment_url || '')}"></div>
-        <div class="edit-row"><label>Gala URL</label><input type="url" id="pse-gala-${pid}" value="${esc(parish.gala_url || '')}"></div>
+        <div class="edit-row">
+          <label>Short links</label>
+          <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLinks('${pid}')">${glyph('ph:link-simple')}Donate, pay, raffle, gala &amp; custom</button>
+          <div class="edit-row-hint">orthodoxy.au/${esc((parish.acronym || 'acronym').toLowerCase().replace(/\s+/g, ''))}/&lt;name&gt; — every link the parish hands out, in one place.</div>
+        </div>
         <div class="edit-row">
           <label>Color</label>
           <input type="color" id="pse-color-${pid}" value="${esc(parish.color || rawJurisColor(parish.jurisdiction))}">
@@ -4207,6 +4208,11 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
         <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
         <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
+        <div class="edit-row">
+          <label>Source checked</label>
+          <input type="date" id="pse-srcchecked-${pid}" value="${esc(String(parish.info_checked_at || '').slice(0, 10))}">
+          <div class="edit-row-hint">The day somebody last read that source. It is what the sheet shows as "Updated 3 months ago" — not a claim the details are still right.</div>
+        </div>
         <div class="edit-form-actions">
           <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
           <button class="ps-btn ps-btn-ghost" type="button" onclick="toggleParishEdit('${pid}')">Cancel</button>
@@ -4286,7 +4292,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       ${addrHtml}
       ${webCopyHtml}
       ${srcHtml}
-      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${shareParishBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
     ${parishEditFormHtml || ''}
@@ -5512,6 +5518,10 @@ function renderScheduleDaysHTML(items, opts = {}) {
       html += `<div class="schedule-item${focused ? ' focused' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}" role="button" tabindex="0">`;
       html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${editBtn}<img class="si-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt=""></div>`;
       if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
+      // Only when the rule meets somewhere other than the parish's own address.
+      // Silence means the parish address, which the sheet has already shown —
+      // repeating it under every row would bury the one line that differs.
+      if (s.location_override) html += `<div class="si-where">${esc(s.location_override)}</div>`;
       html += `</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
@@ -5523,6 +5533,7 @@ function renderScheduleDaysHTML(items, opts = {}) {
             <input data-f="start_time" type="time" value="${esc(s.start_time)}">
             <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
             <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
+            <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
           </div>
           <div class="wom-checkboxes" data-f="week_of_month">
             <span class="wom-label">Weeks:</span>
@@ -6238,15 +6249,14 @@ window.saveParish = async function(id) {
     website: document.getElementById(`pse-website-${pid}`).value || null,
     phone: document.getElementById(`pse-phone-${pid}`).value || null,
     live_url: document.getElementById(`pse-live-${pid}`).value || null,
-    donation_url: document.getElementById(`pse-donation-${pid}`).value || null,
-    raffle_url: document.getElementById(`pse-raffle-${pid}`).value || null,
-    payment_url: document.getElementById(`pse-payment-${pid}`).value || null,
-    gala_url: document.getElementById(`pse-gala-${pid}`).value || null,
     color: document.getElementById(`pse-color-${pid}`).value,
     acronym: document.getElementById(`pse-acro-${pid}`).value || null,
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
     info_source_name: document.getElementById(`pse-srcname-${pid}`).value || null,
     info_source_ref: document.getElementById(`pse-srcref-${pid}`).value || null,
+    info_checked_at: checkedAtFromInput(
+      document.getElementById(`pse-srcchecked-${pid}`).value,
+      (state.parishes.find(p => p.id === pid) || {}).info_checked_at),
   };
   const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
     method: 'PATCH',
@@ -6264,6 +6274,23 @@ window.saveParish = async function(id) {
     alert(err.error || 'Save failed');
   }
 };
+
+/**
+ * A date the admin picked, back into the ISO instant the column stores.
+ *
+ * The stored value is a full timestamp — a scrape knows the second it read a
+ * page — while a person editing the row knows a day. So an untouched field
+ * keeps the timestamp it came from rather than rounding it to midnight and
+ * throwing away what the scrape recorded; only a day the admin actually
+ * changed is written, and it is written as UTC midnight because a provenance
+ * date has no time of day to be wrong about.
+ */
+function checkedAtFromInput(dayValue, current) {
+  if (!dayValue) return null;
+  if (current && String(current).slice(0, 10) === dayValue) return current;
+  return `${dayValue}T00:00:00Z`;
+}
+window.checkedAtFromInput = checkedAtFromInput;
 
 window.deleteParish = async function(id) {
   const parish = state.parishes.find(p => p.id === id);
@@ -6346,6 +6373,128 @@ window.openParishLogoEditor = function(parishId) {
 
   document.getElementById('logo-backdrop').classList.add('open');
 };
+
+// ── a parish's short links ───────────────────────────────────────────────
+//
+// The four payment kinds are columns on `parishes`; anything else is a row in
+// `parish_links`. They are edited together because that is how they are
+// thought about — "the links we hand out" — and split on save because that is
+// how they are stored. A reader of this file should not have to know which is
+// which to change one, which is the whole reason this dialog exists rather
+// than five more rows in the parish form.
+const PARISH_PAY_LINKS = [
+  ['donate', 'donation_url', 'Donate'],
+  ['payment', 'payment_url', 'Payment'],
+  ['raffle', 'raffle_url', 'Raffle'],
+  ['gala', 'gala_url', 'Gala'],
+];
+
+let _links = { parishId: null, custom: [] };
+
+function _linksAcronym(parish) {
+  return (parish.acronym || '').toLowerCase().replace(/\s+/g, '') || parish.id;
+}
+
+function _renderLinkRows() {
+  const parish = state.parishes.find(p => p.id === _links.parishId);
+  if (!parish) return;
+  const base = `orthodoxy.au/${_linksAcronym(parish)}/`;
+  const fixed = PARISH_PAY_LINKS.map(([slug, column, label]) => `
+    <div class="link-row">
+      <div class="link-row-head"><span class="link-row-name">${esc(label)}</span><span class="link-row-slug">${esc(base + slug)}</span></div>
+      <input type="url" data-link-col="${column}" placeholder="https://…" value="${esc(parish[column] || '')}">
+    </div>`).join('');
+  const custom = _links.custom.map((l, i) => `
+    <div class="link-row" data-link-i="${i}">
+      <div class="link-row-head">
+        <input class="link-row-slug-input" data-link-slug="${i}" value="${esc(l.slug || '')}" placeholder="name" spellcheck="false">
+        <button class="link-row-del" type="button" data-link-del="${i}" aria-label="Remove">&times;</button>
+      </div>
+      <div class="link-row-preview">${esc(base)}<b>${esc(l.slug || 'name')}</b></div>
+      <input type="url" data-link-url="${i}" placeholder="https://…" value="${esc(l.url || '')}">
+      <input data-link-label="${i}" placeholder="Label (what to call it)" value="${esc(l.label || '')}">
+    </div>`).join('');
+  const rows = document.getElementById('links-rows');
+  rows.innerHTML = fixed + custom;
+  rows.querySelectorAll('[data-link-del]').forEach(b => {
+    b.onclick = () => { _links.custom.splice(+b.dataset.linkDel, 1); _renderLinkRows(); };
+  });
+  // Kept in the model on every keystroke, because a re-render (adding or
+  // removing a row) would otherwise throw away what is typed in the others.
+  rows.querySelectorAll('[data-link-slug]').forEach(input => {
+    input.oninput = () => {
+      const i = +input.dataset.linkSlug;
+      _links.custom[i].slug = input.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      const preview = input.closest('.link-row').querySelector('.link-row-preview b');
+      if (preview) preview.textContent = _links.custom[i].slug || 'name';
+    };
+  });
+  rows.querySelectorAll('[data-link-url]').forEach(input => {
+    input.oninput = () => { _links.custom[+input.dataset.linkUrl].url = input.value.trim(); };
+  });
+  rows.querySelectorAll('[data-link-label]').forEach(input => {
+    input.oninput = () => { _links.custom[+input.dataset.linkLabel].label = input.value; };
+  });
+}
+
+window.openParishLinks = async function(parishId) {
+  const parish = state.parishes.find(p => p.id === parishId);
+  if (!parish) return;
+  _links.parishId = parishId;
+  _links.custom = (state.parishLinks || []).filter(l => l.parish_id === parishId)
+    .map(l => ({ slug: l.slug, url: l.url, label: l.label || '' }));
+  document.getElementById('links-modal-sub').textContent = parish.name || parishId;
+  _renderLinkRows();
+  document.getElementById('links-backdrop').classList.add('open');
+
+  document.getElementById('links-add').onclick = () => {
+    _links.custom.push({ slug: '', url: '', label: '' });
+    _renderLinkRows();
+  };
+  document.getElementById('links-save').onclick = () => _saveParishLinks();
+};
+
+window.closeParishLinks = function() {
+  document.getElementById('links-backdrop').classList.remove('open');
+};
+
+async function _saveParishLinks() {
+  const pid = _links.parishId;
+  const btn = document.getElementById('links-save');
+  const patch = {};
+  document.querySelectorAll('#links-rows [data-link-col]').forEach(input => {
+    patch[input.dataset.linkCol] = input.value.trim() || null;
+  });
+  const links = _links.custom.filter(l => l.slug && l.url);
+
+  btn.disabled = true;
+  try {
+    // Two writes, because they are two stores. The columns first: if the link
+    // list is refused (a slug that spells a route), the parish still keeps the
+    // four the admin just edited rather than losing both halves to one 409.
+    const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    });
+    if (!res.ok) { alert((await res.json().catch(() => ({}))).error || 'Save failed'); return; }
+    const updated = await res.json();
+    const idx = state.parishes.findIndex(p => p.id === pid);
+    if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
+
+    const res2 = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/links`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ links }),
+    });
+    if (!res2.ok) { alert((await res2.json().catch(() => ({}))).error || 'Links not saved'); return; }
+    const saved = await res2.json();
+    state.parishLinks = [
+      ...(state.parishLinks || []).filter(l => l.parish_id !== pid),
+      ...saved.map(l => ({ ...l, parish_id: pid })),
+    ];
+    closeParishLinks();
+    renderParishSheetContent(pid, {});
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 window.closeParishLogoEditor = function() {
   document.getElementById('logo-backdrop').classList.remove('open');
@@ -7092,21 +7241,40 @@ function scheduleSourceHTML(items) {
       bySource.set(key, { name: s.source_name, ref: s.source_ref || '', checked: s.source_checked_at || '' });
     }
   }
-  if (!bySource.size) return '';
+  return [...bySource.values()]
+    .map(({ name, ref, checked }) => sourceLineHTML(name, ref, checked, 'sched-source'))
+    .join('');
+}
+
+/**
+ * "Updated 3 months ago · Antiochian Archdiocese ↗" — one provenance line.
+ *
+ * Shared, because a parish's details and its service times are the same kind
+ * of claim and were being rendered as two different kinds. The service times
+ * said how old they were; the details said "unverified", which reads as a
+ * warning about the data and was in fact a statement about a column no scrape
+ * ever writes (see parishes.info_verified_at in d1/schema.sql). Both lines now
+ * answer the one question a reader is asking — when did anyone last look —
+ * in the one form of words.
+ *
+ * No date renders no date: the name alone, never "unverified". We do not know
+ * when the source was read, and saying so as a verdict on the parish would be
+ * the same mistake in quieter language.
+ */
+function sourceLineHTML(name, ref, checked, cls) {
+  if (!name) return '';
+  const age = relativeAge(checked);
   // A span, not an img: the icon is painted by a CSS mask over `currentColor`
   // so it follows the line's muted colour and its hover state. An <img> would
   // paint its own black pixels over the mask and stay black in dark mode.
-  const icon = '<span class="sched-source-icon" aria-hidden="true"></span>';
-  return [...bySource.values()].map(({ name, ref, checked }) => {
-    const age = relativeAge(checked);
-    // The name is the readable half and the ref the checkable half, so the name
-    // is what links — and only when the ref is actually a URL, since a source
-    // can be a person or a file path and those must not render as dead links.
-    const label = /^https?:/.test(ref)
-      ? `<a href="${esc(ref)}" target="_blank" rel="noopener">${esc(name)}${icon}</a>`
-      : esc(name);
-    return `<div class="sched-source">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
-  }).join('');
+  const icon = '<span class="source-link-icon" aria-hidden="true"></span>';
+  // The name is the readable half and the ref the checkable half, so the name
+  // is what links — and only when the ref is actually a URL, since a source
+  // can be a person or a file path and those must not render as dead links.
+  const label = /^https?:/.test(ref || '')
+    ? `<a href="${esc(ref)}" target="_blank" rel="noopener">${esc(name)}${icon}</a>`
+    : esc(name);
+  return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
 }
 
 function formatTime12(hhmm) {

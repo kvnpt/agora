@@ -14,9 +14,15 @@ import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
+import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
+
+// The four links that are columns on `parishes`. A parish_links row may not
+// take one of these slugs: /smg/donate has to keep answering from the column,
+// and two places to set one link is how they come to disagree.
+const PAY_KINDS = new Set(['donate', 'raffle', 'payment', 'gala']);
 
 // An acronym is a URL segment, so saving one is a namespace change.
 //
@@ -300,6 +306,144 @@ export function registerAdminRoutes(router) {
     });
   }));
 
+  // ── a parish's own links ──
+  //
+  // The four payment kinds are columns on `parishes` and stay there; these are
+  // the ones it does not have a column for. Both editors show them in one
+  // place, because "where do I change the raffle link" should have one answer.
+
+  // Every parish's links in one response, so the admin list can show a count
+  // per parish without a request each.
+  router.get('/api/admin/parish-links', guarded(async ({ env }) => {
+    const r = await env.DB.prepare(
+      'SELECT parish_id, slug, label, url, sort_order FROM parish_links ORDER BY parish_id, sort_order, slug'
+    ).all().catch(() => ({ results: [] }));
+    return json(r.results || []);
+  }));
+
+  router.get('/api/admin/parishes/:id/links', guarded(async ({ env, params }) => {
+    const r = await env.DB.prepare(
+      'SELECT slug, label, url, sort_order FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug'
+    ).bind(params.id).all().catch(() => ({ results: [] }));
+    return json(r.results || []);
+  }));
+
+  // PUT the whole set for one parish. A link list is short, is edited as a
+  // list, and is saved by one button — so a replace is what the editor
+  // actually does, and a per-row API would make the UI reconstruct it anyway.
+  router.put('/api/admin/parishes/:id/links', guarded(async ({ env, params, request }) => {
+    const id = params.id;
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
+      return json({ error: 'Parish not found' }, 404);
+    }
+    const b = await readJson(request);
+    const links = Array.isArray(b && b.links) ? b.links : null;
+    if (!links) return json({ error: 'links must be an array' }, 400);
+
+    const seen = new Set();
+    const clean = [];
+    for (const l of links) {
+      const slug = normaliseSlug(l && l.slug);
+      const url = String((l && l.url) || '').trim();
+      if (!slug || !url) continue;                       // a blank row is a deletion
+      // The slug is a URL segment in the same namespace as an acronym, a
+      // jurisdiction, a location and a service. /smg/liturgy means the service
+      // and must keep meaning it, so the same list refuses it here.
+      const reserved = reservedSlugReason(slug);
+      if (reserved) return json({ error: reserved, field: slug }, 409);
+      if (PAY_KINDS.has(slug)) {
+        return json({ error: `"${slug}" is one of the four built-in links — set it on the parish itself.`, field: slug }, 409);
+      }
+      if (seen.has(slug)) return json({ error: `"${slug}" is listed twice`, field: slug }, 409);
+      if (!/^https?:\/\//i.test(url)) {
+        return json({ error: `"${slug}" needs a full http(s) URL`, field: slug }, 400);
+      }
+      seen.add(slug);
+      clean.push({ slug, url, label: (l.label || '').trim() || null, sort_order: clean.length });
+    }
+
+    const stmts = [env.DB.prepare('DELETE FROM parish_links WHERE parish_id = ?').bind(id)];
+    for (const l of clean) {
+      stmts.push(env.DB.prepare(
+        `INSERT INTO parish_links (parish_id, slug, label, url, sort_order, updated_at)
+         VALUES (?,?,?,?,?,?)`
+      ).bind(id, l.slug, l.label, l.url, l.sort_order, new Date().toISOString()));
+    }
+    await env.DB.batch(stmts);
+    return json(clean);
+  }));
+
+  // ── jurisdiction colours ──
+  //
+  // Six colours chosen one at a time, in code, that had never been looked at
+  // together. The admin panel shows them side by side; these two endpoints are
+  // what lets an adjustment be a save rather than a deploy.
+
+  // PATCH /api/admin/jurisdiction-colors
+  //
+  // Body { colors: { greek: '#00508f', russian: null, ... } }. A hex sets an
+  // override; null clears one, and clearing is how a jurisdiction goes back to
+  // the colour in public/shared/jurisdiction-colors.js — that file stays the
+  // default table and this endpoint never writes to it.
+  //
+  // PATCH and not PUT, and the distinction is the point: only named keys are
+  // written. Two admins with the page open would each send the six colours
+  // they last loaded, and a whole-table replace would let the second silently
+  // undo the first's change to a jurisdiction they never touched.
+  router.patch('/api/admin/jurisdiction-colors', guarded(async ({ env, request }) => {
+    const b = await readJson(request);
+    const colors = b && b.colors;
+    if (!colors || typeof colors !== 'object') return json({ error: 'colors is required' }, 400);
+
+    const stmts = [];
+    for (const [jurisdiction, value] of Object.entries(colors)) {
+      if (!JURISDICTIONS.has(jurisdiction)) {
+        return json({ error: `Not a jurisdiction: ${jurisdiction}` }, 400);
+      }
+      if (value === null || value === '') {
+        stmts.push(env.DB.prepare('DELETE FROM jurisdiction_colors WHERE jurisdiction = ?')
+          .bind(jurisdiction));
+        continue;
+      }
+      const hex = String(value).trim();
+      if (!HEX.test(hex)) return json({ error: `Not a colour: ${value}`, field: jurisdiction }, 400);
+      stmts.push(env.DB.prepare(
+        `INSERT INTO jurisdiction_colors (jurisdiction, color, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(jurisdiction) DO UPDATE SET color = excluded.color, updated_at = excluded.updated_at`
+      ).bind(jurisdiction, hex, new Date().toISOString()));
+    }
+    if (!stmts.length) return json({ error: 'No colours to write' }, 400);
+    await env.DB.batch(stmts);
+    return json(await jurisdictionColorOverrides(env.DB));
+  }));
+
+  // POST /api/admin/parishes/repaint
+  //
+  // A jurisdiction's colour and a parish's own colour are different things —
+  // the map draws the first, a card draws the second — so changing one does
+  // not change the other, and migration 004 is the only reason they currently
+  // agree for almost every row.
+  //
+  // This is that migration as an explicit, counted action: only rows still
+  // carrying the colour being replaced are repainted, so a parish somebody
+  // gave its own hue keeps it. `from` is what the admin panel just had on
+  // screen, which is why it is a parameter rather than something re-derived
+  // here: the answer to "what am I replacing" belongs to the page that showed
+  // it, and a mismatch repaints nothing rather than the wrong rows.
+  router.post('/api/admin/parishes/repaint', guarded(async ({ env, request }) => {
+    const b = await readJson(request);
+    const { jurisdiction, from, to } = b || {};
+    if (!JURISDICTIONS.has(jurisdiction)) return json({ error: 'jurisdiction is required' }, 400);
+    if (!HEX.test(String(from || '')) || !HEX.test(String(to || ''))) {
+      return json({ error: 'from and to must both be colours' }, 400);
+    }
+    const r = await env.DB.prepare(
+      `UPDATE parishes SET color = ?
+       WHERE jurisdiction = ? AND id != '_unassigned' AND lower(color) = lower(?)`
+    ).bind(to, jurisdiction, from).run();
+    return json({ jurisdiction, from, to, repainted: r.meta ? r.meta.changes : 0 });
+  }));
+
   // ── parishes ──
 
   router.post('/api/admin/parishes', guarded(async ({ env, request }) => {
@@ -323,7 +467,7 @@ export function registerAdminRoutes(router) {
       env.DB.prepare(
         `INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone,
           website, email, phone, acronym, languages, live_url, donation_url, raffle_url, payment_url, gala_url,
-          info_source_type, info_source_ref, info_source_name, info_verified_at)
+          info_source_type, info_source_ref, info_source_name, info_checked_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         id, name, b.full_name || null, jurisdiction, b.address || null, lat, lng,
@@ -335,7 +479,11 @@ export function registerAdminRoutes(router) {
         b.live_url || null, b.donation_url || null, b.raffle_url || null,
         b.payment_url || null, b.gala_url || null,
         b.info_source_type || null, b.info_source_ref || null, b.info_source_name || null,
-        b.info_verified_at || new Date().toISOString(),
+        // Adding a parish by hand IS reading its source, so the row is stamped
+        // now unless the caller says when they actually looked. It stamps the
+        // CHECK, never info_verified_at — nobody has stood in front of the
+        // place because somebody typed its address into a form.
+        b.info_checked_at || new Date().toISOString(),
       ),
       // A generic inactive rule so the parish shows up in the schedules list.
       env.DB.prepare(
@@ -351,7 +499,8 @@ export function registerAdminRoutes(router) {
     'name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone',
     'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url',
     'donation_url', 'raffle_url', 'payment_url', 'gala_url', 'timezone',
-    'info_source_type', 'info_source_ref', 'info_source_name', 'info_verified_at',
+    'info_source_type', 'info_source_ref', 'info_source_name', 'info_checked_at',
+    'info_verified_at',
   ];
 
   router.patch('/api/admin/parishes/:id', guarded(async ({ env, params, request }) => {
@@ -570,19 +719,19 @@ export function registerAdminRoutes(router) {
     }
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
-        languages, week_of_month, hide_live, parish_scoped)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING *`
+        languages, week_of_month, hide_live, parish_scoped, location_override)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
       b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
-      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0,
+      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
     ).first();
     return json(row, 201);
   }));
 
   const SCHEDULE_EDITABLE = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type',
     'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped',
-    'effective_from', 'effective_to'];
+    'effective_from', 'effective_to', 'location_override'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
   router.patch('/api/admin/schedules/:id', guarded(async ({ env, params, request }) => {
