@@ -9,7 +9,8 @@
     "deploy": "wrangler deploy",
     "db:schema": "wrangler d1 execute agora --remote --file=d1/schema.sql",
     "db:seed": "wrangler d1 execute agora --remote --file=d1/seed-parishes.sql",
-    "gen:seed": "node scripts/gen-seed-sql.js && node scripts/sql-for-console.js"
+    "gen:seed": "node scripts/gen-seed-sql.js && node scripts/sql-for-console.js",
+    "db:export": "mkdir -p backups && wrangler d1 export agora --remote --output=backups/agora-$(date -u +%Y%m%d-%H%M%SZ).sql"
   },
   "devDependencies": {
     "@js-temporal/polyfill": "^0.5.1",

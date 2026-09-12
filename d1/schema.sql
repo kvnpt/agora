@@ -40,6 +40,11 @@ CREATE TABLE parishes (
   logo_path        TEXT,
   acronym          TEXT,
   chant_style      TEXT,
+
+  -- Patronal feast, as the parish itself states it ("26th October"). Free text
+  -- on purpose: jurisdictions split across Old and New Calendar, so this is the
+  -- parish's own answer, not a date Agora computes or resolves to a year.
+  feast_day        TEXT,
   languages        TEXT NOT NULL DEFAULT '["English"]',
   color            TEXT,
   live_url         TEXT,
