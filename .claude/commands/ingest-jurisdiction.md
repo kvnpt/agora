@@ -172,7 +172,10 @@ Verified while writing this, so it should still hold:
 ## Done means
 
 - Every row has a pin, an IANA timezone derived from its geocoded location, and
-  a recorded source.
+  a recorded source — `info_source_type`, `info_source_ref` **and**
+  `info_source_name`. The name is what the parish sheet actually shows, so a row
+  without one is a row whose provenance nobody can see. Name the *source*, not
+  the parish, so a jurisdiction's whole import shares one label.
 - `reconcile`'s pin list has been read by a person; nothing ambiguous was
   resolved automatically.
 - Parishes that could not be placed are listed with the reason, not guessed.

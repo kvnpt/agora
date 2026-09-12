@@ -26,6 +26,22 @@ const LIVE = 'https://agora.orthodoxy.au/api/parishes';
 // precisely so a person can correct one and no later scrape will undo it.
 const LANGUAGES = '["Russian", "English"]';
 
+// What to CALL each source, because `info_source_ref` is a URL and a URL is not
+// a name — a hundred characters of orthodox-world.org path answers "where did
+// this come from" only for somebody who reads URLs for a living. Keyed on the
+// host so a parish's own domain, of which there are seventeen, collapses to one
+// honest label rather than seventeen.
+const SOURCE_NAMES = [
+  [/rocor\.org\.au/, 'ROCOR Australian & NZ Diocese'],
+  [/orthodox-world\.org/, 'World Orthodox Directory'],
+  [/openstreetmap/, 'OpenStreetMap'],
+];
+
+const sourceLabel = (ref) => (SOURCE_NAMES.find(([re]) => re.test(ref || ''))?.[1])
+  // Anything else is the parish speaking for itself. Naming the domain here
+  // would just repeat the ref; naming the role is what a reader wants.
+  || (/^https?:/.test(ref || '') ? 'Parish website' : null);
+
 // The parish row the database wants, from the row the scrape produced.
 function toRow(p) {
   // Existing rows read "<dedication>, <suburb>", and reconcile recovers the
@@ -38,6 +54,7 @@ function toRow(p) {
   // parish, which is an import however good it turns out to be.
   const fromOwnSite = !!p.address_source
     && !/orthodox-world\.org|openstreetmap/.test(p.address_source);
+  const sourceName = sourceLabel(p.address_source || DIRECTORY);
   return {
     name,
     jurisdiction: 'russian',
@@ -56,6 +73,7 @@ function toRow(p) {
     feast_day: null,
     info_source_type: fromOwnSite ? 'website' : 'import',
     info_source_ref: p.address_source || DIRECTORY,
+    info_source_name: sourceName,
     // carried through for the report, stripped before the SQL
     _confidence: p.confidence,
     _suburb: p.suburb,

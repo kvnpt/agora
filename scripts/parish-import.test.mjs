@@ -161,6 +161,7 @@ const ROW = {
   address: '1 Example St, Darwin NT 0800', lat: -12.46, lng: 130.84,
   timezone: 'Australia/Darwin', feast_day: '6th December',
   info_source_type: 'import', info_source_ref: 'https://example.org/',
+  info_source_name: 'Example Directory',
 };
 
 test('the upsert refuses to overwrite a pin somebody has checked', () => {
@@ -221,6 +222,10 @@ test('provenance is refreshed as a pair, and human work still is not', () => {
   // directory; with only the ref refreshable, the fix could never land.
   assert.match(out, /info_source_type=excluded\.info_source_type/);
   assert.match(out, /info_source_ref=excluded\.info_source_ref/);
+  // The name travels with them. A URL is not a name, and a source whose label
+  // cannot be corrected by a re-run is the same bug as the type was.
+  assert.match(out, /info_source_name=excluded\.info_source_name/);
+  assert.match(out, /info_source_name/);
   // ...but the guard is what makes that safe, and it is still there.
   assert.match(out, /WHERE parishes\.info_verified_at IS NULL;/);
   assert.doesNotMatch(out, /info_verified_at=excluded/);

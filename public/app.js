@@ -3627,6 +3627,24 @@ function renderParishSheetContent(parishId, opts = {}) {
       </button>`
     : '';
 
+  // Where these details came from. The name is the readable half and the ref is
+  // the checkable half, so the name links to the ref when the ref is a URL —
+  // some are not ("seeds/parishes.js", a person's initials), and those render as
+  // plain text rather than a dead link.
+  //
+  // "unverified" is shown rather than implied. A scraped pin and a pin somebody
+  // has stood in front of should not look the same, and info_verified_at is the
+  // only thing that tells them apart.
+  const srcName = parish.info_source_name;
+  const srcRef = parish.info_source_ref || '';
+  const srcHtml = srcName
+    ? `<div class="ps-source">Info from ${/^https?:/.test(srcRef)
+      ? `<a href="${esc(srcRef)}" target="_blank" rel="noopener">${esc(srcName)}</a>`
+      : esc(srcName)}${parish.info_verified_at
+      ? ` · checked ${esc(String(parish.info_verified_at).slice(0, 10))}`
+      : ' · unverified'}</div>`
+    : '';
+
   const dirBtn = parish.lat && parish.lng
     ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
     : '';
@@ -3677,6 +3695,8 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Color</label><input type="color" id="pse-color-${pid}" value="${esc(parish.color || '#666666')}"></div>
         <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
+        <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
+        <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
         <div style="margin-top:8px;display:flex;gap:8px;">
           <button class="btn-save" onclick="saveParish('${pid}')">Save</button>
         </div>
@@ -3754,6 +3774,7 @@ function renderParishSheetContent(parishId, opts = {}) {
     <div class="ps-section">
       ${addrHtml}
       ${webCopyHtml}
+      ${srcHtml}
       <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
@@ -5654,6 +5675,8 @@ window.saveParish = async function(id) {
     color: document.getElementById(`pse-color-${pid}`).value,
     acronym: document.getElementById(`pse-acro-${pid}`).value || null,
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
+    info_source_name: document.getElementById(`pse-srcname-${pid}`).value || null,
+    info_source_ref: document.getElementById(`pse-srcref-${pid}`).value || null,
   };
   const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
     method: 'PATCH',
