@@ -184,6 +184,48 @@ curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 The database is `agora`, `8e02890d-dc75-4dbe-a018-b64c7871dde9`, also in
 `wrangler.toml`.
 
+## Doing this again
+
+The fetching and parsing is written fresh per jurisdiction — every directory is
+a different site. Everything after parsing is not: `scripts/parish-import.mjs`
+holds the three parts that repeat, with `scripts/parish-import.test.mjs` pinning
+the conventions to real cases from the Greek run.
+
+```js
+parishId(jurisdiction, name, suburb)  // <jurisdiction>-<name>-<suburb>
+reconcile(scraped, existing)          // -> { pinned, fresh, ambiguous }
+buildUpsert(rows)                     // the guarded ON CONFLICT
+```
+
+**`reconcile` is not optional, and its output is meant to be read.** A scrape
+mints ids by derivation, and derivation cannot reproduce an id somebody typed:
+`antiochian-good-shepherd-antiochian-church` is hyphenated inside its name,
+names its jurisdiction twice, and does not contain its suburb. Trusting
+derivation there inserts a second Good Shepherd, and because the Google Calendar
+adapter names the old id, every event stays on the old row while an empty
+duplicate appears beside it.
+
+The trap is that the mismatch is *partial*. Of the nine Antiochian rows, "St
+John the Baptist" and "Sts Peter & Paul" happen to derive back to their existing
+ids while "St Mary's" and "Sts Michael & Gabriel" do not — so some rows update,
+some duplicate, and the result is much harder to spot than a clean failure. So
+match on content, print the pin list, and look at it before writing. `ambiguous`
+is never resolved automatically: a scraped parish matching two existing rows is
+a question for a person.
+
+One live id will never derive, and it is correct as it is: `greek-gopssc-buderim`
+is an acronym somebody typed, which is precisely what `reconcile` is for.
+
+There was a second. The first run's trailing-honorific trim ran against the
+joined string rather than its tokens, so any name ending in a word ending in
+"st" lost its tail — `stjohnbaptist` became `stjohnbapti`, and Port Adelaide was
+written as `greek-nativitychri-portadelaide`. The module trims tokens now, a
+test covers it, and that row has been renamed to
+`greek-nativitychrist-portadelaide`. Renaming was safe only because nothing
+referenced it: `parish_id` is a foreign key from `events`, `schedules` and
+`event_parishes`, so check all three are empty before touching a parish id, and
+expect that to stop being true as soon as a parish has an adapter.
+
 ## Suggested order
 
 1. Pick one jurisdiction's directory and scrape it to JSON — names, addresses,
