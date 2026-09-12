@@ -6,10 +6,13 @@ parishes that is a line in `seeds/parishes.js`. With an archdiocese directory �
 a few hundred names and addresses at once — it is a pipeline, and this is what
 that pipeline has to get right.
 
-This began as a brief for work that had not been done. The Greek Archdiocese
-directory has since been ingested — 135 parishes, 12 September 2026 — so the
-constraints below are now field notes rather than predictions, and the section
-at the end records what the run actually cost.
+This began as a brief for work that had not been done. Two directories have
+since been ingested — the Greek Archdiocese, 135 parishes, and the ROCOR
+Australian and New Zealand Diocese, 33 of 37 — so the constraints below are now
+field notes rather than predictions, and the two sections at the end record what
+each run actually cost. They cost different things: the Greek directory
+published addresses that were sometimes wrong, and the Russian one publishes no
+addresses at all.
 
 ---
 
@@ -46,14 +49,15 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-144 parishes · 13 schedules · 68 events · 0 overrides
+177 parishes · 13 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import; 9 are the Antiochian
-seed. Schedules and events are untouched by it — the directory publishes no
-service times at all, so adapters remain the only route to those.
+135 of those parishes are the Greek Archdiocese import, 33 the ROCOR one, and 9
+the Antiochian seed. Schedules and events are untouched by both — neither
+directory publishes service times at all, so adapters remain the only route to
+those.
 
-The numbers below describe the database *before* that import, and are kept
+The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
 
 Those are the numbers `/api/bundle` returns, and the endpoint is a view rather
@@ -291,3 +295,128 @@ internal roads; the locality centroid at least falls inside the cemetery.
 buildings tagged `denomination=greek_orthodox` that a name search could not,
 including one OSM files under its parish rather than its dedication. Expect the
 tunnel to drop on long Overpass queries and keep them small.
+
+---
+
+## What the ROCOR run actually cost
+
+37 places of worship, scraped from the Australian and New Zealand Diocese of the
+Russian Orthodox Church Outside Russia, geocoded, and written to D1 — 33 of
+them; the other four are held back below. Three scripts, run in order, each
+writing a file that can be read before the next one runs:
+
+```bash
+node scripts/scrape-rocor.mjs   cache/ rocor-scraped.json
+node scripts/geocode-rocor.mjs  rocor-scraped.json cache/geo/ rocor-geocoded.json
+node scripts/build-rocor-sql.mjs rocor-geocoded.json rocor-parishes.sql
+```
+
+**The diocese's homepage is compromised; the diocese is fine.** `rocor.org.au/`
+serves cloaked Turkish casino spam to some user agents. Everything else on the
+site — the directory page, the REST API, every parish page — is intact and
+current. A scrape that checks the front door and stops will conclude the
+jurisdiction has vanished. Fetch the pages, not the homepage, and do not reach
+for an archive.
+
+**The directory the diocese points at is dead.** 31 of its 39 links go to
+`directory.stinnocentpress.com/viewparish.cgi?Uid=NNN`, the ROCOR-wide directory
+that used to carry every parish's address, phone and clergy. Every one of those
+URLs now 404s and the directory root answers 403. So the diocese publishes, for
+most of its parishes, a name and a suburb and nothing else.
+
+**Which made a second source the whole job.** `orthodox-world.org` lists the same
+diocese — 43 entries across Australia and New Zealand — with a street address on
+every one. It is a third party, so parish-published addresses win over it and
+disagreements are recorded rather than resolved
+(`scripts/rocor-addresses.mjs`). Matching is on state plus dedication and never
+on suburb, because the suburb is the field the two sources disagree about.
+
+**And the disagreements are the useful part.** The diocese's own suburbs are
+wrong more often than a wrong address would have been:
+
+| the diocese says | it is actually in |
+|---|---|
+| Woollongong *(sic)* | Corrimal |
+| Bombala | Gunningrah |
+| Canberra | Narrabundah |
+| Hobart | New Town |
+| Christchurch | Sydenham |
+| Brisbane | Woolloongabba |
+| Auckland | Mount Eden |
+
+Every one of those would have pinned in the right region and the wrong place.
+
+**One of them is wrong about the STATE, and that is an hour twice a year.** The
+directory files Tweed Heads under Queensland. Tweed Heads is in New South Wales,
+which observes daylight saving; Queensland does not. Worse, constraining
+Nominatim to the directory's state does not fail — it answers "Tweed Heads,
+Queensland" with **Tweed Heads Avenue**, a residential street 80km away in North
+Tamborine, and a run that takes `results[0]` pins the parish in the wrong state
+and never says so. So a locality result is now checked: the first component of
+its display name must name the suburb, compared as a sorted set of words
+("East Brunswick" and "Brunswick East" are one place), and a result that names
+something else is treated as no result and the question asked again without the
+state.
+
+**The ACT has no `state`.** Nominatim returns Canberra's parish under
+`address.territory`, so reading `address.state` left it with no timezone at all.
+The zone now comes from `ISO3166-2-lvl4`, which is always present.
+
+**Overpass, again.** `overpass-api.de` is unreachable from this environment
+entirely — every query, however small, closes mid-exchange — and
+`overpass.kumi.systems` answers in about a second but returns 504 on a 6km
+radius over inner Sydney or Melbourne. What works is *one* Oceania-wide query
+for `denomination~russian`: 15 buildings, 37 seconds, and it answers more
+parishes than the per-suburb search does. The per-suburb pass is kept as a
+best-effort tier with one attempt and a short deadline.
+
+**Matching on the dedication alone hands one church to several parishes.**
+Croydon is 2.4km from Strathfield and took the cathedral; Fairfield is 1.5km
+from Cabramatta and took its church. Both looked completely confident. A
+building is now claimed by at most one parish, and the tier that accepted a
+church on proximity alone was removed rather than tuned — it was the source of
+both errors.
+
+**A dedication is not a jurisdiction.** Brisbane's Russian cathedral and the
+Serbian St Nicholas sit 500m apart, and OSM tags the Serbian one
+`denomination=greek_orthodox` for good measure. A name match against another
+jurisdiction's denomination is now refused outright, whatever the name says.
+
+**Two of the OSM buildings are named for their city and one for nothing at all**
+("Geelong Russian Orthodox Church", "Warrnambool Orthodox Church", and an
+Adelaide building tagged only "Russian Orthodox"), so no token will ever match
+the dedication. Those four are pinned by hand in `scripts/rocor-addresses.mjs`,
+with the reason written next to each — including the one that matters most, the
+Melbourne cathedral, which has a same-dedication namesake 8km away that the
+matcher preferred.
+
+**The first jurisdiction with monasteries.** `parishId` spent its whole length
+cap on the word every monastery shares and minted `russian-monastery-...`, so
+monastery, convent, skete, chapel, mission and institute joined `church` and
+`cathedral` as generic. A second rule stops the cap reducing a name to a bare
+qualifier — "Holy Transfiguration Monastery" was becoming `holy`.
+
+**Final confidence: 15 pins on a building, 18 street-level, 4 held back.**
+`info_verified_at` is NULL on all of them — these are researched, not confirmed. The four held back are the ones with
+no published address anywhere, and they are held back on purpose: `lat` and
+`lng` are NOT NULL, so the temptation is to drop a pin in the middle of the
+suburb, and a marker where there is no church is worse than an absent parish.
+
+| held back | why |
+|---|---|
+| Sts Cyril & Methodius / St Xenia, Tweed Heads | moved to South Tweed Heads; no address published for the new site |
+| Holy Trinity, Hobart | in the Huon district, an hour from Hobart, on family land; no address published |
+| Holy Ascension Mission, Williamstown | in no directory |
+| St Mary's, Bunbury | in no directory; its website is a JavaScript shell |
+
+**Two entries in the directory are not places of worship** — the Diocesan
+Administration at Croydon and the Sts Cyril and Methodius Orthodox Institute —
+and are dropped. Monasteries, convents, sketes, missions and chapels are kept:
+they hold public services, which is the only test that matters for a feed of
+services.
+
+**The diocese publishes a Google Calendar.** `rocor.org.au` page 19167 is an
+"ANZ Diocese Event Calendar" embed, and the monastery page carries service times
+in prose ("Services daily at 0500 and 1700, Divine Liturgy on Sunday at 0900").
+Neither is touched by this import, which is parishes only — but `docs/adapters.md`
+is the next step and that calendar is the obvious place to start.
