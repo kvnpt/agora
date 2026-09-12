@@ -4,19 +4,26 @@
 -- stays writable and per-parish; this is a baseline for the ~200 rows that
 -- never had one set.
 --
--- Two directory imports wrote `color: null` for every parish they added
--- (scripts/build-antiochian-sql.mjs, scripts/build-rocor-sql.mjs), on the
--- reasoning in scripts/parish-import.mjs that a colour is set by people and
--- not by a scrape. That was right about provenance and wrong about the
--- result: production's 196 parishes came from those imports, so almost every
--- parish card and feed line has been falling back to a grey default. Filling
--- them in by jurisdiction is the answer that needs no per-parish decision and
--- is already what the map draws.
+-- What production actually held the moment before this ran, measured rather
+-- than assumed — the guess going in was wrong in an instructive way:
 --
--- The seeded rows are updated too. Their colours were close but not equal to
--- the app's table — the seed's Greek was #0d5eaf, the app's #00508f — and
--- after this the two agree by construction, since the seed now reads the
--- shared table (public/shared/jurisdiction-colors.js).
+--    135  greek       #0d5eaf     the seed's Greek, not the app's
+--     37  russian     NULL
+--     14  antiochian  NULL
+--      9  antiochian  #1e3a5f     the seeded rows, already correct
+--      1  antiochian  #000000     one row set to black by hand
+--
+-- Two things to fix, then. Fifty-one parishes had no colour at all: the ROCOR
+-- and Antiochian directory imports wrote `color: null` on the reasoning in
+-- scripts/parish-import.mjs that a colour is set by people and not by a
+-- scrape, which was right about provenance and left those cards falling back
+-- to grey. And the 135 Greek rows carried #0d5eaf while the app drew #00508f
+-- from its own table — the same drift that put the colour table in one file
+-- (public/shared/jurisdiction-colors.js), visible here at scale.
+--
+-- Filling every row in by jurisdiction settles both, needs no per-parish
+-- decision, and is already what the map draws. The seed reads that shared
+-- table now, so a fresh database and this one agree by construction.
 --
 -- THE HEXES BELOW ARE A SNAPSHOT of that table as of this migration. They are
 -- not a second source of truth: a later change to a jurisdiction's colour

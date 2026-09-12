@@ -39,7 +39,7 @@ database — and because nothing else in the repo records that it ran.
 
 | File | Adds | For |
 |---|---|---|
-| `004-parish-jurisdiction-colors.sql` | Sets `parishes.color` from `jurisdiction` for every row | Two directory imports wrote `color: null`, so most of production had no colour at all; a jurisdiction baseline needs no per-parish decision |
+| `004-parish-jurisdiction-colors.sql` | Sets `parishes.color` from `jurisdiction` for every row | 51 parishes had no colour at all and 135 carried a Greek blue the app never drew; a jurisdiction baseline needs no per-parish decision. **Applied to production 2026-09-12** |
 | `003-parish-source-name.sql` | `parishes.info_source_name` | Seeing where a parish's details came from without reading a hundred-character directory URL |
 | `002-adapter-settings.console.sql` | `adapter_settings` | Enabling, disabling and pacing each scrape from the admin panel, since a Cron Trigger is fixed at deploy time |
 | `001-tombstone-provenance.console.sql` | `schedule_overrides.source`; `adapter_runs.window_from`, `window_to`, `tombstones_refused` | Auto-tombstoning: telling an adapter's cancellations from a person's, and recording what window a run's absence actually covered |
