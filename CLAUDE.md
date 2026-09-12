@@ -231,3 +231,9 @@ parishes in bulk from a jurisdiction's directory. It records the schema
 constraints that bite a few hundred rows at once, the geocoding trap that put one
 pin 730m off, and the three public endpoints that let you read production without
 any credential at all.
+
+`/ingest-jurisdiction <name>` (`.claude/commands/`) is that brief as a command:
+the three reviewable passes, the traps in the order they cost time, and the one
+rule about sources — **a jurisdiction's own site is where its parish information
+comes from.** Aggregators are for finding that site and nothing else, because
+`info_source_type='website'` asserts the parish told us and that should be true.
