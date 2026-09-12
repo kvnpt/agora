@@ -2,3 +2,8 @@ node_modules/
 data/
 .env
 .wrangler/
+
+# Database dumps from `npm run db:export`. Parish rows carry clergy names,
+# emails and phone numbers, and the file is large and quickly stale — keep it
+# out of the repo and put it somewhere you control instead.
+backups/
