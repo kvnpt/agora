@@ -213,11 +213,18 @@ match on content, print the pin list, and look at it before writing. `ambiguous`
 is never resolved automatically: a scraped parish matching two existing rows is
 a question for a person.
 
-Two known ids will never derive, by the way, and both are correct as they are:
-`greek-gopssc-buderim` is an acronym, and `greek-nativitychri-portadelaide`
-carries a truncation bug the first run shipped — the trailing-honorific trim ran
-against the joined string, so "Christ" lost its tail. The module now trims
-tokens instead, and a test covers it.
+One live id will never derive, and it is correct as it is: `greek-gopssc-buderim`
+is an acronym somebody typed, which is precisely what `reconcile` is for.
+
+There was a second. The first run's trailing-honorific trim ran against the
+joined string rather than its tokens, so any name ending in a word ending in
+"st" lost its tail — `stjohnbaptist` became `stjohnbapti`, and Port Adelaide was
+written as `greek-nativitychri-portadelaide`. The module trims tokens now, a
+test covers it, and that row has been renamed to
+`greek-nativitychrist-portadelaide`. Renaming was safe only because nothing
+referenced it: `parish_id` is a foreign key from `events`, `schedules` and
+`event_parishes`, so check all three are empty before touching a parish id, and
+expect that to stop being true as soon as a parish has an adapter.
 
 ## Suggested order
 

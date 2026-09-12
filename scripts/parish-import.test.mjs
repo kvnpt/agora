@@ -46,8 +46,8 @@ test('the length cap never leaves a dangling honorific', () => {
 test('a word merely ending in "st" is not an honorific', () => {
   // The first run shipped this bug and it reached production: the trailing
   // honorific was trimmed off the joined STRING, so "baptist" lost its tail and
-  // "Nativity of Christ" became nativitychri, which is the id Port Adelaide
-  // still carries.
+  // "Nativity of Christ" became nativitychri. Port Adelaide has since been
+  // renamed to the id below, so this test is what keeps it that way.
   assert.equal(parishId('antiochian', 'St John the Baptist', 'Croydon Park'),
     'antiochian-stjohnbaptist-croydonpark');
   assert.equal(parishId('greek', 'The Nativity of Christ', 'Port Adelaide'),
