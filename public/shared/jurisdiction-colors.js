@@ -35,9 +35,12 @@
     return JURISDICTION_COLORS[j] || JURISDICTION_COLOR_FALLBACK;
   }
 
+  // CommonJS gets exports; a browser classic script gets globals. Never both:
+  // the Worker bundles this file too (esbuild resolves the CJS branch), and a
+  // module that writes to globalThis on the way past is a surprise there.
   const api = { JURISDICTION_COLORS, JURISDICTION_COLOR_FALLBACK, jurisdictionColor };
   if (typeof module === 'object' && module.exports) module.exports = api;
-  if (root) {
+  else if (root) {
     root.AGORA_JURISDICTION_COLORS = JURISDICTION_COLORS;
     root.agoraJurisdictionColor = jurisdictionColor;
   }

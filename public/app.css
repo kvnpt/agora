@@ -2278,6 +2278,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   line-height: 1.4;
   color: var(--text-muted);
 }
+.edit-row-hint-bad { color: var(--danger); font-weight: 600; }
 
 /* ── Location-active distance indicators ── */
 .distance-blue { color: #2196f3; }

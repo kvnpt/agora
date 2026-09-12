@@ -351,6 +351,11 @@
     </div>
   </main>
 
+  <!-- The reserved-link list, and the locations it is built from. Same files
+       the Worker bundles, so the warning shown here and the 409 returned on
+       save cannot disagree about what is available. -->
+  <script src="/shared/locations.js"></script>
+  <script src="/shared/slugs.js"></script>
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -661,22 +666,33 @@
       if (chevron) chevron.style.transform = document.getElementById(id).classList.contains('open') ? 'rotate(90deg)' : '';
     }
 
-    function acronymClash(value, selfId) {
-      const v = (value || '').trim().toLowerCase();
-      if (!v) return null;
-      return parishes.find(p => p.id !== selfId && (p.acronym || '').trim().toLowerCase() === v) || null;
+    // Two ways an acronym fails. It can clash with another parish, which this
+    // already checked, and it can spell a link the router resolves first —
+    // /greek, /qld, /services, /42 — which it did not, so a parish given the
+    // acronym "nz" saved cleanly and then could not be reached at /nz.
+    // Both are re-checked in the Worker on save (acronymConflict); this is the
+    // same verdict, shown before the round-trip.
+    const slugNorm = (v) => window.AgoraSlugs
+      ? window.AgoraSlugs.normaliseSlug(v)
+      : String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+
+    function acronymProblem(value, selfId) {
+      const v = slugNorm(value);
+      if (!v) return '';
+      const reserved = window.AgoraSlugs ? window.AgoraSlugs.reservedSlugReason(v) : null;
+      if (reserved) return `⚠ ${reserved}`;
+      const c = parishes.find(p => p.id !== selfId && slugNorm(p.acronym) === v);
+      return c ? `⚠ Clashes with ${c.name}` : '';
     }
 
     function acronymClashMsg(value, selfId) {
-      const c = acronymClash(value, selfId);
-      return c ? `⚠ Clashes with ${esc(c.name)}` : '';
+      return esc(acronymProblem(value, selfId));
     }
 
     function checkAcronymClash(input, selfId) {
       const warnEl = input.parentElement.querySelector('.acronym-warn');
       if (!warnEl) return;
-      const c = acronymClash(input.value, selfId);
-      warnEl.textContent = c ? `⚠ Clashes with ${c.name}` : '';
+      warnEl.textContent = acronymProblem(input.value, selfId);
     }
 
     async function saveParish(id) {

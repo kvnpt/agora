@@ -14,6 +14,30 @@ import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
+import slugs from '../../public/shared/slugs.js';
+
+const { normaliseSlug, reservedSlugReason } = slugs;
+
+// An acronym is a URL segment, so saving one is a namespace change.
+//
+// Enforced here rather than in either editor: the in-app parish form and
+// /admin both PATCH this endpoint, so a rule that lives here is a rule both
+// obey and neither can be updated out of step with. Two ways it can collide —
+// with a reserved link (/greek, /qld, /services, /42), and with another
+// parish that already answers to it.
+async function acronymConflict(db, acronym, parishId) {
+  const slug = normaliseSlug(acronym);
+  if (!slug) return null;   // clearing it is always allowed
+  const reserved = reservedSlugReason(slug);
+  if (reserved) return reserved;
+  // Compare the way index.mjs resolves a payment deep link, so "St M G" and
+  // "stmg" are recognised as the same link rather than saved as two.
+  const clash = await db.prepare(
+    `SELECT id, name FROM parishes
+     WHERE id != '_unassigned' AND id != ? AND lower(replace(acronym, ' ', '')) = ?`
+  ).bind(parishId || '', slug).first();
+  return clash ? `"${slug}" is already the acronym for ${clash.name}.` : null;
+}
 
 // Wrap a handler so the guard runs first.
 const guarded = (fn) => async (c) => {
@@ -290,17 +314,24 @@ export function registerAdminRoutes(router) {
     if (await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
       return json({ error: 'Parish already exists', id }, 409);
     }
+    if (b.acronym !== undefined) {
+      const conflict = await acronymConflict(env.DB, b.acronym, id);
+      if (conflict) return json({ error: conflict, field: 'acronym' }, 409);
+    }
 
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone,
-          website, email, phone, languages, live_url, donation_url, raffle_url, payment_url, gala_url,
+          website, email, phone, acronym, languages, live_url, donation_url, raffle_url, payment_url, gala_url,
           info_source_type, info_source_ref, info_source_name, info_verified_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         id, name, b.full_name || null, jurisdiction, b.address || null, lat, lng,
         b.timezone || 'Australia/Sydney',
-        b.website || null, b.email || null, b.phone || null, b.languages || '["English"]',
+        // Was accepted and dropped — the column was missing from the INSERT,
+        // so a create that set an acronym came back without one.
+        b.website || null, b.email || null, b.phone || null, b.acronym || null,
+        b.languages || '["English"]',
         b.live_url || null, b.donation_url || null, b.raffle_url || null,
         b.payment_url || null, b.gala_url || null,
         b.info_source_type || null, b.info_source_ref || null, b.info_source_name || null,
@@ -330,6 +361,13 @@ export function registerAdminRoutes(router) {
     if (!parish) return json({ error: 'Parish not found' }, 404);
 
     const b = await readJson(request);
+    // Only when it actually changes. The in-app form posts every field on
+    // every save, so checking on presence alone would block an edit to the
+    // phone number of a parish whose acronym predates a slug that now exists.
+    if (b.acronym !== undefined && normaliseSlug(b.acronym) !== normaliseSlug(parish.acronym)) {
+      const conflict = await acronymConflict(env.DB, b.acronym, id);
+      if (conflict) return json({ error: conflict, field: 'acronym' }, 409);
+    }
     const sets = [], vals = [];
     for (const k of PARISH_EDITABLE) {
       if (b[k] !== undefined) { sets.push(`${k} = ?`); vals.push(b[k]); }

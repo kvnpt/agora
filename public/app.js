@@ -27,7 +27,9 @@ const state = {
   _eventsExtended: false,
   _eventsShowCount: 30,
   _parishEventsShowCount: 30,
-  filters: { jurisdiction: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
+  // `location` is a region slug from /shared/locations.js ('qld', 'syd', 'nz'),
+  // not the viewer's own position — that is locationActive/userLat below.
+  filters: { jurisdiction: null, location: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   parishFilters: { socialOnly: false, englishOnly: false, englishStrict: false },
   selectionMode: false,
   subdomainJurisdiction: null,
@@ -270,6 +272,35 @@ function disablePullToRefresh() {
 // ── URL state detection (subdomain soft-fallback + path parser) ──
 const JURISDICTION_KEYS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
 
+// ── Location filter ──
+// The registry is /shared/locations.js, loaded before this file. These three
+// wrappers are all the rest of app.js needs, and they no-op safely if the
+// script failed to load rather than taking the whole page down with a
+// ReferenceError on the first parish drawn.
+function resolveLocationSlug(slug) {
+  const L = window.AgoraLocations;
+  return L ? L.resolveLocation(slug) : null;
+}
+function activeLocation() {
+  return state.filters.location ? resolveLocationSlug(state.filters.location) : null;
+}
+/** Is this parish inside the active location filter? True when none is set. */
+function parishPassesLocation(parish) {
+  const loc = activeLocation();
+  if (!loc || !parish) return !loc;
+  return window.AgoraLocations.locationMatchesParish(loc, parish);
+}
+/** Same question, for a row that carries a parish_id rather than a parish. */
+function parishIdPassesLocation(parishId) {
+  if (!state.filters.location) return true;
+  const p = state.parishes.find(x => x.id === parishId);
+  return p ? parishPassesLocation(p) : false;
+}
+function locationLabel() {
+  const loc = activeLocation();
+  return loc ? loc.label : '';
+}
+
 function detectUrlState() {
   // Subdomain fallback — honoured while <juris>.orthodoxy.au redirects roll out
   const host = window.location.hostname;
@@ -302,6 +333,13 @@ function detectUrlState() {
     } else if (/^\d+$/.test(seg) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(seg)) {
       // integer (one-off) or synthetic schedule-instance id ("scheduleId:date")
       state._openEventId = seg;
+    } else if (resolveLocationSlug(seg)) {
+      // /qld, /queensland, /syd, /nz … — composes with the jurisdiction, so
+      // /qld/greek and /greek/queensland are the same view. Checked before the
+      // parish-slug fallback below, which is why an acronym may not collide
+      // with a location slug (the Worker refuses one that would).
+      state.filters.location = resolveLocationSlug(seg).slug;
+      state._fitLocation = true;
     } else if (seg.includes('+')) {
       state._parishSlugs = seg.split('+').map(s => s.trim()).filter(Boolean);
     } else {
@@ -370,6 +408,9 @@ function buildPathSegs(opts = {}) {
   if (state.filters.jurisdiction && state.filters.jurisdiction !== state.subdomainJurisdiction) {
     segs.push(state.filters.jurisdiction);
   }
+  // Always the canonical short slug, so /greek/queensland reads back as
+  // /greek/qld and a shared link has one spelling.
+  if (state.filters.location) segs.push(state.filters.location);
   if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
   else if (state.filters.socialOnly) segs.push('social');
   const psfId = state.parishSheetFocus;
@@ -430,6 +471,7 @@ async function reconcileStateFromUrl() {
   try {
     // 1) Reset URL-driven state (preserve location, time range, sort — not in URL)
     state.filters.jurisdiction = null;
+    state.filters.location = null;
     state.filters.parishIds = null;
     state.filters.multiParish = loadMultiParishPref();
     state.filters.socialOnly = false;
@@ -442,6 +484,7 @@ async function reconcileStateFromUrl() {
     delete state._openEventId;
     delete state._startMode;
     delete state._parishSlugs;
+    delete state._fitLocation;
 
     // 2) Re-parse URL into state
     detectUrlState();
@@ -503,9 +546,14 @@ async function reconcileStateFromUrl() {
     const panelOpen = modalOpen || inlineOpen;
     const nextOpenId = state._openEventId || null;
 
-    // 8) Refetch data (URL filter change → different result set)
-    if (state.mode === 'services') window.agoraFetchSchedules();
-    else window.agoraFetchEvents();
+    // 8) Refetch data (URL filter change → different result set). A URL that
+    // carries a location re-frames the map on it, so stepping back to
+    // /greek/qld puts Queensland in view again rather than leaving the map
+    // wherever the forward navigation left it.
+    const refit = !!state._fitLocation;
+    delete state._fitLocation;
+    if (state.mode === 'services') window.agoraFetchSchedules({ fit: refit });
+    else window.agoraFetchEvents({ fit: refit });
 
     if (nextOpenId && nextOpenId !== prevOpenId) {
       // Show the requested event. showEventDetail will re-set state._openEventId
@@ -1104,6 +1152,14 @@ async function applyStartMode() {
     await fetchEvents({ fit: true });
   }
   delete state._startMode;
+  // Frame the region explicitly rather than relying on the fetch above having
+  // done it. The fit rides on the events path, and a region whose parishes
+  // have no events in the window takes the services branch instead — which is
+  // exactly the case where the user most needs to be shown where they are.
+  if (state._fitLocation) {
+    delete state._fitLocation;
+    if (typeof updateMap === 'function') updateMap(state, { fit: true });
+  }
   syncFiltersButton();
 
   if (state._openEventId) {
@@ -1184,6 +1240,7 @@ function renderParishPills() {
   let relevant = state.parishes.filter(p => {
     if (p.id === '_unassigned') return false;
     if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) return false;
+    if (!parishPassesLocation(p)) return false;
     return true;
   });
 
@@ -1902,7 +1959,7 @@ function syncFiltersButton() {
 
 // ── Reset FAB (top center) ──
 function hasActiveFilters() {
-  return state.filters.jurisdiction || state.filters.parishIds ||
+  return state.filters.jurisdiction || state.filters.location || state.filters.parishIds ||
     state.filters.socialOnly || state.filters.englishOnly || state.parishFocus ||
     state.filters.multiParish;
 }
@@ -1911,7 +1968,8 @@ function hasActiveFilters() {
 // selection (while staying in multi-parish mode). It's visible whenever either
 // is set — social/English/focus toggles don't count.
 function hasResettableScope() {
-  return !!(state.filters.jurisdiction || (state.filters.parishIds && state.filters.parishIds.size));
+  return !!(state.filters.jurisdiction || state.filters.location
+    || (state.filters.parishIds && state.filters.parishIds.size));
 }
 
 function syncResetFab() {
@@ -1931,6 +1989,7 @@ function syncResetFab() {
         .filter(p =>
           p.id !== '_unassigned' && p.lat != null && p.lng != null &&
           (!state.filters.jurisdiction || p.jurisdiction === state.filters.jurisdiction) &&
+          parishPassesLocation(p) &&
           (!state.filters.parishIds || state.filters.parishIds.has(p.id))
         )
         .every(p => vp.has(p.id));
@@ -1957,6 +2016,7 @@ function clearAllFilters() {
   }
   const wasServices = state.mode === 'services';
   state.filters.jurisdiction = null;
+  state.filters.location = null;
   state.filters.parishIds = null;
   state.filters.showAllParishes = null;
   state.filters.socialOnly = false;
@@ -2064,6 +2124,11 @@ function clearOneFilter(kind) {
     state.filters.jurisdiction = null;
     document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
     if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
+  } else if (kind === 'location') {
+    state.filters.location = null;
+    // Dropping the region should show what dropping it revealed, so re-frame
+    // on whatever is now in scope rather than leaving the map over one state.
+    if (typeof updateMap === 'function') updateMap(state, { fit: true });
   } else if (kind === 'social') {
     state.filters.socialOnly = false;
     document.getElementById('btn-social')?.classList.remove('active');
@@ -2102,6 +2167,7 @@ function syncFilterActiveStack() {
   // clearer wired to its specific filter key.
   const chips = [];
   if (state.filters.jurisdiction) chips.push({ kind: 'jurisdiction', label: capitalize(state.filters.jurisdiction) });
+  if (state.filters.location) chips.push({ kind: 'location', label: locationLabel() || state.filters.location });
   if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Socials' });
   if (state.filters.englishOnly) {
     // Mirror the English button's tri-state vocabulary: strict = "English",
@@ -2269,6 +2335,14 @@ function applyNonViewportFilters(events) {
     filtered = filtered.filter(e =>
       state.filters.parishIds.has(e.parish_id) ||
       (e.extra_parishes && e.extra_parishes.some(pid => state.filters.parishIds.has(pid)))
+    );
+  }
+  if (state.filters.location) {
+    // An event is in the location if any parish showing it is — a combined
+    // service listed under a Sydney and a Wollongong parish belongs in both.
+    filtered = filtered.filter(e =>
+      parishIdPassesLocation(e.parish_id) ||
+      (e.extra_parishes && e.extra_parishes.some(pid => parishIdPassesLocation(pid)))
     );
   }
   if (state.filters.socialOnly) {
@@ -3719,7 +3793,11 @@ function renderParishSheetContent(parishId, opts = {}) {
           <input type="color" id="pse-color-${pid}" value="${esc(parish.color || rawJurisColor(parish.jurisdiction))}">
           <div class="edit-row-hint">Cards, feed lines and event groups only — map dots and labels always draw the jurisdiction's colour.</div>
         </div>
-        <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
+        <div class="edit-row">
+          <label>Acronym</label>
+          <input id="pse-acro-${pid}" data-acronym-field value="${esc(parish.acronym || '')}">
+          <div class="edit-row-hint" data-acronym-hint>The parish's short link: orthodoxy.au/<span data-acronym-preview>${esc((parish.acronym || 'acronym').toLowerCase().replace(/\s+/g, ''))}</span></div>
+        </div>
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
         <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
         <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
@@ -3879,6 +3957,11 @@ function renderParishSheetContent(parishId, opts = {}) {
       else toggleParishEdit(parishId);
     });
   }
+
+  // Acronym field says, as you type, whether the link it would make is
+  // available. The Worker refuses a reserved or taken one on save either way
+  // — this is so you find out before the round-trip rather than after it.
+  wireAcronymHint(contentEl, parishId);
 
   // Address + website copy chips. Click copies the value to clipboard and
   // flashes a "Copied" label in place of the text for ~1.2s.
@@ -5089,6 +5172,9 @@ function wireScheduleAdminHandlers(container) {
 function renderServices() {
   const container = document.getElementById('services-list');
   let schedules = state.schedules;
+  if (state.filters.location) {
+    schedules = schedules.filter(s => parishIdPassesLocation(s.parish_id));
+  }
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));
   } else if (state.viewportParishIds) {
@@ -6630,6 +6716,31 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = str || '';
   return div.innerHTML;
+}
+
+// Live availability hint under the acronym field. Two ways an acronym fails:
+// it spells a reserved link (/greek, /qld, /services), or another parish
+// already answers to it. Both are checked again in the Worker on save — see
+// acronymConflict there; this only shortens the feedback loop.
+function wireAcronymHint(root, parishId) {
+  const input = root.querySelector('[data-acronym-field]');
+  const hint = root.querySelector('[data-acronym-hint]');
+  if (!input || !hint || !window.AgoraSlugs) return;
+  const { normaliseSlug, reservedSlugReason } = window.AgoraSlugs;
+  const paint = () => {
+    const slug = normaliseSlug(input.value);
+    let problem = reservedSlugReason(slug);
+    if (!problem && slug) {
+      const clash = state.parishes.find(p =>
+        p.id !== parishId && p.id !== '_unassigned' && normaliseSlug(p.acronym) === slug);
+      if (clash) problem = `"${slug}" is already the acronym for ${clash.name}.`;
+    }
+    hint.classList.toggle('edit-row-hint-bad', !!problem);
+    hint.textContent = problem
+      || (slug ? `The parish's short link: orthodoxy.au/${slug}` : "The parish's short link.");
+  };
+  input.addEventListener('input', paint);
+  paint();
 }
 
 // An Iconify glyph that follows its button's text colour. The <img>+invert
