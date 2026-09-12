@@ -16,10 +16,13 @@ const q = (v) => (v === null || v === undefined || v === '')
 // Provenance: we know where each parish came from, but not when it was last
 // checked — so verified_at stays NULL rather than inventing a date. The UI
 // reads that as "never verified", which is both true and the call to action.
+// `name` is what to CALL the source, because a URL is not a name — see
+// parishes.info_source_name in d1/schema.sql. A seeded parish either points at
+// its own site or at this repo, and both are worth saying out loud.
 function provenance(p) {
   return p.website
-    ? { type: 'website', ref: p.website }
-    : { type: 'import', ref: 'seeds/parishes.js' };
+    ? { type: 'website', ref: p.website, name: 'Parish website' }
+    : { type: 'import', ref: 'seeds/parishes.js', name: 'Repo seed' };
 }
 
 const lines = [];
@@ -43,11 +46,12 @@ for (const p of parishes) {
   const pr = provenance(p);
   lines.push(
     'INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, ' +
-    'timezone, website, languages, color, info_source_type, info_source_ref) VALUES (\n' +
+    'timezone, website, languages, color, info_source_type, info_source_ref,\n' +
+    '        info_source_name) VALUES (\n' +
     `  ${q(p.id)}, ${q(p.name)}, ${q(p.full_name)}, ${q(p.jurisdiction)}, ${q(p.address)},\n` +
     `  ${p.lat}, ${p.lng}, ${q(p.timezone || 'Australia/Sydney')},\n` +
     `  ${q(p.website)}, ${q(p.languages || '["English"]')}, ${q(p.color)},\n` +
-    `  ${q(pr.type)}, ${q(pr.ref)}\n) ON CONFLICT(id) DO NOTHING;`
+    `  ${q(pr.type)}, ${q(pr.ref)}, ${q(pr.name)}\n) ON CONFLICT(id) DO NOTHING;`
   );
 }
 

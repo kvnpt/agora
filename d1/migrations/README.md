@@ -13,9 +13,21 @@ tests, a new contributor's local copy — trusts it.
 
 ## Applying one
 
-D1 console (**Workers & Pages → D1 → agora → Console**), paste the file. These
-are `.console.sql` for the same reason the seed is: the console collapses
-newlines on paste, so a leading `--` comment would swallow the whole file.
+With a `D1:Edit` token in the environment, which is the route to prefer:
+
+```bash
+npx wrangler d1 execute agora --remote --file=d1/migrations/003-parish-source-name.sql
+```
+
+Files from 003 on are plain `.sql` with their comments intact, because wrangler
+reads a file rather than a textarea.
+
+**The console is the fallback, not the default.** 001 and 002 are
+`.console.sql` — comments stripped, one statement per line — because they were
+applied by pasting into **Workers & Pages → D1 → agora → Console**, which
+collapses newlines and would let a leading `--` comment swallow the whole file.
+That was a workaround for having no terminal and no credential, and it is worth
+nobody's copy-paste when a token is available.
 
 `ALTER TABLE ... ADD COLUMN` is not idempotent in SQLite — running it twice
 errors with "duplicate column name". That error means the migration is already
@@ -23,5 +35,6 @@ applied and nothing is wrong.
 
 | File | Adds | For |
 |---|---|---|
+| `003-parish-source-name.sql` | `parishes.info_source_name` | Seeing where a parish's details came from without reading a hundred-character directory URL |
 | `002-adapter-settings.console.sql` | `adapter_settings` | Enabling, disabling and pacing each scrape from the admin panel, since a Cron Trigger is fixed at deploy time |
 | `001-tombstone-provenance.console.sql` | `schedule_overrides.source`; `adapter_runs.window_from`, `window_to`, `tombstones_refused` | Auto-tombstoning: telling an adapter's cancellations from a person's, and recording what window a run's absence actually covered |

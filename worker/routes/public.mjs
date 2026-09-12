@@ -27,7 +27,7 @@ function windowFrom(query) {
 const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
   website, phone, email, logo_path, acronym, chant_style, languages, color, live_url,
   donation_url, raffle_url, payment_url, gala_url, feast_day,
-  info_source_type, info_source_ref, info_verified_at`;
+  info_source_type, info_source_ref, info_source_name, info_verified_at`;
 
 export function registerPublicRoutes(router) {
   // GET /api/bundle — everything the client needs to build the feed itself.

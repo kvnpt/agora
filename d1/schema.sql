@@ -61,6 +61,19 @@ CREATE TABLE parishes (
   -- a stale website is not. NULL = never verified since import.
   info_source_type TEXT CHECK(info_source_type IN ('website','person','import')),
   info_source_ref  TEXT,   -- the URL, or a person as "First L."
+
+  -- What to CALL that source, because a URL is not a name. The ref for a
+  -- directory-imported parish is a hundred characters of path
+  -- ("orthodox-world.org/en/i/24479/australia/new-south-wales/croydon/..."),
+  -- which answers "where did this come from" only if you read URLs for a
+  -- living. This is the short label to show instead: "Greek Orthodox
+  -- Archdiocese of Australia", "Parish website", "OpenStreetMap".
+  --
+  -- It names the SOURCE, not the parish, so parishes from one directory share
+  -- one name — that is the point, since it makes a jurisdiction's whole import
+  -- legible at a glance and a stale source findable in one query.
+  info_source_name TEXT,
+
   info_verified_at TEXT
 );
 

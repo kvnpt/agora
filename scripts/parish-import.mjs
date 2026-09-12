@@ -165,7 +165,7 @@ const sql = (v) => (v === null || v === undefined || v === ''
 
 const COLUMNS = ['id', 'name', 'jurisdiction', 'address', 'lat', 'lng', 'timezone',
   'website', 'phone', 'email', 'languages', 'color', 'feast_day',
-  'info_source_type', 'info_source_ref'];
+  'info_source_type', 'info_source_ref', 'info_source_name'];
 
 // Columns a re-run may refresh. id and jurisdiction are identity; languages,
 // color and info_verified_at are set by people, not by scrapes.
@@ -177,7 +177,8 @@ const COLUMNS = ['id', 'name', 'jurisdiction', 'address', 'lat', 'lng', 'timezon
 // twenty-two rows kept asserting the parish had told us something it had not.
 // The pair describes one fact, so it is refreshed as one fact.
 const REFRESHABLE = ['name', 'address', 'lat', 'lng', 'timezone', 'website',
-  'phone', 'email', 'feast_day', 'info_source_type', 'info_source_ref'];
+  'phone', 'email', 'feast_day', 'info_source_type', 'info_source_ref',
+  'info_source_name'];
 
 /**
  * The upsert, guarded so a re-run cannot undo human work.

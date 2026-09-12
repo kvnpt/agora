@@ -13,71 +13,82 @@
 -- hours-wrong service time waiting to happen the first time a parish is
 -- added outside NSW.
 
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stgeorge-redfern', 'St George Cathedral, Redfern', 'St George Antiochian Orthodox Cathedral', 'antiochian', 'Cnr Walker & Cooper Streets, Redfern NSW 2016',
   -33.891, 151.2089, 'Australia/Sydney',
   'https://stgeorgecathedral.com.au/', '["Arabic", "English"]', '#1e3a5f',
-  'website', 'https://stgeorgecathedral.com.au/'
+  'website', 'https://stgeorgecathedral.com.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-good-shepherd-antiochian-church', 'The Good Shepherd, Clayton', 'The Good Shepherd Antiochian Orthodox Church', 'antiochian', 'Religious Centre, 38 Exhibition Walk, Clayton VIC 3168',
   -37.9115, 145.133, 'Australia/Melbourne',
   'https://www.thegoodshepherd.org.au/', '["English"]', '#1e3a5f',
-  'website', 'https://www.thegoodshepherd.org.au/'
+  'website', 'https://www.thegoodshepherd.org.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stnicholas-punchbowl', 'St Nicholas, Punchbowl', 'St Nicholas Antiochian Orthodox Church', 'antiochian', '11 Henry St, Punchbowl NSW 2196',
   -33.9222, 151.0546, 'Australia/Sydney',
   'https://stnicholaspunchbowl.org.au/', '["Arabic", "English"]', '#1e3a5f',
-  'website', 'https://stnicholaspunchbowl.org.au/'
+  'website', 'https://stnicholaspunchbowl.org.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stmary-mayshill', 'St Mary''s, Mays Hill', 'Nativity of the Theotokos Antiochian Orthodox Parish', 'antiochian', '139 Burnett St, Mays Hill NSW 2145',
   -33.82, 150.9909, 'Australia/Sydney',
   'https://www.saintmary.org.au/', '["English", "Arabic"]', '#1e3a5f',
-  'website', 'https://www.saintmary.org.au/'
+  'website', 'https://www.saintmary.org.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stmichaelgabriel-ryde', 'Sts Michael & Gabriel, Ryde', 'Sts Michael & Gabriel Antiochian Orthodox Church', 'antiochian', '72 Belmore St, Ryde NSW 2112',
   -33.8181, 151.0986, 'Australia/Sydney',
   'https://smg.org.au/', '["English", "Arabic"]', '#1e3a5f',
-  'website', 'https://smg.org.au/'
+  'website', 'https://smg.org.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stnicholas-bankstown', 'St Nicholas, Bankstown', 'St Nicholas Antiochian Orthodox Church, Bankstown', 'antiochian', '2a Weigand Ave, Bankstown NSW 2200',
   -33.916, 151.0287, 'Australia/Sydney',
   'https://www.stnicholas-bankstown.org/', '["Arabic", "English"]', '#1e3a5f',
-  'website', 'https://www.stnicholas-bankstown.org/'
+  'website', 'https://www.stnicholas-bankstown.org/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stspeterpaul-doonside', 'Sts Peter & Paul, Doonside', 'Sts Peter and Paul Antiochian Orthodox Church', 'antiochian', '182 Hill End Road, Doonside NSW 2767',
   -33.7485, 150.8719, 'Australia/Sydney',
   NULL, '["Arabic", "English"]', '#1e3a5f',
-  'import', 'seeds/parishes.js'
+  'import', 'seeds/parishes.js', 'Repo seed'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stjohnbaptist-croydonpark', 'St John the Baptist, Croydon Park', 'St John the Baptist Antiochian Orthodox Church', 'antiochian', '12-14 Balmoral Ave, Croydon Park NSW 2133',
   -33.8997, 151.1017, 'Australia/Sydney',
   'https://stjohnthebaptist.church/', '["Arabic", "English"]', '#1e3a5f',
-  'website', 'https://stjohnthebaptist.church/'
+  'website', 'https://stjohnthebaptist.church/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'greek-stparaskevi-blacktown', 'Sts Paraskevi & Barbara, Blacktown', 'Hellenic Orthodox Parish and Community of Blacktown Districts', 'greek', '47-51 Balmoral St, Blacktown NSW 2148',
   -33.7748, 150.9017, 'Australia/Sydney',
   'https://www.stparaskevi.au/', '["Greek", "English"]', '#0d5eaf',
-  'website', 'https://www.stparaskevi.au/'
+  'website', 'https://www.stparaskevi.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'greek-gopssc-buderim', 'Sunshine Coast, Buderim', 'Greek Orthodox Parish of the Sunshine Coast', 'greek', 'St Mark''s Anglican Church, 7 Main Street, Buderim QLD 4556',
   -26.6851, 153.0527, 'Australia/Brisbane',
   'https://orthodoxsunshinecoast.org/', '["English", "Greek"]', '#0d5eaf',
-  'website', 'https://orthodoxsunshinecoast.org/'
+  'website', 'https://orthodoxsunshinecoast.org/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
-INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref) VALUES (
+INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone, website, languages, color, info_source_type, info_source_ref,
+        info_source_name) VALUES (
   'antiochian-stelias-wollongong', 'St Elias, Wollongong', 'St Elias Antiochian Orthodox Church', 'antiochian', '86 Kenny Street, Wollongong NSW 2500',
   -34.4364, 150.8905, 'Australia/Sydney',
   'https://www.saintelias.org.au/', '["Arabic", "English"]', '#1e3a5f',
-  'website', 'https://www.saintelias.org.au/'
+  'website', 'https://www.saintelias.org.au/', 'Parish website'
 ) ON CONFLICT(id) DO NOTHING;
 
 -- Recurrence rules. start_time/end_time are LOCAL wall clock in the

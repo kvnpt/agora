@@ -3197,6 +3197,23 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   overflow-wrap: anywhere;
 }
 .ps-info-copy:last-of-type { margin-bottom: 10px; }
+
+/* Where a parish's details came from. Muted and small on purpose: it is
+   provenance, not content — there for somebody checking the row, not competing
+   with the address above it. */
+.ps-source {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.ps-source a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.ps-source a:hover { color: var(--text); }
 .ps-info-copy-text {
   min-width: 0;
   white-space: normal;

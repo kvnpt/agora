@@ -139,10 +139,20 @@ an address-only result as provisional rather than confirmed.
 candidate for caching results to disk so a re-run costs nothing.
 
 **A pin nobody has checked is worth marking as such.** `parishes` carries
-`info_source_type`, `info_source_ref` and `info_verified_at` for exactly this.
-Use them; a scraped pin and a confirmed one should not be indistinguishable six
-months later. `info_source_type` is a CHECK too — `'website'`, `'person'` or
-`'import'` — and a directory scrape is `'import'`.
+`info_source_type`, `info_source_ref`, `info_source_name` and
+`info_verified_at` for exactly this. Use all four; a scraped pin and a confirmed
+one should not be indistinguishable six months later. `info_source_type` is a
+CHECK too — `'website'`, `'person'` or `'import'` — and a directory scrape is
+`'import'`.
+
+`info_source_name` is what to CALL the source, because the ref is a URL and a
+URL is not a name: an imported parish's ref is a hundred characters of directory
+path, which answers "where did this come from" only for somebody who reads URLs
+for a living. Name the source, not the parish, so a jurisdiction's whole import
+shares one label — "Greek Orthodox Archdiocese of Australia", "Parish website",
+"OpenStreetMap" — which makes the import legible at a glance and a stale source
+findable in one query. The parish sheet renders it under the address, linked to
+the ref when the ref is a URL, with `unverified` shown rather than implied.
 
 ## Writing the rows
 

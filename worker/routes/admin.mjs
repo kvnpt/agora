@@ -295,15 +295,15 @@ export function registerAdminRoutes(router) {
       env.DB.prepare(
         `INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone,
           website, email, phone, languages, live_url, donation_url, raffle_url, payment_url, gala_url,
-          info_source_type, info_source_ref, info_verified_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+          info_source_type, info_source_ref, info_source_name, info_verified_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         id, name, b.full_name || null, jurisdiction, b.address || null, lat, lng,
         b.timezone || 'Australia/Sydney',
         b.website || null, b.email || null, b.phone || null, b.languages || '["English"]',
         b.live_url || null, b.donation_url || null, b.raffle_url || null,
         b.payment_url || null, b.gala_url || null,
-        b.info_source_type || null, b.info_source_ref || null,
+        b.info_source_type || null, b.info_source_ref || null, b.info_source_name || null,
         b.info_verified_at || new Date().toISOString(),
       ),
       // A generic inactive rule so the parish shows up in the schedules list.
@@ -320,7 +320,7 @@ export function registerAdminRoutes(router) {
     'name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone',
     'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url',
     'donation_url', 'raffle_url', 'payment_url', 'gala_url', 'timezone',
-    'info_source_type', 'info_source_ref', 'info_verified_at',
+    'info_source_type', 'info_source_ref', 'info_source_name', 'info_verified_at',
   ];
 
   router.patch('/api/admin/parishes/:id', guarded(async ({ env, params, request }) => {
