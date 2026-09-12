@@ -212,6 +212,22 @@
     .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
     .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
+    /* Short links, one row each. The slug is shown as the URL it makes,
+       because the question being answered is "what happens when somebody types
+       orthodoxy.au/smg/raffle" and a field holding only the destination does
+       not answer it. */
+    .link-row { padding: 9px 0; border-bottom: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 5px; }
+    .link-row:last-of-type { border-bottom: none; }
+    .link-row-head { display: flex; align-items: center; gap: 8px; }
+    .link-row-name { font-size: 12px; font-weight: 600; }
+    .link-row-slug, .link-row-preview { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .link-row-slug { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .link-row-preview b { color: var(--text); }
+    .link-row input { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+    .link-row-slug-input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .link-row-del { flex: none; width: 26px; height: 26px; border: none; border-radius: 50%; background: none; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; }
+    .link-row-del:hover { color: #c0392b; background: var(--surface-2); }
+
     /* ── Archdiocese colours ────────────────────────────────────────────
        Two comparison strips and a grid of editors. The strips are the point
        of the tab: swatches edge to edge with no gap between them, because a
@@ -305,10 +321,10 @@
           <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
           <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
           <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
-          <div class="field full"><label>Donation URL</label><input name="donation_url" placeholder="https://donate.stripe.com/..."></div>
-          <div class="field full"><label>Raffle URL</label><input name="raffle_url" placeholder="https://buy.stripe.com/..."></div>
-          <div class="field full"><label>Payment URL</label><input name="payment_url" placeholder="https://..."></div>
-          <div class="field full"><label>Gala URL</label><input name="gala_url" placeholder="https://antiochian.breezechms.com/form/..."></div>
+          <!-- Donate / payment / raffle / gala and any custom link live in the
+               Links editor on the parish's own card below, not here: a parish
+               is added with a name and a pin, and its links are set once it
+               exists and has an acronym for them to hang off. -->
         </div>
         <div class="btn-row">
           <button type="submit" class="btn btn-primary">Add Parish</button>
@@ -360,6 +376,7 @@
             </select>
           </div>
           <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic, Greek"></div>
+          <div class="field full"><label>Address</label><input name="location_override" placeholder="Blank — meets at the parish's own address"></div>
         </div>
         <div class="field" style="margin-top:8px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
@@ -428,6 +445,23 @@
     </div>
   </main>
 
+  <!-- Every short link a parish hands out. The four with columns of their own
+       (donate, payment, raffle, gala) and the ones without, edited together
+       because that is how they are thought about, and split on save because
+       that is how they are stored. -->
+  <div class="modal-backdrop" id="links-backdrop" onclick="if(event.target===this)closeLinksEditor()">
+    <div class="modal">
+      <h2>Short links</h2>
+      <div class="modal-subtitle" id="links-modal-sub"></div>
+      <div id="links-rows"></div>
+      <button type="button" class="btn btn-outline" id="links-add" style="margin-top:10px;">Add a link</button>
+      <div class="modal-btn-row">
+        <button type="button" class="btn btn-outline" onclick="closeLinksEditor()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="links-save">Save links</button>
+      </div>
+    </div>
+  </div>
+
   <!-- The reserved-link list, and the locations it is built from. Same files
        the Worker bundles, so the warning shown here and the 409 returned on
        save cannot disagree about what is available. -->
@@ -485,7 +519,8 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors()]);
+      await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
+        loadParishLinks()]);
       renderAll();
     }
 
@@ -498,6 +533,123 @@
       renderInferSelect();
       renderColors();
     }
+
+    // ── A parish's short links ──
+    //
+    // Four of them are columns on `parishes` and the rest are parish_links
+    // rows; the dialog edits both together because "the links we hand out" is
+    // one idea, and splits them on save because they are two stores.
+
+    const PAY_LINKS = [
+      ['donate', 'donation_url', 'Donate'],
+      ['payment', 'payment_url', 'Payment'],
+      ['raffle', 'raffle_url', 'Raffle'],
+      ['gala', 'gala_url', 'Gala'],
+    ];
+    let parishLinks = [];              // every parish's custom links
+    let linksEditing = { id: null, custom: [] };
+
+    async function loadParishLinks() {
+      parishLinks = await fetch('/api/admin/parish-links', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
+
+    function linkCountLabel(pid) {
+      const n = parishLinks.filter(l => l.parish_id === pid).length;
+      return n ? ` (${n} custom)` : '';
+    }
+
+    const linkBase = (p) => `orthodoxy.au/${(p.acronym || p.id).toLowerCase().replace(/\s+/g, '')}/`;
+
+    function renderLinkRows() {
+      const p = parishes.find(x => x.id === linksEditing.id);
+      if (!p) return;
+      const base = linkBase(p);
+      const fixed = PAY_LINKS.map(([slug, column, label]) => `
+        <div class="link-row">
+          <div class="link-row-head"><span class="link-row-name">${esc(label)}</span><span class="link-row-slug">${esc(base + slug)}</span></div>
+          <input type="url" data-link-col="${column}" placeholder="https://… (blank to clear)" value="${esc(p[column] || '')}">
+        </div>`).join('');
+      const custom = linksEditing.custom.map((l, i) => `
+        <div class="link-row">
+          <div class="link-row-head">
+            <input class="link-row-slug-input" data-link-slug="${i}" value="${esc(l.slug || '')}" placeholder="name" spellcheck="false">
+            <button type="button" class="link-row-del" data-link-del="${i}" aria-label="Remove">&times;</button>
+          </div>
+          <div class="link-row-preview">${esc(base)}<b>${esc(l.slug || 'name')}</b></div>
+          <input type="url" data-link-url="${i}" placeholder="https://…" value="${esc(l.url || '')}">
+          <input data-link-label="${i}" placeholder="Label (what to call it)" value="${esc(l.label || '')}">
+        </div>`).join('');
+      const rows = document.getElementById('links-rows');
+      rows.innerHTML = fixed + custom;
+      // Held in the model on every keystroke: adding or removing a row
+      // re-renders, and a re-render would otherwise discard the others.
+      rows.querySelectorAll('[data-link-del]').forEach(b => {
+        b.onclick = () => { linksEditing.custom.splice(+b.dataset.linkDel, 1); renderLinkRows(); };
+      });
+      rows.querySelectorAll('[data-link-slug]').forEach(el => {
+        el.oninput = () => {
+          const i = +el.dataset.linkSlug;
+          linksEditing.custom[i].slug = el.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const b = el.closest('.link-row').querySelector('.link-row-preview b');
+          if (b) b.textContent = linksEditing.custom[i].slug || 'name';
+        };
+      });
+      rows.querySelectorAll('[data-link-url]').forEach(el => {
+        el.oninput = () => { linksEditing.custom[+el.dataset.linkUrl].url = el.value.trim(); };
+      });
+      rows.querySelectorAll('[data-link-label]').forEach(el => {
+        el.oninput = () => { linksEditing.custom[+el.dataset.linkLabel].label = el.value; };
+      });
+    }
+
+    window.openLinksEditor = function (pid) {
+      const p = parishes.find(x => x.id === pid);
+      if (!p) return;
+      linksEditing = {
+        id: pid,
+        custom: parishLinks.filter(l => l.parish_id === pid)
+          .map(l => ({ slug: l.slug, url: l.url, label: l.label || '' })),
+      };
+      document.getElementById('links-modal-sub').textContent =
+        `${p.name} — ${p.acronym ? linkBase(p) + '…' : 'no acronym yet, so these have no short link'}`;
+      renderLinkRows();
+      document.getElementById('links-backdrop').classList.add('open');
+    };
+
+    window.closeLinksEditor = function () {
+      document.getElementById('links-backdrop').classList.remove('open');
+    };
+
+    document.getElementById('links-add').addEventListener('click', () => {
+      linksEditing.custom.push({ slug: '', url: '', label: '' });
+      renderLinkRows();
+    });
+
+    document.getElementById('links-save').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const pid = linksEditing.id;
+      const patch = {};
+      document.querySelectorAll('#links-rows [data-link-col]').forEach(el => {
+        patch[el.dataset.linkCol] = el.value.trim() || null;
+      });
+      btn.disabled = true;
+      try {
+        // The columns first: a link list refused for a slug that spells a
+        // route should not also cost the four the admin just edited.
+        const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`,
+          { method: 'PATCH', headers, body: JSON.stringify(patch) });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        const res2 = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/links`,
+          { method: 'PUT', headers, body: JSON.stringify({ links: linksEditing.custom.filter(l => l.slug && l.url) }) });
+        if (!res2.ok) { toast(await adminError(res2), 'error'); return; }
+        closeLinksEditor();
+        toast('Links saved');
+        await loadAll();
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     // ── Archdiocese colours ──
     //
@@ -932,10 +1084,10 @@
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
-              <div class="field full"><label>Donation URL</label><input value="${esc(p.donation_url || '')}" data-field="donation_url" placeholder="https://donate.stripe.com/... (blank to clear)"></div>
-              <div class="field full"><label>Raffle URL</label><input value="${esc(p.raffle_url || '')}" data-field="raffle_url" placeholder="https://buy.stripe.com/... (blank to clear)"></div>
-              <div class="field full"><label>Payment URL</label><input value="${esc(p.payment_url || '')}" data-field="payment_url" placeholder="https://... (blank to clear)"></div>
-              <div class="field full"><label>Gala URL</label><input value="${esc(p.gala_url || '')}" data-field="gala_url" placeholder="https://antiochian.breezechms.com/form/... (blank to clear)"></div>
+              <div class="field full">
+                <label>Short links</label>
+                <button type="button" class="btn btn-outline" onclick="openLinksEditor('${esc(p.id)}')">Donate, pay, raffle, gala &amp; custom${linkCountLabel(p.id)}</button>
+              </div>
               <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
               <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
               <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
@@ -1010,9 +1162,7 @@
       const data = { name: f.name.value.trim(), full_name: f.full_name.value.trim() || null, jurisdiction: f.jurisdiction.value,
         address: f.address.value.trim() || null, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         website: f.website.value.trim() || null, email: f.email.value.trim() || null, phone: f.phone.value.trim() || null,
-        live_url: f.live_url.value.trim() || null, donation_url: f.donation_url.value.trim() || null,
-        raffle_url: f.raffle_url.value.trim() || null, payment_url: f.payment_url.value.trim() || null,
-        gala_url: f.gala_url.value.trim() || null,
+        live_url: f.live_url.value.trim() || null,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
@@ -1081,6 +1231,7 @@
                     <select data-field="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
                   </div>
                   <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages"></div>
+                  <div class="field full"><label>Address</label><input value="${esc(s.location_override || '')}" data-field="location_override" placeholder="Blank — meets at the parish's own address"></div>
                 </div>
                 <div class="field" style="margin-top:8px;">
                   <label>Weeks (blank = every week)</label>
@@ -1139,7 +1290,10 @@
       const data = { parish_id: f.parish_id.value, day_of_week: parseInt(f.day_of_week.value), start_time: f.start_time.value,
         end_time: f.end_time.value || null, title: f.title.value.trim(), event_type: f.event_type.value,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim()).filter(Boolean)) : null,
-        hide_live: f.hide_live.checked, parish_scoped: f.parish_scoped.checked };
+        hide_live: f.hide_live.checked, parish_scoped: f.parish_scoped.checked,
+        // Blank means the parish's address, which is what NULL means in the
+        // column — an empty string would render as an address that is nothing.
+        location_override: f.location_override.value.trim() || null };
       const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
     });

@@ -36,7 +36,7 @@ export function registerPublicRoutes(router) {
   router.get('/api/bundle', async ({ env, query }) => {
     const { from, to } = windowFrom(query);
 
-    const [rows, parishes, oneOffs, cross, jurisColors] = await Promise.all([
+    const [rows, parishes, oneOffs, cross, jurisColors, links] = await Promise.all([
       fetchWindowRows(env.DB, from, to),
       env.DB.prepare(`SELECT ${PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
       env.DB.prepare(
@@ -50,6 +50,12 @@ export function registerPublicRoutes(router) {
       ).bind(from, to).all(),
       env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all(),
       jurisdictionColorOverrides(env.DB),
+      // A parish's own links. Small — a handful of rows in total — and needed
+      // by the sheet the moment a parish is opened, so it rides along rather
+      // than costing a request per parish. The catch keeps a bundle served
+      // while migration 008 has not run.
+      env.DB.prepare('SELECT parish_id, slug, label, url FROM parish_links ORDER BY sort_order, slug')
+        .all().catch(() => ({ results: [] })),
     ]);
 
     return json({
@@ -65,6 +71,7 @@ export function registerPublicRoutes(router) {
       // trip would mean drawing the map once in the old colours and again in
       // the new ones.
       jurisdiction_colors: jurisColors,
+      parish_links: links.results || [],
     }, 200, {
       // Rules change rarely. The client re-derives "now" locally, so a stale-ish
       // bundle is still correct — only newly-added events are missed, briefly.
@@ -77,6 +84,14 @@ export function registerPublicRoutes(router) {
     const r = await env.DB.prepare(
       `SELECT ${PARISH_COLS} FROM parishes WHERE id != '_unassigned' ORDER BY name`
     ).all();
+    return json(r.results || []);
+  });
+
+  // GET /api/parishes/:id/links — a parish's own short links, for the sheet.
+  router.get('/api/parishes/:id/links', async ({ env, params }) => {
+    const r = await env.DB.prepare(
+      'SELECT slug, label, url FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug'
+    ).bind(params.id).all().catch(() => ({ results: [] }));
     return json(r.results || []);
   });
 

@@ -19,6 +19,11 @@ import slugs from '../../public/shared/slugs.js';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
 
+// The four links that are columns on `parishes`. A parish_links row may not
+// take one of these slugs: /smg/donate has to keep answering from the column,
+// and two places to set one link is how they come to disagree.
+const PAY_KINDS = new Set(['donate', 'raffle', 'payment', 'gala']);
+
 // An acronym is a URL segment, so saving one is a namespace change.
 //
 // Enforced here rather than in either editor: the in-app parish form and
@@ -299,6 +304,73 @@ export function registerAdminRoutes(router) {
       additional_parishes: (addl.results || []).map(r => r.parish_id),
       replaces: (repl.results || []).map(r => r.replaced_event_id),
     });
+  }));
+
+  // ── a parish's own links ──
+  //
+  // The four payment kinds are columns on `parishes` and stay there; these are
+  // the ones it does not have a column for. Both editors show them in one
+  // place, because "where do I change the raffle link" should have one answer.
+
+  // Every parish's links in one response, so the admin list can show a count
+  // per parish without a request each.
+  router.get('/api/admin/parish-links', guarded(async ({ env }) => {
+    const r = await env.DB.prepare(
+      'SELECT parish_id, slug, label, url, sort_order FROM parish_links ORDER BY parish_id, sort_order, slug'
+    ).all().catch(() => ({ results: [] }));
+    return json(r.results || []);
+  }));
+
+  router.get('/api/admin/parishes/:id/links', guarded(async ({ env, params }) => {
+    const r = await env.DB.prepare(
+      'SELECT slug, label, url, sort_order FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug'
+    ).bind(params.id).all().catch(() => ({ results: [] }));
+    return json(r.results || []);
+  }));
+
+  // PUT the whole set for one parish. A link list is short, is edited as a
+  // list, and is saved by one button — so a replace is what the editor
+  // actually does, and a per-row API would make the UI reconstruct it anyway.
+  router.put('/api/admin/parishes/:id/links', guarded(async ({ env, params, request }) => {
+    const id = params.id;
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
+      return json({ error: 'Parish not found' }, 404);
+    }
+    const b = await readJson(request);
+    const links = Array.isArray(b && b.links) ? b.links : null;
+    if (!links) return json({ error: 'links must be an array' }, 400);
+
+    const seen = new Set();
+    const clean = [];
+    for (const l of links) {
+      const slug = normaliseSlug(l && l.slug);
+      const url = String((l && l.url) || '').trim();
+      if (!slug || !url) continue;                       // a blank row is a deletion
+      // The slug is a URL segment in the same namespace as an acronym, a
+      // jurisdiction, a location and a service. /smg/liturgy means the service
+      // and must keep meaning it, so the same list refuses it here.
+      const reserved = reservedSlugReason(slug);
+      if (reserved) return json({ error: reserved, field: slug }, 409);
+      if (PAY_KINDS.has(slug)) {
+        return json({ error: `"${slug}" is one of the four built-in links — set it on the parish itself.`, field: slug }, 409);
+      }
+      if (seen.has(slug)) return json({ error: `"${slug}" is listed twice`, field: slug }, 409);
+      if (!/^https?:\/\//i.test(url)) {
+        return json({ error: `"${slug}" needs a full http(s) URL`, field: slug }, 400);
+      }
+      seen.add(slug);
+      clean.push({ slug, url, label: (l.label || '').trim() || null, sort_order: clean.length });
+    }
+
+    const stmts = [env.DB.prepare('DELETE FROM parish_links WHERE parish_id = ?').bind(id)];
+    for (const l of clean) {
+      stmts.push(env.DB.prepare(
+        `INSERT INTO parish_links (parish_id, slug, label, url, sort_order, updated_at)
+         VALUES (?,?,?,?,?,?)`
+      ).bind(id, l.slug, l.label, l.url, l.sort_order, new Date().toISOString()));
+    }
+    await env.DB.batch(stmts);
+    return json(clean);
   }));
 
   // ── jurisdiction colours ──
@@ -647,19 +719,19 @@ export function registerAdminRoutes(router) {
     }
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
-        languages, week_of_month, hide_live, parish_scoped)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING *`
+        languages, week_of_month, hide_live, parish_scoped, location_override)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
       b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
-      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0,
+      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
     ).first();
     return json(row, 201);
   }));
 
   const SCHEDULE_EDITABLE = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type',
     'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped',
-    'effective_from', 'effective_to'];
+    'effective_from', 'effective_to', 'location_override'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
   router.patch('/api/admin/schedules/:id', guarded(async ({ env, params, request }) => {

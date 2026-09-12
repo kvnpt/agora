@@ -442,5 +442,25 @@
       <input type="file" id="logo-file-input" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
     </div>
   </div>
+
+  <!-- Every short link a parish hands out, in one dialog.
+       The four with columns of their own (donate, payment, raffle, gala) and
+       the ones without, edited the same way and shown beside the URL each
+       actually resolves to — because the question being answered is "what
+       happens when somebody types orthodoxy.au/smg/raffle", and a form that
+       shows only the destination does not answer it. -->
+  <div class="escalate-backdrop" id="links-backdrop" onclick="if(event.target===this)closeParishLinks()">
+    <div class="escalate-modal links-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishLinks()">&times;</button>
+      <h2>Short links</h2>
+      <div class="escalate-modal-sub" id="links-modal-sub"></div>
+      <div id="links-rows"></div>
+      <button class="ps-btn ps-btn-admin links-add" type="button" id="links-add">Add a link</button>
+      <div class="escalate-btn-row">
+        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishLinks()">Cancel</button>
+        <button class="btn-save" type="button" id="links-save">Save links</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

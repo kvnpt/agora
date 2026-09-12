@@ -1764,6 +1764,15 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .si-wom {
   padding: 0 0 3px;
 }
+/* Where a rule meets, when that is not the parish's address. Same weight as
+   the week-of-month line under it: both are qualifications on the row above,
+   not content of their own. */
+.si-where {
+  padding: 0 0 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
 .parish-schedule-head + .schedule-day { margin-top: 6px; }
 .schedule-item-title {
   flex: 1;
@@ -1800,6 +1809,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   color: var(--text-muted);
 }
 .si-wom { font-size: 10px; color: var(--text-muted); }
+.si-where { font-size: 10px; }
 .schedule-item-scope {
   flex: none;
   font-size: 9.5px;
@@ -3741,6 +3751,65 @@ button.ps-avatar { cursor: pointer; }
   color: var(--text-secondary);
 }
 .logo-zoom-row input[type=range] { flex: 1; accent-color: var(--accent); }
+/* The short-links dialog. One row per link: what it is called, the URL a
+   visitor lands on, and — for a custom one — the slug that makes the short
+   link, previewed as it is typed. The four with columns show their slug as
+   text because it is not theirs to change. */
+.links-modal { max-width: 520px; }
+.link-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,0.18));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.link-row:last-of-type { border-bottom: none; }
+.link-row-head { display: flex; align-items: center; gap: 8px; }
+.link-row-name { font-size: 13px; font-weight: 600; }
+.link-row-slug, .link-row-preview {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.link-row-slug { margin-left: auto; }
+.link-row-preview b { color: var(--text); font-weight: 600; }
+.link-row-slug-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.link-row-del {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.link-row-del:hover { color: var(--danger, #c0392b); background: rgba(128,128,128,0.12); }
+.links-add { margin-top: 10px; }
+/* The dialog is not a .detail-edit-form, so its fields do not inherit that
+   form's geometry — spelled out here at the same 16px Safari needs to not zoom
+   the viewport on focus. */
+.link-row input {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.link-row input:focus { outline: none; border-color: var(--text-muted); }
+
 .logo-crop-hint {
   font-size: 12px;
   line-height: 1.4;

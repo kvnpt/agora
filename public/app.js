@@ -1205,8 +1205,11 @@ async function fetchParishes() {
   try {
     await window.agoraBundle.load();
     state.parishes = window.agoraBundle.parishes();
+    // A parish's own short links ride along in the same bundle.
+    state.parishLinks = (window.agoraBundle.raw && window.agoraBundle.raw.parish_links) || [];
   } catch {
     state.parishes = [];
+    state.parishLinks = [];
   }
   if (window.lsLog) window.lsLog('✓ parishes loaded (' + state.parishes.length + ')');
   if (window.lsProgress) window.lsProgress(0.35);
@@ -4135,6 +4138,13 @@ function renderParishSheetContent(parishId, opts = {}) {
     ? `<a class="ps-btn ps-donate-btn" href="${esc(parish.donation_url)}" target="_blank" rel="noopener"><img class="ps-btn-icon" src="https://api.iconify.design/ph:hand-heart.svg" alt=""><span>Donate</span></a>`
     : '';
   const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}"><img class="ps-btn-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt=""><span>Share</span></button>`;
+  // A parish's own links, beside the buttons the four columns produce. Named
+  // by their label and not by their slug: the slug is a URL and a URL is not a
+  // name, which is the same reasoning info_source_name carries.
+  const customLinkBtns = (state.parishLinks || [])
+    .filter(l => l.parish_id === parishId && l.url)
+    .map(l => `<a class="ps-btn" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.slug)}</a>`)
+    .join('');
 
   // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
   let parishAdminHtml = '';
@@ -4178,10 +4188,11 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Website</label><input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}"></div>
         <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
         <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
-        <div class="edit-row"><label>Donation URL</label><input type="url" id="pse-donation-${pid}" value="${esc(parish.donation_url || '')}"></div>
-        <div class="edit-row"><label>Raffle URL</label><input type="url" id="pse-raffle-${pid}" value="${esc(parish.raffle_url || '')}"></div>
-        <div class="edit-row"><label>Payment URL</label><input type="url" id="pse-payment-${pid}" value="${esc(parish.payment_url || '')}"></div>
-        <div class="edit-row"><label>Gala URL</label><input type="url" id="pse-gala-${pid}" value="${esc(parish.gala_url || '')}"></div>
+        <div class="edit-row">
+          <label>Short links</label>
+          <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLinks('${pid}')">${glyph('ph:link-simple')}Donate, pay, raffle, gala &amp; custom</button>
+          <div class="edit-row-hint">orthodoxy.au/${esc((parish.acronym || 'acronym').toLowerCase().replace(/\s+/g, ''))}/&lt;name&gt; — every link the parish hands out, in one place.</div>
+        </div>
         <div class="edit-row">
           <label>Color</label>
           <input type="color" id="pse-color-${pid}" value="${esc(parish.color || rawJurisColor(parish.jurisdiction))}">
@@ -4279,7 +4290,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       ${addrHtml}
       ${webCopyHtml}
       ${srcHtml}
-      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${shareParishBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
     ${parishEditFormHtml || ''}
@@ -5505,6 +5516,10 @@ function renderScheduleDaysHTML(items, opts = {}) {
       html += `<div class="schedule-item${focused ? ' focused' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}" role="button" tabindex="0">`;
       html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${editBtn}<img class="si-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt=""></div>`;
       if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
+      // Only when the rule meets somewhere other than the parish's own address.
+      // Silence means the parish address, which the sheet has already shown —
+      // repeating it under every row would bury the one line that differs.
+      if (s.location_override) html += `<div class="si-where">${esc(s.location_override)}</div>`;
       html += `</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
@@ -5516,6 +5531,7 @@ function renderScheduleDaysHTML(items, opts = {}) {
             <input data-f="start_time" type="time" value="${esc(s.start_time)}">
             <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
             <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
+            <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
           </div>
           <div class="wom-checkboxes" data-f="week_of_month">
             <span class="wom-label">Weeks:</span>
@@ -6231,10 +6247,6 @@ window.saveParish = async function(id) {
     website: document.getElementById(`pse-website-${pid}`).value || null,
     phone: document.getElementById(`pse-phone-${pid}`).value || null,
     live_url: document.getElementById(`pse-live-${pid}`).value || null,
-    donation_url: document.getElementById(`pse-donation-${pid}`).value || null,
-    raffle_url: document.getElementById(`pse-raffle-${pid}`).value || null,
-    payment_url: document.getElementById(`pse-payment-${pid}`).value || null,
-    gala_url: document.getElementById(`pse-gala-${pid}`).value || null,
     color: document.getElementById(`pse-color-${pid}`).value,
     acronym: document.getElementById(`pse-acro-${pid}`).value || null,
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
@@ -6359,6 +6371,128 @@ window.openParishLogoEditor = function(parishId) {
 
   document.getElementById('logo-backdrop').classList.add('open');
 };
+
+// ── a parish's short links ───────────────────────────────────────────────
+//
+// The four payment kinds are columns on `parishes`; anything else is a row in
+// `parish_links`. They are edited together because that is how they are
+// thought about — "the links we hand out" — and split on save because that is
+// how they are stored. A reader of this file should not have to know which is
+// which to change one, which is the whole reason this dialog exists rather
+// than five more rows in the parish form.
+const PARISH_PAY_LINKS = [
+  ['donate', 'donation_url', 'Donate'],
+  ['payment', 'payment_url', 'Payment'],
+  ['raffle', 'raffle_url', 'Raffle'],
+  ['gala', 'gala_url', 'Gala'],
+];
+
+let _links = { parishId: null, custom: [] };
+
+function _linksAcronym(parish) {
+  return (parish.acronym || '').toLowerCase().replace(/\s+/g, '') || parish.id;
+}
+
+function _renderLinkRows() {
+  const parish = state.parishes.find(p => p.id === _links.parishId);
+  if (!parish) return;
+  const base = `orthodoxy.au/${_linksAcronym(parish)}/`;
+  const fixed = PARISH_PAY_LINKS.map(([slug, column, label]) => `
+    <div class="link-row">
+      <div class="link-row-head"><span class="link-row-name">${esc(label)}</span><span class="link-row-slug">${esc(base + slug)}</span></div>
+      <input type="url" data-link-col="${column}" placeholder="https://…" value="${esc(parish[column] || '')}">
+    </div>`).join('');
+  const custom = _links.custom.map((l, i) => `
+    <div class="link-row" data-link-i="${i}">
+      <div class="link-row-head">
+        <input class="link-row-slug-input" data-link-slug="${i}" value="${esc(l.slug || '')}" placeholder="name" spellcheck="false">
+        <button class="link-row-del" type="button" data-link-del="${i}" aria-label="Remove">&times;</button>
+      </div>
+      <div class="link-row-preview">${esc(base)}<b>${esc(l.slug || 'name')}</b></div>
+      <input type="url" data-link-url="${i}" placeholder="https://…" value="${esc(l.url || '')}">
+      <input data-link-label="${i}" placeholder="Label (what to call it)" value="${esc(l.label || '')}">
+    </div>`).join('');
+  const rows = document.getElementById('links-rows');
+  rows.innerHTML = fixed + custom;
+  rows.querySelectorAll('[data-link-del]').forEach(b => {
+    b.onclick = () => { _links.custom.splice(+b.dataset.linkDel, 1); _renderLinkRows(); };
+  });
+  // Kept in the model on every keystroke, because a re-render (adding or
+  // removing a row) would otherwise throw away what is typed in the others.
+  rows.querySelectorAll('[data-link-slug]').forEach(input => {
+    input.oninput = () => {
+      const i = +input.dataset.linkSlug;
+      _links.custom[i].slug = input.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      const preview = input.closest('.link-row').querySelector('.link-row-preview b');
+      if (preview) preview.textContent = _links.custom[i].slug || 'name';
+    };
+  });
+  rows.querySelectorAll('[data-link-url]').forEach(input => {
+    input.oninput = () => { _links.custom[+input.dataset.linkUrl].url = input.value.trim(); };
+  });
+  rows.querySelectorAll('[data-link-label]').forEach(input => {
+    input.oninput = () => { _links.custom[+input.dataset.linkLabel].label = input.value; };
+  });
+}
+
+window.openParishLinks = async function(parishId) {
+  const parish = state.parishes.find(p => p.id === parishId);
+  if (!parish) return;
+  _links.parishId = parishId;
+  _links.custom = (state.parishLinks || []).filter(l => l.parish_id === parishId)
+    .map(l => ({ slug: l.slug, url: l.url, label: l.label || '' }));
+  document.getElementById('links-modal-sub').textContent = parish.name || parishId;
+  _renderLinkRows();
+  document.getElementById('links-backdrop').classList.add('open');
+
+  document.getElementById('links-add').onclick = () => {
+    _links.custom.push({ slug: '', url: '', label: '' });
+    _renderLinkRows();
+  };
+  document.getElementById('links-save').onclick = () => _saveParishLinks();
+};
+
+window.closeParishLinks = function() {
+  document.getElementById('links-backdrop').classList.remove('open');
+};
+
+async function _saveParishLinks() {
+  const pid = _links.parishId;
+  const btn = document.getElementById('links-save');
+  const patch = {};
+  document.querySelectorAll('#links-rows [data-link-col]').forEach(input => {
+    patch[input.dataset.linkCol] = input.value.trim() || null;
+  });
+  const links = _links.custom.filter(l => l.slug && l.url);
+
+  btn.disabled = true;
+  try {
+    // Two writes, because they are two stores. The columns first: if the link
+    // list is refused (a slug that spells a route), the parish still keeps the
+    // four the admin just edited rather than losing both halves to one 409.
+    const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    });
+    if (!res.ok) { alert((await res.json().catch(() => ({}))).error || 'Save failed'); return; }
+    const updated = await res.json();
+    const idx = state.parishes.findIndex(p => p.id === pid);
+    if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
+
+    const res2 = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/links`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ links }),
+    });
+    if (!res2.ok) { alert((await res2.json().catch(() => ({}))).error || 'Links not saved'); return; }
+    const saved = await res2.json();
+    state.parishLinks = [
+      ...(state.parishLinks || []).filter(l => l.parish_id !== pid),
+      ...saved.map(l => ({ ...l, parish_id: pid })),
+    ];
+    closeParishLinks();
+    renderParishSheetContent(pid, {});
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 window.closeParishLogoEditor = function() {
   document.getElementById('logo-backdrop').classList.remove('open');

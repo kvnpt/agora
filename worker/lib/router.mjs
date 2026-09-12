@@ -23,6 +23,10 @@ export class Router {
   get(p, h) { return this.add('GET', p, h); }
   post(p, h) { return this.add('POST', p, h); }
   patch(p, h) { return this.add('PATCH', p, h); }
+  // PUT for a route that genuinely replaces a whole collection — a parish's
+  // link list is edited and saved as one list, and a PATCH there would have to
+  // invent a way to say "and delete the row I removed".
+  put(p, h) { return this.add('PUT', p, h); }
   delete(p, h) { return this.add('DELETE', p, h); }
 
   /** Returns a Response, or null when nothing matched. */

@@ -67,7 +67,10 @@ export function project(s, date, o, cache) {
     start_local: `${date}T${startTime}`,
     end_local: endTime ? `${date}T${endTime}` : null,
     timezone: zone,
-    location_override: (o && o.patch_location_override) || null,
+    // Three places a service can say where it is, most specific first: this
+    // occurrence's override, the rule's own address, the parish's address
+    // (which the client falls back to when this is null).
+    location_override: (o && o.patch_location_override) || s.location_override || null,
     lat: s.p_lat,
     lng: s.p_lng,
     event_type: (o && o.patch_event_type) || s.event_type,

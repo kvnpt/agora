@@ -2,8 +2,8 @@
 --
 -- Replaces the 29 sequential user_version migrations in db.js with the end
 -- state they arrived at, minus everything the WhatsApp ingestor and the AI
--- vision pipeline needed. Seven tables survive, and an eighth has since been
--- added for the jurisdiction colour overrides.
+-- vision pipeline needed. Seven tables survive; two have since been added,
+-- for the jurisdiction colour overrides and a parish's own short links.
 --
 -- Apply with:
 --   wrangler d1 execute agora --remote --file=d1/schema.sql
@@ -51,6 +51,9 @@ CREATE TABLE parishes (
   live_url         TEXT,
 
   -- Payment deep links: /<acronym>/donate|raffle|payment|gala 302 to these.
+  -- Any OTHER short link a parish hands out is a `parish_links` row instead —
+  -- these four have columns because they were the four every parish was asked
+  -- for, not because the list is closed.
   donation_url     TEXT,
   raffle_url       TEXT,
   payment_url      TEXT,
@@ -132,6 +135,25 @@ CREATE TABLE schedules (
   parish_scoped  INTEGER NOT NULL DEFAULT 0,
   effective_from TEXT,   -- 'YYYY-MM-DD' local; NULL = open-ended
   effective_to   TEXT,
+
+  -- Where this rule meets, when that is not the parish's own address.
+  --
+  -- NULL means the parish address, which is the usual case and the reason this
+  -- is not NOT NULL. A parish without its own building is the reason it exists
+  -- at all: Good Shepherd serves in a university religious centre and the
+  -- Sunshine Coast parish in a borrowed Anglican church, and a parish that has
+  -- a building still holds a weekday service in a hall down the road, a
+  -- monthly liturgy at a cemetery chapel, or a Vespers at another parish.
+  --
+  -- It is the same field `events.location_override` is, and an occurrence-level
+  -- `schedule_overrides.patch_location_override` still wins over it: the rule
+  -- says where the service normally is, the override says where it is this
+  -- once. project.mjs resolves the three in that order.
+  --
+  -- Text, not coordinates. The pin stays the parish's — an address here is for
+  -- a reader to find the door, and geocoding every rule would put a second
+  -- class of unverified pin on the map for no gain.
+  location_override TEXT,
 
   -- Where this rule came from, and when we last read it there.
   --
@@ -297,6 +319,33 @@ CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);
 -- silently returning zero events, which errors nowhere. Read by
 -- BaseAdapter.healthCheck() behind GET /api/adapters/status.
 -- ─────────────────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────
+-- parish_links — a parish's own short links, beyond the four it has columns for
+--
+-- /<acronym>/donate|raffle|payment|gala are columns on `parishes` because they
+-- are the four every parish was asked for. They are not the four every parish
+-- HAS: a festival, a building fund, a bookstall, a Facebook group, a form for
+-- a baptism enquiry. A column each would be a migration each, and the answer
+-- would still be no the next time somebody asks.
+--
+-- So: one row per extra link, resolved by worker/index.mjs after the four
+-- fixed kinds. `slug` is the second segment of the URL and shares a namespace
+-- with everything else the router reads, so it is checked against the same
+-- reserved list an acronym is (public/shared/slugs.js) — /smg/liturgy has to
+-- keep meaning the service.
+--
+-- `label` is what the parish sheet calls the link; a slug is a URL, not a name.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE parish_links (
+  parish_id  TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  slug       TEXT NOT NULL,
+  label      TEXT,
+  url        TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  PRIMARY KEY (parish_id, slug)
+);
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- jurisdiction_colors — what /admin has changed about the colour table
 --
