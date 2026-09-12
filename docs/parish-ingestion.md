@@ -49,7 +49,7 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-196 parishes · 13 schedules · 68 events · 0 overrides
+196 parishes · 69 schedules · 68 events · 0 overrides
 ```
 
 135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 24
@@ -84,7 +84,9 @@ inside its effective dates; `overrides` is window-scoped.
   `pdf-schedules/stparaskevi-blacktown.json`*, because `fetchEvents()` runs
   before the missing-parish guard and never reaches it. The extraction Action
   (`.github/workflows/parish-pdf.yml`) has to run as well.
-- **13 schedules live, but `d1/seed-parishes.sql` creates only 9.** The four
+- **69 schedules live, but `d1/seed-parishes.sql` creates only 9.** 67 of them
+  are the Antiochian service-time import described at the end of this file; of
+  the rest, four
   extra are all Good Shepherd's, for which the seed writes no rules at all —
   accepted from */admin* → Schedules → *Infer rules from scraped events*, and
   it is the only parish with scraped events to infer from. Worth knowing before
@@ -637,3 +639,89 @@ were written; the service times are parsed and kept in
 recurrence rules is an adapter's job and `docs/adapters.md` is where it belongs.
 This is the largest block of schedule data any jurisdiction has published so far
 and it is sitting there already fetched.
+
+
+---
+
+## What the Antiochian SERVICE TIMES run cost
+
+The same 24 pages carry a PRAYER SERVICES tab, and it is the largest block of
+schedule data any jurisdiction has published. 67 recurrence rules were imported
+from it, taking the table from 13 schedules to 69.
+
+```bash
+node scripts/build-antiochian-schedules.mjs antiochian-scraped.json cache/antiochian/index.json antiochian-schedules.sql
+```
+
+**It is a script, not an adapter, and it has to be.** `docs/adapters.md` is the
+usual home for service times, and an adapter is right when a source can be
+re-fetched on a schedule. This one cannot: the site answers 403 to every
+automated client, so a Worker adapter would fail every four hours forever. The
+pages are fetched by a person and imported once — which is exactly why the rules
+had to start carrying their own provenance.
+
+**`schedules` gained `source_name`, `source_ref` and `source_updated_at`.** A
+recurrence rule is a claim about the FUTURE and, unlike a scraped event, never
+expires on its own: "Sundays 9am" keeps projecting cards forever and looks
+exactly as current on the day the parish changes its times as it did the day it
+was entered. Nothing in the row said how old the claim was. The three columns
+answer three different questions — who says so, where to check, and how old it
+is — and the parish sheet now renders them under the timetable as
+*"Updated 11 months ago · Archdiocese ↗"*.
+
+`source_updated_at` is the SOURCE's own last-modified date, not when we scraped
+it. Re-reading an unchanged page tells you nothing about whether the times are
+still right, so recording the read would manufacture a freshness the data does
+not have. These 24 pages were last touched between July 2024 and May 2026, and
+the line says so honestly.
+
+**Match on parish + weekday + time, never on title.** The nine rules seeded by
+hand before any scraping are all called "Sunday Divine Liturgy" with no
+languages. Matching on title would have left every one of them in place with the
+directory's version inserted beside it — two cards for one service. Updating in
+place also keeps the row id, which matters because `events.schedule_id` and
+`schedule_overrides` both point at it; neither does today, but a rule that is
+deleted and reinserted breaks those silently the first time one does.
+
+**One of the seeded rules was simply wrong.** It said Sts Michael & Gabriel's
+09:00 Sunday service is the Divine Liturgy. The parish says 09:00 is Matins and
+the Liturgy is at 10:00 — so that row's title, type and languages were all
+corrected, and a second rule inserted for the Liturgy it had displaced.
+
+**A rule the directory does not mention is left alone.** A page omitting a
+service is weak evidence that it has stopped. Ryde's Saturday Vespers and Good
+Shepherd's Confession are both absent from the directory, both plausibly still
+happen, and both survive — with no source, which is the honest answer for a row
+whose origin nobody recorded.
+
+**Two parishes hold genuinely simultaneous services and the dedup nearly ate
+one.** Punchbowl runs an Arabic liturgy in the church and an English one in the
+hall, both at 09:30 on first Sundays; Kirrawee does the same at 10:00. The
+read-path dedup partitions on parish, time and TITLE, and a `week_of_month` rule
+beats a generic weekly one — so two rules both called "Liturgy" at 09:30 would
+have left the Arabic one hidden on exactly the Sunday both are held. Two things
+fix it: the three words "in the hall" are kept out of the tail and put in the
+title, and `concurrent` is set on any rules sharing a parish, day and hour.
+Distinct titles alone would have worked, but only until somebody edited one.
+
+**A rule with no time is never invented.** Four lines were dropped: Redfern
+publishes a Friday Compline with a day but no hour, and a Thursday continuation
+line, and Elimbah notes Vespers "as per arrangement" in two other towns. A time
+guessed for any of them would put a card on the map at an hour nobody stated.
+
+**The test caught a widening bug before it shipped.** Redfern's Friday service
+runs "every 2nd last Friday", which `week_of_month` cannot express — and the
+guard meant to refuse it checked for the words "week" or "month" first, neither
+of which that phrase contains. It therefore returned null, and null does not
+mean "unknown" in that column, it means EVERY Friday. Refusing an inexpressible
+pattern has to be checked before anything else.
+
+**Services held somewhere else keep the address in their title.** St Mary
+Magdalene serves Pomona and Gympie from Elimbah, and `schedules` has no location
+column, so "Vespers at 23 Hill Street POMONA QLD 4568" is the title. Dropping it
+would put those services at the wrong church.
+
+**Final: 67 rules across 23 parishes** — 36 liturgies, 32 offices, 1 other; 11
+updates in place, 56 inserts, 2 rows left untouched, 4 lines dropped. St George
+Mission, Auckland is the twenty-fourth parish and publishes no times at all,
+which is not an error and is reported as zero rather than skipped silently.

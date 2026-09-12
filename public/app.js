@@ -4993,6 +4993,9 @@ function renderScheduleDaysHTML(items, opts = {}) {
       }
     }
   }
+  // Under the timetable, not above it: it describes the whole block, and a
+  // reader wants the times first and the provenance second.
+  html += scheduleSourceHTML(items);
   return html;
 }
 
@@ -6207,6 +6210,71 @@ function groupByDay(events) {
 }
 
 function parseLocalDate(utcStr) { return new Date(utcStr); }
+
+/**
+ * "3 months ago" — how old a published claim is, in words.
+ *
+ * Coarse on purpose. The question a reader is asking is "might this have
+ * changed since?", and to that question "3 months ago" and "94 days ago" are
+ * the same answer while the second one pretends to a precision the source does
+ * not have. Intl does the pluralising, so "1 month ago" never reads "1 months".
+ */
+function relativeAge(iso, now = Date.now()) {
+  const then = Date.parse(iso || '');
+  if (!Number.isFinite(then)) return null;
+  const days = Math.floor((now - then) / 86400000);
+  if (days < 0) return 'just now';          // a source dated in the future
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  const [value, unit] = days < 30 ? [days, 'day']
+    : days < 365 ? [Math.round(days / 30.44), 'month']
+      : [Math.round(days / 365.25), 'year'];
+  try {
+    return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-value, unit);
+  } catch {
+    return `${value} ${unit}${value === 1 ? '' : 's'} ago`;
+  }
+}
+
+/**
+ * Where a parish's service times came from, and how old that is.
+ *
+ * Renders "Updated 3 months ago • Archdiocese ↗" under the timetable. A
+ * recurrence rule is a claim about the FUTURE and never expires on its own —
+ * "Sundays 9am" keeps projecting cards forever and looks exactly as current on
+ * the day the parish changes its times as it did the day it was entered. This
+ * line is the only thing on the page that says how old the claim is.
+ *
+ * Grouped by source rather than printed per rule: they almost always share one,
+ * and twenty identical lines would say less than one does. Rules with no source
+ * contribute nothing, which is honest — Ryde's Saturday Vespers and Good
+ * Shepherd's Confession were entered by hand and nobody recorded from where.
+ */
+function scheduleSourceHTML(items) {
+  const bySource = new Map();
+  for (const s of items) {
+    if (!s.source_name) continue;
+    const key = `${s.source_name}|${s.source_ref || ''}|${s.source_updated_at || ''}`;
+    if (!bySource.has(key)) {
+      bySource.set(key, { name: s.source_name, ref: s.source_ref || '', updated: s.source_updated_at || '' });
+    }
+  }
+  if (!bySource.size) return '';
+  // A span, not an img: the icon is painted by a CSS mask over `currentColor`
+  // so it follows the line's muted colour and its hover state. An <img> would
+  // paint its own black pixels over the mask and stay black in dark mode.
+  const icon = '<span class="sched-source-icon" aria-hidden="true"></span>';
+  return [...bySource.values()].map(({ name, ref, updated }) => {
+    const age = relativeAge(updated);
+    // The name is the readable half and the ref the checkable half, so the name
+    // is what links — and only when the ref is actually a URL, since a source
+    // can be a person or a file path and those must not render as dead links.
+    const label = /^https?:/.test(ref)
+      ? `<a href="${esc(ref)}" target="_blank" rel="noopener">${esc(name)}${icon}</a>`
+      : esc(name);
+    return `<div class="sched-source">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
+  }).join('');
+}
 
 function formatTime12(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
