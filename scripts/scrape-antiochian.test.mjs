@@ -10,6 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import {
   sections, location, languages, parishWebsite, email, phone, isVague, toParish, text,
+  addressSuburb,
 } from './scrape-antiochian.mjs';
 
 const HOLY_CROSS = {
@@ -53,7 +54,7 @@ const WOLLONGONG = {
 <a href="tel:0242294211">(02) 4229 4211</a></p>
 </div><div class="awb-tab-pane-inner"><h3>Languages</h3><ul><li>Arabic</li><li>English</li></ul>
 </div><div class="awb-tab-pane-inner"><h3>Location</h3>
-<p>86 Kenny Street, Wollongong NSW 2500</p></div>`,
+<p>86 Kenny Street, Wollongong NSW 2500, Australia</p></div>`,
   },
 };
 
@@ -63,10 +64,81 @@ test('the h3 sections of a page are keyed by their heading', () => {
     ['Languages', 'Location', 'Main Parish Contact', 'Services on Offer', 'Sundays']);
 });
 
-test('the address is whatever the Location section says, verbatim', () => {
-  assert.equal(location(sections(WOLLONGONG.content.rendered)), '86 Kenny Street, Wollongong NSW 2500');
-  assert.equal(location(sections(HOLY_CROSS.content.rendered)),
+const addressOf = (post) => location(sections(post.content.rendered), text(post.content.rendered));
+
+test('the address is whatever the page says, verbatim', () => {
+  assert.equal(addressOf(WOLLONGONG), '86 Kenny Street, Wollongong NSW 2500, Australia');
+  assert.equal(addressOf(HOLY_CROSS),
     'Temporary place of worship in Kalkallo, VIC, Australia (contact the clergy)');
+});
+
+test('the tab strip does not bleed into the address', () => {
+  // Avada renders each tab's TITLE between the panes, so without stripping the
+  // nav every address on the site ends ", PRAYER SERVICES".
+  const withNav = {
+    content: {
+      rendered: `<h3>Location</h3><p>86 Kenny Street, Wollongong 2500 NSW, Australia</p></div>
+<div class="nav fusion-mobile-tab-nav"><ul class="nav-tabs" role="tablist"><li><a class="tab-link"><h4 class="fusion-tab-heading">PRAYER SERVICES</h4></a></li></ul></div>
+<div class="awb-tab-pane-inner"><h3>Sundays</h3><ul><li>9:00AM Liturgy</li></ul>`,
+    },
+  };
+  assert.equal(addressOf(withNav), '86 Kenny Street, Wollongong 2500 NSW, Australia');
+});
+
+test('an address split across a <br> is put back together', () => {
+  // St John the Baptist writes the street and the locality on separate lines
+  // and never names the country, so the street number is lost without this.
+  const croydon = {
+    content: {
+      rendered: '<h3>Location</h3><p>12/14 Balmoral Ave,<br />Croydon Park, NSW 2133</p>',
+    },
+  };
+  assert.equal(addressOf(croydon), '12/14 Balmoral Ave, Croydon Park, NSW 2133');
+});
+
+test('the older layout has no Location heading and still yields its address', () => {
+  // Mays Hill uses <h2>Parish &amp; Location</h2>, not the tabbed template.
+  const maysHill = {
+    content: {
+      rendered: `<h2>Parish &amp; Location</h2><p>(02) 9689 2747</p>
+<p>Parish Priest- Rev. Fr. George Saad</p>
+<p>139 Burnett Street, Mays Hill 2150 NSW, Australia</p>
+<h3>Patron Feast Day</h3><p>Nativity of the Theotokos</p>`,
+    },
+  };
+  assert.equal(addressOf(maysHill), '139 Burnett Street, Mays Hill 2150 NSW, Australia');
+});
+
+test('a percent-obfuscated email is decoded', () => {
+  // Mays Hill publishes smmh@an%74iochian.or%67.a%75 to defeat scrapers; stored
+  // verbatim it is an address that bounces.
+  assert.equal(email('<a href="mailto:smmh@an%74iochian.or%67.a%75">Parish</a>'),
+    'smmh@antiochian.org.au');
+});
+
+test('the suburb an address names beats the one the directory does', () => {
+  // All three are the ROCOR lesson repeating: a directory is wrong about its
+  // suburbs more often than about anything else.
+  assert.equal(addressSuburb('Temporary place of worship in Kalkallo, VIC, Australia (contact the clergy)', 'Australia'),
+    'Kalkallo');
+  assert.equal(addressSuburb('72 Fingall St, South Dunedin, Dunedin 9012, New Zealand', 'New Zealand'),
+    'South Dunedin');
+  assert.equal(addressSuburb("All Saints’ Anglican Church (old building), Cnr Cook St & Selwyn Rd, Howick, Auckland, New Zealand", 'New Zealand'),
+    'Howick');
+  assert.equal(addressSuburb('12/14 Balmoral Ave, Croydon Park, NSW 2133', 'Australia'), 'Croydon Park');
+  assert.equal(addressSuburb('86 Kenny Street, Wollongong 2500 NSW, Australia', 'Australia'), 'Wollongong');
+});
+
+test('a New Zealand address whose only segment is the street keeps the city', () => {
+  // "365 Broadway, Wellington 6022" — the segment before the postcode is the
+  // street, so it must not be mistaken for the suburb.
+  assert.equal(addressSuburb('365 Broadway, Wellington 6022, New Zealand', 'New Zealand'), 'Wellington');
+});
+
+test('a street corner is placeable, an apology is not', () => {
+  assert.equal(isVague("Cnr Walker & Cooper Sts, Redfern 2016 NSW, Australia"), false);
+  assert.equal(isVague("All Saints’ Anglican Church (old building), Cnr Cook St & Selwyn Rd, Howick, Auckland, New Zealand"), false);
+  assert.equal(isVague('Temporary place of worship in Kalkallo, VIC, Australia (contact the clergy)'), true);
 });
 
 test('an address that names no street is flagged rather than geocoded', () => {
@@ -94,9 +166,14 @@ test('the parish website is the external link, never the Archdiocese', () => {
   assert.equal(parishWebsite(HOLY_CROSS.content.rendered), null);
 });
 
-test('the suburb comes off the end of the directory name', () => {
+test('the directory name supplies the suburb when the address does not', () => {
   assert.equal(toParish(WOLLONGONG, { indexEntry: { cats: [114] } }).suburb, 'Wollongong');
-  assert.equal(toParish(HOLY_CROSS, { indexEntry: { cats: [156] } }).suburb, 'Melbourne North');
+  // The directory calls this one Melbourne North; its address says Kalkallo,
+  // which is the locality it can actually be pinned to.
+  const hc = toParish(HOLY_CROSS, { indexEntry: { cats: [156] } });
+  assert.equal(hc.directory_suburb, 'Melbourne North');
+  assert.equal(hc.suburb, 'Kalkallo');
+  assert.match(hc.suburb_disagreement, /Melbourne North.*Kalkallo/);
 });
 
 test("a monastery's second dedication does not become its suburb", () => {

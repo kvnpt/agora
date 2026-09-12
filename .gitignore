@@ -13,3 +13,11 @@ backups/
 # cost to the site of one pass — but the bodies are large, quickly stale, and
 # carry clergy contact details, so they stay out of the repo. Re-fetch instead.
 cache/
+
+# The intermediate files a directory scrape writes (scraped -> geocoded -> .sql).
+# Regenerable from the scripts and the cache, and they carry the clergy emails
+# and phone numbers a parish directory publishes — the same reason `backups/` is
+# here. The ROCOR run's equivalents were never committed either.
+/*-scraped.json
+/*-geocoded.json
+/*-parishes.sql

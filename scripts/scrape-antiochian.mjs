@@ -80,29 +80,39 @@ const entities = (s) => s
   .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
 
+/**
+ * Drop the tab strip.
+ *
+ * Avada renders the tab TITLES in their own <ul class="nav-tabs">, repeated
+ * once per pane for the mobile accordion, and they sit between the panes in
+ * document order. Left in, a section's text runs straight on into the name of
+ * the tab after it and every address on the site ends ", PRAYER SERVICES".
+ */
+const stripTabNav = (html) => String(html || '').replace(/<ul class="nav-tabs"[\s\S]*?<\/ul>/gi, ' ');
+
 /** Rendered HTML to readable text, keeping list items on separate lines. */
-export const text = (html) => entities((html || '')
+export const text = (html) => entities(stripTabNav(html)
   .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
   .replace(/<\/(li|p|h[1-6]|div|tr)>/gi, '\n')
   .replace(/<br\s*\/?>/gi, '\n')
   .replace(/<[^>]+>/g, ' '))
-  .replace(/[ \t ]+/g, ' ')
+  .replace(/[ \t ]+/g, ' ')
   .split('\n').map((l) => l.trim()).filter(Boolean)
   .join('\n');
 
 /**
- * The <h3> sections of a rendered parish page, as `{ heading: body }`.
+ * The headed sections of a rendered parish page, as `{ heading: body }`.
  *
- * Keyed on the h3 rather than on the tab, because the tab titles live in a nav
- * elsewhere in the markup and are joined to their panes by an aria id — while
- * the headings sit directly above the thing they label. "Location", "Languages"
- * and "Main Parish Contact" are all h3s.
+ * h2 as well as h3, because the layout is not uniform: most parishes use the
+ * tabbed template with an <h3>Location</h3>, but Mays Hill uses an older one
+ * whose heading is <h2>Parish &amp; Location</h2>. Keying on the heading rather
+ * than on the tab is what lets one parser read both.
  */
 export function sections(contentHtml) {
   const out = {};
-  const parts = String(contentHtml || '').split(/<h3[^>]*>/i);
+  const parts = stripTabNav(contentHtml).split(/<h[23][^>]*>/i);
   for (const part of parts.slice(1)) {
-    const close = part.search(/<\/h3>/i);
+    const close = part.search(/<\/h[23]>/i);
     if (close < 0) continue;
     const heading = text(part.slice(0, close)).replace(/\s+/g, ' ').trim();
     const body = text(part.slice(close + 5));
@@ -113,36 +123,77 @@ export function sections(contentHtml) {
 
 /** Every href matching a scheme, deduped, in document order. */
 const hrefs = (html, re) => [...new Set(
-  [...String(html || '').matchAll(/href="([^"]+)"/gi)]
+  [...stripTabNav(html).matchAll(/href="([^"]+)"/gi)]
     .map((m) => entities(m[1]))
     .filter((h) => re.test(h)),
 )];
 
-const OWN_SITE = /antiochian\.org\.au|jotform|facebook|youtube|instagram|google\.com\/maps|wp-content|^#|^javascript:|^mailto:|^tel:/i;
+const OWN_SITE = /antiochian\.org\.au|jotform|facebook|youtube|instagram|google\.[a-z.]+\/maps|goo\.gl|wp-content|^#|^javascript:|^mailto:|^tel:/i;
 
 /** The parish's own website: an external link that is not the Archdiocese's. */
 export const parishWebsite = (html) => hrefs(html, /^https?:/i)
   .find((h) => !OWN_SITE.test(h)) || null;
 
-export const email = (html) => (hrefs(html, /^mailto:/i)[0] || '').replace(/^mailto:/i, '') || null;
-export const phone = (html) => {
-  const raw = (hrefs(html, /^tel:/i)[0] || '').replace(/^tel:/i, '').trim();
-  return raw || null;
+/**
+ * The first contact email.
+ *
+ * Percent-DECODED, because several of these pages obfuscate the address against
+ * scrapers: Mays Hill publishes `smmh@an%74iochian.or%67.a%75`, which a browser
+ * resolves and a naive parser stores verbatim as an address that bounces.
+ */
+export const email = (html) => {
+  const raw = (hrefs(html, /^mailto:/i)[0] || '').replace(/^mailto:/i, '').split('?')[0];
+  if (!raw) return null;
+  try { return decodeURIComponent(raw) || null; } catch { return raw; }
 };
 
-/**
- * A parish's address as the Location section words it.
- *
- * Deliberately NOT cleaned up beyond whitespace. The Greek run's lesson was
- * that field labels are not a schema and normalisation is wrong somewhere; here
- * the same applies to the address itself, which is prose. What the parish wrote
- * is kept verbatim and the geocoder is given the job of making sense of it.
- */
-export function location(secs) {
-  for (const [heading, body] of Object.entries(secs)) {
-    if (/^location$/i.test(heading)) return body.split('\n').join(', ') || null;
+export const phone = (html) => (hrefs(html, /^tel:/i)[0] || '').replace(/^tel:/i, '').trim() || null;
+
+// An address, recognised by its SHAPE rather than by the heading above it,
+// because the heading is not reliable — one parish has no Location heading at
+// all. Two shapes occur:
+//
+//   A. ending in the country: "…, Wollongong 2500 NSW, Australia", and the one
+//      address that is an apology, "…, VIC, Australia (contact the clergy)".
+//   B. ending in state and postcode with no country, and split across a <br>:
+//      "12/14 Balmoral Ave," / "Croydon Park, NSW 2133".
+//
+// Shape B is why the previous line is pulled in when it ends with a comma —
+// otherwise Croydon Park's street number is simply lost.
+const ADDRESS_TAIL = /,\s*(Australia|New Zealand)\s*(\([^)]*\))?\s*$/i;
+const AU_TAIL = /(\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b[ ,]*\d{4}|\b\d{4}[ ,]*\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b)\s*$/i;
+
+const tidy = (s) => s.replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim();
+
+function pickAddress(lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (ADDRESS_TAIL.test(line)) return tidy(line);
+    if (AU_TAIL.test(line)) {
+      const prev = lines[i - 1];
+      return tidy(prev && /,\s*$/.test(prev) ? `${prev} ${line}` : line);
+    }
   }
   return null;
+}
+
+/**
+ * A parish's address as its page words it.
+ *
+ * Deliberately NOT cleaned up beyond whitespace. The Greek run's lesson was
+ * that field labels are not a schema and normalisation is wrong somewhere; the
+ * same applies to an address a parish typed by hand, so what it wrote is kept
+ * verbatim and the geocoder is given the job of making sense of it.
+ *
+ * A Location section is preferred where there is one, but the page-wide scan is
+ * what actually finds every address, because the layout is not uniform.
+ */
+export function location(secs, allText) {
+  const headed = Object.entries(secs)
+    .filter(([h]) => /location/i.test(h))
+    .map(([, body]) => pickAddress(body.split('\n')))
+    .find(Boolean);
+  return headed || pickAddress((allText || '').split('\n'));
 }
 
 /** Languages, as `parishes.languages` wants them: a JSON array of names. */
@@ -154,19 +205,70 @@ export function languages(secs) {
   return list.length ? list : null;
 }
 
+const STREETISH = /^\d|\b(st|street|rd|road|ave|avenue|pde|parade|walk|lane|ln|dr|drive|cres|crescent|hwy|highway|cnr|centre|center)\b\.?$/i;
+
+/**
+ * The suburb an address actually names, or null.
+ *
+ * Worth doing rather than trusting the directory's own name, because the ROCOR
+ * run showed a directory is wrong about its suburbs more often than about
+ * anything else — it filed seven parishes under the nearest city. Here the
+ * Auckland mission is in Howick and the Dunedin one in South Dunedin, and both
+ * would otherwise pin in the right region and the wrong place.
+ *
+ * Australian addresses read "<suburb> <postcode> <STATE>"; New Zealand ones
+ * read "<suburb>, <city> <postcode>", so for New Zealand the segment BEFORE the
+ * postcode is the suburb — unless that segment is the street itself.
+ */
+export function addressSuburb(addr, country) {
+  if (!addr) return null;
+  const body = addr.replace(ADDRESS_TAIL, '').trim();
+  const segs = body.split(',')
+    .map((s) => s.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim())
+    // A segment that is only a state abbreviation names no suburb.
+    .filter((s) => s && !/^(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)$/i.test(s));
+  if (!segs.length) return null;
+
+  // "Temporary place of worship in Kalkallo" — prose, but it does name the
+  // locality, which is the whole of what such a row can be pinned to.
+  const inPlace = segs[segs.length - 1].match(/\bin\s+([A-Z][\w’'-]*(?:\s+[A-Z][\w’'-]*)*)\s*$/);
+  if (inPlace) return inPlace[1];
+  const nz = country === 'New Zealand';
+  const pcIndex = segs.findIndex((s) => /\b\d{4}\b/.test(s));
+
+  if (pcIndex < 0) {
+    // No postcode: the last segment is the city, the one before it the suburb.
+    const cand = segs.length >= 3 ? segs[segs.length - 2] : segs[segs.length - 1];
+    return STREETISH.test(cand) ? null : cand;
+  }
+  if (nz && pcIndex >= 1) {
+    const before = segs[pcIndex - 1];
+    if (before && !STREETISH.test(before) && !/^\d/.test(before)) return before;
+  }
+  let seg = (segs[pcIndex] || '').replace(/\b\d{4}\b/g, ' ')
+    .replace(/\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (!seg && pcIndex > 0) seg = segs[pcIndex - 1];
+  if (!seg || STREETISH.test(seg) || /^\d/.test(seg)) return null;
+  return seg;
+}
+
 /**
  * An address that names no street.
  *
  * "Temporary place of worship in Kalkallo, VIC, Australia (contact the clergy)"
- * is a suburb and an apology, not a location, and geocoding it lands on the
- * locality centroid while looking like a real pin. A PO box is the same problem
- * — ROCOR's Marrickville monastery publishes one — so both are flagged here and
- * the row is held back unless somebody decides otherwise.
+ * is a suburb and an apology, not a location, and it geocodes happily to the
+ * middle of Kalkallo while looking like a real pin. A PO box is the same problem
+ * — ROCOR's Marrickville monastery publishes one. Both are flagged here so the
+ * row can be held back rather than quietly given a pin nobody checked.
+ *
+ * A street CORNER is not vague: "Cnr Cook St & Selwyn Rd, Howick" names a real
+ * junction, it just has no house number, so it is treated as placeable.
  */
 export const isVague = (addr) => !addr
   || /\bP\.?O\.?\s*box\b/i.test(addr)
-  || !/\d/.test(addr)
-  || /\b(temporary|contact the clergy|tba|to be advised)\b/i.test(addr);
+  || /\b(temporary|contact the clergy|tba|to be advised)\b/i.test(addr)
+  || (!/\d/.test(addr) && !/\bcnr\b|\bcorner\b/i.test(addr));
 
 // ── the run ────────────────────────────────────────────────────────────────
 
@@ -174,24 +276,35 @@ export const isVague = (addr) => !addr
 export function toParish(post, { indexEntry } = {}) {
   const html = post.content?.rendered ?? post.content ?? '';
   const secs = sections(html);
+  const body = text(html);
   const title = entities(String(post.title?.rendered ?? post.title ?? '')).trim();
   // The directory names every parish "<dedication>, <suburb>", so the suburb is
   // the last comma-separated piece — except Goulburn's monastery, whose title
   // carries a second dedication after a pipe.
   const head = title.split('|')[0].trim();
   const bits = head.split(',').map((s) => s.trim()).filter(Boolean);
-  const suburb = bits.length > 1 ? bits[bits.length - 1] : null;
+  const named = bits.length > 1 ? bits[bits.length - 1] : null;
   const cats = indexEntry?.cats || [];
   const stateAbbr = cats.map((c) => STATE_TERMS[c]).find(Boolean) || null;
-  const addr = location(secs);
+  const addr = location(secs, body);
+  const country = stateAbbr === 'NZ' ? 'New Zealand' : 'Australia';
+  const fromAddress = addressSuburb(addr, country);
 
+  // The address wins where the two disagree, and the disagreement is recorded
+  // rather than swallowed — it is exactly the class of thing a person should read.
+  const suburb = fromAddress || named;
   return {
     name: head,
     full_title: title,
     suburb,
+    directory_suburb: named,
+    address_suburb: fromAddress,
+    suburb_disagreement: fromAddress && named
+      && fromAddress.toLowerCase() !== named.toLowerCase()
+      ? `the directory calls this ${named}; its address says ${fromAddress}` : null,
     state_abbr: stateAbbr === 'NZ' ? null : stateAbbr,
     state: stateAbbr === 'NZ' ? null : STATE_NAME[stateAbbr] || null,
-    country: stateAbbr === 'NZ' ? 'New Zealand' : 'Australia',
+    country,
     jurisdiction: 'antiochian',
     address: addr,
     address_vague: isVague(addr),
@@ -251,6 +364,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   if (missing.length) {
     console.log(`\nnot yet cached (${missing.length}): ${missing.join(', ')}`);
+  }
+  const moved = parishes.filter((p) => p.suburb_disagreement);
+  if (moved.length) {
+    console.log('\nsuburb disagreements (the address wins; read these):');
+    for (const p of moved) console.log(`  ${p.name} — ${p.suburb_disagreement}`);
   }
   const vague = parishes.filter((p) => p.address_vague);
   console.log(`\naddresses: ${parishes.length - vague.length}/${parishes.length} name a street`);

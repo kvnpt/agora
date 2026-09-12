@@ -49,11 +49,11 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-181 parishes · 13 schedules · 68 events · 0 overrides
+196 parishes · 13 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 9
-the Antiochian seed. Schedules and events are untouched by both — neither
+135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 24
+the Antiochian one. Schedules and events are untouched by both — neither
 directory publishes service times at all, so adapters remain the only route to
 those.
 
@@ -467,3 +467,173 @@ services.
 in prose ("Services daily at 0500 and 1700, Divine Liturgy on Sunday at 0900").
 Neither is touched by this import, which is parishes only — but `docs/adapters.md`
 is the next step and that calendar is the obvious place to start.
+
+
+---
+
+## What the Antiochian run actually cost
+
+24 places of worship — 20 parishes, 6 missions and a monastery, of which two are
+both — scraped from the Antiochian Orthodox Archdiocese of Australia, New
+Zealand and the Philippines, geocoded, and written to D1. Unlike the two
+previous runs this one was mostly an **update**: nine of the 24 were already in
+the database, seeded by hand before any scraping existed.
+
+```bash
+node scripts/scrape-antiochian.mjs    cache/antiochian antiochian-scraped.json
+node scripts/geocode-antiochian.mjs   antiochian-scraped.json cache/geo-antiochian antiochian-geocoded.json
+node scripts/build-antiochian-sql.mjs antiochian-geocoded.json antiochian-parishes.sql --include-suburb
+```
+
+**The site cannot be fetched by anything automated, and that is the headline.**
+`antiochian.org.au` sits behind a Cloudflare managed challenge that answers 403
+to every path for every client tried: curl with browser headers, Node's fetch,
+a headless Chromium through the environment's proxy, and the harness's own
+fetcher. `robots.txt` is behind it too, so there is not even a published policy
+to read. A human browser loads the site normally. The responses were therefore
+fetched **by a person** and pasted in, and `scripts/scrape-antiochian.mjs` only
+ever parses what is already in `cache/antiochian/` — it has no fetching code at
+all. That is not a workaround to be improved on later; it is the shape this
+particular directory forces, and it still satisfies what the caching rule is
+for, because a re-parse costs the site nothing.
+
+**The taxonomy is a checksum, and it is what made the scrape provably
+complete.** The directory is an Avada `avada_portfolio` post type with about 900
+posts, 838 of them daily scripture bulletins, the rest mixing churches with two
+childcare centres, two archdiocesan departments, a homeless charity and two
+catechism articles. `portfolio_category` separates them, and
+`/wp-json/wp/v2/portfolio_category` publishes a count per term. Selecting the
+thirteen place-of-worship terms and checking the selection against those counts —
+`parishes` 20/20, `nsw-parishes` 11/11, `missions` 6/6, `monastery` 1/1 and so
+on, all thirteen — proved nothing was hiding behind the listing's pagination
+without fetching page two at all. **Ask a WordPress directory for its term
+counts before walking its pages.**
+
+**One directory, two page layouts.** Most parishes use a tabbed template with
+the address under `<h3>Location</h3>`; Mays Hill uses an older one with
+`<h2>Parish &amp; Location</h2>` and no Location heading anywhere. Keying on the
+heading found 23 of 24. What found all of them was recognising the address by
+its **shape** — it ends with the country, or with a state and a postcode — which
+also handled St John the Baptist, whose address is split across a `<br>` and
+names no country, and would otherwise have lost its street number.
+
+**Avada renders each tab's title between the panes.** Left in, every address on
+the site ends `, PRAYER SERVICES`. Strip `<ul class="nav-tabs">` before reading
+anything.
+
+**Several pages percent-obfuscate their mailto links** — Mays Hill publishes
+`smmh@an%74iochian.or%67.a%75` — so an email stored verbatim is one that
+bounces. Decode the href.
+
+**Search by name FIRST. The brief says so and this run is the proof.** Six
+parishes were upgraded from a street-level pin to the building itself by asking
+Nominatim for "<dedication> Orthodox Church <suburb>", and the cathedral is the
+clearest case: its published address is `Cnr Walker & Cooper Sts`, which geocodes
+to nothing at all, while its name returns `Antiochian Orthodox Cathedral of St
+George` as a building. A name search has to be guarded — a result naming another
+jurisdiction is refused, and it must share a token with the dedication — but it
+is the cheapest good pin available.
+
+**A corner is resolvable without the geometry.** `Cnr A & B` fails as an address
+but both streets geocode alone, so their closest approach is the junction, near
+enough, and much nearer than the locality centroid. That is how the Auckland
+mission got a pin.
+
+**OSM knows almost nothing about this jurisdiction.** One single building in all
+of Oceania is tagged `denomination=antiochian_orthodox` (Doonside). The
+Oceania-wide bbox query is still worth running — it is cheap and the tag asserts
+the jurisdiction — but it answered one parish out of 24, where the same query
+answered 15 of 37 for ROCOR. Radius queries to `overpass.kumi.systems` were
+**unreachable throughout this run**, timing out at 70s even over rural
+Queensland, so the per-suburb tier was not available at all.
+
+**The directory is wrong about three of its suburbs, in the now-familiar way.**
+
+| the directory says | the address says |
+|---|---|
+| Melbourne North | Kalkallo |
+| Auckland | Howick |
+| Dunedin | South Dunedin |
+
+The address wins, and it must also win in the stored **name**, not just the id:
+`reconcile` recovers a parish's suburb from the comma in its name, so a row
+called "Holy Cross Mission, Melbourne North" with an id saying `kalkallo` would
+fail to match itself next time and mint a duplicate. Name and id have to agree
+about where the parish is.
+
+**`reconcile` earned its existence four times over.** Nine rows already existed;
+for four of them derivation would have minted a different id and inserted a
+duplicate beside the original:
+
+| existing id | derivation would have minted |
+|---|---|
+| `antiochian-good-shepherd-antiochian-church` | `antiochian-goodshepherd-clayton` |
+| `antiochian-stgeorge-redfern` | `antiochian-stgeorgeredfern-redfern` |
+| `antiochian-stmichaelgabriel-ryde` | `antiochian-stsmichael-ryde` |
+| `antiochian-stmary-mayshill` | `antiochian-stmarys-mayshill` |
+
+The first is the one that matters most: all 68 events in the database belong to
+Good Shepherd via the Google Calendar adapter, which names the old id. A
+duplicate would have left every event on the old row with an empty second Good
+Shepherd beside it. After the write there is still exactly one, and the bundle
+still reports 68 events against it.
+
+**A scrape must not ERASE what it merely failed to find.** The directory links
+some parishes' own websites and not others, so writing the scraped value
+straight through would have blanked seven working websites and downgraded three
+more from `https` to `http`. A null from the scrape now defers to the stored
+value, and a URL differing only by scheme or `www.` leaves the stored form
+alone. This is the same family of error as the ROCOR provenance bug: the upsert
+exists to refresh what nobody has checked, not to lose what is known.
+
+**Provenance was deliberately downgraded on eight rows, and that is worth
+knowing.** They read `info_source_type='website'` with `info_source_name='Parish
+website'`, because a person had entered them from each parish's own site. Their
+addresses now come from the Archdiocese's directory, so the pair moves to
+`'import'` with the parish's own directory page as the ref. The brief is
+explicit that a directory scrape is `'import'`, and the 135 Greek rows record
+their own archdiocese the same way — but it does trade a stronger claim for a
+more accurate one, and reverting it is a one-line change if that is the wrong
+call.
+
+**Final confidence: 9 pins on a building, 13 street-level, 2 locality
+centroids.** `info_verified_at` is NULL on all 24 — these are researched, not
+confirmed. Three pins moved by more than 100m and all three were checked by hand
+against an independent lookup: Wollongong moved **553m onto Kenny Street**,
+where its published address actually is and where the seeded pin was not;
+Redfern moved 110m onto the named cathedral building; Mays Hill moved 259m
+sideways along the same street, neither better nor worse.
+
+| centroid | why there is nothing better |
+|---|---|
+| Holy Cross Mission, Kalkallo | publishes no address: *"Temporary place of worship in Kalkallo, VIC, Australia (contact the clergy)"*. `address` is left NULL. |
+| St Mary Magdalene, Elimbah | publishes `Coronation Street, Elimbah`, which is in neither Nominatim nor OSM. |
+
+Elimbah is the case that refines the ROCOR rule rather than repeating it. That
+run nulled `address` on every centroid row, because there the address was
+genuinely unknown and an absent address is the only signal the schema has for a
+coarse pin. Elimbah *did* publish a street, which is real and is how somebody
+would actually find the church — so throwing it away to flag the pin would lose
+true information to record a caveat. **A vague address is nulled; a real one
+that merely fails to geocode is kept, and the pin quality is reported instead.**
+
+**The weakest pin is St Ignatius, Darraweit Guim**, 7km from the town centroid.
+Its address, `1478 Bolinda Darraweit Road`, resolves only to the road — a long
+rural road running to Bolinda — and no house-number match exists. The road is
+certainly right and the locality centroid would be no closer, so it stands as
+street-level, but it is the first row to check if somebody visits.
+
+**Two published details are wrong and were kept verbatim anyway**, because
+normalising an address a parish typed is how the Greek run invented errors:
+Mays Hill gives postcode 2150, which is Parramatta's — Mays Hill is 2145 — and
+Darraweit Guim gives 3756 where OSM says 3432.
+
+**These pages carry service times, and nothing was done with them.** 22 of the
+24 publish a PRAYER SERVICES tab with real detail — *"9:00AM Matins (Arabic),
+10:00AM Liturgy (Mostly Arabic), 6:00 PM Liturgy (English)"* — along with
+languages for all 24 and a patronal feast for 18. The languages and feast days
+were written; the service times are parsed and kept in
+`antiochian-scraped.json` but deliberately unused, because turning them into
+recurrence rules is an adapter's job and `docs/adapters.md` is where it belongs.
+This is the largest block of schedule data any jurisdiction has published so far
+and it is sitting there already fetched.
