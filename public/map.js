@@ -608,6 +608,23 @@ async function bakeAndRegisterLogo(parish) {
   logoRegistered.add(parish.id);
 }
 
+// Re-bake one parish's focus sprite after its logo changed. logoRegistered
+// is keyed by parish id, so without this an admin who replaces or clears a
+// logo keeps seeing the old one baked into the map until a reload.
+window.agoraRefreshParishLogo = async function (parishId) {
+  if (!map) return;
+  const id = `focus_${parishId}`;
+  logoRegistered.delete(parishId);
+  if (map.hasImage(id)) map.removeImage(id);
+  const parish = (window.agoraStateRef && window.agoraStateRef.parishes || [])
+    .find(p => p.id === parishId);
+  if (parish && parish.logo_path) {
+    try { await bakeAndRegisterLogo(parish); } catch { /* falls back to the circle */ }
+  }
+  const st = window.agoraStateRef;
+  if (st && typeof updateMap === 'function') updateMap(st);
+};
+
 function loadHtmlImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -672,11 +689,20 @@ function updateMap(state, opts = {}) {
     if (hardFilterOnEvents && !activeSet.has(p.id)) continue;
     const parts = (p.name || '').split(',');
     const label = (parts[0] || p.name || '').trim();
-    // Juris filter active → render every parish as the one juris colour
-    // (matches the inline-style funnel in app.js getParishDisplayColor).
-    const jurisOverride = state.filters && state.filters.jurisdiction;
-    const baseColor = jurisOverride && window.rawJurisColor
-      ? window.rawJurisColor(jurisOverride)
+    // The map reads jurisdiction, never the parish's own colour.
+    //
+    // A custom parish colour is an identity mark and belongs where a parish
+    // is the subject: its card, its feed lines, its event groups. On the map
+    // the parish is one dot among two hundred, and what a reader is asking
+    // there is "which of these is mine" — jurisdiction, not parish. Letting
+    // custom hues through would make the answer unreadable the moment two
+    // parishes a suburb apart pick unrelated colours, and there is no legend
+    // on a map to recover it from.
+    //
+    // A juris filter changes nothing here: every surviving feature is that
+    // jurisdiction already, so its colour is the same either way.
+    const baseColor = window.rawJurisColor
+      ? window.rawJurisColor(p.jurisdiction)
       : (p.color || '#000');
     const props = {
       parish_id: p.id,

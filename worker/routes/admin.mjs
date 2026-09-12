@@ -575,6 +575,13 @@ export function registerAdminRoutes(router) {
     return json({ ok: true });
   }));
 
+  // Every extension a logo has ever been stored under. A re-upload that
+  // changes format writes a new key, so the old one has to go — otherwise
+  // /logos/<id>.jpg lingers in R2 after the parish moved to PNG, paid for
+  // and served to anyone who still holds the old path.
+  const LOGO_EXTS = ['png', 'jpg', 'svg', 'webp'];
+  const logoKeys = (id) => LOGO_EXTS.map(e => `logos/${id}.${e}`);
+
   // POST /api/admin/parishes/:id/logo — raw image body, stored in R2.
   //
   // The Express version wrote to /opt/agora/data/logos on the VM's disk. The
@@ -599,10 +606,35 @@ export function registerAdminRoutes(router) {
     await env.ASSETS_BUCKET.put(key, body, {
       httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
     });
+    const stale = logoKeys(id).filter(k => k !== key);
+    if (stale.length) await env.ASSETS_BUCKET.delete(stale);
 
-    const logoPath = `/${key}`;
+    // ?v= is a cache buster, not part of the R2 key. assets.mjs caches logos
+    // for a day and a replacement usually overwrites the same key, so without
+    // this an admin who changes a logo keeps seeing yesterday's for 24 hours
+    // and so does everyone else. The router matches on pathname, so the query
+    // never reaches the bucket — see registerAssetRoutes.
+    const logoPath = `/${key}?v=${Date.now()}`;
     await env.DB.prepare('UPDATE parishes SET logo_path = ? WHERE id = ?').bind(logoPath, id).run();
     return json({ logo_path: logoPath });
+  }));
+
+  // DELETE /api/admin/parishes/:id/logo — back to the coloured initial.
+  //
+  // Clearing has to drop the objects as well as the column: a logo put up by
+  // mistake (the wrong parish's crest, someone's face) should stop being
+  // served, and nulling logo_path alone leaves it fetchable at a URL that is
+  // guessable from the parish id.
+  router.delete('/api/admin/parishes/:id/logo', guarded(async ({ env, params }) => {
+    const id = params.id;
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
+      return json({ error: 'Parish not found' }, 404);
+    }
+    // The column clears whether or not R2 is bound — a Worker without the
+    // binding should still be able to take a wrong logo off the site.
+    if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(logoKeys(id));
+    await env.DB.prepare('UPDATE parishes SET logo_path = NULL WHERE id = ?').bind(id).run();
+    return json({ logo_path: null });
   }));
 
   // ── adapters ──

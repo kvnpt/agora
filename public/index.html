@@ -356,6 +356,10 @@
   <!-- Hidden date picker — triggered by calendar icon in day headers -->
   <input type="date" id="date-focus-picker" style="position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;top:0;left:0" tabindex="-1" aria-hidden="true">
 
+  <!-- The jurisdiction colour table, before anything that draws with it.
+       Classic script, not an .mjs, because app.js is a classic script and
+       seeds/parishes.js is CommonJS — see the file's own note. -->
+  <script src="/shared/jurisdiction-colors.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
@@ -391,6 +395,42 @@
       <div class="escalate-modal-sub">Pick a parish to open its donation page.</div>
       <select id="donate-juris-filter" class="donate-juris-filter" onchange="_onDonateJurisChange(this.value)"></select>
       <div class="donate-list" id="donate-list"></div>
+    </div>
+  </div>
+
+  <!-- Parish logo editor (admin-only). Two panes in one dialog: the chooser
+       (upload / crop / clear) and the cropper the first two land in. Cropping
+       happens on a canvas here rather than server-side because the Worker has
+       no image pipeline, and a 3 MB phone photo squared down to 512px before
+       upload is the difference between a logo and a payload. -->
+  <div class="escalate-backdrop" id="logo-backdrop" onclick="if(event.target===this)closeParishLogoEditor()">
+    <div class="escalate-modal logo-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishLogoEditor()">&times;</button>
+      <h2 id="logo-modal-title">Parish logo</h2>
+      <div class="escalate-modal-sub" id="logo-modal-sub"></div>
+
+      <div id="logo-pane-choose">
+        <div class="logo-preview" id="logo-preview"></div>
+        <div class="logo-choose-actions" id="logo-choose-actions"></div>
+      </div>
+
+      <div id="logo-pane-crop" hidden>
+        <div class="logo-crop-stage" id="logo-crop-stage">
+          <canvas class="logo-crop-canvas" id="logo-crop-canvas"></canvas>
+          <div class="logo-crop-mask" aria-hidden="true"></div>
+        </div>
+        <label class="logo-zoom-row">
+          <span class="logo-zoom-label">Zoom</span>
+          <input type="range" id="logo-zoom" min="100" max="400" value="100" step="1">
+        </label>
+        <div class="logo-crop-hint">Drag the image to reposition. The circle is what shows.</div>
+        <div class="escalate-btn-row">
+          <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishLogoEditor()">Cancel</button>
+          <button class="btn-save" type="button" id="logo-crop-save" onclick="saveParishLogoCrop()">Save logo</button>
+        </div>
+      </div>
+
+      <input type="file" id="logo-file-input" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
     </div>
   </div>
 </body>

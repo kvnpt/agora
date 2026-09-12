@@ -984,7 +984,13 @@ function toggleAdminControlsVisibility() {
     el.style.display = hiding ? '' : 'none';
   });
   document.querySelectorAll('.btn-admin-controls-pill').forEach(el => {
-    el.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+    // The pill carries a masked glyph alongside its label now, so relabel
+    // the label span rather than assigning textContent over both.
+    const label = el.querySelector('.btn-admin-controls-label');
+    if (label) label.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+    else el.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
+    const g = el.querySelector('.ps-btn-glyph');
+    if (g) g.style.setProperty('--glyph', `url(https://api.iconify.design/ph:${hiding ? 'eye-slash' : 'eye'}.svg)`);
   });
 }
 
@@ -3668,19 +3674,35 @@ function renderParishSheetContent(parishId, opts = {}) {
   if (state.isAdmin) {
     const hiding = localStorage.getItem('hideAdminControls') === 'true';
     const pid = esc(parishId);
+    // Admin row is its own .ps-actions so Edit / Delete / the visibility
+    // toggle sit in the same pill geometry as Directions / Website / Call
+    // directly above them. --parish-color is not set here on purpose: the
+    // public actions carry the parish's hue, and the admin ones staying
+    // neutral is what keeps the two rows telling apart at a glance.
     parishAdminHtml = `
-      <div class="admin-actions-group ps-admin-actions" style="${hiding ? 'display:none' : ''}">
-        <button class="ps-btn btn-outline" onclick="toggleParishEdit('${pid}')">Edit</button>
-        <button class="btn-danger" onclick="deleteParish('${pid}')">Delete</button>
-      </div>
-      <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
-    const jurisdictionOpts = ['antiochian','ecumenical','greek','macedonian','russian','serbian','other']
+      <div class="ps-actions ps-admin-actions">
+        <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
+          <button class="ps-btn ps-btn-admin" type="button" onclick="toggleParishEdit('${pid}')">${glyph('ph:pencil-simple')}Edit</button>
+          <button class="ps-btn ps-btn-danger" type="button" onclick="deleteParish('${pid}')">${glyph('ph:trash')}Delete</button>
+        </div>
+        ${adminVisibilityPill(hiding, 'ps-btn ps-btn-ghost')}
+      </div>`;
+    // Mirrors the jurisdiction CHECK in d1/schema.sql. It listed
+    // 'ecumenical', which the constraint rejects, and omitted 'romanian',
+    // which it allows — so one option could only ever fail the save and one
+    // valid jurisdiction was unreachable from this form.
+    const jurisdictionOpts = ['antiochian','greek','macedonian','romanian','russian','serbian','other']
       .map(j => `<option value="${j}"${parish.jurisdiction === j ? ' selected' : ''}>${capitalize(j)}</option>`)
       .join('');
     let langsVal = '';
     try { langsVal = parish.languages ? JSON.parse(parish.languages).join(', ') : ''; } catch { langsVal = parish.languages || ''; }
     parishEditFormHtml = `
       <div class="detail-edit-form" id="ps-edit-form-${pid}" style="display:none;">
+        <div class="edit-row">
+          <label>Logo</label>
+          <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLogoEditor('${pid}')">${glyph('ph:image-square')}${parish.logo_path ? 'Change logo' : 'Add logo'}</button>
+          <div class="edit-row-hint">Or tap the pencil on the avatar above.</div>
+        </div>
         <div class="edit-row"><label>Short name</label><input id="pse-name-${pid}" value="${esc(parish.name || '')}"></div>
         <div class="edit-row"><label>Full name</label><input id="pse-fullname-${pid}" value="${esc(parish.full_name || '')}"></div>
         <div class="edit-row"><label>Jurisdiction</label><select id="pse-jurisdiction-${pid}">${jurisdictionOpts}</select></div>
@@ -3692,13 +3714,18 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Raffle URL</label><input type="url" id="pse-raffle-${pid}" value="${esc(parish.raffle_url || '')}"></div>
         <div class="edit-row"><label>Payment URL</label><input type="url" id="pse-payment-${pid}" value="${esc(parish.payment_url || '')}"></div>
         <div class="edit-row"><label>Gala URL</label><input type="url" id="pse-gala-${pid}" value="${esc(parish.gala_url || '')}"></div>
-        <div class="edit-row"><label>Color</label><input type="color" id="pse-color-${pid}" value="${esc(parish.color || '#666666')}"></div>
+        <div class="edit-row">
+          <label>Color</label>
+          <input type="color" id="pse-color-${pid}" value="${esc(parish.color || rawJurisColor(parish.jurisdiction))}">
+          <div class="edit-row-hint">Cards, feed lines and event groups only — map dots and labels always draw the jurisdiction's colour.</div>
+        </div>
         <div class="edit-row"><label>Acronym</label><input id="pse-acro-${pid}" value="${esc(parish.acronym || '')}"></div>
         <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
         <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
         <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="btn-save" onclick="saveParish('${pid}')">Save</button>
+        <div class="edit-form-actions">
+          <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
+          <button class="ps-btn ps-btn-ghost" type="button" onclick="toggleParishEdit('${pid}')">Cancel</button>
         </div>
       </div>`;
   }
@@ -3760,7 +3787,7 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   contentEl.innerHTML = `
     <div class="ps-header">
-      <div class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}</div>
+      <${state.isAdmin ? 'button type="button" data-logo-edit' : 'div'} class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}${state.isAdmin ? `<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span>` : ''}</${state.isAdmin ? 'button' : 'div'}>
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
@@ -3838,6 +3865,20 @@ function renderParishSheetContent(parishId, opts = {}) {
   // keeps clientHeight fixed; scrollHeight reports true content height.
   const nameEl = contentEl.querySelector('.ps-name');
   if (nameEl) fitParishName(nameEl);
+
+  // Avatar doubles as the logo control while the edit form is open. The
+  // .editing class is owned by toggleParishEdit; re-apply it here because a
+  // full re-render (a save, a scheme flip) rebuilds the header from HTML and
+  // would otherwise drop the pencil while the form is still showing.
+  const avatarBtn = contentEl.querySelector('.ps-avatar[data-logo-edit]');
+  if (avatarBtn) {
+    const form = contentEl.querySelector('.detail-edit-form');
+    if (form && form.style.display !== 'none') avatarBtn.classList.add('editing');
+    avatarBtn.addEventListener('click', () => {
+      if (avatarBtn.classList.contains('editing')) openParishLogoEditor(parishId);
+      else toggleParishEdit(parishId);
+    });
+  }
 
   // Address + website copy chips. Click copies the value to clipboard and
   // flashes a "Copied" label in place of the text for ~1.2s.
@@ -4733,11 +4774,12 @@ function formatEventTime(date) {
   return `${hour}${minHtml}${merHtml}`;
 }
 
-// Single source for jurisdiction hex values. Used both for direct juris
-// rendering (via getJurisdictionColor below, no substitution) and as the
+// Jurisdiction hex values come from /shared/jurisdiction-colors.js, which
+// index.html loads before this file — the table is also read by the seed, and
+// the two copies it used to have disagreed about Greek. Used both for direct
+// juris rendering (via getJurisdictionColor below, no substitution) and as the
 // override target when a juris filter is active (in getParishDisplayColor).
-const _JURIS_RAW_COLORS = { antiochian: '#1e3a5f', greek: '#00508f', serbian: '#b22234', russian: '#c8a951', romanian: '#002b7f', macedonian: '#d20000' };
-function rawJurisColor(j) { return _JURIS_RAW_COLORS[j] || '#888888'; }
+function rawJurisColor(j) { return window.agoraJurisdictionColor(j); }
 window.rawJurisColor = rawJurisColor;
 
 function getJurisdictionColor(j) {
@@ -5342,7 +5384,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         <button class="btn-outline" onclick="toggleEditEvent(${eid})">Edit</button>
         ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
       </div>
-      <button class="btn-admin-controls-pill" onclick="toggleAdminControlsVisibility()">${hiding ? 'Show admin controls' : 'Hide admin controls'}</button>`;
+      ${adminVisibilityPill(hiding, '')}`;
   }
 
   let editForm = '';
@@ -5656,7 +5698,14 @@ window.deleteEvent = async function(id) {
 
 window.toggleParishEdit = function(id) {
   const form = document.getElementById(`ps-edit-form-${id}`);
-  if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (!form) return;
+  const opening = form.style.display === 'none';
+  form.style.display = opening ? '' : 'none';
+  // The avatar is only a logo control while the form is open — see the
+  // .ps-avatar-edit note in app.css.
+  const avatar = document.querySelector('#parish-sheet-content .ps-avatar[data-logo-edit]');
+  if (avatar) avatar.classList.toggle('editing', opening);
+  if (opening) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
 window.saveParish = async function(id) {
@@ -5717,6 +5766,268 @@ window.deleteParish = async function(id) {
     scheduleRenderEvents();
   }
 };
+
+// ── Parish logo editor (admin) ────────────────────────────────────────
+//
+// One dialog, two panes. The chooser offers upload / crop / clear against
+// the logo as it stands; picking a file or hitting Crop moves to the
+// cropper, which is a canvas the source image is drawn into under a
+// circular mask, pannable by drag and zoomable by slider.
+//
+// Cropping is client-side because there is nowhere else for it to happen:
+// a Worker has no image pipeline, and adding one for this would be a
+// dependency and a CPU bill for something a canvas already does. The
+// export is a square 512px PNG, which also means a 4 MB photograph off a
+// phone reaches R2 as ~100 KB — the avatar it becomes is 44px wide.
+const LOGO_EXPORT_SIZE = 512;
+
+const _logo = {
+  parishId: null,
+  img: null,          // HTMLImageElement of the source
+  scale: 1,           // fitted scale × zoom
+  fitScale: 1,        // scale at which the image just covers the stage
+  offsetX: 0,         // top-left of the drawn image, in stage px
+  offsetY: 0,
+  stage: 0,           // stage side length in CSS px
+  dragging: false,
+  lastX: 0,
+  lastY: 0,
+  wired: false,
+};
+
+window.openParishLogoEditor = function(parishId) {
+  const parish = state.parishes.find(p => p.id === parishId);
+  if (!parish) return;
+  _logo.parishId = parishId;
+  _wireLogoEditor();
+
+  document.getElementById('logo-modal-sub').textContent = parish.name || parishId;
+  _showLogoPane('choose');
+
+  const preview = document.getElementById('logo-preview');
+  if (parish.logo_path) {
+    preview.innerHTML = `<img src="${esc(parish.logo_path)}" alt="">`;
+  } else {
+    const color = getParishDisplayColor(parish.color || rawJurisColor(parish.jurisdiction));
+    preview.innerHTML = `<span class="logo-preview-initial" style="background:${esc(color)}">${esc((parish.full_name || parish.name || '?')[0].toUpperCase())}</span>`;
+  }
+
+  // Crop only offers itself when there is something to crop, and clear only
+  // when there is something to clear — a dialog whose buttons are all live
+  // says less about the current state than one whose buttons are not.
+  const actions = document.getElementById('logo-choose-actions');
+  actions.innerHTML =
+    `<button class="ps-btn ps-btn-admin" type="button" id="logo-act-upload">${glyph('ph:upload-simple')}${parish.logo_path ? 'Upload new' : 'Upload'}</button>`
+    + (parish.logo_path ? `<button class="ps-btn ps-btn-admin" type="button" id="logo-act-crop">${glyph('ph:crop')}Crop</button>` : '')
+    + (parish.logo_path ? `<button class="ps-btn ps-btn-danger" type="button" id="logo-act-clear">${glyph('ph:trash')}Clear</button>` : '');
+  actions.querySelector('#logo-act-upload').onclick = () => document.getElementById('logo-file-input').click();
+  const cropBtn = actions.querySelector('#logo-act-crop');
+  if (cropBtn) cropBtn.onclick = () => _startLogoCrop(parish.logo_path);
+  const clearBtn = actions.querySelector('#logo-act-clear');
+  if (clearBtn) clearBtn.onclick = _clearParishLogo;
+
+  document.getElementById('logo-backdrop').classList.add('open');
+};
+
+window.closeParishLogoEditor = function() {
+  document.getElementById('logo-backdrop').classList.remove('open');
+  const input = document.getElementById('logo-file-input');
+  if (input) input.value = '';
+  _logo.img = null;
+};
+
+function _showLogoPane(which) {
+  document.getElementById('logo-pane-choose').hidden = which !== 'choose';
+  document.getElementById('logo-pane-crop').hidden = which !== 'crop';
+}
+
+function _wireLogoEditor() {
+  if (_logo.wired) return;
+  _logo.wired = true;
+
+  document.getElementById('logo-file-input').addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    // An SVG is already the right thing: resolution-independent, tiny, and
+    // rasterising it into a 512px PNG to crop would be a downgrade. Send it
+    // as-is and skip the cropper.
+    if (file.type === 'image/svg+xml') { _uploadParishLogo(file, file.type); return; }
+    _startLogoCrop(URL.createObjectURL(file));
+  });
+
+  document.getElementById('logo-zoom').addEventListener('input', e => {
+    _setLogoZoom(Number(e.target.value) / 100);
+  });
+
+  const stage = document.getElementById('logo-crop-stage');
+  const down = (x, y) => { _logo.dragging = true; _logo.lastX = x; _logo.lastY = y; };
+  const move = (x, y) => {
+    if (!_logo.dragging) return;
+    _logo.offsetX += x - _logo.lastX;
+    _logo.offsetY += y - _logo.lastY;
+    _logo.lastX = x;
+    _logo.lastY = y;
+    _clampLogoOffset();
+    _drawLogoCrop();
+  };
+  const up = () => { _logo.dragging = false; };
+
+  stage.addEventListener('pointerdown', e => { stage.setPointerCapture(e.pointerId); down(e.clientX, e.clientY); });
+  stage.addEventListener('pointermove', e => { if (_logo.dragging) { e.preventDefault(); move(e.clientX, e.clientY); } });
+  stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointercancel', up);
+}
+
+function _startLogoCrop(src) {
+  const img = new Image();
+  // Same-origin for a stored /logos/... path and a blob: URL alike, so the
+  // canvas stays untainted and toBlob works. crossOrigin is set anyway so a
+  // logo ever served from another host fails loudly here rather than at
+  // export time with a SecurityError.
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    _logo.img = img;
+    _showLogoPane('crop');
+    // Stage size is only knowable once the pane is visible.
+    const stage = document.getElementById('logo-crop-stage');
+    const side = Math.round(stage.getBoundingClientRect().width);
+    _logo.stage = side;
+    const canvas = document.getElementById('logo-crop-canvas');
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = side * dpr;
+    canvas.height = side * dpr;
+    canvas.style.width = side + 'px';
+    canvas.style.height = side + 'px';
+    // Cover, not contain: the crop circle should never open onto empty
+    // canvas, so the smaller dimension is the one that fills the stage.
+    _logo.fitScale = Math.max(side / img.naturalWidth, side / img.naturalHeight);
+    document.getElementById('logo-zoom').value = 100;
+    _setLogoZoom(1, { centre: true });
+  };
+  img.onerror = () => alert('Could not load that image.');
+  img.src = src;
+}
+
+function _setLogoZoom(zoom, opts = {}) {
+  if (!_logo.img) return;
+  const side = _logo.stage;
+  const prev = _logo.scale || _logo.fitScale;
+  const next = _logo.fitScale * zoom;
+  if (opts.centre) {
+    _logo.scale = next;
+    _logo.offsetX = (side - _logo.img.naturalWidth * next) / 2;
+    _logo.offsetY = (side - _logo.img.naturalHeight * next) / 2;
+  } else {
+    // Zoom about the stage centre, so the part of the image the user is
+    // looking at is the part that stays put.
+    const cx = (side / 2 - _logo.offsetX) / prev;
+    const cy = (side / 2 - _logo.offsetY) / prev;
+    _logo.scale = next;
+    _logo.offsetX = side / 2 - cx * next;
+    _logo.offsetY = side / 2 - cy * next;
+  }
+  _clampLogoOffset();
+  _drawLogoCrop();
+}
+
+// Keep the image covering the stage on both axes — panning should never be
+// able to drag a transparent edge into the crop circle.
+function _clampLogoOffset() {
+  if (!_logo.img) return;
+  const side = _logo.stage;
+  const w = _logo.img.naturalWidth * _logo.scale;
+  const h = _logo.img.naturalHeight * _logo.scale;
+  _logo.offsetX = Math.min(0, Math.max(side - w, _logo.offsetX));
+  _logo.offsetY = Math.min(0, Math.max(side - h, _logo.offsetY));
+}
+
+function _drawLogoCrop() {
+  const canvas = document.getElementById('logo-crop-canvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = canvas.width / _logo.stage;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, _logo.stage, _logo.stage);
+  ctx.drawImage(
+    _logo.img,
+    _logo.offsetX, _logo.offsetY,
+    _logo.img.naturalWidth * _logo.scale,
+    _logo.img.naturalHeight * _logo.scale
+  );
+  ctx.restore();
+}
+
+window.saveParishLogoCrop = async function() {
+  if (!_logo.img) return;
+  const out = document.createElement('canvas');
+  out.width = LOGO_EXPORT_SIZE;
+  out.height = LOGO_EXPORT_SIZE;
+  const ctx = out.getContext('2d');
+  // The stage is the crop: same framing, scaled up to the export size.
+  const k = LOGO_EXPORT_SIZE / _logo.stage;
+  ctx.drawImage(
+    _logo.img,
+    _logo.offsetX * k, _logo.offsetY * k,
+    _logo.img.naturalWidth * _logo.scale * k,
+    _logo.img.naturalHeight * _logo.scale * k
+  );
+  // Square, not circular: every surface that shows a logo already rounds it
+  // (border-radius in the sheet, an arc clip on the map sprite). Baking the
+  // circle in would only lose the corners for whatever renders it flat.
+  const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+  if (!blob) { alert('Could not render the crop.'); return; }
+  await _uploadParishLogo(blob, 'image/png');
+};
+
+async function _uploadParishLogo(body, contentType) {
+  const id = _logo.parishId;
+  const btn = document.getElementById('logo-crop-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  const res = await fetch(`/api/admin/parishes/${encodeURIComponent(id)}/logo`, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body,
+  });
+  if (btn) { btn.disabled = false; btn.textContent = 'Save logo'; }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Logo upload failed');
+    return;
+  }
+  const { logo_path } = await res.json();
+  _applyParishLogo(id, logo_path);
+}
+
+async function _clearParishLogo() {
+  const id = _logo.parishId;
+  if (!confirm('Remove this parish’s logo?')) return;
+  const res = await fetch(`/api/admin/parishes/${encodeURIComponent(id)}/logo`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Could not clear the logo');
+    return;
+  }
+  _applyParishLogo(id, null);
+}
+
+// One place to land a logo change: state, the map's baked sprite, and the
+// open sheet. The sheet re-render is a full one because the avatar lives in
+// the header, which the partial refresh deliberately leaves alone.
+function _applyParishLogo(id, logoPath) {
+  const idx = state.parishes.findIndex(p => p.id === id);
+  if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], logo_path: logoPath };
+  if (typeof window.agoraRefreshParishLogo === 'function') window.agoraRefreshParishLogo(id);
+  closeParishLogoEditor();
+  if (state.parishSheetFocus === id) {
+    renderParishSheetContent(id, { fullRender: true });
+    // The header rebuild dropped the pencil; put it back if the form the
+    // user opened it from is still showing.
+    const form = document.getElementById(`ps-edit-form-${id}`);
+    const avatar = document.querySelector('#parish-sheet-content .ps-avatar[data-logo-edit]');
+    if (form && avatar && form.style.display !== 'none') avatar.classList.add('editing');
+  }
+  scheduleRenderEvents();
+}
 
 let _escalatePubEventId = null;
 let _escalatePubCandidates = [];
@@ -6319,6 +6630,26 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = str || '';
   return div.innerHTML;
+}
+
+// An Iconify glyph that follows its button's text colour. The <img>+invert
+// pattern the public action pills use is fine while a glyph is only ever
+// black or white; it cannot follow a pill that is red at rest and white on
+// hover, which the admin row needs. .ps-btn-glyph masks currentColor, so
+// one element covers every state in both schemes. See app.css.
+function glyph(name) {
+  return `<span class="ps-btn-glyph" style="--glyph:url(https://api.iconify.design/${esc(name)}.svg)" aria-hidden="true"></span>`;
+}
+
+// The show/hide toggle is rendered in two places (parish sheet, event
+// drawer) and relabelled in a third (toggleAdminControlsVisibility), so the
+// label and glyph live here rather than in three literals that can drift.
+// The label is its own span because the button now has a glyph child that a
+// textContent assignment would wipe out.
+function adminVisibilityPill(hiding, extraClass) {
+  return `<button class="${extraClass} btn-admin-controls-pill" type="button" onclick="toggleAdminControlsVisibility()">`
+    + glyph(hiding ? 'ph:eye' : 'ph:eye-slash')
+    + `<span class="btn-admin-controls-label">${hiding ? 'Show admin controls' : 'Hide admin controls'}</span></button>`;
 }
 
 // Returns a readable schedule-item label for week_of_month, e.g. "1st, 3rd Sunday"
