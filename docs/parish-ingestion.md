@@ -771,3 +771,114 @@ Good Shepherd's calendar; 36 liturgies, 32 offices, 1 other; 4 lines dropped.
 Every rule in the table carries a source. St George Mission, Auckland is the twenty-fourth parish and publishes no
 times at all, which is not an error and is reported as zero rather than skipped
 silently.
+
+---
+
+## What the Serbian run actually cost
+
+49 places of worship — 45 parishes and 4 monasteries — scraped from the Serbian
+Orthodox Metropolitanate of Australia and New Zealand, geocoded, and written to
+D1. 44 of them; five are held back, and the reasons are below.
+
+```bash
+node scripts/scrape-serbian.mjs     cache/serbian serbian-scraped.json
+node scripts/geocode-serbian.mjs    serbian-scraped.json cache/geo-serbian serbian-geocoded.json
+node scripts/build-serbian-sql.mjs  serbian-geocoded.json serbian-parishes.sql
+```
+
+**The first directory that needs no aggregator at all.** `soc.org.au` is the
+Metropolitanate's own site, it exposes the real post types through the
+WordPress REST API (`/wp-json/wp/v2/parish`, `monastery`, `state`), and it
+publishes a street address for 45 of 49. Every field written here came from the
+jurisdiction itself, which is what the rule about sources asks for and what the
+ROCOR run could not do.
+
+**`per_page` defaults to 2.** The list endpoint answers `x-wp-total: 45` and
+returns two rows. A run that trusts the default imports two parishes and
+reports success.
+
+**The titles carry no suburb, and that shapes everything.** Five parishes are
+"ST SAVA SERBIAN ORTHODOX CHURCH" and four are "ST NICHOLAS"; the ids that
+separate them are their suburbs, and the suburb only exists inside the address
+on each parish's page. So the address is not just the pin here — it is the
+identity. A page that failed to parse would not produce a badly named parish,
+it would produce a collision.
+
+**Four PO boxes.** Cairns, Canberra, Mawson and Moree publish a postal address
+and nothing else. They are marked `address_vague` by the scrape, which keeps
+them away from the geocoder and out of the stored `address` — a PO box pins the
+post office and says nothing. Canberra was then found by name anyway; the other
+three were not.
+
+**Two localities in one address.** "852 Caoura Rd, Tallong, Marulan NSW 2579"
+is the monastery at Tallong written with the larger town beside it, and the
+Australia Post shape — street, suburb, state, postcode — reads Marulan as the
+suburb. The title says Tallong and so does the address, so the component both
+sources name wins. Two sources agreeing beats a positional rule.
+
+**One building, two parishes, again.** Keysborough and Carrum Downs are 10km
+apart and their dedications share the word Stephen, so the first one asked took
+the church that is 400m from the second — the Croydon/Strathfield error from
+the ROCOR run, in a new suburb. The fix is in `scripts/geocode-parish.mjs`:
+OSM buildings are now assigned **globally**, every (parish, building) pair
+scored and sorted by score then distance, rather than parish by parish in
+directory order. "Best building for this parish" and "best parish for this
+building" are different questions and only the second one is safe to answer
+greedily.
+
+**A church OSM knows by its jurisdiction and not its dedication.** The monastery
+at Wallaroo is in OSM as "Free Serbian Orthodox Church - Diocese For Australia
+& New Zealand" — not one token of "St Sava – New Kalenich" in it, so neither the
+dedication match nor the name search can see it. A tier that asks for
+"<Jurisdiction> Orthodox Church, <suburb>" and accepts the answer **only when
+the suburb has exactly one** found it and two others. Where a suburb has two
+parishes of the same jurisdiction the query cannot tell them apart, so it must
+answer neither.
+
+**`dormitionmost`.** Four Serbian dedications are long enough that the 16-char
+id cap cut "Most Holy" in half: "Dormition of the Most Holy Theotokos" minted
+`serbian-dormitionmost-arundel`, which reads as a typo and says nothing
+`dormition` does not. `parishId` now drops a qualifier the cap stranded, the
+same way it already dropped a stranded honorific. Four existing production ids
+would derive differently under the new rule — `reconcile` matches on content,
+not derivation, so they still pin to themselves.
+
+**Where the pins came from:**
+
+| | |
+|---|---|
+| 26 | a building — 13 from the Oceania-wide `denomination=serbian_orthodox` query, 9 by name, 3 by jurisdiction |
+| 18 | street level, from the published address, structured |
+| 1 | street level, free-form |
+| 5 | a locality centroid, and **not written** |
+
+OSM knows this jurisdiction far better than it knows the Antiochians: 18
+buildings tagged `serbian_orthodox` across Oceania, against one. Three of them
+are named nothing more specific than "Serbian Orthodox Church", which is what
+the jurisdiction tier is for.
+
+**The five held back**, all for the same reason — no church in OSM, and no
+street that geocodes:
+
+| | |
+|---|---|
+| St Elijah the Prophet, Cairns | PO box only |
+| Entrance of the Most Holy Theotokos, Mawson | PO box only |
+| Sts Simeon and Ana, Moree | PO box only |
+| St John the Baptist, Dapto | "20 Dale St, Penrose, Dapto NSW 2530" — no Dale St in OSM near Dapto |
+| Nativity of the Most Holy Theotokos Skete, Inglewood | "61 Chapmans Rd, Inglewood SA 5133" — no Chapmans Rd in OSM |
+
+`--include-suburb` writes them as locality centroids with a NULL address, which
+is a deliberate act with a person's name on it rather than a default.
+
+**One parish is not Serbian-speaking.** St Ignatius of Antioch and St Aidan of
+Lindisfarne, Wendouree, is the Metropolitanate's Western Rite parish and the
+only entry whose title omits the word "Serbian" — which is what the import keys
+on to give it `["English"]` where every other row gets `["Serbian", "English"]`.
+
+**New rows carry their jurisdiction's colour.** The Greek, ROCOR and Antiochian
+imports wrote `color: null` on the reasoning that a colour is a person's choice,
+and migration 004 then had to paint 51 rows that had been rendering grey. It is
+a person's choice, but the jurisdiction's colour is the baseline every card
+already draws, so the import writes it and `color` stays out of `REFRESHABLE` —
+the insert sets it, a re-run never touches it.

@@ -199,6 +199,24 @@ test('a monastery is named by its dedication, not by being a monastery', () => {
     'russian-stjohnbaptist-kentlyn');
 });
 
+// The Serbian directory is the first with four dedications long enough for the
+// cap to cut one of these in half.
+test('a qualifier the cap stranded is dropped, not left dangling', () => {
+  // "dormitionmost" is "Most Holy" with the Holy cut off: it reads as a typo
+  // and says nothing `dormition` does not.
+  assert.equal(parishId('serbian', 'Dormition of the Most Holy Theotokos', 'Arundel'),
+    'serbian-dormition-arundel');
+  assert.equal(parishId('serbian', 'Protection of the Most Holy Theotokos', 'Tallong'),
+    'serbian-protection-tallong');
+  assert.equal(parishId('serbian', 'Entrance of the Most Holy Theotokos', 'Mawson'),
+    'serbian-entrance-mawson');
+  // ...but only when the CAP stranded it. A name that fits keeps every word,
+  // qualifier or not.
+  assert.equal(parishId('serbian', 'St Sava', 'Highgate'), 'serbian-stsava-highgate');
+  assert.equal(parishId('greek', 'Holy Trinity', 'Hobart'), 'greek-holytrinity-hobart');
+  assert.equal(parishId('greek', 'All Saints', 'Belmore'), 'greek-allsaints-belmore');
+});
+
 test('the cap never reduces a dedication to a bare qualifier', () => {
   // "transfiguration" is 15 characters and will not fit beside "holy", so the
   // cap used to keep the qualifier and throw the dedication away.

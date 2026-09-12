@@ -103,6 +103,18 @@ export function parishId(jurisdiction, name, suburb) {
   // trailing "Saints" is the dedication itself — "All Saints" is not "All".
   if (kept.length > 1 && kept.length < candidates.length
       && HONORIFIC.has(kept[kept.length - 1])) kept.pop();
+  // And the same for a stranded qualifier, for the same reason. "Dormition of
+  // the Most Holy Theotokos" caps to `dormitionmost`, where "most" is half of
+  // "Most Holy" and qualifies a word that did not fit — it reads as a typo and
+  // identifies nothing that `dormition` does not. The Serbian directory has
+  // four of these. As above, only when the cap stranded it: a name that ENDS
+  // in a qualifier because that is the dedication ("Christ the Great High
+  // Priest") keeps it.
+  // A loop, because "Entrance of the Most Holy Theotokos" fits `most` AND
+  // `holy` inside the cap and strands them both — one pop leaves
+  // `entrancemost`, which is the same typo one word later.
+  while (kept.length > 1 && kept.length < candidates.length
+      && QUALIFIER.has(kept[kept.length - 1])) kept.pop();
   const where = squeeze(words(suburb).filter((w) => !STOP.has(w)), SUBURB_CAP);
   return [jurisdiction, kept.join(''), where.join('')].filter(Boolean).join('-');
 }
