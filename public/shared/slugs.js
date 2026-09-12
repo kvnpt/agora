@@ -1,7 +1,8 @@
 // What a parish acronym is not allowed to be.
 //
 // An acronym is a URL segment: /sjfc opens that parish. So is a jurisdiction
-// (/greek), a region (/qld), a mode (/services) and an event id (/42). They
+// (/greek), a region (/qld), a service (/liturgy), a mode (/services) and an
+// event id (/42). They
 // share one namespace and detectUrlState resolves them in a fixed order, with
 // the parish slug last — so an acronym that spells an earlier one is not a
 // clash the router notices, it is a parish that has quietly become
@@ -15,9 +16,9 @@
 // Same dual-mode wrapper as its neighbours — the Worker bundles the CommonJS
 // branch, the browser gets a global for the inline hint under the field.
 (function (root) {
-  const locations = (typeof module === 'object' && module.exports)
-    ? require('./locations.js')
-    : (root && root.AgoraLocations);
+  const isCjs = typeof module === 'object' && !!module.exports;
+  const locations = isCjs ? require('./locations.js') : (root && root.AgoraLocations);
+  const services = isCjs ? require('./services.js') : (root && root.AgoraServices);
 
   const JURISDICTIONS = [
     'antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian', 'other',
@@ -59,6 +60,13 @@
         add(String(slug).replace(/-/g, ''));
       }
     }
+    if (services && services.SERVICE_SLUGS) {
+      for (const slug of services.SERVICE_SLUGS) {
+        add(slug);
+        add(String(slug).replace(/-/g, ''));
+      }
+    }
+    if (services && services.DAY_SLUGS) for (const slug of services.DAY_SLUGS) add(slug);
     return set;
   }
 

@@ -1722,6 +1722,38 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 13.5px;
   padding: 0;
 }
+/* A schedule row is the way into its rule — tapping one focuses that rule's
+   next occurrence. The chevron says so; it stays low-contrast because the
+   time and title are what the row is for. */
+.schedule-item[data-sched-focus] {
+  cursor: pointer;
+  border-radius: 8px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  transition: background-color 140ms ease-out;
+}
+.schedule-item[data-sched-focus]:hover,
+.schedule-item[data-sched-focus]:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+/* "Emphasised a little bit" — a tint and a left rule in the parish's colour,
+   not a full selection state. The banner below the panel is what announces
+   the focus; this only points at the row it came from. */
+.schedule-item[data-sched-focus].focused {
+  background: color-mix(in srgb, var(--juris-color, var(--accent)) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--juris-color, var(--accent));
+}
+.si-chev {
+  width: 11px;
+  height: 11px;
+  margin-left: auto;
+  align-self: center;
+  opacity: 0.35;
+  flex: none;
+}
+.schedule-item[data-sched-focus]:hover .si-chev { opacity: 0.7; }
+@media (prefers-color-scheme: dark) { .si-chev { filter: brightness(0) invert(1); } }
 .si-main {
   display: flex;
   align-items: baseline;
@@ -3294,6 +3326,42 @@ button.ps-avatar { cursor: pointer; }
   border-color: var(--text);
 }
 .ps-filter-pill.active .ps-filter-pill-icon { filter: brightness(0) invert(1); opacity: 1; }
+/* "Showing Sunday morning Liturgy in English" — the banner a schedule focus
+   spawns between the service times and the events list it has narrowed.
+   A sentence rather than a pill: the answer has three parts (which day, which
+   service, in which language) that a pill cannot hold, and without it the
+   list below reads as the parish's whole feed with most of it missing.
+   Parish-coloured, because the parish is what it is scoped to. */
+.ps-focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 2px;
+  padding: 9px 6px 9px 12px;
+  border-left: 3px solid var(--parish-color, var(--accent));
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--parish-color, var(--accent)) 12%, transparent);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.ps-focus-banner-text { flex: 1; min-width: 0; }
+.ps-focus-banner-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ps-focus-banner-x:hover { color: var(--text); background: var(--surface-2); }
 .ps-filter-en .fm-en-badge {
   display: inline-block;
   font-size: 10px;
