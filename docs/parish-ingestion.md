@@ -184,6 +184,41 @@ curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 The database is `agora`, `8e02890d-dc75-4dbe-a018-b64c7871dde9`, also in
 `wrangler.toml`.
 
+## Doing this again
+
+The fetching and parsing is written fresh per jurisdiction — every directory is
+a different site. Everything after parsing is not: `scripts/parish-import.mjs`
+holds the three parts that repeat, with `scripts/parish-import.test.mjs` pinning
+the conventions to real cases from the Greek run.
+
+```js
+parishId(jurisdiction, name, suburb)  // <jurisdiction>-<name>-<suburb>
+reconcile(scraped, existing)          // -> { pinned, fresh, ambiguous }
+buildUpsert(rows)                     // the guarded ON CONFLICT
+```
+
+**`reconcile` is not optional, and its output is meant to be read.** A scrape
+mints ids by derivation, and derivation cannot reproduce an id somebody typed:
+`antiochian-good-shepherd-antiochian-church` is hyphenated inside its name,
+names its jurisdiction twice, and does not contain its suburb. Trusting
+derivation there inserts a second Good Shepherd, and because the Google Calendar
+adapter names the old id, every event stays on the old row while an empty
+duplicate appears beside it.
+
+The trap is that the mismatch is *partial*. Of the nine Antiochian rows, "St
+John the Baptist" and "Sts Peter & Paul" happen to derive back to their existing
+ids while "St Mary's" and "Sts Michael & Gabriel" do not — so some rows update,
+some duplicate, and the result is much harder to spot than a clean failure. So
+match on content, print the pin list, and look at it before writing. `ambiguous`
+is never resolved automatically: a scraped parish matching two existing rows is
+a question for a person.
+
+Two known ids will never derive, by the way, and both are correct as they are:
+`greek-gopssc-buderim` is an acronym, and `greek-nativitychri-portadelaide`
+carries a truncation bug the first run shipped — the trailing-honorific trim ran
+against the joined string, so "Christ" lost its tail. The module now trims
+tokens instead, and a test covers it.
+
 ## Suggested order
 
 1. Pick one jurisdiction's directory and scrape it to JSON — names, addresses,
