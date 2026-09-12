@@ -37,9 +37,20 @@ const STOP = new Set(['the', 'of', 'our', 'and', 'a', 'an', 'in', 'at', 'for']);
 
 // Words describing the institution rather than naming it. Dropping them keeps
 // the dedication in the id: "Archdiocesan Church of St Sophia" -> stsophia.
+//
+// The second line arrived with the Russian directory, which is the first one
+// that lists anywhere other than parish churches. Without them "Orthodox
+// Monastery of the Archangel Michael" mints `monastery`, having spent the whole
+// length cap on the word every monastery shares.
 const GENERIC = new Set(['church', 'parish', 'orthodox', 'cathedral',
   'archdiocesan', 'community', 'greek', 'antiochian', 'serbian', 'russian',
-  'romanian', 'macedonian']);
+  'romanian', 'macedonian',
+  'monastery', 'convent', 'skete', 'chapel', 'mission', 'institute']);
+
+// Words that qualify a dedication without naming one. They are kept normally —
+// "Holy Trinity" is the dedication — but a name that the length cap has reduced
+// to nothing BUT one of these has been reduced to nothing at all.
+const QUALIFIER = new Set(['holy', 'all', 'new', 'most', 'great']);
 
 // Honorifics carry no distinguishing information — every second parish starts
 // with one — so they are dropped when COMPARING two names, though kept when
@@ -79,7 +90,14 @@ export function parishId(jurisdiction, name, suburb) {
   const significant = words(name).filter((w) => !STOP.has(w));
   const named = significant.filter((w) => !GENERIC.has(w));
   const candidates = named.length ? named : significant;
-  const kept = squeeze(candidates, NAME_CAP);
+  let kept = squeeze(candidates, NAME_CAP);
+  // "Holy Transfiguration Monastery" caps to `holy`, because transfiguration is
+  // fifteen characters and will not fit beside it. A bare qualifier identifies
+  // nothing, so when the cap collapses a name to one, drop it and take what
+  // follows: `transfiguration` is the monastery, `holy` is every second parish.
+  if (kept.length === 1 && kept.length < candidates.length && QUALIFIER.has(kept[0])) {
+    kept = squeeze(candidates.slice(1), NAME_CAP);
+  }
   // Drop a trailing honorific only when the cap actually stranded it, meaning
   // it introduces a saint whose name did not fit. When every word fits, a
   // trailing "Saints" is the dedication itself — "All Saints" is not "All".

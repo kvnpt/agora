@@ -182,3 +182,34 @@ test('an apostrophe in a parish name cannot break out of the statement', () => {
   const out = buildUpsert([{ ...ROW, name: "The Holy Virgin's Protection, South Yarra" }]);
   assert.match(out, /'The Holy Virgin''s Protection, South Yarra'/);
 });
+
+// The Russian directory is the first that lists monasteries, convents and
+// sketes, and those words behave exactly like "church" and "cathedral": every
+// one of them has it, so it distinguishes none of them. Before they were
+// generic, the Marrickville monastery minted the id `russian-monastery-...`.
+test('a monastery is named by its dedication, not by being a monastery', () => {
+  assert.equal(parishId('russian', 'Orthodox Monastery of the Archangel Michael', 'Marrickville'),
+    'russian-archangelmichael-marrickville');
+  assert.equal(parishId('russian', 'Our Lady of Kazan Convent', 'Kentlyn'),
+    'russian-ladykazan-kentlyn');
+  assert.equal(parishId('russian', 'Monastery of the Prophet Elias', 'Monarto South'),
+    'russian-prophetelias-monartosouth');
+  assert.equal(parishId('russian', 'St. John the Baptist Skete', 'Kentlyn'),
+    'russian-stjohnbaptist-kentlyn');
+});
+
+test('the cap never reduces a dedication to a bare qualifier', () => {
+  // "transfiguration" is 15 characters and will not fit beside "holy", so the
+  // cap used to keep the qualifier and throw the dedication away.
+  assert.equal(parishId('russian', 'Holy Transfiguration Monastery', 'Bombala'),
+    'russian-transfiguration-bombala');
+  // ...but a qualifier that shares the name with something that fits stays put:
+  // "Holy Trinity" is the dedication, and this id is already in production.
+  assert.equal(parishId('greek', 'Holy Trinity Greek Orthodox Parish of Hobart', 'Hobart'),
+    'greek-holytrinity-hobart');
+  assert.equal(parishId('russian', 'Holy Virgin Protection Cathedral', 'East Brunswick'),
+    'russian-holyvirgin-eastbrunswick');
+  // "All Saints" is a dedication that is nothing but qualifier and honorific,
+  // and the rule must not strip it to nothing.
+  assert.equal(parishId('greek', 'All Saints', 'Belmore'), 'greek-allsaints-belmore');
+});
