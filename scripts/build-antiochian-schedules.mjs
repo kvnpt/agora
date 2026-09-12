@@ -8,6 +8,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { rulesForParish, planWrite, buildScheduleSql, SOURCE_NAME } from './antiochian-schedules.mjs';
+import { ADAPTERS } from '../worker/lib/adapters.mjs';
 
 const PARISHES = 'https://agora.orthodoxy.au/api/parishes';
 const SCHEDULES = 'https://agora.orthodoxy.au/api/schedules';
@@ -36,12 +37,24 @@ const existing = (await get(SCHEDULES)).filter((s) => byRef.has(
   parishes.find((p) => p.id === s.parish_id)?.info_source_ref,
 ));
 
+// A parish with a LIVE adapter is not this import's to describe.
+//
+// Good Shepherd's rules were inferred from its Google Calendar, and the first
+// run overwrote three of them with the Archdiocese page because that page
+// happens to publish the same three times. Corroborating a time is not being
+// the source of it — and the calendar is re-read every four hours where this
+// directory was read once, by hand, and cannot be re-read automatically at all.
+// So the adapter wins, and a re-run of this script leaves those rows alone.
+const adapted = new Set(ADAPTERS.map((a) => a.parishId));
+
 const rules = [];
 const dropped = [];
 const noParish = [];
+const deferred = [];
 for (const p of scraped.parishes) {
   const parish = byRef.get(p.source_ref);
   if (!parish) { noParish.push(p.name); continue; }
+  if (adapted.has(parish.id)) { deferred.push(`${p.name} (${parish.id})`); continue; }
   const { rules: rs, dropped: ds } = rulesForParish(p);
   dropped.push(...ds);
   for (const r of rs) {
@@ -59,6 +72,10 @@ const { updates, inserts, untouched } = planWrite(rules, existing);
 
 console.log(`${scraped.parishes.length} parishes scraped, ${rules.length} rules parsed`);
 if (noParish.length) console.log(`\nNO PARISH ROW (skipped): ${noParish.join(', ')}`);
+if (deferred.length) {
+  console.log(`\nLEFT TO THEIR ADAPTER (${deferred.length}) — a live source beats a hand-pasted page:`);
+  for (const d of deferred) console.log(`  ${d}`);
+}
 
 console.log(`\nUPDATES IN PLACE (${updates.length}) — an existing rule at the same parish, day and time:`);
 for (const u of updates) {

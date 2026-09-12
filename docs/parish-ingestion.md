@@ -702,7 +702,17 @@ to a person rather than to a rule about absence:
   seed, not from the parish, and has been deleted. The directory's silence
   turned out to be right; it still was not evidence.
 - **Good Shepherd's Confession is real**, and was inferred from the parish's
-  Google Calendar — so it now cites that calendar rather than nothing.
+  Google Calendar — so it cites that calendar rather than nothing.
+
+**And all four of Good Shepherd's rules cite the calendar, not just the one.**
+The import had overwritten the other three with the Archdiocese page because
+that page publishes the same three times — but **corroborating a time is not
+being the source of it**. All four were inferred from the calendar, which is
+also the *live* source: the adapter re-reads it every four hours where the
+directory was read once, by hand, and cannot be re-read automatically at all.
+The build script now defers any parish that has an adapter, so a re-run leaves
+those rows alone instead of quietly reclaiming them — which is the general rule,
+not a special case for this parish: a live source beats a hand-pasted page.
 
 **Two parishes hold genuinely simultaneous services and the dedup nearly ate
 one.** Punchbowl runs an Arabic liturgy in the church and an English one in the
@@ -744,9 +754,8 @@ proposal that is already on file re-stamps `source_checked_at` rather than
 skipping silently — a person has just confirmed the source still publishes it,
 which is exactly what the column records.
 
-**Final: 68 schedules** — 67 from the directory across 23 parishes (36 liturgies,
-32 offices, 1 other; 11 updates in place, 56 inserts, 4 lines dropped) plus Good
-Shepherd's Confession from its calendar. Every rule in the table now carries a
-source. St George Mission, Auckland is the twenty-fourth parish and publishes no
+**Final: 68 schedules** — 64 from the directory across 22 parishes and 4 from
+Good Shepherd's calendar; 36 liturgies, 32 offices, 1 other; 4 lines dropped.
+Every rule in the table carries a source. St George Mission, Auckland is the twenty-fourth parish and publishes no
 times at all, which is not an error and is reported as zero rather than skipped
 silently.
