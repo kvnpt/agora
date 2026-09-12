@@ -7,3 +7,9 @@ data/
 # emails and phone numbers, and the file is large and quickly stale — keep it
 # out of the repo and put it somewhere you control instead.
 backups/
+
+# Cached HTTP responses from a directory scrape (scripts/scrape-*.mjs). Caching
+# every response on the first fetch is what makes the parsing iterative at a
+# cost to the site of one pass — but the bodies are large, quickly stale, and
+# carry clergy contact details, so they stay out of the repo. Re-fetch instead.
+cache/
