@@ -15,6 +15,19 @@ const ARCHDIOCESE_EVENTS = {
 // Display-time type mapping: legacy DB types → display label
 const TYPE_DISPLAY = { vespers: 'prayer', matins: 'prayer', festival: 'social', fundraiser: 'social' };
 
+// How far forward the feed reaches, in days, and how much Load more adds.
+//
+// There is no ceiling. The rules are in the browser already, so projecting
+// another two months costs a projection and not a request for the occurrences
+// — only the overrides and stored one-offs inside the new stretch have to be
+// fetched. The step is a step rather than a doubling so the horizon note under
+// the button stays a date somebody can reason about.
+const HORIZON_START_DAYS = 60;
+const HORIZON_STEP_DAYS = 60;
+// Events revealed per Load more press, before the day the cap lands on is
+// completed. Distinct from the horizon: a quiet week costs no presses.
+const SHOW_COUNT_STEP = 30;
+
 const state = {
   events: [],
   schedules: [],
@@ -24,9 +37,17 @@ const state = {
   userLat: null,
   userLng: null,
   mode: 'events',
-  _eventsExtended: false,
-  _eventsShowCount: 30,
-  _parishEventsShowCount: 30,
+  // How far past today the feed has been asked to reach, in days. The fetch
+  // window, NOT the render cap — that is the two ShowCounts below. It only ever
+  // grows: Load more adds a step, a date focus stretches it far enough to reach
+  // the date asked for, and nothing shrinks it back, because a filter change
+  // that quietly undid "show me March" would be indistinguishable from a bug.
+  _horizonDays: HORIZON_START_DAYS,
+  // What the last fetch actually covered, which is what a date focus has to be
+  // measured against — see ensureHorizonReaches.
+  _loadedHorizonDays: 0,
+  _eventsShowCount: SHOW_COUNT_STEP,
+  _parishEventsShowCount: SHOW_COUNT_STEP,
   // `location` is a region slug from /shared/locations.js ('qld', 'syd', 'nz'),
   // not the viewer's own position — that is locationActive/userLat below.
   filters: { jurisdiction: null, location: null, service: null, day: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
@@ -44,7 +65,11 @@ const state = {
   // one is "this rule at this parish", the other is "this kind of service".
   parishScheduleFocus: null,
   viewportParishIds: null,  // Set of parish IDs inside current map bounds; null until first moveend
-  _dateFocus: null          // 'YYYY-MM-DD' when user has jumped to a specific date
+  // Where the stream starts, when the user has wound it forward. One focus, not
+  // one per surface: the main feed and a parish card are two views of the same
+  // date lens, and /smg/2026-07 has to mean the same thing whichever is open.
+  _dateFocus: null,         // 'YYYY-MM-DD'
+  _dateFocusPrecision: 'day'  // 'month' when the URL named a month, so it reads back as one
 };
 // Expose so map.js's 'move' rAF-throttled handler can re-cluster without
 // passing state through window-scoped callbacks.
@@ -54,35 +79,299 @@ window.agoraStateRef = state;
 const isoDateSyd = (utcStr) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(utcStr));
 
-// Jump to a specific date in the events list stream.
-window.setDateFocus = function(dateStr) {
-  state._dateFocus = dateStr || null;
-  renderEvents();
-  if (dateStr) {
-    requestAnimationFrame(() => {
-      const el = document.querySelector(`.day-box[data-date="${dateStr}"], .day-section[data-date="${dateStr}"]`);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// Today, in the zone the feed's day headers are written in.
+const todayIso = () => isoDateSyd(new Date().toISOString());
+
+/**
+ * Midnight at the start of today, Sydney local, as a UTC instant.
+ *
+ * The feed's lower bound, and it is deliberately not "now": a service that
+ * started an hour ago and runs for two is still happening, and the "Happening
+ * now" section exists to say so.
+ */
+function startOfTodayUtcIso() {
+  const today = todayIso();
+  const startLocal = new Date(`${today}T00:00:00`);          // in the VIEWER's zone
+  const probe = new Date(`${today}T12:00:00Z`);
+  const offsetMs = new Date(probe.toLocaleString('en-US', { timeZone: TZ })).getTime() - probe.getTime();
+  return new Date(startLocal.getTime() - offsetMs).toISOString();
+}
+
+// ── The date focus ──
+//
+// "Showing from 3/7/2027". One focus shared by the main feed and the parish
+// card, because they are two renderings of the same stream — and because the
+// URL carries exactly one date segment, so two would immediately disagree.
+//
+// Setting one has to REACH the date first. The feed only holds the rows inside
+// its horizon, and a focus on a date past that would otherwise render an empty
+// stream and give no clue why, so the horizon is stretched and the bundle
+// re-fetched before anything is drawn.
+
+/** Days from today to `date`, floored at 0. */
+function daysUntil(date) {
+  const t = Date.parse(String(date || '') + 'T00:00:00Z');
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.round((t - Date.parse(todayIso() + 'T00:00:00Z')) / 86400000));
+}
+
+/**
+ * How far the fetch window has to reach.
+ *
+ * Past the focused date rather than up to it — landing on a date with nothing
+ * after it is the same empty page as not reaching it at all — so a focus buys
+ * itself a step's worth of feed to scroll through.
+ */
+function eventsHorizonDays() {
+  const base = state._horizonDays || HORIZON_START_DAYS;
+  if (!state._dateFocus) return base;
+  return Math.max(base, daysUntil(state._dateFocus) + HORIZON_STEP_DAYS);
+}
+
+/**
+ * Widen the window if `date` is past it, and re-fetch when it moved.
+ *
+ * Compared against what the last fetch actually COVERED, not against
+ * eventsHorizonDays() — the focus is already set by the time this runs, so the
+ * wanted horizon has moved with it and comparing the two would always agree
+ * with itself and never fetch.
+ */
+async function ensureHorizonReaches(date) {
+  const needed = daysUntil(date) + HORIZON_STEP_DAYS;
+  if (needed <= (state._loadedHorizonDays || 0)) return false;
+  await fetchEvents({ keepCount: true });
+  return true;
+}
+
+window.setDateFocus = async function (dateStr, opts = {}) {
+  if (!dateStr) return window.clearDateFocus();
+  const month = opts.precision === 'month';
+  // A month focus IS the first of that month. Without the snap the URL would
+  // write "2027-06" for a focus on the 6th and read it back as the 1st — a link
+  // that shows a different feed from the one it was copied out of.
+  state._dateFocus = month ? `${String(dateStr).slice(0, 7)}-01` : dateStr;
+  state._dateFocusPrecision = month ? 'month' : 'day';
+  const refetched = await ensureHorizonReaches(dateStr);
+  renderDateFocus({ rerender: !refetched });
+  if (opts.silent !== true) syncURL();
+  // Scroll to the day itself when one is rendered. A focus that lands on a
+  // quiet date has no day box of its own, and the stream already starts at the
+  // next thing on — so there is nothing to scroll to and nothing is wrong.
+  requestAnimationFrame(() => {
+    const scope = window.agoraParishSheetVisible
+      ? document.getElementById('parish-sheet-scroll')
+      : document.getElementById('sheet-scroll');
+    const el = scope && scope.querySelector(
+      `.day-box[data-date="${dateStr}"], .day-section[data-date="${dateStr}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (scope) scope.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+};
+
+window.clearDateFocus = function (opts = {}) {
+  if (!state._dateFocus) return;
+  state._dateFocus = null;
+  state._dateFocusPrecision = 'day';
+  renderDateFocus({ rerender: true });
+  if (opts.silent !== true) syncURL();
+};
+
+/** Repaint everything the focus shows through: both feeds and both chips. */
+function renderDateFocus({ rerender = true } = {}) {
+  if (rerender) {
+    if (window.agoraParishSheetVisible && state.parishSheetFocus) {
+      renderParishSheetContent(state.parishSheetFocus, {});
+    } else {
+      renderEvents();
+    }
+  }
+  renderInViewChip();
+  syncParishDateBanner();
+}
+
+/** "3/7/2027" / "July 2026" — what both chips say. */
+function dateFocusLabel() {
+  const D = window.AgoraDates;
+  if (!state._dateFocus || !D) return '';
+  return D.dateFocusLabel(state._dateFocus, state._dateFocusPrecision);
+}
+
+// ── The date picker ──
+//
+// A month grid of our own rather than <input type="date">. Three reasons, in
+// order of how much they cost: the native picker cannot carry the X that
+// cancels the focus (the brief asks for one INSIDE the picker), showPicker()
+// is not available everywhere and the fallback is a 1px input the user has to
+// find, and the native control caps at whatever max we set — which is the
+// horizon, and the horizon is the thing this button exists to move past.
+//
+// So: any month, forwards forever, and picking a day in one we have not
+// fetched yet is what stretches the window.
+const DOW_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+let _datePopMonth = null;     // 'YYYY-MM' currently drawn
+
+// What the last render of each stream held back. Load more reads these to tell
+// a reveal from a fetch — see loadMore().
+let _mainDeferredCount = 0;
+let _parishDeferredCount = 0;
+
+/** The round calendar button, wherever it appears. One spelling, four sites. */
+function calendarButtonHTML(cls) {
+  const on = !!state._dateFocus;
+  return `<button class="agora-cal-btn ${cls}${on ? ' active' : ''}" type="button"
+      onclick="openDatePicker(this)" aria-haspopup="dialog"
+      aria-label="Jump to a date" title="Jump to a date">
+      <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">
+    </button>`;
+}
+
+function datePopEl() { return document.getElementById('date-pop'); }
+
+window.openDatePicker = function (btn) {
+  const pop = datePopEl();
+  if (!pop) return;
+  if (!pop.classList.contains('hidden') && pop._anchor === btn) return closeDatePicker();
+  pop._anchor = btn;
+  _datePopMonth = (state._dateFocus || todayIso()).slice(0, 7);
+  renderDatePicker();
+  pop.classList.remove('hidden');
+  positionDatePicker(btn);
+};
+
+window.closeDatePicker = function () {
+  const pop = datePopEl();
+  if (!pop) return;
+  pop.classList.add('hidden');
+  pop._anchor = null;
+};
+
+/** Pin the popover to its trigger, clamped inside the viewport. */
+function positionDatePicker(btn) {
+  const pop = datePopEl();
+  if (!pop || !btn) return;
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = Math.round(r.left + r.width / 2 - w / 2);
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+  // Below the trigger by default; above it when the trigger is near the
+  // bottom of the screen, which is where the footer button always is.
+  let top = r.bottom + 8;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+}
+
+function shiftDatePopMonth(delta) {
+  const [y, m] = _datePopMonth.split('-').map(Number);
+  const total = y * 12 + (m - 1) + delta;
+  _datePopMonth = `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`;
+  renderDatePicker();
+  const pop = datePopEl();
+  if (pop && pop._anchor) positionDatePicker(pop._anchor);
+}
+
+function renderDatePicker() {
+  const pop = datePopEl();
+  const grid = document.getElementById('date-pop-grid');
+  const title = document.getElementById('date-pop-title');
+  if (!pop || !grid || !title) return;
+  const D = window.AgoraDates;
+  const [y, m] = _datePopMonth.split('-').map(Number);
+  title.textContent = D ? `${D.MONTH_LABELS[m - 1]} ${y}` : _datePopMonth;
+
+  const today = todayIso();
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const lead = first.getUTCDay();
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  // Which days have something on, from the rows already in hand. Absence of a
+  // dot past the horizon means "not fetched", not "nothing on", so the dots
+  // stop where the loaded window does rather than claiming a quiet future.
+  const has = new Set((state.events || []).map(e => isoDateSyd(e.start_utc)));
+
+  let html = '';
+  for (let i = 0; i < lead; i++) html += '<span class="date-pop-cell date-pop-pad"></span>';
+  for (let d = 1; d <= days; d++) {
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const cls = ['date-pop-cell', 'date-pop-day'];
+    if (iso < today) cls.push('past');
+    if (iso === today) cls.push('today');
+    if (iso === state._dateFocus) cls.push('selected');
+    if (has.has(iso)) cls.push('has-events');
+    html += `<button type="button" class="${cls.join(' ')}" data-date="${iso}"${iso < today ? ' disabled' : ''}>${d}</button>`;
+  }
+  grid.innerHTML = html;
+
+  const clearBtn = pop.querySelector('[data-date-pop-clear]');
+  if (clearBtn) clearBtn.hidden = !state._dateFocus;
+}
+
+function initDatePicker() {
+  const pop = datePopEl();
+  if (!pop) return;
+  const dows = document.getElementById('date-pop-dows');
+  if (dows) {
+    dows.innerHTML = DOW_INITIALS
+      .map(l => `<span class="date-pop-dow">${l}</span>`).join('');
+  }
+  pop.addEventListener('click', (e) => {
+    if (e.target.closest('[data-date-pop-prev]')) return shiftDatePopMonth(-1);
+    if (e.target.closest('[data-date-pop-next]')) return shiftDatePopMonth(1);
+    // Jumps the GRID back to this month, and does not set a focus: focusing
+    // today would push today's services out of "Happening now" and into a day
+    // group, which is a worse view of today than the one the feed already has.
+    // The × is what cancels a focus.
+    if (e.target.closest('[data-date-pop-today]')) {
+      _datePopMonth = todayIso().slice(0, 7);
+      return renderDatePicker();
+    }
+    // The X inside the picker: cancel the date filter, not just the popover.
+    if (e.target.closest('[data-date-pop-clear]')) {
+      closeDatePicker();
+      return window.clearDateFocus();
+    }
+    const day = e.target.closest('.date-pop-day');
+    if (day && day.dataset.date) {
+      closeDatePicker();
+      window.setDateFocus(day.dataset.date);
+    }
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (pop.classList.contains('hidden')) return;
+    if (pop.contains(e.target)) return;
+    if (pop._anchor && pop._anchor.contains(e.target)) return;
+    closeDatePicker();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !pop.classList.contains('hidden')) closeDatePicker();
+  });
+  window.addEventListener('resize', () => {
+    if (!pop.classList.contains('hidden') && pop._anchor) positionDatePicker(pop._anchor);
+  });
+  // The popover is fixed and its trigger is not: a scroll would leave it
+  // floating over an unrelated part of the list. Capture phase, because the
+  // scroll happens inside the sheet rather than on the document.
+  document.addEventListener('scroll', () => {
+    if (!pop.classList.contains('hidden')) closeDatePicker();
+  }, true);
+}
+
+/** The mode-bar's own calendar button, and the × that leaves the focus. */
+function initDateFocusControls() {
+  const cal = document.getElementById('btn-date-focus');
+  if (cal) cal.addEventListener('click', () => openDatePicker(cal));
+  // A <span>, not a <button>: it lives inside the in-view chip, and a button
+  // inside a button is not something the parser keeps.
+  const x = document.getElementById('in-view-date-clear');
+  if (x) {
+    x.addEventListener('click', (e) => { e.stopPropagation(); window.clearDateFocus(); });
+    x.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.clearDateFocus();
     });
   }
-};
-window.clearDateFocus = function() {
-  state._dateFocus = null;
-  renderEvents();
-};
-window.openDatePicker = function(btn) {
-  const picker = document.getElementById('date-focus-picker');
-  if (!picker) return;
-  const dates = (state.events || []).map(e => isoDateSyd(e.start_utc)).sort();
-  const today = isoDateSyd(new Date().toISOString());
-  picker.min = today;
-  picker.max = dates[dates.length - 1] || today;
-  picker.value = state._dateFocus || '';
-  picker.onchange = () => { if (picker.value) window.setDateFocus(picker.value); };
-  if (typeof picker.showPicker === 'function') {
-    try { picker.showPicker(); return; } catch(e) { console.warn('[date-picker] showPicker failed:', e); }
-  }
-  picker.click();
-};
+}
 
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
 let detailHistoryPushed = false;
@@ -138,6 +427,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFiltersMenu();
   initMultiParishToggle();
   initParishMultiToggle();
+  initDatePicker();
+  initDateFocusControls();
+  initAccountMenu();
   // The pill row no longer scrolls — two labelled pills and a round Admin fit
   // any phone — so there are no edges left to fade.
 
@@ -330,6 +622,19 @@ function serviceLabelFor(slug) {
   return S ? S.serviceLabel(slug) : String(slug || '');
 }
 
+// ── Date filter ──
+// Registry is /shared/dates.js. Same guarded-wrapper shape again, and the
+// "today" it resolves against is the feed's own zone rather than the viewer's,
+// so /next-thursday means the same Thursday the day headers will show.
+function resolveDateSlug(seg) {
+  const D = window.AgoraDates;
+  return D ? D.resolveDateSlug(seg, todayIso()) : null;
+}
+function dateSlugFor(date, precision) {
+  const D = window.AgoraDates;
+  return D ? D.dateSlugFor(date, precision) : null;
+}
+
 function detectUrlState() {
   // Subdomain fallback — honoured while <juris>.orthodoxy.au redirects roll out
   const host = window.location.hostname;
@@ -362,6 +667,14 @@ function detectUrlState() {
     } else if (/^\d+$/.test(seg) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(seg)) {
       // integer (one-off) or synthetic schedule-instance id ("scheduleId:date")
       state._openEventId = seg;
+    } else if (resolveDateSlug(seg)) {
+      // /2026-07, /next-thursday, /march — where the stream STARTS. Checked
+      // before the weekday below because /next-thursday is a date and
+      // /thursday is a filter, and the two would otherwise fight over the
+      // second half of the segment.
+      const d = resolveDateSlug(seg);
+      state._dateFocus = d.date;
+      state._dateFocusPrecision = d.precision;
     } else if (resolveDaySlug(seg) !== null) {
       // /wed, /wednesday — narrows a service to one day (/sgr/wed/liturgy) or
       // stands on its own (/wed, /wed/liturgy across the whole feed).
@@ -633,6 +946,13 @@ function buildPathSegs(opts = {}) {
     if (daySeg) segs.push(daySeg);
     if (f.slug) segs.push(f.slug);
   }
+  // Where the stream starts, after whatever narrowed it: /smg/2026-07 and
+  // /wed/liturgy/march both read as "that, from then". A month keeps its month
+  // shape; a relative spelling has already resolved to the day it meant.
+  if (state._dateFocus) {
+    const dateSeg = dateSlugFor(state._dateFocus, state._dateFocusPrecision);
+    if (dateSeg) segs.push(dateSeg);
+  }
   if (state.filters.englishOnly) {
     segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
   }
@@ -693,6 +1013,8 @@ async function reconcileStateFromUrl() {
     state.filters.englishStrict = false;
     state.filters.showAllParishes = null;
     state.parishFocus = null;
+    state._dateFocus = null;
+    state._dateFocusPrecision = 'day';
     const prevOpenId = state._openEventId || null;
     const prevMode = state.mode;
     delete state._openEventId;
@@ -1099,20 +1421,15 @@ async function fetchEvents(opts = {}) {
   if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
 
   const now = new Date();
-  // Include events from start of today (Sydney local) through 60 days out by default,
-  // 180 days when extended. Round `to` to end of UTC day so the URL is stable within
-  // the day and browser cache can hit on repeat loads.
-  const sydneyDate = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-  const [d, m, y] = sydneyDate.split('/');
-  const todayStr = `${y}-${m}-${d}`;
-  const startLocal = new Date(`${todayStr}T00:00:00`);
-  const testDate = new Date(`${todayStr}T12:00:00Z`);
-  const sydneyStr = testDate.toLocaleString('en-US', { timeZone: TZ });
-  const sydneyParsed = new Date(sydneyStr);
-  const offsetMs = sydneyParsed.getTime() - testDate.getTime();
-  params.set('from', new Date(startLocal.getTime() - offsetMs).toISOString());
-  if (!opts.extended) { state._eventsExtended = false; state._eventsShowCount = 30; }
-  const windowDays = opts.extended ? 180 : 60;
+  // From the start of today (Sydney local) out to the current horizon. Round
+  // `to` to the end of a UTC day so the URL is stable within the day and the
+  // browser cache can hit on repeat loads.
+  params.set('from', startOfTodayUtcIso());
+  // A plain fetch — a filter change, a mode toggle — starts the list at the top
+  // again. It does NOT pull the horizon back in: what has been loaded stays
+  // loaded, so toggling English does not undo a Load more.
+  if (!opts.keepCount) state._eventsShowCount = SHOW_COUNT_STEP;
+  const windowDays = eventsHorizonDays();
   const toDate = new Date(now.getTime() + windowDays * 86400000);
   toDate.setUTCHours(23, 59, 59, 0);
   params.set('to', toDate.toISOString());
@@ -1124,18 +1441,26 @@ async function fetchEvents(opts = {}) {
     // one flat array, ids stringified — schedule instances carry a synthetic
     // string id ("scheduleId:YYYY-MM-DD"), one-offs an integer — so DOM
     // data-id round-trips and find()/=== comparisons stay type-consistent.
-    await window.agoraBundle.load({ fresh: opts.fresh });
+    //
+    // The window goes to load() as well as to feed(): the rules project any
+    // distance from rows we already hold, but the overrides and stored one-offs
+    // inside a newly-reached stretch have to be asked for.
+    await window.agoraBundle.load({
+      fresh: opts.fresh, from: params.get('from'), to: params.get('to'),
+    });
     state.events = window.agoraBundle.feed(params.get('from'), params.get('to'), {
       lat: state.userLat, lng: state.userLng,
     });
-    if (opts.extended) state._eventsExtended = true;
+    // Only once it landed. A failed fetch that claimed the window would stop
+    // the next date focus from retrying it.
+    state._loadedHorizonDays = windowDays;
   } catch {
     state.events = [];
   }
   if (window.lsLog) window.lsLog('✓ events loaded (' + state.events.length + ')');
   if (window.lsProgress) window.lsProgress(0.75);
 
-  // Initial load: empty 60-day window → fall through to Services mode.
+  // Initial load: nothing in the window at all → fall through to Services mode.
   if (state._initialLoad) {
     const filteredNow = applyFilters(state.events).filter(e => {
       const end = e.end_utc ? new Date(e.end_utc) : new Date(new Date(e.start_utc).getTime() + 3600000);
@@ -1153,34 +1478,44 @@ async function fetchEvents(opts = {}) {
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
 }
 
-window.loadMoreEvents = async function() {
-  const mainScroll = document.getElementById('sheet-scroll');
-  const parishScroll = document.getElementById('parish-sheet-scroll');
-  const mainTop = mainScroll ? mainScroll.scrollTop : 0;
-  const parishTop = parishScroll ? parishScroll.scrollTop : 0;
-  await fetchEvents({ extended: true });
-  if (mainScroll) mainScroll.scrollTop = mainTop;
-  if (parishScroll) parishScroll.scrollTop = parishTop;
-};
-
-// Reveal next 30 events from already-fetched state.events — no network request.
-window.showMoreEvents = function() {
-  const scroll = document.getElementById('sheet-scroll');
+// ── Load more ──
+//
+// One button, and it never runs out. It reveals the next batch of what is
+// already in hand, and when there is no next batch it pushes the horizon out
+// and fetches — so the user presses the same control whether the next month is
+// a render away or a request away, and the feed has no last page.
+//
+// The press is deliberately not two buttons ("Show more" then "Load more"),
+// which is what it was: the second only appeared once the first had run out,
+// and the wording asked the user to care which side of the window they were on.
+let _loadingMore = false;
+async function loadMore({ parishMode = false }) {
+  // An impatient second press while the first is fetching would ask for a
+  // window 60 days past the one in flight — a request that cannot be deduped,
+  // for rows the first one is already bringing back.
+  if (_loadingMore) return;
+  const scroll = document.getElementById(parishMode ? 'parish-sheet-scroll' : 'sheet-scroll');
   const top = scroll ? scroll.scrollTop : 0;
-  state._eventsShowCount += 30;
-  scheduleRenderEvents(0);
-  requestAnimationFrame(() => { if (scroll) scroll.scrollTop = top; });
-};
+  const key = parishMode ? '_parishEventsShowCount' : '_eventsShowCount';
+  const deferred = parishMode ? _parishDeferredCount : _mainDeferredCount;
 
-window.showMoreParishEvents = function() {
-  const scroll = document.getElementById('parish-sheet-scroll');
-  const top = scroll ? scroll.scrollTop : 0;
-  state._parishEventsShowCount += 30;
-  if (state.parishSheetFocus) {
-    renderParishSheetContent(state.parishSheetFocus, {});
-    requestAnimationFrame(() => { if (scroll) scroll.scrollTop = top; });
+  state[key] = (state[key] || SHOW_COUNT_STEP) + SHOW_COUNT_STEP;
+  // Reveal and fetch in one press when the reveal would exhaust the window —
+  // otherwise the last press before the horizon does nothing visible.
+  if (deferred <= SHOW_COUNT_STEP) {
+    state._horizonDays = eventsHorizonDays() + HORIZON_STEP_DAYS;
+    _loadingMore = true;
+    try { await fetchEvents({ keepCount: true }); } finally { _loadingMore = false; }
+  } else if (parishMode) {
+    if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
+  } else {
+    scheduleRenderEvents(0);
   }
-};
+  requestAnimationFrame(() => { if (scroll) scroll.scrollTop = top; });
+}
+
+window.loadMoreEvents = () => loadMore({ parishMode: false });
+window.loadMoreParishEvents = () => loadMore({ parishMode: true });
 
 async function fetchSchedules(opts = {}) {
   const params = new URLSearchParams();
@@ -1234,18 +1569,13 @@ async function checkAdmin() {
   const ping = await fetch('/api/admin/ping').catch(() => null);
   state.isAdmin = !!(ping && ping.ok);
 
-  if (state.isAdmin) {
-    const adminBtn = document.getElementById('btn-admin');
-    if (adminBtn) adminBtn.hidden = false;
-    // .fm-admin-sep was the filter-menu divider before Admin. Admin is now
-    // a mode-bar pill; selector may not exist anymore — guard.
-    const adminSep = document.querySelector('.fm-admin-sep');
-    if (adminSep) adminSep.hidden = false;
-    // Signing in is a redirect Cloudflare owns, so the only session control
-    // worth showing is the way out — and only to someone who is signed in.
-    const logoutBtn = document.getElementById('btn-logout');
-    if (logoutBtn) logoutBtn.hidden = false;
-  }
+  // The button itself is always there. What the answer decides is what is
+  // BEHIND it: the panel and the way out, or the way in.
+  syncAccountMenu();
+  // .fm-admin-sep was the filter-menu divider before Admin. Admin is now a
+  // menu item; the selector may not exist anymore — guard.
+  const adminSep = document.querySelector('.fm-admin-sep');
+  if (adminSep) adminSep.hidden = !state.isAdmin;
 }
 
 function toggleAdminControlsVisibility() {
@@ -1274,6 +1604,64 @@ function _initLogout() {
   btn.addEventListener('click', () => {
     location.href = '/cdn-cgi/access/logout';
   });
+}
+
+// ── Account menu ──
+//
+// The person icon is always on the bar, and what it does depends on whether
+// this browser has an Access session. Signed out it is a way IN — there was
+// none before, because the only control was an Admin pill hidden from everyone
+// who was not already signed in. Signed in it is a menu, because there are two
+// things to do (the panel, and leaving) and a single button can only be one.
+//
+// Signing in is a redirect Cloudflare owns: navigating to /admin is what makes
+// Access show its login page, so the menu item is a plain link to it and there
+// is no login flow of ours to get wrong.
+function initAccountMenu() {
+  const btn = document.getElementById('btn-account');
+  const menu = document.getElementById('account-menu');
+  if (!btn || !menu) return;
+
+  const close = () => {
+    menu.classList.add('hidden');
+    btn.setAttribute('aria-expanded', 'false');
+  };
+  const open = () => {
+    menu.classList.remove('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+  };
+  btn.addEventListener('click', () => {
+    if (menu.classList.contains('hidden')) open(); else close();
+  });
+  // Same dismissal shape the filters menu uses: pointerdown in the capture
+  // phase, because a plain click does not always reach a non-interactive
+  // target on iOS.
+  document.addEventListener('pointerdown', (e) => {
+    if (menu.classList.contains('hidden')) return;
+    if (menu.contains(e.target) || btn.contains(e.target)) return;
+    close();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+  menu.addEventListener('click', () => close());
+  syncAccountMenu();
+}
+
+/** Show the half of the menu that applies. Called again once the ping lands. */
+function syncAccountMenu() {
+  const signIn = document.getElementById('btn-signin');
+  const admin = document.getElementById('btn-admin');
+  const logout = document.getElementById('btn-logout');
+  if (signIn) signIn.hidden = !!state.isAdmin;
+  if (admin) admin.hidden = !state.isAdmin;
+  if (logout) logout.hidden = !state.isAdmin;
+  const btn = document.getElementById('btn-account');
+  if (btn) {
+    btn.classList.toggle('signed-in', !!state.isAdmin);
+    btn.setAttribute('aria-label', state.isAdmin ? 'Account' : 'Sign in');
+    btn.title = state.isAdmin ? 'Account' : 'Sign in';
+  }
 }
 
 // ── Mode bar ──
@@ -1828,6 +2216,28 @@ function updateInViewChevron() {
 function renderInViewChip() {
   const countEl = document.getElementById('in-view-count');
   if (!countEl) return;
+  const chip = document.getElementById('in-view-chip');
+  const x = document.getElementById('in-view-date-clear');
+
+  // Under a date focus the chip stops counting and starts saying where the
+  // stream begins. It is the same question either way — "what am I looking
+  // at" — and a count of today's events is the wrong answer once today is not
+  // what is on screen. Inverted, because a focused feed is a modal state and
+  // ought to look like one.
+  if (state._dateFocus) {
+    countEl.textContent = `Showing from ${dateFocusLabel()}`;
+    if (chip) chip.classList.add('date-focused');
+    if (x) x.hidden = false;
+    const cal = document.getElementById('btn-date-focus');
+    if (cal) cal.classList.add('active');
+    updateInViewChevron();
+    return;
+  }
+  if (chip) chip.classList.remove('date-focused');
+  if (x) x.hidden = true;
+  const calOff = document.getElementById('btn-date-focus');
+  if (calOff) calOff.classList.remove('active');
+
   const todayKey = isoDateSyd(new Date().toISOString());
   const nowMs = Date.now();
   const j = state.filters.jurisdiction;
@@ -2263,6 +2673,10 @@ function clearAllFilters() {
   state.filters.englishOnly = false;
   state.filters.englishStrict = false;
   state.parishFocus = null;
+  // "Clear all" means the whole feed from today. Leaving the stream wound on to
+  // March while every chip said the filters were gone would read as a bug.
+  state._dateFocus = null;
+  state._dateFocusPrecision = 'day';
   if (wasServices) {
     state.mode = 'events';
     const servicesBtn = document.getElementById('btn-services');
@@ -3636,7 +4050,7 @@ function initParishSheet() {
         syncURL();
       }
     }
-    state._parishEventsShowCount = 30;
+    state._parishEventsShowCount = SHOW_COUNT_STEP;
     renderParishSheetContent(parishId, openOpts);
     // Map highlight: dim other markers, enlarge focused dot + label.
     state.parishSheetFocus = parishId;
@@ -3773,6 +4187,48 @@ function scheduleFocusBannerHtml(parish) {
       <span class="ps-focus-banner-text">Showing ${esc(scheduleFocusLabel(focus))}</span>
       <button class="ps-focus-banner-x" type="button" data-schedule-focus-clear aria-label="Show everything at this parish">&times;</button>
     </div>`;
+}
+
+/**
+ * "Showing from 4/10/2026" — the same banner shape the schedule focus uses,
+ * because it is the same kind of statement: this list is narrower than the
+ * parish, and here is the one thing narrowing it, with the way out beside it.
+ * Two banners can stand together — a rule focus wound forward to March is both.
+ */
+function dateFocusBannerHtml(parish) {
+  if (!state._dateFocus) return '';
+  const accent = getParishDisplayColor((parish && parish.color) || rawJurisColor(parish && parish.jurisdiction));
+  return `<div class="ps-focus-banner ps-date-banner" style="--parish-color:${esc(accent)}">
+      <span class="ps-focus-banner-text">Showing from ${esc(dateFocusLabel())}</span>
+      <button class="ps-focus-banner-x" type="button" data-date-focus-clear aria-label="Back to the whole feed">&times;</button>
+    </div>`;
+}
+
+/**
+ * Keep the parish sheet's banner and calendar button in step with a focus set
+ * from somewhere else — the mode bar, a deep link, the picker in the footer.
+ * A full re-render would do it too, and would throw away the user's expanded
+ * card and scroll position to say one sentence.
+ */
+function syncParishDateBanner() {
+  const contentEl = document.getElementById('parish-sheet-content');
+  if (!contentEl || !contentEl._psParishId) return;
+  const parish = state.parishes.find(p => p.id === contentEl._psParishId);
+  const existing = contentEl.querySelector('.ps-date-banner');
+  if (!state._dateFocus) {
+    if (existing) existing.remove();
+  } else {
+    const html = dateFocusBannerHtml(parish);
+    if (existing) {
+      existing.outerHTML = html;
+    } else {
+      const list = contentEl.querySelector('.ps-events-list');
+      if (list) list.insertAdjacentHTML('beforebegin', html);
+    }
+    const x = contentEl.querySelector('[data-date-focus-clear]');
+    if (x) x.addEventListener('click', e => { e.stopPropagation(); window.clearDateFocus(); });
+  }
+  contentEl.querySelectorAll('.agora-cal-btn').forEach(b => b.classList.toggle('active', !!state._dateFocus));
 }
 
 // "Sunday morning Liturgy in English" / "Tuesday evening Bible studies" /
@@ -4038,6 +4494,11 @@ function refreshParishContentPortion(parishId, opts = {}) {
 
   if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
 
+  // The banner and the calendar button live outside .ps-events-list, so the
+  // partial refresh above leaves them as they were — including after a focus
+  // set from the mode bar, a deep link, or the back button.
+  syncParishDateBanner();
+
   if (scrollEl) {
     requestAnimationFrame(() => { scrollEl.scrollTop = savedScroll; });
   }
@@ -4245,7 +4706,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       </div>`;
   }
 
-  // Upcoming events across the main-list 28-day window. Prefer the
+  // Upcoming events across the same window as the main list. Prefer the
   // async-fetched list when available; otherwise fall back to state.events
   // so the sheet paints instantly. No start-after-now filter here — that
   // would drop "happening now" events (start < now, end > now).
@@ -4309,9 +4770,11 @@ function renderParishSheetContent(parishId, opts = {}) {
       <button class="ps-filter-pill ps-filter-en" data-ps-filter="english" type="button">
         <span class="fm-en-badge">EN</span>
       </button>
+      ${calendarButtonHTML('ps-filter-cal')}
     </div>
     ${schedSectionHtml}
     ${scheduleFocusBannerHtml(parish)}
+    ${dateFocusBannerHtml(parish)}
     <div class="ps-events-list"></div>
     ${archBtnHtml ? `<div class="ps-arch-row">${archBtnHtml}</div>` : ''}`;
 
@@ -4386,6 +4849,10 @@ function renderParishSheetContent(parishId, opts = {}) {
   // back to everything at this parish.
   const focusX = contentEl.querySelector('[data-schedule-focus-clear]');
   if (focusX) focusX.addEventListener('click', e => { e.stopPropagation(); clearParishScheduleFocus(); });
+
+  // Same for "Showing from 4/10/2026" — the feed widens back to today.
+  const dateX = contentEl.querySelector('[data-date-focus-clear]');
+  if (dateX) dateX.addEventListener('click', e => { e.stopPropagation(); window.clearDateFocus(); });
 
   // Acronym field says, as you type, whether the link it would make is
   // available. The Worker refuses a reserved or taken one on save either way
@@ -4582,23 +5049,15 @@ function renderParishSheetContent(parishId, opts = {}) {
     });
   }
 
-  // Async: fetch the same 28-day window as the main list so the parish
-  // sheet doesn't fall short of future events mid-week. Lower bound is
-  // start-of-today-Sydney (matches fetchEvents) so currently-underway
-  // events still come back. Skip if caller already provided parishEvents.
+  // Async: fetch the SAME window as the main list, so a parish card reaches as
+  // far as the feed behind it — it used to ask for 28 days flat, which is why
+  // its Load more ran out weeks before the main feed's did. Lower bound is
+  // start-of-today-Sydney (matches fetchEvents) so currently-underway events
+  // still come back. Skip if the caller already provided parishEvents.
   if (!opts.parishEvents) {
-    const now = new Date();
-    const sydneyDate = new Intl.DateTimeFormat('en-AU', {
-      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
-    }).format(now);
-    const [d, m, y] = sydneyDate.split('/');
-    const startLocal = new Date(`${y}-${m}-${d}T00:00:00`);
-    const testDate = new Date(`${y}-${m}-${d}T12:00:00Z`);
-    const sydneyStr = testDate.toLocaleString('en-US', { timeZone: TZ });
-    const offsetMs = new Date(sydneyStr).getTime() - testDate.getTime();
-    const from = new Date(startLocal.getTime() - offsetMs).toISOString();
-    const to = new Date(now.getTime() + 28 * 86400000).toISOString();
-    window.agoraBundle.load()
+    const from = startOfTodayUtcIso();
+    const to = new Date(Date.now() + eventsHorizonDays() * 86400000).toISOString();
+    window.agoraBundle.load({ from, to })
       .then(() => window.agoraBundle.feed(from, to))
       .then(events => {
         const data = events || [];
@@ -5096,11 +5555,13 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
 
 // Single continuous stream: optional Earlier-today chip, then Today phase
 // buckets (Happening now / Later today), then day-grouped events through the
-// rest of the 28-day window. Sort toggle reorders within morning/evening
-// sub-groups across the whole stream.
+// rest of the loaded window. Sort toggle reorders within morning/evening
+// sub-groups across the whole stream. A date focus moves where the stream
+// starts; Load more moves where it ends, and there is no ceiling on that.
 function renderStream(container, events, opts = {}) {
-  const { parishMode = false, showCount = 30 } = opts;
-  const dateFocus = !parishMode ? (state._dateFocus || null) : null;
+  const { parishMode = false, showCount = SHOW_COUNT_STEP } = opts;
+  // The focus is shared, so the parish card winds forward with the main feed.
+  const dateFocus = state._dateFocus || null;
   const now = new Date();
   const TZ_LOCAL = TZ;
   const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -5120,15 +5581,20 @@ function renderStream(container, events, opts = {}) {
     }
   }
 
-  // When a date is focused, filter to events on or after that date and skip the cap.
+  // A focused date is where the stream starts, so everything before it drops.
   const activeFuture = dateFocus
     ? future.filter(e => isoDateSyd(e.start_utc) >= dateFocus)
     : future;
 
   // Cap future events at showCount items + complete the day the cap falls on.
-  // Today events (happening now, later today) are always shown in full.
-  const { visible: visibleFuture, deferredCount } = capFutureAtCount(activeFuture, dateFocus ? Infinity : showCount);
-  const hasDeferredFuture = deferredCount > 0;
+  // Today events (happening now, later today) are always shown in full. The cap
+  // applies under a date focus too — a focus a year out can have a year of feed
+  // behind it, and Load more is how you walk through it either way.
+  const { visible: visibleFuture, deferredCount } = capFutureAtCount(activeFuture, showCount);
+  // What Load more would reveal without a fetch. Read by loadMore() to decide
+  // whether this press is a render or a request.
+  if (parishMode) _parishDeferredCount = deferredCount;
+  else _mainDeferredCount = deferredCount;
 
   const hasToday = happeningNow.length || laterToday.length;
   let html = '';
@@ -5180,25 +5646,25 @@ function renderStream(container, events, opts = {}) {
     html += renderEmptyStateHTML();
   }
 
+  // How far the window currently reaches, which is a different claim from how
+  // far the parish has published: the note says what has been LOADED, and Load
+  // more is right beside it saying that is not the end.
   const lastEvt = events.length ? events[events.length - 1] : null;
   const horizonNote = lastEvt
-    ? `<div class="list-footer-note">Events scheduled to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
+    ? `<div class="list-footer-note">Loaded to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
     : '';
 
-  if (parishMode) {
-    if (hasDeferredFuture) {
-      html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreParishEvents()">Show more</button><div class="list-footer-ornament">· · ·</div></div>`;
-    } else {
-      html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
-    }
-  } else if (dateFocus) {
-    html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
-  } else if (hasDeferredFuture) {
-    // Events beyond count cap are already in state.events — reveal with no fetch.
-    html += `<div class="list-footer"><button class="list-footer-btn" onclick="showMoreEvents()">Show more</button><div class="list-footer-ornament">· · ·</div></div>`;
-  } else {
-    html += `<div class="list-footer">${horizonNote}<div class="list-footer-ornament">· · ·</div></div>`;
-  }
+  // The footer never runs out of button. Load more either reveals or fetches
+  // (see loadMore), and the calendar beside it skips straight to a date rather
+  // than pressing forward one window at a time.
+  html += `<div class="list-footer">
+      <div class="list-footer-actions">
+        <button class="list-footer-btn" type="button" onclick="${parishMode ? 'loadMoreParishEvents()' : 'loadMoreEvents()'}">Load more</button>
+        ${calendarButtonHTML('list-footer-cal')}
+      </div>
+      ${horizonNote}
+      <div class="list-footer-ornament">· · ·</div>
+    </div>`;
 
   container.innerHTML = html;
 

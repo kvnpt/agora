@@ -288,6 +288,17 @@
         <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Scroll sheet">
           <span class="in-view-count" id="in-view-count">0 parishes in view</span>
           <span class="in-view-chevron" aria-hidden="true"></span>
+          <!-- Leaves the date focus. A span rather than a button because it
+               lives inside one, and a button inside a button is not something
+               the parser keeps. -->
+          <span class="in-view-date-clear" id="in-view-date-clear" role="button" tabindex="0"
+                aria-label="Back to the whole feed" hidden>&times;</span>
+        </button>
+        <!-- Jump to any date, however far out. Same height as the EN pill on
+             the other side of the chip. -->
+        <button class="agora-cal-btn mode-bar-cal" id="btn-date-focus" type="button"
+                aria-haspopup="dialog" aria-label="Jump to a date" title="Jump to a date">
+          <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">
         </button>
       </div>
       <div class="mode-bar-row mode-bar-row-pills" id="mode-bar-row-pills">
@@ -299,20 +310,37 @@
           <img class="mode-bar-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
           <span class="mode-bar-pill-label">Socials</span>
         </button>
-        <!-- The signed-in half of the row, grouped so the group can be pinned
-             right and Admin stays its last item whether or not Log out is
-             showing. Two pills each with `margin-left: auto` would split the
-             free space between them instead. -->
+        <!-- The account button, pinned right and always present.
+             It used to be an Admin pill that stayed `hidden` until
+             /api/admin/ping answered — so to everybody else the app bar had a
+             gap where the control should be, and there was nowhere at all to
+             sign IN from. The person icon is now always here: it starts the
+             Cloudflare Access login when nobody is signed in, and opens the
+             menu below when somebody is. -->
         <div class="mode-bar-pill-group">
-          <button class="mode-bar-pill fm-logout" id="btn-logout" type="button" role="menuitem" hidden>
-            <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-            <span class="mode-bar-pill-label">Log out</span>
-          </button>
-          <a class="mode-bar-pill fm-admin" id="btn-admin" href="/admin" role="menuitem" aria-label="Admin" title="Admin" hidden>
+          <button class="mode-bar-pill fm-account" id="btn-account" type="button"
+                  aria-haspopup="menu" aria-expanded="false" aria-label="Account" title="Account">
             <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
-            <span class="mode-bar-pill-label">Admin</span>
-          </a>
+            <span class="mode-bar-pill-label">Account</span>
+          </button>
         </div>
+      </div>
+
+      <!-- Signed-in menu. Hidden outright until the ping says this browser can
+           administer; Sign in takes its place until then. -->
+      <div class="account-menu hidden" id="account-menu" role="menu" aria-labelledby="btn-account">
+        <a class="account-menu-item" id="btn-admin" href="/admin" role="menuitem" hidden>
+          <img class="account-menu-icon" src="https://api.iconify.design/ph:sliders-horizontal.svg" alt="">
+          <span>Admin panel</span>
+        </a>
+        <button class="account-menu-item" id="btn-logout" type="button" role="menuitem" hidden>
+          <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+          <span>Log out</span>
+        </button>
+        <a class="account-menu-item" id="btn-signin" href="/admin" role="menuitem">
+          <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-in.svg" alt="">
+          <span>Sign in</span>
+        </a>
       </div>
     </div>
 
@@ -365,8 +393,27 @@
     </a>
   </div>
 
-  <!-- Hidden date picker — triggered by calendar icon in day headers -->
-  <input type="date" id="date-focus-picker" style="position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;top:0;left:0" tabindex="-1" aria-hidden="true">
+  <!-- Date picker — opened by every calendar button (mode bar, day headers,
+       both feed footers, the parish card's filter row).
+       A month grid of our own rather than <input type="date">: the native
+       control cannot carry the × that cancels the focus, showPicker() is not
+       available everywhere, and its max would have to be the loaded horizon —
+       which is the very thing this picker exists to reach past. The grid is
+       drawn by renderDatePicker(); the shell is here so the dialog markup
+       lives with the rest of the dialogs. -->
+  <div class="date-pop hidden" id="date-pop" role="dialog" aria-label="Jump to a date">
+    <div class="date-pop-head">
+      <button class="date-pop-nav" type="button" data-date-pop-prev aria-label="Previous month">&lsaquo;</button>
+      <div class="date-pop-title" id="date-pop-title"></div>
+      <button class="date-pop-nav" type="button" data-date-pop-next aria-label="Next month">&rsaquo;</button>
+      <button class="date-pop-x" type="button" data-date-pop-clear aria-label="Cancel the date filter" hidden>&times;</button>
+    </div>
+    <div class="date-pop-dows" id="date-pop-dows" aria-hidden="true"></div>
+    <div class="date-pop-grid" id="date-pop-grid"></div>
+    <div class="date-pop-foot">
+      <button class="date-pop-today" type="button" data-date-pop-today>This month</button>
+    </div>
+  </div>
 
   <!-- The jurisdiction colour table, before anything that draws with it.
        Classic script, not an .mjs, because app.js is a classic script and
@@ -380,6 +427,9 @@
        can say so before the save round-trip. The Worker is the enforcement. -->
   <!-- Service kinds (/liturgy, /vespers, /paraklesis). -->
   <script src="/shared/services.js"></script>
+  <!-- Where the stream starts (/2026-07, /next-thursday, /march). After
+       services.js, whose weekday aliases it builds "next-<day>" from. -->
+  <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>

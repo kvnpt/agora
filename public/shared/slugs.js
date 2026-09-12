@@ -19,6 +19,7 @@
   const isCjs = typeof module === 'object' && !!module.exports;
   const locations = isCjs ? require('./locations.js') : (root && root.AgoraLocations);
   const services = isCjs ? require('./services.js') : (root && root.AgoraServices);
+  const dates = isCjs ? require('./dates.js') : (root && root.AgoraDates);
 
   const JURISDICTIONS = [
     'antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian', 'other',
@@ -67,6 +68,16 @@
       }
     }
     if (services && services.DAY_SLUGS) for (const slug of services.DAY_SLUGS) add(slug);
+    if (dates && dates.DATE_SLUGS) {
+      // Both spellings again: /nextthursday resolves in the router, so an
+      // acronym spelling it would be shadowed just as surely as the hyphenated
+      // form. Three-letter month abbreviations are deliberately absent from
+      // that list — dates.js says why, and `sep` is a parish.
+      for (const slug of dates.DATE_SLUGS) {
+        add(slug);
+        add(String(slug).replace(/-/g, ''));
+      }
+    }
     return set;
   }
 
@@ -88,6 +99,9 @@
     }
     if (/^\d+:\d{4}-\d{2}-\d{2}$/.test(slug)) {
       return 'An acronym cannot look like a service instance id ("42:2026-09-06").';
+    }
+    if (/^\d{4}-\d{2}(-\d{2})?$/.test(slug)) {
+      return 'An acronym cannot look like a date — /2026-07 winds the feed on to July.';
     }
     if (RESERVED_SLUGS.has(slug)) {
       return `"${slug}" is a reserved link — it already means a jurisdiction, a region or a page, so /${slug} would never reach this parish.`;

@@ -55,6 +55,27 @@ moment "now" moves.
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.
 
+**The feed has no last page.** `state._horizonDays` is how far forward the
+window reaches; **Load more** adds to it and nothing takes it away. The step
+costs a request only for what is genuinely window-bound — the overrides and
+stored one-offs in the new stretch — because the rules that produce the
+occurrences are already in the browser, which is the whole point of the lens.
+`agoraBundle.load()` therefore takes a window and *widens*, never replaces:
+the parish sheet asking for its month must not shrink what the main feed has
+grown to.
+
+**A date segment says where the stream starts.** `/smg/2026-07`,
+`/next-thursday`, `/liturgy/wednesday/march` — `public/shared/dates.js` resolves
+them, and a focus is a *from*, never a single day: a parish does not publish a
+month at a time, and a picked day with nothing on it should show the next thing
+that is. A month-shaped slug keeps its shape through the round trip (`2026-07`
+does not read back as `2026-07-01`); a relative one resolves to the day it meant
+and the URL settles on that. One focus, shared by the main feed and the parish
+card, because the URL carries one date segment and two would immediately
+disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` is
+a parish, the acronym resolves last, and reserving it would not raise a clash but
+silently take that parish's link away.
+
 **A source line says when we last looked, never that it is right.** A parish's
 details and a parish's service times are the same kind of claim — something a
 source published, which nothing in the row expires — so both carry
