@@ -169,8 +169,15 @@ const COLUMNS = ['id', 'name', 'jurisdiction', 'address', 'lat', 'lng', 'timezon
 
 // Columns a re-run may refresh. id and jurisdiction are identity; languages,
 // color and info_verified_at are set by people, not by scrapes.
+//
+// `info_source_type` travels with `info_source_ref` and always did — leaving it
+// out was an oversight, and it cost real rows. The ROCOR run first wrote
+// 'website' for addresses it had taken from a third-party directory, and when
+// the classification was corrected the re-run silently could not apply it:
+// twenty-two rows kept asserting the parish had told us something it had not.
+// The pair describes one fact, so it is refreshed as one fact.
 const REFRESHABLE = ['name', 'address', 'lat', 'lng', 'timezone', 'website',
-  'phone', 'email', 'feast_day', 'info_source_ref'];
+  'phone', 'email', 'feast_day', 'info_source_type', 'info_source_ref'];
 
 /**
  * The upsert, guarded so a re-run cannot undo human work.
