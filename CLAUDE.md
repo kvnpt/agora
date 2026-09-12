@@ -193,16 +193,16 @@ npm run db:export    # dump production to backups/ (gitignored)
 ```
 
 **The seed is a dev fixture, not a picture of production.** It holds 11 parishes
-and 9 rules; production serves 196 parishes and 68 schedules, because three
-jurisdiction directories — Greek, ROCOR and Antiochian — were scraped and
-written straight to D1 rather than through the repo.
+and 9 rules; production serves 240 parishes and 68 schedules, because four
+jurisdiction directories — Greek, ROCOR, Antiochian and Serbian — were scraped
+and written straight to D1 rather than through the repo.
 `/api/parishes` is the answer to "what parishes exist" — `seeds/parishes.js` is
 not, and cannot become one: the seed only ever inserts, so it can neither
 correct an address nor move a pin. What it still earns its place doing is giving
 `npm run dev` a non-empty local database and giving CI a schema smoke test.
 
 Do not resolve that gap by making the seed authoritative. Adding deletes, or a
-sync, would destroy 133 rows to match a file that never held them. The gap is
+sync, would destroy 229 rows to match a file that never held them. The gap is
 the design: rows come from scraping, and the repo does not track them. That also
 means the repo is not a backup — `npm run db:export` and D1's Time Travel are.
 `docs/parish-ingestion.md` is the record of how the import was done.

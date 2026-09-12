@@ -6,13 +6,15 @@ parishes that is a line in `seeds/parishes.js`. With an archdiocese directory �
 a few hundred names and addresses at once — it is a pipeline, and this is what
 that pipeline has to get right.
 
-This began as a brief for work that had not been done. Two directories have
-since been ingested — the Greek Archdiocese, 135 parishes, and the ROCOR
-Australian and New Zealand Diocese, all 37 — so the constraints below are now
-field notes rather than predictions, and the two sections at the end record what
-each run actually cost. They cost different things: the Greek directory
-published addresses that were sometimes wrong, and the Russian one publishes no
-addresses at all.
+This began as a brief for work that had not been done. Four directories have
+since been ingested — the Greek Archdiocese (135), the ROCOR Australian and New
+Zealand Diocese (37), the Antiochian Archdiocese (24) and the Serbian
+Metropolitanate (44 of 49) — so the constraints below are now field notes rather
+than predictions, and the sections at the end record what each run actually
+cost. They cost different things: the Greek directory published addresses that
+were sometimes wrong, the Russian one publishes no addresses at all, the
+Antiochian site cannot be fetched by anything automated, and the Serbian one
+publishes everything and names no suburbs.
 
 ---
 
@@ -49,13 +51,15 @@ needed to *write*.
 ## State as at 12 September 2026
 
 ```
-196 parishes · 68 schedules · 68 events · 0 overrides
+240 parishes · 68 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import, 37 the ROCOR one, and 24
-the Antiochian one. Schedules and events are untouched by both — neither
-directory publishes service times at all, so adapters remain the only route to
-those.
+135 of those parishes are the Greek Archdiocese import, 44 the Serbian one, 37
+the ROCOR one, and 24 the Antiochian one. Every one of the 240 now carries an
+acronym — its short link, `orthodoxy.au/<acronym>` — and a recorded read date
+(`info_checked_at`), which is what the parish sheet renders as "Updated 3 months
+ago". Schedules are untouched by three of the four imports: only the Antiochian
+site publishes service times, so adapters remain the only route to the rest.
 
 The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
@@ -882,3 +886,16 @@ and migration 004 then had to paint 51 rows that had been rendering grey. It is
 a person's choice, but the jurisdiction's colour is the baseline every card
 already draws, so the import writes it and `color` stays out of `REFRESHABLE` —
 the insert sets it, a re-run never touches it.
+
+**What was written, 12 September 2026.** 44 rows, taking production from 196
+parishes to 240: `changes: 45`, no conflicts, nothing pinned (production held no
+Serbian parish at all, so every row was an insert). Then
+`scripts/parish-acronyms.mjs` against the live endpoint, which gave the 232
+parishes without one a short link — the Serbian 44 included — and left the eight
+typed by hand alone.
+
+**Regenerate before writing, even hours later.** The acronym file built that
+morning would have given `SGR` to St George, Robinvale; between generating it
+and applying it somebody had typed `SGR` on the Redfern cathedral. Re-running
+against `/api/parishes` seeded the taken-set from the live rows and moved
+Robinvale to `SRO`. The generated SQL is not the artefact — the script is.
