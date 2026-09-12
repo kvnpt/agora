@@ -467,16 +467,16 @@ input, select, textarea {
    everybody, signed in or not, for as long as both have existed. Same fix the
    filter menu already carries for its own items. */
 .mode-bar-pill[hidden] { display: none; }
-/* Admin is icon-only and round: a 34px circle the size of the row, with the
+/* Account is icon-only and round: a 34px circle the size of the row, with the
    label kept in the markup for a screen reader rather than deleted. */
-.mode-bar-pill.fm-admin {
+.mode-bar-pill.fm-account {
   width: 34px;
   height: 34px;
   padding: 0;
   justify-content: center;
   border-radius: 50%;
 }
-.mode-bar-pill.fm-admin .mode-bar-pill-label {
+.mode-bar-pill.fm-account .mode-bar-pill-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -484,7 +484,59 @@ input, select, textarea {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.mode-bar-pill.fm-admin .mode-bar-pill-icon { width: 17px; height: 17px; }
+.mode-bar-pill.fm-account .mode-bar-pill-icon { width: 17px; height: 17px; opacity: 1; }
+/* Signed in reads as a filled, darker glyph — the only difference between
+   "this is how you get in" and "you are in" that a 17px icon can carry. */
+.mode-bar-pill.fm-account.signed-in {
+  border-color: var(--text);
+  color: var(--text);
+}
+.mode-bar-pill.fm-account[aria-expanded="true"] {
+  background: var(--text);
+  border-color: var(--text);
+}
+.mode-bar-pill.fm-account[aria-expanded="true"] .mode-bar-pill-icon { filter: brightness(0) invert(1); }
+
+/* The menu behind it. Anchored to the mode bar (position: relative) at its
+   right edge, under the button. */
+.account-menu {
+  position: absolute;
+  right: 12px;
+  top: calc(100% - 2px);
+  z-index: 40;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+}
+.account-menu.hidden { display: none; }
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.account-menu-item[hidden] { display: none; }
+.account-menu-item:hover { background: var(--surface-2, var(--border-light)); }
+.account-menu-icon { width: 16px; height: 16px; flex: none; opacity: 0.8; }
+@media (prefers-color-scheme: dark) {
+  .account-menu-icon { filter: brightness(0) invert(1); }
+}
 .mode-bar-pill-icon {
   width: 16px;
   height: 16px;
@@ -3015,6 +3067,237 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   transform: rotate(135deg) translateY(-1px);
 }
 
+/* ── The chip under a date focus ──
+   "Showing from 3/7/2027", inverted. The chip normally counts what is on
+   today; once the stream starts somewhere else that count is answering a
+   question nobody asked, so it says where instead — and looks like a state
+   rather than a reading, because it is one the user has to be able to leave. */
+.in-view-chip.date-focused {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 600;
+  flex: 0 1 auto;
+  max-width: 100%;
+  overflow: hidden;
+}
+.in-view-chip.date-focused .in-view-count {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The chevron is the sheet control, and it has to give way: the × is the
+   thing the user needs at this width. */
+.in-view-chip.date-focused .in-view-chevron { display: none; }
+#bottom-sheet.peeking .in-view-chip.date-focused {
+  background: var(--text);
+  border-color: var(--text);
+}
+.in-view-date-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-left: 2px;
+  margin-right: -4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 22%, transparent);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.in-view-date-clear[hidden] { display: none; }
+.in-view-date-clear:hover { background: color-mix(in srgb, var(--bg) 38%, transparent); }
+
+/* ── Calendar button ──
+   One shape wherever it appears: the mode bar beside the chip, the parish
+   card's filter row, both feed footers, and (smaller, borderless) each day
+   header. EN-pill height in the mode bar, because it is the pill on the other
+   side of the same row and a row of two different heights reads as a mistake. */
+.agora-cal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.agora-cal-btn img {
+  width: 15px;
+  height: 15px;
+  opacity: 0.8;
+  display: block;
+}
+.agora-cal-btn:hover { border-color: #bbb; }
+.agora-cal-btn.active {
+  background: var(--text);
+  border-color: var(--text);
+}
+.agora-cal-btn.active img { filter: brightness(0) invert(1); opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  .agora-cal-btn img { filter: brightness(0) invert(1); }
+  .agora-cal-btn.active img { filter: brightness(0); }
+}
+/* Mode bar: the EN pill measures 24px tall, and this sits at the other end of
+   the same row — a row of two nearly-equal heights reads as a mistake, so it
+   is pinned to the same number rather than to a look-alike. */
+.mode-bar-cal { width: 24px; height: 24px; }
+.mode-bar-cal img { width: 13px; height: 13px; }
+/* Parish card filter row: pinned to the right, away from the pills, because
+   it does not filter — it moves the stream. */
+.ps-filter-cal { width: 28px; height: 28px; margin-left: auto; }
+/* Feed footer: beside Load more, and big enough to be a tap target next to a
+   44px button. */
+.list-footer-cal { width: 44px; height: 44px; }
+.list-footer-cal img { width: 18px; height: 18px; }
+/* Load more and the calendar, side by side. */
+.list-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Date picker ──
+   Fixed-position popover; app.js pins it to whichever calendar button opened
+   it and clamps it into the viewport. */
+.date-pop {
+  position: fixed;
+  z-index: 900;
+  width: 268px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+  user-select: none;
+}
+.date-pop.hidden { display: none; }
+.date-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 6px;
+}
+.date-pop-title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.date-pop-nav,
+.date-pop-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.date-pop-nav:hover,
+.date-pop-x:hover { background: var(--surface-2); color: var(--text); }
+/* The × the brief asks for INSIDE the picker: it cancels the date filter
+   itself, not just the popover, so it only exists while there is one to
+   cancel. Ordered last and pushed past the » so it reads as a separate act. */
+.date-pop-x {
+  margin-left: 8px;
+  font-size: 20px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.date-pop-x[hidden] { display: none; }
+.date-pop-dows,
+.date-pop-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.date-pop-dow {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  padding-bottom: 4px;
+}
+.date-pop-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.date-pop-day {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.date-pop-day:hover:not(:disabled) { background: var(--surface-2); }
+.date-pop-day.past { color: var(--text-secondary); opacity: 0.35; cursor: default; }
+.date-pop-day.today { border-color: var(--border); font-weight: 700; }
+.date-pop-day.selected {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+}
+/* A dot for a day with something on — from the rows already loaded, so it
+   stops where the window does rather than claiming a quiet future. */
+.date-pop-day.has-events::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.date-pop-day.selected.has-events::after { background: var(--bg); }
+.date-pop-foot {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+.date-pop-today {
+  padding: 5px 14px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.date-pop-today:hover { color: var(--text); border-color: #bbb; }
+
 /* ── Parish sheet (secondary sheet opened from event drawer) ── */
 .parish-sheet {
   position: fixed;
@@ -3364,6 +3647,15 @@ button.ps-avatar { cursor: pointer; }
   line-height: 1.35;
   color: var(--text);
 }
+/* "Showing from 4/10/2026" — the same banner, for the same reason, and it can
+   stand under the schedule-focus one: a rule focus wound forward to March is
+   two statements about the list, not one. Neutral rather than parish-coloured
+   so the two do not read as the same claim twice. */
+.ps-date-banner {
+  border-left-color: var(--text-secondary);
+  background: var(--surface-2);
+}
+.ps-focus-banner + .ps-date-banner { margin-top: 6px; }
 .ps-focus-banner-text { flex: 1; min-width: 0; }
 .ps-focus-banner-x {
   flex: none;

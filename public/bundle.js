@@ -14,6 +14,26 @@ window.agoraBundle = (function () {
   let raw = null;         // last bundle payload
   let loadedAt = 0;
   let inflight = null;
+  // What the payload in hand actually covers, and what the request in flight
+  // will cover. Windows only ever WIDEN: the parish sheet asks for a month and
+  // the main feed asks for whatever Load more has grown it to, and the narrower
+  // caller landing second must not shrink the window out from under the first.
+  let held = { from: null, to: null };
+  let wanted = { from: null, to: null };
+
+  const ms = (iso) => (iso ? Date.parse(iso) : NaN);
+  const earlier = (a, b) => (!a ? b : !b ? a : (ms(a) <= ms(b) ? a : b));
+  const later = (a, b) => (!a ? b : !b ? a : (ms(a) >= ms(b) ? a : b));
+
+  /** Does `range` already contain [from, to]? A missing bound is unbounded.
+   *  Named `range` rather than `window` on purpose — this file reaches for the
+   *  global `window` a few lines down. */
+  function covers(range, from, to) {
+    if (!range.from || !range.to) return false;
+    if (from && ms(from) < ms(range.from)) return false;
+    if (to && ms(to) > ms(range.to)) return false;
+    return true;
+  }
 
   async function modules() {
     if (!mods) {
@@ -30,20 +50,39 @@ window.agoraBundle = (function () {
   /**
    * Fetch the bundle. Cheap enough to re-fetch, but deduped so concurrent
    * callers share one request.
+   *
+   * The window matters now that the feed's horizon grows without limit. Rules
+   * always travel whole — they are what makes a 2027 date projectable from a
+   * bundle fetched today — but OVERRIDES and stored one-off events are
+   * window-filtered server-side, so asking further out has to cost a request.
+   * A window we already hold does not: the check is containment, not equality,
+   * so the parish sheet's month never re-fetches behind the main feed's year.
    */
   async function load(opts = {}) {
-    if (inflight) return inflight;
-    if (raw && !opts.fresh && Date.now() - loadedAt < 60000) return raw;
+    const from = opts.from || null;
+    const to = opts.to || null;
+
+    if (raw && !opts.fresh && covers(held, from, to) && Date.now() - loadedAt < 60000) return raw;
+    if (inflight && !opts.fresh && covers(wanted, from, to)) return inflight;
+
+    // Ask for the union of everything asked for since the last load, so a
+    // narrow request landing after a wide one cannot undo the widening.
+    wanted = { from: earlier(from, wanted.from), to: later(to, wanted.to) };
+    const reqFrom = wanted.from, reqTo = wanted.to;
 
     const params = new URLSearchParams();
-    if (opts.from) params.set('from', opts.from);
-    if (opts.to) params.set('to', opts.to);
+    if (reqFrom) params.set('from', reqFrom);
+    if (reqTo) params.set('to', reqTo);
 
     inflight = (async () => {
       await modules();
       const res = await fetch(`/api/bundle?${params}`, opts.fresh ? { cache: 'no-store' } : {});
       if (!res.ok) throw new Error(`bundle ${res.status}`);
       raw = await res.json();
+      // What the SERVER says it answered with, not what we asked for — it
+      // applies its own default when a bound is missing.
+      held = { from: (raw.window && raw.window.from) || reqFrom, to: (raw.window && raw.window.to) || reqTo };
+      wanted = { from: held.from, to: held.to };
       // Jurisdiction colour overrides ride along with the rules, and are
       // applied here rather than by a caller: every reader of a colour — cards,
       // map dots, chips, the parish sheet — runs during the render this load
@@ -56,7 +95,11 @@ window.agoraBundle = (function () {
       return raw;
     })();
 
-    try { return await inflight; } finally { inflight = null; }
+    // Clear only OUR request. A caller that needed a wider window replaced
+    // `inflight` while this one was in the air, and nulling theirs on our
+    // resolution would cost every later caller the dedup.
+    const mine = inflight;
+    try { return await mine; } finally { if (inflight === mine) inflight = null; }
   }
 
   /**
