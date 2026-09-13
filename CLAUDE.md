@@ -224,9 +224,10 @@ npm run db:export    # dump production to backups/ (gitignored)
 ```
 
 **The seed is a dev fixture, not a picture of production.** It holds 11 parishes
-and 9 rules; production serves 245 parishes and 68 schedules, because four
-jurisdiction directories — Greek, ROCOR, Antiochian and Serbian — were scraped
-and written straight to D1 rather than through the repo.
+and 9 rules; production serves 293 parishes and 82 schedules, because six
+jurisdiction directories — Greek, ROCOR, Antiochian, Serbian, Romanian and
+Macedonian — were scraped and written straight to D1 rather than through the
+repo.
 `/api/parishes` is the answer to "what parishes exist" — `seeds/parishes.js` is
 not, and cannot become one: the seed only ever inserts, so it can neither
 correct an address nor move a pin. What it still earns its place doing is giving

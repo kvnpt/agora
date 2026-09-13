@@ -6,15 +6,18 @@ parishes that is a line in `seeds/parishes.js`. With an archdiocese directory �
 a few hundred names and addresses at once — it is a pipeline, and this is what
 that pipeline has to get right.
 
-This began as a brief for work that had not been done. Four directories have
+This began as a brief for work that had not been done. Six directories have
 since been ingested — the Greek Archdiocese (135), the ROCOR Australian and New
-Zealand Diocese (37), the Antiochian Archdiocese (24) and the Serbian
-Metropolitanate (all 49) — so the constraints below are now field notes rather
-than predictions, and the sections at the end record what each run actually
-cost. They cost different things: the Greek directory published addresses that
-were sometimes wrong, the Russian one publishes no addresses at all, the
-Antiochian site cannot be fetched by anything automated, and the Serbian one
-publishes everything and names no suburbs.
+Zealand Diocese (37), the Antiochian Archdiocese (24), the Serbian
+Metropolitanate (all 49), the Romanian Diocese (21) and the Macedonians (27
+across two dioceses) — so the constraints below are now field notes rather than
+predictions, and the sections at the end record what each run actually cost.
+They cost different things: the Greek directory published addresses that were
+sometimes wrong, the Russian one publishes no addresses at all, the Antiochian
+site cannot be fetched by anything automated, the Serbian one publishes
+everything and names no suburbs, the Romanian one publishes its own
+coordinates, and the Macedonians publish the same church twice because there
+are two dioceses claiming it.
 
 ---
 
@@ -51,15 +54,17 @@ needed to *write*.
 ## State as at 13 September 2026
 
 ```
-245 parishes · 68 schedules · 68 events · 0 overrides
+293 parishes · 82 schedules · 68 events · 0 overrides
 ```
 
 135 of those parishes are the Greek Archdiocese import, 49 the Serbian one, 37
-the ROCOR one, and 24 the Antiochian one. Every one of the 240 now carries an
-acronym — its short link, `orthodoxy.au/<acronym>` — and a recorded read date
-(`info_checked_at`), which is what the parish sheet renders as "Updated 3 months
-ago". Schedules are untouched by three of the four imports: only the Antiochian
-site publishes service times, so adapters remain the only route to the rest.
+the ROCOR one, 27 the Macedonian one, 24 the Antiochian one and 21 the Romanian
+one. Every one carries an acronym — its short link, `orthodoxy.au/<acronym>` —
+and a recorded read date (`info_checked_at`), which is what the parish sheet
+renders as "Updated 3 months ago". Service times are thinner than parishes by an
+order of magnitude: the Antiochian directory publishes them, five Romanian
+parish websites publish a standing weekly timetable, and nothing else does, so
+adapters remain the only route to the rest.
 
 The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
@@ -983,3 +988,205 @@ morning would have given `SGR` to St George, Robinvale; between generating it
 and applying it somebody had typed `SGR` on the Redfern cathedral. Re-running
 against `/api/parishes` seeded the taken-set from the live rows and moved
 Robinvale to `SRO`. The generated SQL is not the artefact — the script is.
+
+---
+
+## What the Romanian run actually cost
+
+21 places of worship — 20 parishes and the diocesan monastery — read from the
+Romanian Orthodox Diocese of Australia and New Zealand and written to D1. All
+21 were written; none was held back.
+
+**This one was done inline rather than as three scripts**, at the owner's
+direction: collect, parse, write. The shape the brief asks for is still there —
+a scraped file, a geocoded file, then SQL, each read before the next ran — but
+it lives in the session's scratchpad instead of `scripts/scrape-romanian.mjs`.
+The reusable parts were reused, which is the half that matters:
+`geocodeAll()` did the tiering and `parish-import.mjs` minted the ids and the
+guarded upsert. What is *not* reproducible from the repo is the fetching, and
+the endpoint below is the whole of it.
+
+**The directory is a JSON API and nobody had to parse a page.** `roeanz.com.au`
+is a React app that renders nothing without JavaScript, so the parish pages are
+empty to a fetcher — but `https://roeanz.com.au/api/parish` answers 21 complete
+rows: name in Romanian and English, address, city, priest, phone, email,
+website, slug, deanery, history, and **latitude and longitude**. The site's own
+route table (`/assets/index-*.js`) names `/harta-parohiilor`, its parish map;
+the API behind it is one guess away. **Look for the SPA's API before deciding a
+site cannot be scraped.**
+
+**The first jurisdiction to publish its own pins, and they are good.** Where OSM
+independently knows the church the two agree to within two metres — Berhampore
+0m, Matangi 2m — which is the check that decided the rest: for the fifteen
+street-level rows the diocese's marker beats a Nominatim house-number
+interpolation, and the two disagree by more than 450m five times (South Windsor
+1258m, Glenfield 1096m, Riverview 960m, Carlton 538m, Koondoola 497m). OSM has
+no church at either point in any of those five, so it cannot arbitrate; the
+diocese's own answer wins on the strength of the two it can.
+
+**Four parishes publish no address at all** — Cairns, Canberra, Ashburton and
+Gore — and for those the published coordinate is a city centroid, not a church.
+They are written anyway, as the Serbian centroids were, with a **NULL address**,
+which is the only mark the schema has for a pin nobody has checked. Ashburton's
+own history says why the address is missing and does not supply one: *"The
+Divine Liturgy is celebrated in an Anglican church rented by the Romanian
+community."* Canberra's centroid is Civic, 3.3km from wherever that parish
+actually meets.
+
+**Three parishes are filed under a city they do not meet in**, which is the
+suburb error every run has now hit, in its Romanian spelling:
+
+| the diocese's name says | the address and the pin say |
+|---|---|
+| St Thomas the Apostle, **Dandenong** | Narre Warren North |
+| St Philothea of Argeș, **Bayswater** | Canterbury |
+| St Andrew the Apostle, **Newcastle** | Wallsend |
+
+The address wins, in the stored name as well as the id — Antiochian run, same
+rule, same reason: `reconcile` recovers a parish's suburb from its name, so a
+row called "…, Dandenong" with an id saying `narrewarren` fails to match itself
+next time and mints a duplicate.
+
+**Two published postcodes are wrong and are kept verbatim**: St Philip the
+Apostle gives Beenleigh as 4000, which is Brisbane's CBD, and St John the
+Baptist gives South Windsor as 2761. Normalising an address a parish typed is
+how the Greek run invented errors; the pin comes from the street and the suburb,
+which are right.
+
+**A published website can be dead.** `sfdimitrie.org.au`, the Brisbane parish's
+site, no longer resolves in DNS at all. It is stored as published — the diocese
+is the source and a scrape's job is to record what the source says — but it is
+the first row to fix if somebody checks. Two more, `sftreimeperth.org` and
+`saintapostlethomas.com.au`, 503 on HTTPS and answer normally over plain HTTP —
+the diocese publishes both as `http://` and they are stored that way, which is
+the accident of a directory being older than the web's move to TLS.
+
+**Final confidence: 2 pins on a building, 15 street-level, 4 locality
+centroids.** `info_verified_at` is NULL on all 21.
+
+---
+
+## What the Macedonian run actually cost
+
+27 places of worship — 23 parishes and 4 monasteries — read from **two**
+diocesan websites and written to D1.
+
+**The jurisdiction is split, and that is the headline.** The Macedonian Orthodox
+Church has two dioceses in this territory and each publishes its own directory:
+`mocdanz.org.au` (Australia and New Zealand, 13 churches and 3 monasteries) and
+`macedonianorthodoxdiocese.org.au`, also reachable as `mpcaus.org`
+(Australia–Sydney, 11 churches and 1 monastery). Both are the jurisdiction's own
+sites, so both are sources, and the import carries two `info_source_name`
+labels where every previous one carried a single label. That is not the same
+mistake as spelling one source two ways: these are two bodies, and a row cites
+the one that published it.
+
+**28 entries, 27 rows, because one church is on both lists.** The two dioceses
+each claim a St Nikola in North Perth — one at 69 Angove St, one at 8 Macedonia
+Place, 481m apart. The only place of worship OSM knows in North Perth sits on
+Angove Street; Macedonia Place is a residential cul-de-sac with nothing on it.
+One congregation gets one row, pinned on the building, citing the diocese whose
+address matches it. **`buildUpsert` would have caught this anyway** — both
+entries derive the same id and it refuses a duplicate id in a batch — which is
+the argument for the check being in the builder rather than in each caller.
+
+**Two cathedrals in one suburb are NOT a duplicate.** Sydenham, Victoria has the
+Nativity of the Most Holy Theotokos at 1 Pecks Road and the Dormition of the
+Mother of God at 340 Sydenham Road, 990m apart, one per diocese. Same suburb,
+same city, different buildings, different dedications.
+
+**OSM knows this jurisdiction well.** Ten places of worship tagged
+`denomination=macedonian_orthodox` across Oceania, and with the name search on
+top of them 13 rows pin to an actual building without any research at all — the
+second-best coverage of any run so far, after the Serbians' 18. North Perth is a
+fourteenth, found by hand while settling the duplicate above.
+
+**The dedications needed their own synonyms.** Clement is Kliment on every
+Macedonian parish sign, Demetrius is Dimitrija, St Nedela is Holy Sunday
+translated, and Romanian writes Dumitru, Gheorghe and Ioan. Those groups are now
+in `SYNONYM` in `scripts/geocode-parish.mjs` with a test, because without them
+the right building sits in the results with no token in common.
+
+**A one-letter street name and a postcode from another suburb.**
+
+| the directory says | it is |
+|---|---|
+| 219 **Banyla** Drive, Gaven | Banyula Drive — the Chapmans/Chapman error again |
+| Macedonian Park, National Rd, Kinglake West **3065** | 387 National Park Rd, 3757; 3065 is Fitzroy's |
+| **12 – 514** High St, Epping | 512 High Street — a mangled 512-514 |
+| 18-26 Nyanza St, **Woodrige** | Woodridge |
+| 100 Goyder St, Narrabundah **2601** | 2604 |
+| 83-85 Victoria Street, **West Seddon** | Seddon; "West Seddon" is not a suburb |
+
+The first three moved a pin and are corrected; the last three are cosmetic and
+kept verbatim. Kinglake and Epping were settled by `mocmv.org.au` — the
+Macedonian Orthodox Community of Victoria, which *owns* both properties, so it
+is not an aggregator standing in for the jurisdiction but the freeholder
+correcting its own diocese's typing.
+
+**One parish publishes a PO box and nothing else**: the Synaxis of All
+Macedonian Saints in Auckland, served by visiting clergy, with no venue named
+anywhere. It is written as an Auckland centroid with a NULL address, like the
+Romanian four.
+
+**The Fitzroy question answers itself.** Third-party lists still name a St George
+in Fitzroy; MOCMV's own history says it was relocated to Epping in 1995 and
+rebuilt as St George and St Mary Mother of God. Four entries on those lists —
+Rosebery, Broadmeadow, New Farm and Balcatta — appear on **neither** diocesan
+site, so they are not imported: the rule is that a jurisdiction's own site is the
+source, and an aggregator is a signpost. They are the first thing to ask a
+Macedonian priest about.
+
+**Final confidence: 14 pins on a building, 12 street-level, 1 locality
+centroid.** `info_verified_at` is NULL on all 27. The weakest of the twelve
+street pins is Gaven, which is Banyula Drive itself rather than number 219 —
+the road is right and no house number resolves on it.
+
+---
+
+## What the Romanian SERVICE TIMES run cost
+
+Seven recurrence rules across five parishes, taking the table from 75 schedules
+to 82. Neither diocesan directory publishes a service time — the Macedonian
+pages publish office hours, which is not the same thing and must not be read as
+one — so every rule here came from a **parish's own website**, and each cites
+that page with `source_name = 'Parish website'`.
+
+| parish | rule |
+|---|---|
+| St Mary, Croydon Park | Sun 09:00–10:00 Matins; Sun 10:00–12:00 Liturgy |
+| St George, Matangi | Sun 09:00 Matins; Sun 10:00–12:30 Divine Liturgy |
+| Holy Brâncoveanu Martyrs, Glenfield | Sun 09:00–12:00 Matins & Liturgy |
+| St Thomas the Apostle, Narre Warren North | Sun 10:00 Divine Liturgy |
+| Holy Trinity, Koondoola | Sun 10:00 Sunday Service |
+
+**A dated programme is not a rule.** Three of the Romanian parishes — Auckland,
+Wellington and Christchurch — publish a month of services at a time, with real
+dates and times. That is an adapter's output, not something to hand-write:
+`infer.mjs` exists to turn scraped occurrences into rules and it will only do so
+when a rule reproduces the observed dates exactly. Hand-writing "Sundays 9am"
+from a March calendar asserts something the calendar does not.
+
+**Glenfield is one rule and not two** because that is how the parish publishes
+it: "UTRENIA ȘI SFÂNTA LITURGHIE … 09:00am to 12:00pm", one block, one span.
+Splitting it into Matins and Liturgy would need a boundary nobody stated.
+
+**Koondoola's title is "Sunday Service" on purpose.** The parish says *"Slujbele
+se tin cu regularitate in fiecare duminica, incepand cu ora 10"* — the services
+are held every Sunday from 10 — and names a day and an hour but not which
+service. A Sunday morning at ten is almost certainly the Divine Liturgy, and
+"almost certainly" is not what a card should say.
+
+**What was dropped, and why:** St George Matangi's third Sunday line, "Sermon &
+Holy Unction from 12:30 PM", which is the tail of the Liturgy rather than a
+service somebody arrives for; the Kinglake monastery's "services most feast days
+and Weekends from 9:00am", where *most* and *weekends* are both unexpressible in
+`week_of_month` and a rule would put a card on two days the monastery did not
+promise; and Epping's "always open on Sundays from 9am", which is an opening
+time, not a service.
+
+**The match is on parish + weekday + time, never on title**, so a re-run cannot
+insert a second copy of a rule somebody has since renamed in */admin*. Seven
+rules in the table already carry no source at all — one Antiochian and six
+Serbian, all entered by hand through */admin* over the last two days — and they
+are left exactly as they are.

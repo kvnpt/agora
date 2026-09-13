@@ -72,8 +72,9 @@ const GENERIC_BASE = ['the', 'of', 'our', 'and', 'a', 'an', 'in', 'at', 'for',
 // Sava is Sabbas, which is the Serbian directory's contribution to the list.
 const SYNONYM = [
   ['elias', 'elijah', 'ilya', 'ilija'],
-  ['forerunner', 'baptist', 'john', 'jovan'],
-  ['mary', 'theotokos', 'virgin', 'dormition', 'assumption', 'nativity', 'entrance', 'protection'],
+  ['forerunner', 'baptist', 'john', 'jovan', 'ioan', 'krstitel'],
+  ['mary', 'theotokos', 'virgin', 'dormition', 'assumption', 'nativity', 'entrance', 'protection',
+    'bogorodica', 'maria', 'prechista'],
   ['michael', 'archangel', 'archangels'],
   ['gabriel', 'archangel'],
   ['paul', 'apostle'],
@@ -84,10 +85,25 @@ const SYNONYM = [
   ['petka', 'paraskeva', 'paraskevi'],
   ['sava', 'sabbas'],
   ['nicholas', 'nikola', 'nikolaj'],
-  ['george', 'georgije', 'djordje'],
+  ['george', 'georgije', 'djordje', 'gheorghe', 'gorgi'],
   ['stephen', 'steven', 'stefan'],
   ['lazarus', 'lazar'],
-  ['basil', 'vasilije'],
+  ['basil', 'vasilije', 'vasile'],
+  // The Macedonian and Romanian directories, which write their dedications in
+  // their own languages while OSM often carries the English. Clement of Ohrid
+  // is Kliment on every Macedonian parish sign, Demetrius is Dimitrija there
+  // and Dumitru in Romanian, and St Nedela is Holy Sunday translated.
+  ['clement', 'kliment'],
+  ['demetrius', 'dimitrija', 'dimitrij', 'dimitar', 'dumitru'],
+  ['sunday', 'nedela', 'nedelja'],
+  ['philothea', 'filofteia'],
+  ['spyridon', 'spiridon'],
+  ['gregory', 'grigorie'],
+  ['thomas', 'toma'],
+  ['andrew', 'andrei'],
+  ['philip', 'filip'],
+  ['trinity', 'treime', 'troica'],
+  ['brancoveanu', 'brancoveni'],
 ];
 
 /**
