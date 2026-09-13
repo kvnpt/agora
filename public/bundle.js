@@ -91,6 +91,12 @@ window.agoraBundle = (function () {
       if (window.agoraSetJurisdictionColors) {
         window.agoraSetJurisdictionColors(raw.jurisdiction_colors);
       }
+      // …with one exception to "runs during the render this load triggers":
+      // the jurisdiction chips are painted once by initFilters, before this
+      // resolves, and nothing re-paints them afterwards. They are the reason
+      // an override used to move every colour on the page except the row at
+      // the very top of it.
+      if (window.agoraRepaintJurisdictionChips) window.agoraRepaintJurisdictionChips();
       loadedAt = Date.now();
       return raw;
     })();

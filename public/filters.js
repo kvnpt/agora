@@ -1,10 +1,20 @@
+// Labels and order. The COLOURS ARE NOT HERE, deliberately.
+//
+// They used to be, as a sixth hex per row stamped into data-color at render
+// time, and that made the chips the one surface in the app that could not see
+// a colour change: /admin's overrides arrive with the bundle and reach every
+// reader through jurisdictionColor(), and a chip painted from its own frozen
+// copy never asks. Setting Greek to another blue moved the map dots, the
+// cards, the feed lines and the parish sheet, and left this row alone.
+//
+// Resolved per chip in applyChipColors instead, at paint time.
 const JURISDICTIONS = [
-  { key: 'antiochian', label: 'Antiochian', color: '#1e3a5f' },
-  { key: 'greek', label: 'Greek', color: '#00508f' },
-  { key: 'serbian', label: 'Serbian', color: '#b22234' },
-  { key: 'russian', label: 'Russian', color: '#c8a951' },
-  { key: 'romanian', label: 'Romanian', color: '#002b7f' },
-  { key: 'macedonian', label: 'Macedonian', color: '#d20000' }
+  { key: 'antiochian', label: 'Antiochian' },
+  { key: 'greek', label: 'Greek' },
+  { key: 'serbian', label: 'Serbian' },
+  { key: 'russian', label: 'Russian' },
+  { key: 'romanian', label: 'Romanian' },
+  { key: 'macedonian', label: 'Macedonian' }
 ];
 
 function initFilters(state) {
@@ -18,7 +28,7 @@ function initFilters(state) {
     ];
   }
   chipContainer.innerHTML = ordered.map(j =>
-    `<button class="jurisdiction-chip${state.filters.jurisdiction === j.key ? ' active' : ''}" data-jurisdiction="${j.key}" data-color="${j.color}">${j.label}</button>`
+    `<button class="jurisdiction-chip${state.filters.jurisdiction === j.key ? ' active' : ''}" data-jurisdiction="${j.key}">${j.label}</button>`
   ).join('');
 
   applyChipColors(chipContainer);
@@ -62,13 +72,16 @@ function initFilters(state) {
 }
 
 function applyChipColors(container) {
+  if (!container) return;
   const anyActive = container.querySelector('.jurisdiction-chip.active');
-  // Route colours through the parish/jurisdiction lift funnel — pass-through
-  // in light mode, OKLab L-floor lift in dark — so the chip text/underline
-  // matches the lifted parish-colour treatment elsewhere.
-  const lift = window.getParishDisplayColor || (h => h);
+  // getJurisdictionColor is the shared table plus /admin's overrides plus the
+  // dark-mode OKLab lift, and it is the no-substitution path: with a filter
+  // active, getParishDisplayColor would answer every chip with the SELECTED
+  // jurisdiction's colour, which is right for a parish card and wrong for a
+  // row of six chips naming six different jurisdictions.
+  const resolve = window.getJurisdictionColor || (() => '');
   container.querySelectorAll('.jurisdiction-chip').forEach(chip => {
-    const c = lift(chip.dataset.color);
+    const c = resolve(chip.dataset.jurisdiction);
     if (chip.classList.contains('active')) {
       // Selected: full color fill
       chip.style.background = c;
@@ -91,5 +104,12 @@ function applyChipColors(container) {
   });
 }
 window.applyChipColors = applyChipColors;
+
+// Repaint from wherever the chips happen to be. The overrides land with the
+// bundle, which resolves after initFilters has already painted once — every
+// other reader of a colour re-renders on that load, and the chips do not.
+window.agoraRepaintJurisdictionChips = function () {
+  applyChipColors(document.getElementById('jurisdiction-chips'));
+};
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }

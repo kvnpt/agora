@@ -5756,6 +5756,8 @@ function formatEventTime(date) {
 function rawJurisColor(j) { return window.agoraJurisdictionColor(j); }
 window.rawJurisColor = rawJurisColor;
 
+// Exposed for filters.js, which paints the jurisdiction chips and needs the
+// no-substitution path — see the note in applyChipColors there.
 function getJurisdictionColor(j) {
   const key = j || state.filters.jurisdiction;
   // Use the no-substitution path so passing a non-active juris (e.g. when
@@ -5763,6 +5765,8 @@ function getJurisdictionColor(j) {
   // still returns that specific juris's colour.
   return _liftIfDark(rawJurisColor(key));
 }
+
+window.getJurisdictionColor = getJurisdictionColor;
 
 // Convert a #RRGGBB / #RGB hex to an rgba() string. Used to build the
 // parish-colored glow on an expanded event card (injected as a CSS var so the
