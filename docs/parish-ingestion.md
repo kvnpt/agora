@@ -9,7 +9,7 @@ that pipeline has to get right.
 This began as a brief for work that had not been done. Four directories have
 since been ingested — the Greek Archdiocese (135), the ROCOR Australian and New
 Zealand Diocese (37), the Antiochian Archdiocese (24) and the Serbian
-Metropolitanate (47 of 49) — so the constraints below are now field notes rather
+Metropolitanate (all 49) — so the constraints below are now field notes rather
 than predictions, and the sections at the end record what each run actually
 cost. They cost different things: the Greek directory published addresses that
 were sometimes wrong, the Russian one publishes no addresses at all, the
@@ -51,10 +51,10 @@ needed to *write*.
 ## State as at 13 September 2026
 
 ```
-243 parishes · 68 schedules · 68 events · 0 overrides
+245 parishes · 68 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import, 47 the Serbian one, 37
+135 of those parishes are the Greek Archdiocese import, 49 the Serbian one, 37
 the ROCOR one, and 24 the Antiochian one. Every one of the 240 now carries an
 acronym — its short link, `orthodoxy.au/<acronym>` — and a recorded read date
 (`info_checked_at`), which is what the parish sheet renders as "Updated 3 months
@@ -935,12 +935,29 @@ street-level geocode had resolved to one point.
 | St John the Baptist, Dapto | Dale Street is in **Avondale**, the locality next door; "Penrose" is a stray |
 | Nativity of the Most Holy Theotokos Skete, Inglewood | the road is **Chapman** Road, not Chapmans — the same class of error as the Greek run's Holterman/Holtermann |
 
-**Two remain out, and neither is a geocoding problem.** Sts Simeon and Ana,
+**Two are on the map as locality centroids, deliberately.** Sts Simeon and Ana,
 Moree and the Entrance of the Most Holy Theotokos, Mawson publish a PO box, a
 phone number and an administering priest, and no venue anywhere — not on the
 Metropolitanate's site, not on the priests' own pages (Moree's priest is at
 Lightning Ridge, 250km away; Mawson's own address is the same PO box), and not
 on any aggregator. A phone call settles both; a geocoder cannot.
+
+They were written anyway, at the owner's request, because a row he can see and
+correct beats a row he has to remember exists. Both carry a **NULL address**,
+which is the whole convention: the schema has no column for pin quality, so an
+absent address is the only mark a row has saying nobody has checked where this
+is. Filling one in is what marks it done — the same signal the ROCOR run's four
+centroid rows carry.
+
+**Which needed a guard, because `lat` and `lng` are refreshable.** Six of these
+49 were placed by hand after the import, and a second run offering only a
+centroid would have walked every one of them back to the middle of a suburb.
+`mergeWithExisting` in build-serbian-sql.mjs now keeps the pin already on file
+whenever this run can only offer a centroid AND the row has an address — one
+way, so a re-scrape that finds a real address still wins, and a centroid row
+with its NULL address is still free to be placed properly later. It is the same
+sentence as the rest of that function, applied to the field that had been left
+out of it: a scrape that found nothing must not erase something.
 
 **One parish is not Serbian-speaking.** St Ignatius of Antioch and St Aidan of
 Lindisfarne, Wendouree, is the Metropolitanate's Western Rite parish and the
