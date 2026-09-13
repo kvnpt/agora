@@ -26,8 +26,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { geocodeAll as geocodeParishes, report } from './geocode-parish.mjs';
 
-export const geocodeAll = (scraped, cacheDir, log = () => {}) =>
-  geocodeParishes(scraped, cacheDir, log, { jurisdiction: 'serbian' });
+const LIVE = 'https://agora.orthodoxy.au/api/parishes';
+
+export const geocodeAll = (scraped, cacheDir, log = () => {}, existing = null) =>
+  geocodeParishes(scraped, cacheDir, log, { jurisdiction: 'serbian', existing });
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const input = process.argv[2] || './serbian-scraped.json';
@@ -35,8 +37,24 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const output = process.argv[4] || './serbian-geocoded.json';
 
   const scraped = JSON.parse(await readFile(input, 'utf8'));
+
+  // The parishes already in the table, for the venue tier: a parish that meets
+  // in somebody else's church is usually meeting in one we already hold on a
+  // confirmed pin. Optional — the run still works without it, and did before.
+  let existing = null;
+  try {
+    const res = await fetch(LIVE, { headers: { 'User-Agent': 'agora-parish-import/1.0' } });
+    if (res.ok) {
+      const body = await res.json();
+      existing = Array.isArray(body) ? body : (body.parishes || []);
+      console.log(`${existing.length} parishes already in the table, available as venues`);
+    }
+  } catch (err) {
+    console.log(`could not read ${LIVE} (${err.message}); a named venue will only be looked up in Nominatim`);
+  }
+
   console.log(`geocoding ${scraped.parishes.length} places of worship\n`);
-  const rows = await geocodeAll(scraped, cacheDir, (m) => console.log(m));
+  const rows = await geocodeAll(scraped, cacheDir, (m) => console.log(m), existing);
   report(rows);
 
   await writeFile(output, JSON.stringify({ ...scraped, geocoded_at: new Date().toISOString(), parishes: rows }, null, 1));

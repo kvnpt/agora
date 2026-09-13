@@ -9,7 +9,7 @@ that pipeline has to get right.
 This began as a brief for work that had not been done. Four directories have
 since been ingested — the Greek Archdiocese (135), the ROCOR Australian and New
 Zealand Diocese (37), the Antiochian Archdiocese (24) and the Serbian
-Metropolitanate (44 of 49) — so the constraints below are now field notes rather
+Metropolitanate (47 of 49) — so the constraints below are now field notes rather
 than predictions, and the sections at the end record what each run actually
 cost. They cost different things: the Greek directory published addresses that
 were sometimes wrong, the Russian one publishes no addresses at all, the
@@ -48,13 +48,13 @@ curl -sS https://agora.orthodoxy.au/api/adapters/status
 Reach for those before reaching for a token. A `D1:Edit` credential is only
 needed to *write*.
 
-## State as at 12 September 2026
+## State as at 13 September 2026
 
 ```
-240 parishes · 68 schedules · 68 events · 0 overrides
+243 parishes · 68 schedules · 68 events · 0 overrides
 ```
 
-135 of those parishes are the Greek Archdiocese import, 44 the Serbian one, 37
+135 of those parishes are the Greek Archdiocese import, 47 the Serbian one, 37
 the ROCOR one, and 24 the Antiochian one. Every one of the 240 now carries an
 acronym — its short link, `orthodoxy.au/<acronym>` — and a recorded read date
 (`info_checked_at`), which is what the parish sheet renders as "Updated 3 months
@@ -862,7 +862,7 @@ are named nothing more specific than "Serbian Orthodox Church", which is what
 the jurisdiction tier is for.
 
 **The five held back**, all for the same reason — no church in OSM, and no
-street that geocodes:
+street that geocodes. Three were resolved the next day; see below.
 
 | | |
 |---|---|
@@ -874,6 +874,73 @@ street that geocodes:
 
 `--include-suburb` writes them as locality centroids with a NULL address, which
 is a deliberate act with a person's name on it rather than a default.
+
+---
+
+## A parish's address is where the service is
+
+This is the rule the held-back five turned into a principle, and it governs
+every import from here.
+
+**Agora exists to answer "which parish is near me, and when is the service".**
+So a parish's stored address is the place somebody walks into. Not its mailbox,
+and not the priest's house. Three of the five publish a PO box and nothing
+else; a fourth publishes a postal address on one street while meeting in a
+chapel 240m away on another.
+
+**A `schedules.location_override` is NOT the mechanism for this.** That column
+is for the exception — the one Sunday a service moves to the cathedral. Where a
+parish meets every week is the parish's address, full stop. Putting a permanent
+venue in an override would leave the map pin on a post office and the truth in
+a footnote under a timetable.
+
+**The field that answers it is free text on the parish's own page.** "Services
+held at: St John the Baptist Greek Orthodox Church" — five of the 49 Serbian
+entries have one, and for the PO-box parishes it is the only location the
+directory publishes at all. `venueOf()` in scrape-serbian.mjs reads it.
+
+**And the venue is usually a parish we already hold.** A congregation without a
+building lodges in somebody else's, and somebody else is often already in the
+table on a confirmed pin. So the geocoder's first tier after the suburb is now
+`venueMatcher` against `/api/parishes`, and it inverts two rules of the
+dedication match on purpose:
+
+| dedication match | venue match |
+|---|---|
+| a candidate naming another jurisdiction is always wrong | it is usually right — that is whose building this is |
+| the jurisdiction word is noise to be stripped | it is the strongest signal, and is required of the candidate's `jurisdiction` column |
+
+It also excludes the jurisdiction being imported, which is not fussiness: on a
+re-run the row being placed is itself in the table, and Holy Cross, Lenah Valley
+shares a dedication with the Exaltation of the Holy Cross church it meets in to
+within one letter. Without that rule the parish matches itself and the
+tie-break, correctly, refuses to choose.
+
+**Two parishes in one building get pins ten metres apart.** Exactly on top of
+each other, one of them cannot be tapped. Ten metres is far enough to separate
+the dots and near enough that the address stays true; 1° of latitude is ~111.32km
+everywhere, so it needs no cosine. Asking the database for exact coordinate
+collisions found two more pairs nobody had noticed — the Hobart one above, and
+St John the Baptist and St Elias at 82 and 86 Kenny St, Wollongong, which a
+street-level geocode had resolved to one point.
+
+**What that recovered, 13 September:**
+
+| | |
+|---|---|
+| St Elijah the Prophet, **Redlynch** | its page names the Greek parish's church; that row's pin, +10m. Renamed from Cairns, because the address won |
+| St Nicholas, Christchurch | already on the right building and exactly on top of the ROCOR parish; +10m |
+| St Basil of Ostrog, Waterford | moved off the Manning Rd postal address to the Clontarf College chapel |
+| Holy Cross, Lenah Valley | +10m off the Russian-Serbian church it shares |
+| St John the Baptist, Dapto | Dale Street is in **Avondale**, the locality next door; "Penrose" is a stray |
+| Nativity of the Most Holy Theotokos Skete, Inglewood | the road is **Chapman** Road, not Chapmans — the same class of error as the Greek run's Holterman/Holtermann |
+
+**Two remain out, and neither is a geocoding problem.** Sts Simeon and Ana,
+Moree and the Entrance of the Most Holy Theotokos, Mawson publish a PO box, a
+phone number and an administering priest, and no venue anywhere — not on the
+Metropolitanate's site, not on the priests' own pages (Moree's priest is at
+Lightning Ridge, 250km away; Mawson's own address is the same PO box), and not
+on any aggregator. A phone call settles both; a geocoder cannot.
 
 **One parish is not Serbian-speaking.** St Ignatius of Antioch and St Aidan of
 Lindisfarne, Wendouree, is the Metropolitanate's Western Rite parish and the

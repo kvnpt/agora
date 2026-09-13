@@ -76,6 +76,16 @@ disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` 
 a parish, the acronym resolves last, and reserving it would not raise a clash but
 silently take that parish's link away.
 
+**A parish's address is where the service is.** Not its mailbox and not the
+priest's house: Agora answers "which parish is near me and when", so the stored
+address is the door somebody walks through. A parish that meets in another
+parish's church gets that church's address and its pin, ten metres off so both
+dots can be tapped — `scripts/geocode-parish.mjs` reads the "Services held at:"
+line for this and matches it against the parishes already in the table.
+`schedules.location_override` is NOT this: that is for the one Sunday a service
+moves, and a permanent venue hidden there would leave the map pin on a post
+office.
+
 **A source line says when we last looked, never that it is right.** A parish's
 details and a parish's service times are the same kind of claim — something a
 source published, which nothing in the row expires — so both carry
@@ -205,7 +215,7 @@ deliberately absent from `wrangler.toml` so it cannot ship by accident.
 
 ## Database
 
-The schema is one baseline file, `d1/schema.sql` — not a migration chain. Eight tables.
+The schema is one baseline file, `d1/schema.sql` — not a migration chain. Ten tables.
 
 ```bash
 npm run db:schema    # apply to remote D1
@@ -214,7 +224,7 @@ npm run db:export    # dump production to backups/ (gitignored)
 ```
 
 **The seed is a dev fixture, not a picture of production.** It holds 11 parishes
-and 9 rules; production serves 240 parishes and 68 schedules, because four
+and 9 rules; production serves 243 parishes and 68 schedules, because four
 jurisdiction directories — Greek, ROCOR, Antiochian and Serbian — were scraped
 and written straight to D1 rather than through the repo.
 `/api/parishes` is the answer to "what parishes exist" — `seeds/parishes.js` is
@@ -223,7 +233,7 @@ correct an address nor move a pin. What it still earns its place doing is giving
 `npm run dev` a non-empty local database and giving CI a schema smoke test.
 
 Do not resolve that gap by making the seed authoritative. Adding deletes, or a
-sync, would destroy 229 rows to match a file that never held them. The gap is
+sync, would destroy 232 rows to match a file that never held them. The gap is
 the design: rows come from scraping, and the repo does not track them. That also
 means the repo is not a backup — `npm run db:export` and D1's Time Travel are.
 `docs/parish-ingestion.md` is the record of how the import was done.

@@ -274,6 +274,11 @@ function parsePage(html, entry, stateName) {
   const suburb = suburbFromTitle(address, entry.title.rendered, parsed.suburb);
   const { state, postcode } = parsed;
   const vague = !address || isPoBox(address);
+  // "Services held at: St John the Baptist Greek Orthodox Church" — the one
+  // field that says where a parish without a building of its own actually
+  // meets. Five of the 49 have it, and for the ones whose Address is a PO box
+  // it is the ONLY location the directory publishes. See venueOf().
+  const venue = venueOf(infoText);
   const country = (state === 'New Zealand' || stateName === 'New Zealand') ? 'New Zealand' : 'Australia';
   return {
     name: dedicationOf(entry.title.rendered, suburb),
@@ -297,6 +302,10 @@ function parsePage(html, entry, stateName) {
     timezone: ZONE_BY_STATE[state] || ZONE_BY_STATE[stateName] || null,
     // The page the address was actually read off, not the directory index.
     source_ref: entry.link,
+    // Where the parish MEETS, when that is not its own building. A parish's
+    // address is where you turn up — Agora exists to answer "which parish is
+    // near me" — so a venue beats a PO box, and step 2 geocodes it by name.
+    venue,
     extra: infoText && !/^website\s*:/i.test(infoText) ? infoText : null,
   };
 }
@@ -318,6 +327,26 @@ function normalisePhone(raw) {
   if (/^61\d{9}$/.test(p)) return `+${p}`;           // Australia, plus dropped
   if (/^[2-9]\d{8}$/.test(p)) return `0${p}`;        // Australia, trunk 0 dropped
   return p;
+}
+
+/**
+ * The venue named in "Services held at: …", or null.
+ *
+ * Four of the five parishes this scrape could not place publish a PO box and
+ * nothing else, and two of them say in this field exactly whose church they
+ * meet in — Cairns in the Greek parish at Redlynch, Christchurch in the ROCOR
+ * one. Reading it is the difference between a parish on the map and a parish
+ * held back.
+ *
+ * Stops at the first line break or at "Postal address", because the field is
+ * free text and often carries both.
+ */
+export function venueOf(infoText) {
+  const m = /services?\s+(?:are\s+)?held\s+(?:at|in)\s*:?\s*(.+)/i.exec(decode(infoText));
+  if (!m) return null;
+  const v = m[1].split(/\s+-\s+|postal address|\s{2,}/i)[0]
+    .replace(/[\s.,;-]+$/, '').trim();
+  return v.length >= 4 ? v : null;
 }
 
 function normaliseSite(s) {
@@ -364,6 +393,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(`with an address: ${rows.filter((r) => r.address).length}/${rows.length}`);
   console.log(`with a suburb:   ${rows.filter((r) => r.suburb).length}/${rows.length}`);
   console.log(`with a website:  ${rows.filter((r) => r.website).length}/${rows.length}`);
+  const venues = rows.filter((r) => r.venue);
+  if (venues.length) {
+    console.log('\nMEETS SOMEWHERE ELSE — the venue is the address, not the PO box:');
+    for (const r of venues) console.log(`  ${(r.name + ', ' + r.suburb).padEnd(44)} ${r.venue}`);
+  }
   console.log(`with a phone:    ${rows.filter((r) => r.phone).length}/${rows.length}`);
 
   if (missing.length) {
