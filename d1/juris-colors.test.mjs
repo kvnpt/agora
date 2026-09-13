@@ -85,6 +85,37 @@ test('app.js reads the shared table rather than its own copy', () => {
     'index.html does not load the shared colour table');
 });
 
+test('the jurisdiction chips read the table too, at paint time', () => {
+  // filters.js held a sixth hex per row and stamped it into data-color, which
+  // made the chips the one surface an /admin override could not move: every
+  // other reader goes through jurisdictionColor(), and a chip painted from a
+  // frozen copy never asks. A literal hex anywhere in this file is that copy
+  // coming back.
+  //
+  // Plain white and black are allowed through: the active chip sets its text
+  // to #ffffff for contrast against whatever fill it just took, which is not
+  // a jurisdiction's colour and does not change when one is overridden.
+  const NEUTRAL = new Set(['#fff', '#ffffff', '#000', '#000000']);
+  const filters = fs.readFileSync('public/filters.js', 'utf8');
+  const hexes = (filters.match(/#[0-9a-fA-F]{3,8}\b/g) || [])
+    .filter(h => !NEUTRAL.has(h.toLowerCase()));
+  assert.deepEqual(hexes, [], `filters.js has hard-coded colours again: ${hexes.join(', ')}`);
+  assert.ok(filters.includes('window.getJurisdictionColor'),
+    'applyChipColors no longer resolves the colour at paint time');
+
+  // Painted once by initFilters, before the bundle carrying the overrides
+  // resolves. Every other reader re-renders on that load; the chips do not,
+  // so the repaint has to be called explicitly.
+  assert.ok(filters.includes('agoraRepaintJurisdictionChips'),
+    'filters.js exposes no repaint for the chips');
+  const bundle = fs.readFileSync('public/bundle.js', 'utf8');
+  assert.ok(bundle.includes('agoraRepaintJurisdictionChips'),
+    'bundle.js applies the overrides without repainting the chips');
+  assert.ok(
+    bundle.indexOf('agoraSetJurisdictionColors') < bundle.indexOf('agoraRepaintJurisdictionChips'),
+    'the chips are repainted before the overrides are applied');
+});
+
 // ── the override layer ──────────────────────────────────────────────────
 //
 // /admin can change a jurisdiction's colour without a deploy. That is one more
