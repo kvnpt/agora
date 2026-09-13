@@ -107,8 +107,22 @@ const sameSite = (a, b) => !!a && !!b
   && a.replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase()
   === b.replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
 
-// A scrape that found nothing must not ERASE something. Only relevant on a
-// re-run; production holds no Serbian row today.
+/**
+ * A scrape that found nothing must not ERASE something.
+ *
+ * A blank field keeps whatever the row already has — and so does a PIN, which
+ * is the half that had to be learned. Six of these parishes were placed by
+ * hand after the import: two spellings corrected (Chapman Road, not Chapmans;
+ * Dale Street is in Avondale), and four moved onto the church they actually
+ * meet in. The geocoder reproduces four of those six on its own now, but the
+ * two street corrections it cannot — and `lat`/`lng` are refreshable, so
+ * without this a re-run would quietly walk both back to the middle of a
+ * suburb where there is no church.
+ *
+ * The rule is one-way: a centroid never replaces something better, while a
+ * building or a street always may. A re-scrape that finds a real address is
+ * exactly what should win.
+ */
 function mergeWithExisting(row, was) {
   if (!was) return row;
   const out = { ...row };
@@ -116,6 +130,13 @@ function mergeWithExisting(row, was) {
     if (out[f] == null && was[f] != null) out[f] = was[f];
   }
   if (sameSite(out.website, was.website)) out.website = was.website;
+  if (row._confidence === 'suburb' && was.lat != null && was.lng != null && was.address) {
+    out.lat = was.lat;
+    out.lng = was.lng;
+    out._confidence = 'kept';
+    out._note = [out._note, `kept the pin already on file — this run could only offer the ${row._suburb} centroid`]
+      .filter(Boolean).join('; ');
+  }
   return out;
 }
 
@@ -164,6 +185,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (ambiguous.length) {
     console.log('\nAMBIGUOUS — a person decides these, nothing is written for them:');
     for (const a of ambiguous) console.log(`  ${a.name}  ->  ${a.candidates.join(', ')}`);
+  }
+
+  const kept = pinned.filter((p) => p._confidence === 'kept');
+  if (kept.length) {
+    console.log('\nPIN KEPT — this run could only offer a centroid, and the row already has better:');
+    for (const p of kept) console.log(`  ${p.id.padEnd(40)} ${p.address}`);
   }
 
   if (pinned.length) {

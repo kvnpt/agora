@@ -42,6 +42,11 @@ import {
 // parishes sharing a dedication, and the Serbian one has five St Savas.
 export const MAX_KM = 20;
 
+// Ten metres north, for a parish that meets inside another parish's church.
+// Far enough that both dots can be tapped, near enough that the address is
+// still true.
+export const TEN_METRES = 10 / 111320;
+
 // Every jurisdiction the schema allows, as the word OSM writes in a
 // `denomination` tag. A parish's own word is generic — it describes all of its
 // jurisdiction's churches and distinguishes none of them — and every other
@@ -86,6 +91,22 @@ const SYNONYM = [
 ];
 
 /**
+ * A token set widened through SYNONYM, so two spellings of one dedication meet.
+ *
+ * Shared by the dedication matcher and the venue matcher: the Serbian
+ * directory writes "Exultation of the Holy Cross" where OSM and the ROCOR
+ * directory write "Exaltation", and one letter is not a different church.
+ */
+export function expandSynonyms(set) {
+  const out = new Set(set);
+  for (const group of SYNONYM) {
+    const g = group.map((w) => w.replace(/s$/, ''));
+    if (g.some((w) => out.has(w))) for (const w of g) out.add(w);
+  }
+  return out;
+}
+
+/**
  * The dedication matcher for one jurisdiction.
  *
  * Two ways to be wrong, both seen on the ROCOR run. A dedication is not a
@@ -107,14 +128,6 @@ export function matcher(jurisdiction) {
     .filter((w) => w && !generic.has(w))
     .map((w) => w.replace(/s$/, '')));
 
-  const expand = (set) => {
-    const out = new Set(set);
-    for (const group of SYNONYM) {
-      const g = group.map((w) => w.replace(/s$/, ''));
-      if (g.some((w) => out.has(w))) for (const w of g) out.add(w);
-    }
-    return out;
-  };
 
   /**
    * How well one OSM place of worship matches one parish, or null for no match.
@@ -166,6 +179,7 @@ export function matcher(jurisdiction) {
     return [...want].some((w) => have.has(w));
   }
 
+  const expand = expandSynonyms;
   return { toks, expand, scoreBuilding, pickBuilding, nameHitIsSound };
 }
 
@@ -194,6 +208,85 @@ export function cornerStreets(addr) {
 }
 
 /**
+ * Match a venue name against the parishes already in the database.
+ *
+ * "Services held at: St John the Baptist Greek Orthodox Church" is a Serbian
+ * parish telling you whose building it borrows — so this is the opposite of the
+ * dedication matcher in two ways, both deliberate. There, a candidate naming
+ * another jurisdiction is always the wrong answer; here it is usually the right
+ * one. And there, the jurisdiction word is noise; here it is the strongest
+ * signal in the string, so it is read off the venue and required of the
+ * candidate's own `jurisdiction` column rather than matched as a word.
+ *
+ * What is left after the jurisdiction and the generic words come out is the
+ * dedication, widened through SYNONYM because the two directories spell
+ * Exaltation and Exultation. A single candidate has to win outright: two
+ * churches near one suburb both answering to the venue is a question for a
+ * person.
+ */
+export function venueMatcher(existing, jurisdiction) {
+  const generic = new Set([...GENERIC_BASE, ...JURISDICTION_WORDS]);
+  const toks = (v) => new Set(String(v || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().split(/[^a-z0-9]+/)
+    .filter((w) => w && !generic.has(w))
+    .map((w) => w.replace(/s$/, '')));
+
+  // "Russian-Serbian Orthodox Church" names two, and either is an acceptable
+  // host — the building at 3 Augusta Rd is shared by both.
+  const jurisdictionsNamed = (v) =>
+    JURISDICTION_WORDS.filter((w) => new RegExp(`\\b${w}`, 'i').test(String(v || '')));
+
+  return (venue, centroid, maxKm) => {
+    const want = expandSynonyms(toks(venue));
+    if (!want.size) return null;
+    const named = jurisdictionsNamed(venue);
+
+    const scored = [];
+    for (const e of existing) {
+      if (e.lat == null || e.lng == null) continue;
+      if (km(centroid, { lat: +e.lat, lng: +e.lng }) > maxKm) continue;
+      // Never this import's own jurisdiction. A venue tier exists to find
+      // SOMEBODY ELSE's building, and on a re-run the row being placed is
+      // itself in the table: Holy Cross, Lenah Valley and the Exaltation of
+      // the Holy Cross church it meets in share a dedication to within one
+      // letter, so the parish matched itself and the tie-break — correctly —
+      // refused to choose. Excluding the importing jurisdiction is the rule
+      // that says which of the two is the host.
+      if (jurisdiction && e.jurisdiction === jurisdiction) continue;
+      if (named.length && !named.includes(e.jurisdiction)) continue;
+      const have = expandSynonyms(toks(`${e.name || ''} ${e.full_name || ''}`));
+      const shared = [...want].filter((w) => have.has(w)).length;
+      // One distinctive word is enough when that is all the venue has ("St
+      // Nicholas Russian Orthodox Church"); two otherwise.
+      if (shared >= Math.min(2, want.size)) scored.push({ e, shared });
+    }
+    if (!scored.length) return null;
+    scored.sort((a, b) => b.shared - a.shared);
+    if (scored.length > 1 && scored[1].shared === scored[0].shared) return null;
+    const h = scored[0].e;
+    return { id: h.id, name: h.name, address: h.address, lat: +h.lat, lng: +h.lng };
+  };
+}
+
+/**
+ * The stored address for a parish that meets in a named venue.
+ *
+ * The venue's own name first, because that is what a visitor is looking for on
+ * the door, then the street and locality out of Nominatim's structured answer
+ * rather than its display_name — which runs to the country and the postcode of
+ * the council area.
+ */
+export function venueAddress(venue, result) {
+  const a = result.address || {};
+  const street = [a.house_number, a.road].filter(Boolean).join(' ');
+  const locality = a.suburb || a.village || a.town || a.city || a.municipality;
+  const state = a.state || a.territory;
+  const tail = [street, locality, [state, a.postcode].filter(Boolean).join(' ')]
+    .filter(Boolean).join(', ');
+  return tail ? `${venue}, ${tail}` : venue;
+}
+
+/**
  * A published address split for a STRUCTURED Nominatim query.
  *
  * Free-form left 28 of the 135 Greek parishes unplaced: `St` reads as Saint,
@@ -217,16 +310,22 @@ export function addressParts(addr, suburb) {
  * Place every scraped row.
  *
  * `scraped.parishes` rows are expected to carry: name, suburb, state,
- * state_abbr, country, address, address_vague, slug. That shape is what
- * scrape-<jurisdiction>.mjs produces, and `address_vague` is the flag that
- * keeps a PO box away from the geocoder — a postal address is a place to send
- * mail, not a place to stand.
+ * state_abbr, country, address, address_vague, slug, and optionally `venue`.
+ * That shape is what scrape-<jurisdiction>.mjs produces. `address_vague` is the
+ * flag that keeps a PO box away from the geocoder — a postal address is a place
+ * to send mail, not a place to stand — and `venue` is the parish's own answer
+ * to where it does stand, which outranks everything.
  */
 export async function geocodeAll(scraped, cacheDir, log = () => {}, opts = {}) {
   const jurisdiction = opts.jurisdiction || scraped.jurisdiction;
   if (!jurisdiction) throw new Error('which jurisdiction? pass opts.jurisdiction');
   const maxKm = opts.maxKm || MAX_KM;
   const { scoreBuilding, nameHitIsSound } = matcher(jurisdiction);
+
+  // `opts.existing` is /api/parishes. Optional: without it the venue tier below
+  // falls straight through to Nominatim, which is what every run before this
+  // one did.
+  const existingByVenue = opts.existing ? venueMatcher(opts.existing, jurisdiction) : null;
 
   const cached = makeCache(cacheDir);
   const out = [];
@@ -321,6 +420,77 @@ export async function geocodeAll(scraped, cacheDir, log = () => {}, opts = {}) {
       out.push({ ...p, timezone, resolved_state: resolvedState, ...row,
         note: note.length ? note.join('; ') : null });
     };
+
+    // 1a. the venue, matched against a parish ALREADY IN THE DATABASE.
+    //
+    // A parish with no building of its own lodges in somebody else's, and
+    // somebody else's is usually a parish we already hold on a confirmed pin.
+    // Four of the Serbian rows name a venue and Nominatim could find none of
+    // them by name — while two were already in the table: the Greek parish at
+    // Redlynch and the ROCOR one at Sydenham. Asking the database first is both
+    // the cheapest lookup and the most accurate one.
+    //
+    // Ten metres north, because the alternative is two parishes on one dot and
+    // one of them unclickable. 1° of latitude is ~111.32km everywhere, so this
+    // is the one offset that needs no cosine.
+    if (p.venue && existingByVenue) {
+      const host = existingByVenue(p.venue, centroid, maxKm);
+      if (host) {
+        note.push(`meets at ${p.venue} — ${host.name}, already in the database; pinned ten metres from it`);
+        finish({
+          lat: +(host.lat + TEN_METRES).toFixed(6), lng: +(+host.lng).toFixed(6),
+          confidence: 'building', matched_via: 'venue-existing-parish',
+          osm: null, osm_name: host.name,
+          address: host.address || p.venue,
+          km_from_suburb: +km(centroid, { lat: host.lat, lng: host.lng }).toFixed(2),
+        });
+        log(`  building  ${p.name}  ->  ${host.name} (venue, already in the table)`);
+        continue;
+      }
+    }
+
+    // 1b. the venue the parish NAMES for itself.
+    //
+    // "Services held at: St John the Baptist Greek Orthodox Church" is the
+    // parish saying where to turn up, and that is what a parish's address is
+    // for here — Agora answers "which parish is near me and when", so the
+    // place people walk into beats a postal address every time. It therefore
+    // outranks every tier below, including the parish's own published street:
+    // Waterford publishes 295 Manning Rd, which geocodes perfectly and is its
+    // mailbox, while the services are in the Clontarf College chapel 240m away.
+    //
+    // The foreign-jurisdiction refusal that guards the dedication match is
+    // deliberately NOT applied here. There it stops Brisbane's Serbian parish
+    // claiming the Russian one's building; here another jurisdiction's church
+    // is the whole point, because a parish with no building of its own is
+    // usually lodging in somebody else's.
+    if (p.venue) {
+      // Two spellings. A parish writes "Clontarf College Chapel"; OSM has the
+      // college and not its chapel, so a trailing Chapel/Hall/Centre is tried
+      // and then dropped — the building it names is the one to pin.
+      const queries = [p.venue, p.venue.replace(/\s+(chapel|hall|centre|center|church)\s*$/i, '')]
+        .filter((q, i, all) => q && all.indexOf(q) === i);
+      let r = null;
+      for (const q of queries) {
+        const hits = await nominatim(cached, `${q}, ${p.suburb}, ${where}`, cc);
+        r = hits.find((x) => isBuilding(x) && km(centroid, { lat: +x.lat, lng: +x.lon }) <= maxKm);
+        if (r) break;
+      }
+      if (r) {
+        const d = km(centroid, { lat: +r.lat, lng: +r.lon });
+        note.push(`meets at ${p.venue}, which is where this pin is — the published address is ${p.address_vague ? 'a PO box' : 'postal'}`);
+        finish({
+          lat: +(+r.lat).toFixed(6), lng: +(+r.lon).toFixed(6),
+          confidence: 'building', matched_via: 'venue',
+          osm: `${r.osm_type}/${r.osm_id}`, osm_name: (r.display_name || '').split(',')[0],
+          address: venueAddress(p.venue, r),
+          km_from_suburb: +d.toFixed(2),
+        });
+        log(`  building  ${p.name}  ->  ${p.venue} (named venue)`);
+        continue;
+      }
+      note.push(`names a venue the geocoder could not find: "${p.venue}"`);
+    }
 
     // 2. the OSM building pass 2 gave this parish, if any
     const cand = assignment.get(p.slug);
