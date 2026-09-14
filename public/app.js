@@ -602,6 +602,23 @@ function locationLabel() {
   return loc ? loc.label : '';
 }
 
+// ── Jurisdiction filter ──
+// The chip row at the top of the app. It is a CONTENT filter like the ones
+// above and below it — it decides which events are in the feed, not what
+// colour the feed is painted in (see getParishDisplayColor for the repaint
+// this used to also do).
+//
+// It lives on the client because the feed does. /api/events took a
+// `jurisdiction` param and filtered in SQL; /api/bundle ships the rules for
+// every parish and leaves every axis to applyNonViewportFilters, which is
+// where this one goes.
+/** Is this parish id inside the active jurisdiction filter? True when none is set. */
+function parishIdPassesJurisdiction(parishId) {
+  if (!state.filters.jurisdiction) return true;
+  const p = state.parishes.find(x => x.id === parishId);
+  return !!p && p.jurisdiction === state.filters.jurisdiction;
+}
+
 // ── Service filter ──
 // Registry is /shared/services.js. Same guarded-wrapper shape as the location
 // helpers above, for the same reason.
@@ -1418,7 +1435,11 @@ async function fetchEvents(opts = {}) {
   if (state.userLat != null) params.set('lat', state.userLat);
   if (state.userLng != null) params.set('lng', state.userLng);
   if (state.filters.type) params.set('type', state.filters.type);
-  if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
+  // No jurisdiction param. /api/bundle answers with every parish's rules on
+  // purpose — that is what lets the chip narrow the feed without a refetch —
+  // so the filter is applied in applyNonViewportFilters instead. A line
+  // setting it here stayed behind after the bundle stopped reading it, and a
+  // dead param on a request is indistinguishable from a live filter.
 
   const now = new Date();
   // From the start of today (Sydney local) out to the current horizon. Round
@@ -1518,8 +1539,6 @@ window.loadMoreEvents = () => loadMore({ parishMode: false });
 window.loadMoreParishEvents = () => loadMore({ parishMode: true });
 
 async function fetchSchedules(opts = {}) {
-  const params = new URLSearchParams();
-  if (state.filters.jurisdiction) params.set('jurisdiction', state.filters.jurisdiction);
   if (window.lsLog) window.lsLog('GET /api/schedules …');
   try {
     await window.agoraBundle.load();
@@ -2995,6 +3014,23 @@ function applyNonViewportFilters(events) {
     filtered = filtered.filter(e =>
       state.filters.parishIds.has(e.parish_id) ||
       (e.extra_parishes && e.extra_parishes.some(pid => state.filters.parishIds.has(pid)))
+    );
+  }
+  if (state.filters.jurisdiction) {
+    // The chips filtered in SQL until the lens moved the feed into the browser,
+    // and then nothing filtered at all: /api/bundle has no jurisdiction param,
+    // so the whole country kept arriving and this function never learned the
+    // axis. The map and the parish pills read state.filters.jurisdiction
+    // directly and carried on working, which is what made the feed look like
+    // the only thing ignoring the chip.
+    //
+    // An event is in the jurisdiction if any parish showing it is, for the same
+    // reason the location filter below says so: a combined service listed under
+    // a Greek and an Antiochian parish is genuinely both parishes' service, and
+    // belongs under either chip.
+    filtered = filtered.filter(e =>
+      e.jurisdiction === state.filters.jurisdiction ||
+      (e.extra_parishes && e.extra_parishes.some(pid => parishIdPassesJurisdiction(pid)))
     );
   }
   if (state.filters.location) {
@@ -5750,19 +5786,19 @@ function formatEventTime(date) {
 
 // Jurisdiction hex values come from /shared/jurisdiction-colors.js, which
 // index.html loads before this file — the table is also read by the seed, and
-// the two copies it used to have disagreed about Greek. Used both for direct
-// juris rendering (via getJurisdictionColor below, no substitution) and as the
-// override target when a juris filter is active (in getParishDisplayColor).
+// the two copies it used to have disagreed about Greek. Read wherever a
+// JURISDICTION is the subject: the chip row, a parish-group header, the map's
+// dots, and as the fallback for a parish that has set no colour of its own.
 function rawJurisColor(j) { return window.agoraJurisdictionColor(j); }
 window.rawJurisColor = rawJurisColor;
 
-// Exposed for filters.js, which paints the jurisdiction chips and needs the
-// no-substitution path — see the note in applyChipColors there.
+// A named jurisdiction's own tone, lifted for dark mode. Exposed for
+// filters.js, which paints the chip row.
 function getJurisdictionColor(j) {
+  // The fallback is for a caller with no jurisdiction in hand at all. Every
+  // current one passes an explicit key — a chip's own, a group header's own —
+  // and gets that jurisdiction's colour whether or not it is the active filter.
   const key = j || state.filters.jurisdiction;
-  // Use the no-substitution path so passing a non-active juris (e.g. when
-  // colouring a parish-group header for a juris that isn't the filter)
-  // still returns that specific juris's colour.
   return _liftIfDark(rawJurisColor(key));
 }
 
@@ -5777,9 +5813,9 @@ window.getJurisdictionColor = getJurisdictionColor;
 // loads first per index.html script order). The matchMedia check means
 // inline HTML re-renders pick up scheme changes — see __agoraSchemeRerender
 // below.
-// Dark-mode perceptual lift only. No juris-filter substitution.
-// Used by getJurisdictionColor (drawing a specific juris's tone) and as
-// the inner step of getParishDisplayColor (which adds the substitution).
+// Dark-mode perceptual lift only. The shared inner step of both colour
+// funnels: getJurisdictionColor (a jurisdiction's tone) and
+// getParishDisplayColor (a parish's own).
 function _liftIfDark(hex) {
   if (!hex) return hex;
   return (matchMedia('(prefers-color-scheme: dark)').matches && window.liftParishColor)
@@ -5789,13 +5825,19 @@ function _liftIfDark(hex) {
 
 function getParishDisplayColor(hex) {
   if (!hex) return hex;
-  // When a jurisdiction filter is active, every parish reads as that one
-  // juris's colour — the per-parish hue identity is intentionally hidden
-  // under the juris-wide selection. Cascades into dot/label/acronym/pill/
-  // avatar/glow because they all flow through this funnel.
-  const j = state && state.filters && state.filters.jurisdiction;
-  const effective = j ? rawJurisColor(j) : hex;
-  return _liftIfDark(effective);
+  // The dark-mode lift, and nothing else.
+  //
+  // A jurisdiction filter used to substitute that jurisdiction's own colour
+  // here, so picking Greek repainted every acronym, pill, avatar, feed line
+  // and card glow in the view at once. That was worth something while parish
+  // colours were arbitrary and the repaint was the only thing in the list
+  // saying "these are the Greek ones". Parish colours now mostly follow their
+  // jurisdiction already, so the substitution was restating what the reader
+  // could see — and flattening the parishes that deliberately don't follow it
+  // to make the point. It also made a chip whose job is filtering behave like
+  // a theme switch, which read as the filter having done something other than
+  // filter. The chips filter; a colour stays the parish's.
+  return _liftIfDark(hex);
 }
 // Exposed so filters.js (jurisdiction chips) and any other module can route
 // colour through the same dark-mode lift funnel.

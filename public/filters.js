@@ -75,10 +75,9 @@ function applyChipColors(container) {
   if (!container) return;
   const anyActive = container.querySelector('.jurisdiction-chip.active');
   // getJurisdictionColor is the shared table plus /admin's overrides plus the
-  // dark-mode OKLab lift, and it is the no-substitution path: with a filter
-  // active, getParishDisplayColor would answer every chip with the SELECTED
-  // jurisdiction's colour, which is right for a parish card and wrong for a
-  // row of six chips naming six different jurisdictions.
+  // dark-mode OKLab lift. Each chip asks for its OWN jurisdiction's colour, so
+  // a row of six chips naming six jurisdictions draws six of them whichever
+  // one is selected. Selection is carried by fill and opacity below, not hue.
   const resolve = window.getJurisdictionColor || (() => '');
   container.querySelectorAll('.jurisdiction-chip').forEach(chip => {
     const c = resolve(chip.dataset.jurisdiction);
