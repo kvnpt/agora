@@ -101,3 +101,18 @@ test('synonyms widen both matchers the same way', () => {
   assert.ok(expandSynonyms(new Set(['petka'])).has('paraskeva'));
   assert.ok(!expandSynonyms(new Set(['nichola'])).has('sava'));
 });
+
+test('a dedication written in its own language still finds the building', () => {
+  // Both Macedonian dioceses write Clement as Kliment and Demetrius as
+  // Dimitrija, and the Romanian one writes Dumitru for the same saint; OSM
+  // carries whichever the community put on the sign. Without these the right
+  // building sits in the results with no token in common with the parish.
+  assert.ok(expandSynonyms(new Set(['kliment'])).has('clement'));
+  assert.ok(expandSynonyms(new Set(['dimitrija'])).has('demetriu'));
+  assert.ok(expandSynonyms(new Set(['dumitru'])).has('demetriu'));
+  assert.ok(expandSynonyms(new Set(['gheorghe'])).has('george'));
+  // "Sveta Nedela" is Holy Sunday translated, not a personal name.
+  assert.ok(expandSynonyms(new Set(['nedela'])).has('sunday'));
+  // And the groups stay disjoint: a Macedonian St Nikola is not a St Kliment.
+  assert.ok(!expandSynonyms(new Set(['nikola'])).has('kliment'));
+});
