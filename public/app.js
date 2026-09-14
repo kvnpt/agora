@@ -6387,11 +6387,38 @@ function renderEventDrawerHTML(evt, opts = {}) {
   }
 
   const addr = evt.location_override || evt.parish_address || '';
-  // If event has a location override, use event's own coords (custom venue).
-  // Otherwise use parish coords (always current — event coords may be stale).
   const parish = state.parishes.find(p => p.id === evt.parish_id);
-  const lat = evt.location_override ? (evt.lat || (parish && parish.lat) || 0) : ((parish && parish.lat) || evt.lat || 0);
-  const lng = evt.location_override ? (evt.lng || (parish && parish.lng) || 0) : ((parish && parish.lng) || evt.lng || 0);
+
+  // Where Directions actually goes, which has to be the address this drawer is
+  // showing rather than the parish it belongs to.
+  //
+  // An override is TEXT — d1/schema.sql says so for the rule and says why: the
+  // pin stays the parish's, because geocoding every rule would put a second
+  // class of unverified pin on the map. So a projected occurrence carries the
+  // PARISH's coordinates in evt.lat/evt.lng (project.mjs copies p_lat/p_lng),
+  // and the old "override ? the event's own coords : the parish's" read the
+  // same numbers down either branch. The drawer named a hall down the road and
+  // then drove the reader to the church — the one place an override exists to
+  // say the service is not.
+  //
+  // Only a stored one-off can carry a pin of its own (events.lat/lng), and only
+  // there is a coordinate more precise than the words. Everything else
+  // navigates to the override's address and lets Maps geocode it, which is what
+  // a reader holding the printed address would type in themselves.
+  const hasOwnPin = evt.lat != null && evt.lng != null
+    && !(parish && evt.lat === parish.lat && evt.lng === parish.lng);
+  let destination = '';
+  if (evt.location_override) {
+    destination = hasOwnPin ? `${evt.lat},${evt.lng}` : encodeURIComponent(evt.location_override);
+  } else if (parish && parish.lat != null && parish.lng != null) {
+    // No override: the parish's pin, which is always current where a copy sitting
+    // on the event row may be stale.
+    destination = `${parish.lat},${parish.lng}`;
+  } else if (hasOwnPin) {
+    destination = `${evt.lat},${evt.lng}`;
+  } else if (addr) {
+    destination = encodeURIComponent(addr);
+  }
 
   const watchLiveCta = (evt.parish_live_url && !evt.hide_live)
     ? `<a class="btn-watch-live" href="${esc(evt.parish_live_url)}" target="_blank" rel="noopener"><span class="live-dot"></span>Watch Live</a>`
@@ -6513,9 +6540,9 @@ function renderEventDrawerHTML(evt, opts = {}) {
     </div>
     ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
     <div class="detail-actions">
-      <a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">
+      ${destination ? `<a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${destination}" target="_blank" rel="noopener">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
-      </a>
+      </a>` : ''}
       <button class="btn-action btn-share-event" type="button" data-share-id="${evt.id}">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share
       </button>
