@@ -318,7 +318,16 @@ const valueOf = (r, c) => {
   return sql(r[c]);
 };
 
-/** The SQL for a planned write: updates by id, inserts guarded on the natural key. */
+/**
+ * The SQL for a planned write: updates by id, inserts guarded on the natural key.
+ *
+ * ONE STATEMENT PER LINE, and no comments. These files get pasted into the
+ * Cloudflare D1 console as often as they get applied with wrangler, and that
+ * textarea collapses newlines — which is why `d1/*.console.sql` exists at all.
+ * A multi-line statement survives the collapse, but a `--` comment would eat
+ * the rest of the file, and a file that is already one-per-line needs no
+ * console sibling to go stale.
+ */
 export function buildScheduleSql({ updates, inserts }) {
   const out = [];
   for (const r of updates) {
@@ -331,9 +340,9 @@ export function buildScheduleSql({ updates, inserts }) {
     // and for the same reason: week_of_month makes "last Saturday 09:00 Liturgy"
     // and "09:00 Liturgy" distinct rules that agree on everything else.
     out.push(
-      `INSERT INTO schedules (${COLS.join(', ')})\n`
-      + `SELECT ${COLS.map((c) => valueOf(r, c)).join(', ')}\n`
-      + `WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id=${sql(r.parish_id)}`
+      `INSERT INTO schedules (${COLS.join(', ')})`
+      + ` SELECT ${COLS.map((c) => valueOf(r, c)).join(', ')}`
+      + ` WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE parish_id=${sql(r.parish_id)}`
       + ` AND day_of_week=${Number(r.day_of_week)} AND start_time=${sql(r.start_time)}`
       + ` AND title=${sql(r.title)});`,
     );
@@ -359,7 +368,16 @@ export function buildScheduleSql({ updates, inserts }) {
 export function buildWebsiteSql(changes, checkedAt) {
   const out = [];
   for (const c of changes) {
-    out.push(`UPDATE parishes SET website=${sql(c.website)}, info_checked_at=${sql(checkedAt)} WHERE id=${sql(c.id)};`);
+    // `website: undefined` means this row was re-read and nothing about its
+    // website changed. It gets the timestamp and NOTHING ELSE — writing the
+    // column back to the value it already holds would look identical in the
+    // data and would not be identical in intent, and the one time it differs
+    // is the time it matters: re-writing a normalised copy of a URL an admin
+    // has since edited by hand would quietly undo them.
+    const sets = c.website === undefined
+      ? `info_checked_at=${sql(checkedAt)}`
+      : `website=${sql(c.website)}, info_checked_at=${sql(checkedAt)}`;
+    out.push(`UPDATE parishes SET ${sets} WHERE id=${sql(c.id)};`);
   }
   return out.join('\n');
 }

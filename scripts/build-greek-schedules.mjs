@@ -169,7 +169,9 @@ for (const c of websiteChanges) {
 console.log(`\n${stampOnly.length} further rows keep the website they had; every row read gets info_checked_at = ${checkedAt}.`);
 
 await writeFile(scheduleOut, `${buildScheduleSql({ updates, inserts })}\n`);
-const stamped = [...websiteChanges, ...stampOnly.map((id) => ({ id, website: normaliseUrl(byId.get(id).website) }))];
+// `website` omitted on the stamp-only rows, so their statement carries the
+// timestamp alone and cannot walk back a URL somebody has edited in /admin.
+const stamped = [...websiteChanges, ...stampOnly.map((id) => ({ id }))];
 await writeFile(websiteOut, `${buildWebsiteSql(stamped, checkedAt)}\n`);
 console.log(`\nwrote ${updates.length + inserts.length} schedule statements to ${scheduleOut}`);
 console.log(`wrote ${stamped.length} parish statements to ${websiteOut}`);

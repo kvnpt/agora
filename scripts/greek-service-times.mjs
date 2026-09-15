@@ -19,8 +19,11 @@
 //   parish_id     the row in `parishes`
 //   source_ref    the page the quote is on — not the homepage, the page
 //   quote         the parish's own words, verbatim, including the hedges
-//   context       the surrounding sentence, when `quote` is a clause of it and
-//                 the weekday or the service name lives in the other half
+//   context       adjacent text from the SAME page, verbatim — the heading above
+//                 the quote, or the other half of a sentence the quote is a
+//                 clause of. Checked against the page like `quote` is.
+//   note          the curator's own explanation. Never checked against anything,
+//                 because it is not something the parish said.
 //   title         what the card will say; chosen by a person, never guessed
 //   days          0=Sun; supplied when the quote alone does not name the day
 //   start_time /  local wall clock, per schema.sql — NOT normalised to UTC
@@ -40,12 +43,42 @@ export const SERVICE_TIMES = [
   // ── All Saints, Belmore ───────────────────────────────────────────────────
   {
     parish_id: 'greek-allsaints-belmore',
-    source_ref: 'https://www.allsaints.com.au/sunday-services',
+    source_ref: 'https://www.allsaints.com.au/sacraments',
     quote: 'Matins and Liturgy take place every Sunday morning from 7:30am-10:30am.',
+    context: 'Sunday Services',
+    note: 'The parish files its weekly times on its Sacraments page rather than anywhere '
+      + 'named for a timetable.',
     title: 'Matins & Divine Liturgy',
     days: [0],
     start_time: '07:30',
     end_time: '10:30',
+    event_type: 'liturgy',
+    week_of_month: null,
+    languages: null,
+  },
+
+  // ── The Cathedral of the Annunciation of Our Lady, Redfern ───────────────
+  //
+  // The Cathedral's upcoming-services panel is a dated programme and is not
+  // used. This line is different: it is a standing weekly claim in the site
+  // footer, and it sits under a heading that reads "Opening Hours" — which is
+  // recorded here rather than smoothed over, because that heading is exactly
+  // what `NOT_A_SERVICE` refuses elsewhere. The line beside it, "Mon - Fri:
+  // 8:00 AM - 3:30 PM", genuinely IS an opening time and is not taken. This one
+  // names a service, a weekday and a span, and every dated Sunday in the
+  // programme above it starts at 7:30 am, which is corroboration rather than
+  // the source.
+  {
+    parish_id: 'greek-annunciationlady-redfern',
+    source_ref: 'https://www.goacathedral.org.au',
+    context: 'Sunday',
+    note: 'In the site footer, under an "Opening Hours" heading. The "Mon - Fri: 8:00 AM - 3:30 PM" '
+      + 'line above it is an opening time and is deliberately not taken.',
+    quote: 'Divine Liturgy: 7:30 AM - 11:00 AM',
+    title: 'Divine Liturgy',
+    days: [0],
+    start_time: '07:30',
+    end_time: '11:00',
     event_type: 'liturgy',
     week_of_month: null,
     languages: null,
@@ -157,7 +190,7 @@ export const SERVICE_TIMES = [
     parish_id: 'greek-stanna-bundallgold',
     source_ref: 'https://gocstanna.org',
     quote: 'Sunday Service every Sunday | 7:30am - 10:30am',
-    context: 'Under the heading "Sunday Service Matins & Divine Liturgy".',
+    context: 'Sunday Service Matins & Divine Liturgy',
     title: 'Matins & Divine Liturgy',
     days: [0],
     start_time: '07:30',
@@ -187,8 +220,8 @@ export const SERVICE_TIMES = [
   // ── Sts Raphael, Nicholas & Irene, Liverpool ─────────────────────────────
   {
     parish_id: 'greek-straphael-liverpool',
-    source_ref: 'https://www.straphael.org.au',
-    context: 'Under the heading "Every Sunday".',
+    source_ref: 'https://www.straphael.org.au/whats-on',
+    context: 'Every Sunday',
     quote: 'Matins + Divine Liturgy starting at 7:30am',
     title: 'Matins & Divine Liturgy',
     days: [0],
@@ -207,8 +240,13 @@ export const SERVICE_TIMES = [
   {
     parish_id: 'greek-stsophiathree-taylorsquare',
     source_ref: 'https://stsophia.org.au/divine-liturgy-in-english',
-    quote: 'St Sophia has implemented a new initiative to perform the Divine Liturgy in English on the '
-      + 'last Saturday morning of every month. The Liturgy begins at 9:00am.',
+    // The hour and the week are in two different paragraphs, so the quote is
+    // the one carrying the hour and `context` is the one carrying the week —
+    // which is also the sentence that justifies week_of_month being 'last'.
+    context: 'Dedicated to providing our English speaking parishioners with opportunities to engage with '
+      + 'their faith. St Sophia has implemented a new initiative to perform the Divine Liturgy in English '
+      + 'on the last Saturday morning of every month .',
+    quote: 'The Liturgy begins at 9:00am.',
     title: 'Divine Liturgy in English',
     days: [6],
     start_time: '09:00',
@@ -227,7 +265,7 @@ export const SERVICE_TIMES = [
     parish_id: 'greek-stsophronyessex-hectorville',
     source_ref: 'https://saintsophronyorthodoxparish.com',
     quote: 'Sundays 8 am - 9 am',
-    context: 'Under the heading "Matins Service".',
+    context: 'Matins Service',
     title: 'Matins',
     days: [0],
     start_time: '08:00',
@@ -240,7 +278,7 @@ export const SERVICE_TIMES = [
     parish_id: 'greek-stsophronyessex-hectorville',
     source_ref: 'https://saintsophronyorthodoxparish.com',
     quote: 'Sundays 9 am - 10.30 am',
-    context: 'Under the heading "Divine Liturgy".',
+    context: 'Divine Liturgy',
     title: 'Divine Liturgy',
     days: [0],
     start_time: '09:00',
@@ -293,5 +331,19 @@ export const PUBLISHES_BUT_NOT_A_RULE = [
     parish_id: 'greek-stgeorge-rosebay',
     url: 'https://www.stgeorgerosebay.org.au',
     why: 'publishes dated parish events and no weekly service times',
+  },
+  {
+    parish_id: 'greek-stspyridon-kingsford',
+    url: 'https://stspyridon.org.au',
+    why: 'publishes a dated programme — every Sunday listed by name and date at 7:30-11:00am, '
+      + 'which is an adapter\'s input and not a rule the parish has stated as one',
+  },
+  {
+    parish_id: 'greek-stnektarios-dianella',
+    url: 'https://www.stnektarioswa.org.au',
+    why: 'the only recurring times it publishes are RADIO BROADCASTS of recorded liturgies — '
+      + '"Thursdays from 1:30pm of the recorded English liturgy from the previous Saturday". '
+      + 'A broadcast is not a service somebody travels to, and the liturgies themselves appear '
+      + 'only in a newsletter dated 2022',
   },
 ];

@@ -320,6 +320,10 @@ test('an insert is guarded so re-running writes nothing twice', () => {
   assert.match(sql, /'\["Greek", "English"\]'/);
   assert.match(sql, /'10:30'/);
   assert.ok(!sql.includes('NULL,NULL'));
+  // One statement per line: these files get pasted into the D1 console, whose
+  // textarea collapses newlines.
+  assert.equal(sql.split('\n').length, 1);
+  assert.ok(!sql.includes('--'));
 });
 
 test('a quote mark in a title cannot break out of the statement', () => {
@@ -353,4 +357,14 @@ test('a website correction re-stamps when we looked and nothing else', () => {
 test('clearing a dead website writes NULL rather than an empty string', () => {
   const sql = buildWebsiteSql([{ id: 'greek-ladyaxionestin-northcote', website: null }], '2026-09-15T00:00:00Z');
   assert.match(sql, /SET website=NULL/);
+});
+
+test('a row that was only re-read gets the timestamp and nothing else', () => {
+  // 116 of the 135 rows are this. Writing `website` back to the value it already
+  // holds would be invisible in the data and wrong in intent — and the one case
+  // where it differs is the case that matters: an admin who has since corrected
+  // the URL by hand would be quietly undone by the next re-run.
+  const sql = buildWebsiteSql([{ id: 'greek-stspyridon-kingsford' }], '2026-09-15T00:00:00Z');
+  assert.equal(sql, "UPDATE parishes SET info_checked_at='2026-09-15T00:00:00Z' WHERE id='greek-stspyridon-kingsford';");
+  assert.ok(!sql.includes('website'));
 });
