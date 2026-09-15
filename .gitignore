@@ -24,3 +24,11 @@ cache/
 /*-schedules.sql
 /*-corrections.sql
 /goodshepherd-source.sql
+
+# The Greek service-times run's equivalents. `greek-sites.json` carries the
+# phone numbers off the directory pages, and `greek-pages.json` is most of a
+# megabyte of other people's website text — neither belongs in the repo, and
+# both regenerate from scripts/scrape-greek-*.mjs.
+/greek-sites.json
+/greek-pages.json
+/greek-websites.sql
