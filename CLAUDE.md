@@ -183,6 +183,27 @@ kept alongside, because two deploy paths race on every push. Workers Builds need
 no credential stored anywhere, which is worth more here than the test gate it
 gives up — CI still runs on every pull request, so the gate lives there instead.
 
+**Green CI is the merge gate, not a human.** A pull request whose checks pass may
+be merged without waiting for a review, Claude's own included. It is the same
+reasoning that deleted the deploy workflow: the gate that actually catches things
+here is the machine one, and a review step nobody is reliably awake for is a
+queue rather than a safeguard. Merging is deploying, so it is the check being
+*green* that earns the merge — a red or still-running one waits, every time, and
+"probably a flake" is not a reason to merge past it.
+
+What that buys has a limit worth naming, and it is not "CI cannot see the
+frontend". `public/shared/` is covered well — the projection, the timezone maths,
+the dedup and the slug tables are imported by the suite directly, which is half
+the point of the modules being shared. What nothing *executes* is the app built
+on top of them: `app.js`, `filters.js`, `bundle.js`, `map.js`. A few tests read
+those as text, to assert they reach for the shared table rather than keeping a
+private copy, and that is not the same as running them.
+
+So a change to rendering, filtering or wiring merges on the strength of whatever
+its author did to check it, and the PR should say what that was. Reproducing the
+fault against the old code first and then re-measuring is the honest version.
+"Tests pass" is not, when no test ran the line that changed.
+
 ```bash
 npm run deploy       # the same thing, if you do have a terminal
 ```
