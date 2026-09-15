@@ -158,15 +158,46 @@ window.setDateFocus = async function (dateStr, opts = {}) {
   // quiet date has no day box of its own, and the stream already starts at the
   // next thing on — so there is nothing to scroll to and nothing is wrong.
   requestAnimationFrame(() => {
-    const scope = window.agoraParishSheetVisible
-      ? document.getElementById('parish-sheet-scroll')
-      : document.getElementById('sheet-scroll');
+    if (window.agoraParishSheetVisible) return scrollParishSheetToDateBanner();
+    const scope = document.getElementById('sheet-scroll');
     const el = scope && scope.querySelector(
       `.day-box[data-date="${dateStr}"], .day-section[data-date="${dateStr}"]`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     else if (scope) scope.scrollTo({ top: 0, behavior: 'smooth' });
   });
 };
+
+/**
+ * Where a date pick lands in the parish sheet: the row that says which date is
+ * showing, not the day it names.
+ *
+ * The main feed can scroll to the focused day because the feed IS the page and
+ * everything above it is chrome. A parish sheet is not — between its picker and
+ * its events list stand the parish's address, its actions and its whole
+ * timetable — so scrolling to the day box carried all of that off the top for
+ * the sake of one card, and landed the sheet somewhere the user had to scroll
+ * back out of. Stopping at "Showing from …" puts the answer at the top of the
+ * list and leaves the list under it to be read.
+ */
+function scrollParishSheetToDateBanner() {
+  const scope = document.getElementById('parish-sheet-scroll');
+  if (!scope) return;
+  const banner = scope.querySelector('.ps-date-banner');
+  if (!banner) return scope.scrollTo({ top: 0, behavior: 'smooth' });
+  // .ps-header and .ps-filter-row are both sticky inside this scroller, so the
+  // banner has to stop below their combined height or it arrives behind them.
+  // Measured rather than read off --ps-stack-h, which a sheet opened this frame
+  // has not been written yet.
+  const stack = ['.ps-header', '.ps-filter-row'].reduce((h, sel) => {
+    const el = scope.querySelector(sel);
+    return h + (el ? el.getBoundingClientRect().height : 0);
+  }, 0);
+  const top = scope.scrollTop
+    + banner.getBoundingClientRect().top
+    - scope.getBoundingClientRect().top
+    - stack - 8;
+  scope.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
 
 window.clearDateFocus = function (opts = {}) {
   if (!state._dateFocus) return;
@@ -2289,10 +2320,41 @@ function renderInViewChip() {
   const hour = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()));
   const when = hour >= 16 ? 'tonight' : 'today';
   const noun = n === 1 ? 'event' : 'events';
-  countEl.textContent = `${n} ${noun} ${when}`;
+  // Both halves of "what am I looking at": how much of the map's contents the
+  // count is drawn from, and how much of it is on. A zero-event reading is
+  // ambiguous on its own — nothing on, or nothing in view — and the parish
+  // count is what separates the two.
+  const parishCount = countFilteredParishesInView();
+  const parishNoun = parishCount === 1 ? 'parish' : 'parishes';
+  countEl.textContent = `${parishCount} ${parishNoun} • ${n} ${noun} ${when}`;
   updateInViewChevron();
 }
 window.agoraRenderInViewChip = renderInViewChip;
+
+/**
+ * How many parishes the feed is currently drawn from: inside the map viewport
+ * AND past the filters that scope which parishes count at all.
+ *
+ * The same three axes renderParishPills applies, plus the viewport — a
+ * jurisdiction, a location slug, and an explicit pick from the pill row. The
+ * English toggle is deliberately not among them: it prunes SERVICES by the
+ * language they are in, and a parish with no languages recorded would drop out
+ * of the count while its services stayed in the list under it.
+ */
+function countFilteredParishesInView() {
+  const vp = state.viewportParishIds;
+  if (!(vp instanceof Set)) return 0;
+  let n = 0;
+  for (const p of state.parishes || []) {
+    if (!p || p.id === '_unassigned' || p.lat == null || p.lng == null) continue;
+    if (!vp.has(p.id)) continue;
+    if (state.filters.jurisdiction && p.jurisdiction !== state.filters.jurisdiction) continue;
+    if (!parishPassesLocation(p)) continue;
+    if (state.filters.parishIds && !state.filters.parishIds.has(p.id)) continue;
+    n++;
+  }
+  return n;
+}
 
 function syncParishRowVisibility() {
   const wrap = document.getElementById('parish-filter-row-wrap');
@@ -6037,7 +6099,12 @@ function renderScheduleDaysHTML(items, opts = {}) {
       html += `</div>`;
       if (isAdmin) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
-        html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
+        // data-sef, not id: this markup renders into the services panel AND
+        // into the parish sheet at the same time, so an id would be duplicated
+        // and getElementById would hand every lookup the services copy — which
+        // is off-screen behind the sheet. The lookups below are scoped to the
+        // container they were wired against instead.
+        html += `<div class="schedule-edit-form" data-sef="${s.id}" style="display:none;" onclick="event.stopPropagation()">
           <div class="schedule-edit-grid">
             <input data-f="title" class="sef-full" value="${esc(s.title)}" placeholder="Title">
             <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
@@ -6073,11 +6140,20 @@ function renderScheduleDaysHTML(items, opts = {}) {
 
 // Bind toggle/save/delete handlers for every admin schedule-edit affordance
 // under `container`. Idempotent: tied to elements, not global state.
+//
+// Every lookup here goes through `container`, never through the document. The
+// services panel and the parish sheet render the same rule at the same time,
+// so "the form for schedule 4" is two elements; the one this button belongs to
+// is the one inside the container it was wired against. A document-wide lookup
+// found the services copy first — behind the sheet, so an edit opened nothing,
+// a save wrote that copy's untouched values back over the admin's, and the form
+// they were looking at stayed open.
 function wireScheduleAdminHandlers(container) {
+  const formFor = (sid) => container.querySelector(`.schedule-edit-form[data-sef="${sid}"]`);
   container.querySelectorAll('.schedule-edit-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const form = document.getElementById('sef-' + btn.dataset.sid);
+      const form = formFor(btn.dataset.sid);
       if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
     });
   });
@@ -6085,7 +6161,9 @@ function wireScheduleAdminHandlers(container) {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const id = btn.dataset.sid;
-      const form = document.getElementById('sef-' + id);
+      // The save button lives inside the form it saves, so closest() is exact
+      // even before the container scoping above is trusted.
+      const form = btn.closest('.schedule-edit-form') || formFor(id);
       if (!form) return;
       const data = {};
       form.querySelectorAll('[data-f]').forEach(input => {
@@ -6103,7 +6181,15 @@ function wireScheduleAdminHandlers(container) {
         }
       });
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-        .then(r => { if (r.ok) { form.style.display = 'none'; fetchSchedules(); } });
+        .then(async r => {
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            alert(err.error || 'Save failed');
+            return;
+          }
+          form.style.display = 'none';
+          reloadAfterScheduleChange();
+        });
     });
   });
   container.querySelectorAll('.schedule-del-btn').forEach(btn => {
@@ -6111,9 +6197,36 @@ function wireScheduleAdminHandlers(container) {
       e.stopPropagation();
       if (!confirm('Delete this schedule?')) return;
       fetch(`/api/admin/schedules/${btn.dataset.sid}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
-        .then(r => { if (r.ok) fetchSchedules(); });
+        .then(async r => {
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            alert(err.error || 'Delete failed');
+            return;
+          }
+          reloadAfterScheduleChange();
+        });
     });
   });
+}
+
+/**
+ * A rule row changed under an admin's hands. Everything on screen is projected
+ * from the bundle — the feed, the map dots, the parish sheet's timetable — so
+ * until the bundle is fetched again nothing reflects the edit, and a deleted
+ * rule keeps projecting its occurrences. `fresh` is what makes it a fetch:
+ * load() otherwise serves its 60-second cache, which is the whole reason a
+ * delete used to leave the schedule sitting there.
+ *
+ * Order matters. fetchEvents re-renders the parish sheet on its way out, and
+ * the sheet's timetable reads state.schedules — so schedules are refreshed
+ * first, or the sheet would repaint from the rows the edit just replaced.
+ */
+async function reloadAfterScheduleChange() {
+  // No window: load() unions it with whatever the feed has already grown to,
+  // so re-fetching here cannot pull the horizon back in.
+  await window.agoraBundle.load({ fresh: true });
+  await fetchSchedules();
+  await fetchEvents({ keepCount: true });
 }
 
 function renderServices() {
