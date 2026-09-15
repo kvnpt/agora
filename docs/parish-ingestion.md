@@ -67,9 +67,11 @@ parish websites publish a standing weekly timetable, and nothing else does, so
 adapters remain the only route to the rest.
 
 The Greek service-times run at the end of this file adds 17 more, across 8
-parishes, and corrects 19 parish websites — which takes the table to 99
-schedules and leaves the largest jurisdiction still the thinnest, for reasons
-that section sets out.
+parishes, and corrects 19 parish websites. **It has been applied**: the table
+went from 80 schedules to 97 on 15 September 2026, and the largest jurisdiction
+is still the thinnest, for the reasons that section sets out. (80, not the 82
+quoted above — the count above is the bundle's, taken two days earlier, and two
+rows have gone since.)
 
 The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
@@ -1459,3 +1461,31 @@ schedule, and a `source_ref` pointing at a page nothing can fetch is worse than
 an empty column. If Greek service times are ever going to be more than a
 footnote in this database, that is the wall to get past, and it is a product
 decision rather than a scraping one.
+
+### Applied to production, 15 September 2026
+
+```
+schedules        80  ->  97      (+17, all Greek)
+greek schedules   0  ->  17      across 8 parishes
+greek websites   36  ->  50      (16 added, 2 cleared, 1 repointed)
+info_checked_at           135    every Greek row re-stamped
+info_verified_at   0  ->   0     untouched, as it must be
+```
+
+Applied with `wrangler d1 execute agora --remote --file=…`, schedules first and
+parish rows second, after `npm run db:export` — the repo is not a backup, and
+D1's Time Travel plus that dump are what a mistake would be rolled back from.
+
+**Verified after the write, not assumed.** `/api/schedules` returns the 17 with
+`source_name = 'Parish website'`; `/api/parishes` shows 50 Greek websites, all
+135 rows stamped, and `info_verified_at` still null on every one. Running
+`expandFrom()` from `public/shared/` over the live `/api/bundle` projects 143
+Greek occurrences over two months, and two of them are the checks worth keeping:
+
+- **St Sophia's monthly liturgy lands on 26 September and 31 October and no
+  other Saturday** — `week_of_month = 'last'` doing exactly the job that made it
+  worth parsing "the last Saturday morning of every month" properly.
+- **St Sophrony's Matins stays at 08:00 in Adelaide across the DST boundary**,
+  while the instant it projects to moves from `22:30Z` to `21:30Z` on 4 October.
+  That is the local-time-not-UTC rule in `d1/schema.sql` working end to end, on
+  real rows, in the zone that is hardest to get right.
