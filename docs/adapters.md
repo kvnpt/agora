@@ -113,6 +113,27 @@ publisher. What was missing was never fetch frequency, it was anyone noticing.
 A rolling source never trips it: an adapter asking for the next ninety days
 every run carries its horizon forward with it. See `worker/lib/coverage.mjs`.
 
+**A PDF source can follow the page that links it.** `pdf-sources.mjs` says a
+parish's source is remembered rather than discovered, and for the FILE that is
+still true — probing Blacktown's `programme_<month>_<year>_en.pdf` template
+across 2025-26 finds four months and eight 404s, so there is no sequence to
+follow. What is stable is the page: `/church-programme.html` shows one month at
+a time and carries the current file as an ordinary link. Set `indexUrl` and
+`linkPattern` and the extractor reads the URL off that page each run.
+
+`sourceUrl` stays, and stays the fallback. A parish that reorganises its site
+degrades to "still reading last month's file, and the log says why" rather than
+to nothing — every discovery failure is a `::notice::`, never an error. When the
+page offers a file the entry does not remember, the log says so, because the
+fallback should be moved on to the current file rather than ageing quietly.
+
+Two links for the same month are refused rather than chosen between: picking
+arbitrarily is how a run starts serving an archived programme, and the fallback
+is a file already known to work. Not every parish can be followed — Buderim's
+site links no PDF from any page, because `/hubfs/` is HubSpot's file manager and
+the sheet is handed out rather than published. That one needs a person once a
+year, and the entry says so.
+
 ## Testing
 
 Nothing needs the network:

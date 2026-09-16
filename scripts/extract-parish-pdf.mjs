@@ -41,6 +41,7 @@ import path from 'node:path';
 import { PDF_SOURCES, r2KeyFor } from '../worker/lib/pdf-sources.mjs';
 import { parseSchedulePdfText } from '../worker/lib/pdf-schedule.mjs';
 import { reflowTraceXml } from './pdf-grid.mjs';
+import { discoverPdfUrl } from './pdf-discover.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback = null) => {
@@ -102,14 +103,52 @@ function pdfToText(bytes, mode) {
 let failures = 0;
 mkdirSync(outDir, { recursive: true });
 
+const UA = { 'User-Agent': 'Agora-OrthodoxEventFinder/1.0 (orthodoxy.au)' };
+
+/**
+ * The URL to actually download, following the parish's index page when it has
+ * one. Returns the remembered `sourceUrl` unchanged when it does not, or when
+ * following fails.
+ *
+ * Never throws. A parish reorganising its website should cost us this month's
+ * file, not the whole extraction — so every failure here is a notice and a
+ * fallback to the last URL known to work.
+ */
+async function resolveSourceUrl(source, label) {
+  if (!source.indexUrl || !source.linkPattern) return { url: source.sourceUrl, from: null };
+  let html = '';
+  try {
+    const res = await fetch(source.indexUrl, { headers: UA, redirect: 'follow' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    html = await res.text();
+  } catch (err) {
+    console.log(`::notice::${label} could not read ${source.indexUrl} (${err.message}); using the remembered URL`);
+    return { url: source.sourceUrl, from: null };
+  }
+
+  const { url, reason } = discoverPdfUrl(html, source);
+  if (!url) {
+    console.log(`::notice::${label} ${reason}; using the remembered URL`);
+    return { url: source.sourceUrl, from: null };
+  }
+  if (url !== source.sourceUrl) {
+    // The parish has published something new. This is the event the index is
+    // there to catch, and it is worth an annotation rather than a log line:
+    // pdf-sources.mjs still names the old file, and somebody should move it on
+    // so the fallback is the current one rather than an ageing one.
+    console.log(`::notice::${label} ${source.indexUrl} now offers ${url} — `
+      + `pdf-sources.mjs still remembers ${source.sourceUrl}`);
+  }
+  console.log(`${label} discovered ${url} (${reason})`);
+  return { url, from: source.indexUrl };
+}
+
 for (const source of sources) {
   const label = `[${source.key}]`;
   try {
-    console.log(`${label} GET ${source.sourceUrl}`);
-    const res = await fetch(source.sourceUrl, {
-      headers: { 'User-Agent': 'Agora-OrthodoxEventFinder/1.0 (orthodoxy.au)' },
-      redirect: 'follow',
-    });
+    const { url: sourceUrl, from: discoveredFrom } = await resolveSourceUrl(source, label);
+    console.log(`${label} GET ${sourceUrl}`);
+    const res = await fetch(sourceUrl, { headers: UA, redirect: 'follow' });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const bytes = Buffer.from(await res.arrayBuffer());
 
@@ -144,7 +183,12 @@ for (const source of sources) {
     const doc = {
       key: source.key,
       parish_id: source.parishId,
-      source_url: source.sourceUrl,
+      // The URL actually fetched, which with an index is the discovered one —
+      // the adapter stamps this onto every event's source_url, so a card links
+      // the file its service was read out of rather than a remembered older one.
+      source_url: sourceUrl,
+      // Null when the URL came from pdf-sources.mjs rather than a page.
+      discovered_from: discoveredFrom,
       fetched_at: new Date().toISOString(),
       // Lets the adapter log say whether it is looking at a new file or the one
       // it read last time, without diffing the text.
