@@ -66,6 +66,13 @@ order of magnitude: the Antiochian directory publishes them, five Romanian
 parish websites publish a standing weekly timetable, and nothing else does, so
 adapters remain the only route to the rest.
 
+The Greek service-times run at the end of this file adds 17 more, across 8
+parishes, and corrects 19 parish websites. **It has been applied**: the table
+went from 80 schedules to 97 on 15 September 2026, and the largest jurisdiction
+is still the thinnest, for the reasons that section sets out. (80, not the 82
+quoted above — the count above is the bundle's, taken two days earlier, and two
+rows have gone since.)
+
 The notes below describe the database *before* both imports, and are kept
 because the reasoning attached to them still holds.
 
@@ -1190,3 +1197,295 @@ insert a second copy of a rule somebody has since renamed in */admin*. Seven
 rules in the table already carry no source at all — one Antiochian and six
 Serbian, all entered by hand through */admin* over the last two days — and they
 are left exactly as they are.
+
+---
+
+## What the Greek SERVICE TIMES run cost
+
+**17 recurrence rules, across 8 of 135 parishes.** That ratio is the finding,
+not a shortfall in the scraping, and it is worth writing down plainly because
+the next person to look at the Greek rows will assume somebody gave up.
+
+```
+135  Greek parishes in production
+  0  for which the Archdiocese publishes a service time
+ 38  with a readable website of their own
+  4  whose website exists and cannot be opened from a scraping environment
+ 14  searched by name and suburb, and found to publish nowhere at all
+  9  publishing something that is deliberately NOT a rule
+  8  publishing a standing weekly timetable  ->  17 rules
+```
+
+The gap between 38 readable sites and 8 usable ones is the shape of the whole
+run: a Greek parish in Australia that has a website mostly uses it for a history,
+a priest's photograph and a dated programme.
+
+**The Archdiocese publishes no service time at all.** Not "publishes them
+inconsistently" — publishes none. All 135 church pages at
+`greekorthodox.org.au/churches/<slug>/` are one template, and the template has
+rows for address, phone, fax, feast day, parish email, website, priest, deacon,
+mobile and confessor. There is no row for a service. So unlike the Antiochian
+run, where the same 24 pages that gave the addresses also gave 67 rules, this
+run could not start from the directory at all: every Greek time has to come
+from a parish's own site, which makes *finding the sites* the first pass rather
+than a footnote.
+
+**And the directory links to a site for only a quarter of them.** 34 of 135
+carry a website; 101 carry nothing. Eleven of the 34 links no longer answer.
+
+```bash
+node scripts/scrape-greek-sites.mjs     cache/greek/       greek-sites.json
+node scripts/scrape-greek-schedules.mjs greek-sites.json   cache/greek-sites/ greek-pages.json
+node scripts/check-greek-quotes.mjs     greek-pages.json
+node scripts/build-greek-schedules.mjs  greek-sites.json   greek-schedules.sql greek-websites.sql
+```
+
+### A hundred sites, a hundred layouts
+
+`antiochian-schedules.mjs` is a line parser because that directory is one
+template. Nothing here is. The readable Greek sites are WordPress, Wix,
+Squarespace, two Blogspots and one hand-written table, and what they have in
+common is not a layout — it is a **sentence**:
+
+> Matins and Liturgy take place every Sunday morning from 7:30am-10:30am.
+
+> Vespers take place every Saturday at 3pm.
+
+> …to perform the Divine Liturgy in English on the last Saturday morning of
+> every month. The Liturgy begins at 9:00am.
+
+So the pipeline splits differently from the Antiochian one. `greek-crawl.mjs`
+finds the page, `greek-schedules.mjs` parses English prose narrowly, and
+`greek-service-times.mjs` holds the sentences a person selected — quoted
+verbatim, with the URL they are on. **The test parses every quote and asserts
+the rule claimed beside it**, so a mistyped hour fails the suite instead of
+reaching D1. That is the check that makes a hand-curated file safe; without it
+the file is just numbers somebody typed.
+
+**And a second check proves the sentence is really on the page it cites.**
+`check-greek-quotes.mjs` is not in CI — it needs the crawl output — and it
+earned its keep on the first run: three of the first thirteen entries cited a
+page that did not carry their sentence. One URL was invented outright
+(`/sunday-services`, when All Saints publishes its times on `/sacraments`), one
+cited a homepage when the text was on `/whats-on`, and one quoted across a
+paragraph break so the hour and the week were never on the same line. All three
+would have shipped a `source_ref` that a reader clicking *"Updated 2 days ago ·
+Parish website"* would have found nothing on. Run it after every re-crawl: a
+parish rewording its page is itself a finding, because the times may have moved
+too.
+
+That check is also why `context` and `note` are separate fields. `context` is
+adjacent text copied off the same page and is verified like the quote; `note` is
+the curator's own explanation and is never checked, because it is not something
+the parish said. Collapsing the two meant the checker either had to sniff for
+prose that "looks like a note" or stop checking headings at all.
+
+### The traps, in the order they cost time
+
+**A link crawler alone under-reports, and under-reporting here is a false
+claim.** This run's headline is how many parishes publish nothing, so a page
+that exists and was never fetched is not a gap — it is a wrong answer. St
+Nicholas Marrickville publishes at `/general/serviceschedule.html`, linked only
+from a submenu built by script and therefore absent from the HTML. Hence
+`WELL_KNOWN_PATHS`: after ranking the links, try `/services`, `/programme`,
+`/church-program` and a dozen others regardless. A 404 costs one request.
+
+**Half the sites have no server-rendered text.** Wix and Squarespace return a
+shell; `goacathedral.org.au` returns literally zero characters of body text to
+`fetch`, and its only standing weekly rule is in that unrendered footer. Those
+were fetched with a real browser into `cache/`, which is the same escape hatch
+the Antiochian run used for a site that 403s robots — the repo scripts stay
+dependency-free and read whatever is in the cache.
+
+**A browser pass must not overwrite a good cache entry with a failed one.**
+Merging the rendered pages back in clobbered Coburg's `/our-programs` — the
+fullest Greek timetable in the country — with a 174-byte transient 502, and the
+only reason it did not silently vanish from the import is that
+`check-greek-quotes.mjs` reported five sentences citing a page that was no
+longer in the crawl. Losing a page and losing a parish's rules look identical
+from downstream, which is the argument for the check rather than for trusting
+the merge.
+
+**Three hosts cannot be reached from a scraping environment at all**, and that
+is a third state which must not be collapsed into the other two. SiteGround's
+captcha (`hcwa.org`, `gocna.com.au`) does not yield to a real browser either,
+and two hosts are refused at the egress gateway. `greek-site-overrides.mjs`
+records `unreachable` separately from `website: null`, because "nobody can read
+it from here" and "this parish has no site" are different facts and only the
+second one belongs in a count of parishes that publish nothing.
+
+**Transient failures look exactly like dead sites.** The same host answered a
+121-byte `upstream connect error` on one attempt and 200 on the next; an early
+pass declared `dormition.org.au` and `axionestin.org.au` dead on that basis and
+both are alive. Anything that is not a clean HTTP answer is retried with
+backoff, and both the bare host and the `www.` host are tried, because about
+half of these serve only one of the two.
+
+**A candidate has to be confirmed against the dedication, not just the suburb.**
+Australia has nine Greek parishes called St Nicholas and five called St George.
+The aggregator offers `orthodoxtoowoomba.com` for St Nicholas Toowoomba; that
+domain belongs to **St John the Baptist Orthodox Mission, a ROCOR community**.
+Every discovered URL in `greek-site-overrides.mjs` was fetched and checked for
+the parish's own suburb *and* its dedication *and* the word Orthodox before it
+was written down, and that check is what caught this one.
+
+### The rule about sources held, and it cost the run rules
+
+`orthodoxyinaustralia.com` publishes a service time for most of these parishes.
+None of them is used. It is an aggregator, and `docs/parish-ingestion.md` has
+said since the ROCOR run that an aggregator is a signpost and not a source — so
+it was read for its outbound links and closed. It is worth being explicit that
+this was expensive: taking its word would have roughly tripled the rule count,
+and the rules would have asserted `Parish website` about a page no parish wrote.
+
+**A community that runs a parish IS that parish's publisher, though.** The Greek
+Community of Melbourne runs five of these churches outright and publishes a page
+for each; so do the Greek Community of Tasmania, of Geelong and of Northern
+Australia. Those are first-party and are used as such. (The five Melbourne pages
+carry an address, a priest and a long parish history, and not one service time —
+which is a finding, not a reason to have skipped them.)
+
+### What was refused, and why
+
+**A dated programme is not a rule** — the Romanian run's finding, and three more
+parishes fall under it. Perth's Evangelismos publishes every service for weeks
+ahead with real dates; Templestowe publishes a "calendar of services"; Geelong
+publishes a monthly programme. `infer.mjs` exists to turn observed occurrences
+into rules and will only do so when a rule reproduces the dates exactly. Those
+three want an adapter, and hand-writing "Sundays 8am" off a September calendar
+asserts something the calendar does not.
+
+**A parish that contradicts itself is not a source for either hour.** Coburg
+publishes its timetable twice, at `/our-programs` and `/liturgical-programs`,
+and the two disagree: Small Compline is Tuesdays 7pm on one page and Tuesdays
+5pm on the other, and the Paraklesis to St John the Russian is Tuesday mornings
+on one and Thursday mornings from 7am on the other. Both were dropped. The nine
+rules that page *does* agree with itself about were taken.
+
+**"Alternates" is a fortnight, and `week_of_month` has no spelling for it.**
+Coburg's Compline and its Youth Group both rotate between that parish and St
+Vasilios Brunswick. `week_of_month` NULL does not mean "unknown", it means every
+matching weekday — so the widened rule would put a service at Coburg on the
+Tuesdays it is at Brunswick. `parseWeekOfMonth` refuses the pattern *before* it
+checks for the words "week" or "month", which is the same ordering bug the
+Antiochian run shipped a test for and the same reason.
+
+**An availability is not a service.** St Vasilios Brunswick publishes only that
+a priest is "available at the Church every Monday to Friday between 4.00 -
+6.00pm for Holy Confession". Mt Gravatt publishes administration office hours.
+Templestowe publishes church opening hours. None is something somebody arrives
+at, and the Romanian run drew the same line at Epping's "always open on Sundays
+from 9am".
+
+**A broadcast is not a service either.** St Nektarios Dianella publishes two
+firmly recurring times — "Thursdays from 1:30pm of the recorded English liturgy
+from the previous Saturday" and the same for the Greek liturgy on Sundays — and
+both are radio programmes. They parse perfectly and mean nothing to somebody
+deciding which church to go to. The liturgies themselves appear on that site
+only inside a newsletter dated 2022.
+
+**The one heading that was overruled, and why it is written down.** The Redfern
+Cathedral states, in its site footer under a heading reading *Opening Hours*,
+"Sunday / Divine Liturgy: 7:30 AM - 11:00 AM" — directly beneath "Mon - Fri:
+8:00 AM - 3:30 PM", which is a genuine opening time and was not taken. The
+heading is exactly what `NOT_A_SERVICE` refuses elsewhere, so taking the line
+under it needs saying out loud: it names a service, a weekday and a span, and
+every dated Sunday in the programme higher up the page starts at 7:30 am. The
+programme corroborates the rule; it is not its source.
+
+### The parish rows this corrected
+
+The run re-read all 135 directory pages, so every Greek row's `info_checked_at`
+is re-stamped — the column records when we last looked, and looking and finding
+nothing new is still looking. Nineteen rows also had their `website` changed:
+dead links cleared, missing ones filled in from the parish's own site or from
+the community that runs it.
+
+`info_source_name` and `info_source_ref` were deliberately **not** touched. The
+address on these rows still came from the Archdiocese directory, and finding a
+parish's website by search does not change where the rest of the row came from.
+`info_verified_at` was not touched either, for the reason it exists: a scrape is
+not a person standing in front of the building.
+
+One row is worth naming. `greek-ladyaxionestin-northcote` pointed at
+`greekorthodox.org.au/monasteries/holy-monastery-of-axion-estin`, which is a
+404 — the Archdiocese moved it under `/churches/`. The column was **cleared**
+rather than repointed at the new directory page: that page is the directory, not
+a parish site, and `info_source_ref` already says the directory is where the row
+came from. Storing it as the parish's website would claim the parish publishes
+somewhere it does not.
+
+### The rules, in full
+
+| parish | rule |
+|---|---|
+| All Saints, Belmore | Sun 07:30–10:30 Matins & Divine Liturgy |
+| Cathedral of the Annunciation, Redfern | Sun 07:30–11:00 Divine Liturgy |
+| The Presentation of Our Lord, Coburg | Sun & Tue 06:30 Midnight Service; 07:00 Matins; 09:00 Divine Liturgy · Tue 19:00 Catechism · Fri 18:00 Liturgy (English) · Sat 15:00 Vespers |
+| St Anna, Bundall | Sun 07:30–10:30 Matins & Divine Liturgy |
+| St George, South Hobart | Sun 08:30 Matins & Divine Liturgy |
+| Sts Raphael, Nicholas & Irene, Liverpool | Sun 07:30 Matins & Divine Liturgy |
+| St Sophia, Taylor Square | Sat 09:00 Divine Liturgy in English, **last Saturday of the month** |
+| St Sophrony, Hectorville | Sun 08:00–09:00 Matins; Sun 09:00–10:30 Divine Liturgy |
+
+Nine of the seventeen are Coburg's. Every rule carries
+`source_name = 'Parish website'`, the page it was read on, and the date it was
+read — deliberately not "Greek Archdiocese", which publishes none of them and
+should not be credited under a timetable.
+
+### What to do next
+
+**Four parishes want an adapter, not a curator.** Perth's Evangelismos, St
+Spyridon Kingsford, Templestowe and the Redfern Cathedral all publish a full
+dated programme — real dates, real times, weeks ahead. That is precisely
+`infer.mjs`'s input, and an adapter over any one of them would produce more
+rules than this entire run did, with tombstoning for free. Evangelismos is the
+best first target: it publishes an "ALL SERVICES" list with start and end times
+and a stable per-event URL.
+
+**Two things block parishes this run could otherwise read.** `hcwa.org` and
+`gocna.com.au` sit behind SiteGround's captcha, which a real browser does not
+clear either; between them they cover Perth's Sts Constantine & Helen and
+Darwin's St Nicholas. `saintnicholascanberra.org.au` and
+`stsophiaadelaide.org.au` are refused at the egress gateway, not by the sites —
+St Nicholas Canberra publishes a Church Program page that is very likely rule
+material to anyone who can open it.
+
+**And most of the jurisdiction is on Facebook.** Of the parishes searched by
+hand, the commonest outcome by a wide margin was a Facebook page and nothing
+else — St Nectarios Burwood, the Three Hierarchs Clayton, St Eustathios South
+Melbourne, Sts Constantine & Helen Newtown, Holy Cross Wollongong, the
+Transfiguration Earlwood, Sts Anargiri Oakleigh. Facebook is deliberately not
+recorded in `parishes.website`: it cannot be crawled, cannot be re-read on a
+schedule, and a `source_ref` pointing at a page nothing can fetch is worse than
+an empty column. If Greek service times are ever going to be more than a
+footnote in this database, that is the wall to get past, and it is a product
+decision rather than a scraping one.
+
+### Applied to production, 15 September 2026
+
+```
+schedules        80  ->  97      (+17, all Greek)
+greek schedules   0  ->  17      across 8 parishes
+greek websites   36  ->  50      (16 added, 2 cleared, 1 repointed)
+info_checked_at           135    every Greek row re-stamped
+info_verified_at   0  ->   0     untouched, as it must be
+```
+
+Applied with `wrangler d1 execute agora --remote --file=…`, schedules first and
+parish rows second, after `npm run db:export` — the repo is not a backup, and
+D1's Time Travel plus that dump are what a mistake would be rolled back from.
+
+**Verified after the write, not assumed.** `/api/schedules` returns the 17 with
+`source_name = 'Parish website'`; `/api/parishes` shows 50 Greek websites, all
+135 rows stamped, and `info_verified_at` still null on every one. Running
+`expandFrom()` from `public/shared/` over the live `/api/bundle` projects 143
+Greek occurrences over two months, and two of them are the checks worth keeping:
+
+- **St Sophia's monthly liturgy lands on 26 September and 31 October and no
+  other Saturday** — `week_of_month = 'last'` doing exactly the job that made it
+  worth parsing "the last Saturday morning of every month" properly.
+- **St Sophrony's Matins stays at 08:00 in Adelaide across the DST boundary**,
+  while the instant it projects to moves from `22:30Z` to `21:30Z` on 4 October.
+  That is the local-time-not-UTC rule in `d1/schema.sql` working end to end, on
+  real rows, in the zone that is hardest to get right.

@@ -94,6 +94,46 @@ than half the parish is refused and says so in `adapter_runs.tombstones_refused`
 **Pacing.** `adapter_settings` decides how often each adapter runs; the Cron
 Trigger is an hourly heartbeat. No settings row means enabled at four-hourly.
 
+**A warning when the source runs out.** Report a `window` and
+`/api/adapters/status` also reports `coverage` — `ok`, `ending`, `expired` or
+`unknown` — and */admin* → Adapters shows "Running dry" or "Out of dates" in
+place of "OK". This exists because a source that stops being republished does
+not look like a failure from anywhere else: the fetch succeeds, the parse
+succeeds, the same events are rewritten, and `status` stays `success` forever
+while the feed empties out. On 16 September 2026 the Sunshine Coast adapter was
+reporting healthy over a window that had ended on 9 April.
+
+It is deliberately NOT part of `healthy`, and deliberately not a scheduling
+input. The scrape worked — the parish stopped publishing, which is a different
+thing and wants a different response. And re-fetching more often as the horizon
+approaches buys nothing: it cannot make a parish publish, and the extraction
+Action already polls weekly, which bounds pickup at seven days for a monthly
+publisher. What was missing was never fetch frequency, it was anyone noticing.
+
+A rolling source never trips it: an adapter asking for the next ninety days
+every run carries its horizon forward with it. See `worker/lib/coverage.mjs`.
+
+**A PDF source can follow the page that links it.** `pdf-sources.mjs` says a
+parish's source is remembered rather than discovered, and for the FILE that is
+still true — probing Blacktown's `programme_<month>_<year>_en.pdf` template
+across 2025-26 finds four months and eight 404s, so there is no sequence to
+follow. What is stable is the page: `/church-programme.html` shows one month at
+a time and carries the current file as an ordinary link. Set `indexUrl` and
+`linkPattern` and the extractor reads the URL off that page each run.
+
+`sourceUrl` stays, and stays the fallback. A parish that reorganises its site
+degrades to "still reading last month's file, and the log says why" rather than
+to nothing — every discovery failure is a `::notice::`, never an error. When the
+page offers a file the entry does not remember, the log says so, because the
+fallback should be moved on to the current file rather than ageing quietly.
+
+Two links for the same month are refused rather than chosen between: picking
+arbitrarily is how a run starts serving an archived programme, and the fallback
+is a file already known to work. Not every parish can be followed — Buderim's
+site links no PDF from any page, because `/hubfs/` is HubSpot's file manager and
+the sheet is handed out rather than published. That one needs a person once a
+year, and the entry says so.
+
 ## Testing
 
 Nothing needs the network:
