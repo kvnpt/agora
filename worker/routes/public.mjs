@@ -13,6 +13,7 @@
 import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
+import { coverageState, coverageMessage } from '../lib/coverage.mjs';
 
 // A generous default. The client picks the window it actually renders; this only
 // bounds how many rows travel, and rows are far cheaper than instances.
@@ -153,22 +154,37 @@ export function registerPublicRoutes(router) {
        WHERE started_at = (SELECT MAX(started_at) FROM adapter_runs WHERE adapter_id = r.adapter_id)
        ORDER BY adapter_id`
     ).all();
-    return json((r.results || []).map(run => ({
-      id: run.adapter_id,
-      healthy: run.status !== 'failed',
-      message: `Last run: ${run.status}` +
-        (run.tombstones_refused ? ` (cancellations held back: ${run.tombstones_refused})` : ''),
-      lastRun: run.finished_at,
-      lastError: run.error_message,
-      eventsFound: run.events_found,
-      eventsCreated: run.events_created,
-      eventsUpdated: run.events_updated,
-      // What the run could speak for, and whether it was allowed to act on
-      // silence. A refusal is not a failure — the scrape worked — but it is
-      // the difference between "nothing was cancelled" and "nothing needed
-      // cancelling", and only one of those is worth looking into.
-      window: run.window_from ? { from: run.window_from, to: run.window_to } : null,
-      tombstonesRefused: run.tombstones_refused,
-    })));
+    const today = new Date().toISOString().slice(0, 10);
+    return json((r.results || []).map(run => {
+      // Only a run that WORKED has anything to say about coverage. A failed run
+      // reported no window, and calling that "out of dates" would blame the
+      // source for the scraper being broken — which is precisely backwards on
+      // the adapter this was written for, whose R2 object is simply missing.
+      const cover = run.status === 'failed'
+        ? { state: 'unknown', until: null, daysLeft: null }
+        : coverageState(run.window_to, today);
+      return {
+        id: run.adapter_id,
+        healthy: run.status !== 'failed',
+        message: `Last run: ${run.status}` +
+          (run.tombstones_refused ? ` (cancellations held back: ${run.tombstones_refused})` : ''),
+        lastRun: run.finished_at,
+        lastError: run.error_message,
+        eventsFound: run.events_found,
+        eventsCreated: run.events_created,
+        eventsUpdated: run.events_updated,
+        // What the run could speak for, and whether it was allowed to act on
+        // silence. A refusal is not a failure — the scrape worked — but it is
+        // the difference between "nothing was cancelled" and "nothing needed
+        // cancelling", and only one of those is worth looking into.
+        window: run.window_from ? { from: run.window_from, to: run.window_to } : null,
+        tombstonesRefused: run.tombstones_refused,
+        // How much future is left in it. Deliberately NOT folded into `healthy`:
+        // a parish that has stopped publishing has not broken the scraper, and
+        // a run that succeeds forever over a source that ran out in April is
+        // the exact failure this reports. See worker/lib/coverage.mjs.
+        coverage: { ...cover, message: coverageMessage(cover) },
+      };
+    }));
   });
 }

@@ -1383,28 +1383,42 @@
         const r = a.run;
         const parish = parishes.find(p => p.id === a.parishId);
 
-        // Three states worth telling apart: cannot run, has never run, and has
-        // run. A scraper that has never run is not the same as a broken one,
-        // and a run that found zero events is not the same as no run at all —
-        // that distinction is the whole reason adapter_runs was kept.
+        // Five states worth telling apart: cannot run, has never run, has run
+        // and failed, has run and succeeded over a source that has run out of
+        // dates, and has run. A scraper that has never run is not the same as a
+        // broken one, and a run that found zero events is not the same as no
+        // run at all — that distinction is the whole reason adapter_runs was
+        // kept. "Out of dates" is the newest of them and the quietest: the
+        // scrape works, the parish has simply stopped publishing, and every
+        // other signal on this card reads green while the feed empties out.
+        const cov = (r && r.coverage) || null;
         let status, tone;
-        if (a.pending)          { status = 'Cannot run'; tone = '#e67e22'; }
-        else if (!r)            { status = 'Never run';  tone = 'var(--muted)'; }
-        else if (!r.healthy)    { status = 'Failed';     tone = '#ef4444'; }
-        else                    { status = 'OK';         tone = '#22c55e'; }
+        if (a.pending)                      { status = 'Cannot run';   tone = '#e67e22'; }
+        else if (!r)                        { status = 'Never run';    tone = 'var(--muted)'; }
+        else if (!r.healthy)                { status = 'Failed';       tone = '#ef4444'; }
+        else if (cov && cov.state === 'expired') { status = 'Out of dates'; tone = '#ef4444'; }
+        else if (cov && cov.state === 'ending')  { status = 'Running dry'; tone = '#e67e22'; }
+        else                                { status = 'OK';           tone = '#22c55e'; }
 
         const counts = r && r.healthy
           ? `${r.eventsFound} found &middot; ${r.eventsCreated} new &middot; ${r.eventsUpdated} updated`
+          : '';
+
+        // The coverage sentence sits with the error, not with the counts: it is
+        // the thing to act on, and what it asks for is a person going to look
+        // at whether the parish has published the next one.
+        const covLine = cov && cov.message && !a.pending && r && r.healthy
+          ? `<div class="card-meta" style="color:${cov.state === 'expired' ? '#ef4444' : '#e67e22'};margin-top:6px;">${esc(cov.message)}</div>`
           : '';
 
         const detail = a.pending
           ? `<div class="card-meta" style="color:#e67e22;margin-top:6px;">${esc(a.pending)}</div>`
           : (r && r.lastError
               ? `<div class="card-meta" style="color:#ef4444;margin-top:6px;word-break:break-word;">${esc(r.lastError)}</div>`
-              : '');
+              : covLine);
 
         return `
-          <div class="card${a.pending || (r && !r.healthy) ? ' warn' : ''}">
+          <div class="card${a.pending || (r && !r.healthy) || (cov && (cov.state === 'expired' || cov.state === 'ending')) ? ' warn' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
               <div style="min-width:0;">
                 <div class="card-title">${esc(parish ? parish.name : a.parishId)}</div>

@@ -94,6 +94,25 @@ than half the parish is refused and says so in `adapter_runs.tombstones_refused`
 **Pacing.** `adapter_settings` decides how often each adapter runs; the Cron
 Trigger is an hourly heartbeat. No settings row means enabled at four-hourly.
 
+**A warning when the source runs out.** Report a `window` and
+`/api/adapters/status` also reports `coverage` — `ok`, `ending`, `expired` or
+`unknown` — and */admin* → Adapters shows "Running dry" or "Out of dates" in
+place of "OK". This exists because a source that stops being republished does
+not look like a failure from anywhere else: the fetch succeeds, the parse
+succeeds, the same events are rewritten, and `status` stays `success` forever
+while the feed empties out. On 16 September 2026 the Sunshine Coast adapter was
+reporting healthy over a window that had ended on 9 April.
+
+It is deliberately NOT part of `healthy`, and deliberately not a scheduling
+input. The scrape worked — the parish stopped publishing, which is a different
+thing and wants a different response. And re-fetching more often as the horizon
+approaches buys nothing: it cannot make a parish publish, and the extraction
+Action already polls weekly, which bounds pickup at seven days for a monthly
+publisher. What was missing was never fetch frequency, it was anyone noticing.
+
+A rolling source never trips it: an adapter asking for the next ninety days
+every run carries its horizon forward with it. See `worker/lib/coverage.mjs`.
+
 ## Testing
 
 Nothing needs the network:
