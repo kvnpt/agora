@@ -18,6 +18,7 @@ import { pdfSourceStatus, fileIsNewerThanRun } from '../lib/pdf-status.mjs';
 import { dispatchExtraction, recentExtractionRuns } from '../lib/github-actions.mjs';
 import { pdfSourceOverrides, applyOverride, isHttpUrl } from '../lib/pdf-source-overrides.mjs';
 import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parseParishIds } from '../lib/roles.mjs';
+import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen } from '../lib/proposals.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
@@ -80,14 +81,24 @@ const guarded = (capability, fn) => {
     const denied = await requireAdmin(c);
     if (denied) return denied;
 
-    const who = await resolveRole(c.env.DB, await adminIdentity(c));
+    const identity = await adminIdentity(c);
+    const who = await resolveRole(c.env.DB, identity);
     // Stash it: handlers need the role for parish scoping and for the audit
     // line, and resolving it twice is a second query for the same answer.
-    c.who = who;
+    c.who = { ...who, identity };
 
     if (!who.role) return json({ error: denial(null, capability), role: null }, 403);
     if (capability && !can(who.role, capability)) {
-      return json({ error: denial(who.role, capability), role: who.role }, 403);
+      // A refusal that offers the way forward. These three are exactly the
+      // capabilities an owner keeps, and exactly the ones with nowhere else to
+      // go — so rather than ending at "you cannot", the panel turns this into
+      // an ask the owner sees with its reason attached.
+      return json({
+        error: denial(who.role, capability),
+        role: who.role,
+        proposable: PROPOSABLE.includes(capability),
+        capability,
+      }, 403);
     }
     return fn(c);
   };
@@ -1103,6 +1114,290 @@ export function registerAdminRoutes(router) {
     if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(logoKeys(id));
     await env.DB.prepare('UPDATE parishes SET logo_path = NULL WHERE id = ?').bind(id).run();
     return json({ logo_path: null });
+  }));
+
+  // ── proposals ──
+  //
+  // A refusal that offers to carry the ask. An editor who needs a parish
+  // deleted has nowhere to put that request except some other channel, where it
+  // arrives without the context that produced it; this keeps the ask, the exact
+  // change and the reason together, and lets the owner act on it in one press.
+  //
+  // Anybody with a role may propose. Only an owner may decide — which is the
+  // same boundary the three capabilities already draw, expressed once more.
+  router.get('/api/admin/proposals', guarded(async ({ env, query, ...c }) => {
+    const status = query.get('status') || 'open';
+    const r = await env.DB.prepare(
+      `SELECT * FROM admin_proposals WHERE status = ? ORDER BY created_at DESC LIMIT 200`
+    ).bind(status).all().catch(() => ({ results: [] }));
+
+    const parishes = new Map(((await env.DB.prepare(
+      "SELECT id, name FROM parishes").all().catch(() => ({ results: [] }))).results || [])
+      .map(p => [p.id, p.name]));
+
+    return json((r.results || []).map(row => {
+      const payload = readPayload(row.payload);
+      return {
+        id: row.id,
+        capability: row.capability,
+        subject: row.subject,
+        subjectName: parishes.get(row.subject) || row.subject,
+        payload,
+        // Null when the row is unreadable — the list still renders, and that
+        // one proposal simply cannot be approved.
+        summary: payload
+          ? describeProposal(row.capability, payload, {
+              subject: parishes.get(row.subject) || row.subject,
+              transferTo: parishes.get(payload.transferTo) || payload.transferTo,
+            })
+          : null,
+        reason: row.reason || null,
+        status: row.status,
+        proposedBy: row.proposed_by,
+        createdAt: row.created_at,
+        decidedBy: row.decided_by || null,
+        decidedAt: row.decided_at || null,
+        decisionNote: row.decision_note || null,
+        // Whether the person reading this is the one who can act on it.
+        mine: row.proposed_by === c.who.identity,
+      };
+    }));
+  }));
+
+  router.post('/api/admin/proposals', guarded(async (c) => {
+    const { env, request } = c;
+    const b = await readJson(request);
+
+    // Proposing something you could simply do is a confusing dead end: the ask
+    // would sit waiting for an owner to approve what the proposer could have
+    // pressed themselves.
+    if (can(c.who.role, b.capability)) {
+      return json({
+        error: `You can do that yourself — no need to propose it.`,
+        capability: b.capability,
+      }, 400);
+    }
+    const v = validateProposal(b);
+    if (!v.ok) return json({ error: v.error }, 400);
+
+    // A parish contact may only propose about their own parishes, for the same
+    // reason they may only edit them.
+    if (b.capability !== 'colors.edit') {
+      const scoped = outOfScope(c, b.subject);
+      if (scoped) return scoped;
+    }
+
+    const who = await editor(c);
+    const row = await env.DB.prepare(
+      `INSERT INTO admin_proposals (capability, subject, payload, reason, proposed_by)
+       VALUES (?,?,?,?,?) RETURNING id`
+    ).bind(b.capability, b.subject.trim(), JSON.stringify(v.payload),
+           (b.reason || '').trim() || null, who).first();
+
+    return json({ id: row.id, status: 'open' }, 201);
+  }));
+
+  // Withdraw your own. Not a decision — it is the proposer saying never mind,
+  // and it needs no owner.
+  router.post('/api/admin/proposals/:id/withdraw', guarded(async (c) => {
+    const { env, params } = c;
+    const row = await env.DB.prepare('SELECT * FROM admin_proposals WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'Proposal not found' }, 404);
+    if (!isOpen(row)) return json({ error: `That proposal is already ${row.status}.` }, 409);
+
+    const who = await editor(c);
+    if (row.proposed_by !== who && !can(c.who.role, 'people.manage')) {
+      return json({ error: 'You can only withdraw your own proposals.' }, 403);
+    }
+    await env.DB.prepare(
+      `UPDATE admin_proposals SET status='withdrawn', decided_by=?, decided_at=? WHERE id=?`
+    ).bind(who, NOW(), params.id).run();
+    return json({ id: Number(params.id), status: 'withdrawn' });
+  }));
+
+  router.post('/api/admin/proposals/:id/decide', guarded('people.manage', async (c) => {
+    const { env, params, request } = c;
+    const b = await readJson(request);
+    const approve = b.decision === 'approve';
+    if (!approve && b.decision !== 'decline') {
+      return json({ error: "decision must be 'approve' or 'decline'." }, 400);
+    }
+
+    const row = await env.DB.prepare('SELECT * FROM admin_proposals WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'Proposal not found' }, 404);
+    if (!isOpen(row)) return json({ error: `That proposal is already ${row.status}.` }, 409);
+
+    const who = await editor(c);
+    const close = async (status, note) => {
+      await env.DB.prepare(
+        `UPDATE admin_proposals SET status=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?`
+      ).bind(status, who, NOW(), (note || '').trim() || null, params.id).run();
+    };
+
+    if (!approve) {
+      await close('declined', b.note);
+      return json({ id: Number(params.id), status: 'declined' });
+    }
+
+    // ── approving ──
+    //
+    // RE-VALIDATE EVERYTHING. This row may have been sitting for a week: the
+    // parish could have been renamed, deleted, or given the very acronym being
+    // asked for, and the transfer target could be gone. Trusting a stored
+    // payload is how an approval quietly does something nobody asked for.
+    const payload = readPayload(row.payload);
+    if (!payload) return json({ error: 'This proposal is unreadable and cannot be approved.' }, 422);
+
+    const applied = await applyProposal(env, row, payload, who);
+    if (applied.error) return json({ error: applied.error }, applied.status || 409);
+
+    await close('approved', b.note);
+    return json({ id: Number(params.id), status: 'approved', ...applied });
+  }));
+
+  /** Carry out an approved proposal, re-checking the world as it is now. */
+  async function applyProposal(env, row, payload, who) {
+    const now = NOW();
+
+    if (row.capability === 'colors.edit') {
+      if (!HEX.test(payload.color)) return { error: 'That is no longer a valid colour.' };
+      if (!JURISDICTIONS.has(row.subject)) return { error: `${row.subject} is not a jurisdiction.` };
+      await env.DB.prepare(
+        `INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES (?,?)
+         ON CONFLICT(jurisdiction) DO UPDATE SET color = excluded.color,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')`
+      ).bind(row.subject, payload.color).run();
+      return { applied: 'colour changed' };
+    }
+
+    const parish = await env.DB.prepare('SELECT id, name FROM parishes WHERE id = ?')
+      .bind(row.subject).first();
+    if (!parish) return { error: 'That parish no longer exists.', status: 410 };
+
+    if (row.capability === 'parish.acronym') {
+      // The clash check deliberately happens HERE and not when the proposal was
+      // made: another parish may have taken that acronym in the meantime, and
+      // the reserved-slug list can change with a deploy.
+      const conflict = await acronymConflict(env.DB, payload.acronym, row.subject);
+      if (conflict) return { error: `Cannot approve: ${conflict}` };
+      await env.DB.prepare(
+        'UPDATE parishes SET acronym = ?, updated_at = ?, updated_by = ? WHERE id = ?'
+      ).bind(payload.acronym || null, now, who, row.subject).run();
+      return { applied: 'acronym changed' };
+    }
+
+    // parish.delete
+    const { n: eventCount } = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM events WHERE parish_id = ?').bind(row.subject).first();
+    const stmts = [];
+    if (payload.disposition === 'transfer') {
+      const target = await env.DB.prepare('SELECT id FROM parishes WHERE id = ?')
+        .bind(payload.transferTo).first();
+      if (!target) return { error: 'The parish those events were to move to no longer exists.' };
+      stmts.push(env.DB.prepare('UPDATE events SET parish_id = ? WHERE parish_id = ?')
+        .bind(payload.transferTo, row.subject));
+      stmts.push(env.DB.prepare('UPDATE schedules SET parish_id = ? WHERE parish_id = ?')
+        .bind(payload.transferTo, row.subject));
+    } else {
+      stmts.push(env.DB.prepare('DELETE FROM events WHERE parish_id = ?').bind(row.subject));
+    }
+    stmts.push(env.DB.prepare('DELETE FROM schedules WHERE parish_id = ?').bind(row.subject));
+    stmts.push(env.DB.prepare('DELETE FROM parishes WHERE id = ?').bind(row.subject));
+    await env.DB.batch(stmts);
+    return { applied: 'parish deleted', events: eventCount };
+  }
+
+  // ── overrides ──
+  //
+  // WHAT THIS EXISTS FOR. Every exception to the rhythm is a row in
+  // schedule_overrides — this Sunday cancelled, moved to 10am, combined with the
+  // cathedral — and nothing anywhere listed them. There was no way to answer
+  // "what have we cancelled", no way to find a tombstone set by mistake, and no
+  // way to see what the machine decided on its own: applyTombstones writes
+  // cancellations from ABSENCE, which is the most consequential thing in this
+  // codebase that happens without anybody pressing a button.
+  //
+  // `source` is what tells those apart. A human edit writes 'human'; a scrape
+  // writes the adapter's own id. Both are shown, because a person looking for a
+  // wrong cancellation does not know in advance which kind it is.
+  router.get('/api/admin/overrides', guarded(async ({ env, query, ...c }) => {
+    // Default to a window around now rather than the whole table: the useful
+    // question is almost always "what is in force", and a cancellation from
+    // 2024 is history rather than something to act on.
+    const from = query.get('from') || new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+    const to = query.get('to') || new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
+
+    const r = await env.DB.prepare(
+      `SELECT o.*, s.title AS schedule_title, s.start_time, s.day_of_week,
+              s.parish_id, p.name AS parish_name, p.timezone
+       FROM schedule_overrides o
+       JOIN schedules s ON o.schedule_id = s.id
+       JOIN parishes p ON s.parish_id = p.id
+       WHERE o.occurrence_date BETWEEN ? AND ?
+       ORDER BY o.occurrence_date, s.start_time`
+    ).bind(from, to).all();
+
+    const rows = (r.results || [])
+      // A parish contact sees their own parishes here too, for the same reason
+      // the other lists are scoped: it is their parish's exceptions they are
+      // responsible for.
+      .filter(row => mayTouchParish(c.who, row.parish_id))
+      .map(row => ({
+        id: row.id,
+        scheduleId: row.schedule_id,
+        // The synthetic id the public site addresses an occurrence by, so the
+        // panel can link straight at the card rather than describing where it is.
+        instanceId: `${row.schedule_id}:${row.occurrence_date}`,
+        date: row.occurrence_date,
+        kind: row.kind,
+        note: row.note || null,
+        // 'human', or the adapter id that wrote it. The distinction is the
+        // whole point of the list.
+        source: row.source,
+        byMachine: row.source !== 'human',
+        updatedBy: row.updated_by || null,
+        updatedAt: row.updated_at || null,
+        createdAt: row.created_at,
+        parishId: row.parish_id,
+        parishName: row.parish_name,
+        title: row.schedule_title,
+        startTime: row.start_time,
+        // Only the patches that actually say something, so the panel can render
+        // "10:00 instead of 09:00" without inspecting fourteen null columns.
+        patch: Object.fromEntries(Object.entries({
+          title: row.patch_title,
+          start_time: row.patch_start_time,
+          end_time: row.patch_end_time,
+          event_type: row.patch_event_type,
+          languages: row.patch_languages,
+          feast: row.patch_feast,
+          description: row.patch_description,
+          location_override: row.patch_location_override,
+        }).filter(([, v]) => v != null && v !== '')),
+        combinedIntoEventId: row.combined_into_event_id || null,
+      }));
+
+    return json({ from, to, overrides: rows });
+  }));
+
+  // Undo one.
+  //
+  // Deleting the row IS the undo: the lens projects from rules, so removing an
+  // exception restores whatever the rule always said. Nothing to regenerate.
+  router.delete('/api/admin/overrides/:id', guarded('override.edit', async (c) => {
+    const { env, params } = c;
+    const row = await env.DB.prepare(
+      `SELECT o.id, s.parish_id FROM schedule_overrides o
+       JOIN schedules s ON o.schedule_id = s.id WHERE o.id = ?`
+    ).bind(params.id).first();
+    if (!row) return json({ error: 'Override not found' }, 404);
+    const scoped = outOfScope(c, row.parish_id);
+    if (scoped) return scoped;
+
+    await env.DB.prepare('DELETE FROM schedule_overrides WHERE id = ?').bind(params.id).run();
+    return json({ id: Number(params.id), removed: true });
   }));
 
   // ── adapters ──

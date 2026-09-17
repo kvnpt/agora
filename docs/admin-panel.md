@@ -36,8 +36,21 @@ second person uses. Written 16 September 2026, against production.
 > rule: from then on an account with no row can do nothing. The People tab says
 > so in as many words before you add anybody.
 >
-> `GITHUB_ACTIONS_TOKEN` is set and declared. Tier 4 — an overrides tab, and
-> linking the two admin surfaces — is untouched.
+> One more table for Tier 3's proposals and Tier 4:
+>
+> ```bash
+> npx wrangler d1 execute agora --remote --command \
+>   "CREATE TABLE IF NOT EXISTS admin_proposals (
+>      id INTEGER PRIMARY KEY AUTOINCREMENT,
+>      capability TEXT NOT NULL CHECK(capability IN ('parish.delete','parish.acronym','colors.edit')),
+>      subject TEXT NOT NULL, payload TEXT NOT NULL, reason TEXT,
+>      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','declined','withdrawn')),
+>      proposed_by TEXT NOT NULL,
+>      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+>      decided_by TEXT, decided_at TEXT, decision_note TEXT)"
+> ```
+>
+> `GITHUB_ACTIONS_TOKEN` is set and declared. **Every tier is now done.**
 
 `/admin` today has exactly one user, who also wrote it. Every affordance assumes
 that. The copy is terse because the reader already knows; the destructive
@@ -313,8 +326,14 @@ any of this. What changed, in one line each:
 - **Roles** — owner, editor, parish contact — enforced server-side per
   capability, with a People tab for the owner.
 
-Still open: Tier 4, and the "propose instead of ban" idea under Tier 3,
-which is a queue and a workflow rather than a permission.
+- **Proposals** — the three capabilities an editor is refused (delete an
+  acronym, a parish, a jurisdiction colour) turn the 403 into an ask the
+  owner sees, with the exact change and the reason attached.
+- **A Changes tab** — every cancellation, move and combine in force,
+  including the ones `applyTombstones` wrote from absence, each with an
+  undo and a link straight at the occurrence on the public site.
+
+Nothing from the assessment is outstanding.
 
 ## What to do
 

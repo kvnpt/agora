@@ -297,3 +297,192 @@ test('an email is stored lower-cased so it matches at read time', async () => {
   const row = raw.prepare("SELECT email FROM admin_roles WHERE role = 'editor'").get();
   assert.equal(row.email, 'deacon@example.org');
 });
+
+// ── proposals ──
+//
+// The refusal that carries the ask. What matters most here is the
+// re-validation on approval: a row can sit for a week while the world moves
+// under it, and trusting a stored payload is how an approval quietly does
+// something nobody asked for.
+
+const asRole = (role, parishIds) => fresh({ role, parishIds });
+
+test('an editor refused a delete is told it can be proposed', async () => {
+  const { call } = asRole('editor');
+  const r = await call('DELETE', `/api/admin/parishes/${PARISH_A}`);
+  assert.equal(r.status, 403);
+  assert.equal(r.body.proposable, true);
+  assert.equal(r.body.capability, 'parish.delete');
+});
+
+test('a refusal for something not proposable says so', async () => {
+  const { call } = asRole('parish', [PARISH_A]);
+  const r = await call('PATCH', '/api/admin/adapters/pdf-gopssc-buderim/settings', { enabled: false });
+  assert.equal(r.status, 403);
+  assert.equal(r.body.proposable, false);
+});
+
+test('proposing something you could just do is refused as a dead end', async () => {
+  // It would sit waiting for an owner to approve what the proposer could have
+  // pressed themselves.
+  const { call } = asRole('owner');
+  const r = await call('POST', '/api/admin/proposals',
+    { capability: 'parish.delete', subject: PARISH_A, payload: { disposition: 'purge' } });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /do that yourself/);
+});
+
+test('an editor proposes, an owner sees it with its reason and consequence', async () => {
+  const { raw, call } = asRole('editor');
+  const made = await call('POST', '/api/admin/proposals', {
+    capability: 'parish.delete', subject: PARISH_A,
+    payload: { disposition: 'transfer', transferTo: PARISH_B },
+    reason: 'Duplicate of the other Redfern listing.',
+  });
+  assert.equal(made.status, 201);
+
+  // Now read it as an owner.
+  raw.prepare("UPDATE admin_roles SET role='owner' WHERE email='dev'").run();
+  const list = await call('GET', '/api/admin/proposals');
+  assert.equal(list.status, 200);
+  const p = list.body[0];
+  assert.equal(p.capability, 'parish.delete');
+  assert.equal(p.proposedBy, 'dev');
+  assert.match(p.reason, /Duplicate/);
+  // The summary carries the consequence, with real parish names rather than ids.
+  assert.match(p.summary, /moving its events and rules to/);
+  assert.ok(!p.summary.includes(PARISH_B), 'the summary should name the parish, not its id');
+});
+
+test('an editor cannot decide, even their own proposal', async () => {
+  const { call } = asRole('editor');
+  const made = await call('POST', '/api/admin/proposals',
+    { capability: 'parish.acronym', subject: PARISH_A, payload: { acronym: 'stgr' } });
+  const decide = await call('POST', `/api/admin/proposals/${made.body.id}/decide`, { decision: 'approve' });
+  assert.equal(decide.status, 403);
+});
+
+test('an editor may withdraw their own, and only their own', async () => {
+  const { raw, call } = asRole('editor');
+  const mine = await call('POST', '/api/admin/proposals',
+    { capability: 'parish.acronym', subject: PARISH_A, payload: { acronym: 'stgr' } });
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.acronym',?,'{\"acronym\":\"x\"}','someone@else.org')"
+  ).bind(PARISH_A).run();
+  const theirs = raw.prepare("SELECT id FROM admin_proposals WHERE proposed_by='someone@else.org'").get();
+
+  assert.equal((await call('POST', `/api/admin/proposals/${mine.body.id}/withdraw`)).status, 200);
+  const other = await call('POST', `/api/admin/proposals/${theirs.id}/withdraw`);
+  assert.equal(other.status, 403);
+  assert.match(other.body.error, /only withdraw your own/);
+});
+
+test('approving an acronym applies it, and attributes the edit to the approver', async () => {
+  const { raw, call } = asRole('owner');
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.acronym',?,'{\"acronym\":\"stgr\"}','editor@example.org')"
+  ).bind(PARISH_A).run();
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 200, r.body && r.body.error);
+  const parish = raw.prepare('SELECT acronym, updated_by FROM parishes WHERE id = ?').get(PARISH_A);
+  assert.equal(parish.acronym, 'stgr');
+  // The approver made the change, not the proposer — they are the one who
+  // decided it should happen.
+  assert.equal(parish.updated_by, 'dev');
+});
+
+test('approval re-checks the world, and refuses when it has moved', async () => {
+  // THE CASE THIS EXISTS FOR. The proposal was fine when it was made; another
+  // parish took that acronym while it waited. Approving on the stored payload
+  // would have written a duplicate link.
+  const { raw, call } = asRole('owner');
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.acronym',?,'{\"acronym\":\"taken\"}','editor@example.org')"
+  ).bind(PARISH_A).run();
+  raw.prepare('UPDATE parishes SET acronym = ? WHERE id = ?').run('taken', PARISH_B);
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /already the acronym/);
+  // Still open, so it can be fixed and decided again rather than lost.
+  assert.equal(raw.prepare('SELECT status FROM admin_proposals WHERE id=?').get(id).status, 'open');
+});
+
+test('approving a delete whose parish is gone says so rather than half-acting', async () => {
+  const { raw, call } = asRole('owner');
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.delete','ghost-parish','{\"disposition\":\"purge\"}','editor@example.org')"
+  ).run();
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 410);
+  assert.match(r.body.error, /no longer exists/);
+});
+
+test('approving a transfer whose target is gone refuses before touching anything', async () => {
+  const { raw, call } = asRole('owner');
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.delete',?,'{\"disposition\":\"transfer\",\"transferTo\":\"nowhere\"}','editor@example.org')"
+  ).bind(PARISH_A).run();
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /no longer exists/);
+  // The parish it was about is untouched.
+  assert.ok(raw.prepare('SELECT id FROM parishes WHERE id = ?').get(PARISH_A));
+});
+
+test('an unreadable payload cannot be approved but does not break the list', async () => {
+  const { raw, call } = asRole('owner');
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.acronym',?,'not json','editor@example.org')"
+  ).bind(PARISH_A).run();
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+
+  const list = await call('GET', '/api/admin/proposals');
+  assert.equal(list.status, 200);
+  assert.equal(list.body[0].summary, null, 'an unreadable row should render with no summary');
+
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 422);
+});
+
+test('declining closes it with a note and changes nothing', async () => {
+  const { raw, call } = asRole('owner');
+  const before = raw.prepare('SELECT acronym FROM parishes WHERE id = ?').get(PARISH_A).acronym;
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by) VALUES ('parish.acronym',?,'{\"acronym\":\"nope\"}','editor@example.org')"
+  ).bind(PARISH_A).run();
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`,
+    { decision: 'decline', note: 'That slug is reserved for the jurisdiction page.' });
+  assert.equal(r.status, 200);
+  const row = raw.prepare('SELECT status, decided_by, decision_note FROM admin_proposals WHERE id=?').get(id);
+  assert.equal(row.status, 'declined');
+  assert.equal(row.decided_by, 'dev');
+  assert.match(row.decision_note, /reserved/);
+  assert.equal(raw.prepare('SELECT acronym FROM parishes WHERE id = ?').get(PARISH_A).acronym, before);
+});
+
+test('a decided proposal cannot be decided twice', async () => {
+  const { raw, call } = asRole('owner');
+  raw.prepare(
+    "INSERT INTO admin_proposals (capability, subject, payload, proposed_by, status) VALUES ('parish.acronym',?,'{\"acronym\":\"x\"}','e@x.org','approved')"
+  ).bind(PARISH_A).run();
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+  const r = await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /already approved/);
+});
+
+test('a parish contact can only propose about their own parishes', async () => {
+  const { call } = asRole('parish', [PARISH_A]);
+  assert.equal((await call('POST', '/api/admin/proposals',
+    { capability: 'parish.delete', subject: PARISH_A, payload: { disposition: 'purge' } })).status, 201);
+  assert.equal((await call('POST', '/api/admin/proposals',
+    { capability: 'parish.delete', subject: PARISH_B, payload: { disposition: 'purge' } })).status, 403);
+});
