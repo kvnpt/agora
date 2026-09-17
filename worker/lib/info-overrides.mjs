@@ -64,15 +64,33 @@ export function parseSlot(subject) {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-/** Read the rulings. One parish, or all of them. */
+/**
+ * Read the rulings. One parish, or all of them.
+ *
+ * A MISSING TABLE reads as no rulings, so the Worker can deploy before
+ * d1/migrations/010 is applied rather than 500ing for the window in between.
+ * That is safe in the one direction that matters: a database without the table
+ * cannot contain a ruling, so nothing is being lost — it is the pre-migration
+ * state, where every import behaved this way anyway.
+ *
+ * Narrow on purpose. Any OTHER database error propagates, because "the
+ * database is unreachable" and "nobody has ruled on anything" are opposite
+ * facts and an importer that confused them would recreate every service
+ * somebody deleted.
+ */
 export async function readInfoOverrides(db, parishId = null) {
   const sql = `SELECT id, parish_id, target, subject, decision, tier, source_label,
                       source_name, source_ref, checked_at, note, created_at, updated_at, updated_by
                FROM info_overrides${parishId ? ' WHERE parish_id = ?' : ''}
                ORDER BY parish_id, target, subject`;
-  const stmt = parishId ? db.prepare(sql).bind(parishId) : db.prepare(sql);
-  const r = await stmt.all();
-  return r.results || [];
+  try {
+    const stmt = parishId ? db.prepare(sql).bind(parishId) : db.prepare(sql);
+    const r = await stmt.all();
+    return r.results || [];
+  } catch (e) {
+    if (/no such table/i.test(String(e && e.message))) return [];
+    throw e;
+  }
 }
 
 /**

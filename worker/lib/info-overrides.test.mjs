@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import {
   slotKey, parseSlot, indexOverrides, mayWriteField, pinnedFields,
   suppressionFor, pinFor, validateOverride, describeOverride,
-  publicOverridePayload, PINNABLE_FIELDS,
+  publicOverridePayload, readInfoOverrides, PINNABLE_FIELDS,
 } from './info-overrides.mjs';
 
 const require = createRequire(import.meta.url);
@@ -308,4 +308,19 @@ test('the public payload survives being handed straight back to the guards', () 
   // on the way out is a suppression that stops working in the place it matters.
   const idx = indexOverrides(publicOverridePayload([{ ...ruling(), id: 1, updated_by: 'a@b.c' }]));
   assert.ok(suppressionFor(idx, ELIMBAH, 0, '18:00', 'jurisdiction'));
+});
+
+// ── the deploy window ──────────────────────────────────────────────────────
+
+test('a missing table reads as no rulings, and nothing else does', async () => {
+  // The Worker may deploy before d1/migrations/010 is applied. A database
+  // without the table cannot hold a ruling, so [] is the truth there. Any
+  // other failure is the opposite fact — the database is unreachable — and an
+  // importer that read it as "nothing has been ruled" would recreate every
+  // service somebody deleted.
+  const missing = { prepare: () => ({ all: async () => { throw new Error('D1_ERROR: no such table: info_overrides'); } }) };
+  assert.deepEqual(await readInfoOverrides(missing), []);
+
+  const broken = { prepare: () => ({ all: async () => { throw new Error('D1_ERROR: network'); } }) };
+  await assert.rejects(() => readInfoOverrides(broken), /network/);
 });
