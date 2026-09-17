@@ -120,6 +120,23 @@ binding = "GOOGLE_API_KEY"
 store_id = "caf2bffa59d544e88e6649b71c3e6c09"
 secret_name = "GOOGLE_API_KEY"
 
+# Lets /admin start the "Extract parish PDFs" workflow itself, instead of
+# handing somebody a link to GitHub and hoping they have an account.
+#
+# A fine-grained GitHub personal access token scoped to THIS REPOSITORY ONLY,
+# with Actions: read and write and nothing else — it cannot read code, write
+# contents, or reach another repo. Not a Cloudflare credential: this is the
+# Worker calling GitHub, the opposite direction to the R2 keys the extraction
+# workflow uses, which are GitHub Actions secrets and belong over there.
+#
+# Declared here rather than left in the dashboard for the reason at the top of
+# this section: Workers Builds deploys on every push to main, and a binding
+# that is not written down is a binding the next deploy removes.
+[[secrets_store_secrets]]
+binding = "GITHUB_ACTIONS_TOKEN"
+store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+secret_name = "GITHUB_ACTIONS_TOKEN"
+
 
 # Which repository holds the "Extract parish PDFs" workflow.
 #
@@ -129,19 +146,10 @@ secret_name = "GOOGLE_API_KEY"
 [vars]
 GITHUB_REPO = "kvnpt/agora"
 
-# GITHUB_ACTIONS_TOKEN is optional and absent on purpose.
+# GITHUB_ACTIONS_TOKEN is declared above, and remains OPTIONAL in the code.
 #
-# Without it the panel still reads the workflow's run history (a public repo
-# answers that anonymously) and still shows "Re-fetch from the parish" — the
-# button just hands over a link to GitHub instead of starting the run itself.
-# That is the honest degradation, and it is what the panel did before this
-# existed, minus the treasure hunt.
-#
-# To let /admin start the extraction directly, add a fine-grained personal
-# access token scoped to THIS REPOSITORY ONLY, with Actions: read and write and
-# nothing else — it cannot read code or touch another repo:
-#
-#   wrangler secret put GITHUB_ACTIONS_TOKEN
-#
-# or add it to the Secrets Store and declare a [[secrets_store_secrets]] block
-# here like the three above. readSecret() takes either shape.
+# A deployment without it is not broken: the panel still reads the workflow's
+# run history, and "Re-fetch from the parish" hands over a link to GitHub
+# instead of starting the run itself. That degradation is deliberate and is
+# tested, so removing the binding is a supported thing to do rather than a way
+# to break /admin.
