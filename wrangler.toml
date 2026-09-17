@@ -120,3 +120,28 @@ binding = "GOOGLE_API_KEY"
 store_id = "caf2bffa59d544e88e6649b71c3e6c09"
 secret_name = "GOOGLE_API_KEY"
 
+
+# Which repository holds the "Extract parish PDFs" workflow.
+#
+# A plain var, not a secret: an owner/repo pair is an identifier, and the panel
+# builds a public link out of it. The TOKEN that lets /admin start a run is a
+# secret and is deliberately NOT declared here — see below.
+[vars]
+GITHUB_REPO = "kvnpt/agora"
+
+# GITHUB_ACTIONS_TOKEN is optional and absent on purpose.
+#
+# Without it the panel still reads the workflow's run history (a public repo
+# answers that anonymously) and still shows "Re-fetch from the parish" — the
+# button just hands over a link to GitHub instead of starting the run itself.
+# That is the honest degradation, and it is what the panel did before this
+# existed, minus the treasure hunt.
+#
+# To let /admin start the extraction directly, add a fine-grained personal
+# access token scoped to THIS REPOSITORY ONLY, with Actions: read and write and
+# nothing else — it cannot read code or touch another repo:
+#
+#   wrangler secret put GITHUB_ACTIONS_TOKEN
+#
+# or add it to the Secrets Store and declare a [[secrets_store_secrets]] block
+# here like the three above. readSecret() takes either shape.

@@ -14,10 +14,22 @@ import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
+import { pdfSourceStatus, fileIsNewerThanRun } from '../lib/pdf-status.mjs';
+import { dispatchExtraction, recentExtractionRuns } from '../lib/github-actions.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
+import timezones from '../../public/shared/timezones.js';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
+const { isResolvableTimezone, DEFAULT_TIMEZONE } = timezones;
+
+// A zone the runtime cannot resolve makes every one of that parish's service
+// times meaningless, and the row looks fine. Refused rather than stored,
+// because `schedules.start_time` is LOCAL to this column and there is nothing
+// downstream that can notice.
+const timezoneProblem = (tz) => (tz === undefined || isResolvableTimezone(tz))
+  ? null
+  : `"${tz}" is not a timezone this runtime knows. Use an IANA name like Australia/Brisbane.`;
 
 // The four links that are columns on `parishes`. A parish_links row may not
 // take one of these slugs: /smg/donate has to keep answering from the column,
@@ -459,6 +471,8 @@ export function registerAdminRoutes(router) {
     if (!name || !jurisdiction || lat == null || lng == null) {
       return json({ error: 'name, jurisdiction, lat, and lng are required' }, 400);
     }
+    const tzBad = timezoneProblem(b.timezone);
+    if (tzBad) return json({ error: tzBad, field: 'timezone' }, 400);
     const id = jurisdiction + '-' + name.toLowerCase()
       .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 
@@ -478,7 +492,7 @@ export function registerAdminRoutes(router) {
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         id, name, b.full_name || null, jurisdiction, b.address || null, lat, lng,
-        b.timezone || 'Australia/Sydney',
+        b.timezone || DEFAULT_TIMEZONE,
         // Was accepted and dropped — the column was missing from the INSERT,
         // so a create that set an acronym came back without one.
         b.website || null, b.email || null, b.phone || null, b.acronym || null,
@@ -524,6 +538,9 @@ export function registerAdminRoutes(router) {
       const conflict = await acronymConflict(env.DB, b.acronym, id);
       if (conflict) return json({ error: conflict, field: 'acronym' }, 409);
     }
+    const tzBad = timezoneProblem(b.timezone);
+    if (tzBad) return json({ error: tzBad, field: 'timezone' }, 400);
+
     const sets = [], vals = [];
     for (const k of PARISH_EDITABLE) {
       if (b[k] !== undefined) { sets.push(`${k} = ?`); vals.push(b[k]); }
@@ -544,6 +561,23 @@ export function registerAdminRoutes(router) {
       }
     }
     return json(await env.DB.prepare('SELECT * FROM parishes WHERE id = ?').bind(id).first());
+  }));
+
+  // What deleting this parish would take with it.
+  //
+  // A GET, deliberately, rather than a `dry_run=1` on the DELETE. The delete
+  // route removes a parish outright when nothing references it, so a dry run
+  // expressed as a flag on that verb is one dropped query parameter away from
+  // being the real thing. A GET that loses its parameters is still a GET.
+  router.get('/api/admin/parishes/:id/deletion', guarded(async ({ env, params }) => {
+    const parish = await env.DB.prepare('SELECT id, name FROM parishes WHERE id = ?')
+      .bind(params.id).first();
+    if (!parish) return json({ error: 'Parish not found' }, 404);
+    const [{ n: events }, { n: schedules }] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS n FROM events WHERE parish_id = ?').bind(params.id).first(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM schedules WHERE parish_id = ?').bind(params.id).first(),
+    ]);
+    return json({ id: parish.id, name: parish.name, event_count: events, schedule_count: schedules });
   }));
 
   router.delete('/api/admin/parishes/:id', guarded(async ({ env, params, query }) => {
@@ -838,8 +872,28 @@ export function registerAdminRoutes(router) {
   router.get('/api/admin/adapters', guarded(async ({ env }) => {
     const pacing = await adapterPacing(env.DB);
     const now = Date.now();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // The last run of ANY status, which is not what pacing tracks — pacing
+    // measures from the last SUCCESS so a broken adapter retries soon. Here the
+    // question is different: is the file in R2 newer than our last attempt to
+    // read it, whatever that attempt did?
+    const { results: lastRuns = [] } = await env.DB.prepare(
+      `SELECT adapter_id, MAX(started_at) AS last_run FROM adapter_runs GROUP BY adapter_id`
+    ).all();
+    const lastRunById = new Map(lastRuns.map(r => [r.adapter_id, r.last_run]));
+
+    // One R2 read per PDF adapter, in parallel. These are admin-only requests
+    // over a handful of small objects; pdfSourceStatus never throws, so a bad
+    // object costs one card its detail rather than the whole list.
+    const sources = new Map(await Promise.all(
+      ADAPTERS.filter(a => a.sourceType === 'parish-pdf').map(async (a) =>
+        [a.id, await pdfSourceStatus(env.ASSETS_BUCKET, a.source, today)])
+    ));
+
     return json(ADAPTERS.map(a => {
       const setting = pacing.setting(a.id);
+      const source = sources.get(a.id) || null;
       return {
         id: a.id, parishId: a.parishId, sourceType: a.sourceType, schedule: a.schedule,
         pending: PENDING_PARISHES.get(a.id) || null,
@@ -848,8 +902,50 @@ export function registerAdminRoutes(router) {
         enabled: setting ? setting.enabled === 1 : true,
         intervalMinutes: setting?.interval_minutes ?? DEFAULT_INTERVAL_MINUTES,
         next: isDue(setting, pacing.lastSuccess(a.id), now).why,
+        // What the parish's FILE says, as opposed to what our last read of it
+        // said. Null for an adapter that does not read a file.
+        source,
+        // The Blacktown case: a card reporting a failure that a later
+        // extraction has already overtaken. Computed here rather than in the
+        // browser so the comparison lives with its test.
+        sourceNewerThanRun: source?.present
+          ? fileIsNewerThanRun(source.fetchedAt, lastRunById.get(a.id))
+          : false,
       };
     }));
+  }));
+
+  // The state of the extraction workflow itself — the half of a PDF parish's
+  // pipeline that /admin could not see at all. Separate from the adapter list
+  // because it is one call to GitHub for every PDF adapter rather than one
+  // each, and because a card should still render when GitHub is unreachable.
+  router.get('/api/admin/pdf-workflow', guarded(async ({ env }) =>
+    json(await recentExtractionRuns(env))));
+
+  // Go and look at the parish's website again.
+  //
+  // THE DISTINCTION THIS ENDPOINT EXISTS FOR. `/run` re-reads an R2 object; it
+  // cannot make that object newer, because only the Action writes it. So a card
+  // warning "out of dates" had exactly one button and it was the wrong one.
+  // This is the right one.
+  router.post('/api/admin/adapters/:id/refresh-source', guarded(async ({ env, params }) => {
+    const adapter = getAdapter(params.id);
+    if (!adapter) return json({ error: 'Adapter not found' }, 404);
+    if (adapter.sourceType !== 'parish-pdf' || !adapter.source?.key) {
+      return json({
+        error: 'This adapter reads its source directly, so there is nothing to re-fetch. Use Run now.',
+      }, 400);
+    }
+
+    const r = await dispatchExtraction(env, adapter.source.key);
+    if (r.started) return json({ started: true, dispatchUrl: r.dispatchUrl }, 202);
+
+    // 501 when the deployment simply has no token: that is a configuration
+    // gap, not a bad request, and the panel turns it into a link rather than
+    // an error. A genuine refusal from GitHub is a 502 — we asked and were
+    // turned down.
+    return json({ error: r.error, configured: r.configured, dispatchUrl: r.dispatchUrl },
+      r.configured ? 502 : 501);
   }));
 
   // Pacing lives in the database because a Cron Trigger cannot be changed by
