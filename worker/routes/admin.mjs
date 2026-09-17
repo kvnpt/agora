@@ -7,7 +7,7 @@
 // now and fails closed.
 
 import { json, readJson } from '../lib/router.mjs';
-import { requireAdmin } from '../lib/auth.mjs';
+import { requireAdmin, adminIdentity } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
@@ -65,7 +65,14 @@ async function syncEventCoordsForParish(db, parishId) {
 
 export function registerAdminRoutes(router) {
   // ── liveness ──
-  router.get('/api/admin/ping', guarded(async () => json({ ok: true })));
+  // Answers "am I signed in", and now also "as whom". The panel prints it in
+  // the header: with one admin that was noise, but the moment a second person
+  // has a login, "which account am I editing as" is a question worth being able
+  // to answer without opening a Cloudflare dashboard.
+  router.get('/api/admin/ping', guarded(async (c) => json({
+    ok: true,
+    identity: await adminIdentity(c),
+  })));
 
   // ── events ──
 

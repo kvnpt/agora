@@ -195,6 +195,20 @@ for (const source of sources) {
       pdf_sha256: createHash('sha256').update(bytes).digest('hex'),
       pdf_bytes: bytes.length,
       extractor: mode === 'grid' ? 'mutool trace + pdf-grid' : 'pdftotext -layout',
+      // What the FILE covers, as opposed to what the last adapter run covered.
+      //
+      // The two are usually the same and diverge in exactly the case worth
+      // seeing: an adapter that is paused, failing or simply has not run since
+      // the Action last fetched. Coverage computed from `adapter_runs` freezes
+      // with the adapter, so a card could say nothing at all about a perfectly
+      // good file sitting in R2. Written here because the parse already
+      // happened for the log two lines up; re-deriving it in the Worker would
+      // mean parsing the whole text again to learn one pair of dates.
+      //
+      // Null when nothing datable was read — distinct from a missing field,
+      // which is a document written before this existed.
+      coverage: parsed.refused ? null : (parsed.coverage || null),
+      occurrences: parsed.refused ? 0 : parsed.occurrences.length,
       text,
     };
 
@@ -214,6 +228,18 @@ for (const source of sources) {
 
 console.log(`\n${sources.length - failures}/${sources.length} sources extracted.` +
   (dryRun ? ' Dry run — nothing was uploaded to R2.' : ''));
-// Only a total loss is worth failing on: a partial run still has something
-// worth uploading, and the per-source ::error:: annotations say what is missing.
-if (failures === sources.length) process.exit(1);
+
+// ANY failure fails the run.
+//
+// This used to be `failures === sources.length`, so a green tick meant "at
+// least one source extracted" — with two sources, one success was green, and
+// at ten PDF parishes nine failures would still be green. The only per-source
+// signal was an ::error:: annotation inside a step summary nobody opens on a
+// passing run, and a parish going dark is precisely the thing that has to be
+// noticed rather than looked for.
+//
+// Every source that worked has already been written to disk, and the workflow
+// uploads those before it acts on this status — see the "Extract" step, which
+// swallows this exit code on purpose and re-raises it at the end. Continuing
+// past a failed parish is still right; reporting the run as a pass was not.
+if (failures > 0) process.exit(1);
