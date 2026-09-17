@@ -23,9 +23,16 @@ import { SERVICE_TIMES, PUBLISHES_BUT_NOT_A_RULE } from './greek-service-times.m
 import { SITE_OVERRIDES } from './greek-site-overrides.mjs';
 import { normaliseUrl, sameSite } from './greek-directory.mjs';
 import { ADAPTERS } from '../worker/lib/adapters.mjs';
+import { indexOverrides, describeOverride } from '../worker/lib/info-overrides.mjs';
 
 const PARISHES = 'https://agora.orthodoxy.au/api/parishes';
 const SCHEDULES = 'https://agora.orthodoxy.au/api/schedules';
+const RULINGS = 'https://agora.orthodoxy.au/api/info-overrides';
+
+// Every rule in this run is read off the parish's own website, so this import
+// speaks at the `parish` tier — one rung above the Antiochian directory run
+// and one below an admin. public/shared/source-tiers.js has the ladder.
+const TIER = 'parish';
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const sitesFile = process.argv[2] || './greek-sites.json';
@@ -46,6 +53,10 @@ const parishes = await get(PARISHES);
 const greek = parishes.filter((p) => p.jurisdiction === 'greek');
 const byId = new Map(greek.map((p) => [p.id, p]));
 const allSchedules = await get(SCHEDULES);
+// Public precisely so a script with no Cloudflare credential can read it. A
+// failure here is fatal rather than survivable: carrying on would mean
+// recreating services somebody deleted on purpose.
+const rulings = indexOverrides(await get(RULINGS));
 const existing = allSchedules.filter((s) => byId.has(s.parish_id));
 
 // A parish with a LIVE adapter is not this import's to describe. Nothing Greek
@@ -85,7 +96,10 @@ for (const entry of SERVICE_TIMES) {
   }
 }
 markConcurrent(rules);
-const { updates, inserts, untouched } = planWrite(rules, existing);
+// `ruled` rather than `refused`: this file already has a `refused` above, for
+// curated entries the PARSER rejected. Two different refusals, and conflating
+// them in the report would be worse than the name clash.
+const { updates, inserts, untouched, refused: ruled } = planWrite(rules, existing, rulings, TIER);
 
 // ── websites ───────────────────────────────────────────────────────────────
 
@@ -145,6 +159,16 @@ if (updates.length) {
     console.log(`  #${u.id} ${u.parish_id} ${DAYS[u.day_of_week]} ${u.start_time}  ${JSON.stringify(was.title)} -> ${JSON.stringify(u.title)}`);
   }
 }
+if (ruled.length) {
+  console.log(`\nREFUSED BY A RULING (${ruled.length}) — published by the parish, and somebody has decided otherwise:`);
+  for (const { rule, ruling, existing: had } of ruled) {
+    console.log(`  ${rule.parish_id} ${DAYS[rule.day_of_week]} ${rule.start_time} ${JSON.stringify(rule.title)}`
+      + `${had ? ` (would have UPDATED #${had.id})` : ' (would have been INSERTED)'}`);
+    console.log(`      ${describeOverride(ruling)}`);
+    console.log(`      \u201c${ruling.note}\u201d`);
+  }
+}
+
 if (untouched.length) {
   console.log(`\nLEFT ALONE (${untouched.length}) — not mentioned by the parish, which is not evidence it stopped:`);
   for (const e of untouched) console.log(`  #${e.id} ${e.parish_id} ${DAYS[e.day_of_week]} ${e.start_time} ${JSON.stringify(e.title)}`);

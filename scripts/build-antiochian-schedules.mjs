@@ -9,9 +9,17 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { rulesForParish, planWrite, buildScheduleSql, SOURCE_NAME } from './antiochian-schedules.mjs';
 import { ADAPTERS } from '../worker/lib/adapters.mjs';
+import { indexOverrides, describeOverride } from '../worker/lib/info-overrides.mjs';
 
 const PARISHES = 'https://agora.orthodoxy.au/api/parishes';
 const SCHEDULES = 'https://agora.orthodoxy.au/api/schedules';
+const RULINGS = 'https://agora.orthodoxy.au/api/info-overrides';
+
+// Where THIS import's claims come from. The Antiochian directory is the
+// jurisdiction talking about its parishes, which loses to anything a parish
+// says about itself and to anything an admin has decided. See
+// public/shared/source-tiers.js.
+const TIER = 'jurisdiction';
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const get = async (url) => {
@@ -32,6 +40,16 @@ const output = process.argv[4] || './antiochian-schedules.sql';
 // the only one we can make — it records freshness, never veracity.
 const checkedAt = scraped.scraped_at || new Date().toISOString();
 const parishes = await get(PARISHES);
+
+// What has been ruled on since the last run. Read over HTTP because that is
+// all this script has — it runs from a terminal with no Cloudflare credential,
+// which is exactly why /api/info-overrides is public.
+//
+// An unreachable endpoint is NOT survivable here, unlike the PDF overrides
+// where a miss degrades to "no overrides". A miss here degrades to recreating
+// every service somebody deleted, silently. So it throws.
+const rulings = indexOverrides(await get(RULINGS));
+
 const byRef = new Map(parishes.filter((p) => p.info_source_ref).map((p) => [p.info_source_ref, p]));
 const existing = (await get(SCHEDULES)).filter((s) => byRef.has(
   parishes.find((p) => p.id === s.parish_id)?.info_source_ref,
@@ -68,7 +86,7 @@ for (const p of scraped.parishes) {
   }
 }
 
-const { updates, inserts, untouched } = planWrite(rules, existing);
+const { updates, inserts, untouched, refused } = planWrite(rules, existing, rulings, TIER);
 
 console.log(`${scraped.parishes.length} parishes scraped, ${rules.length} rules parsed`);
 if (noParish.length) console.log(`\nNO PARISH ROW (skipped): ${noParish.join(', ')}`);
@@ -84,6 +102,16 @@ for (const u of updates) {
   console.log(`        ${DAYS[u.day_of_week]} ${u.start_time}  ${JSON.stringify(was.title)} -> ${JSON.stringify(u.title)}`
     + `${u.languages ? `  langs ${u.languages.join('/')}` : ''}`
     + `${was.event_type !== u.event_type ? `  type ${was.event_type} -> ${u.event_type}` : ''}`);
+}
+
+if (refused.length) {
+  console.log(`\nREFUSED (${refused.length}) — the directory publishes these and a ruling says not to write them:`);
+  for (const { rule, ruling, existing: had } of refused) {
+    console.log(`  ${rule.parish_id}  ${DAYS[rule.day_of_week]} ${rule.start_time}  ${JSON.stringify(rule.title)}`
+      + `${had ? `  (would have UPDATED #${had.id})` : '  (would have been INSERTED)'}`);
+    console.log(`      ${describeOverride(ruling)}`);
+    console.log(`      \u201c${ruling.note}\u201d`);
+  }
 }
 
 console.log(`\nLEFT ALONE (${untouched.length}) — the directory does not mention these, which is not evidence they stopped:`);
@@ -107,7 +135,7 @@ for (const [pid, rs] of byParish) {
 console.log(`\nDROPPED (${dropped.length}) — published without a time, so no rule is invented:`);
 for (const d of dropped) console.log(`  ${d.parish} [${d.day}] ${JSON.stringify(d.line)}\n      ${d.why}`);
 
-console.log(`\nevery rule is stamped read ${checkedAt}`);
+console.log(`\nevery rule is stamped read ${checkedAt}, at the ${TIER} tier`);
 
 await writeFile(output, `${buildScheduleSql({ updates, inserts })}\n`);
 console.log(`\nwrote ${updates.length + inserts.length} statements to ${output}`);

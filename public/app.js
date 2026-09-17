@@ -2289,7 +2289,40 @@ function renderInViewChip() {
   const hour = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()));
   const when = hour >= 16 ? 'tonight' : 'today';
   const noun = n === 1 ? 'event' : 'events';
-  countEl.textContent = `${n} ${noun} ${when}`;
+  const events = `${n} ${noun} ${when}`;
+
+  // Two numbers, because a zero in the second one means two different things.
+  // "0 events today" on its own reads as "there is nothing here" when what it
+  // often means is "there are four parishes here and none of them has anything
+  // left on today" — which is the cue to scroll, not to pan. Counting the
+  // parishes first separates "nowhere near a church" from "nothing on".
+  //
+  // The parish half counts what the MAP is showing: the viewport set narrowed
+  // by the jurisdiction filter, which is the one filter map.js applies to its
+  // markers. The English and socials filters are deliberately not applied —
+  // they select events, and a parish is not English.
+  const vp = state.viewportParishIds;
+  if (!(vp instanceof Set)) {
+    // Before the first moveend there is no viewport, so there is no honest
+    // parish number. The event count is still true.
+    countEl.textContent = events;
+    updateInViewChevron();
+    return;
+  }
+  let parishes = 0;
+  for (const id of vp) {
+    if (id === '_unassigned') continue;
+    if (j) {
+      const p = state.parishes.find(pa => pa.id === id);
+      if (!p || p.jurisdiction !== j) continue;
+    }
+    parishes++;
+  }
+  countEl.textContent = parishes === 0
+    // The empty state already says this in full; the chip agreeing with it
+    // beats "0 parishes • 0 events today", which counts nothing twice.
+    ? 'No parishes in view'
+    : `${parishes} ${parishes === 1 ? 'parish' : 'parishes'} \u2022 ${events}`;
   updateInViewChevron();
 }
 window.agoraRenderInViewChip = renderInViewChip;

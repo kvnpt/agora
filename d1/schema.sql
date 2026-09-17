@@ -193,13 +193,18 @@ CREATE TABLE schedules (
   source_ref        TEXT,
   source_checked_at TEXT,   -- ISO 8601 UTC, when WE last read the source
 
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+
   -- As on parishes: which of US last edited the rule, as opposed to which
   -- source the rule came from. source_* is the claim's origin; these two are
   -- the edit's author.
+  --
+  -- After created_at rather than beside the other metadata, for the reason
+  -- schedule_overrides.source gives at length: these arrived by ALTER TABLE
+  -- (d1/migrations/009) and ALTER can only append, so a database migrated
+  -- forward and one built from this file have to agree down to column order.
   updated_at        TEXT,
-  updated_by        TEXT,
-
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  updated_by        TEXT
 );
 
 CREATE INDEX idx_schedules_parish ON schedules(parish_id);
@@ -296,12 +301,15 @@ CREATE TABLE schedule_overrides (
   -- Last, not beside the other metadata, because ALTER TABLE ADD COLUMN can
   -- only append: a database migrated with d1/migrations/001 and one created
   -- from this file must come out identical, down to column order.
+  source                  TEXT NOT NULL DEFAULT 'human',
+
   -- Which person, when `source` is 'human'. Null for one the machine wrote:
   -- applyTombstones cancels services from absence, and attributing that to
   -- whoever happened to be signed in would be a lie.
+  --
+  -- After `source` for the same reason `source` is after `updated_at`: it
+  -- arrived later, by ALTER (d1/migrations/009), and ALTER appends.
   updated_by              TEXT,
-
-  source                  TEXT NOT NULL DEFAULT 'human',
 
   UNIQUE(schedule_id, occurrence_date)
 );
@@ -590,3 +598,114 @@ CREATE TABLE admin_proposals (
 );
 
 CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- info_overrides — which source wins, per parish, per fact
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- `schedule_overrides` above rules on an OCCURRENCE: this Sunday's liturgy is
+-- at ten, or cancelled, or combined. This table rules on the INFORMATION
+-- itself — the address, the phone number, whether a Vespers exists at all —
+-- and it exists because a parish has several sources and they disagree.
+--
+-- The ladder is written down once, in public/shared/source-tiers.js:
+--
+--   admin > parish site/social > jurisdiction directory > search > directory > null
+--
+-- and `outranks` there is the only comparison anyone makes. This table stores
+-- the rulings; that file stores the order.
+--
+-- THE CASE THAT PAID FOR IT. St Mary Magdalene, Elimbah publishes two Vespers
+-- on its Antiochian directory page. Neither has run for years — confirmed by
+-- telephone — so both rules were deleted in /admin. Nothing recorded that.
+-- `planWrite` in scripts/antiochian-schedules.mjs pairs a scraped rule with an
+-- existing row on parish + weekday + time; a deleted row has nothing to pair
+-- with, so it became an insert, and `buildScheduleSql`'s WHERE NOT EXISTS
+-- guard only asks whether the rule is there NOW. Re-running the import would
+-- have put both back, silently, and the next person to notice would have
+-- deleted them again. A deletion is a claim, and a claim needs somewhere to
+-- live.
+--
+-- WHY IT IS NOT A VALUE STORE. A pinned field's value stays in `parishes`,
+-- where every reader already looks. Copying it here would give one fact two
+-- homes and a way to drift, which is the failure jurisdiction-colors.js was
+-- written to end. A row here says only "hands off from below this tier", plus
+-- enough about the losing source to explain itself on screen.
+--
+-- Absence means no ruling has been made and the newest read wins, exactly as
+-- before. That is the same shape as jurisdiction_colors and
+-- pdf_source_overrides: the table holds deliberate exceptions and nothing
+-- else, and a reset DELETEs the row rather than writing a default into it.
+--
+-- SERVED PUBLICLY at /api/info-overrides, minus `updated_by`. The importers
+-- are scripts run from a terminal with no Access token, and an override only
+-- the Worker could see would be an override the import ignores — the same
+-- argument that put pdf_source_overrides on a public route.
+CREATE TABLE info_overrides (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id    TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+
+  -- What kind of claim is being ruled on.
+  --   'field'     a column on parishes; `subject` names it
+  --   'schedule'  a recurrence rule; `subject` is its slot
+  target       TEXT NOT NULL CHECK(target IN ('field','schedule')),
+
+  -- The key, shaped by `target`:
+  --   field     'address', 'phone', 'website', …
+  --   schedule  '<weekday>|<HH:MM>' in the parish's LOCAL time, e.g. '0|18:00'
+  --
+  -- The schedule form is the slot every importer already treats as a rule's
+  -- identity, deliberately: a suppression keyed differently from the match it
+  -- has to beat is a suppression that misses. It carries no title, so renaming
+  -- "Vespers" to "Great Vespers" upstream does not slip a refused service back
+  -- in. `source_label` keeps the title for the panel to quote.
+  subject      TEXT NOT NULL,
+
+  -- The ruling.
+  --   'pin'       what is stored is right. A source at or below `tier` may not
+  --               change it. An emptied field is a pin like any other — "there
+  --               is no good phone number, stop filling one in".
+  --   'suppress'  the source publishes this rule and it does not happen. Never
+  --               create it, never revive it. Schedules only: for a field,
+  --               "suppress" and "pin an empty value" are the same act, and one
+  --               way to say a thing beats two.
+  decision     TEXT NOT NULL CHECK(decision IN ('pin','suppress')),
+
+  -- Where the BETTER information came from — one of source-tiers.js. Not the
+  -- tier being refused: a scrape may write here only if it outranks this.
+  tier         TEXT NOT NULL CHECK(tier IN ('admin','parish','jurisdiction','search','directory')),
+
+  -- What the losing source says, kept so the panel can quote it: "the
+  -- Archdiocese lists a 6pm Vespers here". Display only, stamped when the
+  -- ruling was made, never read back as truth.
+  source_label TEXT,
+
+  -- Where the better information came from, in the same shape as
+  -- parishes.info_source_* — a name, a reference, and when it was read. The
+  -- reference is a URL where there is one and free text where there is not:
+  -- a telephone call is a source, and it is the one that settled Elimbah.
+  source_name  TEXT,
+  source_ref   TEXT,
+  checked_at   TEXT,
+
+  -- Why. NOT NULL, and the whole point of the table being visible. An
+  -- unexplained suppression is worse than none: the next admin sees an import
+  -- refusing to apply half a page and has no way to tell a decision from a bug.
+  note         TEXT NOT NULL,
+
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_by   TEXT,
+
+  -- One ruling per fact. Writing a second replaces the first, because two
+  -- rulings that disagree about the same field is the condition this table
+  -- was built to remove.
+  --
+  -- Table constraints, and everything after this point has to be one: SQLite
+  -- stops accepting column definitions the moment the first table constraint
+  -- appears.
+  UNIQUE(parish_id, target, subject),
+  CHECK(decision = 'pin' OR target = 'schedule')
+);
+
+CREATE INDEX idx_info_overrides_parish ON info_overrides(parish_id, target);

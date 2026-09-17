@@ -38,6 +38,19 @@ here because it has the same shape — applied once, by hand, against the live
 database — and because nothing else in the repo records that it ran. `005` is
 both at once: a column, and the dates to fill it with.
 
+**Column order is part of the contract.** `ALTER TABLE ... ADD COLUMN` can only
+append, so a column added here has to be appended in `d1/schema.sql` too —
+otherwise a database migrated forward and one built from the baseline differ,
+and the baseline stops being what it claims to be. Two tables had already
+drifted this way when `009` was written; the fix was to move the columns in the
+baseline, never in the live database. The check is mechanical and worth
+re-running after any migration:
+
+```bash
+node -e "…build a pre-migration database, apply the files, diff sqlite_master
+against a fresh baseline…"
+```
+
 **A column a live Worker selects by name cannot simply be renamed.** The
 Worker lists its parish columns explicitly, so a rename breaks every read
 either side of the deploy — the old code asking for the old name against a
@@ -46,6 +59,8 @@ runs. `005` adds instead, which costs one column and no window.
 
 | File | Adds | For |
 |---|---|---|
+| `010-info-overrides.sql` | `info_overrides` | Which source wins when several describe the same parish, and the rulings made against that ladder — the two Elimbah Vespers a re-import would otherwise have recreated. Empty table = every import behaves exactly as before. |
+| `009-admin-roles-and-attribution.sql` | `admin_roles`, `admin_proposals`, `pdf_source_overrides`; `updated_at`/`updated_by` on `parishes` and `schedules`; `updated_by` on `schedule_overrides` | Written after the fact. All of it was applied to production on 17 September 2026 one `--command` at a time from `docs/admin-panel.md` and never recorded here, which is the failure the top of this file describes. **Applied to production 2026-09-17** |
 | `008-parish-links.sql` | `parish_links` | A parish's own short links beyond the four it has columns for — a festival, a building fund, a bookstall. **Applied to production 2026-09-12** |
 | `007-schedule-location.sql` | `schedules.location_override` | A recurring service that meets somewhere other than the parish's address — a borrowed church, a hall, a cemetery chapel. NULL keeps the parish address. **Applied to production 2026-09-12** |
 | `006-jurisdiction-colors.sql` | `jurisdiction_colors` | Adjusting the six archdiocese colours against each other from */admin* instead of one at a time in code. Empty table = every jurisdiction keeps the shared file's colour, so the order against the deploy does not matter. **Applied to production 2026-09-12** |

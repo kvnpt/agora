@@ -33,6 +33,8 @@
 //
 // Import-side only. Nothing in the Worker imports this.
 
+import { pinnedFields } from '../worker/lib/info-overrides.mjs';
+
 const STOP = new Set(['the', 'of', 'our', 'and', 'a', 'an', 'in', 'at', 'for']);
 
 // Words describing the institution rather than naming it. Dropping them keeps
@@ -211,8 +213,27 @@ const REFRESHABLE = ['name', 'address', 'lat', 'lng', 'timezone', 'website',
  * row the moment it was first written and no re-run could ever correct
  * anything. `info_verified_at` is set by a person and by nothing else, so it is
  * the only one that can mean "hands off".
+ *
+ * ── PER-FIELD RULINGS ──
+ *
+ * `info_verified_at` is all-or-nothing: it freezes the whole row or none of
+ * it, and a person who has checked one field has not checked thirteen. That is
+ * too blunt for the commonest case there is — St Mary Magdalene, Elimbah,
+ * whose Antiochian directory page gives "Coronation Street" with no street
+ * number while the parish's own site has it. Freezing the row to protect the
+ * address would also freeze the phone number, the website and the feast day,
+ * none of which anybody has checked.
+ *
+ * So `opts.overrides` (the index from worker/lib/info-overrides.mjs) and
+ * `opts.tier` (where THIS import reads) narrow REFRESHABLE per row: a field
+ * pinned at a tier this import does not outrank is left out of that row's
+ * DO UPDATE SET. A row with every refreshable field pinned gets DO NOTHING,
+ * because `DO UPDATE SET` with an empty list is a syntax error and "update
+ * nothing" is what it meant anyway.
+ *
+ * No overrides means the old list for every row, unchanged.
  */
-export function buildUpsert(rows) {
+export function buildUpsert(rows, opts = {}) {
   if (rows.some((r) => !r.id)) throw new Error('every row needs an explicit id — run reconcile first');
   if (rows.some((r) => r.lat == null || r.lng == null)) throw new Error('lat and lng are NOT NULL in the schema');
   if (rows.some((r) => !r.timezone)) throw new Error('timezone must be derived from the address, never defaulted');
@@ -223,11 +244,36 @@ export function buildUpsert(rows) {
     seen.add(r.id);
   }
 
-  return rows.map((r) => (
-    `INSERT INTO parishes (${COLUMNS.join(', ')}, info_verified_at) VALUES (\n` +
-    `  ${COLUMNS.map((c) => (c === 'lat' || c === 'lng' ? r[c] : sql(r[c]))).join(', ')}, NULL)\n` +
-    'ON CONFLICT(id) DO UPDATE SET\n' +
-    `  ${REFRESHABLE.map((c) => `${c}=excluded.${c}`).join(', ')}\n` +
-    'WHERE parishes.info_verified_at IS NULL;'
-  )).join('\n');
+  const { overrides = null, tier = 'jurisdiction' } = opts;
+  return rows.map((r) => {
+    const held = overrides
+      ? new Set(pinnedFields(overrides, r.id, tier).map((f) => f.field))
+      : new Set();
+    const refresh = REFRESHABLE.filter((c) => !held.has(c));
+    const head = `INSERT INTO parishes (${COLUMNS.join(', ')}, info_verified_at) VALUES (\n`
+      + `  ${COLUMNS.map((c) => (c === 'lat' || c === 'lng' ? r[c] : sql(r[c]))).join(', ')}, NULL)\n`;
+    if (!refresh.length) {
+      return `${head}ON CONFLICT(id) DO NOTHING;`;
+    }
+    return `${head}ON CONFLICT(id) DO UPDATE SET\n`
+      + `  ${refresh.map((c) => `${c}=excluded.${c}`).join(', ')}\n`
+      + 'WHERE parishes.info_verified_at IS NULL;';
+  }).join('\n');
+}
+
+/**
+ * What a run is about to leave alone because somebody ruled on it.
+ *
+ * Reported rather than inferred from the SQL: an import that quietly wrote
+ * eleven of thirteen columns and said nothing is the failure mode this whole
+ * mechanism exists to replace.
+ */
+export function heldFields(rows, { overrides = null, tier = 'jurisdiction' } = {}) {
+  if (!overrides) return [];
+  const out = [];
+  for (const r of rows) {
+    const held = pinnedFields(overrides, r.id, tier).filter((f) => REFRESHABLE.includes(f.field));
+    if (held.length) out.push({ id: r.id, name: r.name, held });
+  }
+  return out;
 }
