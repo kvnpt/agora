@@ -115,6 +115,30 @@
     .ask-why { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
     .ask-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
 
+    /* Jurisdictions — staleness, coverage, and what it takes to re-read. */
+    .jur { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--bg); }
+    .jur.due { border-left: 3px solid #e67e22; }
+    .jur.never { border-left: 3px solid var(--border); }
+    .jur-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .jur-name { font-weight: 600; font-size: 15px; }
+    .jur-dir { font-size: 11.5px; color: var(--muted); }
+    .jur-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    @media (max-width: 560px) { .jur-grid { grid-template-columns: 1fr; } }
+    .jur-half { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 10px; }
+    .jur-half h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+    .jur-big { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .jur-sub { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+    .jur-age { font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .age-fresh { color: #22c55e; }
+    .age-stale { color: #e67e22; }
+    .age-overdue { color: #ef4444; }
+    .age-never { color: var(--muted); }
+    .jur-notes { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+    .jur-how { margin-top: 10px; font-size: 12px; }
+    .jur-cmd { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: var(--soft-bg); border-radius: var(--radius); padding: 8px 10px; margin-top: 6px; overflow-x: auto; white-space: pre; }
+    .jur-auto { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    .jur-auto.person { color: #e67e22; }
+
     /* Cards */
     .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
     .card.warn { border-left: 3px solid #e67e22; }
@@ -375,6 +399,7 @@
       <button class="tab" data-tab="colors" data-needs="colors.edit">Colours <span class="tab-count" id="count-colors">0</span></button>
       <button class="tab" data-tab="people" data-needs="people.manage">People <span class="tab-count" id="count-people">0</span></button>
       <button class="tab" data-tab="proposals">Asks <span class="tab-count" id="count-proposals">0</span></button>
+      <button class="tab" data-tab="jurisdictions" data-needs="people.manage">Jurisdictions <span class="tab-count" id="count-jurisdictions">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -590,6 +615,21 @@
       <h3>Asks</h3>
       <p class="card-meta" style="margin:0 0 12px;" id="proposals-intro"></p>
       <div id="proposal-list"></div>
+    </div>
+
+    <!-- Where each jurisdiction's rows came from, and how long ago.
+         Six directories were scraped into D1 over four days and then nothing
+         watched them. info_checked_at and source_checked_at have recorded when
+         we last looked all along; nothing read them back, so "which of these is
+         most overdue" had no answer short of a SQL console. -->
+    <div id="section-jurisdictions" class="section">
+      <h3>Jurisdictions</h3>
+      <p class="card-meta" style="margin:0 0 12px;">
+        How old each jurisdiction's parish details and service times are, and what it
+        takes to re-read them. A re-run refreshes what nobody has checked and
+        <em>cannot</em> overwrite a pin somebody has confirmed in person.
+      </p>
+      <div id="jurisdiction-list"></div>
     </div>
 
     <!-- Who may sign in, and what they may touch.
@@ -818,7 +858,8 @@
 
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
-        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals()]);
+        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(),
+        loadJurisdictions()]);
       // After loadAdapters, which is what says whether any PDF adapter exists.
       await loadWorkflow();
       renderAll();
@@ -835,6 +876,7 @@
       renderColors();
       renderOverrides();
       renderProposals();
+      renderJurisdictions();
       renderPeople();
       renderPersonParishes();
       // The explainer under the role picker describes whichever role is
@@ -2723,6 +2765,108 @@
         renderProposals();
       } finally { e.target.disabled = false; }
     });
+
+    // ── Jurisdictions ──
+    let jurisdictions = [];
+
+    async function loadJurisdictions() {
+      if (!may('people.manage')) { jurisdictions = []; return; }
+      jurisdictions = await fetch('/api/admin/jurisdictions', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
+
+    // "97 days ago" beats a date when the question is whether to re-read.
+    //
+    // The whole sentence is built here rather than a fragment the caller
+    // prefixes, because "never" does not compose with "Directory read …" and
+    // the first attempt rendered "Directory read never looked".
+    const ageWords = (days, staleness, what) => {
+      if (days === null) return { text: `${what} has never been read`, cls: 'age-never' };
+      const t = days === 0 ? 'today'
+        : days === 1 ? 'yesterday'
+        : days < 60 ? `${days} days ago`
+        : `${Math.round(days / 30)} months ago`;
+      return { text: `${what} read ${t}`, cls: 'age-' + (staleness || 'fresh') };
+    };
+
+    function renderJurisdictions() {
+      const el = document.getElementById('jurisdiction-list');
+      if (!el) return;
+      document.getElementById('count-jurisdictions').textContent = jurisdictions.length;
+      if (!jurisdictions.length) { el.innerHTML = '<div class="empty">Nothing to show</div>'; return; }
+
+      el.innerHTML = jurisdictions.map(j => {
+        const p = j.parishes, r = j.rules;
+        const pAge = ageWords(p.daysSinceChecked, p.staleness, 'Directory');
+        const rAge = ageWords(r.daysSinceChecked, r.staleness, 'Sources');
+        const due = p.staleness !== 'fresh' || (r.total && r.staleness !== 'fresh');
+
+        // What the rules cite. The distinction worth surfacing: a rule citing
+        // the ARCHDIOCESE means one directory page changing can move a whole
+        // jurisdiction's timetable; a rule citing a parish website has to be
+        // re-read one parish at a time; a rule citing nothing was typed by hand
+        // and a re-run must leave it alone.
+        const sourceLine = r.sources.length
+          ? r.sources.map(x => x.name
+              ? `${x.count} from ${esc(x.name)}`
+              : `${x.count} typed by hand`).join(' \u00b7 ')
+          : 'no rules on file';
+
+        // The commands, verbatim from the registry, because the three passes
+        // are the documented way to do this and a paraphrase would drift.
+        const cmds = [...j.parishScripts, ...j.scheduleScripts];
+
+        return `
+        <div class="jur${due ? ' due' : ''}${p.total ? '' : ' never'}">
+          <div class="jur-head">
+            <span class="jur-name">${esc(j.label)}</span>
+            ${j.directory ? `<a class="jur-dir" href="${esc(j.directory)}" target="_blank" rel="noopener">${esc(j.directory.replace(/^https?:\/\//, ''))}</a>` : '<span class="jur-dir">no directory on file</span>'}
+          </div>
+
+          <div class="jur-grid">
+            <div class="jur-half">
+              <h4>Parish details</h4>
+              <div class="jur-big">${p.total}</div>
+              <div class="jur-sub">
+                ${p.noWebsite} without a website${p.noAddress ? ` \u00b7 ${p.noAddress} without an address` : ''}
+                ${p.verified ? ` \u00b7 ${p.verified} confirmed in person` : ''}
+              </div>
+              <div class="jur-age ${pAge.cls}">${pAge.text}</div>
+            </div>
+
+            <div class="jur-half">
+              <h4>Service times</h4>
+              <div class="jur-big">${r.total}</div>
+              <div class="jur-sub">
+                ${p.total
+                  ? `across ${r.parishesWithRules} of ${p.total} parishes${
+                      r.parishesWithoutRules ? ` \u00b7 ${r.parishesWithoutRules} publish none we have found` : ''}`
+                  : 'no parishes on file'}
+                <br>${sourceLine}
+              </div>
+              <div class="jur-age ${rAge.cls}">${r.total ? rAge.text : 'No rules to re-read'}</div>
+            </div>
+          </div>
+
+          <div class="jur-notes">${esc(j.notes)}</div>
+
+          <div class="jur-auto${j.automation === 'person' ? ' person' : ''}">${esc(j.automationNote)}</div>
+
+          ${cmds.length ? `
+            <div class="jur-how">
+              <button type="button" class="btn btn-outline" data-jur-how="${esc(j.slug)}">How to re-read this</button>
+              <div class="jur-cmd" id="jur-cmd-${esc(j.slug)}" hidden>${
+                cmds.map(c => `node scripts/${esc(c)}`).join('\n')}</div>
+            </div>` : ''}
+        </div>`;
+      }).join('');
+
+      el.querySelectorAll('[data-jur-how]').forEach(b => b.addEventListener('click', () => {
+        const box = document.getElementById('jur-cmd-' + b.dataset.jurHow);
+        box.hidden = !box.hidden;
+        b.textContent = box.hidden ? 'How to re-read this' : 'Hide';
+      }));
+    }
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 

@@ -19,6 +19,8 @@ import { dispatchExtraction, recentExtractionRuns } from '../lib/github-actions.
 import { pdfSourceOverrides, applyOverride, isHttpUrl } from '../lib/pdf-source-overrides.mjs';
 import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parseParishIds } from '../lib/roles.mjs';
 import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen } from '../lib/proposals.mjs';
+import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
+         daysSince, staleness } from '../lib/jurisdictions.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
@@ -1114,6 +1116,121 @@ export function registerAdminRoutes(router) {
     if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(logoKeys(id));
     await env.DB.prepare('UPDATE parishes SET logo_path = NULL WHERE id = ?').bind(id).run();
     return json({ logo_path: null });
+  }));
+
+  // ── jurisdictions ──
+  //
+  // WHAT THIS ANSWERS. Six directories were scraped into D1 over four days and
+  // then nothing watched them. Parishes move, close, build a website and change
+  // their service times, and the only signal would be somebody noticing a wrong
+  // card. `info_checked_at` and `source_checked_at` have recorded when we last
+  // looked all along; nothing ever read them back, so "which of these is most
+  // overdue" had no answer short of a SQL console.
+  //
+  // Everything here is computed from rows that already exist. It is useful
+  // before any re-scrape has ever run, which is the point — the re-scrape is
+  // the action this prompts, not the thing it reports.
+  //
+  // Owner-only: it names every jurisdiction, so it is not a parish contact's
+  // screen, and it is the doorway to a job that rewrites a few hundred rows.
+  router.get('/api/admin/jurisdictions', guarded('people.manage', async ({ env }) => {
+    const now = Date.now();
+
+    // Two grouped queries rather than one per jurisdiction. Both scan small
+    // tables — 293 parishes and 97 rules — and the panel asks for all six at
+    // once, so there is nothing to gain by splitting them.
+    const [{ results: pRows = [] }, { results: sRows = [] }] = await Promise.all([
+      env.DB.prepare(
+        `SELECT jurisdiction,
+                COUNT(*)                                                   AS parishes,
+                SUM(CASE WHEN website IS NULL OR website = '' THEN 1 ELSE 0 END)   AS no_website,
+                SUM(CASE WHEN address IS NULL OR address = '' THEN 1 ELSE 0 END)   AS no_address,
+                SUM(CASE WHEN info_verified_at IS NOT NULL THEN 1 ELSE 0 END)      AS verified,
+                MIN(info_checked_at)                                       AS oldest_check,
+                MAX(info_checked_at)                                       AS newest_check
+         FROM parishes WHERE id != '_unassigned' GROUP BY jurisdiction`
+      ).all(),
+      env.DB.prepare(
+        `SELECT p.jurisdiction,
+                COUNT(*)                                                   AS rules,
+                COUNT(DISTINCT s.parish_id)                                AS parishes_with_rules,
+                SUM(CASE WHEN s.active = 1 THEN 1 ELSE 0 END)              AS active_rules,
+                SUM(CASE WHEN s.source_name IS NULL OR s.source_name = '' THEN 1 ELSE 0 END) AS no_source,
+                MIN(s.source_checked_at)                                   AS oldest_check,
+                MAX(s.source_checked_at)                                   AS newest_check
+         FROM schedules s JOIN parishes p ON s.parish_id = p.id
+         GROUP BY p.jurisdiction`
+      ).all(),
+    ]);
+
+    // Which page a jurisdiction's rules actually cite. The distinction the
+    // owner asked for: a rule citing the ARCHDIOCESE means one directory page
+    // changing can move a whole jurisdiction's timetable, while a rule citing a
+    // parish website has to be re-read one parish at a time.
+    const { results: srcRows = [] } = await env.DB.prepare(
+      `SELECT p.jurisdiction, s.source_name, COUNT(*) AS n
+       FROM schedules s JOIN parishes p ON s.parish_id = p.id
+       GROUP BY p.jurisdiction, s.source_name`
+    ).all();
+
+    const byJ = (rows) => new Map(rows.map(r => [r.jurisdiction, r]));
+    const parishBy = byJ(pRows);
+    const schedBy = byJ(sRows);
+
+    return json(JURISDICTION_SOURCES.map(j => {
+      const p = parishBy.get(j.slug) || {};
+      const s = schedBy.get(j.slug) || {};
+      const parishDays = daysSince(p.oldest_check, now);
+      // The SCHEDULE staleness is measured from the OLDEST rule, not the
+      // newest: one rule re-read yesterday says nothing about the sixty beside
+      // it that nobody has looked at since September.
+      const ruleDays = daysSince(s.oldest_check, now);
+
+      const sources = srcRows
+        .filter(r => r.jurisdiction === j.slug)
+        .map(r => ({ name: r.source_name || null, count: r.n }))
+        .sort((a, b) => b.count - a.count);
+
+      const parishes = p.parishes || 0;
+      return {
+        slug: j.slug,
+        label: j.label,
+        directory: j.directory || null,
+        notes: j.notes,
+        automation: j.automation,
+        automationNote: automationNote(j),
+        rerunnable: isRerunnable(j),
+        parishScripts: j.parishScripts,
+        scheduleScripts: j.scheduleScripts,
+        scheduleSource: j.scheduleSource || null,
+
+        parishes: {
+          total: parishes,
+          noWebsite: p.no_website || 0,
+          noAddress: p.no_address || 0,
+          verified: p.verified || 0,
+          lastChecked: p.oldest_check || null,
+          daysSinceChecked: parishDays,
+          staleness: staleness(parishDays),
+        },
+        rules: {
+          total: s.rules || 0,
+          active: s.active_rules || 0,
+          // The ratio docs/parish-ingestion.md calls a finding rather than a
+          // shortfall: 8 of 135 Greek parishes publish a service time anywhere.
+          parishesWithRules: s.parishes_with_rules || 0,
+          parishesWithoutRules: Math.max(0, parishes - (s.parishes_with_rules || 0)),
+          // Rules typed by hand in /admin cite nothing, and a re-run must leave
+          // them alone — a scrape has nothing to say about a claim it did not
+          // make.
+          noSource: s.no_source || 0,
+          sources,
+          lastChecked: s.oldest_check || null,
+          daysSinceChecked: ruleDays,
+          staleness: s.rules ? staleness(ruleDays) : null,
+        },
+      };
+    }));
   }));
 
   // ── proposals ──
