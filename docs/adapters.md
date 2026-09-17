@@ -374,6 +374,34 @@ tombstoning and is exactly the trade the contract describes above.
    and coverage per source, so a layout the parser cannot read shows up there
    rather than when the feed empties — a `REFUSED column-grid` in that log
    usually just means the source wants `extract: 'grid'`.
-4. Untick it and run for real, then **Run now** in `/admin` → Adapters.
-5. `/admin` → Schedules → *Infer rules from scraped events* to turn the
-   occurrences into recurrence rules.
+4. Untick it and run for real, then **Re-read the last fetch** in `/admin` →
+   Adapters. (That button is the old **Run now**, renamed because on a PDF
+   parish it does not fetch anything — it re-reads the R2 document the Action
+   just wrote. **Re-fetch from the parish** is the one that runs the Action.)
+5. **Propose rules →** on the same card turns the occurrences into recurrence
+   rules. It is the same panel as Schedules → *Infer rules from scraped
+   events*, with the parish already chosen.
+
+## When the parish republishes
+
+The commonest thing that happens to a PDF source is the URL changing — the
+Sunshine Coast sheet is a new path every January and shares no pattern with
+last year's. That no longer needs a pull request: **Where to fetch it from** on
+the adapter card writes a `pdf_source_overrides` row, and **Reset** deletes it
+so the file's URL comes back. Only the URL is editable; `parse`, `extract` and
+`linkPattern` stay in code, because they are judgements about how to read a
+document and a wrong one mis-reads every service silently instead of failing.
+
+The override has to reach BOTH consumers or the whole point of pdf-sources.mjs
+being a shared module collapses — the panel would show a new file and the Action
+would keep downloading the old one. So the overrides are served publicly at
+`/api/pdf-sources` and `scripts/extract-parish-pdf.mjs` reads them before it
+fetches. They are public parish PDFs; there is nothing there to withhold. If
+that endpoint is unreachable the extraction falls back to the URLs in the file
+and says so with a `::warning::`, because a run that quietly used last year's
+URL after somebody changed it is the confusing outcome worth naming.
+
+Once a parish has settled on a new URL, move it into `pdf-sources.mjs` anyway
+and reset the override: the file is still the thing a reader looks at to learn
+where a parish publishes, and a permanent truth living only in a database row
+is how the next person comes to be surprised.

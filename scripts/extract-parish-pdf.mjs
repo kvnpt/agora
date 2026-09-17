@@ -42,6 +42,7 @@ import { PDF_SOURCES, r2KeyFor } from '../worker/lib/pdf-sources.mjs';
 import { parseSchedulePdfText } from '../worker/lib/pdf-schedule.mjs';
 import { reflowTraceXml } from './pdf-grid.mjs';
 import { discoverPdfUrl } from './pdf-discover.mjs';
+import { applyOverride, isHttpUrl } from '../worker/lib/pdf-source-overrides.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback = null) => {
@@ -57,7 +58,51 @@ const only = arg('key');
 // which happened. Without this the dry run still printed "-> pdf-schedules/…",
 // which reads exactly like an upload that did not occur.
 const dryRun = args.includes('--dry-run');
-const sources = only ? PDF_SOURCES.filter(s => s.key === only) : PDF_SOURCES;
+
+// Where /admin says a parish's file is now.
+//
+// THE INVARIANT THIS PROTECTS. pdf-sources.mjs is imported by this script and
+// by the Worker so the URL fetched and the URL believed cannot drift. Letting
+// /admin change a URL would have broken that outright — the panel would show a
+// new file and this job would keep downloading the old one — so the overrides
+// are served publicly and read here too. Same one-source-two-consumers trick,
+// extended to cover the part that is now data.
+//
+// A failure is a notice, never fatal: an unreachable site degrades to the URLs
+// in the file, which is where they were before overrides existed. It IS logged
+// loudly, because a run that silently used last year's URL after somebody
+// changed it is the confusing outcome worth naming.
+const overridesUrl = arg('overrides', 'https://agora.orthodoxy.au/api/pdf-sources');
+
+async function fetchOverrides() {
+  if (overridesUrl === 'none') return {};
+  try {
+    const res = await fetch(overridesUrl, { headers: UA, redirect: 'follow' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const rows = await res.json();
+    if (!Array.isArray(rows)) throw new Error('not a list');
+    const out = {};
+    for (const r of rows) {
+      if (r && typeof r.key === 'string' && isHttpUrl(r.source_url)) {
+        out[r.key] = { url: r.source_url.trim(), updatedAt: r.updated_at || null };
+      }
+    }
+    if (Object.keys(out).length) {
+      console.log(`Read ${Object.keys(out).length} source override(s) from ${overridesUrl}.`);
+    }
+    return out;
+  } catch (err) {
+    console.log(`::warning::Could not read source overrides from ${overridesUrl} (${err.message}). `
+      + 'Using the URLs in pdf-sources.mjs — if somebody changed one in /admin, this run did not see it.');
+    return {};
+  }
+}
+
+const UA = { 'User-Agent': 'Agora-OrthodoxEventFinder/1.0 (orthodoxy.au)' };
+
+const overrides = await fetchOverrides();
+const sources = (only ? PDF_SOURCES.filter(s => s.key === only) : PDF_SOURCES)
+  .map(s => applyOverride(s, overrides));
 
 if (!sources.length) {
   console.error(only ? `No source with key '${only}'.` : 'No sources configured.');
@@ -103,8 +148,6 @@ function pdfToText(bytes, mode) {
 let failures = 0;
 mkdirSync(outDir, { recursive: true });
 
-const UA = { 'User-Agent': 'Agora-OrthodoxEventFinder/1.0 (orthodoxy.au)' };
-
 /**
  * The URL to actually download, following the parish's index page when it has
  * one. Returns the remembered `sourceUrl` unchanged when it does not, or when
@@ -146,6 +189,9 @@ async function resolveSourceUrl(source, label) {
 for (const source of sources) {
   const label = `[${source.key}]`;
   try {
+    if (source.overridden) {
+      console.log(`${label} using the URL set in /admin (pdf-sources.mjs still remembers ${source.remembersUrl})`);
+    }
     const { url: sourceUrl, from: discoveredFrom } = await resolveSourceUrl(source, label);
     console.log(`${label} GET ${sourceUrl}`);
     const res = await fetch(sourceUrl, { headers: UA, redirect: 'follow' });
@@ -189,6 +235,10 @@ for (const source of sources) {
       source_url: sourceUrl,
       // Null when the URL came from pdf-sources.mjs rather than a page.
       discovered_from: discoveredFrom,
+      // Whether the URL came from /admin rather than from pdf-sources.mjs.
+      // The panel shows both, so a run that fell back to the file after
+      // failing to read the overrides is visible rather than puzzling.
+      from_override: !!source.overridden,
       fetched_at: new Date().toISOString(),
       // Lets the adapter log say whether it is looking at a new file or the one
       // it read last time, without diffing the text.

@@ -10,6 +10,7 @@
 // almost no CPU, and it caches far better: rules change rarely, while an
 // expanded feed is stale the moment "now" moves.
 
+import { pdfSourceOverrides, publicOverridePayload } from '../lib/pdf-source-overrides.mjs';
 import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
@@ -144,6 +145,22 @@ export function registerPublicRoutes(router) {
     ).bind(params.id).first();
     return row ? json(row) : json({ error: 'Event not found' }, 404);
   });
+
+  // GET /api/pdf-sources — which parish PDF URLs have been changed from /admin.
+  //
+  // PUBLIC, and that is the point rather than an oversight. The extraction
+  // GitHub Action has to read the same overrides the Worker does, or the URL
+  // fetched and the URL believed drift apart — which is the exact failure
+  // pdf-sources.mjs being imported by both consumers exists to prevent. The
+  // Action has no Cloudflare credential and should not need one, so the
+  // overrides are served here.
+  //
+  // There is nothing to withhold: these are public parish schedules, already
+  // linked from the parishes' own websites. Only the overrides are served, not
+  // the registry — the Action already has the file, so an unreachable endpoint
+  // degrades to "no overrides" rather than to "no sources".
+  router.get('/api/pdf-sources', async ({ env }) =>
+    json(publicOverridePayload(await pdfSourceOverrides(env.DB))));
 
   // GET /api/adapters/status — is the scrape alive?
   router.get('/api/adapters/status', async ({ env }) => {

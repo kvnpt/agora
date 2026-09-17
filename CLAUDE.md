@@ -138,7 +138,13 @@ the contract, what comes free, and the constraints that bite.
 A parish that publishes a PDF instead of a calendar keeps its source — URL,
 publishing cadence, layout quirks — in `worker/lib/pdf-sources.mjs`, which is
 imported by both the registry and the GitHub Action that does the extraction, so
-the two cannot disagree about what to fetch. Getting text out of a PDF happens in
+the two cannot disagree about what to fetch. The **URL alone** may be changed
+from /admin, because a parish republishing under a new path is the commonest
+maintenance act there is and needs no review; `pdf_source_overrides` holds only
+what was deliberately changed, exactly as `jurisdiction_colors` does. That
+override is served *publicly* at `/api/pdf-sources` and read by the Action too —
+an override only the Worker could see would break the very invariant the shared
+module exists for. Getting text out of a PDF happens in
 that Action, never in the Worker; `scripts/extract-parish-pdf.mjs` says why at
 length, and the short version is that one of the surveyed parish schedules is a
 photograph of a piece of paper.

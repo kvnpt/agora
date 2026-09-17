@@ -16,6 +16,7 @@ import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
 import { inferSchedules } from '../lib/infer.mjs';
 import { pdfSourceStatus, fileIsNewerThanRun } from '../lib/pdf-status.mjs';
 import { dispatchExtraction, recentExtractionRuns } from '../lib/github-actions.mjs';
+import { pdfSourceOverrides, applyOverride, isHttpUrl } from '../lib/pdf-source-overrides.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
@@ -873,6 +874,7 @@ export function registerAdminRoutes(router) {
     const pacing = await adapterPacing(env.DB);
     const now = Date.now();
     const today = new Date().toISOString().slice(0, 10);
+    const overrides = await pdfSourceOverrides(env.DB);
 
     // The last run of ANY status, which is not what pacing tracks — pacing
     // measures from the last SUCCESS so a broken adapter retries soon. Here the
@@ -887,8 +889,26 @@ export function registerAdminRoutes(router) {
     // over a handful of small objects; pdfSourceStatus never throws, so a bad
     // object costs one card its detail rather than the whole list.
     const sources = new Map(await Promise.all(
-      ADAPTERS.filter(a => a.sourceType === 'parish-pdf').map(async (a) =>
-        [a.id, await pdfSourceStatus(env.ASSETS_BUCKET, a.source, today)])
+      ADAPTERS.filter(a => a.sourceType === 'parish-pdf').map(async (a) => {
+        // The EFFECTIVE source: the file's URL, or whatever /admin changed it
+        // to. applyOverride returns a copy — PDF_SOURCES is module state shared
+        // across every request in the isolate and must not be written to.
+        const resolved = applyOverride(a.source, overrides);
+        const status = await pdfSourceStatus(env.ASSETS_BUCKET, resolved, today);
+        return [a.id, {
+          ...status,
+          sourceKey: a.source.key,
+          // What the next fetch will ask for, which is not necessarily what
+          // the last one did — the extracted document reports that separately.
+          willFetch: resolved.sourceUrl,
+          overridden: resolved.overridden,
+          overrideUpdatedAt: resolved.overrideUpdatedAt || null,
+          overrideUpdatedBy: resolved.overrideUpdatedBy || null,
+          // The file's own value, so a reset has something to say.
+          fileUrl: a.source.sourceUrl,
+          followsIndex: !!a.source.indexUrl,
+        }];
+      })
     ));
 
     return json(ADAPTERS.map(a => {
@@ -913,6 +933,55 @@ export function registerAdminRoutes(router) {
           : false,
       };
     }));
+  }));
+
+  // ── a PDF parish's source URL ──
+  //
+  // The one thing about a PDF source that /admin may change. Same contract as
+  // the jurisdiction colours: absence means the file's value, a PUT writes an
+  // override, a DELETE removes it and the file's URL comes back. Changing this
+  // takes effect on the next extraction, not the next adapter run, because it
+  // is the Action that does the fetching.
+  router.put('/api/admin/pdf-sources/:key', guarded(async (c) => {
+    const { env, params, request } = c;
+    const adapter = ADAPTERS.find(a => a.source?.key === params.key);
+    if (!adapter) return json({ error: 'No PDF source with that key' }, 404);
+
+    const b = await readJson(request);
+    const url = typeof b.source_url === 'string' ? b.source_url.trim() : '';
+    if (!isHttpUrl(url)) {
+      return json({ error: 'source_url must be an http or https URL.', field: 'source_url' }, 400);
+    }
+
+    // Setting it back to what the file already says is a reset, not an
+    // override. Otherwise the row would sit there claiming somebody changed
+    // something, and a later edit to pdf-sources.mjs would be silently ignored
+    // in favour of a row that agrees with its old value.
+    if (url === adapter.source.sourceUrl) {
+      await env.DB.prepare('DELETE FROM pdf_source_overrides WHERE source_key = ?')
+        .bind(params.key).run();
+      return json({ key: params.key, source_url: url, overridden: false });
+    }
+
+    const who = await adminIdentity(c);
+    await env.DB.prepare(
+      `INSERT INTO pdf_source_overrides (source_key, source_url, updated_by)
+       VALUES (?,?,?)
+       ON CONFLICT(source_key) DO UPDATE SET
+         source_url = excluded.source_url,
+         updated_by = excluded.updated_by,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')`
+    ).bind(params.key, url, who).run();
+
+    return json({ key: params.key, source_url: url, overridden: true, updated_by: who });
+  }));
+
+  router.delete('/api/admin/pdf-sources/:key', guarded(async ({ env, params }) => {
+    const adapter = ADAPTERS.find(a => a.source?.key === params.key);
+    if (!adapter) return json({ error: 'No PDF source with that key' }, 404);
+    await env.DB.prepare('DELETE FROM pdf_source_overrides WHERE source_key = ?')
+      .bind(params.key).run();
+    return json({ key: params.key, source_url: adapter.source.sourceUrl, overridden: false });
   }));
 
   // The state of the extraction workflow itself — the half of a PDF parish's

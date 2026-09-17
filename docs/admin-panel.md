@@ -3,6 +3,28 @@
 An assessment of `/admin` against the thing it has never had to be: a screen a
 second person uses. Written 16 September 2026, against production.
 
+> **Status, 17 September 2026.** Tiers 0 and 1 below are done. The one thing
+> that needs a hand is the new table, because `d1/schema.sql` is a baseline with
+> bare `CREATE TABLE` statements and re-applying the whole file to a live
+> database fails on the tables that already exist. Run this once against
+> production:
+>
+> ```bash
+> npx wrangler d1 execute agora --remote --command \
+>   "CREATE TABLE IF NOT EXISTS pdf_source_overrides (
+>      source_key TEXT PRIMARY KEY,
+>      source_url TEXT NOT NULL,
+>      updated_by TEXT,
+>      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
+> ```
+>
+> Until it exists, the panel reads no overrides and every PDF source uses the
+> URL in `pdf-sources.mjs` — which is where they were before, so nothing breaks
+> in the meantime. `GITHUB_ACTIONS_TOKEN` is optional in the same way: without
+> it, **Re-fetch from the parish** opens GitHub instead of starting the run.
+>
+> Tiers 2–4 are untouched.
+
 `/admin` today has exactly one user, who also wrote it. Every affordance assumes
 that. The copy is terse because the reader already knows; the destructive
 actions are unguarded because the reader would not click them by accident; and

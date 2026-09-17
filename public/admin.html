@@ -131,6 +131,13 @@
     .src-overtaken { color: #2563eb; }
     @media (prefers-color-scheme: dark) { .src-overtaken { color: #7aa5f5; } }
 
+    .src-url { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .src-url label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .src-url-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .src-url-row input { flex: 1; min-width: 200px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); font-size: 12px !important; }
+    .src-badge { font-size: 9px; font-weight: 500; text-transform: none; letter-spacing: 0; background: var(--soft-bg); color: var(--muted); padding: 1px 5px; border-radius: 2px; }
+    .src-url code { font-size: 11px; word-break: break-all; }
+
     .workflow-status { margin: 0 0 12px; }
     .workflow-line { font-size: 12px; color: var(--muted); padding: 7px 10px; background: var(--soft-bg); border-radius: var(--radius); }
     .workflow-line a { color: var(--text); }
@@ -1595,6 +1602,36 @@
     // freezes the moment the adapter stops running, so a stale failure could
     // sit on screen while a perfectly good file waited in R2 — which is exactly
     // what Blacktown did for four days in September.
+    // ── Where the next fetch will look ──
+    //
+    // The one thing about a PDF source /admin may change, and the commonest
+    // maintenance act there is: a parish republishes under a new path — the
+    // Sunshine Coast sheet is a fresh URL every January — and following it used
+    // to mean a pull request and a deploy.
+    //
+    // It changes what the EXTRACTION fetches, not what the adapter reads, so
+    // the copy says so: saving a URL and pressing nothing else does nothing
+    // until the next re-fetch.
+    function sourceUrlEditor(a) {
+      const src = a.source;
+      if (!src || !src.sourceKey) return '';
+      const val = src.willFetch || src.fileUrl || '';
+      return `<div class="src-url">
+        <label>Where to fetch it from${src.overridden
+          ? ` <span class="src-badge">changed in /admin${src.overrideUpdatedBy ? ' by ' + esc(src.overrideUpdatedBy) : ''}</span>`
+          : ''}</label>
+        <div class="src-url-row">
+          <input type="url" value="${esc(val)}" data-src-url="${esc(src.sourceKey)}"
+                 spellcheck="false" placeholder="https://…">
+          <button class="btn btn-outline" data-src-save="${esc(src.sourceKey)}">Save URL</button>
+          ${src.overridden ? `<button class="btn btn-outline" data-src-reset="${esc(src.sourceKey)}"
+                 title="Go back to the URL in pdf-sources.mjs">Reset</button>` : ''}
+        </div>
+        ${src.followsIndex ? `<div class="src-line src-dim">This parish has an index page, so the extraction usually finds the current file by itself \u2014 this URL is the fallback.</div>` : ''}
+        ${src.overridden ? `<div class="src-line src-dim">pdf-sources.mjs remembers <code>${esc(src.fileUrl)}</code></div>` : ''}
+      </div>`;
+    }
+
     function sourceBlock(a) {
       const src = a.source;
       if (!src) return '';
@@ -1631,6 +1668,7 @@
         ${src.discoveredFrom ? `<div class="src-line src-dim">Found via <a href="${esc(src.discoveredFrom)}" target="_blank" rel="noopener">${esc(new URL(src.discoveredFrom).pathname.replace(/^\//, ''))}</a></div>` : ''}
         ${moved ? `<div class="src-line warn">The parish has moved on from the file pdf-sources.mjs remembers \u2014 worth updating that line so the fallback is current.</div>` : ''}
         ${a.sourceNewerThanRun ? `<div class="src-line src-overtaken">This file is newer than the last scrape of it \u2014 the status above has been overtaken. <b>Re-read the last fetch</b> to catch up.</div>` : ''}
+        ${sourceUrlEditor(a)}
       </div>`;
     }
 
@@ -1747,6 +1785,12 @@
       });
       c.querySelectorAll('[data-refetch]').forEach(btn => {
         btn.addEventListener('click', () => refetchSource(btn.dataset.refetch, btn));
+      });
+      c.querySelectorAll('[data-src-save]').forEach(btn => {
+        btn.addEventListener('click', () => saveSourceUrl(btn.dataset.srcSave, btn));
+      });
+      c.querySelectorAll('[data-src-reset]').forEach(btn => {
+        btn.addEventListener('click', () => resetSourceUrl(btn.dataset.srcReset, btn));
       });
       // The last step of the PDF flow, on the card that produced the events
       // rather than behind a collapsed panel on another tab with its own parish
@@ -1886,6 +1930,37 @@
         btn.disabled = false;
         btn.textContent = label;
       }
+    }
+
+    async function saveSourceUrl(key, btn) {
+      const input = document.querySelector(`[data-src-url="${CSS.escape(key)}"]`);
+      const url = input.value.trim();
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/pdf-sources/${encodeURIComponent(key)}`, {
+          method: 'PUT', headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({ source_url: url }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+        toast(body.overridden
+          ? 'Saved \u2014 press Re-fetch from the parish to download it'
+          : 'Back to the URL in pdf-sources.mjs');
+        await loadAdapters();
+        renderAdapterList();
+      } finally { btn.disabled = false; }
+    }
+
+    async function resetSourceUrl(key, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/pdf-sources/${encodeURIComponent(key)}`,
+          { method: 'DELETE', headers });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        toast('Back to the URL in pdf-sources.mjs');
+        await loadAdapters();
+        renderAdapterList();
+      } finally { btn.disabled = false; }
     }
 
     // ── The extraction workflow ──
