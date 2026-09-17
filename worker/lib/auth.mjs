@@ -102,8 +102,14 @@ export async function verifyAccessJwt(token, { teamDomain, aud }) {
 
 /**
  * Guard for admin routes. Returns null when allowed, or a Response to return.
+ *
+ * On success the verified claims are stashed on the request context, so a
+ * handler that wants the signed-in identity gets it without a second RSA
+ * verify. Workers Free meters 10ms of CPU per request and verifying twice to
+ * print an email address is a poor way to spend it.
  */
-export async function requireAdmin({ request, env }) {
+export async function requireAdmin(c) {
+  const { request, env } = c;
   if (env.AGORA_DEV_ADMIN === 'true') return null;
 
   const teamDomain = await readSecret(env.ACCESS_TEAM_DOMAIN);
@@ -125,23 +131,33 @@ export async function requireAdmin({ request, env }) {
   if (!token) return json({ error: 'Unauthorized' }, 401);
 
   try {
-    const claims = await verifyAccessJwt(token, { teamDomain, aud });
+    c.claims = await verifyAccessJwt(token, { teamDomain, aud });
     return null;
   } catch (err) {
     return json({ error: 'Unauthorized', detail: err.message }, 401);
   }
 }
 
-/** The signed-in identity, for audit lines. Null when not verifiable. */
-export async function adminIdentity({ request, env }) {
+/**
+ * The signed-in identity, for audit lines and for telling somebody which
+ * account they are using. Null when not verifiable.
+ *
+ * Prefers the claims requireAdmin already verified. Re-verifying is the
+ * fallback for a caller that has not been through the guard — which should not
+ * happen on an /api/admin/* route, but this returning a stale-free answer
+ * matters more than it returning a fast one.
+ */
+export async function adminIdentity(c) {
+  const { request, env } = c;
   if (env.AGORA_DEV_ADMIN === 'true') return 'dev';
+  if (c.claims) return c.claims.email || c.claims.sub || null;
   const token = request.headers.get('Cf-Access-Jwt-Assertion');
   if (!token) return null;
   const teamDomain = await readSecret(env.ACCESS_TEAM_DOMAIN);
   const aud = await readSecret(env.ACCESS_AUD);
   if (!teamDomain || !aud) return null;
   try {
-    const c = await verifyAccessJwt(token, { teamDomain, aud });
-    return c.email || c.sub || null;
+    const claims = await verifyAccessJwt(token, { teamDomain, aud });
+    return claims.email || claims.sub || null;
   } catch { return null; }
 }

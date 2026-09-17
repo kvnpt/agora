@@ -421,3 +421,42 @@ CREATE TABLE adapter_runs (
 
 -- healthCheck() reads the newest run for one adapter.
 CREATE INDEX idx_adapter_runs_lookup ON adapter_runs(adapter_id, started_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- pdf_source_overrides — where a PDF parish's file is, when it has moved
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Same shape and the same reasoning as jurisdiction_colors: the DEFAULT lives
+-- in code (worker/lib/pdf-sources.mjs), this table holds only what somebody
+-- deliberately changed, absence means the file's value, and a reset DELETEs the
+-- row rather than writing the default into it.
+--
+-- WHAT IT IS FOR. A parish republishes its schedule under a new path — the
+-- Sunshine Coast sheet is a new URL every January and shares no pattern with
+-- last year's — and until now the only way to follow it was a pull request and
+-- a deploy. That is the single most common maintenance act on a PDF parish, it
+-- needs no review, and it was the one thing a sub-admin could not do.
+--
+-- WHAT IT IS NOT FOR. Only the URL. `parse`, `extract` and `linkPattern` stay
+-- in code because they are judgements about how to read a document, and a wrong
+-- one silently mis-reads every service rather than failing.
+--
+-- THE INVARIANT THIS HAS TO KEEP. pdf-sources.mjs is imported by the Worker AND
+-- by the GitHub Action precisely so the URL fetched and the URL believed cannot
+-- drift. An override only the Worker could see would break that: the panel
+-- would show a new URL, the Action would keep fetching the old file, and
+-- nothing would change. So the overrides are served publicly at
+-- /api/pdf-sources and the Action reads them too — the same trick as the shared
+-- modules, one source of truth with two consumers.
+CREATE TABLE pdf_source_overrides (
+  -- The PDF_SOURCES key, e.g. 'gopssc-buderim'. Not a foreign key: the source
+  -- list is code, and a row for a key that has since been removed should be
+  -- inert rather than un-deletable.
+  source_key  TEXT PRIMARY KEY,
+  source_url  TEXT NOT NULL,
+  -- Who moved it and when. The first per-row audit line in this schema, and
+  -- the reason is the same one that put an identity in the admin header: a
+  -- URL somebody typed is a claim, and a claim wants an author.
+  updated_by  TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);

@@ -85,17 +85,33 @@ jobs:
       # "0 occurrences, refused: column-grid" shows up. So it is written to the
       # summary whether the run succeeded or not, which means NOT letting
       # pipefail take the step out before the summary is written.
+      # This step always SUCCEEDS, deliberately, and the job's verdict is passed
+      # on to "Report the result" at the end instead.
+      #
+      # The reason is the upload two steps down. A run where one parish fails
+      # and another works still has a good file to ship, and withholding it
+      # would leave that parish's feed on older text for a week over a
+      # neighbour's broken website. So the failure has to travel past the
+      # upload, not stop at it.
+      #
+      # `set +e` around the extractor matters as much: GitHub runs this with
+      # `bash -e`, so a non-zero node would otherwise take the step out on the
+      # spot — before the log is echoed and before the summary is written,
+      # which is the one artefact saying WHICH parish failed.
       - name: Extract
         id: extract
         run: |
           set -uo pipefail
+          set +e
           node scripts/extract-parish-pdf.mjs \
             --out dist/pdf-schedules \
             ${{ inputs.key && format('--key {0}', inputs.key) || '' }} \
             ${{ inputs.dry_run && '--dry-run' || '' }} \
             > /tmp/extract.log 2>&1
           status=$?
+          set -e
           cat /tmp/extract.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Parish PDF extraction"
@@ -104,8 +120,6 @@ jobs:
             cat /tmp/extract.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-          exit $status
 
       # Says so on the run's own page, rather than leaving three skipped steps
       # as the only clue that nothing was uploaded. Same shape as the basemap
@@ -164,11 +178,30 @@ jobs:
           aws s3 ls s3://agora-assets/pdf-schedules/ --endpoint-url "$ENDPOINT"
 
       - name: Next step
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.extract.outputs.status == '0' }}
         run: |
           {
             echo ""
-            echo "Uploaded. The adapters read these on their next run; **Run now** in"
-            echo "/admin -> Adapters does it immediately, and Schedules -> *Infer rules"
-            echo "from scraped events* turns the occurrences into recurrence rules."
+            echo "Uploaded. The adapters read these on their next run; **Re-read the last"
+            echo "fetch** in /admin -> Adapters does it immediately, and Schedules ->"
+            echo "*Infer rules from scraped events* turns the occurrences into rules."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The verdict, after the good files have gone up.
+      #
+      # A green tick used to mean "at least one source extracted", because the
+      # extractor exited non-zero only when every one of them failed. With two
+      # sources that made one success green; at ten parishes it would have made
+      # nine failures green. A parish going dark has to be noticed rather than
+      # looked for, so any failure is now the job's verdict.
+      - name: Report the result
+        if: ${{ steps.extract.outputs.status != '0' }}
+        run: |
+          {
+            echo ""
+            echo "**At least one source failed.** Anything that did extract was still"
+            echo "uploaded — see the ::error:: lines above for which parish, and"
+            echo "/admin -> Adapters for what each one is currently serving."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Extraction failed for at least one source."
+          exit 1

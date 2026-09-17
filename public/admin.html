@@ -52,6 +52,9 @@
     .admin-header a { font-size: 12px; color: var(--muted); text-decoration: none; }
     .admin-header a:hover { color: var(--text); }
     .header-right { display: flex; align-items: center; gap: 10px; }
+    /* Who is editing. Noise with one admin; the first thing you want to check
+       the moment more than one person has a login. */
+    .admin-identity { font-size: 11px; color: var(--muted); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #jurisdiction-filter { font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
     main { max-width: 680px; margin: 0 auto; padding: 16px; }
 
@@ -114,6 +117,33 @@
     .expandable { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); }
     .expandable.open { display: block; }
     .expand-trigger { cursor: pointer; }
+
+    /* The source line on a scraper card — what the parish's own file says. */
+    .src-block { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 3px; }
+    .src-line { font-size: 12px; color: var(--muted); line-height: 1.45; word-break: break-word; }
+    .src-line a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+    .src-line b.bad { color: #ef4444; }
+    .src-line b.warn { color: #e67e22; }
+    .src-dim { color: var(--muted); opacity: 0.8; }
+    .src-problem { color: #e67e22; }
+    .src-line.warn { color: #e67e22; }
+    /* The overtaken case: a card reporting a failure a later extraction fixed. */
+    .src-overtaken { color: #2563eb; }
+    @media (prefers-color-scheme: dark) { .src-overtaken { color: #7aa5f5; } }
+
+    .src-url { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .src-url label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .src-url-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .src-url-row input { flex: 1; min-width: 200px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); font-size: 12px !important; }
+    .src-badge { font-size: 9px; font-weight: 500; text-transform: none; letter-spacing: 0; background: var(--soft-bg); color: var(--muted); padding: 1px 5px; border-radius: 2px; }
+    .src-url code { font-size: 11px; word-break: break-all; }
+
+    .workflow-status { margin: 0 0 12px; }
+    .workflow-line { font-size: 12px; color: var(--muted); padding: 7px 10px; background: var(--soft-bg); border-radius: var(--radius); }
+    .workflow-line a { color: var(--text); }
+    .workflow-line b.good { color: #22c55e; }
+    .workflow-line b.bad { color: #ef4444; }
+    .workflow-line b.running { color: #e67e22; }
 
     /* Schedule card */
     .sched-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -210,6 +240,8 @@
     .modal-event-label small { display: block; color: var(--muted); font-size: 11px; }
     .modal-parish-grid { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
     .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
+    .delete-choice { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; cursor: pointer; }
+    .delete-select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); margin: 2px 0 6px 24px; max-width: calc(100% - 24px); }
     .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
     /* Short links, one row each. The slug is shown as the URL it makes,
@@ -282,6 +314,7 @@
         <option value="macedonian">Macedonian</option>
         <option value="other">Other</option>
       </select>
+      <span id="admin-identity" class="admin-identity" hidden></span>
       <a href="/">Back to site</a>
       <button id="logout-btn" hidden>Log out</button>
     </div>
@@ -316,6 +349,14 @@
           <div class="field full"><label>Address</label><input name="address" placeholder="161 George St, Redfern NSW 2016"></div>
           <div class="field"><label>Latitude</label><input name="lat" type="number" step="any" required placeholder="-33.8920"></div>
           <div class="field"><label>Longitude</label><input name="lng" type="number" step="any" required placeholder="151.2050"></div>
+          <!-- Required, and deliberately not defaulted in the markup.
+               parishes.timezone is what turns a rule's local start_time into an
+               instant; this field did not exist, the API defaulted it to
+               Sydney, and that is wrong for 188 of the 293 parishes in
+               production. Nothing downstream can notice, so it is asked here. -->
+          <div class="field full"><label>Timezone</label>
+            <select name="timezone" id="add-parish-tz" required></select>
+          </div>
           <div class="field"><label>Website</label><input name="website" placeholder="https://..."></div>
           <div class="field"><label>Email</label><input name="email" type="email" placeholder="parish@example.com"></div>
           <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
@@ -366,8 +407,13 @@
               <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
             </select>
           </div>
-          <div class="field"><label>Start (Sydney)</label><input name="start_time" type="time" required></div>
-          <div class="field"><label>End (Sydney)</label><input name="end_time" type="time"></div>
+          <!-- The zone is the SELECTED PARISH'S, not Sydney's. schema.sql
+               documents start_time as local to parishes.timezone, and a label
+               reading "Sydney" over a Perth parish's service invites somebody
+               to convert a time that should be typed exactly as the parish
+               prints it. -->
+          <div class="field"><label>Start <span data-sched-tz>(Sydney)</span></label><input name="start_time" type="time" required></div>
+          <div class="field"><label>End <span data-sched-tz>(Sydney)</span></label><input name="end_time" type="time"></div>
           <div class="field"><label>Title</label><input name="title" required placeholder="Sunday Divine Liturgy"></div>
           <div class="field"><label>Type</label>
             <select name="event_type">
@@ -397,13 +443,15 @@
       <div id="schedule-list"></div>
     </div>
 
-    <!-- Scraping. The cron fires every four hours; this is how you see what it
-         did and make it happen now. adapter_runs is the only record of a scrape,
-         so a source going quiet looks like a run finding zero events, not like
-         nothing happening. -->
+    <!-- Scraping. The cron fires HOURLY and adapter_settings decides what an
+         hour is allowed to do; this is how you see what it did and make it
+         happen now. adapter_runs is the only record of a scrape, so a source
+         going quiet looks like a run finding zero events, not like nothing
+         happening — which is why the card also reads the parish's file. -->
     <div id="section-adapters" class="section">
       <h3>Scrapers</h3>
-      <p class="card-meta" style="margin:0 0 12px;">Registered in <code>worker/lib/adapters.mjs</code>. The cron runs them all every four hours; “Run now” runs one immediately.</p>
+      <p class="card-meta" style="margin:0 0 12px;">Registered in <code>worker/lib/adapters.mjs</code>. The Cron Trigger fires hourly and each scraper’s own interval decides whether that hour does anything; the buttons below ignore both.</p>
+      <div id="workflow-status" class="workflow-status"></div>
       <div id="adapter-list"></div>
     </div>
 
@@ -462,6 +510,43 @@
     </div>
   </div>
 
+  <!-- Deleting a parish.
+       Every other destructive control in this panel asks first; this one did
+       not. A parish with no events was removed on the first click of a button
+       sitting next to Save, and a parish WITH events got a prompt() in which
+       typing a name transferred and typing DELETE destroyed — two destructive
+       branches down one free-text box. The repo is not a backup: recovery is
+       `npm run db:export` or D1 Time Travel. -->
+  <div class="modal-backdrop" id="delete-backdrop" onclick="if(event.target===this)closeDeleteParish()">
+    <div class="modal">
+      <h2>Delete parish</h2>
+      <div class="modal-subtitle" id="delete-sub"></div>
+
+      <div id="delete-events-block" hidden>
+        <div class="modal-section-title">Its events</div>
+        <label class="delete-choice">
+          <input type="radio" name="delete-mode" value="transfer" checked>
+          <span>Move them to another parish</span>
+        </label>
+        <select id="delete-transfer-to" class="delete-select"></select>
+        <label class="delete-choice">
+          <input type="radio" name="delete-mode" value="purge">
+          <span>Delete the events as well</span>
+        </label>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label>Type the parish name to confirm</label>
+        <input id="delete-confirm-name" autocomplete="off" placeholder="">
+      </div>
+
+      <div class="modal-btn-row">
+        <button type="button" class="btn btn-outline" onclick="closeDeleteParish()">Cancel</button>
+        <button type="button" class="btn btn-reject" id="delete-go" disabled>Delete parish</button>
+      </div>
+    </div>
+  </div>
+
   <!-- The reserved-link list, and the locations it is built from. Same files
        the Worker bundles, so the warning shown here and the 409 returned on
        save cannot disagree about what is available. -->
@@ -472,9 +557,47 @@
   <script src="/shared/services.js"></script>
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
+  <!-- The parish timezone table. Shared for the same reason the colours are:
+       parishes.timezone is what makes a rule's local start_time an instant,
+       and a second list of zones would be a second chance to get one wrong. -->
+  <script src="/shared/timezones.js"></script>
   <script>
     const TZ = 'Australia/Sydney';
     const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+    // ── Parish timezones ──
+    //
+    // From the shared table, so the panel offers exactly the zones the rest of
+    // the site knows about. AgoraTimezones is the global that
+    // /shared/timezones.js publishes; the fallbacks keep the form usable if
+    // that script fails to load rather than rendering an empty required select
+    // nobody can satisfy.
+    const TZS = (window.AgoraTimezones && window.AgoraTimezones.PARISH_TIMEZONES) || [
+      { tz: 'Australia/Sydney', label: 'Sydney', note: '' },
+    ];
+    const tzLabel = (tz) => (window.AgoraTimezones
+      ? window.AgoraTimezones.timezoneLabel(tz)
+      : String(tz || '').split('/').pop().replace(/_/g, ' '));
+
+    const tzOptions = (selected) => TZS.map(z =>
+      `<option value="${esc(z.tz)}"${z.tz === selected ? ' selected' : ''}>` +
+      `${esc(z.label)}${z.note ? ' \u2014 ' + esc(z.note) : ''}</option>`).join('');
+
+    /** A parish's zone, for labelling a time field. */
+    const parishTz = (pid) => {
+      const p = parishes.find(x => x.id === pid);
+      return (p && p.timezone) || '';
+    };
+
+    // Every "Start (Sydney)" on the Add Schedule form follows the parish
+    // picker. The rule's start_time is local to the parish, so the label has to
+    // name the parish's city or it is telling somebody to convert.
+    function syncScheduleTzLabels() {
+      const sel = document.getElementById('schedule-parish-select');
+      const tz = sel ? parishTz(sel.value) : '';
+      const text = tz ? `(${tzLabel(tz)})` : '';
+      document.querySelectorAll('[data-sched-tz]').forEach(el => { el.textContent = text; });
+    }
     let parishes = [], schedules = [], adapters = [];
     let activeJurisdiction = '';
     const headers = { 'Content-Type': 'application/json' };
@@ -522,6 +645,8 @@
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
         loadParishLinks()]);
+      // After loadAdapters, which is what says whether any PDF adapter exists.
+      await loadWorkflow();
       renderAll();
     }
 
@@ -531,6 +656,7 @@
       renderScheduleList();
       renderParishSelects();
       renderAdapterList();
+      renderWorkflowStatus();
       renderInferSelect();
       renderColors();
     }
@@ -1026,7 +1152,18 @@
       const fps = filteredParishes().filter(p => p.id !== '_unassigned');
       const opts = fps.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
       const sel = document.getElementById('schedule-parish-select');
-      if (sel) sel.innerHTML = opts;
+      if (sel) {
+        const keep = sel.value;
+        sel.innerHTML = opts;
+        if (keep && fps.some(p => p.id === keep)) sel.value = keep;
+      }
+      const tzSel = document.getElementById('add-parish-tz');
+      // No pre-selection: an empty required select is what makes somebody
+      // choose, and choosing is the whole point of adding the field.
+      if (tzSel && !tzSel.options.length) {
+        tzSel.innerHTML = '<option value="" disabled selected>Choose a timezone\u2026</option>' + tzOptions(null);
+      }
+      syncScheduleTzLabels();
     }
 
     // ── Time helpers ──
@@ -1092,12 +1229,21 @@
               <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
               <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
               <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
+              <div class="field full"><label>Timezone</label>
+                <select data-field="timezone">${tzOptions(p.timezone)}${
+                  // A parish already carrying a zone this table does not offer
+                  // keeps it rather than being silently moved to Sydney by the
+                  // act of opening its card and pressing Save.
+                  p.timezone && !TZS.some(z => z.tz === p.timezone)
+                    ? `<option value="${esc(p.timezone)}" selected>${esc(p.timezone)}</option>` : ''
+                }</select>
+              </div>
               <div class="field"><label>Logo</label><input type="file" accept="image/*" onchange="uploadLogo('${esc(p.id)}', this)"></div>
             </div>
             <div class="btn-row">
               <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
               <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')">Geocode Address</button>
-              <button class="btn btn-reject" onclick="deleteParish('${esc(p.id)}')">Delete</button>
+              <button class="btn btn-reject" onclick="openDeleteParish('${esc(p.id)}')">Delete</button>
             </div>
           </div>
         </div>`;
@@ -1164,28 +1310,101 @@
         address: f.address.value.trim() || null, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         website: f.website.value.trim() || null, email: f.email.value.trim() || null, phone: f.phone.value.trim() || null,
         live_url: f.live_url.value.trim() || null,
+        timezone: f.timezone.value,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
       if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
     });
 
-    async function deleteParish(id) {
-      const res = await fetch(`/api/admin/parishes/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Removed'); loadAll(); return; }
-      const err = await res.json().catch(() => ({}));
-      if (!err.event_count) { toast(await adminError(res), 'error'); return; }
-      const choice = prompt(`This parish has ${err.event_count} events.\n\nType a parish name to transfer events to it, or type DELETE to remove all events and the parish:`);
-      if (!choice) return;
-      if (choice.trim() === 'DELETE') {
-        const r2 = await fetch(`/api/admin/parishes/${id}?delete_events=1`, { method: 'DELETE', headers });
-        if (r2.ok) { toast('Parish and events deleted'); loadAll(); } else toast(await adminError(r2), 'error');
-      } else {
-        const target = parishes.find(p => p.name.toLowerCase() === choice.trim().toLowerCase() || p.id === choice.trim());
-        if (!target) { toast('Parish not found — use exact name or ID', 'error'); return; }
-        const r2 = await fetch(`/api/admin/parishes/${id}?transfer_to=${encodeURIComponent(target.id)}`, { method: 'DELETE', headers });
-        if (r2.ok) { toast(`Events transferred to ${target.name}, parish deleted`); loadAll(); } else toast(await adminError(r2), 'error');
+    // ── Deleting a parish ──
+    //
+    // Two questions, asked in a dialog rather than assumed or typed into a
+    // prompt: what happens to its events, and are you sure it is this parish.
+    // The name has to be typed for BOTH branches — a transfer still deletes the
+    // parish, and the old flow only guarded the branch that also deleted rows.
+    let deleting = null;   // { id, name, eventCount }
+
+    window.closeDeleteParish = function () {
+      document.getElementById('delete-backdrop').classList.remove('open');
+      deleting = null;
+    };
+
+    /** Open the dialog. The only path to a delete. */
+    window.openDeleteParish = async function (id) {
+      const parish = parishes.find(p => p.id === id);
+      if (!parish) return;
+
+      // What the delete would take with it. A GET, so that a lost query
+      // parameter cannot turn the question into the answer.
+      const probe = await fetch(`/api/admin/parishes/${id}/deletion`, { headers });
+      if (!probe.ok) { toast(await adminError(probe), 'error'); return; }
+      const info = await probe.json();
+      const eventCount = info.event_count || 0;
+      const scheduleCount = info.schedule_count || 0;
+
+      deleting = { id, name: parish.name, eventCount };
+
+      // Name the rules as well as the events. Deleting a parish has always
+      // deleted its recurrence rules — that is every service it projects — and
+      // nothing ever said so before pressing the button.
+      const bits = [];
+      if (scheduleCount) bits.push(`${scheduleCount} recurrence rule${scheduleCount === 1 ? '' : 's'}`);
+      if (eventCount) bits.push(`${eventCount} scraped event${eventCount === 1 ? '' : 's'}`);
+      document.getElementById('delete-sub').textContent = bits.length
+        ? `${parish.name} has ${bits.join(' and ')}. Its rules go with it, and this cannot be undone.`
+        : `${parish.name} has no rules or events. Deleting it cannot be undone.`;
+      document.getElementById('delete-events-block').hidden = !eventCount;
+
+      const sel = document.getElementById('delete-transfer-to');
+      sel.innerHTML = parishes
+        .filter(p => p.id !== id && p.id !== '_unassigned')
+        .map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+
+      const confirmInput = document.getElementById('delete-confirm-name');
+      confirmInput.value = '';
+      confirmInput.placeholder = parish.name;
+      document.getElementById('delete-go').disabled = true;
+
+      document.getElementById('delete-backdrop').classList.add('open');
+      confirmInput.focus();
+    };
+
+    document.getElementById('delete-confirm-name').addEventListener('input', (e) => {
+      // Exact, but forgiving about surrounding space and case — the point is
+      // that somebody read the name, not that they can match whitespace.
+      const ok = !!deleting &&
+        e.target.value.trim().toLowerCase() === deleting.name.trim().toLowerCase();
+      document.getElementById('delete-go').disabled = !ok;
+    });
+
+    document.getElementById('delete-go').addEventListener('click', async (e) => {
+      if (!deleting) return;
+      const { id, name, eventCount } = deleting;
+      const mode = document.querySelector('input[name="delete-mode"]:checked')?.value;
+      const target = document.getElementById('delete-transfer-to').value;
+
+      let url = `/api/admin/parishes/${id}`;
+      if (eventCount) {
+        if (mode === 'transfer') {
+          if (!target) { toast('Choose a parish to move the events to', 'error'); return; }
+          url += `?transfer_to=${encodeURIComponent(target)}`;
+        } else {
+          url += '?delete_events=1';
+        }
       }
-    }
+
+      e.target.disabled = true;
+      const res = await fetch(url, { method: 'DELETE', headers });
+      e.target.disabled = false;
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+
+      const moved = eventCount && mode === 'transfer'
+        ? ` \u00b7 ${eventCount} event${eventCount === 1 ? '' : 's'} moved to ${parishes.find(p => p.id === target)?.name || target}`
+        : (eventCount ? ` \u00b7 ${eventCount} event${eventCount === 1 ? '' : 's'} deleted` : '');
+      closeDeleteParish();
+      toast(`${name} deleted${moved}`);
+      loadAll();
+    });
 
     // ── Schedules grouped by parish ──
     function renderScheduleList() {
@@ -1226,8 +1445,8 @@
                   <div class="field"><label>Day</label>
                     <select data-field="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
                   </div>
-                  <div class="field"><label>Start</label><input type="time" value="${esc(s.start_time)}" data-field="start_time"></div>
-                  <div class="field"><label>End</label><input type="time" value="${esc(s.end_time || '')}" data-field="end_time"></div>
+                  <div class="field"><label>Start${s.timezone ? ' (' + esc(tzLabel(s.timezone)) + ')' : ''}</label><input type="time" value="${esc(s.start_time)}" data-field="start_time"></div>
+                  <div class="field"><label>End${s.timezone ? ' (' + esc(tzLabel(s.timezone)) + ')' : ''}</label><input type="time" value="${esc(s.end_time || '')}" data-field="end_time"></div>
                   <div class="field"><label>Type</label>
                     <select data-field="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
                   </div>
@@ -1375,6 +1594,84 @@
       return `${Math.round(hrs / 24)} days ago`;
     }
 
+    // ── The source line ──
+    //
+    // What the PARISH'S FILE says, as opposed to what our last read of it said.
+    // Everything here comes from the extracted document in R2, which carried it
+    // all along and was never read back: a card built only from adapter_runs
+    // freezes the moment the adapter stops running, so a stale failure could
+    // sit on screen while a perfectly good file waited in R2 — which is exactly
+    // what Blacktown did for four days in September.
+    // ── Where the next fetch will look ──
+    //
+    // The one thing about a PDF source /admin may change, and the commonest
+    // maintenance act there is: a parish republishes under a new path — the
+    // Sunshine Coast sheet is a fresh URL every January — and following it used
+    // to mean a pull request and a deploy.
+    //
+    // It changes what the EXTRACTION fetches, not what the adapter reads, so
+    // the copy says so: saving a URL and pressing nothing else does nothing
+    // until the next re-fetch.
+    function sourceUrlEditor(a) {
+      const src = a.source;
+      if (!src || !src.sourceKey) return '';
+      const val = src.willFetch || src.fileUrl || '';
+      return `<div class="src-url">
+        <label>Where to fetch it from${src.overridden
+          ? ` <span class="src-badge">changed in /admin${src.overrideUpdatedBy ? ' by ' + esc(src.overrideUpdatedBy) : ''}</span>`
+          : ''}</label>
+        <div class="src-url-row">
+          <input type="url" value="${esc(val)}" data-src-url="${esc(src.sourceKey)}"
+                 spellcheck="false" placeholder="https://…">
+          <button class="btn btn-outline" data-src-save="${esc(src.sourceKey)}">Save URL</button>
+          ${src.overridden ? `<button class="btn btn-outline" data-src-reset="${esc(src.sourceKey)}"
+                 title="Go back to the URL in pdf-sources.mjs">Reset</button>` : ''}
+        </div>
+        ${src.followsIndex ? `<div class="src-line src-dim">This parish has an index page, so the extraction usually finds the current file by itself \u2014 this URL is the fallback.</div>` : ''}
+        ${src.overridden ? `<div class="src-line src-dim">pdf-sources.mjs remembers <code>${esc(src.fileUrl)}</code></div>` : ''}
+      </div>`;
+    }
+
+    function sourceBlock(a) {
+      const src = a.source;
+      if (!src) return '';
+
+      if (!src.present) {
+        return `<div class="src-block">
+          <div class="src-line src-problem">${esc(src.problem)}</div>
+        </div>`;
+      }
+
+      const cov = src.coverage || {};
+      const covTone = cov.state === 'expired' ? 'bad' : (cov.state === 'ending' ? 'warn' : '');
+      const fileName = (() => {
+        try { return decodeURIComponent(new URL(src.sourceUrl).pathname.split('/').pop()) || src.sourceUrl; }
+        catch { return src.sourceUrl || 'the parish\u2019s file'; }
+      })();
+
+      // A covered range reads as a range, because "1\u201331 July" is what somebody
+      // checks against the parish's website. The coverage message already says
+      // how stale it is and in whose words.
+      const covers = cov.until
+        ? `Covers to ${esc(cov.until)}${cov.message ? ' \u2014 <b class="' + covTone + '">' + esc(cov.message.replace(/^[^:]*: /, '').replace(/\.$/, '')) + '</b>' : ''}`
+        : 'Nothing datable was read from this file';
+
+      const moved = src.remembersUrl && src.sourceUrl && src.remembersUrl !== src.sourceUrl;
+
+      return `<div class="src-block">
+        <div class="src-line">${covers}</div>
+        <div class="src-line">
+          PDF fetched ${relativeTime(src.fetchedAt)} &middot;
+          <a href="${esc(src.sourceUrl)}" target="_blank" rel="noopener">${esc(fileName)}</a>
+          ${src.occurrences != null ? ` &middot; ${src.occurrences} service${src.occurrences === 1 ? '' : 's'} read` : ''}
+        </div>
+        ${src.discoveredFrom ? `<div class="src-line src-dim">Found via <a href="${esc(src.discoveredFrom)}" target="_blank" rel="noopener">${esc(new URL(src.discoveredFrom).pathname.replace(/^\//, ''))}</a></div>` : ''}
+        ${moved ? `<div class="src-line warn">The parish has moved on from the file pdf-sources.mjs remembers \u2014 worth updating that line so the fallback is current.</div>` : ''}
+        ${a.sourceNewerThanRun ? `<div class="src-line src-overtaken">This file is newer than the last scrape of it \u2014 the status above has been overtaken. <b>Re-read the last fetch</b> to catch up.</div>` : ''}
+        ${sourceUrlEditor(a)}
+      </div>`;
+    }
+
     function renderAdapterList() {
       const c = document.getElementById('adapter-list');
       if (!adapters.length) { c.innerHTML = '<div class="empty">No adapters registered</div>'; return; }
@@ -1382,6 +1679,7 @@
       c.innerHTML = adapters.map(a => {
         const r = a.run;
         const parish = parishes.find(p => p.id === a.parishId);
+        const isPdf = a.sourceType === 'parish-pdf';
 
         // Five states worth telling apart: cannot run, has never run, has run
         // and failed, has run and succeeded over a source that has run out of
@@ -1404,10 +1702,10 @@
           ? `${r.eventsFound} found &middot; ${r.eventsCreated} new &middot; ${r.eventsUpdated} updated`
           : '';
 
-        // The coverage sentence sits with the error, not with the counts: it is
-        // the thing to act on, and what it asks for is a person going to look
-        // at whether the parish has published the next one.
-        const covLine = cov && cov.message && !a.pending && r && r.healthy
+        // On a PDF adapter the coverage sentence now lives in the source block,
+        // where it belongs — it describes the file, not the run. Keeping both
+        // would say the same thing twice in two different voices.
+        const covLine = !isPdf && cov && cov.message && !a.pending && r && r.healthy
           ? `<div class="card-meta" style="color:${cov.state === 'expired' ? '#ef4444' : '#e67e22'};margin-top:6px;">${esc(cov.message)}</div>`
           : '';
 
@@ -1417,31 +1715,57 @@
               ? `<div class="card-meta" style="color:#ef4444;margin-top:6px;word-break:break-word;">${esc(r.lastError)}</div>`
               : covLine);
 
+        // THE BUTTONS, AND WHY THERE ARE NOW TWO.
+        //
+        // "Run now" on a PDF adapter re-reads an R2 object that only the
+        // extraction workflow can rewrite. So on a card warning "out of dates"
+        // there was exactly one button and it could not possibly help: pressing
+        // it re-read the same April text and reported the same April event.
+        // Fetching the parish's website again is a different act, and it is the
+        // one the warning is asking for.
+        const buttons = isPdf
+          ? `<button class="btn btn-primary" data-refetch="${esc(a.id)}"
+                     title="Ask GitHub to download this parish&#39;s PDF again and re-extract it">Re-fetch from the parish</button>
+             <button class="btn btn-outline" data-run-adapter="${esc(a.id)}"
+                     title="Re-read the text already extracted, without touching the parish&#39;s website"
+                     ${a.pending ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Re-read the last fetch</button>`
+          : `<button class="btn btn-outline" data-run-adapter="${esc(a.id)}"
+                     ${a.pending ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Run now</button>`;
+
+        const warn = a.pending || (r && !r.healthy)
+          || (cov && (cov.state === 'expired' || cov.state === 'ending'))
+          || (a.source && a.source.present && a.source.coverage
+              && ['expired', 'ending'].includes(a.source.coverage.state))
+          || (a.source && !a.source.present);
+
         return `
-          <div class="card${a.pending || (r && !r.healthy) || (cov && (cov.state === 'expired' || cov.state === 'ending')) ? ' warn' : ''}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-              <div style="min-width:0;">
-                <div class="card-title">${esc(parish ? parish.name : a.parishId)}</div>
-                <div class="card-meta">${esc(a.sourceType)} &middot; <code>${esc(a.id)}</code></div>
-                <div class="card-meta" style="margin-top:4px;">
-                  <span style="color:${tone};font-weight:600;">${status}</span>
-                  &middot; last run ${relativeTime(r && r.lastRun)}
-                  ${counts ? ' &middot; ' + counts : ''}
-                  ${a.enabled ? `&middot; every ${intervalLabel(a.intervalMinutes)}` : '&middot; <span style="color:#e67e22;font-weight:600;">paused</span>'}
-                  ${a.enabled && a.next ? ' &middot; ' + esc(a.next) : ''}
-                  ${window_(r)}
-                </div>
-                ${detail}
+          <div class="card${warn ? ' warn' : ''}">
+            <div style="min-width:0;">
+              <div class="card-title">${esc(parish ? parish.name : a.parishId)}</div>
+              <div class="card-meta">${esc(a.sourceType)} &middot; <code>${esc(a.id)}</code></div>
+              <div class="card-meta" style="margin-top:4px;">
+                <span style="color:${tone};font-weight:600;">${status}</span>
+                &middot; last run ${relativeTime(r && r.lastRun)}
+                ${counts ? ' &middot; ' + counts : ''}
+                ${a.enabled ? `&middot; every ${intervalLabel(a.intervalMinutes)}` : '&middot; <span style="color:#e67e22;font-weight:600;">paused</span>'}
+                ${a.enabled && a.next ? ' &middot; ' + esc(nextLabel(a.next)) : ''}
+                ${isPdf ? '' : window_(r)}
               </div>
-              <button class="btn btn-outline" data-run-adapter="${esc(a.id)}"
-                      ${a.pending ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Run now</button>
+              ${detail}
+              ${sourceBlock(a)}
+            </div>
+
+            <div class="btn-row">${buttons}
+              <button class="btn btn-outline" data-propose="${esc(a.parishId)}"
+                      title="Turn what this scrape found into recurrence rules">Propose rules \u2192</button>
             </div>
 
             <!-- Pacing. The Cron Trigger is fixed at deploy time and fires
                  hourly; these decide what an hour is allowed to do, so they
-                 take effect at the next tick with no deploy. "Run now" ignores
-                 both — asking explicitly is not a timer going off. -->
-            <div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #eee;font-size:12px;">
+                 take effect at the next tick with no deploy. Neither button
+                 above is bound by them — asking explicitly is not a timer
+                 going off. -->
+            <div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);font-size:12px;">
               <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
                 <input type="checkbox" data-adapter-enabled="${esc(a.id)}" ${a.enabled ? 'checked' : ''}>
                 Scrape automatically
@@ -1459,6 +1783,21 @@
       c.querySelectorAll('[data-run-adapter]').forEach(btn => {
         btn.addEventListener('click', () => runAdapterNow(btn.dataset.runAdapter, btn));
       });
+      c.querySelectorAll('[data-refetch]').forEach(btn => {
+        btn.addEventListener('click', () => refetchSource(btn.dataset.refetch, btn));
+      });
+      c.querySelectorAll('[data-src-save]').forEach(btn => {
+        btn.addEventListener('click', () => saveSourceUrl(btn.dataset.srcSave, btn));
+      });
+      c.querySelectorAll('[data-src-reset]').forEach(btn => {
+        btn.addEventListener('click', () => resetSourceUrl(btn.dataset.srcReset, btn));
+      });
+      // The last step of the PDF flow, on the card that produced the events
+      // rather than behind a collapsed panel on another tab with its own parish
+      // picker. "78 services read" and "turn them into rules" belong together.
+      c.querySelectorAll('[data-propose]').forEach(btn => {
+        btn.addEventListener('click', () => proposeFor(btn.dataset.propose));
+      });
       c.querySelectorAll('[data-adapter-enabled]').forEach(cb => {
         cb.addEventListener('change', () =>
           saveAdapterSettings(cb.dataset.adapterEnabled, { enabled: cb.checked }, cb));
@@ -1468,6 +1807,27 @@
           saveAdapterSettings(sel.dataset.adapterInterval, { intervalMinutes: Number(sel.value) }, sel));
       });
     }
+
+    /** Jump to Schedules with this parish already inferred. */
+    function proposeFor(parishId) {
+      activateTab('schedules');
+      const panel = document.getElementById('infer-panel');
+      if (!panel.classList.contains('open')) toggleExpand('infer-panel');
+      const sel = document.getElementById('infer-parish-select');
+      if (sel) sel.value = parishId;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      findRules();
+    }
+
+    // isDue() reports WHY, in its own vocabulary, because it is a pure function
+    // with a test. "never-run" is its way of saying "due, because it has never
+    // succeeded" — rendered raw it sat next to "last run 5 days ago" and read
+    // as a contradiction.
+    const nextLabel = (why) => ({
+      'never-run': 'due on the next tick',
+      'due': 'due on the next tick',
+      'disabled': 'paused',
+    }[why] || why);
 
     // Hourly is the floor: the trigger cannot fire more often than wrangler.toml
     // says, so offering anything shorter would be a control that does nothing.
@@ -1528,6 +1888,144 @@
       }
     }
 
+    // Go and look at the parish's website again.
+    //
+    // This is the button the "out of dates" warning is actually asking for.
+    // The Worker cannot read a PDF — that is why extraction is a GitHub Action
+    // — so this asks GitHub to run it for this one parish and then watches for
+    // the run to appear.
+    //
+    // A deployment with no GITHUB_ACTIONS_TOKEN answers 501, and the panel
+    // hands over the workflow link instead of pretending the button worked.
+    async function refetchSource(id, btn) {
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Asking GitHub\u2026';
+      try {
+        const res = await fetch(`/api/admin/adapters/${encodeURIComponent(id)}/refresh-source`,
+          { method: 'POST', headers });
+        const body = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+          toast('Extraction started \u2014 it takes about a minute. The card updates when it lands.');
+          await loadWorkflow();
+          renderWorkflowStatus();
+          // The run has to finish and write R2 before re-reading is worth
+          // anything, so poll the workflow rather than the adapter.
+          watchWorkflow();
+          return;
+        }
+
+        if (res.status === 501 && body.dispatchUrl) {
+          // Not an error the operator caused. Say what is missing and give them
+          // the same journey by hand.
+          toast('This deployment cannot start the extraction itself \u2014 opening GitHub.', 'error');
+          window.open(body.dispatchUrl, '_blank', 'noopener');
+          return;
+        }
+        toast(body.error || await adminError(res), 'error');
+      } catch {
+        toast('Could not reach the server', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+
+    async function saveSourceUrl(key, btn) {
+      const input = document.querySelector(`[data-src-url="${CSS.escape(key)}"]`);
+      const url = input.value.trim();
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/pdf-sources/${encodeURIComponent(key)}`, {
+          method: 'PUT', headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({ source_url: url }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+        toast(body.overridden
+          ? 'Saved \u2014 press Re-fetch from the parish to download it'
+          : 'Back to the URL in pdf-sources.mjs');
+        await loadAdapters();
+        renderAdapterList();
+      } finally { btn.disabled = false; }
+    }
+
+    async function resetSourceUrl(key, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/pdf-sources/${encodeURIComponent(key)}`,
+          { method: 'DELETE', headers });
+        if (!res.ok) { toast(await adminError(res), 'error'); return; }
+        toast('Back to the URL in pdf-sources.mjs');
+        await loadAdapters();
+        renderAdapterList();
+      } finally { btn.disabled = false; }
+    }
+
+    // ── The extraction workflow ──
+    //
+    // The half of a PDF parish's pipeline /admin could not see at all. One call
+    // for every PDF adapter rather than one each, because it is the same
+    // workflow behind all of them.
+    let workflow = { configured: false, runs: [], dispatchUrl: null };
+
+    async function loadWorkflow() {
+      if (!adapters.some(a => a.sourceType === 'parish-pdf')) return;
+      workflow = await fetch('/api/admin/pdf-workflow', { headers })
+        .then(r => r.ok ? r.json() : workflow).catch(() => workflow);
+    }
+
+    function renderWorkflowStatus() {
+      const el = document.getElementById('workflow-status');
+      if (!el) return;
+      if (!adapters.some(a => a.sourceType === 'parish-pdf')) { el.innerHTML = ''; return; }
+
+      const run = workflow.runs && workflow.runs[0];
+      const link = workflow.dispatchUrl;
+      let inner;
+
+      if (!run) {
+        inner = `PDF extraction: <span class="src-dim">${esc(workflow.error || 'no runs found')}</span>`;
+      } else if (run.status !== 'completed') {
+        inner = `PDF extraction <b class="running">running now</b> \u00b7 started ${relativeTime(run.startedAt)}`;
+      } else {
+        const ok = run.conclusion === 'success';
+        inner = `PDF extraction last ran ${relativeTime(run.startedAt)} \u00b7 ` +
+          `<b class="${ok ? 'good' : 'bad'}">${esc(run.conclusion || 'unknown')}</b>`;
+      }
+      const href = (run && run.url) || link;
+      el.innerHTML = `<div class="workflow-line">${inner}` +
+        (href ? ` \u00b7 <a href="${esc(href)}" target="_blank" rel="noopener">view on GitHub</a>` : '') +
+        `</div>`;
+    }
+
+    // Poll while a run is in flight, then refresh the cards once. The run
+    // writes R2 and nothing else notices, so this is what turns "started" into
+    // a card that says something new.
+    let workflowTimer = null;
+    function watchWorkflow() {
+      clearTimeout(workflowTimer);
+      let tries = 0;
+      const tick = async () => {
+        tries++;
+        await loadWorkflow();
+        renderWorkflowStatus();
+        const run = workflow.runs && workflow.runs[0];
+        const busy = run && run.status !== 'completed';
+        // Give up after five minutes: the workflow takes about a minute, and a
+        // panel left polling forever is worse than one that stops and lets you
+        // press the button again.
+        if ((busy || tries <= 2) && tries < 25) {
+          workflowTimer = setTimeout(tick, 12000);
+        } else {
+          await loadAdapters();
+          renderAdapterList();
+        }
+      };
+      workflowTimer = setTimeout(tick, 6000);
+    }
+
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
     // Signing out is Cloudflare's to do, not ours: /cdn-cgi/access/logout is
@@ -1556,6 +2054,10 @@
     }
 
     document.getElementById('infer-btn').addEventListener('click', findRules);
+
+    // The Add Schedule form's time labels follow whichever parish is picked.
+    document.getElementById('schedule-parish-select')
+      .addEventListener('change', syncScheduleTzLabels);
 
     (async function init() {
       // One source of truth. /api/admin/ping is the Worker verifying the Access
@@ -1615,6 +2117,22 @@
       try { sessionStorage.removeItem('agora-access-retry'); } catch { /* fine */ }
 
       document.getElementById('logout-btn').hidden = false;
+
+      // Whose account this is. /api/admin/ping is the Worker reading the Access
+      // JWT it just verified, so this is the identity the API will attribute
+      // any edit to — not a guess from a cookie.
+      try {
+        const who = (await ping.json()).identity;
+        if (who) {
+          const el = document.getElementById('admin-identity');
+          el.textContent = who === 'dev' ? 'dev admin (local)' : who;
+          el.title = who === 'dev'
+            ? 'AGORA_DEV_ADMIN is set — this bypasses Cloudflare Access and is only for wrangler dev.'
+            : `Signed in to Cloudflare Access as ${who}`;
+          el.hidden = false;
+        }
+      } catch { /* the panel works without knowing who you are */ }
+
       await loadAll();
     })();
 
