@@ -101,7 +101,21 @@ CREATE TABLE parishes (
   --
   -- Nothing renders it. It is a fact about the row, not about the source, and
   -- the provenance line above speaks only for the source.
-  info_verified_at TEXT
+  info_verified_at TEXT,
+
+  -- Who last edited this row, and when.
+  --
+  -- Anonymous rows were fine while one person had a login. With several, "is
+  -- this address newer than the scrape, and who says so" becomes the question
+  -- asked of every field, and nothing could answer it — adminIdentity() existed
+  -- and was called from nowhere.
+  --
+  -- Distinct from info_source_*, which is about the SOURCE: that says a parish
+  -- website published this and when we last read it. This says which of us
+  -- typed it in. A scrape writes the first and never the second, because a
+  -- scrape is not a person.
+  updated_at  TEXT,
+  updated_by  TEXT
 );
 
 -- Sentinel parish for events whose parish is unknown.
@@ -178,6 +192,12 @@ CREATE TABLE schedules (
   source_name       TEXT,
   source_ref        TEXT,
   source_checked_at TEXT,   -- ISO 8601 UTC, when WE last read the source
+
+  -- As on parishes: which of US last edited the rule, as opposed to which
+  -- source the rule came from. source_* is the claim's origin; these two are
+  -- the edit's author.
+  updated_at        TEXT,
+  updated_by        TEXT,
 
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
@@ -276,6 +296,11 @@ CREATE TABLE schedule_overrides (
   -- Last, not beside the other metadata, because ALTER TABLE ADD COLUMN can
   -- only append: a database migrated with d1/migrations/001 and one created
   -- from this file must come out identical, down to column order.
+  -- Which person, when `source` is 'human'. Null for one the machine wrote:
+  -- applyTombstones cancels services from absence, and attributing that to
+  -- whoever happened to be signed in would be a lie.
+  updated_by              TEXT,
+
   source                  TEXT NOT NULL DEFAULT 'human',
 
   UNIQUE(schedule_id, occurrence_date)
@@ -459,4 +484,52 @@ CREATE TABLE pdf_source_overrides (
   -- URL somebody typed is a claim, and a claim wants an author.
   updated_by  TEXT,
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- admin_roles — what an authenticated person may do
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Cloudflare Access decides who gets through the door. This decides what they
+-- may touch once inside, which was previously a single boolean: anyone who got
+-- in could delete any parish, change any acronym, or repaint every jurisdiction.
+--
+-- NOT an Access group claim, deliberately. That would need the identity
+-- provider to emit groups and the Access application to forward them, neither
+-- of which the Worker can check; it would put "who is a sub-admin" in a
+-- Cloudflare dashboard rather than in the panel the owner already uses; and it
+-- could not be tested. A table is the shape every other piece of configuration
+-- here already has.
+--
+-- THE BOOTSTRAP RULE, which is the whole reason this is safe to deploy:
+-- an EMPTY table means every authenticated user is an owner. That reproduces
+-- exactly the behaviour before roles existed, so the deploy cannot lock the
+-- existing admin out of their own panel. The moment any row exists, absence
+-- stops meaning owner and starts meaning no access.
+--
+-- Note the asymmetry with adapter_settings, where a missing row deliberately
+-- means "carry on at the default" — absence must never be the thing that stops
+-- a scrape. Here absence must stop a delete. A missed scrape is fixed by the
+-- next one; a wrongly-granted delete is not.
+CREATE TABLE admin_roles (
+  -- The Access identity, lower-cased on the way in. Matching is
+  -- case-insensitive at read time too, because an identity provider may hand
+  -- back a different casing than whoever typed the row.
+  email       TEXT PRIMARY KEY,
+
+  -- owner   — everything, including deletes, acronyms, colours and this table
+  -- editor  — the day-to-day work across every parish, minus those four
+  -- parish  — the same verbs as editor, but only for parish_ids below
+  role        TEXT NOT NULL CHECK(role IN ('owner','editor','parish')),
+
+  -- A JSON array of parish ids. Only read for role='parish'; an empty list
+  -- there can touch nothing, which is the right reading of "scoped to these
+  -- parishes" and is why the panel refuses to save that combination.
+  parish_ids  TEXT,
+
+  -- A human note: which parish they are the contact for, who vouched for them.
+  note        TEXT,
+
+  added_by    TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
