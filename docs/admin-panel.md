@@ -3,27 +3,41 @@
 An assessment of `/admin` against the thing it has never had to be: a screen a
 second person uses. Written 16 September 2026, against production.
 
-> **Status, 17 September 2026.** Tiers 0 and 1 below are done. The one thing
-> that needs a hand is the new table, because `d1/schema.sql` is a baseline with
-> bare `CREATE TABLE` statements and re-applying the whole file to a live
-> database fails on the tables that already exist. Run this once against
-> production:
+> **Status, 17 September 2026.** Tiers 0–3 below are done; Tier 4 is not.
+>
+> Two schema changes have to be applied by hand, because `d1/schema.sql` is a
+> baseline of bare `CREATE TABLE` statements and re-applying the whole file to a
+> live database fails on the tables that already exist:
 >
 > ```bash
+> # Tier 1 — the PDF source override (already applied in production)
 > npx wrangler d1 execute agora --remote --command \
 >   "CREATE TABLE IF NOT EXISTS pdf_source_overrides (
->      source_key TEXT PRIMARY KEY,
->      source_url TEXT NOT NULL,
->      updated_by TEXT,
+>      source_key TEXT PRIMARY KEY, source_url TEXT NOT NULL, updated_by TEXT,
 >      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
+>
+> # Tiers 2 and 3 — attribution, and who may do what
+> npx wrangler d1 execute agora --remote --command \
+>   "ALTER TABLE parishes ADD COLUMN updated_at TEXT;
+>    ALTER TABLE parishes ADD COLUMN updated_by TEXT;
+>    ALTER TABLE schedules ADD COLUMN updated_at TEXT;
+>    ALTER TABLE schedules ADD COLUMN updated_by TEXT;
+>    ALTER TABLE schedule_overrides ADD COLUMN updated_by TEXT;
+>    CREATE TABLE IF NOT EXISTS admin_roles (
+>      email TEXT PRIMARY KEY,
+>      role TEXT NOT NULL CHECK(role IN ('owner','editor','parish')),
+>      parish_ids TEXT, note TEXT, added_by TEXT,
+>      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
 > ```
 >
-> Until it exists, the panel reads no overrides and every PDF source uses the
-> URL in `pdf-sources.mjs` — which is where they were before, so nothing breaks
-> in the meantime. `GITHUB_ACTIONS_TOKEN` is optional in the same way: without
-> it, **Re-fetch from the parish** opens GitHub instead of starting the run.
+> **`admin_roles` empty means every authenticated user is an owner**, which is
+> exactly the behaviour before roles existed — so the deploy cannot lock anyone
+> out, and the table can be created before or after it. The first row flips the
+> rule: from then on an account with no row can do nothing. The People tab says
+> so in as many words before you add anybody.
 >
-> Tiers 2–4 are untouched.
+> `GITHUB_ACTIONS_TOKEN` is set and declared. Tier 4 — an overrides tab, and
+> linking the two admin surfaces — is untouched.
 
 `/admin` today has exactly one user, who also wrote it. Every affordance assumes
 that. The copy is terse because the reader already knows; the destructive
@@ -280,6 +294,27 @@ exact failure CLAUDE.md documents at length.
 it; a parish card never mentions that a scraper feeds it.
 
 ---
+
+## What has since been done
+
+Tiers 0–3 below are implemented. The findings above are kept as written
+because they are the record of why, not a to-do list — reading them as
+present tense is reading the state of the panel in September 2026, before
+any of this. What changed, in one line each:
+
+- **Timezone** on both parish forms, required, validated through `Intl`.
+- **Schedule time labels** name the selected parish's city.
+- **Delete** is a dialog that names the rules going with it.
+- **The PDF card** describes the parish's file, with re-fetch split from
+  re-read, and the source URL editable without a deploy.
+- **Search and saved filters** on Parishes; edit forms build on expand.
+- **Provenance** on parishes and rules, with `info_verified_at` settable by
+  a person for the first time, and `updated_by` on every edit.
+- **Roles** — owner, editor, parish contact — enforced server-side per
+  capability, with a People tab for the owner.
+
+Still open: Tier 4, and the "propose instead of ban" idea under Tier 3,
+which is a queue and a workflow rather than a permission.
 
 ## What to do
 

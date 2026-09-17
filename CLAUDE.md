@@ -233,6 +233,17 @@ A secret reaches `env` as a **string** (a Worker secret) or as an **object with
 takes either. Do not compare a binding for truthiness and call it configured —
 an object always passes, and the value then renders as `[object Object]`.
 
+**Who may do what lives in `admin_roles`.** Cloudflare Access decides who
+reaches `/admin`; that table decides what they may touch once inside —
+owner, editor, or a parish contact scoped to their own parishes. Routes name
+a *capability*, never a role, so a control the panel greys out and a route
+that refuses read the same map. **An empty table means every authenticated
+user is an owner**, which is exactly the behaviour before roles existed, so
+the deploy cannot lock anybody out; the first row flips it and absence then
+means no access. That is the opposite of `adapter_settings`, where absence
+must never stop a scrape, and deliberately so: a missed scrape is fixed by
+the next one, a wrongly-granted delete is not.
+
 **Admin fails closed.** With `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` unset, every
 `/api/admin/*` request is refused. The Access JWT's signature is verified against the
 team's published keys — a forged `Cf-Access-Jwt-Assertion` header gets nothing.

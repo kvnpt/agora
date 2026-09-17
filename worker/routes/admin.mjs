@@ -17,6 +17,7 @@ import { inferSchedules } from '../lib/infer.mjs';
 import { pdfSourceStatus, fileIsNewerThanRun } from '../lib/pdf-status.mjs';
 import { dispatchExtraction, recentExtractionRuns } from '../lib/github-actions.mjs';
 import { pdfSourceOverrides, applyOverride, isHttpUrl } from '../lib/pdf-source-overrides.mjs';
+import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parseParishIds } from '../lib/roles.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
@@ -59,11 +60,55 @@ async function acronymConflict(db, acronym, parishId) {
 }
 
 // Wrap a handler so the guard runs first.
-const guarded = (fn) => async (c) => {
-  const denied = await requireAdmin(c);
-  if (denied) return denied;
-  return fn(c);
+//
+// TWO GATES, not one. requireAdmin is Cloudflare Access: who got through the
+// door. `capability` is this codebase's own question: what they may touch now
+// that they are inside. That was a single boolean until roles existed, so
+// everybody who could sign in could delete any parish.
+//
+// The capability is named at the route, never a role — a route that asked for
+// "owner" would have to be revisited every time the role table changed, and the
+// panel could not grey out the same control the API refuses.
+//
+// Omitting the capability means "any recognised role", which is right for the
+// reads: a parish contact needs the parish list to render their own card.
+const guarded = (capability, fn) => {
+  // Called as guarded(fn) by every route that predates roles.
+  if (typeof capability === 'function') { fn = capability; capability = null; }
+
+  return async (c) => {
+    const denied = await requireAdmin(c);
+    if (denied) return denied;
+
+    const who = await resolveRole(c.env.DB, await adminIdentity(c));
+    // Stash it: handlers need the role for parish scoping and for the audit
+    // line, and resolving it twice is a second query for the same answer.
+    c.who = who;
+
+    if (!who.role) return json({ error: denial(null, capability), role: null }, 403);
+    if (capability && !can(who.role, capability)) {
+      return json({ error: denial(who.role, capability), role: who.role }, 403);
+    }
+    return fn(c);
+  };
 };
+
+// A parish-scoped person acting on somebody else's parish.
+//
+// Separate from the capability check because it is a different question — the
+// verb is allowed, the object is not — and because the answer needs the row,
+// which only the handler has.
+const outOfScope = (c, parishId) => mayTouchParish(c.who, parishId)
+  ? null
+  : json({
+      error: 'That parish is not one of yours. Ask an owner if you need it added.',
+      role: c.who.role,
+    }, 403);
+
+// Who to attribute an edit to. Null under the dev bypass is fine — the column
+// is nullable and "dev" is not a person.
+const editor = async (c) => (await adminIdentity(c)) || null;
+const NOW = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 // Keep an event's coordinates in step with its parish, unless it has an override.
 async function syncEventCoordsForParish(db, parishId) {
@@ -85,7 +130,135 @@ export function registerAdminRoutes(router) {
   router.get('/api/admin/ping', guarded(async (c) => json({
     ok: true,
     identity: await adminIdentity(c),
+    // The panel renders itself from this: a control it greys out and a route
+    // that refuses consult the same capability map, so a disabled button and a
+    // 403 cannot disagree. It is convenience, never enforcement — every guard
+    // above re-checks server-side.
+    ...rolePayload(c.who),
   })));
+
+  // ── people ──
+  //
+  // Who may sign in and what they may do. Owner-only, because an editor who
+  // could edit this table could make themselves an owner.
+  router.get('/api/admin/people', guarded('people.manage', async ({ env }) => {
+    const r = await env.DB.prepare(
+      'SELECT email, role, parish_ids, note, added_by, created_at FROM admin_roles ORDER BY role, email'
+    ).all().catch(() => ({ results: [] }));
+    return json((r.results || []).map(row => ({
+      email: row.email,
+      role: row.role,
+      parishIds: parseParishIds(row.parish_ids),
+      note: row.note || null,
+      addedBy: row.added_by || null,
+      createdAt: row.created_at,
+    })));
+  }));
+
+  router.put('/api/admin/people/:email', guarded('people.manage', async (c) => {
+    const { env, params, request } = c;
+    // Whatever adminIdentity() returns is what this table is keyed on, and that
+    // is NOT always an email: the claims fall back to `sub` when the identity
+    // provider supplies no address, and the dev bypass returns 'dev'. Requiring
+    // an '@' would make exactly those accounts unaddable, so the check is that
+    // it is a plausible single identifier rather than that it is an email.
+    const email = decodeURIComponent(params.email).trim().toLowerCase();
+    if (!email || /\s/.test(email) || email.length > 320) {
+      return json({ error: 'An identity is required — the email or subject Access signs in with.' }, 400);
+    }
+
+    const b = await readJson(request);
+    if (!ROLES.includes(b.role)) {
+      return json({ error: `role must be one of ${ROLES.join(', ')}.`, field: 'role' }, 400);
+    }
+    const parishIds = Array.isArray(b.parishIds) ? b.parishIds.filter(x => typeof x === 'string' && x) : [];
+    // A parish contact with no parishes can touch nothing, which is a role
+    // that looks granted and is not. Refuse it here rather than let somebody
+    // discover it from a 403 on their own parish.
+    if (b.role === 'parish' && !parishIds.length) {
+      return json({ error: 'A parish contact needs at least one parish.', field: 'parishIds' }, 400);
+    }
+
+    // The last owner cannot demote themselves, because the table would then
+    // have rows and no one able to edit it — locked out with no way back in
+    // except SQL.
+    const lastOwner = await wouldStrandTheTable(env.DB, email, b.role);
+    if (lastOwner) return json({ error: lastOwner }, 409);
+
+    await env.DB.prepare(
+      `INSERT INTO admin_roles (email, role, parish_ids, note, added_by)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(email) DO UPDATE SET
+         role = excluded.role, parish_ids = excluded.parish_ids, note = excluded.note`
+    ).bind(email, b.role, parishIds.length ? JSON.stringify(parishIds) : null,
+           (b.note || '').trim() || null, await editor(c)).run();
+
+    return json({ email, role: b.role, parishIds, note: b.note || null });
+  }));
+
+  router.delete('/api/admin/people/:email', guarded('people.manage', async ({ env, params }) => {
+    const email = decodeURIComponent(params.email).trim().toLowerCase();
+    const stranded = await wouldStrandTheTable(env.DB, email, null);
+    if (stranded) return json({ error: stranded }, 409);
+    await env.DB.prepare('DELETE FROM admin_roles WHERE lower(email) = ?').bind(email).run();
+    return json({ email, removed: true });
+  }));
+
+  /**
+   * Would changing this person's role leave the table with no owner?
+   *
+   * Returns a sentence when it would, null when it is fine. The failure it
+   * prevents is total: with rows present and no owner, nobody can edit
+   * admin_roles and nobody can be added, so the only way back is SQL against
+   * production.
+   */
+  async function wouldStrandTheTable(db, email, newRole) {
+    let owners = [];
+    try {
+      const r = await db.prepare("SELECT email FROM admin_roles WHERE role = 'owner'").all();
+      owners = (r.results || []).map(x => String(x.email).toLowerCase());
+    } catch { return null; }
+    if (!owners.includes(email)) return null;      // not an owner; nothing to strand
+    if (newRole === 'owner') return null;          // still an owner afterwards
+    if (owners.length > 1) return null;            // somebody else can still get in
+    return 'This is the only owner. Make somebody else an owner first, or the '
+      + 'admin list becomes uneditable by anyone.';
+  }
+
+  // ── "I have stood in front of this place" ──
+  //
+  // info_verified_at is the one field that stops a re-import moving a pin
+  // somebody checked: scripts/parish-import.mjs guards its UPDATE on it. It
+  // was in PARISH_EDITABLE and in no form, so the only way to set it was SQL
+  // against production.
+  //
+  // Its own endpoint rather than a field on the edit form, because it is not a
+  // value somebody types — it is an assertion about having been there, and it
+  // is stamped with who made it.
+  router.post('/api/admin/parishes/:id/verify', guarded('parish.edit', async (c) => {
+    const { env, params } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(params.id).first()) {
+      return json({ error: 'Parish not found' }, 404);
+    }
+    const who = await editor(c);
+    const now = NOW();
+    await env.DB.prepare(
+      `UPDATE parishes SET info_verified_at = ?, updated_at = ?, updated_by = ? WHERE id = ?`
+    ).bind(now, now, who, params.id).run();
+    return json({ id: params.id, info_verified_at: now, verified_by: who });
+  }));
+
+  router.delete('/api/admin/parishes/:id/verify', guarded('parish.edit', async (c) => {
+    const { env, params } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
+    await env.DB.prepare(
+      `UPDATE parishes SET info_verified_at = NULL, updated_at = ?, updated_by = ? WHERE id = ?`
+    ).bind(NOW(), await editor(c), params.id).run();
+    return json({ id: params.id, info_verified_at: null });
+  }));
 
   // ── events ──
 
@@ -123,7 +296,7 @@ export function registerAdminRoutes(router) {
   }));
 
   // PATCH an event. A synthetic id writes an override instead of mutating a row.
-  router.patch('/api/admin/events/:id', guarded(async ({ env, params, request }) => {
+  router.patch('/api/admin/events/:id', guarded('event.edit', async ({ env, params, request }) => {
     const body = await readJson(request);
 
     const inst = parseInstanceId(params.id);
@@ -186,7 +359,7 @@ export function registerAdminRoutes(router) {
   }));
 
   // DELETE. A synthetic id is suppressed with a 'hidden' override — the rule lives on.
-  router.delete('/api/admin/events/:id', guarded(async ({ env, params }) => {
+  router.delete('/api/admin/events/:id', guarded('event.edit', async ({ env, params }) => {
     const inst = parseInstanceId(params.id);
     if (inst) {
       const r = await hideInstance(env.DB, inst.scheduleId, inst.date);
@@ -228,7 +401,7 @@ export function registerAdminRoutes(router) {
 
   // Set the desired combine state. Idempotent: the body is the target state,
   // and anything not named is removed.
-  router.post('/api/admin/events/:id/escalate', guarded(async ({ env, params, request }) => {
+  router.post('/api/admin/events/:id/escalate', guarded('event.edit', async ({ env, params, request }) => {
     const db = env.DB;
     const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(params.id).first();
     if (!event) return json({ error: 'Event not found' }, 404);
@@ -351,7 +524,10 @@ export function registerAdminRoutes(router) {
   // PUT the whole set for one parish. A link list is short, is edited as a
   // list, and is saved by one button — so a replace is what the editor
   // actually does, and a per-row API would make the UI reconstruct it anyway.
-  router.put('/api/admin/parishes/:id/links', guarded(async ({ env, params, request }) => {
+  router.put('/api/admin/parishes/:id/links', guarded('links.edit', async (c) => {
+    const { env, params, request } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
     const id = params.id;
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
       return json({ error: 'Parish not found' }, 404);
@@ -410,7 +586,7 @@ export function registerAdminRoutes(router) {
   // written. Two admins with the page open would each send the six colours
   // they last loaded, and a whole-table replace would let the second silently
   // undo the first's change to a jurisdiction they never touched.
-  router.patch('/api/admin/jurisdiction-colors', guarded(async ({ env, request }) => {
+  router.patch('/api/admin/jurisdiction-colors', guarded('colors.edit', async ({ env, request }) => {
     const b = await readJson(request);
     const colors = b && b.colors;
     if (!colors || typeof colors !== 'object') return json({ error: 'colors is required' }, 400);
@@ -450,7 +626,7 @@ export function registerAdminRoutes(router) {
   // screen, which is why it is a parameter rather than something re-derived
   // here: the answer to "what am I replacing" belongs to the page that showed
   // it, and a mismatch repaints nothing rather than the wrong rows.
-  router.post('/api/admin/parishes/repaint', guarded(async ({ env, request }) => {
+  router.post('/api/admin/parishes/repaint', guarded('colors.edit', async ({ env, request }) => {
     const b = await readJson(request);
     const { jurisdiction, from, to } = b || {};
     if (!JURISDICTIONS.has(jurisdiction)) return json({ error: 'jurisdiction is required' }, 400);
@@ -466,7 +642,25 @@ export function registerAdminRoutes(router) {
 
   // ── parishes ──
 
-  router.post('/api/admin/parishes', guarded(async ({ env, request }) => {
+  // The panel's own read of the parish table.
+  //
+  // It used to use the PUBLIC /api/parishes, which was fine until rows started
+  // carrying `updated_by` — an admin's email address, which has no business on
+  // an endpoint anybody can curl. The public list stays exactly as it was; this
+  // one is behind the guard and carries the whole row.
+  //
+  // Not scoped to a parish contact's own parishes: everything here is already
+  // on the public site, minus the audit line, and every admin is trusted with
+  // that. Scoping happens where it matters, on the writes.
+  router.get('/api/admin/parishes', guarded(async ({ env }) => {
+    const r = await env.DB.prepare(
+      "SELECT * FROM parishes WHERE id != '_unassigned' ORDER BY name"
+    ).all();
+    return json(r.results || []);
+  }));
+
+
+  router.post('/api/admin/parishes', guarded('parish.create', async ({ env, request }) => {
     const b = await readJson(request);
     const { name, jurisdiction, lat, lng } = b;
     if (!name || !jurisdiction || lat == null || lng == null) {
@@ -525,17 +719,28 @@ export function registerAdminRoutes(router) {
     'info_verified_at',
   ];
 
-  router.patch('/api/admin/parishes/:id', guarded(async ({ env, params, request }) => {
+  router.patch('/api/admin/parishes/:id', guarded('parish.edit', async (c) => {
+    const { env, params, request } = c;
     const id = params.id;
     if (id === '_unassigned') return json({ error: 'Cannot edit sentinel parish' }, 400);
     const parish = await env.DB.prepare('SELECT * FROM parishes WHERE id = ?').bind(id).first();
     if (!parish) return json({ error: 'Parish not found' }, 404);
 
     const b = await readJson(request);
+
+    const scoped = outOfScope(c, id);
+    if (scoped) return scoped;
+
     // Only when it actually changes. The in-app form posts every field on
     // every save, so checking on presence alone would block an edit to the
     // phone number of a parish whose acronym predates a slug that now exists.
     if (b.acronym !== undefined && normaliseSlug(b.acronym) !== normaliseSlug(parish.acronym)) {
+      // An acronym is a URL segment, so changing one takes a link away from
+      // everybody holding it. That is a different act from editing a phone
+      // number, and it is the reason `parish.edit` is not enough on its own.
+      if (!can(c.who.role, 'parish.acronym')) {
+        return json({ error: denial(c.who.role, 'parish.acronym'), field: 'acronym', role: c.who.role }, 403);
+      }
       const conflict = await acronymConflict(env.DB, b.acronym, id);
       if (conflict) return json({ error: conflict, field: 'acronym' }, 409);
     }
@@ -547,6 +752,11 @@ export function registerAdminRoutes(router) {
       if (b[k] !== undefined) { sets.push(`${k} = ?`); vals.push(b[k]); }
     }
     if (!sets.length) return json({ error: 'No valid fields to update' }, 400);
+
+    // Who typed this, and when. Appended rather than offered as an editable
+    // field: an audit line somebody can set is not an audit line.
+    sets.push('updated_at = ?', 'updated_by = ?');
+    vals.push(NOW(), await editor(c));
 
     await env.DB.prepare(`UPDATE parishes SET ${sets.join(', ')} WHERE id = ?`)
       .bind(...vals, id).run();
@@ -581,7 +791,7 @@ export function registerAdminRoutes(router) {
     return json({ id: parish.id, name: parish.name, event_count: events, schedule_count: schedules });
   }));
 
-  router.delete('/api/admin/parishes/:id', guarded(async ({ env, params, query }) => {
+  router.delete('/api/admin/parishes/:id', guarded('parish.delete', async ({ env, params, query }) => {
     const id = params.id;
     if (id === '_unassigned') return json({ error: 'Cannot delete sentinel parish' }, 400);
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
@@ -665,7 +875,10 @@ export function registerAdminRoutes(router) {
     });
   }));
 
-  router.post('/api/admin/parishes/:id/schedule-proposals/accept', guarded(async ({ env, params, request }) => {
+  router.post('/api/admin/parishes/:id/schedule-proposals/accept', guarded('schedule.create', async (c) => {
+    const { env, params, request } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(params.id).first()) {
       return json({ error: 'Parish not found' }, 404);
     }
@@ -747,12 +960,17 @@ export function registerAdminRoutes(router) {
     return json(r.results || []);
   }));
 
-  router.post('/api/admin/schedules', guarded(async ({ env, request }) => {
+  router.post('/api/admin/schedules', guarded('schedule.create', async (c) => {
+    const { env, request } = c;
     const b = await readJson(request);
     const { parish_id, day_of_week, start_time, title } = b;
     if (!parish_id || day_of_week == null || !start_time || !title) {
       return json({ error: 'parish_id, day_of_week, start_time, and title are required' }, 400);
     }
+    // Scoped on the parish being written TO, which for a create is the only
+    // place the scope can be checked — there is no existing row to read it off.
+    const scoped = outOfScope(c, parish_id);
+    if (scoped) return scoped;
     if (b.week_of_month && b.week_of_month.split(',').some(w => !VALID_WEEKS.has(w.trim()))) {
       return json({ error: 'week_of_month values must be: first, second, third, fourth, last' }, 400);
     }
@@ -771,15 +989,25 @@ export function registerAdminRoutes(router) {
     return json(row, 201);
   }));
 
+  // `source_*` joins the list. A recurrence rule is a claim about the FUTURE
+  // that never expires on its own — "Sundays 9am" keeps projecting cards
+  // forever, looking as current on the day the parish changes its times as it
+  // did the day it was typed. schema.sql calls these three the only signal that
+  // anybody has looked since, and until now the API refused them, so the field
+  // the schema treats as load-bearing could not be filled in from anywhere.
   const SCHEDULE_EDITABLE = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type',
     'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped',
-    'effective_from', 'effective_to', 'location_override'];
+    'effective_from', 'effective_to', 'location_override',
+    'source_name', 'source_ref', 'source_checked_at'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
-  router.patch('/api/admin/schedules/:id', guarded(async ({ env, params, request }) => {
-    if (!await env.DB.prepare('SELECT id FROM schedules WHERE id = ?').bind(params.id).first()) {
-      return json({ error: 'Schedule not found' }, 404);
-    }
+  router.patch('/api/admin/schedules/:id', guarded('schedule.edit', async (c) => {
+    const { env, params, request } = c;
+    const row = await env.DB.prepare('SELECT id, parish_id FROM schedules WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'Schedule not found' }, 404);
+    const scoped = outOfScope(c, row.parish_id);
+    if (scoped) return scoped;
     const b = await readJson(request);
     const sets = [], vals = [];
     for (const k of SCHEDULE_EDITABLE) {
@@ -789,16 +1017,21 @@ export function registerAdminRoutes(router) {
       }
     }
     if (!sets.length) return json({ error: 'No valid fields to update' }, 400);
+    sets.push('updated_at = ?', 'updated_by = ?');
+    vals.push(NOW(), await editor(c));
     // v26: the edit shows up on the next read. No regeneration, no orphaned rows.
     await env.DB.prepare(`UPDATE schedules SET ${sets.join(', ')} WHERE id = ?`)
       .bind(...vals, params.id).run();
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(params.id).first());
   }));
 
-  router.delete('/api/admin/schedules/:id', guarded(async ({ env, params }) => {
-    if (!await env.DB.prepare('SELECT id FROM schedules WHERE id = ?').bind(params.id).first()) {
-      return json({ error: 'Schedule not found' }, 404);
-    }
+  router.delete('/api/admin/schedules/:id', guarded('schedule.delete', async (c) => {
+    const { env, params } = c;
+    const row = await env.DB.prepare('SELECT id, parish_id FROM schedules WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'Schedule not found' }, 404);
+    const scoped = outOfScope(c, row.parish_id);
+    if (scoped) return scoped;
     // schedule_overrides cascade via FK.
     await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(params.id).run();
     return json({ ok: true });
@@ -815,7 +1048,10 @@ export function registerAdminRoutes(router) {
   //
   // The Express version wrote to /opt/agora/data/logos on the VM's disk. The
   // stored logo_path stays '/logos/<id>.<ext>', so nothing downstream changes.
-  router.post('/api/admin/parishes/:id/logo', guarded(async ({ env, params, request }) => {
+  router.post('/api/admin/parishes/:id/logo', guarded('logo.edit', async (c) => {
+    const { env, params, request } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
     if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
     const id = params.id;
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
@@ -854,7 +1090,10 @@ export function registerAdminRoutes(router) {
   // mistake (the wrong parish's crest, someone's face) should stop being
   // served, and nulling logo_path alone leaves it fetchable at a URL that is
   // guessable from the parish id.
-  router.delete('/api/admin/parishes/:id/logo', guarded(async ({ env, params }) => {
+  router.delete('/api/admin/parishes/:id/logo', guarded('logo.edit', async (c) => {
+    const { env, params } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
     const id = params.id;
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(id).first()) {
       return json({ error: 'Parish not found' }, 404);
@@ -942,7 +1181,7 @@ export function registerAdminRoutes(router) {
   // override, a DELETE removes it and the file's URL comes back. Changing this
   // takes effect on the next extraction, not the next adapter run, because it
   // is the Action that does the fetching.
-  router.put('/api/admin/pdf-sources/:key', guarded(async (c) => {
+  router.put('/api/admin/pdf-sources/:key', guarded('adapter.source', async (c) => {
     const { env, params, request } = c;
     const adapter = ADAPTERS.find(a => a.source?.key === params.key);
     if (!adapter) return json({ error: 'No PDF source with that key' }, 404);
@@ -976,7 +1215,7 @@ export function registerAdminRoutes(router) {
     return json({ key: params.key, source_url: url, overridden: true, updated_by: who });
   }));
 
-  router.delete('/api/admin/pdf-sources/:key', guarded(async ({ env, params }) => {
+  router.delete('/api/admin/pdf-sources/:key', guarded('adapter.source', async ({ env, params }) => {
     const adapter = ADAPTERS.find(a => a.source?.key === params.key);
     if (!adapter) return json({ error: 'No PDF source with that key' }, 404);
     await env.DB.prepare('DELETE FROM pdf_source_overrides WHERE source_key = ?')
@@ -997,7 +1236,7 @@ export function registerAdminRoutes(router) {
   // cannot make that object newer, because only the Action writes it. So a card
   // warning "out of dates" had exactly one button and it was the wrong one.
   // This is the right one.
-  router.post('/api/admin/adapters/:id/refresh-source', guarded(async ({ env, params }) => {
+  router.post('/api/admin/adapters/:id/refresh-source', guarded('adapter.run', async ({ env, params }) => {
     const adapter = getAdapter(params.id);
     if (!adapter) return json({ error: 'Adapter not found' }, 404);
     if (adapter.sourceType !== 'parish-pdf' || !adapter.source?.key) {
@@ -1023,7 +1262,7 @@ export function registerAdminRoutes(router) {
   const MIN_INTERVAL = 60;      // the heartbeat — asking for less has no effect
   const MAX_INTERVAL = 20160;   // a fortnight; past that, the adapter is off
 
-  router.patch('/api/admin/adapters/:id/settings', guarded(async ({ env, params, request }) => {
+  router.patch('/api/admin/adapters/:id/settings', guarded('adapter.pace', async ({ env, params, request }) => {
     if (!getAdapter(params.id)) return json({ error: 'Adapter not found' }, 404);
     const b = await readJson(request);
 
@@ -1063,7 +1302,7 @@ export function registerAdminRoutes(router) {
     });
   }));
 
-  router.post('/api/admin/adapters/:id/run', guarded(async ({ env, params }) => {
+  router.post('/api/admin/adapters/:id/run', guarded('adapter.run', async ({ env, params }) => {
     const adapter = getAdapter(params.id);
     if (!adapter) return json({ error: 'Adapter not found' }, 404);
     try {
