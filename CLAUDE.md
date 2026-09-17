@@ -97,6 +97,43 @@ renders it, and it is what stops a re-import moving a pin somebody checked. A
 scrape stamps the first and never the second — a guard on the checked date
 would freeze every row at its first import.
 
+**Sources compete, and the ladder decides.** A parish is described by several
+sources at once and they disagree, so `public/shared/source-tiers.js` writes the
+order down once — **admin > the parish's own site or social feed > its
+jurisdiction's directory > a search engine > a third-party aggregator > null**
+— and `outranks` is the only comparison anyone makes. It is *strict*: two
+sources at one tier disagreeing is not something a rank settles, so the later
+read does not win by being later.
+
+Tiers are **derived, not stored**. `parishes.info_source_type` has three values
+against the ladder's five and 281 of 293 rows say `import`, which is true and
+says nothing; the URL already in `info_source_ref` says whether that import read
+the jurisdiction's own directory or an aggregator.
+
+`info_overrides` holds the rulings made against that ladder — one row per
+parish per fact, and only where somebody has deliberately decided something, so
+absence means every import behaves exactly as before. It is to *information*
+what `schedule_overrides` is to an *occurrence*. A ruling stores no value: the
+parish row is the value, and a second copy is a way to drift. `note` is NOT
+NULL, because an import refusing half a page is indistinguishable from a broken
+one unless it says why — which is also why the refusal is rendered on the parish
+card, on the jurisdiction card and in the import's own plan.
+
+The case that paid for it: St Mary Magdalene, Elimbah publishes two Vespers on
+its Antiochian directory page, neither runs, and both rules were deleted in
+`/admin`. Nothing recorded that. `planWrite` pairs a scraped rule with an
+*existing* row on parish + weekday + time, a deleted row is not one, and the
+insert guard only asks whether the rule is there now — so a re-run put both
+back. A deactivated rule fared worse: it matched, got updated, and `active=1`
+switched it on again. `info_verified_at` is the parish-side equivalent and is
+all-or-nothing; a pin is per field, so holding that parish's address does not
+also stop a re-run correcting the phone number nobody has looked at.
+
+Served **publicly** at `/api/info-overrides`, minus `updated_by`. The importers
+are scripts run from a terminal with no Cloudflare credential — the same
+argument that put `pdf_source_overrides` on a public route, and a stronger one:
+a ruling only the Worker could see is a ruling the import ignores.
+
 **Nothing disappears.** Every occurrence in a window emits exactly one instance. A
 cancellation is a *tombstone* that still renders, so someone who would otherwise turn up
 at church sees "CANCELLED" rather than the service silently vanishing.
@@ -243,6 +280,16 @@ the deploy cannot lock anybody out; the first row flips it and absence then
 means no access. That is the opposite of `adapter_settings`, where absence
 must never stop a scrape, and deliberately so: a missed scrape is fixed by
 the next one, a wrongly-granted delete is not.
+
+**Signed in is not the same as editing.** On the main app a parish sheet has
+one pencil, and `state.parishEditMode` holds the single parish it turns on.
+Until then the sheet is the sheet a visitor sees: no schedule pencils, no logo
+button, no form in the DOM behind `display:none`. Edit mode covers everything
+on that sheet including the service times, and a rule is editable wherever it
+renders — the sheet or the main services panel — exactly when its own parish is
+the one open. `hideAdminControls` predates this and survives only on the event
+drawer, where the buttons are still inline; it was a preference for making
+tools go away, which is what a mode does by default.
 
 **Admin fails closed.** With `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` unset, every
 `/api/admin/*` request is refused. The Access JWT's signature is verified against the
