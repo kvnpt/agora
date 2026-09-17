@@ -28,3 +28,17 @@ test('surrounding whitespace is stripped', async () => {
 test('an object that is not a binding is not a value', async () => {
   assert.equal(await readSecret({ value: 'nope' }), null);
 });
+
+test('a binding whose secret is missing reads as unset, not as a throw', async () => {
+  // Cloudflare throws `Secret "X" not found` when a declared binding outlives
+  // the secret it names. Letting that escape turns requireAdmin's deliberate
+  // 503 — which says WHICH secret is unreadable — into an opaque 500, and
+  // takes down any route holding an optional secret.
+  const missing = { get: async () => { throw new Error('Secret "GITHUB_ACTIONS_TOKEN" not found'); } };
+  assert.equal(await readSecret(missing), null);
+});
+
+test('a binding that throws synchronously is caught too', async () => {
+  const angry = { get: () => { throw new Error('store unavailable'); } };
+  assert.equal(await readSecret(angry), null);
+});

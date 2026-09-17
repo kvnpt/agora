@@ -642,6 +642,24 @@ export function registerAdminRoutes(router) {
 
   // ── parishes ──
 
+  // The panel's own read of the parish table.
+  //
+  // It used to use the PUBLIC /api/parishes, which was fine until rows started
+  // carrying `updated_by` — an admin's email address, which has no business on
+  // an endpoint anybody can curl. The public list stays exactly as it was; this
+  // one is behind the guard and carries the whole row.
+  //
+  // Not scoped to a parish contact's own parishes: everything here is already
+  // on the public site, minus the audit line, and every admin is trusted with
+  // that. Scoping happens where it matters, on the writes.
+  router.get('/api/admin/parishes', guarded(async ({ env }) => {
+    const r = await env.DB.prepare(
+      "SELECT * FROM parishes WHERE id != '_unassigned' ORDER BY name"
+    ).all();
+    return json(r.results || []);
+  }));
+
+
   router.post('/api/admin/parishes', guarded('parish.create', async ({ env, request }) => {
     const b = await readJson(request);
     const { name, jurisdiction, lat, lng } = b;

@@ -69,6 +69,30 @@
     .section { display: none; }
     .section.active { display: block; }
 
+    /* Finding one parish among several hundred. */
+    .finder { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+    .finder input[type=search] { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip { font-size: 11px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg); color: var(--muted); cursor: pointer; }
+    .chip:hover { color: var(--text); }
+    .chip[aria-pressed="true"] { background: var(--accent); color: var(--text-inverse); border-color: var(--accent); }
+    .finder-count { font-size: 11px; color: var(--muted); }
+
+    /* Provenance — where a row's claim came from, and who last touched it. */
+    .prov { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-light); }
+    .prov-head { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+    .prov-line { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+    .verified { color: #22c55e; font-weight: 600; }
+    .unverified { color: var(--muted); }
+
+    .bootstrap-note { font-size: 12.5px; line-height: 1.5; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-bg, #f9ecdd); color: #a35a12; border: 1px solid #e8c9a0; margin-bottom: 12px; }
+    @media (prefers-color-scheme: dark) { .bootstrap-note { background: #2c2113; color: #e59544; border-color: #4a3a1e; } }
+    .role-explain { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    .person-row { display: flex; align-items: baseline; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
+    .person-email { font-weight: 600; font-size: 13.5px; }
+    .person-role { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; background: var(--soft-bg); color: var(--muted); }
+    .person-meta { font-size: 11.5px; color: var(--muted); }
+
     /* Cards */
     .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
     .card.warn { border-left: 3px solid #e67e22; }
@@ -324,8 +348,9 @@
     <div class="tabs">
       <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
-      <button class="tab" data-tab="adapters">Adapters <span class="tab-count" id="count-adapters">0</span></button>
-      <button class="tab" data-tab="colors">Colours <span class="tab-count" id="count-colors">0</span></button>
+      <button class="tab" data-tab="adapters" data-needs="adapter.run">Adapters <span class="tab-count" id="count-adapters">0</span></button>
+      <button class="tab" data-tab="colors" data-needs="colors.edit">Colours <span class="tab-count" id="count-colors">0</span></button>
+      <button class="tab" data-tab="people" data-needs="people.manage">People <span class="tab-count" id="count-people">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -374,6 +399,29 @@
       </form>
       </div>
       <h3 style="margin-top: 20px;">Existing Parishes</h3>
+
+      <!-- 293 parishes, one flat list, filterable only by jurisdiction — and
+           Greek alone is 135. For somebody who knows the data that is friction;
+           for a sub-admin asked to fix one parish's phone number, FINDING the
+           parish is the whole task.
+
+           The saved filters are the questions an editor actually has. They are
+           not decoration: each one is a gap somebody has to close, and none of
+           them was answerable before. -->
+      <div class="finder">
+        <input type="search" id="parish-search" placeholder="Search name, address, acronym…"
+               autocomplete="off" spellcheck="false">
+        <div class="chips" id="parish-chips">
+          <button type="button" class="chip" data-filter="" aria-pressed="true">All</button>
+          <button type="button" class="chip" data-filter="no-schedules">No rules</button>
+          <button type="button" class="chip" data-filter="no-address">No address</button>
+          <button type="button" class="chip" data-filter="no-acronym">No acronym</button>
+          <button type="button" class="chip" data-filter="stale">Not checked in 6mo</button>
+          <button type="button" class="chip" data-filter="unverified">Never verified</button>
+        </div>
+        <div class="finder-count" id="parish-count"></div>
+      </div>
+
       <div id="parish-list"></div>
     </div>
 
@@ -491,6 +539,44 @@
         </div>
       </div>
     </div>
+    <!-- Who may sign in, and what they may touch.
+         Owner-only: an editor who could edit this could make themselves an
+         owner, which is not a role boundary at all. -->
+    <div id="section-people" class="section">
+      <h3>People</h3>
+      <p class="card-meta" style="margin:0 0 12px;">
+        Cloudflare Access decides who can reach <code>/admin</code> at all. This decides
+        what they may do once they are in. Add the address Access signs them in with.
+      </p>
+
+      <div id="people-bootstrap" class="bootstrap-note" hidden></div>
+
+      <form id="person-form" class="card">
+        <div class="grid">
+          <div class="field full"><label>Email</label>
+            <input name="email" required placeholder="deacon@example.org" autocomplete="off"></div>
+          <div class="field"><label>Role</label>
+            <select name="role" id="person-role">
+              <option value="editor">Editor — everything day to day</option>
+              <option value="parish">Parish contact — their own parishes only</option>
+              <option value="owner">Owner — everything, including this list</option>
+            </select>
+          </div>
+          <div class="field"><label>Note</label>
+            <input name="note" placeholder="Blacktown contact"></div>
+          <div class="field full" id="person-parishes-field" hidden>
+            <label>Their parishes</label>
+            <select name="parishIds" id="person-parishes" multiple size="6"></select>
+            <div class="card-meta" style="margin-top:4px;">Hold ⌘ or Ctrl to pick several. A parish contact with none can do nothing.</div>
+          </div>
+        </div>
+        <div class="role-explain" id="role-explain"></div>
+        <div class="btn-row"><button type="submit" class="btn btn-primary">Save person</button></div>
+      </form>
+
+      <h3 style="margin-top:20px;">Who has access</h3>
+      <div id="people-list"></div>
+    </div>
   </main>
 
   <!-- Every short link a parish hands out. The four with columns of their own
@@ -600,6 +686,21 @@
     }
     let parishes = [], schedules = [], adapters = [];
     let activeJurisdiction = '';
+
+    // ── What this account may do ──
+    //
+    // Straight from /api/admin/ping, which reads the same capability map the
+    // guards consult — so a control this greys out and a route that refuses
+    // cannot disagree. Convenience only: every one of these is re-checked
+    // server-side, and a hidden button is not a permission system.
+    let me = { role: null, parishIds: [], bootstrap: false, can: {} };
+    const may = (capability) => !!me.can[capability];
+
+    // A parish-scoped account sees its own parishes and nothing else. Applied
+    // at the source so every list, count and dropdown inherits it rather than
+    // each one remembering to.
+    const inMyScope = (parishId) =>
+      me.role !== 'parish' || me.parishIds.includes(parishId);
     const headers = { 'Content-Type': 'application/json' };
 
     // Jurisdiction filter
@@ -644,7 +745,7 @@
 
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
-        loadParishLinks()]);
+        loadParishLinks(), loadPeople()]);
       // After loadAdapters, which is what says whether any PDF adapter exists.
       await loadWorkflow();
       renderAll();
@@ -659,6 +760,13 @@
       renderWorkflowStatus();
       renderInferSelect();
       renderColors();
+      renderPeople();
+      renderPersonParishes();
+      // The explainer under the role picker describes whichever role is
+      // selected, including the one the form opens on — it was blank until
+      // somebody changed the dropdown, which is the wrong way round for the
+      // control whose whole job is to explain itself.
+      if (may('people.manage')) syncRoleForm();
     }
 
     // ── A parish's short links ──
@@ -1114,7 +1222,13 @@
       }
     }
 
-    async function loadParishes() { parishes = await (await fetch('/api/parishes')).json(); }
+    // The admin read, not the public one: /api/parishes deliberately omits
+    // `updated_by` because it is an admin's email and that endpoint is open to
+    // anybody.
+    async function loadParishes() {
+      parishes = await fetch('/api/admin/parishes', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
     async function loadSchedules() { schedules = await (await fetch('/api/admin/schedules', { headers })).json(); }
 
     // Two sources, deliberately. /api/admin/adapters is the registry — what
@@ -1131,16 +1245,57 @@
       adapters = reg.map(a => ({ ...a, run: byId.get(a.id) || null }));
     }
 
+    let parishQuery = '';
+    let parishFilter = '';
+
+    const MONTHS_6 = 1000 * 60 * 60 * 24 * 183;
+
+    // The saved filters, as predicates. Each one is a question somebody has
+    // and could not ask: "which parishes has nobody given rules", "which
+    // addresses has nobody checked since autumn".
+    const PARISH_FILTERS = {
+      'no-schedules': (p) => !schedules.some(s => s.parish_id === p.id && s.active),
+      'no-address': (p) => !p.address || !p.address.trim(),
+      'no-acronym': (p) => !p.acronym || !p.acronym.trim(),
+      'stale': (p) => !p.info_checked_at || (Date.now() - Date.parse(p.info_checked_at)) > MONTHS_6,
+      'unverified': (p) => !p.info_verified_at,
+    };
+
+    // Matched over the fields somebody would actually type: the nickname, the
+    // full name, the street, the acronym. Not the id — it is derived from the
+    // name, so searching it adds nothing and matches oddly.
+    function matchesQuery(p, q) {
+      if (!q) return true;
+      const hay = [p.name, p.full_name, p.address, p.acronym, p.suburb]
+        .filter(Boolean).join(' ').toLowerCase();
+      // Every word has to appear somewhere, so "st george redfern" works
+      // regardless of the order they were typed in.
+      return q.split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+    }
+
     function filteredParishes() {
-      if (!activeJurisdiction) return parishes;
-      return parishes.filter(p => p.jurisdiction === activeJurisdiction);
+      const q = parishQuery.trim().toLowerCase();
+      const pred = PARISH_FILTERS[parishFilter];
+      return parishes.filter(p =>
+        inMyScope(p.id) &&
+        (!activeJurisdiction || p.jurisdiction === activeJurisdiction) &&
+        (!pred || pred(p)) &&
+        matchesQuery(p, q));
     }
     function filteredSchedules() {
-      if (!activeJurisdiction) return schedules;
-      return schedules.filter(s => s.parish_jurisdiction === activeJurisdiction);
+      return schedules.filter(s => inMyScope(s.parish_id) &&
+        (!activeJurisdiction || s.parish_jurisdiction === activeJurisdiction));
     }
 
     function renderStats() {
+      const shown = filteredParishes().filter(p => p.id !== '_unassigned').length;
+      const total = parishes.filter(p => p.id !== '_unassigned').length;
+      const countEl = document.getElementById('parish-count');
+      if (countEl) {
+        countEl.textContent = (shown === total)
+          ? `${total} parishes`
+          : `${shown} of ${total} parishes`;
+      }
       document.getElementById('count-parishes').textContent = filteredParishes().length;
       document.getElementById('count-schedules').textContent = filteredSchedules().length;
       // Not filtered by jurisdiction: adapters belong to the deployment, not to
@@ -1195,19 +1350,55 @@
     }
 
     // ── Parishes ──
+    // ── The parish list ──
+    //
+    // Only the SUMMARY of each card is built up front. The edit form — sixteen
+    // controls — is built when the card is opened, because building all of them
+    // for 293 parishes put roughly 4,700 form controls in the DOM on load, and
+    // almost none of them were ever looked at.
     function renderParishList() {
       const fps = filteredParishes().filter(p => p.id !== '_unassigned');
       const c = document.getElementById('parish-list');
-      if (!fps.length) { c.innerHTML = '<div class="empty">No parishes</div>'; return; }
+      if (!fps.length) {
+        c.innerHTML = `<div class="empty">${parishQuery || parishFilter
+          ? 'No parishes match that.' : 'No parishes'}</div>`;
+        return;
+      }
       c.innerHTML = fps.map(p => {
-        const langs = (() => { try { return JSON.parse(p.languages || '[]').join(', '); } catch { return p.languages || ''; } })();
+        const langs = parseLangsField(p.languages);
         return `
-        <div class="card expand-trigger" onclick="toggleExpand('pe-${esc(p.id)}')">
+        <div class="card expand-trigger" onclick="toggleParishCard('${esc(p.id)}')">
           <div style="display:flex;align-items:center;gap:8px;">
             ${p.logo_path ? `<img src="${esc(p.logo_path)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border-light);" alt="">` : ''}
-            <div><div class="card-title">${esc(p.name)}</div><div class="card-meta">${esc(p.jurisdiction)} &middot; ${esc(p.address || 'No address')}${langs ? ' &middot; ' + esc(langs) : ''}</div></div>
+            <div style="min-width:0;">
+              <div class="card-title">${esc(p.name)}${p.info_verified_at ? ' <span class="verified" title="Somebody has confirmed this against the place itself">\u2713</span>' : ''}</div>
+              <div class="card-meta">${esc(p.jurisdiction)} &middot; ${esc(p.address || 'No address')}${langs ? ' &middot; ' + esc(langs) : ''}</div>
+            </div>
           </div>
-          <div class="expandable" id="pe-${esc(p.id)}" onclick="event.stopPropagation()">
+          <div class="expandable" id="pe-${esc(p.id)}" onclick="event.stopPropagation()"></div>
+        </div>`;
+      }).join('');
+    }
+
+    const parseLangsField = (v) => {
+      try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; }
+    };
+
+    /** Open a card, building its form the first time. */
+    window.toggleParishCard = function (id) {
+      const holder = document.getElementById('pe-' + id);
+      if (!holder) return;
+      if (!holder.dataset.built) {
+        holder.innerHTML = parishFormHtml(parishes.find(x => x.id === id));
+        holder.dataset.built = '1';
+      }
+      holder.classList.toggle('open');
+    };
+
+    function parishFormHtml(p) {
+      if (!p) return '';
+      const langs = parseLangsField(p.languages);
+      return `
             <div class="grid">
               <div class="field full"><label>Nickname</label><input value="${esc(p.name || '')}" data-field="name"></div>
               <div class="field full"><label>Full Name</label><input value="${esc(p.full_name || '')}" data-field="full_name"></div>
@@ -1218,7 +1409,7 @@
               <div class="field"><label>Website</label><input value="${esc(p.website || '')}" data-field="website"></div>
               <div class="field"><label>Email</label><input value="${esc(p.email || '')}" data-field="email"></div>
               <div class="field"><label>Phone</label><input value="${esc(p.phone || '')}" data-field="phone"></div>
-              <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" data-field="acronym" oninput="checkAcronymClash(this, '${esc(p.id)}')"><span class="acronym-warn" style="font-size:11px;color:#e67e22;display:block;margin-top:2px;">${acronymClashMsg(p.acronym, p.id)}</span></div>
+              <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" ${may('parish.acronym') ? '' : 'disabled title="Changing an acronym changes the parish\u2019s public link, so it is an owner\u2019s to do."'} data-field="acronym" oninput="checkAcronymClash(this, '${esc(p.id)}')"><span class="acronym-warn" style="font-size:11px;color:#e67e22;display:block;margin-top:2px;">${acronymClashMsg(p.acronym, p.id)}</span></div>
               <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
@@ -1240,14 +1431,79 @@
               </div>
               <div class="field"><label>Logo</label><input type="file" accept="image/*" onchange="uploadLogo('${esc(p.id)}', this)"></div>
             </div>
+            ${provenanceHtml(p)}
             <div class="btn-row">
               <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
               <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')">Geocode Address</button>
-              <button class="btn btn-reject" onclick="openDeleteParish('${esc(p.id)}')">Delete</button>
-            </div>
+              ${may('parish.delete')
+                ? `<button class="btn btn-reject" onclick="openDeleteParish('${esc(p.id)}')">Delete</button>`
+                : ''}
+            </div>`;
+    }
+
+    // ── Where a row's claim came from, and who last touched it ──
+    //
+    // CLAUDE.md calls this a first-class idea — "a source line says when we
+    // last looked, never that it is right" — and all five columns were in
+    // PARISH_EDITABLE with none of them in any form. info_verified_at was the
+    // worst of it: the one field that stops a re-import moving a pin somebody
+    // checked, settable only in SQL.
+    function provenanceHtml(p) {
+      const verified = p.info_verified_at;
+      return `
+      <div class="prov">
+        <div class="prov-head">Where this came from</div>
+        <div class="grid">
+          <div class="field"><label>Source</label>
+            <select data-field="info_source_type">
+              <option value="">\u2014</option>
+              ${['website','person','import'].map(t =>
+                `<option value="${t}"${p.info_source_type === t ? ' selected' : ''}>${t}</option>`).join('')}
+            </select>
           </div>
-        </div>`;
-      }).join('');
+          <div class="field"><label>Who says so</label>
+            <input value="${esc(p.info_source_name || '')}" data-field="info_source_name"
+                   placeholder="Antiochian Archdiocese"></div>
+          <div class="field full"><label>Where to check</label>
+            <input value="${esc(p.info_source_ref || '')}" data-field="info_source_ref"
+                   placeholder="https://\u2026 or a person, as \u201cFirst L.\u201d"></div>
+          <div class="field full"><label>We last looked</label>
+            <input type="date" value="${esc((p.info_checked_at || '').slice(0, 10))}"
+                   data-field="info_checked_at"></div>
+        </div>
+
+        <!-- Deliberately a button and not a date field. It is not a value
+             somebody types; it is an assertion that a person went and looked at
+             the place, and it is stamped with who made it. -->
+        <div class="prov-line">
+          ${verified
+            ? `<span class="verified">\u2713 Confirmed in person</span> ${relativeTime(verified)}`
+            : `<span class="unverified">Nobody has confirmed this against the place itself.</span>`}
+          <button type="button" class="btn btn-outline" style="margin-left:6px;"
+                  onclick="toggleVerified('${esc(p.id)}', ${verified ? 'false' : 'true'})">
+            ${verified ? 'Withdraw' : 'I have been there'}
+          </button>
+        </div>
+        ${p.updated_by || p.updated_at
+          ? `<div class="prov-line">Last edited${p.updated_by ? ' by ' + esc(p.updated_by) : ''}${p.updated_at ? ' \u00b7 ' + relativeTime(p.updated_at) : ''}</div>`
+          : ''}
+      </div>`;
+    }
+
+    async function toggleVerified(id, on) {
+      const res = await fetch(`/api/admin/parishes/${encodeURIComponent(id)}/verify`,
+        { method: on ? 'POST' : 'DELETE', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast(on ? 'Marked as confirmed in person' : 'Confirmation withdrawn');
+      await loadParishes();
+      // Rebuild just this card's form so the new state shows without collapsing
+      // everything else somebody had open.
+      const holder = document.getElementById('pe-' + id);
+      if (holder && holder.dataset.built) {
+        const wasOpen = holder.classList.contains('open');
+        holder.innerHTML = parishFormHtml(parishes.find(x => x.id === id));
+        if (wasOpen) holder.classList.add('open');
+      }
     }
 
     function toggleExpand(id) {
@@ -1436,7 +1692,7 @@
                 </div>
                 <div style="display:flex;gap:4px;">
                   <button class="btn btn-outline" onclick="event.stopPropagation();toggleSchedule(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'Disable' : 'Enable'}</button>
-                  <button class="btn btn-reject" onclick="event.stopPropagation();deleteSchedule(${s.id})">Delete</button>
+                  ${may('schedule.delete') ? `<button class="btn btn-reject" onclick="event.stopPropagation();deleteSchedule(${s.id})">Delete</button>` : ''}
                 </div>
               </div>
               <div class="expandable" id="se-${s.id}" onclick="event.stopPropagation()">
@@ -1478,6 +1734,30 @@
                     <input type="checkbox" data-field="parish_scoped" ${s.parish_scoped ? 'checked' : ''}>
                     Parish-only (hidden unless filtered to parish)
                   </label>
+                </div>
+                <!-- A rule is a claim about the FUTURE and never expires on
+                     its own: "Sundays 9am" keeps projecting cards forever,
+                     looking as current on the day the parish changes its times
+                     as it did the day it was typed. schema.sql calls these
+                     three the only signal anybody has looked since — and the
+                     API refused them until now, so they could not be set from
+                     anywhere. -->
+                <div class="prov">
+                  <div class="prov-head">Where this came from</div>
+                  <div class="grid">
+                    <div class="field"><label>Who says so</label>
+                      <input value="${esc(s.source_name || '')}" data-field="source_name"
+                             placeholder="Parish website"></div>
+                    <div class="field"><label>We last looked</label>
+                      <input type="date" value="${esc((s.source_checked_at || '').slice(0, 10))}"
+                             data-field="source_checked_at"></div>
+                    <div class="field full"><label>Where to check</label>
+                      <input value="${esc(s.source_ref || '')}" data-field="source_ref"
+                             placeholder="https://\u2026"></div>
+                  </div>
+                  ${s.updated_by || s.updated_at
+                    ? `<div class="prov-line">Last edited${s.updated_by ? ' by ' + esc(s.updated_by) : ''}${s.updated_at ? ' \u00b7 ' + relativeTime(s.updated_at) : ''}</div>`
+                    : ''}
                 </div>
                 <div class="btn-row">
                   <button class="btn btn-primary" onclick="saveSchedule(${s.id})">Save</button>
@@ -2026,6 +2306,101 @@
       workflowTimer = setTimeout(tick, 6000);
     }
 
+    // ── People ──
+    let people = [];
+
+    const ROLE_EXPLAIN = {
+      owner: 'Everything, including deleting parishes, changing acronyms, the jurisdiction colours, and this list.',
+      editor: 'Parishes, rules, overrides and the scrapers, across every parish. Cannot delete a parish, change an acronym, or repaint a jurisdiction.',
+      parish: 'The same work as an editor, but only for the parishes picked below. Cannot add a parish or touch the scrapers.',
+    };
+
+    async function loadPeople() {
+      if (!may('people.manage')) { people = []; return; }
+      people = await fetch('/api/admin/people', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
+
+    function renderPeople() {
+      const el = document.getElementById('people-list');
+      if (!el) return;
+      document.getElementById('count-people').textContent = people.length;
+
+      // The bootstrap state looks exactly like a configured one from the
+      // outside, which is the whole danger of it — say so plainly.
+      const note = document.getElementById('people-bootstrap');
+      if (me.bootstrap) {
+        note.innerHTML = '<b>Nobody is listed yet, so everyone Cloudflare Access lets in is an owner.</b> '
+          + 'That is the same as before roles existed, so nothing is broken. Adding the first '
+          + 'person below changes the rule: from then on, an account with no row here cannot do '
+          + 'anything at all \u2014 so add yourself as an owner first.';
+        note.hidden = false;
+      } else {
+        note.hidden = true;
+      }
+
+      if (!people.length) { el.innerHTML = '<div class="empty">Nobody listed</div>'; return; }
+      el.innerHTML = people.map(p => {
+        const names = p.parishIds
+          .map(id => (parishes.find(x => x.id === id) || {}).name || id);
+        return `<div class="person-row">
+          <span class="person-email">${esc(p.email)}</span>
+          <span class="person-role">${esc(p.role)}</span>
+          ${names.length ? `<span class="person-meta">${esc(names.join(', '))}</span>` : ''}
+          ${p.note ? `<span class="person-meta">\u00b7 ${esc(p.note)}</span>` : ''}
+          <span class="person-meta" style="margin-left:auto;">
+            ${p.addedBy ? 'added by ' + esc(p.addedBy) + ' \u00b7 ' : ''}${relativeTime(p.createdAt)}
+          </span>
+          <button class="btn btn-outline" data-person-edit="${esc(p.email)}">Edit</button>
+          <button class="btn btn-reject" data-person-remove="${esc(p.email)}">Remove</button>
+        </div>`;
+      }).join('');
+
+      el.querySelectorAll('[data-person-edit]').forEach(b =>
+        b.addEventListener('click', () => fillPersonForm(b.dataset.personEdit)));
+      el.querySelectorAll('[data-person-remove]').forEach(b =>
+        b.addEventListener('click', () => removePerson(b.dataset.personRemove)));
+    }
+
+    function renderPersonParishes() {
+      const sel = document.getElementById('person-parishes');
+      if (!sel) return;
+      const keep = new Set([...sel.selectedOptions].map(o => o.value));
+      sel.innerHTML = parishes.filter(p => p.id !== '_unassigned')
+        .map(p => `<option value="${esc(p.id)}"${keep.has(p.id) ? ' selected' : ''}>${esc(p.name)}</option>`)
+        .join('');
+    }
+
+    function syncRoleForm() {
+      const role = document.getElementById('person-role').value;
+      document.getElementById('person-parishes-field').hidden = role !== 'parish';
+      document.getElementById('role-explain').textContent = ROLE_EXPLAIN[role] || '';
+    }
+
+    function fillPersonForm(email) {
+      const p = people.find(x => x.email === email);
+      if (!p) return;
+      const f = document.getElementById('person-form');
+      f.email.value = p.email;
+      f.role.value = p.role;
+      f.note.value = p.note || '';
+      syncRoleForm();
+      renderPersonParishes();
+      [...document.getElementById('person-parishes').options].forEach(o => {
+        o.selected = p.parishIds.includes(o.value);
+      });
+      f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function removePerson(email) {
+      if (!confirm(`Remove ${email}? They will keep reaching /admin through Access but will not be able to do anything.`)) return;
+      const res = await fetch(`/api/admin/people/${encodeURIComponent(email)}`, { method: 'DELETE', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast(`${email} removed`);
+      await loadPeople();
+      renderPeople();
+    }
+
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
     // Signing out is Cloudflare's to do, not ours: /cdn-cgi/access/logout is
@@ -2035,6 +2410,37 @@
     document.getElementById('logout-btn').addEventListener('click', () => {
       location.href = '/cdn-cgi/access/logout';
     });
+
+    /**
+     * Hide what this role cannot use.
+     *
+     * A hidden tab is a courtesy, not a boundary — the API refuses regardless,
+     * and these read the same capability map it consults. The point is that a
+     * parish contact should not be shown a Colours tab whose every control
+     * answers 403.
+     */
+    function applyRoleToChrome() {
+      document.querySelectorAll('.tab[data-needs]').forEach(btn => {
+        btn.hidden = !may(btn.dataset.needs);
+      });
+      // The Add Parish form, for a role that cannot add one.
+      const addParish = document.querySelector('h3[onclick*="add-parish-form"]');
+      if (addParish) addParish.hidden = !may('parish.create');
+      const addParishForm = document.getElementById('add-parish-form');
+      if (addParishForm && !may('parish.create')) addParishForm.hidden = true;
+
+      // If the active tab is one they cannot use, move to the first they can.
+      const active = document.querySelector('.tab.active');
+      if (active && active.hidden) {
+        const first = [...document.querySelectorAll('.tab')].find(t => !t.hidden);
+        if (first) activateTab(first.dataset.tab);
+      }
+
+      // A parish contact's jurisdiction filter is noise: their parishes are
+      // already a short, fixed list.
+      const jf = document.getElementById('jurisdiction-filter');
+      if (jf) jf.hidden = me.role === 'parish';
+    }
 
     function blockPage(title, detail) {
       const wrap = document.createElement('div');
@@ -2055,6 +2461,48 @@
 
     document.getElementById('infer-btn').addEventListener('click', findRules);
 
+    document.getElementById('person-role').addEventListener('change', syncRoleForm);
+    document.getElementById('person-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const parishIds = [...document.getElementById('person-parishes').selectedOptions].map(o => o.value);
+      const res = await fetch(`/api/admin/people/${encodeURIComponent(f.email.value.trim())}`, {
+        method: 'PUT', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ role: f.role.value, parishIds, note: f.note.value.trim() || null }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+      toast(`${body.email} is now ${body.role}`);
+      f.reset();
+      syncRoleForm();
+      await loadPeople();
+      renderPeople();
+    });
+
+    // ── The parish finder ──
+    //
+    // Re-rendering 293 cards on every keystroke is what makes a search box
+    // feel broken, so the input is debounced and the list is built from a
+    // filtered array rather than hidden with CSS.
+    let searchTimer = null;
+    document.getElementById('parish-search').addEventListener('input', (e) => {
+      parishQuery = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { renderParishList(); renderStats(); }, 120);
+    });
+
+    document.getElementById('parish-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      // Pressing the active chip again clears it, so there is always a way back
+      // to the whole list without hunting for "All".
+      parishFilter = (chip.dataset.filter === parishFilter) ? '' : chip.dataset.filter;
+      document.querySelectorAll('#parish-chips .chip').forEach(c =>
+        c.setAttribute('aria-pressed', String((c.dataset.filter || '') === parishFilter)));
+      renderParishList();
+      renderStats();
+    });
+
     // The Add Schedule form's time labels follow whichever parish is picked.
     document.getElementById('schedule-parish-select')
       .addEventListener('change', syncScheduleTzLabels);
@@ -2066,6 +2514,16 @@
       // auth could authenticate someone the Caddy gate had not seen yet; that
       // endpoint and that whole subsystem went with the VM.
       const ping = await fetch('/api/admin/ping', { headers }).catch(() => null);
+
+      // 403 is new: Access let them in, and this deployment has an admin list
+      // they are not on. Distinct from 401 (not signed in) and 503 (nobody can
+      // get in), and it has a different remedy — ask an owner, not reload.
+      if (ping && ping.status === 403) {
+        const detail = await ping.json().catch(() => ({}));
+        blockPage('Signed in, but not on the admin list.',
+          detail.error || 'Ask an owner of this site to give your account a role.');
+        return;
+      }
 
       // A 503 and a 401 look identical from a locked-out browser and have
       // opposite fixes, so say which one it is.
@@ -2117,6 +2575,21 @@
       try { sessionStorage.removeItem('agora-access-retry'); } catch { /* fine */ }
 
       document.getElementById('logout-btn').hidden = false;
+
+      // The role, before anything renders. Every list scopes itself from it and
+      // every control asks may() — getting this after the first paint would
+      // flash an owner's panel at a parish contact.
+      try {
+        const body = await ping.clone().json();
+        me = {
+          role: body.role || null,
+          parishIds: Array.isArray(body.parishIds) ? body.parishIds : [],
+          bootstrap: !!body.bootstrap,
+          can: body.can || {},
+        };
+      } catch { /* leave `me` as no-role; every control stays off */ }
+
+      applyRoleToChrome();
 
       // Whose account this is. /api/admin/ping is the Worker reading the Access
       // JWT it just verified, so this is the identity the API will attribute
