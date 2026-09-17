@@ -23,3 +23,5 @@ CREATE TABLE adapter_runs ( id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEX
 CREATE INDEX idx_adapter_runs_lookup ON adapter_runs(adapter_id, started_at DESC);
 CREATE TABLE pdf_source_overrides ( source_key TEXT PRIMARY KEY, source_url TEXT NOT NULL, updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')) );
 CREATE TABLE admin_roles ( email TEXT PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('owner','editor','parish')), parish_ids TEXT, note TEXT, added_by TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')) );
+CREATE TABLE admin_proposals ( id INTEGER PRIMARY KEY AUTOINCREMENT, capability TEXT NOT NULL CHECK(capability IN ('parish.delete','parish.acronym','colors.edit')), subject TEXT NOT NULL, payload TEXT NOT NULL, reason TEXT, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','declined','withdrawn')), proposed_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), decided_by TEXT, decided_at TEXT, decision_note TEXT );
+CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);

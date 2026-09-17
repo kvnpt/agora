@@ -93,6 +93,28 @@
     .person-role { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; background: var(--soft-bg); color: var(--muted); }
     .person-meta { font-size: 11.5px; color: var(--muted); }
 
+    .ov-row { display: flex; gap: 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
+    .ov-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; white-space: nowrap; }
+    .ov-cancelled { background: #f9e4e4; color: #d33a3a; }
+    .ov-modified  { background: #f9ecdd; color: #c26a18; }
+    .ov-combined  { background: #e8d5e8; color: #6b2d6b; }
+    .ov-hidden    { background: var(--soft-bg); color: var(--muted); }
+    @media (prefers-color-scheme: dark) {
+      .ov-cancelled { background: #2d1a1a; color: #f06b6b; }
+      .ov-modified  { background: #2c2113; color: #e59544; }
+      .ov-combined  { background: #3a223a; color: #c79ac7; }
+    }
+    .ov-machine { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; background: #e0ecf8; color: #2d5a8a; white-space: nowrap; }
+    @media (prefers-color-scheme: dark) { .ov-machine { background: #17233a; color: #7aa5f5; } }
+    .ov-when { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+    .ov-what { font-size: 13px; min-width: 0; }
+    .ov-meta { font-size: 11px; color: var(--muted); }
+
+    .ask { border: 1px solid var(--border-light); border-left: 3px solid #e67e22; border-radius: var(--radius); padding: 12px; margin-bottom: 8px; background: var(--bg); }
+    .ask-what { font-size: 13.5px; font-weight: 500; }
+    .ask-why { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+    .ask-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
     /* Cards */
     .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
     .card.warn { border-left: 3px solid #e67e22; }
@@ -348,9 +370,11 @@
     <div class="tabs">
       <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
       <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
+      <button class="tab" data-tab="overrides">Changes <span class="tab-count" id="count-overrides">0</span></button>
       <button class="tab" data-tab="adapters" data-needs="adapter.run">Adapters <span class="tab-count" id="count-adapters">0</span></button>
       <button class="tab" data-tab="colors" data-needs="colors.edit">Colours <span class="tab-count" id="count-colors">0</span></button>
       <button class="tab" data-tab="people" data-needs="people.manage">People <span class="tab-count" id="count-people">0</span></button>
+      <button class="tab" data-tab="proposals">Asks <span class="tab-count" id="count-proposals">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -539,6 +563,35 @@
         </div>
       </div>
     </div>
+    <!-- Every exception to the rhythm, in one place.
+         A cancellation, a moved service, a combined one — and the ones nobody
+         pressed a button for: applyTombstones writes cancellations from
+         ABSENCE, which is the most consequential thing here that happens on its
+         own, and nothing listed them. -->
+    <div id="section-overrides" class="section">
+      <h3>Changes to the rhythm</h3>
+      <p class="card-meta" style="margin:0 0 12px;">
+        Every cancellation, move and combine in force. The ones marked
+        <b>automatic</b> were written by a scraper from a service disappearing from its
+        source — those are the ones worth a second look.
+      </p>
+      <div class="chips" id="override-chips" style="margin-bottom:10px;">
+        <button type="button" class="chip" data-ofilter="" aria-pressed="true">All</button>
+        <button type="button" class="chip" data-ofilter="cancelled">Cancelled</button>
+        <button type="button" class="chip" data-ofilter="modified">Moved</button>
+        <button type="button" class="chip" data-ofilter="combined">Combined</button>
+        <button type="button" class="chip" data-ofilter="machine">Automatic</button>
+      </div>
+      <div id="override-list"></div>
+    </div>
+
+    <!-- The asks an editor cannot carry out themselves. -->
+    <div id="section-proposals" class="section">
+      <h3>Asks</h3>
+      <p class="card-meta" style="margin:0 0 12px;" id="proposals-intro"></p>
+      <div id="proposal-list"></div>
+    </div>
+
     <!-- Who may sign in, and what they may touch.
          Owner-only: an editor who could edit this could make themselves an
          owner, which is not a role boundary at all. -->
@@ -592,6 +645,26 @@
       <div class="modal-btn-row">
         <button type="button" class="btn btn-outline" onclick="closeLinksEditor()">Cancel</button>
         <button type="button" class="btn btn-primary" id="links-save">Save links</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Turning a refusal into an ask.
+       A bare 403 sends somebody to find the owner by some other route, and the
+       request arrives without the context that produced it. This keeps the ask,
+       the exact change and the reason together. -->
+  <div class="modal-backdrop" id="propose-backdrop" onclick="if(event.target===this)closePropose()">
+    <div class="modal">
+      <h2 id="propose-title">Ask an owner</h2>
+      <div class="modal-subtitle" id="propose-sub"></div>
+      <div id="propose-extra"></div>
+      <div class="field" style="margin-top:12px;">
+        <label>Why</label>
+        <textarea id="propose-reason" rows="3" placeholder="What makes this the right thing to do?"></textarea>
+      </div>
+      <div class="modal-btn-row">
+        <button type="button" class="btn btn-outline" onclick="closePropose()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="propose-send">Send the ask</button>
       </div>
     </div>
   </div>
@@ -745,7 +818,7 @@
 
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
-        loadParishLinks(), loadPeople()]);
+        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals()]);
       // After loadAdapters, which is what says whether any PDF adapter exists.
       await loadWorkflow();
       renderAll();
@@ -760,6 +833,8 @@
       renderWorkflowStatus();
       renderInferSelect();
       renderColors();
+      renderOverrides();
+      renderProposals();
       renderPeople();
       renderPersonParishes();
       // The explainer under the role picker describes whichever role is
@@ -1437,7 +1512,7 @@
               <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')">Geocode Address</button>
               ${may('parish.delete')
                 ? `<button class="btn btn-reject" onclick="openDeleteParish('${esc(p.id)}')">Delete</button>`
-                : ''}
+                : `<button class="btn btn-outline" onclick="offerProposal('parish.delete', '${esc(p.id)}')">Ask to delete\u2026</button>`}
             </div>`;
     }
 
@@ -1550,7 +1625,20 @@
         data[field] = field === 'languages' ? JSON.stringify(val.split(',').map(s => s.trim()).filter(Boolean)) : (val || null);
       });
       const res = await fetch(`/api/admin/parishes/${id}`, { method: 'PATCH', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Saved'); loadAll(); } else toast(await adminError(res), 'error');
+      if (res.ok) { toast('Saved'); loadAll(); return; }
+
+      // A refusal this role can turn into an ask opens the dialog instead of
+      // stopping at "you cannot" — the way forward appears where the refusal
+      // did, rather than somewhere they have to go looking.
+      const err = await res.json().catch(() => ({}));
+      if (res.status === 403 && err.proposable) {
+        const parish = parishes.find(x => x.id === id);
+        toast(err.error, 'error');
+        offerProposal(err.capability, id,
+          err.capability === 'parish.acronym' ? { acronym: data.acronym || '' } : {});
+        return;
+      }
+      toast(err.error || await adminError(res), 'error');
     }
 
     async function uploadLogo(id, input) {
@@ -2401,6 +2489,241 @@
       renderPeople();
     }
 
+    // ── Changes to the rhythm ──
+    let overrides = [];
+    let overrideFilter = '';
+
+    async function loadOverrides() {
+      const r = await fetch('/api/admin/overrides', { headers })
+        .then(x => x.ok ? x.json() : null).catch(() => null);
+      overrides = (r && r.overrides) || [];
+    }
+
+    const KIND_WORD = { cancelled: 'Cancelled', modified: 'Moved', combined: 'Combined', hidden: 'Hidden' };
+
+    function overrideSummary(o) {
+      if (o.kind === 'cancelled') return `${esc(o.title)} is cancelled`;
+      if (o.kind === 'hidden') return `${esc(o.title)} is hidden from the feed`;
+      if (o.kind === 'combined') return `${esc(o.title)} is combined into another service`;
+      // A move says what changed and what it was, because "moved" without the
+      // old time is not something anybody can check against a parish notice.
+      const bits = [];
+      if (o.patch.start_time) bits.push(`${esc(o.patch.start_time)} instead of ${esc(o.startTime)}`);
+      if (o.patch.title) bits.push(`titled \u201c${esc(o.patch.title)}\u201d`);
+      if (o.patch.location_override) bits.push(`at ${esc(o.patch.location_override)}`);
+      if (o.patch.event_type) bits.push(`as ${esc(o.patch.event_type)}`);
+      return `${esc(o.title)} \u2014 ${bits.length ? bits.join(', ') : 'changed'}`;
+    }
+
+    function renderOverrides() {
+      const el = document.getElementById('override-list');
+      if (!el) return;
+      const shown = overrides.filter(o =>
+        !overrideFilter ||
+        (overrideFilter === 'machine' ? o.byMachine : o.kind === overrideFilter));
+      document.getElementById('count-overrides').textContent = overrides.length;
+
+      if (!shown.length) {
+        el.innerHTML = `<div class="empty">${overrides.length
+          ? 'Nothing of that kind.' : 'Nothing has been changed from the rhythm.'}</div>`;
+        return;
+      }
+
+      el.innerHTML = shown.map(o => `
+        <div class="ov-row">
+          <span class="ov-when">${esc(o.date)}</span>
+          <span class="ov-kind ov-${esc(o.kind)}">${esc(KIND_WORD[o.kind] || o.kind)}</span>
+          ${o.byMachine ? `<span class="ov-machine" title="Written by ${esc(o.source)} from the service disappearing from its source">automatic</span>` : ''}
+          <span class="ov-what">
+            ${overrideSummary(o)}
+            <div class="ov-meta">${esc(o.parishName)}${o.note ? ' \u00b7 ' + esc(o.note) : ''}</div>
+            <div class="ov-meta">
+              ${o.byMachine ? esc(o.source) : (o.updatedBy ? 'by ' + esc(o.updatedBy) : 'by hand')}
+              ${o.createdAt ? ' \u00b7 ' + relativeTime(o.createdAt) : ''}
+            </div>
+          </span>
+          <span style="margin-left:auto;display:flex;gap:5px;">
+            <!-- Straight at the card on the public site. The synthetic id is
+                 addressable, so this resolves even though the occurrence has
+                 never been a row. -->
+            <a class="btn btn-outline" href="/${esc(o.instanceId)}" target="_blank" rel="noopener">Open</a>
+            ${may('override.edit') ? `<button class="btn btn-reject" data-undo-override="${o.id}">Undo</button>` : ''}
+          </span>
+        </div>`).join('');
+
+      el.querySelectorAll('[data-undo-override]').forEach(b =>
+        b.addEventListener('click', () => undoOverride(Number(b.dataset.undoOverride))));
+    }
+
+    async function undoOverride(id) {
+      const o = overrides.find(x => x.id === id);
+      if (!o) return;
+      const what = o.byMachine
+        ? `Undo this automatic cancellation? ${o.parishName}\u2019s ${o.title} on ${o.date} goes back to running.\n\nThe next scrape may write it again if the source still does not list the service.`
+        : `Undo this change? ${o.parishName}\u2019s ${o.title} on ${o.date} goes back to whatever the rule says.`;
+      if (!confirm(what)) return;
+      const res = await fetch(`/api/admin/overrides/${id}`, { method: 'DELETE', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast('Undone');
+      await loadOverrides();
+      renderOverrides();
+    }
+
+    // ── Asks ──
+    let proposals = [];
+
+    async function loadProposals() {
+      proposals = await fetch('/api/admin/proposals', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
+
+    function renderProposals() {
+      const el = document.getElementById('proposal-list');
+      if (!el) return;
+      document.getElementById('count-proposals').textContent = proposals.length;
+      const decider = may('people.manage');
+      document.getElementById('proposals-intro').textContent = decider
+        ? 'Changes somebody has asked an owner to make. Each one names what it would do and why.'
+        : 'Things you have asked an owner to do. They stay here until somebody decides.';
+
+      if (!proposals.length) {
+        el.innerHTML = `<div class="empty">${decider ? 'Nothing waiting.' : 'You have not asked for anything.'}</div>`;
+        return;
+      }
+      el.innerHTML = proposals.map(p => `
+        <div class="ask">
+          <div class="ask-what">${p.summary ? esc(p.summary) : `<span style="color:#ef4444;">This ask is unreadable and cannot be approved.</span>`}</div>
+          ${p.reason ? `<div class="ask-why">\u201c${esc(p.reason)}\u201d</div>` : ''}
+          <div class="ask-meta">asked by ${esc(p.proposedBy)} \u00b7 ${relativeTime(p.createdAt)}</div>
+          <div class="btn-row">
+            ${decider && p.summary ? `
+              <button class="btn btn-approve" data-decide="${p.id}" data-decision="approve">Approve</button>
+              <button class="btn btn-outline" data-decide="${p.id}" data-decision="decline">Decline</button>` : ''}
+            ${p.mine ? `<button class="btn btn-outline" data-withdraw="${p.id}">Withdraw</button>` : ''}
+          </div>
+        </div>`).join('');
+
+      el.querySelectorAll('[data-decide]').forEach(b =>
+        b.addEventListener('click', () => decideProposal(Number(b.dataset.decide), b.dataset.decision)));
+      el.querySelectorAll('[data-withdraw]').forEach(b =>
+        b.addEventListener('click', () => withdrawProposal(Number(b.dataset.withdraw))));
+    }
+
+    async function decideProposal(id, decision) {
+      const p = proposals.find(x => x.id === id);
+      let note = null;
+      if (decision === 'decline') {
+        // A decline with no note is a refusal the proposer cannot learn
+        // anything from.
+        note = prompt('Why not? The person who asked will see this.');
+        if (note === null) return;
+      } else if (!confirm(`${p.summary}\n\nApprove?`)) {
+        return;
+      }
+      const res = await fetch(`/api/admin/proposals/${id}/decide`, {
+        method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ decision, note }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+      toast(decision === 'approve' ? 'Approved and done' : 'Declined');
+      await loadAll();
+    }
+
+    async function withdrawProposal(id) {
+      const res = await fetch(`/api/admin/proposals/${id}/withdraw`, { method: 'POST', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast('Withdrawn');
+      await loadProposals();
+      renderProposals();
+    }
+
+    // ── Proposing ──
+    let proposing = null;
+
+    window.closePropose = function () {
+      document.getElementById('propose-backdrop').classList.remove('open');
+      proposing = null;
+    };
+
+    /**
+     * Offer to carry an ask that this role was refused.
+     *
+     * Called from the 403 itself, so the way forward appears exactly where the
+     * refusal did rather than somewhere the person has to go looking.
+     */
+    window.offerProposal = function (capability, subject, prefill = {}) {
+      // The name is looked up rather than passed: it goes into an inline
+      // onclick attribute, and a parish called `St Elias, "the old church"`
+      // would end the attribute early.
+      const subjectName = capability === 'colors.edit'
+        ? subject
+        : ((parishes.find(x => x.id === subject) || {}).name || subject);
+      proposing = { capability, subject, payload: { ...prefill } };
+      const extra = document.getElementById('propose-extra');
+      document.getElementById('propose-reason').value = '';
+
+      if (capability === 'parish.acronym') {
+        document.getElementById('propose-sub').textContent =
+          `Ask an owner to change ${subjectName}\u2019s acronym. It is their call because it changes the parish\u2019s public link.`;
+        extra.innerHTML = `<div class="field"><label>The acronym you want</label>
+          <input id="propose-acronym" value="${esc(prefill.acronym || '')}" autocomplete="off"></div>`;
+      } else if (capability === 'parish.delete') {
+        document.getElementById('propose-sub').textContent =
+          `Ask an owner to delete ${subjectName}. It is their call because it cannot be undone.`;
+        extra.innerHTML = `
+          <div class="field"><label>What happens to its events</label>
+            <select id="propose-disposition">
+              <option value="transfer">Move them to another parish</option>
+              <option value="purge">Delete them too</option>
+            </select>
+          </div>
+          <div class="field" id="propose-target-field"><label>Move them to</label>
+            <select id="propose-target">${parishes.filter(x => x.id !== subject && x.id !== '_unassigned')
+              .map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select>
+          </div>`;
+        extra.querySelector('#propose-disposition').addEventListener('change', (e) => {
+          extra.querySelector('#propose-target-field').hidden = e.target.value !== 'transfer';
+        });
+      } else {
+        document.getElementById('propose-sub').textContent =
+          `Ask an owner to repaint ${subjectName}. It is their call because it applies across the whole site.`;
+        extra.innerHTML = `<div class="field"><label>The colour</label>
+          <input type="color" id="propose-color" value="${prefill.color || '#000000'}" style="height:32px;padding:2px;"></div>`;
+      }
+      document.getElementById('propose-backdrop').classList.add('open');
+    };
+
+    document.getElementById('propose-send').addEventListener('click', async (e) => {
+      if (!proposing) return;
+      const payload = {};
+      if (proposing.capability === 'parish.acronym') {
+        payload.acronym = document.getElementById('propose-acronym').value.trim();
+      } else if (proposing.capability === 'parish.delete') {
+        payload.disposition = document.getElementById('propose-disposition').value;
+        if (payload.disposition === 'transfer') payload.transferTo = document.getElementById('propose-target').value;
+      } else {
+        payload.color = document.getElementById('propose-color').value;
+      }
+
+      e.target.disabled = true;
+      try {
+        const res = await fetch('/api/admin/proposals', {
+          method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            capability: proposing.capability, subject: proposing.subject, payload,
+            reason: document.getElementById('propose-reason').value.trim() || null,
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+        closePropose();
+        toast('Sent \u2014 an owner will see it under Asks');
+        await loadProposals();
+        renderProposals();
+      } finally { e.target.disabled = false; }
+    });
+
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
     // Signing out is Cloudflare's to do, not ours: /cdn-cgi/access/logout is
@@ -2460,6 +2783,15 @@
     }
 
     document.getElementById('infer-btn').addEventListener('click', findRules);
+
+    document.getElementById('override-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      overrideFilter = (chip.dataset.ofilter === overrideFilter) ? '' : chip.dataset.ofilter;
+      document.querySelectorAll('#override-chips .chip').forEach(c =>
+        c.setAttribute('aria-pressed', String((c.dataset.ofilter || '') === overrideFilter)));
+      renderOverrides();
+    });
 
     document.getElementById('person-role').addEventListener('change', syncRoleForm);
     document.getElementById('person-form').addEventListener('submit', async (e) => {

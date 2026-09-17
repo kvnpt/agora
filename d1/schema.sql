@@ -533,3 +533,60 @@ CREATE TABLE admin_roles (
   added_by    TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- admin_proposals — the asks an editor cannot carry out themselves
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Roles draw three hard lines: an editor may not delete a parish, change an
+-- acronym, or repaint a jurisdiction. Each of those is the right call — a
+-- delete is unrecoverable, an acronym takes a public link away from everybody
+-- holding it, and a colour applies site-wide — but a bare refusal turns the
+-- owner into a help desk reached by some other channel, and the request arrives
+-- without the context that produced it.
+--
+-- So the refusal offers to carry the ask instead. The editor says what they
+-- wanted and why; the owner sees it in the panel, with the parish and the exact
+-- change already attached, and approves or declines in one press.
+--
+-- WHAT THIS IS NOT. Not a general approval queue, and deliberately not a way to
+-- moderate ordinary edits — the WhatsApp moderation subsystem was deleted with
+-- the VM and is not coming back. Only the three capabilities an editor is
+-- refused can become a proposal, because those are the only asks that have
+-- nowhere else to go.
+--
+-- The payload is JSON because the three shapes have nothing in common: a delete
+-- carries what to do with the events, an acronym carries the new slug, a colour
+-- carries a hex. Reading it is the approving route's job, and it re-validates
+-- everything rather than trusting a row that has been sitting in a table.
+CREATE TABLE admin_proposals (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  -- The capability the proposer was refused: 'parish.delete', 'parish.acronym'
+  -- or 'colors.edit'. Checked against that list on the way in, so a row can
+  -- never ask for something the approving route does not know how to do.
+  capability  TEXT NOT NULL CHECK(capability IN ('parish.delete','parish.acronym','colors.edit')),
+
+  -- What it is about: a parish id, or a jurisdiction for a colour.
+  subject     TEXT NOT NULL,
+
+  -- The change itself, shaped by `capability`.
+  payload     TEXT NOT NULL,
+
+  -- Why. Free text from the proposer, and the reason this beats an email: the
+  -- ask and its justification arrive together and stay attached to the record.
+  reason      TEXT,
+
+  status      TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','declined','withdrawn')),
+
+  proposed_by TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+
+  -- Who closed it and what they said. A decline with no note is a refusal the
+  -- proposer cannot learn anything from.
+  decided_by  TEXT,
+  decided_at  TEXT,
+  decision_note TEXT
+);
+
+CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);
