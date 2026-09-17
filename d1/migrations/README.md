@@ -38,6 +38,29 @@ here because it has the same shape — applied once, by hand, against the live
 database — and because nothing else in the repo records that it ran. `005` is
 both at once: a column, and the dates to fill it with.
 
+**Column order is part of the contract, and two tables are already out of it.**
+`ALTER TABLE ... ADD COLUMN` can only append, so a column added here has to be
+appended in `d1/schema.sql` too — otherwise a database migrated forward and one
+built from the baseline differ, and the baseline stops being what it claims to
+be. The check is mechanical: build a database from the previous baseline, apply
+the new files, and diff `sqlite_master` against a fresh one. `009` and `010`
+pass it, and writing `009` is what turned up the drift below.
+
+Measured against **production** on 17 September 2026, 12 of the 14 tables match
+the baseline exactly. Two do not, in ORDER only — same columns, same types:
+
+| Table | Where they differ | From |
+|---|---|---|
+| `parishes` | `feast_day`, `info_source_name`, `info_checked_at` sit at the end in production and in the identity block in the baseline; `info_verified_at` sits earlier | `003`, `005` |
+| `schedules` | `location_override` is last-but-two in production and before `source_*` in the baseline | `007` |
+
+Nothing reads a column by position — every query in `worker/` names its columns
+and there are no column-less `INSERT`s — so this costs nothing today. It is
+recorded because a `SELECT *` written against the baseline's order, or a
+positional insert, would be wrong against the live database and right in every
+test. **Fix it in the baseline if you fix it at all.** Reordering a live table
+means rebuilding it, and that is a far larger risk than the one it removes.
+
 **A column a live Worker selects by name cannot simply be renamed.** The
 Worker lists its parish columns explicitly, so a rename breaks every read
 either side of the deploy — the old code asking for the old name against a
@@ -46,6 +69,8 @@ runs. `005` adds instead, which costs one column and no window.
 
 | File | Adds | For |
 |---|---|---|
+| `010-info-overrides.sql` | `info_overrides` | Which source wins when several describe the same parish, and the rulings made against that ladder — the two Elimbah Vespers a re-import would otherwise have recreated. Empty table = every import behaves exactly as before. **Applied to production 2026-09-17** |
+| `009-admin-roles-and-attribution.sql` | `admin_roles`, `admin_proposals`, `pdf_source_overrides`; `updated_at`/`updated_by` on `parishes` and `schedules`; `updated_by` on `schedule_overrides` | Written after the fact. All of it was applied to production on 17 September 2026 one `--command` at a time from `docs/admin-panel.md` and never recorded here, which is the failure the top of this file describes. **Applied to production 2026-09-17** |
 | `008-parish-links.sql` | `parish_links` | A parish's own short links beyond the four it has columns for — a festival, a building fund, a bookstall. **Applied to production 2026-09-12** |
 | `007-schedule-location.sql` | `schedules.location_override` | A recurring service that meets somewhere other than the parish's address — a borrowed church, a hall, a cemetery chapel. NULL keeps the parish address. **Applied to production 2026-09-12** |
 | `006-jurisdiction-colors.sql` | `jurisdiction_colors` | Adjusting the six archdiocese colours against each other from */admin* instead of one at a time in code. Empty table = every jurisdiction keeps the shared file's colour, so the order against the deploy does not matter. **Applied to production 2026-09-12** |

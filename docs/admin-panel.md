@@ -51,6 +51,34 @@ second person uses. Written 16 September 2026, against production.
 > ```
 >
 > `GITHUB_ACTIONS_TOKEN` is set and declared. **Every tier is now done.**
+>
+> **Since, 17 September 2026.** Two things this assessment did not ask for and
+> the first sub-admin would have run into within a week.
+>
+> *Which source wins.* A parish is described by several sources at once and
+> they disagree, and until now the winner was whichever import ran last. The
+> ladder is `public/shared/source-tiers.js`; the rulings made against it are
+> `info_overrides`; CLAUDE.md has the reasoning. The panel surfaces it three
+> ways — per parish on its card, per jurisdiction on the Jurisdictions tab as
+> "what a re-run will leave alone", and in the dialog that now replaces the
+> `confirm()` on deleting a rule. That dialog asks the question that decides
+> the outcome: not "are you sure" but "is this gone for good, or gone until
+> the next scrape".
+>
+> *Editing is a mode.* The main app's parish sheet had every admin control on
+> screen the whole time somebody was signed in. One pencil now, covering the
+> whole sheet including the service times. See CLAUDE.md.
+>
+> Two more migrations, and `d1/migrations/` now records the tier work that was
+> applied here by hand and never written down:
+>
+> ```bash
+> npx wrangler d1 execute agora --remote --file=d1/migrations/009-admin-roles-and-attribution.sql
+> npx wrangler d1 execute agora --remote --file=d1/migrations/010-info-overrides.sql
+> ```
+>
+> 009 is the back-record and is safe to re-run — its five `ALTER TABLE`s will
+> report "duplicate column name", which means they are already applied.
 
 `/admin` today has exactly one user, who also wrote it. Every affordance assumes
 that. The copy is terse because the reader already knows; the destructive

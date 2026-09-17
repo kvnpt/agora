@@ -19,6 +19,11 @@ import { dispatchExtraction, recentExtractionRuns } from '../lib/github-actions.
 import { pdfSourceOverrides, applyOverride, isHttpUrl } from '../lib/pdf-source-overrides.mjs';
 import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parseParishIds } from '../lib/roles.mjs';
 import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen } from '../lib/proposals.mjs';
+import { readInfoOverrides, validateOverride, describeOverride, slotKey,
+         parseSlot, PINNABLE_FIELDS, FIELD_GROUPS, SOURCE_TIERS }
+  from '../lib/info-overrides.mjs';
+import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
+         daysSince, staleness } from '../lib/jurisdictions.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
@@ -120,6 +125,71 @@ const outOfScope = (c, parishId) => mayTouchParish(c.who, parishId)
 // is nullable and "dev" is not a person.
 const editor = async (c) => (await adminIdentity(c)) || null;
 const NOW = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+/**
+ * Write a ruling, replacing any that already covers the same fact.
+ *
+ * UNIQUE(parish_id, target, subject) makes this an upsert rather than a
+ * second row: two rulings disagreeing about one field is the condition the
+ * table exists to remove, so the newer one wins outright. `created_at` is
+ * kept, because when the decision was FIRST made is the part a reader is
+ * reconstructing.
+ */
+async function upsertInfoOverride(db, row, who) {
+  return db.prepare(
+    `INSERT INTO info_overrides
+       (parish_id, target, subject, decision, tier, source_label, source_name,
+        source_ref, checked_at, note, updated_at, updated_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(parish_id, target, subject) DO UPDATE SET
+       decision=excluded.decision, tier=excluded.tier,
+       source_label=excluded.source_label, source_name=excluded.source_name,
+       source_ref=excluded.source_ref, checked_at=excluded.checked_at,
+       note=excluded.note, updated_at=excluded.updated_at, updated_by=excluded.updated_by
+     RETURNING *`
+  ).bind(
+    row.parish_id, row.target, row.subject, row.decision, row.tier,
+    row.source_label, row.source_name, row.source_ref, row.checked_at, row.note,
+    NOW(), who,
+  ).first();
+}
+
+/**
+ * Is this slot one somebody ruled must stay empty? A 409 if so, else null.
+ *
+ * Refused rather than silently allowed, and 409 rather than 403: nothing is
+ * wrong with the caller’s permissions, the database simply holds a decision
+ * that contradicts the write. The ruling travels with the refusal so the panel
+ * can offer to lift it in the same press — which is the point. Reversing a
+ * decision should be one deliberate act that leaves a record, not a silent
+ * re-create that makes the record a lie.
+ *
+ * The panel is the `admin` tier and is still refused, because nothing
+ * outranks `admin`. That is not a lock: DELETE the ruling and the slot is
+ * free.
+ */
+async function suppressedSlot(db, parishId, dayOfWeek, startTime) {
+  const key = slotKey(dayOfWeek, startTime);
+  if (!key) return null;
+  const row = await db.prepare(
+    `SELECT * FROM info_overrides
+     WHERE parish_id = ? AND target = 'schedule' AND subject = ? AND decision = 'suppress'`
+  ).bind(parishId, key).first();
+  if (!row) return null;
+  return json({
+    // The NOTE, not just the fact of a ruling. Whoever hits this refusal is
+    // exactly the reader the note was written for — somebody about to
+    // recreate a service that a phone call established does not run. A
+    // refusal that withheld the reason would send them to the table to look
+    // it up, which is the friction that makes people stop recording reasons.
+    error: `${describeOverride(row)} — “${row.note}”`,
+    ruling: row,
+    ruling_id: row.id,
+    // The panel reads this to decide whether to offer "lift it and try again"
+    // rather than just showing the message.
+    liftable: true,
+  }, 409);
+}
 
 // Keep an event's coordinates in step with its parish, unless it has an override.
 async function syncEventCoordsForParish(db, parishId) {
@@ -782,7 +852,41 @@ export function registerAdminRoutes(router) {
         await syncEventCoordsForParish(env.DB, id);
       }
     }
-    return json(await env.DB.prepare('SELECT * FROM parishes WHERE id = ?').bind(id).first());
+
+    // `pin` — say where this value came from, so the next import cannot
+    // quietly replace it.
+    //
+    // Optional, and the edit lands either way: a save that failed because the
+    // ruling was malformed would be a worse trade than a saved value with no
+    // ruling. So the rulings are attempted after the write and their problems
+    // are REPORTED rather than thrown, in `pins` and `pin_errors`.
+    //
+    // This is the other half of Elimbah. The Antiochian directory gives
+    // “Coronation Street” with no street number; the parish’s own site has it.
+    // Typing the better address is not enough on its own, because the next run
+    // of build-antiochian-sql.mjs refreshes `address` for every row whose
+    // info_verified_at is null — and that guard is all-or-nothing, freezing the
+    // whole row or none of it. A pin is per field.
+    const pins = [];
+    const pinErrors = [];
+    if (b.pin && typeof b.pin === 'object') {
+      const asked = Array.isArray(b.pin.fields) ? b.pin.fields : [b.pin.field];
+      // An address and its coordinates are one fact. Pinning the words and
+      // leaving the dot free is how a geocoder moves a pin somebody checked.
+      const fields = [...new Set(asked.flatMap(f => FIELD_GROUPS[f] || [f]))];
+      for (const field of fields) {
+        const v = validateOverride({
+          ...b.pin, parish_id: id, target: 'field', decision: 'pin', field,
+        });
+        if (!v.ok) { pinErrors.push({ field, error: v.error }); continue; }
+        pins.push(await upsertInfoOverride(env.DB, v.row, await editor(c)));
+      }
+    }
+
+    const saved = await env.DB.prepare('SELECT * FROM parishes WHERE id = ?').bind(id).first();
+    return json(pins.length || pinErrors.length
+      ? { ...saved, pins: pins.map(r => ({ ...r, describes: describeOverride(r) })), pin_errors: pinErrors }
+      : saved);
   }));
 
   // What deleting this parish would take with it.
@@ -988,6 +1092,8 @@ export function registerAdminRoutes(router) {
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(parish_id).first()) {
       return json({ error: 'Invalid parish_id' }, 400);
     }
+    const refused = await suppressedSlot(env.DB, parish_id, day_of_week, start_time);
+    if (refused) return refused;
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
         languages, week_of_month, hide_live, parish_scoped, location_override)
@@ -1020,6 +1126,20 @@ export function registerAdminRoutes(router) {
     const scoped = outOfScope(c, row.parish_id);
     if (scoped) return scoped;
     const b = await readJson(request);
+    // Moving a rule is the same act as creating one, as far as a ruling is
+    // concerned: the slot it lands in is the slot somebody refused. Checked
+    // against where it is GOING, using the existing values for whichever half
+    // of the slot the edit does not mention.
+    if (b.day_of_week !== undefined || b.start_time !== undefined) {
+      const at = await env.DB.prepare('SELECT day_of_week, start_time FROM schedules WHERE id = ?')
+        .bind(params.id).first();
+      const refused = await suppressedSlot(
+        env.DB, row.parish_id,
+        b.day_of_week !== undefined ? b.day_of_week : at.day_of_week,
+        b.start_time !== undefined ? b.start_time : at.start_time,
+      );
+      if (refused) return refused;
+    }
     const sets = [], vals = [];
     for (const k of SCHEDULE_EDITABLE) {
       if (b[k] !== undefined) {
@@ -1036,16 +1156,50 @@ export function registerAdminRoutes(router) {
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(params.id).first());
   }));
 
+  // DELETE /api/admin/schedules/:id
+  //
+  // Optionally carries the ruling that makes the deletion STICK. Without one,
+  // deleting a scraped rule is a decision with a half-life: `planWrite` pairs
+  // a scraped rule to an existing row, a deleted row is not one, and the next
+  // import inserts it again. That is how the two Elimbah Vespers would have
+  // come back.
+  //
+  // One request rather than two, deliberately. A panel that deleted the rule
+  // and then posted the ruling separately would leave exactly the wrong thing
+  // behind when the second call failed: the rule gone and no record of why.
   router.delete('/api/admin/schedules/:id', guarded('schedule.delete', async (c) => {
-    const { env, params } = c;
-    const row = await env.DB.prepare('SELECT id, parish_id FROM schedules WHERE id = ?')
-      .bind(params.id).first();
+    const { env, params, request } = c;
+    const row = await env.DB.prepare(
+      'SELECT id, parish_id, day_of_week, start_time, title, source_name, source_ref FROM schedules WHERE id = ?'
+    ).bind(params.id).first();
     if (!row) return json({ error: 'Schedule not found' }, 404);
     const scoped = outOfScope(c, row.parish_id);
     if (scoped) return scoped;
+
+    // A body on a DELETE is unusual and is read defensively: readJson returns
+    // {} for an absent or unparseable one, so a client that sends nothing gets
+    // exactly the behaviour it had before this route learned to record.
+    const b = await readJson(request);
+    let ruling = null;
+    if (b && b.suppress) {
+      const v = validateOverride({
+        ...b.suppress,
+        parish_id: row.parish_id,
+        target: 'schedule',
+        decision: 'suppress',
+        day_of_week: row.day_of_week,
+        start_time: row.start_time,
+        // What the SOURCE calls it, for the panel to quote later. Taken from
+        // the row being deleted rather than from the request, because the
+        // request is about why it is going, not about what it was.
+        source_label: b.suppress.source_label || row.title,
+      });
+      if (!v.ok) return json({ error: v.error }, 400);
+      ruling = await upsertInfoOverride(env.DB, v.row, await editor(c));
+    }
     // schedule_overrides cascade via FK.
     await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(params.id).run();
-    return json({ ok: true });
+    return json({ ok: true, ruling, ruling_note: ruling ? describeOverride(ruling) : null });
   }));
 
   // Every extension a logo has ever been stored under. A re-upload that
@@ -1114,6 +1268,121 @@ export function registerAdminRoutes(router) {
     if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(logoKeys(id));
     await env.DB.prepare('UPDATE parishes SET logo_path = NULL WHERE id = ?').bind(id).run();
     return json({ logo_path: null });
+  }));
+
+  // ── jurisdictions ──
+  //
+  // WHAT THIS ANSWERS. Six directories were scraped into D1 over four days and
+  // then nothing watched them. Parishes move, close, build a website and change
+  // their service times, and the only signal would be somebody noticing a wrong
+  // card. `info_checked_at` and `source_checked_at` have recorded when we last
+  // looked all along; nothing ever read them back, so "which of these is most
+  // overdue" had no answer short of a SQL console.
+  //
+  // Everything here is computed from rows that already exist. It is useful
+  // before any re-scrape has ever run, which is the point — the re-scrape is
+  // the action this prompts, not the thing it reports.
+  //
+  // Owner-only: it names every jurisdiction, so it is not a parish contact's
+  // screen, and it is the doorway to a job that rewrites a few hundred rows.
+  router.get('/api/admin/jurisdictions', guarded('people.manage', async ({ env }) => {
+    const now = Date.now();
+
+    // Two grouped queries rather than one per jurisdiction. Both scan small
+    // tables — 293 parishes and 97 rules — and the panel asks for all six at
+    // once, so there is nothing to gain by splitting them.
+    const [{ results: pRows = [] }, { results: sRows = [] }] = await Promise.all([
+      env.DB.prepare(
+        `SELECT jurisdiction,
+                COUNT(*)                                                   AS parishes,
+                SUM(CASE WHEN website IS NULL OR website = '' THEN 1 ELSE 0 END)   AS no_website,
+                SUM(CASE WHEN address IS NULL OR address = '' THEN 1 ELSE 0 END)   AS no_address,
+                SUM(CASE WHEN info_verified_at IS NOT NULL THEN 1 ELSE 0 END)      AS verified,
+                MIN(info_checked_at)                                       AS oldest_check,
+                MAX(info_checked_at)                                       AS newest_check
+         FROM parishes WHERE id != '_unassigned' GROUP BY jurisdiction`
+      ).all(),
+      env.DB.prepare(
+        `SELECT p.jurisdiction,
+                COUNT(*)                                                   AS rules,
+                COUNT(DISTINCT s.parish_id)                                AS parishes_with_rules,
+                SUM(CASE WHEN s.active = 1 THEN 1 ELSE 0 END)              AS active_rules,
+                SUM(CASE WHEN s.source_name IS NULL OR s.source_name = '' THEN 1 ELSE 0 END) AS no_source,
+                MIN(s.source_checked_at)                                   AS oldest_check,
+                MAX(s.source_checked_at)                                   AS newest_check
+         FROM schedules s JOIN parishes p ON s.parish_id = p.id
+         GROUP BY p.jurisdiction`
+      ).all(),
+    ]);
+
+    // Which page a jurisdiction's rules actually cite. The distinction the
+    // owner asked for: a rule citing the ARCHDIOCESE means one directory page
+    // changing can move a whole jurisdiction's timetable, while a rule citing a
+    // parish website has to be re-read one parish at a time.
+    const { results: srcRows = [] } = await env.DB.prepare(
+      `SELECT p.jurisdiction, s.source_name, COUNT(*) AS n
+       FROM schedules s JOIN parishes p ON s.parish_id = p.id
+       GROUP BY p.jurisdiction, s.source_name`
+    ).all();
+
+    const byJ = (rows) => new Map(rows.map(r => [r.jurisdiction, r]));
+    const parishBy = byJ(pRows);
+    const schedBy = byJ(sRows);
+
+    return json(JURISDICTION_SOURCES.map(j => {
+      const p = parishBy.get(j.slug) || {};
+      const s = schedBy.get(j.slug) || {};
+      const parishDays = daysSince(p.oldest_check, now);
+      // The SCHEDULE staleness is measured from the OLDEST rule, not the
+      // newest: one rule re-read yesterday says nothing about the sixty beside
+      // it that nobody has looked at since September.
+      const ruleDays = daysSince(s.oldest_check, now);
+
+      const sources = srcRows
+        .filter(r => r.jurisdiction === j.slug)
+        .map(r => ({ name: r.source_name || null, count: r.n }))
+        .sort((a, b) => b.count - a.count);
+
+      const parishes = p.parishes || 0;
+      return {
+        slug: j.slug,
+        label: j.label,
+        directory: j.directory || null,
+        notes: j.notes,
+        automation: j.automation,
+        automationNote: automationNote(j),
+        rerunnable: isRerunnable(j),
+        parishScripts: j.parishScripts,
+        scheduleScripts: j.scheduleScripts,
+        scheduleSource: j.scheduleSource || null,
+
+        parishes: {
+          total: parishes,
+          noWebsite: p.no_website || 0,
+          noAddress: p.no_address || 0,
+          verified: p.verified || 0,
+          lastChecked: p.oldest_check || null,
+          daysSinceChecked: parishDays,
+          staleness: staleness(parishDays),
+        },
+        rules: {
+          total: s.rules || 0,
+          active: s.active_rules || 0,
+          // The ratio docs/parish-ingestion.md calls a finding rather than a
+          // shortfall: 8 of 135 Greek parishes publish a service time anywhere.
+          parishesWithRules: s.parishes_with_rules || 0,
+          parishesWithoutRules: Math.max(0, parishes - (s.parishes_with_rules || 0)),
+          // Rules typed by hand in /admin cite nothing, and a re-run must leave
+          // them alone — a scrape has nothing to say about a claim it did not
+          // make.
+          noSource: s.no_source || 0,
+          sources,
+          lastChecked: s.oldest_check || null,
+          daysSinceChecked: ruleDays,
+          staleness: s.rules ? staleness(ruleDays) : null,
+        },
+      };
+    }));
   }));
 
   // ── proposals ──
@@ -1313,6 +1582,70 @@ export function registerAdminRoutes(router) {
   //
   // WHAT THIS EXISTS FOR. Every exception to the rhythm is a row in
   // schedule_overrides — this Sunday cancelled, moved to 10am, combined with the
+  // ── information overrides ──────────────────────────────────────────────
+  //
+  // `schedule_overrides` below rules on an OCCURRENCE. These rule on the
+  // INFORMATION: whether a source may set this parish’s address at all,
+  // whether a rule it publishes is one that actually runs. The ladder is
+  // public/shared/source-tiers.js and the rows are the exceptions made
+  // against it.
+  //
+  // Absence means no ruling, so a panel that never touches these leaves every
+  // import behaving as it did before the table existed.
+
+  router.get('/api/admin/info-overrides', guarded(async ({ env, query }) => {
+    const rows = await readInfoOverrides(env.DB, query.get('parish') || null);
+    // Joined to the parish name, because the list is read across parishes as
+    // often as within one, and an id is not a thing anybody recognises.
+    const names = new Map(((await env.DB.prepare(
+      'SELECT id, name FROM parishes').all()).results || []).map(p => [p.id, p.name]));
+    return json({
+      overrides: rows.map(r => ({
+        ...r,
+        parish_name: names.get(r.parish_id) || r.parish_id,
+        slot: r.target === 'schedule' ? parseSlot(r.subject) : null,
+        describes: describeOverride(r),
+      })),
+      // The vocabulary, so the panel’s menu and the API’s guard cannot offer
+      // different things — the same argument that made the timezone list a
+      // shared module.
+      tiers: SOURCE_TIERS,
+      fields: PINNABLE_FIELDS,
+    });
+  }));
+
+  router.put('/api/admin/info-overrides', guarded('source.rule', async (c) => {
+    const { env, request } = c;
+    const b = await readJson(request);
+    const parishId = String(b.parish_id || '').trim();
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+    const exists = !!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?')
+      .bind(parishId).first();
+    const v = validateOverride({ ...b, parish_id: parishId }, { parishExists: exists });
+    if (!v.ok) return json({ error: v.error }, 400);
+    const row = await upsertInfoOverride(env.DB, v.row, await editor(c));
+    return json({ ...row, describes: describeOverride(row) });
+  }));
+
+  // DELETE — lift a ruling.
+  //
+  // The row goes rather than gaining a `withdrawn` flag, for the reason every
+  // override table here gives: absence is the default, so a lifted ruling and
+  // a ruling never made have to be the same state. A retired row that still
+  // matched would be a suppression nobody could see and everybody would obey.
+  router.delete('/api/admin/info-overrides/:id', guarded('source.rule', async (c) => {
+    const { env, params } = c;
+    const row = await env.DB.prepare('SELECT * FROM info_overrides WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'No such ruling.' }, 404);
+    const scoped = outOfScope(c, row.parish_id);
+    if (scoped) return scoped;
+    await env.DB.prepare('DELETE FROM info_overrides WHERE id = ?').bind(params.id).run();
+    // What the caller just made possible again, so the panel can say it.
+    return json({ ok: true, lifted: describeOverride(row), was: row });
+  }));
+
   // cathedral — and nothing anywhere listed them. There was no way to answer
   // "what have we cancelled", no way to find a tombstone set by mistake, and no
   // way to see what the machine decided on its own: applyTombstones writes

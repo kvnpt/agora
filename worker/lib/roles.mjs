@@ -55,7 +55,7 @@ const CAPABILITIES = {
   owner: new Set([
     'parish.edit', 'parish.create', 'parish.delete', 'parish.acronym',
     'schedule.edit', 'schedule.create', 'schedule.delete',
-    'override.edit', 'event.edit',
+    'override.edit', 'event.edit', 'source.rule',
     'adapter.run', 'adapter.pace', 'adapter.source',
     'colors.edit', 'links.edit', 'logo.edit',
     'people.manage',
@@ -66,18 +66,24 @@ const CAPABILITIES = {
   editor: new Set([
     'parish.edit', 'parish.create',
     'schedule.edit', 'schedule.create', 'schedule.delete',
-    'override.edit', 'event.edit',
+    'override.edit', 'event.edit', 'source.rule',
     'adapter.run', 'adapter.pace', 'adapter.source',
     'links.edit', 'logo.edit',
   ]),
   // A parish contact. Same verbs as an editor, but every one of them is
   // additionally checked against their own parish list — see mayTouchParish.
+  //
+  // `source.rule` is on all three lists deliberately, including this one.
+  // Whoever may delete a rule must be able to record WHY, because the delete
+  // alone does not survive the next import — the ruling is what makes it
+  // stick. Granting the destructive half and withholding the durable half
+  // would be the worst possible split.
   // No create: a new parish is not their business, and it would be a way out
   // of their own scope.
   parish: new Set([
     'parish.edit',
     'schedule.edit', 'schedule.create', 'schedule.delete',
-    'override.edit', 'event.edit',
+    'override.edit', 'event.edit', 'source.rule',
     'links.edit', 'logo.edit',
   ]),
 };

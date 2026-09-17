@@ -41,6 +41,8 @@
 // published something unreadable are counted separately.
 
 // Sunday = 0, matching schedules.day_of_week.
+import { suppressionFor } from '../worker/lib/info-overrides.mjs';
+
 const DAY_INDEX = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
 };
@@ -268,8 +270,20 @@ export const SOURCE_NAME = 'Parish website';
  * /admin, and matching on title would insert a second copy beside it rather
  * than updating it — two cards for one service. Updating in place also keeps
  * the row id, which `events.schedule_id` and `schedule_overrides` both point at.
+ *
+ * ── RULINGS ──
+ *
+ * `overrides` is the index from worker/lib/info-overrides.mjs, and `tier` says
+ * where this import's claims come from — 'parish' here, because every rule in
+ * this run is read off the parish's own website. A slot suppressed at a tier
+ * this import does not outrank is neither inserted nor updated, and comes back
+ * in `refused` so the plan can print it.
+ *
+ * That tier is the reason this argument is not hardcoded. The same function
+ * would be wrong for the Antiochian run, which reads the jurisdiction's
+ * directory and therefore loses to a ruling made on a parish's own site.
  */
-export function planWrite(rules, existing) {
+export function planWrite(rules, existing, overrides = null, tier = 'parish') {
   const bySlot = new Map();
   for (const e of existing) {
     const k = `${e.parish_id}|${e.day_of_week}|${e.start_time}`;
@@ -278,12 +292,20 @@ export function planWrite(rules, existing) {
   }
   const updates = [];
   const inserts = [];
+  const refused = [];
   for (const r of rules) {
+    const ruling = overrides
+      ? suppressionFor(overrides, r.parish_id, r.day_of_week, r.start_time, tier)
+      : null;
     const pool = bySlot.get(`${r.parish_id}|${r.day_of_week}|${r.start_time}`);
+    if (ruling) {
+      refused.push({ rule: r, ruling, existing: pool && pool.length ? pool.shift() : null });
+      continue;
+    }
     if (pool && pool.length) updates.push({ ...r, id: pool.shift().id });
     else inserts.push(r);
   }
-  return { updates, inserts, untouched: [...bySlot.values()].flat() };
+  return { updates, inserts, untouched: [...bySlot.values()].flat(), refused };
 }
 
 /**

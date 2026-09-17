@@ -29,6 +29,8 @@
 // Friday. Compline Service" — and a rule invented for it would put a card on
 // the map at an hour nobody said. Those are reported and dropped.
 
+import { suppressionFor } from '../worker/lib/info-overrides.mjs';
+
 // Sunday = 0, matching schedules.day_of_week.
 const DAY_INDEX = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
@@ -281,8 +283,21 @@ export const SOURCE_NAME = 'Antiochian Archdiocese';
  * omits a service is weak evidence that it has stopped; Ryde's Saturday Vespers
  * and Good Shepherd's Confession are both absent from the directory and both
  * plausibly still happen.
+ *
+ * ── RULINGS ──
+ *
+ * `overrides` is the index from worker/lib/info-overrides.mjs, and `tier` is
+ * where THIS import's claims come from. A slot somebody has suppressed at a
+ * tier this import does not outrank is neither inserted nor updated, and it
+ * comes back in `refused` so the plan can say so rather than silently printing
+ * one rule fewer. Both halves matter: the insert is how a DELETED rule comes
+ * back, and the update is how a DEACTIVATED one does, because the SQL below
+ * sets active=1.
+ *
+ * Absent overrides mean the old behaviour exactly, so a run against a
+ * database with no rulings plans what it always planned.
  */
-export function planWrite(rules, existing) {
+export function planWrite(rules, existing, overrides = null, tier = 'jurisdiction') {
   const bySlot = new Map();
   for (const e of existing) {
     const k = `${e.parish_id}|${e.day_of_week}|${e.start_time}`;
@@ -291,16 +306,27 @@ export function planWrite(rules, existing) {
   }
   const updates = [];
   const inserts = [];
+  const refused = [];
   for (const r of rules) {
+    const ruling = overrides
+      ? suppressionFor(overrides, r.parish_id, r.day_of_week, r.start_time, tier)
+      : null;
     const k = `${r.parish_id}|${r.day_of_week}|${r.start_time}`;
     const pool = bySlot.get(k);
+    if (ruling) {
+      // Take the paired row out of the pool anyway, so a refused rule does not
+      // also get reported as an existing row the directory failed to mention.
+      const existingRow = pool && pool.length ? pool.shift() : null;
+      refused.push({ rule: r, ruling, existing: existingRow });
+      continue;
+    }
     if (pool && pool.length) updates.push({ ...r, id: pool.shift().id, was: null });
     else inserts.push(r);
   }
   // Rows in a slot the directory also describes, but which it had no rule left
   // to pair with, plus every slot it never mentioned.
   const untouched = [...bySlot.values()].flat();
-  return { updates, inserts, untouched };
+  return { updates, inserts, untouched, refused };
 }
 
 const COLS = ['parish_id', 'day_of_week', 'start_time', 'title', 'event_type',

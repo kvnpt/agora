@@ -85,6 +85,25 @@
     .verified { color: #22c55e; font-weight: 600; }
     .unverified { color: var(--muted); }
 
+    /* A ruling about which source wins. Deliberately quiet: these are read far
+       more often than they are made, and the one that matters is whichever one
+       explains why an import left something out. */
+    .ruling { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between;
+              padding: 6px 0; border-bottom: 1px dashed var(--border-light); font-size: 12px; }
+    .ruling:last-of-type { border-bottom: 0; }
+    .ruling-text { min-width: 0; }
+    .ruling-tier { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase;
+                   letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px;
+                   background: var(--border-light); color: var(--muted); margin-right: 5px;
+                   vertical-align: 1px; }
+    .ruling-note { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+    .ruling-add { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .ruling-add select, .ruling-add input { font-size: 12px; padding: 4px 6px; }
+    .ruling-add input { flex: 1 1 200px; min-width: 0; }
+    /* On a jurisdiction card: what the next re-run will refuse. */
+    .jur-refuse { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
+    .jur-refuse b { color: var(--text); font-weight: 600; }
+
     .bootstrap-note { font-size: 12.5px; line-height: 1.5; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-bg, #f9ecdd); color: #a35a12; border: 1px solid #e8c9a0; margin-bottom: 12px; }
     @media (prefers-color-scheme: dark) { .bootstrap-note { background: #2c2113; color: #e59544; border-color: #4a3a1e; } }
     .role-explain { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
@@ -114,6 +133,30 @@
     .ask-what { font-size: 13.5px; font-weight: 500; }
     .ask-why { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
     .ask-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+    /* Jurisdictions — staleness, coverage, and what it takes to re-read. */
+    .jur { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--bg); }
+    .jur.due { border-left: 3px solid #e67e22; }
+    .jur.never { border-left: 3px solid var(--border); }
+    .jur-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .jur-name { font-weight: 600; font-size: 15px; }
+    .jur-dir { font-size: 11.5px; color: var(--muted); }
+    .jur-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    @media (max-width: 560px) { .jur-grid { grid-template-columns: 1fr; } }
+    .jur-half { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 10px; }
+    .jur-half h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+    .jur-big { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .jur-sub { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+    .jur-age { font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .age-fresh { color: #22c55e; }
+    .age-stale { color: #e67e22; }
+    .age-overdue { color: #ef4444; }
+    .age-never { color: var(--muted); }
+    .jur-notes { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+    .jur-how { margin-top: 10px; font-size: 12px; }
+    .jur-cmd { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: var(--soft-bg); border-radius: var(--radius); padding: 8px 10px; margin-top: 6px; overflow-x: auto; white-space: pre; }
+    .jur-auto { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    .jur-auto.person { color: #e67e22; }
 
     /* Cards */
     .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
@@ -375,6 +418,7 @@
       <button class="tab" data-tab="colors" data-needs="colors.edit">Colours <span class="tab-count" id="count-colors">0</span></button>
       <button class="tab" data-tab="people" data-needs="people.manage">People <span class="tab-count" id="count-people">0</span></button>
       <button class="tab" data-tab="proposals">Asks <span class="tab-count" id="count-proposals">0</span></button>
+      <button class="tab" data-tab="jurisdictions" data-needs="people.manage">Jurisdictions <span class="tab-count" id="count-jurisdictions">0</span></button>
     </div>
 
     <div id="section-parishes" class="section active">
@@ -592,6 +636,21 @@
       <div id="proposal-list"></div>
     </div>
 
+    <!-- Where each jurisdiction's rows came from, and how long ago.
+         Six directories were scraped into D1 over four days and then nothing
+         watched them. info_checked_at and source_checked_at have recorded when
+         we last looked all along; nothing read them back, so "which of these is
+         most overdue" had no answer short of a SQL console. -->
+    <div id="section-jurisdictions" class="section">
+      <h3>Jurisdictions</h3>
+      <p class="card-meta" style="margin:0 0 12px;">
+        How old each jurisdiction's parish details and service times are, and what it
+        takes to re-read them. A re-run refreshes what nobody has checked and
+        <em>cannot</em> overwrite a pin somebody has confirmed in person.
+      </p>
+      <div id="jurisdiction-list"></div>
+    </div>
+
     <!-- Who may sign in, and what they may touch.
          Owner-only: an editor who could edit this could make themselves an
          owner, which is not a role boundary at all. -->
@@ -706,6 +765,47 @@
     </div>
   </div>
 
+  <!-- Deleting a rule, and saying whether the deletion is meant to last.
+       A rule read off a directory that the parish has stopped running is the
+       commonest delete there is, and until now it did not survive: the next
+       import pairs a scraped rule to an EXISTING row, a deleted row is not
+       one, and it came straight back. The reason typed here is what makes the
+       deletion stick, and it is what the next admin reads when an import
+       refuses part of a page. -->
+  <div class="modal-backdrop" id="drop-backdrop" onclick="if(event.target===this)closeDropSchedule()">
+    <div class="modal">
+      <h2>Delete rule</h2>
+      <div class="modal-subtitle" id="drop-sub"></div>
+
+      <label class="delete-choice" style="margin-top:12px;">
+        <input type="radio" name="drop-mode" value="rule" checked onchange="syncDropForm()">
+        <span>Just remove it — nothing said about the source</span>
+      </label>
+      <label class="delete-choice">
+        <input type="radio" name="drop-mode" value="suppress" onchange="syncDropForm()">
+        <span>It does not run — stop every import recreating it</span>
+      </label>
+
+      <div id="drop-why" hidden>
+        <div class="field" style="margin-top:10px;">
+          <label>How do you know?</label>
+          <select id="drop-tier"></select>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <label>Why — whoever meets this next has only these words</label>
+          <input id="drop-note" autocomplete="off"
+                 placeholder="Confirmed by telephone; stopped running in 2024.">
+        </div>
+        <div class="prov-line" id="drop-warn"></div>
+      </div>
+
+      <div class="modal-btn-row">
+        <button type="button" class="btn btn-outline" onclick="closeDropSchedule()">Cancel</button>
+        <button type="button" class="btn btn-reject" id="drop-go" onclick="confirmDropSchedule()">Delete rule</button>
+      </div>
+    </div>
+  </div>
+
   <!-- The reserved-link list, and the locations it is built from. Same files
        the Worker bundles, so the warning shown here and the 409 returned on
        save cannot disagree about what is available. -->
@@ -759,6 +859,31 @@
     }
     let parishes = [], schedules = [], adapters = [];
     let activeJurisdiction = '';
+
+    // ── Which source wins ──
+    //
+    // `rulings` is info_overrides: the deliberate decisions about whose claim
+    // about a parish is believed. The ladder (admin > the parish's own site >
+    // its jurisdiction's directory > a search > a third-party aggregator) is
+    // public/shared/source-tiers.js, and `tiers`/`pinnable` come back with the
+    // list so the menu here and the guard on the route read one vocabulary.
+    //
+    // The whole reason this is on screen: an import that refuses half of what
+    // a page publishes is indistinguishable from a broken import unless the
+    // refusal is visible with its reason attached.
+    let rulings = [], tiers = [], pinnable = [];
+    const rulingsFor = (parishId) => rulings.filter(r => r.parish_id === parishId);
+
+    async function loadRulings() {
+      try {
+        const res = await fetch('/api/admin/info-overrides', { headers });
+        if (!res.ok) return;
+        const body = await res.json();
+        rulings = body.overrides || [];
+        tiers = body.tiers || [];
+        pinnable = body.fields || [];
+      } catch { /* a panel that cannot list rulings still edits parishes */ }
+    }
 
     // ── What this account may do ──
     //
@@ -818,7 +943,8 @@
 
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
-        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals()]);
+        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(),
+        loadJurisdictions(), loadRulings()]);
       // After loadAdapters, which is what says whether any PDF adapter exists.
       await loadWorkflow();
       renderAll();
@@ -835,6 +961,7 @@
       renderColors();
       renderOverrides();
       renderProposals();
+      renderJurisdictions();
       renderPeople();
       renderPersonParishes();
       // The explainer under the role picker describes whichever role is
@@ -1507,6 +1634,7 @@
               <div class="field"><label>Logo</label><input type="file" accept="image/*" onchange="uploadLogo('${esc(p.id)}', this)"></div>
             </div>
             ${provenanceHtml(p)}
+            ${rulingsHtml(p)}
             <div class="btn-row">
               <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
               <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')">Geocode Address</button>
@@ -1514,6 +1642,111 @@
                 ? `<button class="btn btn-reject" onclick="openDeleteParish('${esc(p.id)}')">Delete</button>`
                 : `<button class="btn btn-outline" onclick="offerProposal('parish.delete', '${esc(p.id)}')">Ask to delete\u2026</button>`}
             </div>`;
+    }
+
+    // ── Which source wins, for this parish ──
+    //
+    // `info_verified_at` above freezes the WHOLE row or none of it, and a
+    // person who has checked one field has not checked thirteen. This is the
+    // per-field version, and it is the control the Elimbah case needed: the
+    // Antiochian directory gives that parish "Coronation Street" with no
+    // number, the parish's own site has it, and the fix should not also stop a
+    // re-run correcting the phone number nobody has looked at.
+    //
+    // Schedule rulings appear here too, read-only apart from Lift, because
+    // they are made where the rule is — on the Schedules tab, when it is
+    // deleted — and this is where somebody comes to ask why an import left
+    // something out.
+    function rulingsHtml(p) {
+      const mine = rulingsFor(p.id);
+      const held = mine.filter(r => r.target === 'field');
+      const rules = mine.filter(r => r.target === 'schedule');
+      const canRule = may('source.rule');
+
+      const row = (r) => `
+        <div class="ruling">
+          <div class="ruling-text">
+            <span class="ruling-tier" title="${esc(tierBlurb(r.tier))}">${esc(tierShort(r.tier))}</span>
+            ${esc(r.describes || '')}
+            <div class="ruling-note">“${esc(r.note)}”${
+              r.source_ref
+                ? ` · <a href="${esc(r.source_ref)}" target="_blank" rel="noopener">source</a>`
+                : ''}${r.updated_by ? ' · ' + esc(r.updated_by) : ''}</div>
+          </div>
+          ${canRule ? `<button type="button" class="btn btn-outline" onclick="liftRuling(${r.id})">Lift</button>` : ''}
+        </div>`;
+
+      return `
+      <div class="prov">
+        <div class="prov-head">Which source wins</div>
+        ${mine.length
+          ? [...held, ...rules].map(row).join('')
+          : '<div class="prov-line">Nothing held. Every import may refresh every field.</div>'}
+        ${canRule ? `
+        <div class="ruling-add">
+          <select id="hold-field-${esc(p.id)}">
+            ${pinnable.map(f => `<option value="${f}">${f}</option>`).join('')}
+          </select>
+          <select id="hold-tier-${esc(p.id)}">
+            ${tiers.map(t => `<option value="${t.id}"${t.id === 'parish' ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}
+          </select>
+          <input id="hold-note-${esc(p.id)}" placeholder="Why — e.g. the directory omits the street number">
+          <button type="button" class="btn btn-outline" onclick="holdField('${esc(p.id)}')">Hold</button>
+        </div>
+        <div class="prov-line">
+          Holding a field stops any source at or below that rung changing it. Saving
+          the parish first and holding second is the usual order: the hold protects
+          what is stored, it does not carry a value of its own.
+        </div>` : ''}
+      </div>`;
+    }
+
+    const tierShort = (id) => (tiers.find(t => t.id === id) || {}).short || id;
+    const tierBlurb = (id) => (tiers.find(t => t.id === id) || {}).blurb || '';
+
+    async function holdField(parishId) {
+      const field = document.getElementById('hold-field-' + parishId).value;
+      const tier = document.getElementById('hold-tier-' + parishId).value;
+      const noteEl = document.getElementById('hold-note-' + parishId);
+      const note = noteEl.value.trim();
+      // Checked here as well as on the route, so the reason is asked for while
+      // the person still remembers it rather than after a round trip.
+      if (!note) { toast('Say why — an unexplained hold reads as a broken import later.', 'error'); noteEl.focus(); return; }
+      const p = parishes.find(x => x.id === parishId);
+      const res = await fetch('/api/admin/info-overrides', {
+        method: 'PUT', headers,
+        body: JSON.stringify({
+          parish_id: parishId, target: 'field', field, decision: 'pin', tier, note,
+          source_ref: tier === 'parish' ? (p && p.website) || null : null,
+          checked_at: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast(`${field} held`);
+      noteEl.value = '';
+      await loadRulings();
+      rebuildParishCard(parishId);
+    }
+
+    async function liftRuling(id) {
+      const r = rulings.find(x => x.id === id);
+      if (!confirm(`Lift this ruling?\n\n${r ? r.describes : ''}\n\nThe next import will be free to write it again.`)) return;
+      const res = await fetch(`/api/admin/info-overrides/${id}`, { method: 'DELETE', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast('Lifted');
+      const parishId = r && r.parish_id;
+      await loadRulings();
+      if (parishId) rebuildParishCard(parishId);
+      renderJurisdictions();
+    }
+
+    /** Rebuild one card's form in place, keeping whatever else is open. */
+    function rebuildParishCard(id) {
+      const holder = document.getElementById('pe-' + id);
+      if (!holder || !holder.dataset.built) return;
+      const wasOpen = holder.classList.contains('open');
+      holder.innerHTML = parishFormHtml(parishes.find(x => x.id === id));
+      if (wasOpen) holder.classList.add('open');
     }
 
     // ── Where a row's claim came from, and who last touched it ──
@@ -1914,10 +2147,78 @@
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ active }) });
       if (res.ok) { toast(active ? 'Enabled' : 'Disabled'); loadAll(); } else toast(await adminError(res), 'error');
     }
-    async function deleteSchedule(id) {
-      if (!confirm('Delete this schedule?')) return;
-      const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE', headers });
-      if (res.ok) { toast('Deleted'); loadAll(); } else toast(await adminError(res), 'error');
+    // ── Deleting a rule ──
+    //
+    // A confirm() was the whole flow, and it asked the wrong question. The one
+    // that matters is not "are you sure" but "is this gone for good, or gone
+    // until the next scrape" — because without a ruling it is the second, and
+    // nothing said so.
+    let dropping = null;
+
+    function deleteSchedule(id) {
+      const s = schedules.find(x => x.id === id);
+      dropping = s || { id };
+      const when = s ? `${DAYS[s.day_of_week]} ${s.start_time} · ${s.title}` : `rule #${id}`;
+      document.getElementById('drop-sub').textContent = s
+        ? `${s.parish_name || s.parish_id} — ${when}`
+        : when;
+      document.querySelector('input[name="drop-mode"][value="rule"]').checked = true;
+      document.getElementById('drop-note').value = '';
+      document.getElementById('drop-tier').innerHTML =
+        tiers.map(t => `<option value="${t.id}"${t.id === 'admin' ? ' selected' : ''}>${esc(t.label)}</option>`).join('');
+      syncDropForm();
+      document.getElementById('drop-backdrop').classList.add('open');
+    }
+
+    function closeDropSchedule() {
+      document.getElementById('drop-backdrop').classList.remove('open');
+      dropping = null;
+    }
+
+    function syncDropForm() {
+      const on = document.querySelector('input[name="drop-mode"]:checked').value === 'suppress';
+      document.getElementById('drop-why').hidden = !on;
+      // Which import this actually stops, named rather than implied. A rule
+      // whose source line says "Antiochian Archdiocese" is re-read by a
+      // different script from one that says "Parish website", and the person
+      // deleting it is entitled to know the ruling will cover theirs.
+      const src = dropping && dropping.source_name;
+      document.getElementById('drop-warn').textContent = on
+        ? (src
+            ? `The next re-read of “${src}” will list this as refused, with your reason, instead of writing it.`
+            : 'This rule cites no source, so no import is writing it today — the ruling guards against one that starts.')
+        : '';
+      document.getElementById('drop-go').textContent = on ? 'Delete and hold' : 'Delete rule';
+    }
+
+    async function confirmDropSchedule() {
+      if (!dropping) return;
+      const suppress = document.querySelector('input[name="drop-mode"]:checked').value === 'suppress';
+      let body;
+      if (suppress) {
+        const note = document.getElementById('drop-note').value.trim();
+        if (!note) {
+          toast('Say why — an unexplained refusal reads as a broken import later.', 'error');
+          document.getElementById('drop-note').focus();
+          return;
+        }
+        body = JSON.stringify({
+          suppress: {
+            tier: document.getElementById('drop-tier').value,
+            note,
+            source_name: dropping.source_name || null,
+            source_ref: dropping.source_ref || null,
+            checked_at: new Date().toISOString().slice(0, 10),
+          },
+        });
+      }
+      const res = await fetch(`/api/admin/schedules/${dropping.id}`,
+        { method: 'DELETE', headers, ...(body ? { body } : {}) });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      const out = await res.json().catch(() => ({}));
+      closeDropSchedule();
+      toast(out.ruling ? 'Deleted, and held against the next import' : 'Deleted');
+      loadAll();
     }
 
     async function geocodeParish(id) {
@@ -2723,6 +3024,141 @@
         renderProposals();
       } finally { e.target.disabled = false; }
     });
+
+    // ── Jurisdictions ──
+    let jurisdictions = [];
+
+    async function loadJurisdictions() {
+      if (!may('people.manage')) { jurisdictions = []; return; }
+      jurisdictions = await fetch('/api/admin/jurisdictions', { headers })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+    }
+
+    // "97 days ago" beats a date when the question is whether to re-read.
+    //
+    // The whole sentence is built here rather than a fragment the caller
+    // prefixes, because "never" does not compose with "Directory read …" and
+    // the first attempt rendered "Directory read never looked".
+    const ageWords = (days, staleness, what) => {
+      if (days === null) return { text: `${what} has never been read`, cls: 'age-never' };
+      const t = days === 0 ? 'today'
+        : days === 1 ? 'yesterday'
+        : days < 60 ? `${days} days ago`
+        : `${Math.round(days / 30)} months ago`;
+      return { text: `${what} read ${t}`, cls: 'age-' + (staleness || 'fresh') };
+    };
+
+    function renderJurisdictions() {
+      const el = document.getElementById('jurisdiction-list');
+      if (!el) return;
+      document.getElementById('count-jurisdictions').textContent = jurisdictions.length;
+      if (!jurisdictions.length) { el.innerHTML = '<div class="empty">Nothing to show</div>'; return; }
+
+      el.innerHTML = jurisdictions.map(j => {
+        const p = j.parishes, r = j.rules;
+        const pAge = ageWords(p.daysSinceChecked, p.staleness, 'Directory');
+        const rAge = ageWords(r.daysSinceChecked, r.staleness, 'Sources');
+        const due = p.staleness !== 'fresh' || (r.total && r.staleness !== 'fresh');
+
+        // What the rules cite. The distinction worth surfacing: a rule citing
+        // the ARCHDIOCESE means one directory page changing can move a whole
+        // jurisdiction's timetable; a rule citing a parish website has to be
+        // re-read one parish at a time; a rule citing nothing was typed by hand
+        // and a re-run must leave it alone.
+        const sourceLine = r.sources.length
+          ? r.sources.map(x => x.name
+              ? `${x.count} from ${esc(x.name)}`
+              : `${x.count} typed by hand`).join(' \u00b7 ')
+          : 'no rules on file';
+
+        // The commands, verbatim from the registry, because the three passes
+        // are the documented way to do this and a paraphrase would drift.
+        const cmds = [...j.parishScripts, ...j.scheduleScripts];
+
+        return `
+        <div class="jur${due ? ' due' : ''}${p.total ? '' : ' never'}">
+          <div class="jur-head">
+            <span class="jur-name">${esc(j.label)}</span>
+            ${j.directory ? `<a class="jur-dir" href="${esc(j.directory)}" target="_blank" rel="noopener">${esc(j.directory.replace(/^https?:\/\//, ''))}</a>` : '<span class="jur-dir">no directory on file</span>'}
+          </div>
+
+          <div class="jur-grid">
+            <div class="jur-half">
+              <h4>Parish details</h4>
+              <div class="jur-big">${p.total}</div>
+              <div class="jur-sub">
+                ${p.noWebsite} without a website${p.noAddress ? ` \u00b7 ${p.noAddress} without an address` : ''}
+                ${p.verified ? ` \u00b7 ${p.verified} confirmed in person` : ''}
+              </div>
+              <div class="jur-age ${pAge.cls}">${pAge.text}</div>
+            </div>
+
+            <div class="jur-half">
+              <h4>Service times</h4>
+              <div class="jur-big">${r.total}</div>
+              <div class="jur-sub">
+                ${p.total
+                  ? `across ${r.parishesWithRules} of ${p.total} parishes${
+                      r.parishesWithoutRules ? ` \u00b7 ${r.parishesWithoutRules} publish none we have found` : ''}`
+                  : 'no parishes on file'}
+                <br>${sourceLine}
+              </div>
+              <div class="jur-age ${rAge.cls}">${r.total ? rAge.text : 'No rules to re-read'}</div>
+            </div>
+          </div>
+
+          ${rulingSummary(j.slug)}
+
+          <div class="jur-notes">${esc(j.notes)}</div>
+
+          <div class="jur-auto${j.automation === 'person' ? ' person' : ''}">${esc(j.automationNote)}</div>
+
+          ${cmds.length ? `
+            <div class="jur-how">
+              <button type="button" class="btn btn-outline" data-jur-how="${esc(j.slug)}">How to re-read this</button>
+              <div class="jur-cmd" id="jur-cmd-${esc(j.slug)}" hidden>${
+                cmds.map(c => `node scripts/${esc(c)}`).join('\n')}</div>
+            </div>` : ''}
+        </div>`;
+      }).join('');
+
+      el.querySelectorAll('[data-jur-how]').forEach(b => b.addEventListener('click', () => {
+        const box = document.getElementById('jur-cmd-' + b.dataset.jurHow);
+        box.hidden = !box.hidden;
+        b.textContent = box.hidden ? 'How to re-read this' : 'Hide';
+      }));
+      el.querySelectorAll('[data-jur-rulings]').forEach(b => b.addEventListener('click', () => {
+        const box = document.getElementById('jur-rulings-' + b.dataset.jurRulings);
+        box.hidden = !box.hidden;
+        b.textContent = box.hidden ? 'Which' : 'Hide';
+      }));
+    }
+
+    // What a re-run of this jurisdiction will deliberately NOT do.
+    //
+    // On the card that answers "should I re-read this", because the honest
+    // answer includes the part that will not change. Somebody who re-runs the
+    // Antiochian import and sees two fewer rules than the page publishes
+    // should find the reason here rather than in the database.
+    function rulingSummary(slug) {
+      const ids = new Set(parishes.filter(p => p.jurisdiction === slug).map(p => p.id));
+      const mine = rulings.filter(r => ids.has(r.parish_id));
+      if (!mine.length) return '';
+      const refused = mine.filter(r => r.decision === 'suppress');
+      const held = mine.filter(r => r.decision === 'pin');
+      const bits = [];
+      if (refused.length) bits.push(`<b>${refused.length}</b> service${refused.length === 1 ? '' : 's'} it publishes will not be written`);
+      if (held.length) bits.push(`<b>${held.length}</b> field${held.length === 1 ? '' : 's'} held from a better source`);
+      return `<div class="jur-refuse">A re-run will leave things alone: ${bits.join(', ')}.
+        <button type="button" class="btn btn-outline" style="margin-left:6px;"
+                data-jur-rulings="${esc(slug)}">Which</button>
+        <div id="jur-rulings-${esc(slug)}" hidden style="margin-top:6px;">
+          ${mine.map(r => `<div class="ruling"><div class="ruling-text">
+            <span class="ruling-tier">${esc(tierShort(r.tier))}</span>
+            ${esc(r.parish_name)} — ${esc(r.describes || '')}
+            <div class="ruling-note">“${esc(r.note)}”</div></div></div>`).join('')}
+        </div></div>`;
+    }
 
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 
