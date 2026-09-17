@@ -34,6 +34,24 @@ const state = {
   parishes: [],
   user: null,
   isAdmin: false,
+
+  // Which parish is being EDITED, or null. Signing in and editing are two
+  // states, not one: before this, every admin control was on screen the whole
+  // time a signed-in person looked at a parish, so the sheet an owner saw was
+  // never the sheet a visitor saw. `hideAdminControls` was the plaster — a
+  // preference to make the tools go away, remembered forever, and easy to
+  // leave on and then wonder where the buttons went.
+  //
+  // One parish at a time, deliberately. Edit mode is entered from a parish's
+  // own sheet and covers everything on it, its service times included, so
+  // "which parish" is never a question.
+  parishEditMode: null,
+
+  // The rulings for the parish being edited: which source won, and which
+  // services a source publishes that do not run. Fetched when edit mode is
+  // entered rather than on load — a visitor has no use for it and the public
+  // app should not pay for a request it never renders.
+  parishRulings: null,
   userLat: null,
   userLng: null,
   mode: 'events',
@@ -1541,7 +1559,11 @@ window.loadMoreParishEvents = () => loadMore({ parishMode: true });
 async function fetchSchedules(opts = {}) {
   if (window.lsLog) window.lsLog('GET /api/schedules …');
   try {
-    await window.agoraBundle.load();
+    // `fresh` has to reach the bundle. It caches for 60 seconds, which is
+    // right for a reader and wrong for the person who just changed a rule:
+    // the parish sheet can now add, edit and delete services, and without
+    // this the rule they deleted stayed on screen until the cache expired.
+    await window.agoraBundle.load(opts.fresh ? { fresh: true } : {});
     // The services view renders the RULES themselves, so the bundle's schedules
     // are exactly what it wants — no separate request.
     const juris = state.filters.jurisdiction;
@@ -4453,6 +4475,21 @@ function openParishSheet(parishId, opts = {}) {
   }
 }
 function closeParishSheet() {
+  // Editing belongs to the sheet. Leaving it with the mode still set would
+  // mean the next parish opened — or the same one re-opened — came up with a
+  // form already spread open, which is the surprise this mode exists to end.
+  //
+  // Clearing the flag is not enough on its own. Re-opening the SAME parish
+  // takes renderParishSheetContent's fast path, which refreshes the events and
+  // the timetable and deliberately leaves the header and the actions row as
+  // they were — so the sheet came back reading "Done" with the mode already
+  // off. Dropping the cached id makes that one re-open a full render.
+  if (state.parishEditMode) {
+    state.parishEditMode = null;
+    state.parishRulings = null;
+    const contentEl = document.getElementById('parish-sheet-content');
+    if (contentEl) contentEl._psParishId = null;
+  }
   // The schedule focus belongs to the sheet — it is "this rule at this
   // parish", and there is nowhere to show it once the parish is gone. The
   // pinned occurrence goes with it: it was the focus's, not the user's, and
@@ -4542,7 +4579,8 @@ function refreshParishContentPortion(parishId, opts = {}) {
     const innerHTML = `<div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
       <div class="section-header jurisdiction-header">${esc(psJurisLabel)}</div>
       <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
-        ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+        ${renderScheduleDaysHTML(scheds)}
+        ${state.isAdmin && state.parishEditMode === parishId ? refusedServicesHTML() + addServiceHTML(parishId) : ''}
       </div>
     </div>`;
     if (existingSection) {
@@ -4678,24 +4716,42 @@ function renderParishSheetContent(parishId, opts = {}) {
     .map(l => `<a class="ps-btn" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.slug)}</a>`)
     .join('');
 
-  // Admin controls + edit form (gated by state.isAdmin, respects hideAdminControls pref)
+  // Is this sheet being edited? Read once, high up, because it decides three
+  // separate things further down — the admin row, the timetable's pencils and
+  // whether the avatar is a logo control — and a second copy taken later is
+  // how one of them ends up disagreeing.
+  //
+  // The avatar was a logo button whenever somebody was signed in, which put a
+  // pencil on a parish's face on every sheet an admin ever opened.
+  const psEditing = state.isAdmin && state.parishEditMode === parishId;
+
+  // Admin controls + the edit form. Both follow the MODE, not a local toggle.
   let parishAdminHtml = '';
   let parishEditFormHtml = '';
   if (state.isAdmin) {
-    const hiding = localStorage.getItem('hideAdminControls') === 'true';
     const pid = esc(parishId);
-    // Admin row is its own .ps-actions so Edit / Delete / the visibility
-    // toggle sit in the same pill geometry as Directions / Website / Call
-    // directly above them. --parish-color is not set here on purpose: the
-    // public actions carry the parish's hue, and the admin ones staying
-    // neutral is what keeps the two rows telling apart at a glance.
+    const editing = psEditing;
+    // ONE control, and it is a mode rather than a form toggle.
+    //
+    // This row used to carry Edit, Delete and a "hide admin controls" pill,
+    // and every schedule row carried its own pencil, so a signed-in person
+    // never saw the sheet a visitor sees. A pencil that turns editing ON for
+    // the whole sheet says the same thing in one affordance and leaves the
+    // reading state alone — which is also why the Delete has moved inside the
+    // form: it is not something to keep a thumb's width from Directions.
+    //
+    // `hideAdminControls` is deliberately NOT consulted here. It exists to get
+    // admin clutter out of the way, and edit mode has removed the clutter it
+    // was hiding; it still governs the event cards, where the buttons are
+    // still inline.
     parishAdminHtml = `
       <div class="ps-actions ps-admin-actions">
-        <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
-          <button class="ps-btn ps-btn-admin" type="button" onclick="toggleParishEdit('${pid}')">${glyph('ph:pencil-simple')}Edit</button>
-          <button class="ps-btn ps-btn-danger" type="button" onclick="deleteParish('${pid}')">${glyph('ph:trash')}Delete</button>
-        </div>
-        ${adminVisibilityPill(hiding, 'ps-btn ps-btn-ghost')}
+        <button class="ps-btn ${editing ? 'ps-btn-admin ps-editing' : 'ps-btn-ghost'}" type="button"
+                aria-pressed="${editing}"
+                onclick="setParishEditMode('${pid}', ${editing ? 'false' : 'true'})">
+          ${glyph(editing ? 'ph:check' : 'ph:pencil-simple')}${editing ? 'Done' : 'Edit'}
+        </button>
+        ${editing ? `<span class="ps-edit-hint">Editing — every field on this sheet, service times included.</span>` : ''}
       </div>`;
     // Mirrors the jurisdiction CHECK in d1/schema.sql. It listed
     // 'ecumenical', which the constraint rejects, and omitted 'romanian',
@@ -4706,8 +4762,11 @@ function renderParishSheetContent(parishId, opts = {}) {
       .join('');
     let langsVal = '';
     try { langsVal = parish.languages ? JSON.parse(parish.languages).join(', ') : ''; } catch { langsVal = parish.languages || ''; }
-    parishEditFormHtml = `
-      <div class="detail-edit-form" id="ps-edit-form-${pid}" style="display:none;">
+    // Built only while editing. Painting twenty controls and hiding them is
+    // how the reading sheet ended up carrying the whole toolkit — and since
+    // entering the mode re-renders anyway, there is nothing to keep warm.
+    parishEditFormHtml = editing ? `
+      <div class="detail-edit-form" id="ps-edit-form-${pid}">
         <div class="edit-row">
           <label>Logo</label>
           <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLogoEditor('${pid}')">${glyph('ph:image-square')}${parish.logo_path ? 'Change logo' : 'Add logo'}</button>
@@ -4745,9 +4804,15 @@ function renderParishSheetContent(parishId, opts = {}) {
         </div>
         <div class="edit-form-actions">
           <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
-          <button class="ps-btn ps-btn-ghost" type="button" onclick="toggleParishEdit('${pid}')">Cancel</button>
+          <button class="ps-btn ps-btn-ghost" type="button" onclick="setParishEditMode('${pid}', false)">Done</button>
         </div>
-      </div>`;
+        <!-- Inside the form, and last. Deleting a parish is not a thing to
+             keep next to Directions, and it is not a thing to reach without
+             having said you are editing. -->
+        <div class="edit-form-danger">
+          <button class="ps-btn ps-btn-danger" type="button" onclick="deleteParish('${pid}')">${glyph('ph:trash')}Delete this parish</button>
+        </div>
+      </div>` : '';
   }
 
   // Service times — always shown when there are schedules (after the
@@ -4763,13 +4828,18 @@ function renderParishSheetContent(parishId, opts = {}) {
   const psJurisColor = getJurisdictionColor(parish.jurisdiction);
   const psJurisLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
   let schedSectionHtml = '';
-  if (scheds.length) {
+  // In edit mode the section shows even with no rules: a parish whose times
+  // have never been entered is exactly the one somebody opens this to fix,
+  // and "there is nothing here" is not a reason to hide the way to add it.
+  if (scheds.length || psEditing) {
     schedSectionHtml = `
       <div class="ps-section ps-sched-section">
         <div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
           <div class="section-header jurisdiction-header">${esc(psJurisLabel)}</div>
           <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
-            ${renderScheduleDaysHTML(scheds, { isAdmin: state.isAdmin })}
+            ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
+            ${psEditing ? refusedServicesHTML() : ''}
+            ${psEditing ? addServiceHTML(parishId) : ''}
           </div>
         </div>
       </div>`;
@@ -4807,7 +4877,7 @@ function renderParishSheetContent(parishId, opts = {}) {
 
   contentEl.innerHTML = `
     <div class="ps-header">
-      <${state.isAdmin ? 'button type="button" data-logo-edit' : 'div'} class="ps-avatar" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}${state.isAdmin ? `<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span>` : ''}</${state.isAdmin ? 'button' : 'div'}>
+      <${psEditing ? 'button type="button" data-logo-edit' : 'div'} class="ps-avatar${psEditing ? ' editing' : ''}" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}${psEditing ? `<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span>` : ''}</${psEditing ? 'button' : 'div'}>
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
@@ -6037,8 +6107,14 @@ function bindEventCards(container) {
 // Render a parish's schedule as day-grouped items. Used by the main services
 // list AND the parish-sheet Schedule section so both surfaces look identical,
 // including language chips, WOM labels, and admin edit affordances.
-function renderScheduleDaysHTML(items, opts = {}) {
-  const isAdmin = !!opts.isAdmin;
+function renderScheduleDaysHTML(items) {
+  // Editability is read from state per ROW rather than taken as an argument,
+  // because this renders three surfaces — the parish sheet, its partial
+  // refresh, and the main services panel, which mixes parishes — and three
+  // call sites passing the same flag is three chances for one to forget.
+  // Edit mode belongs to a parish, so a rule is editable wherever it appears
+  // exactly when its own parish is the one open for editing.
+  const canEdit = (s) => state.isAdmin && state.parishEditMode === s.parish_id;
   const byDay = new Map();
   for (const item of items) {
     if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
@@ -6053,7 +6129,8 @@ function renderScheduleDaysHTML(items, opts = {}) {
       const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
-      const editBtn = isAdmin ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit schedule">✎</button>` : '';
+      const editing = canEdit(s);
+      const editBtn = editing ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit this service">✎</button>` : '';
       const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
       // The row is the way into the rule: tapping it focuses that rule's next
       // occurrence at that parish. data-sched-focus carries both halves
@@ -6068,7 +6145,7 @@ function renderScheduleDaysHTML(items, opts = {}) {
       // repeating it under every row would bury the one line that differs.
       if (s.location_override) html += `<div class="si-where">${esc(s.location_override)}</div>`;
       html += `</div>`;
-      if (isAdmin) {
+      if (editing) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
         html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
           <div class="schedule-edit-grid">
@@ -6104,6 +6181,65 @@ function renderScheduleDaysHTML(items, opts = {}) {
   return html;
 }
 
+/**
+ * Services a source publishes that somebody has ruled do not run.
+ *
+ * The gap this fills: a timetable that is shorter than the parish's own
+ * directory page looks like a scrape that missed something, and there was no
+ * way to tell that from a decision somebody made on purpose. St Mary
+ * Magdalene, Elimbah is the case — two Vespers on its Antiochian page,
+ * neither running, confirmed by telephone.
+ *
+ * Only while editing. A visitor is looking for what IS on, and a list of
+ * services that are not would be the wrong answer to that question.
+ */
+function refusedServicesHTML() {
+  const rows = (state.parishRulings || []).filter(
+    r => r.target === 'schedule' && r.decision === 'suppress');
+  if (!rows.length) return '';
+  const when = (subject) => {
+    const m = /^([0-6])\|(\d{2}:\d{2})$/.exec(String(subject || ''));
+    return m ? `${DAYS[Number(m[1])]} ${formatTime12(m[2])}` : String(subject || '');
+  };
+  return `
+    <div class="schedule-refused">
+      <div class="schedule-refused-head">Not written, on purpose</div>
+      ${rows.map(r => `
+        <div class="schedule-refused-row">
+          <span class="schedule-refused-when">${esc(when(r.subject))}</span>
+          ${r.source_label ? `<span class="schedule-refused-what">${esc(r.source_label)}</span>` : ''}
+          ${r.source_name ? `<span class="schedule-refused-src">per ${esc(r.source_name)}</span>` : ''}
+          <div class="schedule-refused-note">“${esc(r.note)}”</div>
+        </div>`).join('')}
+      <div class="schedule-refused-foot">An import that finds these will list them as refused instead of writing them. Lift one in /admin.</div>
+    </div>`;
+}
+
+/**
+ * The "add a service" row, shown inside the timetable while editing.
+ *
+ * On the parish's own sheet rather than only in /admin, because the moment
+ * somebody notices a missing service is while they are looking at the parish
+ * that is missing it. The four fields here are the four the route requires;
+ * everything else — languages, weeks of the month, a borrowed address — is
+ * on the row's own form once it exists, which keeps this short enough to use
+ * on a phone.
+ */
+function addServiceHTML(parishId) {
+  const types = ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other'];
+  const pid = esc(parishId);
+  return `
+    <div class="schedule-add" data-parish-id="${pid}">
+      <div class="schedule-add-grid">
+        <input data-af="title" class="sef-full" placeholder="Divine Liturgy">
+        <select data-af="day_of_week">${DAYS.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('')}</select>
+        <input data-af="start_time" type="time" value="09:00">
+        <select data-af="event_type">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+      </div>
+      <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add service</button>
+    </div>`;
+}
+
 // Bind toggle/save/delete handlers for every admin schedule-edit affordance
 // under `container`. Idempotent: tied to elements, not global state.
 function wireScheduleAdminHandlers(container) {
@@ -6136,17 +6272,93 @@ function wireScheduleAdminHandlers(container) {
         }
       });
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-        .then(r => { if (r.ok) { form.style.display = 'none'; fetchSchedules(); } });
+        .then(r => { if (r.ok) { form.style.display = 'none'; fetchSchedules({ fresh: true }); } });
     });
   });
+  // Deleting a rule, and saying whether the deletion is meant to last.
+  //
+  // A bare confirm() asked the wrong question. The one that decides the
+  // outcome is not "are you sure" but "will the next scrape bring this back",
+  // and for a rule read off a directory the answer was yes: the importer pairs
+  // a scraped rule to an EXISTING row, a deleted row is not one, and it came
+  // straight back. The reason typed here is what makes the deletion stick and
+  // what the next person reads when an import refuses part of a page.
   container.querySelectorAll('.schedule-del-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
+    btn.addEventListener('click', async e => {
       e.stopPropagation();
-      if (!confirm('Delete this schedule?')) return;
-      fetch(`/api/admin/schedules/${btn.dataset.sid}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
-        .then(r => { if (r.ok) fetchSchedules(); });
+      const id = btn.dataset.sid;
+      const rule = (state.schedules || []).find(x => String(x.id) === String(id));
+      const src = rule && rule.source_name;
+      if (!confirm('Delete this service?')) return;
+      // A prompt rather than a dialog, because this sits inside a bottom sheet
+      // on a phone and a modal over a modal is worse than a plain question.
+      // Empty or cancelled means "just remove it" — the old behaviour — so the
+      // reason is offered, never demanded.
+      const note = window.prompt(
+        src
+          ? `Why is it gone? A reason here stops the next re-read of “${src}” putting it back.\n\nLeave blank to just remove it.`
+          : 'Why is it gone? A reason here stops any future import recreating it.\n\nLeave blank to just remove it.',
+        '');
+      if (note === null) return;
+      const body = note.trim()
+        ? JSON.stringify({
+            suppress: {
+              tier: 'admin',
+              note: note.trim(),
+              source_name: src || null,
+              source_ref: (rule && rule.source_ref) || null,
+              checked_at: new Date().toISOString().slice(0, 10),
+            },
+          })
+        : null;
+      const res = await fetch(`/api/admin/schedules/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        ...(body ? { body } : {}),
+      });
+      if (res.ok) fetchSchedules({ fresh: true });
+      else alert(await adminErrorText(res));
     });
   });
+
+  container.querySelectorAll('.schedule-add-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const wrap = btn.closest('.schedule-add');
+      const read = (f) => wrap.querySelector(`[data-af="${f}"]`).value;
+      const title = read('title').trim();
+      if (!title) { alert('Give the service a name.'); return; }
+      const res = await fetch('/api/admin/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parish_id: btn.dataset.parishId,
+          title,
+          day_of_week: parseInt(read('day_of_week'), 10),
+          start_time: read('start_time'),
+          event_type: read('event_type'),
+        }),
+      });
+      if (res.ok) {
+        wrap.querySelector('[data-af="title"]').value = '';
+        fetchSchedules({ fresh: true });
+        return;
+      }
+      // 409 means a ruling refuses this slot — somebody deleted this service
+      // on purpose and said why. The message carries their reason, which is the
+      // whole point of having asked for one.
+      alert(await adminErrorText(res));
+    });
+  });
+}
+
+/** The server's own words, when it has any. */
+async function adminErrorText(res) {
+  try {
+    const body = await res.json();
+    if (body && body.error) return body.error;
+  } catch { /* not json */ }
+  return `Could not save (${res.status})`;
 }
 
 function renderServices() {
@@ -6236,7 +6448,7 @@ function renderServices() {
       html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
       html += distHtml;
       html += `</div>`;
-      html += renderScheduleDaysHTML(items, { isAdmin: state.isAdmin });
+      html += renderScheduleDaysHTML(items);
       html += '</div>';
     }
     html += '</div>';
@@ -6797,16 +7009,54 @@ window.deleteEvent = async function(id) {
   }
 };
 
+/**
+ * Enter or leave edit mode for one parish.
+ *
+ * A full re-render rather than a class flip, because edit mode changes what
+ * EXISTS and not only what is shown: the schedule rows grow pencils and
+ * forms, the avatar becomes a button, and an "add a service" row appears.
+ * Painting those on load and hiding them is how the sheet ended up carrying
+ * an admin's whole toolkit on every view.
+ *
+ * Only one parish is ever in edit mode, so opening another parish's sheet
+ * leaves this one — which is also the reason nothing here has to be undone
+ * on close.
+ */
+window.setParishEditMode = function(id, on) {
+  const next = on ? id : null;
+  if (state.parishEditMode === next) return;
+  state.parishEditMode = next;
+  state.parishRulings = null;
+  // fullRender, because the partial refresh deliberately leaves the header
+  // and the actions row alone — which is exactly the half that changes here.
+  const open = state.parishSheetFocus;
+  if (open) renderParishSheetContent(open, { fullRender: true });
+  // Then again once the rulings arrive. Not awaited, because edit mode has to
+  // open at once: a person who pressed a pencil is waiting on the form, not on
+  // an explanation of what a scrape will refuse.
+  if (next) {
+    fetch(`/api/info-overrides?parish=${encodeURIComponent(next)}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(rows => {
+        if (state.parishEditMode !== next) return;
+        state.parishRulings = rows;
+        if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
+      })
+      .catch(() => { /* the form still works without them */ });
+  }
+  if (next) {
+    const form = document.getElementById(`ps-edit-form-${next}`);
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  // The main services panel renders the same rules, so its pencils have to
+  // come and go with the mode too.
+  if (typeof renderServices === 'function') renderServices();
+};
+
+// Kept so an old inline handler, a bookmarklet or a half-updated cached copy
+// of this file does not throw. It is the mode now, not a form toggle.
 window.toggleParishEdit = function(id) {
-  const form = document.getElementById(`ps-edit-form-${id}`);
-  if (!form) return;
-  const opening = form.style.display === 'none';
-  form.style.display = opening ? '' : 'none';
-  // The avatar is only a logo control while the form is open — see the
-  // .ps-avatar-edit note in app.css.
-  const avatar = document.querySelector('#parish-sheet-content .ps-avatar[data-logo-edit]');
-  if (avatar) avatar.classList.toggle('editing', opening);
-  if (opening) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  window.setParishEditMode(id, state.parishEditMode !== id);
 };
 
 window.saveParish = async function(id) {
@@ -7953,9 +8203,14 @@ function glyph(name) {
   return `<span class="ps-btn-glyph" style="--glyph:url(https://api.iconify.design/${esc(name)}.svg)" aria-hidden="true"></span>`;
 }
 
-// The show/hide toggle is rendered in two places (parish sheet, event
-// drawer) and relabelled in a third (toggleAdminControlsVisibility), so the
-// label and glyph live here rather than in three literals that can drift.
+// The show/hide toggle. Rendered on the EVENT drawer only, now that the
+// parish sheet has an edit mode — there, the tools are absent until somebody
+// says they are editing, so a preference for hiding them has nothing left to
+// hide. An event card's admin buttons are still inline, which is what this
+// still answers for.
+//
+// Relabelled from toggleAdminControlsVisibility, so the label and glyph live
+// here rather than in two literals that can drift.
 // The label is its own span because the button now has a glyph child that a
 // textContent assignment would wipe out.
 function adminVisibilityPill(hiding, extraClass) {
