@@ -13,7 +13,6 @@
 
 const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
-const LABEL_SHADOW_IMAGE = 'label-shadow';
 const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
 // Parish labels always use Medium — the heaviest glyph dir we have shipped.
@@ -409,53 +408,26 @@ function addParishSourceAndLayers() {
   });
 
   // ── Label layers ──────────────────────────────────────────────────────
-  // A label's shadow is ONE shadow for the whole label, cast by a stretched
-  // sprite in the same layer as the text — not a second text layer.
+  // A halo and no shadow, which is what Google Maps does and what MapLibre
+  // can actually draw well.
   //
-  // The obvious way, a translated dark copy of the text underneath, cannot
-  // work, and the reason is worth writing down because it looks like a
-  // tuning problem right up until you measure it. A symbol layer's only soft
-  // edge is text-halo-blur, and a halo is drawn per GLYPH out of a signed
-  // distance field whose glyph has about three SDF pixels of border. At
-  // text-size 11 that is roughly 1.4 screen pixels. Past it the halo stops
-  // growing and is simply clipped to the glyph's quad, so a "bigger" shadow
-  // turns into a row of little dark rectangles, one per letter. And because
-  // every glyph draws its own translucent quad, the quads overlap between
-  // letters and composite into darker patches where they meet — the opposite
-  // of CSS text-shadow, which masks the whole run once and then composites.
+  // A label shadow was tried twice and removed. A translated dark copy of the
+  // text cannot work: a symbol layer's only soft edge is text-halo-blur, that
+  // halo is drawn per GLYPH from a distance field with about three SDF pixels
+  // of border, and past roughly 1.4 screen pixels at text-size 11 it stops
+  // growing and is clipped square to each glyph's quad — a row of little dark
+  // rectangles, one per letter, with darker patches where adjacent quads
+  // overlap. A stretched sprite behind the whole label cannot work either:
+  // icon-text-fit sizes the icon to the text's bounding BOX, and a box is not
+  // the shape of a label. "Sts. Cyril and Methodius Community / St Xenia
+  // Church" wraps to three centred lines of 122, 79 and 67 px, so a
+  // box-shaped shadow stands 28 px past each end of the last line.
   //
-  // So the shadow is an ICON instead. icon-text-fit stretches a nine-slice
-  // sprite to the text's own box, which makes it one object at any label
-  // width, of any size we like, with no glyphs and no SDF anywhere near it.
-  // Being in the same layer as the text it is also the same symbol: placed
-  // once, flipped with the text by text-variable-anchor, and — because
-  // text-optional stays false — never left behind as a pool with no label
-  // over it.
-  //
-  // It costs one sprite for the whole map, built in buildLabelShadowSprite().
-
-  registerLabelShadowSprite();
-
-  // The icon half of a label: the shadow, sized to the text.
-  //
-  // allow-overlap + ignore-placement keep it out of the collision index
-  // entirely, so adding it changes nothing about which labels place — the
-  // text decides that alone, exactly as before there was a shadow.
-  const LABEL_SHADOW_LAYOUT = {
-    'icon-image': LABEL_SHADOW_IMAGE,
-    'icon-text-fit': 'both',
-    // top, right, bottom, left. Wider than tall: a line of text is a long
-    // low object and its shadow should be too.
-    'icon-text-fit-padding': [1, 3, 1, 3],
-    'icon-allow-overlap': true,
-    'icon-ignore-placement': true
-  };
-  const LABEL_SHADOW_PAINT = {
-    // The same light source as the dots and the grape sprite.
-    'icon-translate': [0, 1.5],
-    'icon-translate-anchor': 'viewport'
-  };
-
+  // What draws a text-shaped shadow is an offscreen pass — render the run,
+  // blur the surface, composite it underneath — which is what Apple Maps does
+  // and what MapLibre GL JS does not expose for symbol layers. Until that is
+  // worth building, the halo is the lift. The dots keep their shadow, which is
+  // a circle layer and blurs properly.
   const DEFAULT_LABEL_FILTER = ['all',
     ['!', ['has', 'point_count']],
     ['!=', ['get', 'focused'], true],
@@ -470,11 +442,8 @@ function addParishSourceAndLayers() {
     'text-justify': 'auto',
     'text-padding': 2,
     'text-allow-overlap': false,
-    // NOT text-optional. With an icon in the layer that would mean "draw the
-    // shadow even when the text was collided away", which is a pool of dark
-    // with nothing floating over it.
-    'symbol-sort-key': ['case', ['==', ['get', 'active'], true], 1, 2],
-    ...LABEL_SHADOW_LAYOUT
+    'text-optional': true,
+    'symbol-sort-key': ['case', ['==', ['get', 'active'], true], 1, 2]
   };
 
   const ABOVE_LABEL_FILTER = ['all',
@@ -490,16 +459,14 @@ function addParishSourceAndLayers() {
     'text-padding': 2,
     'text-allow-overlap': true,
     'text-ignore-placement': true,
-    'symbol-sort-key': 0,
-    ...LABEL_SHADOW_LAYOUT
+    'symbol-sort-key': 0
   };
 
   const CRISP_PAINT = {
     'text-color': ['get', 'color'],
     'text-halo-color': getHalo(),
     'text-halo-width': 2,
-    'text-halo-blur': 0,
-    ...LABEL_SHADOW_PAINT
+    'text-halo-blur': 0
   };
 
   map.addLayer({
@@ -613,141 +580,6 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 };
 
 // ── Sprite registration ────────────────────────────────────────────────
-// The one sprite every label's shadow is made of: a soft, rounded, blurred
-// slab, registered nine-slice so icon-text-fit can stretch its middle to any
-// label's width without pulling the blurred corners out of shape.
-//
-// Drawn with shadowBlur rather than ctx.filter = 'blur()'. The filter
-// property is the obvious tool and is missing on Safari before 17, where it
-// is silently ignored — which would not fail, it would ship a hard-edged grey
-// slab behind every label on a few years of iPhones. shadowBlur is
-// everywhere, and drawing the source shape off the left edge of the canvas
-// and offsetting its shadow back on is the standard way to get the blur
-// without the shape.
-//
-// content[] is the box icon-text-fit matches to the text; everything outside
-// it is the blur's falloff and keeps its natural size at every label width.
-// The sprite is a soft slab with its middle PUNCHED OUT, and both halves of
-// that matter.
-//
-// icon-text-fit matches the icon to the text's bounding BOX, and a box is not
-// the shape of a label. A centred three-liner — "Sts. Cyril and Methodius
-// Community / St Xenia Church" is a real one — has one long line and two
-// short ones, so most of that box has no text in it. A filled sprite shows
-// through everywhere the words do not reach and reads as a grey rectangle
-// parked on the map rather than as a shadow.
-//
-// Hollowing it is the fix, but drawing a RING does not hollow it. The hole
-// has to survive being stretched, and MapLibre stretches by replicating a
-// band through the sprite's middle — so what the finished label shows in its
-// interior is whatever alpha that one band happens to carry. A ring blurred
-// enough to be soft bleeds across its own hole: at blur 16 the centre still
-// measures 0.15 alpha, and stretching that across a wide label paints the
-// slab straight back on. The hole cannot be made of the same blur that makes
-// the edge soft.
-//
-// So the two are separated. Draw the slab, blurred as softly as we like, then
-// erase the content box out of it with destination-out. What survives is the
-// falloff OUTSIDE the box, which is all a drop shadow is ever visible as —
-// under the object you never see it, and here the label is the object. The
-// centre lands at exactly zero, so the stretched interior is exactly nothing.
-//
-// The corner radius stays small on purpose: corners are the part icon-text-fit
-// cannot shrink, and 19 of the 293 real labels are as short as "St Sava".
-//
-// shadowBlur is roughly twice the gaussian sigma. All of these came off sweeps
-// rendered against the three cases that bite: a three-line label, an ordinary
-// one, and the shortest one on the map.
-const LABEL_SHADOW_BLUR = 16;    // how far the shadow reaches outside the text
-const LABEL_SHADOW_RADIUS = 10;  // corner radius; the sprite is 2x this across
-const LABEL_SHADOW_CUT = 3;      // softness of the punched inner edge
-const LABEL_SHADOW_DPR = 2;
-
-function roundRectPath(ctx, x, y, w, h, r) {
-  if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-function buildLabelShadowSprite() {
-  const dpr = LABEL_SHADOW_DPR;
-  const inner = LABEL_SHADOW_RADIUS * 2;
-  const margin = Math.ceil(LABEL_SHADOW_BLUR * 1.6);   // room for the falloff
-  const size = inner + margin * 2;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size * dpr;
-  const ctx = canvas.getContext('2d');
-
-  // Everything below is in DEVICE pixels, deliberately — no ctx.scale().
-  // shadowOffsetX/Y and shadowBlur are specified as NOT affected by the
-  // current transform, so scaling the context moves the shape without moving
-  // its shadow, and the blur lands a canvas-width off to one side.
-  const px = (v) => v * dpr;
-  // The shape is always drawn a full canvas to the left and its shadow
-  // offset back on, because shadowBlur is the one blur every browser has:
-  // ctx.filter is missing on Safari before 17, where it is ignored in silence
-  // and would ship a hard-edged slab behind every label.
-  const box = () => {
-    ctx.beginPath();
-    roundRectPath(ctx, px(margin - size), px(margin), px(inner), px(inner), px(LABEL_SHADOW_RADIUS));
-  };
-
-  ctx.shadowColor = getMapShadow();
-  ctx.shadowBlur = px(LABEL_SHADOW_BLUR);
-  ctx.shadowOffsetX = px(size);
-  ctx.fillStyle = '#000';         // never seen: only its shadow lands on canvas
-  box();
-  ctx.fill();
-
-  // Punch the content box back out. destination-out erases in proportion to
-  // what it draws, so a second, barely-blurred copy of the same box takes the
-  // interior to zero and leaves a soft inner edge.
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.shadowColor = 'rgba(0, 0, 0, 1)';
-  ctx.shadowBlur = px(LABEL_SHADOW_CUT);
-  ctx.shadowOffsetX = px(size);
-  box();
-  ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
-
-  const at = (v) => Math.round(px(v));
-  // Stretch a two-pixel band through the dead centre — the part the punch took
-  // to zero. Replicating nothing is what keeps a wide label's middle empty,
-  // and keeping the band away from the corners is what keeps them round.
-  const mid = margin + inner / 2;
-  return {
-    data: ctx.getImageData(0, 0, canvas.width, canvas.height),
-    options: {
-      pixelRatio: dpr,
-      stretchX: [[at(mid - 1), at(mid + 1)]],
-      stretchY: [[at(mid - 1), at(mid + 1)]],
-      content: [at(margin), at(margin), at(margin + inner), at(margin + inner)]
-    }
-  };
-}
-
-// Synchronous, and called before the label layers are added rather than with
-// the other sprites afterwards: an icon-image naming a picture that is not
-// there yet renders the text alone for the first frames, which is the bug
-// that made the cluster grapes vanish at low zoom.
-function registerLabelShadowSprite() {
-  const id = LABEL_SHADOW_IMAGE;
-  if (map.hasImage(id)) map.removeImage(id);
-  try {
-    const { data, options } = buildLabelShadowSprite();
-    map.addImage(id, data, options);
-  } catch (err) {
-    // Without the image the labels render exactly as they did before there
-    // were shadows, which is a fine thing to degrade to.
-    console.warn('label shadow sprite failed', err);
-  }
-}
-
 // Rasterise the existing grape SVG (buildGrapeClusterHtml is the truth source)
 // to per-count bitmaps and register via map.addImage. Symbol layer references
 // them by name via icon-image expression.
