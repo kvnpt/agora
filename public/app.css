@@ -59,14 +59,18 @@
   --map-fade: #ffffff;
   --map-fade-opacity: 0.35;
   /* The drop shadow under a parish dot and its label. Read by map.js, which
-     paints it into a circle layer and a text layer rather than a CSS filter —
-     MapLibre has no filter: drop-shadow, so the shadow is its own layer and
-     needs its colour the same way the halo does.
+     paints it into a blurred circle layer and bakes it into the label
+     shadow's sprite — MapLibre has no filter: drop-shadow, so the shadow is
+     drawn rather than declared and needs its colour the way the halo does.
+
+     The label's copy is blurred hard, which spreads this alpha out, so the
+     darkest pixel of a finished label shadow is a good deal lighter than the
+     number here. Tuned by rendering, not by reading it.
 
      Not pure black: a shadow on a map is the basemap seen through the marker,
      and the basemap's darkest tones are blue-grey. Pure black on the pale
      protomaps land reads as a smudge rather than as depth. */
-  --map-shadow: rgba(15, 23, 42, 0.32);
+  --map-shadow: rgba(15, 23, 42, 0.38);
 
   /* shadow */
   --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.10);
@@ -151,7 +155,7 @@
     /* Darker and more opaque than the light value, for the same reason the
        halo flips: the dark basemap's land sits around #2a303e, so a shadow
        has to reach past black-ish to separate from it at all. */
-    --map-shadow: rgba(0, 0, 0, 0.6);
+    --map-shadow: rgba(0, 0, 0, 0.45);
 
     /* shadow */
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.6);
