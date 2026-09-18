@@ -97,6 +97,23 @@ test('parish labels are lifted by a halo, not by a shadow', () => {
     `addParishSourceAndLayers registers sprites again: ${Object.keys(IMAGES).join(', ')}`);
 });
 
+test('a dot that was moved off its parish does not get to keep its label', () => {
+  // In 'dots' mode a crowded parish's dot is nudged away from where the parish
+  // actually is, so labelling it would point the name at the wrong place. It
+  // is also what answers "no labels when zoomed out" without anyone having to
+  // pick a zoom threshold: being crowded is exactly the condition that matters.
+  const flat = (f) => JSON.stringify(f);
+  const def = LAYERS.find((l) => l.id === 'parish-label');
+  assert.ok(flat(def.filter).includes('"crowded"'),
+    'parish-label no longer skips crowded dots, so every dot in a pile is labelled');
+
+  // The emphasised labels deliberately do NOT check it: the reader asked for
+  // that parish by name, so it stays named even in a crowd.
+  const above = LAYERS.find((l) => l.id === 'parish-label-above');
+  assert.ok(!flat(above.filter).includes('"crowded"'),
+    'the focused/selected label now hides itself in a crowd, which is where it is most needed');
+});
+
 // Enough of the MapLibre expression language to evaluate the paint
 // expressions in this file against a feature: ['case'], ['all'], ['=='],
 // ['has'] and ['get']. Evaluating beats pulling branches out by index — the

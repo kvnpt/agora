@@ -15,6 +15,50 @@ const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
 const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
+
+// ── How crowding is answered: 'dots' or 'grapes' ───────────────────────
+// Two ways of dealing with parishes too close together to draw separately.
+//
+//   'grapes'  supercluster DELETES the dots and draws one symbol standing for
+//             a count. Reads as "twelve things here", and loses every colour.
+//   'dots'    every parish keeps its own dot and its own jurisdiction colour,
+//             and dots that would overlap are pushed apart until they don't.
+//             Reads as "a crowd, mostly Greek". Zoomed out that is 293 dots.
+//
+// Live A/B, so both stay reachable: ?markers=grapes or ?markers=dots sets it
+// and remembers, or agoraSetMarkerMode() from the console. The query string
+// wins over the remembered value so a link can pin either one.
+const MARKER_MODE_DEFAULT = 'dots';
+// The gap two dots settle at. The dot is 3.75 r + 1.5 stroke = 10.5 across,
+// so this leaves about a pixel and a half of daylight between neighbours.
+const DOT_MIN_DISTANCE_PX = 12;
+// Under this much movement a dot is still on its parish, so it keeps its label.
+const DOT_SHIFT_EPSILON_PX = 0.5;
+
+function markerMode() {
+  try {
+    const q = new URLSearchParams(location.search).get('markers');
+    if (q === 'dots' || q === 'grapes') {
+      localStorage.setItem('agoraMarkers', q);
+      return q;
+    }
+    const saved = localStorage.getItem('agoraMarkers');
+    if (saved === 'dots' || saved === 'grapes') return saved;
+  } catch (_) {
+    // Private mode denies localStorage; the default is a fine answer.
+  }
+  return MARKER_MODE_DEFAULT;
+}
+
+window.agoraSetMarkerMode = function (mode) {
+  if (mode !== 'dots' && mode !== 'grapes') return markerMode();
+  try { localStorage.setItem('agoraMarkers', mode); } catch (_) { /* ignore */ }
+  // Clustering is a source option, and a source's options cannot be changed
+  // after it is added — so the switch needs the style rebuilt, same as a
+  // light/dark flip does.
+  location.reload();
+  return mode;
+};
 // Parish labels always use Medium — the heaviest glyph dir we have shipped.
 // Regular is reserved for the protomaps basemap (city/town/country names);
 // using Medium uniformly keeps parish labels visually distinct from the
@@ -236,6 +280,7 @@ async function initMap(state) {
     addUserLocSourceAndLayer(state);
     setupClickHandlers();
     setupViewportPhases();
+    setupDeclutterOnZoom();
 
     // Register sprites BEFORE any layer tries to render them — otherwise the
     // symbol layers report "image missing" and skip drawing for the first
@@ -301,6 +346,7 @@ async function initMap(state) {
         addParishSourceAndLayers();
         addUserLocSourceAndLayer(st);
         setupClickHandlers();
+        setupDeclutterOnZoom();
         await Promise.allSettled([
           registerGrapeSprites(),
           registerParishLogos(st.parishes || [])
@@ -315,10 +361,14 @@ async function initMap(state) {
 
 // ── Sources & layers ────────────────────────────────────────────────────
 function addParishSourceAndLayers() {
+  // In 'dots' mode clustering is simply off, and every cluster-shaped layer
+  // below keeps its filter on ['has', 'point_count'] and quietly matches
+  // nothing. Nothing else in the file has to know which mode it is in —
+  // including the click handler, which still names parish-cluster-icon.
   map.addSource(PARISH_SOURCE, {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
-    cluster: true,
+    cluster: markerMode() === 'grapes',
     clusterRadius: CLUSTER_RADIUS_PX,
     clusterMinPoints: CLUSTER_MIN_POINTS
   });
@@ -431,7 +481,11 @@ function addParishSourceAndLayers() {
   const DEFAULT_LABEL_FILTER = ['all',
     ['!', ['has', 'point_count']],
     ['!=', ['get', 'focused'], true],
-    ['!=', ['get', 'selected'], true]
+    ['!=', ['get', 'selected'], true],
+    // Set by the declutter on any dot it had to move. The focused and
+    // selected labels below deliberately do NOT check it: the reader asked
+    // for that parish by name, so it is named even in a crowd.
+    ['!=', ['get', 'crowded'], true]
   ];
   const DEFAULT_LABEL_LAYOUT = {
     'text-field': ['get', 'label'],
@@ -705,6 +759,85 @@ function loadHtmlImage(src) {
   });
 }
 
+// ── Dot declutter ──────────────────────────────────────────────────────
+// Pushing overlapping dots apart, so a crowd can be drawn as the parishes it
+// actually contains instead of replaced by a grape.
+//
+// The work is done in Mercator WORLD pixels rather than screen pixels, and
+// that is the whole reason this is affordable. Two fixed lng/lats sit a fixed
+// number of pixels apart at a given zoom no matter where the map is panned —
+// panning only translates. So the answer depends on zoom alone and can be
+// cached per zoom step; dragging the map recomputes nothing.
+//
+// Recomputed on zoom rather than on every frame: 293 parishes takes about
+// 30 ms at national zoom, which is fine once a gesture settles and much too
+// slow sixty times a second.
+const ZOOM_STEP = 0.25;            // cache granularity; finer than the eye needs
+let trueFeatures = [];             // what updateMap built, at real coordinates
+let declutterCache = new Map();    // zoom step -> displaced [lng, lat] per feature
+let declutterToken = 0;            // bumped when trueFeatures changes, voids the cache
+
+function worldPixels(zoom) {
+  return 512 * Math.pow(2, zoom);
+}
+
+// The features as the source should see them: displaced in 'dots' mode, and
+// the plain truth in 'grapes' mode, where supercluster does the crowding.
+function paintedFeatures() {
+  if (markerMode() !== 'dots' || !trueFeatures.length || !map) return trueFeatures;
+  const step = Math.round(map.getZoom() / ZOOM_STEP) * ZOOM_STEP;
+  const cacheKey = declutterToken + ':' + step;
+  let moved = declutterCache.get(cacheKey);
+  if (!moved) {
+    const world = worldPixels(step);
+    const pts = trueFeatures.map((f) => {
+      const m = maplibregl.MercatorCoordinate.fromLngLat({
+        lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
+      });
+      return { x: m.x * world, y: m.y * world };
+    });
+    const out = window.AgoraDeclutter.declutter(pts, { minDist: DOT_MIN_DISTANCE_PX });
+    // Whether a dot moved is decided HERE, in pixels, before the trip back to
+    // lng/lat. Comparing the returned coordinates against the originals looks
+    // equivalent and is not: every point round-trips through Mercator, so
+    // floating-point noise in the last bits marks almost all of them moved,
+    // and then no dot anywhere is ever allowed a label.
+    moved = out.map((pt, i) => {
+      const ll = new maplibregl.MercatorCoordinate(pt.x / world, pt.y / world).toLngLat();
+      return {
+        at: [ll.lng, ll.lat],
+        crowded: Math.hypot(pt.x - pts[i].x, pt.y - pts[i].y) > DOT_SHIFT_EPSILON_PX,
+      };
+    });
+    // One entry per zoom step is ~20 arrays for the whole zoom range; keeping
+    // them costs nothing and makes zooming back out instant.
+    declutterCache.set(cacheKey, moved);
+  }
+  // A dot that had to move is in a crowd, and its label would now be pointing
+  // at a place the parish is not. Mark it so the label layer can stand down —
+  // which also answers "no labels when zoomed out" without a zoom threshold to
+  // pick, because being crowded is exactly the condition that matters.
+  return trueFeatures.map((f, i) => ({
+    type: 'Feature',
+    properties: moved[i].crowded ? { ...f.properties, crowded: true } : f.properties,
+    geometry: { type: 'Point', coordinates: moved[i].at },
+  }));
+}
+
+function paintParishSource() {
+  const src = map && map.getSource(PARISH_SOURCE);
+  if (!src) return;
+  src.setData({ type: 'FeatureCollection', features: paintedFeatures() });
+}
+
+// Zoom changes how much the dots overlap, so it changes where they settle.
+// Bound to zoomend rather than zoom: mid-pinch the existing positions scale
+// with the map, which stays stable and readable, and the settle lands once.
+function setupDeclutterOnZoom() {
+  if (markerMode() !== 'dots') return;
+  map.on('zoomend', paintParishSource);
+}
+
 // ── updateMap: rebuild GeoJSON, apply feature state ────────────────────
 function updateMap(state, opts = {}) {
   if (!map) return;
@@ -806,8 +939,13 @@ function updateMap(state, opts = {}) {
     });
   }
 
-  const src = map.getSource(PARISH_SOURCE);
-  if (src) src.setData({ type: 'FeatureCollection', features });
+  // Keep what was built at true coordinates: the declutter re-derives from it
+  // on every zoom, and fitBounds below must frame where the parishes ARE
+  // rather than where their dots were nudged to.
+  trueFeatures = features;
+  declutterToken++;
+  declutterCache = new Map();
+  paintParishSource();
 
   if (opts.fit) {
     // Prefer the parishes actually in scope — a region with three parishes in
