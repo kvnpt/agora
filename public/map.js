@@ -34,6 +34,14 @@ function getMapFade() {
     opacity: parseFloat(css.getPropertyValue('--map-fade-opacity')) || 0.35
   };
 }
+// The drop shadow under the dots and the labels, from CSS var --map-shadow so
+// it flips with the scheme exactly as --halo does. Read fresh each time, for
+// the same reason: the scheme-change handler rebuilds the style and re-runs
+// addParishSourceAndLayers, and a value cached at load would be the old one.
+function getMapShadow() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--map-shadow').trim();
+  return v || 'rgba(15, 23, 42, 0.32)';
+}
 function isDark() {
   return matchMedia('(prefers-color-scheme: dark)').matches;
 }
@@ -326,39 +334,99 @@ function addParishSourceAndLayers() {
   // the focused parish is still visible. Active state has no size delta —
   // active is purely a sort-key for label priority (matches the pre-migration
   // behaviour where active dots had higher z-index but identical visuals).
+  const DOT_RADIUS = [
+    'case',
+    ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
+    ['==', ['get', 'focused'], true], 6,
+    ['==', ['get', 'selected'], true], 6,
+    3.75
+  ];
+  const DOT_STROKE_WIDTH = [
+    'case',
+    ['==', ['get', 'focused'], true], 2.5,
+    ['==', ['get', 'selected'], true], 2.5,
+    1.5
+  ];
+  // What the reader actually sees the edge of: the fill plus the halo ring
+  // around it, and for the focused parish with a logo the sprite instead —
+  // that case draws no circle at all (DOT_RADIUS is 0) and the sprite is
+  // baked at 32 CSS px, so its edge is 16 out from the centre.
+  //
+  // Plus a pixel, so the blur has somewhere to fall outside the ring. Without
+  // it the shadow is entirely under the marker and the marker is opaque.
+  const DOT_SHADOW_RADIUS = [
+    'case',
+    ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 17,
+    ['==', ['get', 'focused'], true], 9.5,
+    ['==', ['get', 'selected'], true], 9.5,
+    6.25
+  ];
+
+  // parish-circle-shadow: the dots' drop shadow, and the focused parish's
+  // logo sprite's too — a circle layer is the only thing MapLibre will blur,
+  // there being no filter: drop-shadow on a WebGL layer. Added before the dot
+  // so it paints under it; circle-blur is a FRACTION of the radius, not a
+  // pixel count, which is why it is not the same number at both sizes.
+  map.addLayer({
+    id: 'parish-circle-shadow',
+    type: 'circle',
+    source: PARISH_SOURCE,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-radius': DOT_SHADOW_RADIUS,
+      'circle-color': getMapShadow(),
+      'circle-blur': [
+        'case',
+        ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0.28,
+        ['==', ['get', 'focused'], true], 0.45,
+        ['==', ['get', 'selected'], true], 0.45,
+        0.55
+      ],
+      // Straight down, and the labels do the same: one light source, the one
+      // the grape sprite's baked-in drop-shadow(0 2px 3px) already assumes, so
+      // the dots and the clusters read as the same map rather than as two
+      // conventions that happen to share a canvas.
+      'circle-translate': [0, 1],
+      'circle-translate-anchor': 'viewport'
+    }
+  });
+
   map.addLayer({
     id: 'parish-circle',
     type: 'circle',
     source: PARISH_SOURCE,
     filter: ['!', ['has', 'point_count']],
     paint: {
-      'circle-radius': [
-        'case',
-        ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
-        ['==', ['get', 'focused'], true], 6,
-        ['==', ['get', 'selected'], true], 6,
-        3.75
-      ],
+      'circle-radius': DOT_RADIUS,
       'circle-color': ['get', 'color'],
       // Same source as label halo so dot rings and label outlines flip
       // together (white in light, dark in dark). User-loc dot keeps its
       // hardcoded white ring — that's the universal "I am here" pin.
       'circle-stroke-color': getHalo(),
-      'circle-stroke-width': [
-        'case',
-        ['==', ['get', 'focused'], true], 2.5,
-        ['==', ['get', 'selected'], true], 2.5,
-        1.5
-      ]
+      'circle-stroke-width': DOT_STROKE_WIDTH
     }
   });
 
   // ── Label layers ──────────────────────────────────────────────────────
-  // MapLibre symbol layers can't render filter: drop-shadow, so the old
-  // CSS look (4 px white text-stroke + soft drop-shadow) is composited from
-  // TWO layers per label state: a translated dark "shadow" underlay rendered
-  // first, then the crisp white-halo text on top. Layout is identical
-  // between each pair so the engine's collision pass keeps them in lockstep.
+  // MapLibre symbol layers can't render filter: drop-shadow, so the old CSS
+  // look (white text-stroke + soft drop-shadow) is composited from TWO layers
+  // per label state: a translated soft-haloed "shadow" underlay rendered
+  // first, then the crisp white-halo text on top. One layer cannot do both —
+  // a symbol layer has exactly one halo, and it is already spending it on the
+  // crisp outline.
+  //
+  // THE LAYOUT OF A PAIR MUST BE IDENTICAL, and that is not a tidiness
+  // preference. MapLibre groups layers that share a source, a filter and a
+  // layout into ONE bucket, laid out and collision-tested once, with each
+  // layer contributing only its own paint. That is what keeps a shadow under
+  // its text: these labels use text-variable-anchor, so a separately placed
+  // underlay would be free to pick 'left' where the text picked 'right' and
+  // park the shadow on the wrong side of the dot — and, being a symbol in the
+  // collision index, would have blocked that text from placing at all.
+  //
+  // So the pairs differ in PAINT only. text-translate is a paint property,
+  // which is the whole reason the offset can be expressed at all; anything
+  // that reached the layout would split the bucket and lose the lockstep.
 
   const DEFAULT_LABEL_FILTER = ['all',
     ['!', ['has', 'point_count']],
@@ -401,12 +469,35 @@ function addParishSourceAndLayers() {
     'text-halo-blur': 0
   };
 
+  // The underlay. All of it is the halo — the glyph fill is there only because
+  // a symbol layer cannot draw a halo without one, and the crisp layer's own
+  // 2 px halo covers it. Widths stay small: a halo much past a quarter of the
+  // font size stops being a halo and starts being the SDF running out of
+  // range, which shows up as a square-ish blob around each letter.
+  const shadowPaint = (halo) => ({
+    'text-color': getMapShadow(),
+    'text-halo-color': getMapShadow(),
+    'text-halo-width': halo,
+    'text-halo-blur': halo,
+    'text-translate': [0, 1],
+    'text-translate-anchor': 'viewport'
+  });
+
+  map.addLayer({
+    id: 'parish-label-shadow',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: DEFAULT_LABEL_FILTER,
+    layout: { ...DEFAULT_LABEL_LAYOUT },
+    paint: shadowPaint(1.5)
+  });
+
   map.addLayer({
     id: 'parish-label',
     type: 'symbol',
     source: PARISH_SOURCE,
     filter: DEFAULT_LABEL_FILTER,
-    layout: DEFAULT_LABEL_LAYOUT,
+    layout: { ...DEFAULT_LABEL_LAYOUT },
     paint: CRISP_PAINT
   });
 
@@ -469,13 +560,24 @@ function addParishSourceAndLayers() {
   });
 
   // Emphasised labels (focused / selected) — centred above the marker, no
-  // side-flip. Rendered last so they paint over the cluster + focus-icon stack.
+  // side-flip. Rendered last so they paint over the cluster + focus-icon stack,
+  // shadow included: these are the labels that sit ON a grape or a logo rather
+  // than on the basemap, and a shadow painted earlier would be under it.
+  map.addLayer({
+    id: 'parish-label-above-shadow',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: ABOVE_LABEL_FILTER,
+    layout: { ...ABOVE_LABEL_LAYOUT },
+    paint: shadowPaint(2)
+  });
+
   map.addLayer({
     id: 'parish-label-above',
     type: 'symbol',
     source: PARISH_SOURCE,
     filter: ABOVE_LABEL_FILTER,
-    layout: ABOVE_LABEL_LAYOUT,
+    layout: { ...ABOVE_LABEL_LAYOUT },
     paint: CRISP_PAINT
   });
 }
