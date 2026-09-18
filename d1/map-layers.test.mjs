@@ -43,17 +43,23 @@ function buildStack() {
       scale(x, y) { ctx._scale = [ctx._scale[0] * x, ctx._scale[1] * y]; canvasCalls.push({ op: 'scale', x, y }); },
       beginPath() {}, closePath() {}, moveTo() {}, arcTo() {}, rect(...a) { ctx._shape = a; },
       roundRect(...a) { ctx._shape = a; },
-      fill() {
+      strokeStyle: '', lineWidth: 0,
+      globalCompositeOperation: 'source-over',
+      _draw(op) {
         canvasCalls.push({
-          op: 'fill',
+          op,
+          gco: ctx.globalCompositeOperation,
           shape: ctx._shape,
           scale: ctx._scale.slice(),
+          lineWidth: ctx.lineWidth,
           shadowOffsetX: ctx.shadowOffsetX,
           shadowOffsetY: ctx.shadowOffsetY,
           shadowBlur: ctx.shadowBlur,
           shadowColor: ctx.shadowColor,
         });
       },
+      fill() { ctx._draw('fill'); },
+      stroke() { ctx._draw('stroke'); },
       getImageData: (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
       drawImage() {}, save() {}, restore() {}, clip() {}, arc() {},
     };
@@ -131,7 +137,7 @@ test('the shadow sprite is registered before anything names it', () => {
   for (const n of names) assert.ok(IMAGES[n], `${n} was never registered at all`);
   // registerLabelShadowSprite runs at the top of addParishSourceAndLayers, so
   // by the time any addLayer call happened the image already existed.
-  assert.ok(CANVAS.some((c) => c.op === 'fill'),
+  assert.ok(CANVAS.some((c) => c.op === 'fill' || c.op === 'stroke'),
     'no sprite was drawn, so the registration never ran');
 });
 
@@ -189,9 +195,10 @@ test('the blur lands on the sprite, not a canvas-width away', () => {
   // Checked as the invariant rather than as "do not call scale": wherever the
   // shape is and however the context is scaled, the shadow has to come to rest
   // on the content box.
-  const fills = CANVAS.filter((c) => c.op === 'fill');
-  assert.equal(fills.length, 1, `expected one filled shape, saw ${fills.length}`);
-  const f = fills[0];
+  const drawn = CANVAS.filter((c) => c.op === 'fill' || c.op === 'stroke');
+  // The slab, then the punch that hollows it.
+  assert.equal(drawn.length, 2, `expected the slab and its punch, saw ${drawn.length}`);
+  const f = drawn[0];
   assert.ok(f.shadowBlur > 0, 'the sprite is drawn with no blur at all');
   assert.ok(f.shape, 'nothing was actually drawn');
   const [sx, sy] = f.shape;
@@ -283,4 +290,53 @@ test('both schemes get a shadow colour, from CSS rather than from here', () => {
     'app.css has no light-mode --map-shadow');
   assert.ok(/--map-shadow:/.test(dark),
     'app.css has no dark-mode --map-shadow, so the light one is used on both');
+});
+
+test('the sprite is hollowed, so a multi-line label gets no grey slab', () => {
+  // icon-text-fit matches the icon to the text's bounding BOX. A centred
+  // three-line label fills maybe half of that box, so a solid sprite shows
+  // through everywhere the words do not reach and reads as a rectangle parked
+  // on the map.
+  //
+  // Drawing a ring instead does NOT hollow it, which is the trap this pins:
+  // MapLibre stretches by replicating a band through the sprite's middle, so a
+  // ring blurred softly enough to look like a shadow bleeds across its own
+  // hole and the middle band carries that bleed into every wide label. The
+  // hole has to be cut AFTER the blur, with destination-out.
+  const drawn = CANVAS.filter((c) => c.op === 'fill' || c.op === 'stroke');
+  assert.equal(drawn.length, 2);
+  const [slab, punch] = drawn;
+  assert.equal(slab.gco, 'source-over', 'the slab is not drawn normally');
+  assert.equal(punch.gco, 'destination-out',
+    'the second pass does not erase, so the sprite is solid and every ' +
+    'multi-line label gets a slab behind it');
+  assert.ok(punch.shadowBlur < slab.shadowBlur,
+    'the punch is blurred as much as the slab, which softens the hole away again');
+
+  // And the hollow has to survive stretching: the band MapLibre replicates
+  // runs through the middle, which is the part the punch took to zero.
+  const img = IMAGES['label-shadow'];
+  const [cl, ct, cr, cb] = img.options.content;
+  const midX = (cl + cr) / 2, midY = (ct + cb) / 2;
+  for (const [axis, mid] of [['stretchX', midX], ['stretchY', midY]]) {
+    const [from, to] = img.options[axis][0];
+    assert.ok(from <= mid && to >= mid,
+      `${axis} ${from}..${to} does not run through the hollow at ${mid}`);
+  }
+});
+
+test('the sprite can fit the shortest label on the map', () => {
+  // The corners are the part icon-text-fit cannot shrink. 19 of the 293 real
+  // parish labels are as short as "St Sava" — about 38 css px at text-size 11
+  // — and a sprite whose fixed corners are wider than that blows out into a
+  // donut around the word instead of a shadow under it.
+  const img = IMAGES['label-shadow'];
+  const dpr = img.options.pixelRatio;
+  const [from, to] = img.options.stretchX[0];
+  // Everything but the stretchable band has to be drawn at natural size.
+  const fixedCss = (img.data.width - (to - from)) / dpr;
+  const SHORTEST_LABEL_CSS = 38 + 6;   // "St Sava" at 11 px, plus the fit padding
+  assert.ok(fixedCss < SHORTEST_LABEL_CSS * 2.2,
+    `the sprite's fixed parts are ${fixedCss.toFixed(0)} css px wide, far past the ` +
+    `${SHORTEST_LABEL_CSS} px of the shortest real label`);
 });
