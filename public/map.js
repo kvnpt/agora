@@ -627,13 +627,40 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 //
 // content[] is the box icon-text-fit matches to the text; everything outside
 // it is the blur's falloff and keeps its natural size at every label width.
-// shadowBlur is roughly twice the gaussian sigma, and the blur spreads the
-// source alpha out, so the darkest part of the finished sprite is a good deal
-// lighter than --map-shadow says. These are the numbers a sweep at 11 px
-// landed on: below them the shadow is not visibly there, above them it stops
-// being a shadow and starts being a grey slab behind the words.
-const LABEL_SHADOW_BLUR = 15;
-const LABEL_SHADOW_RADIUS = 9;   // corner radius of the slab
+// The sprite is a soft slab with its middle PUNCHED OUT, and both halves of
+// that matter.
+//
+// icon-text-fit matches the icon to the text's bounding BOX, and a box is not
+// the shape of a label. A centred three-liner — "Sts. Cyril and Methodius
+// Community / St Xenia Church" is a real one — has one long line and two
+// short ones, so most of that box has no text in it. A filled sprite shows
+// through everywhere the words do not reach and reads as a grey rectangle
+// parked on the map rather than as a shadow.
+//
+// Hollowing it is the fix, but drawing a RING does not hollow it. The hole
+// has to survive being stretched, and MapLibre stretches by replicating a
+// band through the sprite's middle — so what the finished label shows in its
+// interior is whatever alpha that one band happens to carry. A ring blurred
+// enough to be soft bleeds across its own hole: at blur 16 the centre still
+// measures 0.15 alpha, and stretching that across a wide label paints the
+// slab straight back on. The hole cannot be made of the same blur that makes
+// the edge soft.
+//
+// So the two are separated. Draw the slab, blurred as softly as we like, then
+// erase the content box out of it with destination-out. What survives is the
+// falloff OUTSIDE the box, which is all a drop shadow is ever visible as —
+// under the object you never see it, and here the label is the object. The
+// centre lands at exactly zero, so the stretched interior is exactly nothing.
+//
+// The corner radius stays small on purpose: corners are the part icon-text-fit
+// cannot shrink, and 19 of the 293 real labels are as short as "St Sava".
+//
+// shadowBlur is roughly twice the gaussian sigma. All of these came off sweeps
+// rendered against the three cases that bite: a three-line label, an ordinary
+// one, and the shortest one on the map.
+const LABEL_SHADOW_BLUR = 16;    // how far the shadow reaches outside the text
+const LABEL_SHADOW_RADIUS = 10;  // corner radius; the sprite is 2x this across
+const LABEL_SHADOW_CUT = 3;      // softness of the punched inner edge
 const LABEL_SHADOW_DPR = 2;
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -648,8 +675,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
 function buildLabelShadowSprite() {
   const dpr = LABEL_SHADOW_DPR;
-  const margin = Math.ceil(LABEL_SHADOW_BLUR * 1.6);        // room for the falloff
-  const inner = LABEL_SHADOW_RADIUS * 2 + 4;                // the stretchable middle
+  const inner = LABEL_SHADOW_RADIUS * 2;
+  const margin = Math.ceil(LABEL_SHADOW_BLUR * 1.6);   // room for the falloff
   const size = inner + margin * 2;
 
   const canvas = document.createElement('canvas');
@@ -661,22 +688,44 @@ function buildLabelShadowSprite() {
   // current transform, so scaling the context moves the shape without moving
   // its shadow, and the blur lands a canvas-width off to one side.
   const px = (v) => v * dpr;
+  // The shape is always drawn a full canvas to the left and its shadow
+  // offset back on, because shadowBlur is the one blur every browser has:
+  // ctx.filter is missing on Safari before 17, where it is ignored in silence
+  // and would ship a hard-edged slab behind every label.
+  const box = () => {
+    ctx.beginPath();
+    roundRectPath(ctx, px(margin - size), px(margin), px(inner), px(inner), px(LABEL_SHADOW_RADIUS));
+  };
+
   ctx.shadowColor = getMapShadow();
   ctx.shadowBlur = px(LABEL_SHADOW_BLUR);
-  ctx.shadowOffsetX = px(size);   // the shape is drawn a full canvas to the left
+  ctx.shadowOffsetX = px(size);
   ctx.fillStyle = '#000';         // never seen: only its shadow lands on canvas
-  ctx.beginPath();
-  roundRectPath(ctx, px(margin - size), px(margin), px(inner), px(inner), px(LABEL_SHADOW_RADIUS));
+  box();
   ctx.fill();
 
+  // Punch the content box back out. destination-out erases in proportion to
+  // what it draws, so a second, barely-blurred copy of the same box takes the
+  // interior to zero and leaves a soft inner edge.
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.shadowColor = 'rgba(0, 0, 0, 1)';
+  ctx.shadowBlur = px(LABEL_SHADOW_CUT);
+  ctx.shadowOffsetX = px(size);
+  box();
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
   const at = (v) => Math.round(px(v));
+  // Stretch a two-pixel band through the dead centre — the part the punch took
+  // to zero. Replicating nothing is what keeps a wide label's middle empty,
+  // and keeping the band away from the corners is what keeps them round.
+  const mid = margin + inner / 2;
   return {
     data: ctx.getImageData(0, 0, canvas.width, canvas.height),
     options: {
       pixelRatio: dpr,
-      // Stretch between the corners only, so they stay round.
-      stretchX: [[at(margin + LABEL_SHADOW_RADIUS), at(margin + inner - LABEL_SHADOW_RADIUS)]],
-      stretchY: [[at(margin + LABEL_SHADOW_RADIUS), at(margin + inner - LABEL_SHADOW_RADIUS)]],
+      stretchX: [[at(mid - 1), at(mid + 1)]],
+      stretchY: [[at(mid - 1), at(mid + 1)]],
       content: [at(margin), at(margin), at(margin + inner), at(margin + inner)]
     }
   };

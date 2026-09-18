@@ -63,14 +63,15 @@
      shadow's sprite — MapLibre has no filter: drop-shadow, so the shadow is
      drawn rather than declared and needs its colour the way the halo does.
 
-     The label's copy is blurred hard, which spreads this alpha out, so the
-     darkest pixel of a finished label shadow is a good deal lighter than the
-     number here. Tuned by rendering, not by reading it.
+     The label's copy is a blurred ring, which spreads this alpha out twice
+     over, so the darkest pixel of a finished label shadow is much lighter
+     than the number here while a dot's shadow is close to it. Tuned by
+     rendering the two together, not by reading the number.
 
      Not pure black: a shadow on a map is the basemap seen through the marker,
      and the basemap's darkest tones are blue-grey. Pure black on the pale
      protomaps land reads as a smudge rather than as depth. */
-  --map-shadow: rgba(15, 23, 42, 0.38);
+  --map-shadow: rgba(15, 23, 42, 0.30);
 
   /* shadow */
   --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.10);
@@ -155,7 +156,7 @@
     /* Darker and more opaque than the light value, for the same reason the
        halo flips: the dark basemap's land sits around #2a303e, so a shadow
        has to reach past black-ish to separate from it at all. */
-    --map-shadow: rgba(0, 0, 0, 0.45);
+    --map-shadow: rgba(0, 0, 0, 0.38);
 
     /* shadow */
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.6);
