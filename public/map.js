@@ -13,6 +13,7 @@
 
 const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
+const LABEL_SHADOW_IMAGE = 'label-shadow';
 const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
 // Parish labels always use Medium — the heaviest glyph dir we have shipped.
@@ -33,6 +34,14 @@ function getMapFade() {
     color: css.getPropertyValue('--map-fade').trim() || '#ffffff',
     opacity: parseFloat(css.getPropertyValue('--map-fade-opacity')) || 0.35
   };
+}
+// The drop shadow under the dots and the labels, from CSS var --map-shadow so
+// it flips with the scheme exactly as --halo does. Read fresh each time, for
+// the same reason: the scheme-change handler rebuilds the style and re-runs
+// addParishSourceAndLayers, and a value cached at load would be the old one.
+function getMapShadow() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--map-shadow').trim();
+  return v || 'rgba(15, 23, 42, 0.32)';
 }
 function isDark() {
   return matchMedia('(prefers-color-scheme: dark)').matches;
@@ -326,39 +335,126 @@ function addParishSourceAndLayers() {
   // the focused parish is still visible. Active state has no size delta —
   // active is purely a sort-key for label priority (matches the pre-migration
   // behaviour where active dots had higher z-index but identical visuals).
+  const DOT_RADIUS = [
+    'case',
+    ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
+    ['==', ['get', 'focused'], true], 6,
+    ['==', ['get', 'selected'], true], 6,
+    3.75
+  ];
+  const DOT_STROKE_WIDTH = [
+    'case',
+    ['==', ['get', 'focused'], true], 2.5,
+    ['==', ['get', 'selected'], true], 2.5,
+    1.5
+  ];
+  // What the reader actually sees the edge of: the fill plus the halo ring
+  // around it, and for the focused parish with a logo the sprite instead —
+  // that case draws no circle at all (DOT_RADIUS is 0) and the sprite is
+  // baked at 32 CSS px, so its edge is 16 out from the centre.
+  //
+  // Plus a pixel, so the blur has somewhere to fall outside the ring. Without
+  // it the shadow is entirely under the marker and the marker is opaque.
+  const DOT_SHADOW_RADIUS = [
+    'case',
+    ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 17,
+    ['==', ['get', 'focused'], true], 9.5,
+    ['==', ['get', 'selected'], true], 9.5,
+    6.25
+  ];
+
+  // parish-circle-shadow: the dots' drop shadow, and the focused parish's
+  // logo sprite's too — a circle layer is the only thing MapLibre will blur,
+  // there being no filter: drop-shadow on a WebGL layer. Added before the dot
+  // so it paints under it; circle-blur is a FRACTION of the radius, not a
+  // pixel count, which is why it is not the same number at both sizes.
+  map.addLayer({
+    id: 'parish-circle-shadow',
+    type: 'circle',
+    source: PARISH_SOURCE,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-radius': DOT_SHADOW_RADIUS,
+      'circle-color': getMapShadow(),
+      'circle-blur': [
+        'case',
+        ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0.28,
+        ['==', ['get', 'focused'], true], 0.45,
+        ['==', ['get', 'selected'], true], 0.45,
+        0.55
+      ],
+      // Straight down, as the labels and the grape sprite's baked-in
+      // drop-shadow(0 2px 3px) also go. One light source for the whole map:
+      // the distance differs with the size of the thing casting, the
+      // direction never does.
+      'circle-translate': [0, 1],
+      'circle-translate-anchor': 'viewport'
+    }
+  });
+
   map.addLayer({
     id: 'parish-circle',
     type: 'circle',
     source: PARISH_SOURCE,
     filter: ['!', ['has', 'point_count']],
     paint: {
-      'circle-radius': [
-        'case',
-        ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
-        ['==', ['get', 'focused'], true], 6,
-        ['==', ['get', 'selected'], true], 6,
-        3.75
-      ],
+      'circle-radius': DOT_RADIUS,
       'circle-color': ['get', 'color'],
       // Same source as label halo so dot rings and label outlines flip
       // together (white in light, dark in dark). User-loc dot keeps its
       // hardcoded white ring — that's the universal "I am here" pin.
       'circle-stroke-color': getHalo(),
-      'circle-stroke-width': [
-        'case',
-        ['==', ['get', 'focused'], true], 2.5,
-        ['==', ['get', 'selected'], true], 2.5,
-        1.5
-      ]
+      'circle-stroke-width': DOT_STROKE_WIDTH
     }
   });
 
   // ── Label layers ──────────────────────────────────────────────────────
-  // MapLibre symbol layers can't render filter: drop-shadow, so the old
-  // CSS look (4 px white text-stroke + soft drop-shadow) is composited from
-  // TWO layers per label state: a translated dark "shadow" underlay rendered
-  // first, then the crisp white-halo text on top. Layout is identical
-  // between each pair so the engine's collision pass keeps them in lockstep.
+  // A label's shadow is ONE shadow for the whole label, cast by a stretched
+  // sprite in the same layer as the text — not a second text layer.
+  //
+  // The obvious way, a translated dark copy of the text underneath, cannot
+  // work, and the reason is worth writing down because it looks like a
+  // tuning problem right up until you measure it. A symbol layer's only soft
+  // edge is text-halo-blur, and a halo is drawn per GLYPH out of a signed
+  // distance field whose glyph has about three SDF pixels of border. At
+  // text-size 11 that is roughly 1.4 screen pixels. Past it the halo stops
+  // growing and is simply clipped to the glyph's quad, so a "bigger" shadow
+  // turns into a row of little dark rectangles, one per letter. And because
+  // every glyph draws its own translucent quad, the quads overlap between
+  // letters and composite into darker patches where they meet — the opposite
+  // of CSS text-shadow, which masks the whole run once and then composites.
+  //
+  // So the shadow is an ICON instead. icon-text-fit stretches a nine-slice
+  // sprite to the text's own box, which makes it one object at any label
+  // width, of any size we like, with no glyphs and no SDF anywhere near it.
+  // Being in the same layer as the text it is also the same symbol: placed
+  // once, flipped with the text by text-variable-anchor, and — because
+  // text-optional stays false — never left behind as a pool with no label
+  // over it.
+  //
+  // It costs one sprite for the whole map, built in buildLabelShadowSprite().
+
+  registerLabelShadowSprite();
+
+  // The icon half of a label: the shadow, sized to the text.
+  //
+  // allow-overlap + ignore-placement keep it out of the collision index
+  // entirely, so adding it changes nothing about which labels place — the
+  // text decides that alone, exactly as before there was a shadow.
+  const LABEL_SHADOW_LAYOUT = {
+    'icon-image': LABEL_SHADOW_IMAGE,
+    'icon-text-fit': 'both',
+    // top, right, bottom, left. Wider than tall: a line of text is a long
+    // low object and its shadow should be too.
+    'icon-text-fit-padding': [1, 3, 1, 3],
+    'icon-allow-overlap': true,
+    'icon-ignore-placement': true
+  };
+  const LABEL_SHADOW_PAINT = {
+    // The same light source as the dots and the grape sprite.
+    'icon-translate': [0, 1.5],
+    'icon-translate-anchor': 'viewport'
+  };
 
   const DEFAULT_LABEL_FILTER = ['all',
     ['!', ['has', 'point_count']],
@@ -374,8 +470,11 @@ function addParishSourceAndLayers() {
     'text-justify': 'auto',
     'text-padding': 2,
     'text-allow-overlap': false,
-    'text-optional': true,
-    'symbol-sort-key': ['case', ['==', ['get', 'active'], true], 1, 2]
+    // NOT text-optional. With an icon in the layer that would mean "draw the
+    // shadow even when the text was collided away", which is a pool of dark
+    // with nothing floating over it.
+    'symbol-sort-key': ['case', ['==', ['get', 'active'], true], 1, 2],
+    ...LABEL_SHADOW_LAYOUT
   };
 
   const ABOVE_LABEL_FILTER = ['all',
@@ -391,14 +490,16 @@ function addParishSourceAndLayers() {
     'text-padding': 2,
     'text-allow-overlap': true,
     'text-ignore-placement': true,
-    'symbol-sort-key': 0
+    'symbol-sort-key': 0,
+    ...LABEL_SHADOW_LAYOUT
   };
 
   const CRISP_PAINT = {
     'text-color': ['get', 'color'],
     'text-halo-color': getHalo(),
     'text-halo-width': 2,
-    'text-halo-blur': 0
+    'text-halo-blur': 0,
+    ...LABEL_SHADOW_PAINT
   };
 
   map.addLayer({
@@ -469,7 +570,9 @@ function addParishSourceAndLayers() {
   });
 
   // Emphasised labels (focused / selected) — centred above the marker, no
-  // side-flip. Rendered last so they paint over the cluster + focus-icon stack.
+  // side-flip. Rendered last so they paint over the cluster + focus-icon
+  // stack, shadow included: these are the labels that sit ON a grape or a
+  // logo rather than on the basemap.
   map.addLayer({
     id: 'parish-label-above',
     type: 'symbol',
@@ -510,6 +613,92 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 };
 
 // ── Sprite registration ────────────────────────────────────────────────
+// The one sprite every label's shadow is made of: a soft, rounded, blurred
+// slab, registered nine-slice so icon-text-fit can stretch its middle to any
+// label's width without pulling the blurred corners out of shape.
+//
+// Drawn with shadowBlur rather than ctx.filter = 'blur()'. The filter
+// property is the obvious tool and is missing on Safari before 17, where it
+// is silently ignored — which would not fail, it would ship a hard-edged grey
+// slab behind every label on a few years of iPhones. shadowBlur is
+// everywhere, and drawing the source shape off the left edge of the canvas
+// and offsetting its shadow back on is the standard way to get the blur
+// without the shape.
+//
+// content[] is the box icon-text-fit matches to the text; everything outside
+// it is the blur's falloff and keeps its natural size at every label width.
+// shadowBlur is roughly twice the gaussian sigma, and the blur spreads the
+// source alpha out, so the darkest part of the finished sprite is a good deal
+// lighter than --map-shadow says. These are the numbers a sweep at 11 px
+// landed on: below them the shadow is not visibly there, above them it stops
+// being a shadow and starts being a grey slab behind the words.
+const LABEL_SHADOW_BLUR = 15;
+const LABEL_SHADOW_RADIUS = 9;   // corner radius of the slab
+const LABEL_SHADOW_DPR = 2;
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function buildLabelShadowSprite() {
+  const dpr = LABEL_SHADOW_DPR;
+  const margin = Math.ceil(LABEL_SHADOW_BLUR * 1.6);        // room for the falloff
+  const inner = LABEL_SHADOW_RADIUS * 2 + 4;                // the stretchable middle
+  const size = inner + margin * 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size * dpr;
+  const ctx = canvas.getContext('2d');
+
+  // Everything below is in DEVICE pixels, deliberately — no ctx.scale().
+  // shadowOffsetX/Y and shadowBlur are specified as NOT affected by the
+  // current transform, so scaling the context moves the shape without moving
+  // its shadow, and the blur lands a canvas-width off to one side.
+  const px = (v) => v * dpr;
+  ctx.shadowColor = getMapShadow();
+  ctx.shadowBlur = px(LABEL_SHADOW_BLUR);
+  ctx.shadowOffsetX = px(size);   // the shape is drawn a full canvas to the left
+  ctx.fillStyle = '#000';         // never seen: only its shadow lands on canvas
+  ctx.beginPath();
+  roundRectPath(ctx, px(margin - size), px(margin), px(inner), px(inner), px(LABEL_SHADOW_RADIUS));
+  ctx.fill();
+
+  const at = (v) => Math.round(px(v));
+  return {
+    data: ctx.getImageData(0, 0, canvas.width, canvas.height),
+    options: {
+      pixelRatio: dpr,
+      // Stretch between the corners only, so they stay round.
+      stretchX: [[at(margin + LABEL_SHADOW_RADIUS), at(margin + inner - LABEL_SHADOW_RADIUS)]],
+      stretchY: [[at(margin + LABEL_SHADOW_RADIUS), at(margin + inner - LABEL_SHADOW_RADIUS)]],
+      content: [at(margin), at(margin), at(margin + inner), at(margin + inner)]
+    }
+  };
+}
+
+// Synchronous, and called before the label layers are added rather than with
+// the other sprites afterwards: an icon-image naming a picture that is not
+// there yet renders the text alone for the first frames, which is the bug
+// that made the cluster grapes vanish at low zoom.
+function registerLabelShadowSprite() {
+  const id = LABEL_SHADOW_IMAGE;
+  if (map.hasImage(id)) map.removeImage(id);
+  try {
+    const { data, options } = buildLabelShadowSprite();
+    map.addImage(id, data, options);
+  } catch (err) {
+    // Without the image the labels render exactly as they did before there
+    // were shadows, which is a fine thing to degrade to.
+    console.warn('label shadow sprite failed', err);
+  }
+}
+
 // Rasterise the existing grape SVG (buildGrapeClusterHtml is the truth source)
 // to per-count bitmaps and register via map.addImage. Symbol layer references
 // them by name via icon-image expression.
