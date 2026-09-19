@@ -37,8 +37,12 @@ class MercatorCoordinate {
   }
 }
 
-// Run map.js with just enough browser to reach paintedFeatures().
-function paint(parishes, zoom) {
+// Run map.js with just enough browser to reach the functions below. `search`
+// and `stored` are the only two inputs markerMode() has: the query string and
+// whatever a previous visit remembered. `stored` is a real cell rather than a
+// stub returning null, so a test can also watch what gets written to it.
+function runMapJs({ search = '', stored = null, zoom = 9 } = {}) {
+  const remembered = { value: stored };
   const ctx = {
     window: { AgoraDeclutter: { declutter } },
     document: { documentElement: {}, createElement: () => ({ getContext: () => null }) },
@@ -50,8 +54,12 @@ function paint(parishes, zoom) {
     Image: class {}, Blob: class {},
     URL: { createObjectURL: () => '', revokeObjectURL() {} },
     URLSearchParams,
-    location: { search: '?markers=dots' },
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    location: { search, reload() {} },
+    localStorage: {
+      getItem: () => remembered.value,
+      setItem: (_k, v) => { remembered.value = v; },
+      removeItem() { remembered.value = null; },
+    },
     maplibregl: { MercatorCoordinate },
     __fakeMap: { getZoom: () => zoom, getSource: () => null },
   };
@@ -59,6 +67,14 @@ function paint(parishes, zoom) {
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync('public/map.js', 'utf8'), ctx);
+  return { ctx, remembered };
+}
+
+// What the source would be handed for these parishes at this zoom. Asks for
+// 'dots' explicitly: these tests are about the displacement, and which mode is
+// the DEFAULT is a separate question, pinned separately below.
+function paint(parishes, zoom, mode = 'dots') {
+  const { ctx } = runMapJs({ search: '?markers=' + mode, zoom });
   ctx.__features = parishes.map((p, i) => ({
     type: 'Feature',
     properties: { parish_id: 'p' + i, label: 'P' + i },
@@ -67,6 +83,8 @@ function paint(parishes, zoom) {
   return vm.runInContext(
     'map = __fakeMap; trueFeatures = __features; paintedFeatures();', ctx);
 }
+
+const mode = (opts) => vm.runInContext('markerMode()', runMapJs(opts).ctx);
 
 test('a dot on its own is not marked crowded by the Mercator round trip', () => {
   // THE regression. These three are hundreds of kilometres apart — nothing
@@ -115,4 +133,54 @@ test('the painted dots stay in step with the parishes they came from', () => {
   assert.deepEqual(out.map((f) => f.properties.parish_id), ['p0', 'p1', 'p2']);
   // The isolated one is untouched, so its coordinate is still recognisable.
   assert.ok(Math.abs(out[2].geometry.coordinates[0] - 144.96) < 1e-6);
+});
+
+// ── Which mode a visitor actually gets ─────────────────────────────────
+// Both modes work; these are about which one is reached with no help, and
+// about the switch surviving. Nothing else in map.js reads the mode directly
+// — it all goes through markerMode() — so this is the whole of the routing.
+
+test('a visitor who has asked for nothing gets the grape clusters', () => {
+  // Dots shipped as the default for one round and was switched back. The mode
+  // stays reachable; being the default is what it lost.
+  assert.equal(mode(), 'grapes');
+});
+
+test('the query string still selects either mode, and is remembered', () => {
+  // This is the half of the A/B that has to keep working: a link pins a mode,
+  // and it survives the next visit without the link.
+  for (const want of ['dots', 'grapes']) {
+    const { ctx, remembered } = runMapJs({ search: '?markers=' + want });
+    assert.equal(vm.runInContext('markerMode()', ctx), want);
+    assert.equal(remembered.value, want, `?markers=${want} was not remembered`);
+  }
+});
+
+test('a remembered choice outlives the link that set it', () => {
+  assert.equal(mode({ stored: 'dots' }), 'dots');
+});
+
+test('the query string beats the remembered choice', () => {
+  // So a link can pin either mode for someone who has already chosen.
+  assert.equal(mode({ search: '?markers=grapes', stored: 'dots' }), 'grapes');
+  assert.equal(mode({ search: '?markers=dots', stored: 'grapes' }), 'dots');
+});
+
+test('a mode nobody has heard of falls back instead of being obeyed', () => {
+  assert.equal(mode({ search: '?markers=pins', stored: 'rubbish' }), 'grapes');
+});
+
+test('grapes mode leaves every dot exactly where its parish is', () => {
+  // supercluster does the crowding there, so displacing first would move dots
+  // that are about to be replaced anyway — and a dot coming back marked
+  // crowded would silence a label that grapes mode has no reason to hide.
+  const pile = [];
+  for (let i = 0; i < 10; i++) pile.push({ lng: 151.2 + i * 0.002, lat: -33.87 + i * 0.001 });
+  const out = paint(pile, 4, 'grapes');
+  out.forEach((f, i) => {
+    assert.deepEqual(f.geometry.coordinates, [pile[i].lng, pile[i].lat],
+      `${f.properties.parish_id} was displaced in grapes mode`);
+    assert.notEqual(f.properties.crowded, true,
+      `${f.properties.parish_id} was marked crowded in grapes mode`);
+  });
 });

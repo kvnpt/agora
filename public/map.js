@@ -28,7 +28,13 @@ const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
 // Live A/B, so both stay reachable: ?markers=grapes or ?markers=dots sets it
 // and remembers, or agoraSetMarkerMode() from the console. The query string
 // wins over the remembered value so a link can pin either one.
-const MARKER_MODE_DEFAULT = 'dots';
+//
+// Grapes is what a visitor gets. Dots shipped as the default for one round,
+// was looked at on the live map, and the default was set back; the mode itself
+// stays exactly where it was, which is what the switch above is for. Changing
+// this line is the whole of changing the default — nothing below it asks which
+// mode is the default, only which mode it is in.
+const MARKER_MODE_DEFAULT = 'grapes';
 // The gap two dots settle at. The dot is 3.75 r + 1.5 stroke = 10.5 across,
 // so this leaves about a pixel and a half of daylight between neighbours.
 const DOT_MIN_DISTANCE_PX = 12;

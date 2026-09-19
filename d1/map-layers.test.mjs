@@ -19,8 +19,9 @@ import vm from 'node:vm';
 function buildStack() {
   const added = [];
   const images = {};
+  const sources = {};
   const fakeMap = {
-    addSource() {},
+    addSource(id, spec) { sources[id] = spec; },
     addLayer(spec) { added.push(spec); },
     hasImage: (id) => Object.prototype.hasOwnProperty.call(images, id),
     addImage(id, data, options) { images[id] = { data, options }; },
@@ -48,10 +49,10 @@ function buildStack() {
   // `map` is a top-level `let`, so it lives in the context's lexical scope
   // rather than on the context object — assign to it from inside.
   vm.runInContext('map = __fakeMap; addParishSourceAndLayers();', ctx);
-  return { layers: added, images };
+  return { layers: added, images, sources };
 }
 
-const { layers: LAYERS, images: IMAGES } = buildStack();
+const { layers: LAYERS, images: IMAGES, sources: SOURCES } = buildStack();
 const byId = Object.fromEntries(LAYERS.map((l) => [l.id, l]));
 const order = LAYERS.map((l) => l.id);
 
@@ -189,4 +190,18 @@ test('both schemes get a shadow colour, from CSS rather than from here', () => {
     'app.css has no light-mode --map-shadow');
   assert.ok(/--map-shadow:/.test(dark),
     'app.css has no dark-mode --map-shadow, so the light one is used on both');
+});
+
+test('the stack a visitor gets is the clustered one', () => {
+  // The context above has no location and no localStorage, so markerMode()
+  // falls through to its default exactly as a private window would — which
+  // makes this the source options a first-time visitor is served.
+  //
+  // 'dots' is not gone, and the routing that reaches it is pinned in
+  // map-declutter.test.mjs. What is pinned here is that it is not what
+  // happens by default: clustering is a source option, so the mode is decided
+  // once, at addSource, and cannot be changed afterwards.
+  assert.equal(SOURCES.parishes.cluster, true,
+    'the parish source no longer clusters by default, so every visitor gets 293 loose dots');
+  assert.ok(SOURCES.parishes.clusterRadius > 0, 'clustering is on with no radius to cluster by');
 });
