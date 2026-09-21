@@ -741,6 +741,31 @@ export function registerAdminRoutes(router) {
   }));
 
 
+  // Geocode an address WITHOUT writing anything.
+  //
+  // The browser cannot call Nominatim itself: it sends no usable User-Agent
+  // from a page, and the service asks for one. So the Worker proxies the one
+  // lookup — the same `geocode()` the PATCH above uses, which is the point.
+  // A preview that consulted a different geocoder from the save would show a
+  // dot the save then moved.
+  //
+  // `parish.edit`, not a capability of its own: this answers exactly the
+  // question "where would saving this address put the pin", and anybody who
+  // may not edit a parish has no use for the answer.
+  //
+  // Deliberately a read. It is pressed while somebody is still typing, and a
+  // route that wrote would turn a preview into a half-finished save.
+  router.post('/api/admin/geocode', guarded('parish.edit', async ({ request }) => {
+    const b = await readJson(request);
+    const address = typeof b.address === 'string' ? b.address.trim() : '';
+    if (!address) return json({ error: 'An address is required' }, 400);
+    const coords = await geocode(address);
+    // 404 rather than 200-with-null: "no match" is the answer to a lookup, and
+    // the caller has to tell it apart from a match at 0,0 in the Gulf of Guinea.
+    if (!coords) return json({ error: 'No match for that address', address }, 404);
+    return json({ ...coords, address });
+  }));
+
   router.post('/api/admin/parishes', guarded('parish.create', async ({ env, request }) => {
     const b = await readJson(request);
     const { name, jurisdiction, lat, lng } = b;

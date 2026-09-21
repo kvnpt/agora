@@ -506,6 +506,34 @@
     </div>
   </div>
 
+  <!-- Placing a parish's pin by hand.
+       A crosshair fixed dead centre and a map that moves under it, rather
+       than a marker you drag: on a phone the dragging thumb covers the exact
+       spot being aimed at, which is the one pixel that matters here. The
+       readout under the map is live, so the coordinate that will be saved is
+       never a surprise.
+       This is the override for a geocoder that cannot find the building —
+       Nominatim answers a street with no house number by returning the middle
+       of the street, and no amount of retyping the address fixes that. -->
+  <div class="escalate-backdrop" id="pin-backdrop" onclick="if(event.target===this)closeParishPinMover()">
+    <div class="escalate-modal pin-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishPinMover()">&times;</button>
+      <h2>Move pin location</h2>
+      <div class="escalate-modal-sub" id="pin-modal-sub"></div>
+
+      <div class="pin-map-stage">
+        <div class="pin-map" id="pin-map"></div>
+        <div class="pin-crosshair" aria-hidden="true"></div>
+      </div>
+      <div class="pin-readout" id="pin-readout" aria-live="polite"></div>
+      <div class="logo-crop-hint">Drag the map so the crosshair sits on the church door. This is the dot people tap for directions, so it beats the street it stands on.</div>
+      <div class="escalate-btn-row">
+        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishPinMover()">Cancel</button>
+        <button class="btn-save" type="button" id="pin-confirm" onclick="confirmParishPin()">Use this spot</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Every short link a parish hands out, in one dialog.
        The four with columns of their own (donate, payment, raffle, gala) and
        the ones without, edited the same way and shown beside the URL each

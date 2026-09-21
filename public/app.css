@@ -4226,6 +4226,69 @@ button.ps-avatar { cursor: pointer; }
 }
 .logo-modal .escalate-btn-row { align-items: center; }
 
+/* ── Placing a parish's pin by hand ──────────────────────────────────── */
+.pin-modal { position: relative; max-width: 460px; }
+.pin-map-stage {
+  position: relative;
+  width: 100%;
+  height: 300px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.pin-map { position: absolute; inset: 0; }
+/* Dead centre, and deliberately not clickable — the map underneath has to get
+   every drag, and the crosshair is only telling you where the centre is. */
+.pin-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  pointer-events: none;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgba(74, 134, 255, 0.35);
+  box-shadow: 0 0 0 2px #4a86ff, 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+/* The hairlines, so the exact pixel is readable when the disc sits over a
+   busy roof. */
+.pin-crosshair::before,
+.pin-crosshair::after {
+  content: '';
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}
+.pin-crosshair::before { left: 50%; top: -10px; bottom: -10px; width: 1px; margin-left: -0.5px; }
+.pin-crosshair::after { top: 50%; left: -10px; right: -10px; height: 1px; margin-top: -0.5px; }
+.pin-readout {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted, var(--muted));
+  margin-bottom: 8px;
+}
+
+/* The two pin controls under the Address box. */
+.pin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+/* The staged-pin line. It is the only thing telling an admin that the dot has
+   moved but nothing is saved yet, so it does not whisper. */
+.pin-status {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.pin-status.pin-status-staged { color: #4a86ff; font-weight: 600; }
+.pin-status.pin-status-error { color: var(--danger); font-weight: 600; }
+
 /* ── Desktop layout (≥1024px) ──
    Rules scoped under body[data-layout="desktop"] so a JS-driven layout flag
    stays the single source of truth (set in initAgora via matchMedia). The
