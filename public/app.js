@@ -4487,6 +4487,10 @@ function closeParishSheet() {
   if (state.parishEditMode) {
     state.parishEditMode = null;
     state.parishRulings = null;
+    // A staged pin is part of the unsaved form and goes with it. Left behind,
+    // it would be offered again the next time this parish is edited, as if it
+    // had been decided rather than abandoned.
+    clearPinDraft();
     const contentEl = document.getElementById('parish-sheet-content');
     if (contentEl) contentEl._psParishId = null;
   }
@@ -4748,7 +4752,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       <div class="ps-actions ps-admin-actions">
         <button class="ps-btn ${editing ? 'ps-btn-admin ps-editing' : 'ps-btn-ghost'}" type="button"
                 aria-pressed="${editing}"
-                onclick="setParishEditMode('${pid}', ${editing ? 'false' : 'true'})">
+                onclick="${editing ? `finishParishEdit('${pid}')` : `setParishEditMode('${pid}', true)`}">
           ${glyph(editing ? 'ph:check' : 'ph:pencil-simple')}${editing ? 'Done' : 'Edit'}
         </button>
         ${editing ? `<span class="ps-edit-hint">Editing — every field on this sheet, service times included.</span>` : ''}
@@ -4775,7 +4779,17 @@ function renderParishSheetContent(parishId, opts = {}) {
         <div class="edit-row"><label>Short name</label><input id="pse-name-${pid}" value="${esc(parish.name || '')}"></div>
         <div class="edit-row"><label>Full name</label><input id="pse-fullname-${pid}" value="${esc(parish.full_name || '')}"></div>
         <div class="edit-row"><label>Jurisdiction</label><select id="pse-jurisdiction-${pid}">${jurisdictionOpts}</select></div>
-        <div class="edit-row"><label>Address</label><input id="pse-address-${pid}" value="${esc(parish.address || '')}"></div>
+        <div class="edit-row">
+          <label>Address</label>
+          <input id="pse-address-${pid}" value="${esc(parish.address || '')}" oninput="parishAddressTyped('${pid}')">
+          <div class="pin-actions">
+            <button class="ps-btn ps-btn-admin" type="button" id="pse-locate-${pid}"
+                    onclick="geolocateParishPin('${pid}')">${glyph('ph:map-pin')}Locate pin</button>
+            <button class="ps-btn ps-btn-admin" type="button"
+                    onclick="openParishPinMover('${pid}')">${glyph('ph:crosshair-simple')}Move pin location</button>
+          </div>
+          <div class="pin-status" id="pse-pin-status-${pid}">${pinStatusHTML(parishId)}</div>
+        </div>
         <div class="edit-row"><label>Website</label><input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}"></div>
         <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
         <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
@@ -4802,9 +4816,14 @@ function renderParishSheetContent(parishId, opts = {}) {
           <input type="date" id="pse-srcchecked-${pid}" value="${esc(String(parish.info_checked_at || '').slice(0, 10))}">
           <div class="edit-row-hint">The day somebody last read that source. It is what the sheet shows as "Updated 3 months ago" — not a claim the details are still right.</div>
         </div>
+        <!-- ONE button, because there was never a second thing to do here.
+             This row carried a green Save and a ghost Done, and the only
+             difference between them was that Done threw the edits away — a
+             distinction nothing on screen made, next to a button labelled as
+             if it were the way to finish. Saving IS finishing now, and the
+             header's Done does the same thing rather than a quieter one. -->
         <div class="edit-form-actions">
           <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
-          <button class="ps-btn ps-btn-ghost" type="button" onclick="setParishEditMode('${pid}', false)">Done</button>
         </div>
         <!-- Inside the form, and last. Deleting a parish is not a thing to
              keep next to Directions, and it is not a thing to reach without
@@ -7027,6 +7046,9 @@ window.setParishEditMode = function(id, on) {
   if (state.parishEditMode === next) return;
   state.parishEditMode = next;
   state.parishRulings = null;
+  // Same reasoning as closing the sheet: a pin staged against one parish must
+  // not still be staged when the mode moves to another, or to nothing.
+  if (_pinDraft.parishId && _pinDraft.parishId !== next) clearPinDraft();
   // fullRender, because the partial refresh deliberately leaves the header
   // and the actions row alone — which is exactly the half that changes here.
   const open = state.parishSheetFocus;
@@ -7059,6 +7081,247 @@ window.toggleParishEdit = function(id) {
   window.setParishEditMode(id, state.parishEditMode !== id);
 };
 
+/**
+ * Leave edit mode, keeping the work. What the header's Done does.
+ *
+ * The sheet used to offer three ways out — a green Save, a ghost Done beside
+ * it, and this one in the header — and the difference between them was that
+ * two of the three silently discarded everything typed. A control labelled
+ * Done, sitting where you finish, is read as "I am finished", not as "throw
+ * that away": the tick glyph says the same thing again. So Done saves, Save
+ * closes, and the pair in the form has collapsed to one button.
+ *
+ * On a failed save `saveParish` returns false and stays open, deliberately —
+ * closing there would take the unsaved values with it.
+ */
+window.finishParishEdit = async function(id) {
+  // The form exists only while the mode is on, and the mode can be on with the
+  // sheet showing something else — a schedule pencil, mid-render. Nothing to
+  // save then, so just leave.
+  if (document.getElementById(`ps-edit-form-${id}`)) {
+    await window.saveParish(id);
+    return;
+  }
+  window.setParishEditMode(id, false);
+};
+
+// ── Where a parish's pin goes (admin) ──────────────────────────────────
+//
+// Two controls, because the data has two cases and one of them is not the
+// geocoder's fault.
+//
+// "Locate pin" asks what the address CURRENTLY IN THE BOX resolves to. It
+// goes through the Worker, which runs the same `geocode()` the save runs, so
+// the dot previewed and the dot saved cannot disagree — a preview against a
+// second geocoder would be a different answer wearing the same button.
+//
+// It is a button press and not an oninput, deliberately. Nominatim asks for
+// one request a second; geocoding on every keystroke would send one per
+// character and most of them for half an address. So typing CLEARS the last
+// answer instead of replacing it, and the button re-asks when the address is
+// finished.
+//
+// "Move pin location" is the override, and it earns its place because the
+// geocoder genuinely cannot always win. Nominatim answers a street it knows
+// carrying a house number it does not — "27 Saints Road" — with the middle of
+// the street, and no amount of retyping moves that dot onto the church. A
+// hand-placed pin is sent as an explicit lat/lng, which the PATCH route reads
+// as its reason NOT to re-geocode, and it carries an `info_overrides` pin on
+// the address group so the next jurisdiction re-import cannot put it back.
+//
+// Nothing here writes. A staged pin lives in memory until Save, which is what
+// lets it be abandoned by leaving edit mode.
+const _pinDraft = { parishId: null, lat: null, lng: null, manual: false };
+
+function clearPinDraft() {
+  _pinDraft.parishId = null;
+  _pinDraft.lat = null;
+  _pinDraft.lng = null;
+  _pinDraft.manual = false;
+}
+
+function pinDraftFor(pid) {
+  return _pinDraft.parishId === pid && _pinDraft.lat != null ? _pinDraft : null;
+}
+
+/** Six decimals is ~11cm. Past that the digits are noise, and they are read by a person. */
+function fmtCoord(n) {
+  return Number(n).toFixed(6);
+}
+
+/**
+ * The line under the two pin buttons.
+ *
+ * It answers one question — where will the dot be after I press Save — and it
+ * has to answer it differently in the three states, because "staged" is the
+ * only one where what is on screen is not what is in the database.
+ */
+function pinStatusHTML(pid, error) {
+  if (error) return `<span class="pin-status-error">${esc(error)}</span>`;
+  const draft = pinDraftFor(pid);
+  if (draft) {
+    const how = draft.manual
+      ? 'placed by hand — saving also holds it against re-imports'
+      : 'from the address above';
+    return `<span class="pin-status-staged">Pin staged: ${fmtCoord(draft.lat)}, ${fmtCoord(draft.lng)}</span>`
+      + ` — ${esc(how)}. Not saved yet.`;
+  }
+  const parish = (state.parishes || []).find(p => p.id === pid);
+  if (!parish || parish.lat == null || parish.lng == null) {
+    return 'No pin yet. Locate it from the address, or place it by hand.';
+  }
+  // A held pin is worth saying out loud here rather than only in the rulings
+  // list: it is the reason an import "did nothing" to this row.
+  const held = (state.parishRulings || []).some(
+    r => r.target === 'field' && r.decision === 'pin' && (r.subject === 'lat' || r.subject === 'address')
+  );
+  return `Pin: ${fmtCoord(parish.lat)}, ${fmtCoord(parish.lng)}`
+    + (held ? ' — held by a ruling, so imports leave it alone.' : '');
+}
+window.pinStatusHTML = pinStatusHTML;
+
+function renderPinStatus(pid, error) {
+  const el = document.getElementById(`pse-pin-status-${pid}`);
+  if (el) el.innerHTML = pinStatusHTML(pid, error);
+}
+
+/**
+ * The address changed, so a pin derived FROM that address no longer describes
+ * it. A hand-placed one survives — somebody who put the dot on the door and
+ * then tidied the wording of the street has not moved the church.
+ */
+window.parishAddressTyped = function(pid) {
+  const draft = pinDraftFor(pid);
+  if (draft && !draft.manual) clearPinDraft();
+  renderPinStatus(pid);
+};
+
+window.geolocateParishPin = async function(pid) {
+  const input = document.getElementById(`pse-address-${pid}`);
+  const address = input ? input.value.trim() : '';
+  if (!address) { renderPinStatus(pid, 'Type an address first.'); return; }
+  const btn = document.getElementById(`pse-locate-${pid}`);
+  if (btn) btn.disabled = true;
+  const el = document.getElementById(`pse-pin-status-${pid}`);
+  if (el) el.textContent = 'Looking that address up…';
+  try {
+    const res = await fetch('/api/admin/geocode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      // The commonest failure by far, and the one with an actual next step.
+      renderPinStatus(pid, res.status === 404
+        ? 'No match for that address. Place the pin by hand instead.'
+        : (err.error || 'Lookup failed.'));
+      return;
+    }
+    const coords = await res.json();
+    _pinDraft.parishId = pid;
+    _pinDraft.lat = coords.lat;
+    _pinDraft.lng = coords.lng;
+    _pinDraft.manual = false;
+    renderPinStatus(pid);
+  } catch {
+    renderPinStatus(pid, 'Lookup failed.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+};
+
+// ── The by-hand pin, on a map of its own ───────────────────────────────
+//
+// A second MapLibre instance rather than borrowing the main one, so the sheet
+// behind it keeps its unsaved form fields and its scroll position. The style
+// is the live map's, stripped to the basemap: cloning it whole would drag in
+// the parish layers, whose sprites and logo images are registered against the
+// OTHER map and would render as missing-image warnings on this one.
+const _pinMap = { map: null, parishId: null };
+
+function basemapStyleOnly() {
+  if (!window.agoraMap || typeof window.agoraMap.getStyle !== 'function') return null;
+  let style;
+  try { style = window.agoraMap.getStyle(); } catch { return null; }
+  if (!style || !style.sources || !style.sources.protomaps) return null;
+  return {
+    ...style,
+    sources: { protomaps: style.sources.protomaps },
+    layers: (style.layers || []).filter(l => l.type === 'background' || l.source === 'protomaps'),
+  };
+}
+
+window.openParishPinMover = function(parishId) {
+  const parish = (state.parishes || []).find(p => p.id === parishId);
+  if (!parish) return;
+  const draft = pinDraftFor(parishId);
+  // Start from whatever the pin would be if you saved right now, so opening
+  // this and pressing Cancel is genuinely a no-op.
+  const lat = draft ? draft.lat : parish.lat;
+  const lng = draft ? draft.lng : parish.lng;
+  if (lat == null || lng == null) {
+    renderPinStatus(parishId, 'Locate the pin from the address first, so the map has somewhere to open.');
+    return;
+  }
+  _pinMap.parishId = parishId;
+  document.getElementById('pin-modal-sub').textContent = parish.name || parishId;
+  document.getElementById('pin-backdrop').classList.add('open');
+
+  const style = basemapStyleOnly();
+  if (!style) {
+    document.getElementById('pin-readout').textContent = 'The map is still loading — close this and try again.';
+    return;
+  }
+  if (!_pinMap.map) {
+    _pinMap.map = new maplibregl.Map({
+      container: 'pin-map',
+      style,
+      center: [lng, lat],
+      zoom: 18,
+      attributionControl: false,
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      boxZoom: false,
+    });
+    _pinMap.map.touchZoomRotate.disableRotation();
+    // Live, because the readout is the only exact statement of what Confirm
+    // will save — the crosshair is a picture of it and a picture is not a
+    // coordinate.
+    _pinMap.map.on('move', syncPinReadout);
+  } else {
+    _pinMap.map.jumpTo({ center: [lng, lat], zoom: 18 });
+  }
+  // The container had no size while the modal was display:none, so the map
+  // measured itself as 0×0. Without this it paints a sliver.
+  requestAnimationFrame(() => { if (_pinMap.map) _pinMap.map.resize(); syncPinReadout(); });
+};
+
+function syncPinReadout() {
+  const el = document.getElementById('pin-readout');
+  if (!el || !_pinMap.map) return;
+  const c = _pinMap.map.getCenter();
+  el.textContent = `${fmtCoord(c.lat)}, ${fmtCoord(c.lng)}`;
+}
+
+window.closeParishPinMover = function() {
+  document.getElementById('pin-backdrop').classList.remove('open');
+  _pinMap.parishId = null;
+};
+
+window.confirmParishPin = function() {
+  const pid = _pinMap.parishId;
+  if (!pid || !_pinMap.map) { window.closeParishPinMover(); return; }
+  const c = _pinMap.map.getCenter();
+  _pinDraft.parishId = pid;
+  _pinDraft.lat = c.lat;
+  _pinDraft.lng = c.lng;
+  _pinDraft.manual = true;
+  window.closeParishPinMover();
+  renderPinStatus(pid);
+};
+
 window.saveParish = async function(id) {
   const pid = id;
   const langsRaw = document.getElementById(`pse-langs-${pid}`).value;
@@ -7080,21 +7343,60 @@ window.saveParish = async function(id) {
       document.getElementById(`pse-srcchecked-${pid}`).value,
       (state.parishes.find(p => p.id === pid) || {}).info_checked_at),
   };
+
+  // A staged pin goes as an explicit lat/lng, for both kinds.
+  //
+  // For a hand-placed one that is the whole point — the PATCH route re-geocodes
+  // only when an address arrives WITHOUT coordinates, so sending them is how
+  // the by-hand dot survives its own save.
+  //
+  // For a located one it is not redundant either: it makes the saved dot the
+  // dot that was previewed, rather than a second lookup that might answer
+  // differently, and it spares Nominatim the duplicate request.
+  const draft = pinDraftFor(pid);
+  if (draft) {
+    data.lat = draft.lat;
+    data.lng = draft.lng;
+    // Only by hand. A geocoded pin is just this import's answer again, and
+    // pinning it would freeze a value nobody actually checked — which is the
+    // distinction info_verified_at gets wrong and a per-field ruling gets right.
+    if (draft.manual) {
+      data.pin = {
+        field: 'address',
+        tier: 'admin',
+        note: 'Pin placed by hand in /admin against the address on the parish sheet.',
+      };
+    }
+  }
+
   const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (res.ok) {
-    const updated = await res.json();
-    const idx = state.parishes.findIndex(p => p.id === pid);
-    if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
-    renderParishSheetContent(pid, {});
-    if (typeof updateMap === 'function') updateMap(state);
-  } else {
+  if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     alert(err.error || 'Save failed');
+    // Deliberately stays in edit mode. A failed save that tidied the form away
+    // would take the unsaved values with it.
+    return false;
   }
+  const updated = await res.json();
+  const idx = state.parishes.findIndex(p => p.id === pid);
+  if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
+  if (draft) clearPinDraft();
+  // A ruling is attempted after the write and reported rather than thrown, so
+  // the save can succeed while the pin that was meant to protect it did not.
+  // Silence there would be the worst of both.
+  if (updated.pin_errors && updated.pin_errors.length) {
+    alert('Saved, but the pin could not be held: '
+      + updated.pin_errors.map(e => e.error).join(' '));
+  }
+  // Saving IS finishing. This is the whole reason Save and Done are not two
+  // buttons any more — see the actions row above.
+  window.setParishEditMode(pid, false);
+  if (typeof updateMap === 'function') updateMap(state);
+  return true;
 };
 
 /**
