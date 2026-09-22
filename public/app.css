@@ -1032,22 +1032,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .parish-pill:hover { color: var(--text-secondary); border-color: var(--border); }
 .pill-dist { opacity: 0.45; font-weight: 500; margin-left: 2px; }
-/* × on a selected pill — tap to drop just that pill from the selection
-   without re-toggling. Sized small enough to nest without dwarfing the
-   acronym; opacity bumps on pill hover so it stays discoverable. */
-.parish-pill-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 6px;
-  font-size: 9px;
-  line-height: 1;
-  opacity: 0.7;
-  padding: 1px 2px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-}
-.parish-pill:hover .parish-pill-x { opacity: 1; }
 .parish-pill.active {
   color: var(--bg);
   border-color: transparent;
@@ -1879,6 +1863,16 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .schedule-item[data-sched-focus]:hover .si-chev { opacity: 0.7; }
 @media (prefers-color-scheme: dark) { .si-chev { filter: brightness(0) invert(1); } }
+/* Editing: the row IS the pencil. The glyph at its end says which of the two
+   things a tap does here, and it sits up where the chevron was rather than
+   wedged between the chips, so the whole row stays one target. */
+.schedule-item.editable .si-chev { opacity: 0.55; }
+.schedule-item.editable:hover .si-chev { opacity: 0.9; }
+.schedule-item.editable.editing-open {
+  background: var(--surface-2);
+  border-radius: 8px 8px 0 0;
+}
+.schedule-item.editable.editing-open .si-chev { opacity: 0.9; }
 .si-main {
   display: flex;
   align-items: baseline;
@@ -1945,18 +1939,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   padding: 1px 5px;
   border-radius: 3px;
 }
-.schedule-edit-btn {
-  flex: none;
-  background: none;
-  border: none;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 2px;
-  opacity: 0.45;
-  line-height: 1;
-}
-.schedule-edit-btn:hover { opacity: 1; }
 .schedule-edit-form {
   padding: 8px;
   margin: 2px 0 4px;
@@ -2008,6 +1990,13 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 11px !important;
 }
 .wom-check input { width: auto; font-size: 11px !important; }
+/* Nothing ticked is every week. Said out loud because five empty boxes read
+   as "not filled in yet" just as easily as they read as "every week". */
+.wom-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: italic;
+}
 .sef-toggles {
   display: flex;
   flex-wrap: wrap;
