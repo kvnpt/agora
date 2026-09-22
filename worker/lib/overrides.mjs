@@ -17,11 +17,12 @@ import { expandOne, isValidOccurrence } from './expand.mjs';
 const PATCH_COLS = [
   'patch_title', 'patch_start_time', 'patch_end_time', 'patch_event_type',
   'patch_languages', 'patch_feast', 'patch_description', 'patch_location_override',
-  'patch_hide_live', 'patch_parish_scoped',
+  'patch_hide_live', 'patch_parish_scoped', 'patch_poster_path',
 ];
 const DISPLAY_FIELDS = [
   'title', 'description', 'start_utc', 'end_utc', 'event_type',
   'languages', 'location_override', 'hide_live', 'parish_scoped', 'feast',
+  'poster_path',
 ];
 
 // A UTC instant -> 'HH:MM' on the parish's wall clock.
@@ -51,6 +52,11 @@ function mergePatch(s, zone, body, cur) {
   if ('location_override' in body) cur.patch_location_override = body.location_override || null;
   if ('hide_live' in body) cur.patch_hide_live = ((body.hide_live ? 1 : 0) !== (s.hide_live || 0)) ? (body.hide_live ? 1 : 0) : null;
   if ('parish_scoped' in body) cur.patch_parish_scoped = ((body.parish_scoped ? 1 : 0) !== (s.parish_scoped || 0)) ? (body.parish_scoped ? 1 : 0) : null;
+  // No comparison against the rule, unlike every line above: a rule has no
+  // poster to differ from. Set means this occurrence has one, null means it
+  // does not — so clearing a poster is `poster_path: null`, which is also how
+  // it stops being the only thing holding the override open.
+  if ('poster_path' in body) cur.patch_poster_path = body.poster_path || null;
 }
 
 const hasContent = (cur) =>
@@ -61,8 +67,8 @@ function upsert(db, scheduleId, date, kind, cur) {
     INSERT INTO schedule_overrides
       (schedule_id, occurrence_date, kind, patch_title, patch_start_time, patch_end_time,
        patch_event_type, patch_languages, patch_feast, patch_description, patch_location_override,
-       patch_hide_live, patch_parish_scoped, combined_into_event_id, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+       patch_hide_live, patch_parish_scoped, patch_poster_path, combined_into_event_id, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
     ON CONFLICT(schedule_id, occurrence_date) DO UPDATE SET
       kind=excluded.kind,
       patch_title=excluded.patch_title, patch_start_time=excluded.patch_start_time,
@@ -71,6 +77,7 @@ function upsert(db, scheduleId, date, kind, cur) {
       patch_description=excluded.patch_description,
       patch_location_override=excluded.patch_location_override,
       patch_hide_live=excluded.patch_hide_live, patch_parish_scoped=excluded.patch_parish_scoped,
+      patch_poster_path=excluded.patch_poster_path,
       combined_into_event_id=excluded.combined_into_event_id,
       updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
   `).bind(
@@ -79,6 +86,7 @@ function upsert(db, scheduleId, date, kind, cur) {
     cur.patch_event_type ?? null, cur.patch_languages ?? null, cur.patch_feast ?? null,
     cur.patch_description ?? null, cur.patch_location_override ?? null,
     cur.patch_hide_live ?? null, cur.patch_parish_scoped ?? null,
+    cur.patch_poster_path ?? null,
     cur.combined_into_event_id ?? null,
   ).run();
 }
@@ -119,7 +127,21 @@ export async function applyAdminEdit(db, scheduleId, date, body, cache = new Off
   if (status === 'cancelled') kind = 'cancelled';
   else if (status === 'hidden') kind = 'hidden';
   else if (status === 'approved') kind = hasContent(cur) ? 'modified' : '__revert__'; // uncancel/unhide
-  else kind = hasDisplay ? 'modified' : null;                                          // no status given
+  else if (hasDisplay) {
+    // No status given — a field edit. KEEP whatever this occurrence already is.
+    //
+    // This said `'modified'` outright, which quietly revived anything it was
+    // applied to: correcting the title of a CANCELLED service dropped the
+    // tombstone and put the service back on the feed as if it were running,
+    // and so did putting a poster on it. That is the failure this whole area
+    // is shaped around, pointing the other way — the asymmetry in tombstone.mjs
+    // is about not inventing cancellations, and this was erasing real ones.
+    //
+    // Reviving is `status: 'approved'`, handled above, and that should be the
+    // only thing that does it. A 'combined' occurrence keeps its link for the
+    // same reason: the combine is a separate decision from the wording.
+    kind = (existing && existing.kind !== 'modified') ? existing.kind : 'modified';
+  } else kind = null;
 
   // A 'modified' write that nets no actual patch (edited back to the rule's own
   // values) is equivalent to having no override — drop it, so the instance is

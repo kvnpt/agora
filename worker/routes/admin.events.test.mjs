@@ -67,7 +67,18 @@ function fresh(roleRow) {
     try { parsed = await res.clone().json(); } catch { /* not json */ }
     return { status: res.status, body: parsed };
   };
-  return { raw, db, call };
+  /** A raw-body request, for the poster uploads — no JSON, a real content type. */
+  const callRaw = async (method, url, bytes, contentType) => {
+    const res = await router.handle(new Request(`https://orthodoxy.au${url}`, {
+      method, body: bytes, headers: { 'Content-Type': contentType },
+    }), env, {});
+    assert.ok(res, `no route matched ${method} ${url}`);
+    let parsed = null;
+    try { parsed = await res.clone().json(); } catch { /* not json */ }
+    return { status: res.status, body: parsed };
+  };
+
+  return { raw, db, call, callRaw, env };
 }
 
 const FROM = '2026-09-01T00:00:00.000Z';
@@ -724,4 +735,156 @@ test('an owner and an editor are unaffected by all of it', async () => {
     assert.equal((await call('PATCH', `/api/admin/events/${inst.id}`, { title: 'R' })).status, 200, `${role} patch instance`);
     assert.equal((await call('DELETE', `/api/admin/events/${made.body.id}`)).status, 200, `${role} delete`);
   }
+});
+
+// ── posters ──
+//
+// `events.poster_path` outlived the WhatsApp ingestor that filled it; a
+// schedule occurrence never had anywhere to put one, because a rule has no
+// flyer. One route, routed by the shape of the id, like the rest of this file.
+
+/** A minimal R2 stand-in: enough to record what was put and deleted. */
+function bucket() {
+  const store = new Map();
+  const deleted = [];
+  return {
+    store, deleted,
+    async put(key, body, opts) { store.set(key, { size: body.byteLength, opts }); },
+    async delete(keys) {
+      for (const k of (Array.isArray(keys) ? keys : [keys])) { deleted.push(k); store.delete(k); }
+    },
+  };
+}
+
+const png = () => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+
+/** POST/DELETE a poster; `fresh` gives no ASSETS_BUCKET, so pass one in. */
+function withBucket(fixture) {
+  const b = bucket();
+  fixture.env.ASSETS_BUCKET = b;
+  return b;
+}
+
+test('a poster on a stored event lands in R2 and on the row', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const made = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'Parish Feast', start_utc: '2026-09-20T23:00:00.000Z' });
+  assert.equal(made.status, 201);
+
+  const r = await f.callRaw('POST', `/api/admin/events/${made.body.id}/poster`, png(), 'image/png');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.poster_path, new RegExp(`^/posters/${made.body.id}\\.png\\?v=\\d+$`));
+  assert.ok(b.store.has(`posters/${made.body.id}.png`), [...b.store.keys()].join(','));
+  assert.equal(
+    f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(made.body.id).poster_path,
+    r.body.poster_path);
+  // The other extensions are swept, so replacing a jpg with a png leaves one.
+  assert.ok(b.deleted.includes(`posters/${made.body.id}.jpg`), b.deleted.join(','));
+});
+
+test('a poster on an occurrence writes an override and projects', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 0);
+
+  const r = await f.callRaw('POST', `/api/admin/events/${inst.id}/poster`, png(), 'image/jpeg');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  // The colon is not a key separator in R2 — it becomes a dash.
+  assert.match(r.body.poster_path, /^\/posters\/\d+-\d{4}-\d{2}-\d{2}\.jpg\?v=\d+$/);
+
+  const [sid, date] = splitInstance(inst.id);
+  const row = f.raw.prepare(
+    'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sid, date);
+  assert.ok(row, 'no override was written');
+  assert.equal(row.patch_poster_path, r.body.poster_path);
+  assert.equal(row.kind, 'modified');
+
+  // It projects onto that one occurrence and no other.
+  const after = await expandOne(f.db, sid, date);
+  assert.equal(after.poster_path, r.body.poster_path);
+  const all = await expandWindow(f.db, FROM, TO);
+  const others = all.filter(e => e.schedule_id === sid && e.id !== inst.id);
+  assert.ok(others.length, 'the rule should produce more than one occurrence');
+  assert.ok(others.every(e => !e.poster_path), 'a poster leaked onto the weeks either side');
+});
+
+test('clearing an occurrence poster drops the override it was holding open', async () => {
+  // A poster-only override modifies nothing once the poster goes, and an
+  // override that modifies nothing is not an override.
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid, date] = splitInstance(inst.id);
+
+  assert.equal((await f.callRaw('POST', `/api/admin/events/${inst.id}/poster`, png(), 'image/png')).status, 200);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 1);
+
+  const del = await f.call('DELETE', `/api/admin/events/${inst.id}/poster`);
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 0);
+  assert.equal((await expandOne(f.db, sid, date)).poster_path, null);
+  assert.ok(b.deleted.includes(`posters/${sid}-${date}.png`), b.deleted.join(','));
+});
+
+test('a poster does not disturb a cancellation the occurrence already carries', async () => {
+  const f = fresh({ role: 'editor' });
+  withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid, date] = splitInstance(inst.id);
+
+  assert.equal((await f.call('PATCH', `/api/admin/events/${inst.id}`, { status: 'cancelled' })).status, 200);
+  assert.equal((await f.callRaw('POST', `/api/admin/events/${inst.id}/poster`, png(), 'image/png')).status, 200);
+
+  const after = await expandOne(f.db, sid, date);
+  assert.equal(after.status, 'cancelled', 'the poster overwrote the tombstone');
+  assert.equal(after.is_tombstone, 1);
+  assert.ok(after.poster_path, 'the poster did not stick');
+});
+
+test('a poster is refused for another parish, and when there is nothing to put it on', async () => {
+  const f = fresh({ role: 'parish', parishIds: [] });
+  withBucket(f);
+  const [mine, theirs] = twoParishes(f.raw);
+  contact(f.raw, mine);
+  const theirInst = await firstInstance(f.db, theirs);
+
+  assert.equal((await f.callRaw('POST', `/api/admin/events/${theirInst.id}/poster`, png(), 'image/png')).status, 403);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 0);
+  assert.equal((await f.call('DELETE', `/api/admin/events/${theirInst.id}/poster`)).status, 403);
+  assert.equal((await f.callRaw('POST', '/api/admin/events/99999/poster', png(), 'image/png')).status, 404);
+
+  // Their own occurrence is fine.
+  const mineInst = await firstInstance(f.db, mine);
+  assert.equal((await f.callRaw('POST', `/api/admin/events/${mineInst.id}/poster`, png(), 'image/png')).status, 200);
+});
+
+test('an empty or oversized poster is refused before anything is written', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const made = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'Feast', start_utc: '2026-09-20T23:00:00.000Z' });
+
+  assert.equal((await f.callRaw('POST', `/api/admin/events/${made.body.id}/poster`,
+    new Uint8Array(0), 'image/png')).status, 400);
+  assert.equal((await f.callRaw('POST', `/api/admin/events/${made.body.id}/poster`,
+    new Uint8Array(8 * 1024 * 1024 + 1), 'image/png')).status, 413);
+  assert.equal(b.store.size, 0);
+  assert.equal(f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(made.body.id).poster_path, null);
+});
+
+test('without R2 bound the upload says so rather than half-writing', async () => {
+  const f = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(f.raw);
+  const made = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'Feast', start_utc: '2026-09-20T23:00:00.000Z' });
+  const r = await f.callRaw('POST', `/api/admin/events/${made.body.id}/poster`, png(), 'image/png');
+  assert.equal(r.status, 503);
+  assert.equal(f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(made.body.id).poster_path, null);
 });

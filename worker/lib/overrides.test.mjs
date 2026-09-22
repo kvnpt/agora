@@ -181,3 +181,35 @@ test('refuses to move a recurring service to another parish', async () => {
   assert.strictEqual(res.code, 400);
   assert.match(res.error, /Edit the schedule/);
 });
+
+test('a field edit does not revive a cancelled occurrence', async () => {
+  // It did. `kind` was set to 'modified' for any edit that named a display
+  // field, so correcting the TITLE of a cancelled service dropped the
+  // tombstone and put the service back on the feed — somebody reads "10am
+  // Liturgy" and arrives at a locked church.
+  const { db } = fresh();
+  const { scheduleId, date } = await firstInstance(db);
+
+  await applyAdminEdit(db, scheduleId, date, { status: 'cancelled' });
+  assert.strictEqual((await expandOne(db, scheduleId, date)).status, 'cancelled');
+
+  await applyAdminEdit(db, scheduleId, date, { title: 'Corrected name' });
+  const after = await expandOne(db, scheduleId, date);
+  assert.strictEqual(after.status, 'cancelled', 'a title edit revived it');
+  assert.strictEqual(after.is_tombstone, 1);
+  assert.strictEqual(after.title, 'Corrected name', 'the correction did not stick');
+
+  // And reviving still works, because that is what status: approved is for.
+  await applyAdminEdit(db, scheduleId, date, { status: 'approved' });
+  const revived = await expandOne(db, scheduleId, date);
+  assert.strictEqual(revived.status, 'approved');
+  assert.strictEqual(revived.title, 'Corrected name', 'the patch went with the revival');
+});
+
+test('a field edit does not un-hide a hidden occurrence either', async () => {
+  const { db } = fresh();
+  const { scheduleId, date } = await firstInstance(db);
+  await applyAdminEdit(db, scheduleId, date, { status: 'hidden' });
+  await applyAdminEdit(db, scheduleId, date, { description: 'A note' });
+  assert.strictEqual((await expandOne(db, scheduleId, date)).status, 'hidden');
+});

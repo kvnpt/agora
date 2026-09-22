@@ -1,0 +1,24 @@
+-- 012 — a poster for one occurrence
+--
+-- `events.poster_path` survived the WhatsApp ingestor: a parish sent a flyer
+-- over WhatsApp, Claude Vision read it, and the image stayed with the row. The
+-- pipeline is gone and the column is still there and still rendered — the event
+-- card shows a poster for a feast, a talk, a social or a youth event, and the
+-- drawer shows it full-width with a tap-to-zoom.
+--
+-- What has never had one is a SCHEDULE OCCURRENCE. A rule cannot carry a poster
+-- (a weekly liturgy does not have a flyer) and a projected instance is not a
+-- row, so "put the flyer on this year's Dormition vigil" had nowhere to go.
+-- This is that place, and it is a patch like the rest of `schedule_overrides` —
+-- one occurrence, one exception, nothing written for the weeks either side.
+--
+-- It differs from its neighbours in one way worth knowing: every other patch_*
+-- means "the rule says X, this week it is Y", so NULL means inherit. This one
+-- has nothing to inherit from, so NULL means there is no poster.
+--
+--   npx wrangler d1 execute agora --remote --file=d1/migrations/012-occurrence-poster.sql
+--
+-- `ALTER TABLE ... ADD COLUMN` is not idempotent in SQLite — a second run
+-- errors with "duplicate column name", which means it is already applied.
+
+ALTER TABLE schedule_overrides ADD COLUMN patch_poster_path TEXT;

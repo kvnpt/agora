@@ -567,6 +567,11 @@ export function registerAdminRoutes(router) {
     const lastOwner = await wouldStrandTheTable(env.DB, email, b.role);
     if (lastOwner) return json({ error: lastOwner }, 409);
 
+    // …and the FIRST row cannot be somebody else's, for the same reason one
+    // press earlier. See wouldEndYourOwnAccess.
+    const lockout = await wouldEndYourOwnAccess(env.DB, email, b.role, c.who.identity);
+    if (lockout) return json({ error: lockout, field: 'role' }, 409);
+
     await env.DB.prepare(
       `INSERT INTO admin_roles (email, role, parish_ids, note, added_by)
        VALUES (?,?,?,?,?)
@@ -594,6 +599,43 @@ export function registerAdminRoutes(router) {
    * admin_roles and nobody can be added, so the only way back is SQL against
    * production.
    */
+  /**
+   * The bootstrap flip, guarded.
+   *
+   * An empty `admin_roles` means everybody Access lets in is an owner. The
+   * FIRST row ends that rule, and if it is not the caller's own they have just
+   * removed their own access in one press — recoverable only with SQL against
+   * production. The panel says "add yourself as an owner first" in an orange
+   * box, which is a sentence asking somebody to remember rather than a guard.
+   *
+   * `wouldStrandTheTable` below does not cover this: with no rows there are no
+   * owners, so its first test passes and it returns nothing to say.
+   *
+   * Three presses instead of one for the case where somebody genuinely means
+   * to hand the site over — add yourself, add them, remove yourself — and each
+   * of the three is reversible.
+   */
+  async function wouldEndYourOwnAccess(db, email, newRole, caller) {
+    let n = 0;
+    try {
+      const r = await db.prepare('SELECT COUNT(*) AS n FROM admin_roles').first();
+      n = r ? r.n : 0;
+    } catch { return null; }
+    if (n > 0) return null;                       // not the flip
+
+    const me = String(caller || '').trim().toLowerCase();
+    if (me && email === me && newRole === 'owner') return null;
+    if (!me) {
+      // Nothing identifies this caller, so there is no row that would keep
+      // them in — whatever is written here locks them out.
+      return 'Access is not telling this site who you are, so no row here can '
+        + 'keep you in. An owner row has to be created in D1 directly.';
+    }
+    return 'This is the first row, and writing it ends the rule that makes '
+      + `everybody an owner. Add yourself (${caller}) as an owner first, or `
+      + 'nobody will be able to edit this list again.';
+  }
+
   async function wouldStrandTheTable(db, email, newRole) {
     let owners = [];
     try {
@@ -899,6 +941,102 @@ export function registerAdminRoutes(router) {
     if (scoped) return scoped;
     await env.DB.prepare('DELETE FROM events WHERE id = ?').bind(params.id).run();
     return json({ ok: true });
+  }));
+
+  // ── posters ──
+  //
+  // `events.poster_path` is the one piece of the WhatsApp ingestor still doing
+  // its job: a parish sent a flyer, Claude Vision read it, and the image stayed
+  // with the row. The pipeline went with the VM; the column, the R2 prefix and
+  // the rendering all survived, and until now nothing could put a new one up.
+  //
+  // ONE ROUTE FOR BOTH SHAPES, like every other event route here. An integer
+  // id writes the column; a "sid:date" writes patch_poster_path on that
+  // occurrence's override, which is the only place a projected instance can
+  // hold anything — a rule has no poster because a weekly liturgy has no flyer.
+  const POSTER_EXTS = ['png', 'jpg', 'webp', 'gif'];
+  const posterKey = (id, ext) => `posters/${String(id).replace(':', '-')}.${ext}`;
+  const posterKeys = (id) => POSTER_EXTS.map(e => posterKey(id, e));
+
+  /** The parish an event id belongs to, whichever shape it is. */
+  async function eventParish(db, id) {
+    const inst = parseInstanceId(id);
+    if (inst) {
+      const row = await db.prepare('SELECT parish_id FROM schedules WHERE id = ?')
+        .bind(inst.scheduleId).first();
+      return row ? row.parish_id : null;
+    }
+    const row = await db.prepare('SELECT parish_id FROM events WHERE id = ?').bind(id).first();
+    return row ? row.parish_id : null;
+  }
+
+  /** Point an event or an occurrence at a poster path (or null to clear it). */
+  async function setPosterPath(env, id, path) {
+    const inst = parseInstanceId(id);
+    if (inst) {
+      // Through applyAdminEdit so the override gets the right `kind`, and so
+      // clearing the only patch on it drops the row rather than leaving a
+      // 'modified' override that modifies nothing.
+      const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, { poster_path: path });
+      return r.error ? r : { ok: true };
+    }
+    await env.DB.prepare(
+      "UPDATE events SET poster_path = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?"
+    ).bind(path, id).run();
+    return { ok: true };
+  }
+
+  router.post('/api/admin/events/:id/poster', guarded('event.edit', async (c) => {
+    const { env, params, request } = c;
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+
+    const parishId = await eventParish(env.DB, params.id);
+    if (!parishId) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+
+    const contentType = request.headers.get('content-type') || '';
+    const ext = contentType.includes('png') ? 'png'
+              : contentType.includes('webp') ? 'webp'
+              : contentType.includes('gif') ? 'gif' : 'jpg';
+
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return json({ error: 'No data received' }, 400);
+    // Bigger than a logo on purpose: a poster is a full-bleed image somebody
+    // photographs off a noticeboard, and the client already squares a logo down
+    // before upload while a poster keeps its shape.
+    if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
+
+    const key = posterKey(params.id, ext);
+    await env.ASSETS_BUCKET.put(key, body, {
+      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
+    });
+    const stale = posterKeys(params.id).filter(k => k !== key);
+    if (stale.length) await env.ASSETS_BUCKET.delete(stale);
+
+    // ?v= for the same reason a logo carries one: assets.mjs caches posters for
+    // a day, a replacement usually overwrites the same key, and without this
+    // everybody keeps yesterday's flyer for 24 hours.
+    const posterPath = `/${key}?v=${Date.now()}`;
+    const r = await setPosterPath(env, params.id, posterPath);
+    if (r.error) return json({ error: r.error }, r.code || 400);
+    return json({ id: params.id, poster_path: posterPath });
+  }));
+
+  router.delete('/api/admin/events/:id/poster', guarded('event.edit', async (c) => {
+    const { env, params } = c;
+    const parishId = await eventParish(env.DB, params.id);
+    if (!parishId) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+
+    // The objects go too, not just the column — a flyer put up by mistake
+    // should stop being served, and nulling the path alone leaves it fetchable
+    // at a URL derivable from the event id. Same reasoning as the logo delete.
+    if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(posterKeys(params.id));
+    const r = await setPosterPath(env, params.id, null);
+    if (r.error) return json({ error: r.error }, r.code || 400);
+    return json({ id: params.id, poster_path: null });
   }));
 
   // ── combine ──

@@ -1500,6 +1500,24 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
 .badge-combined { background: #ccf0f0; color: #0e7070; }
 .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: var(--accent-bg); color: var(--accent-text); border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
+/* Sibling of .own-tag: "this one is not yours to write". Warm rather than red,
+   because it is not a refusal — the row is still tickable, and ticking it turns
+   the press into an ask. */
+.ask-tag {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--morning) 14%, transparent);
+  color: var(--morning);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 5px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) {
+  .ask-tag { background: color-mix(in srgb, #e59544 18%, transparent); color: #e59544; }
+}
 .badge-live { background: var(--live); color: var(--text-inverse); display: inline-flex; align-items: center; gap: 4px; }
 .badge-live .live-dot { background: var(--text-inverse); }
 .badge-live-soon { background: var(--live-soon-bg); color: var(--live-soon-text); }
@@ -4132,6 +4150,34 @@ button.ps-avatar { cursor: pointer; }
 .escalate-item-label { font-size: 13px; line-height: 1.4; }
 .escalate-item-label small { display: block; font-size: 11px; color: var(--muted); }
 .escalate-empty { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+/* A jurisdiction heading inside a pick list. Sticky, because the list scrolls
+   inside 180px and the run you are ticking down is the one you need named. */
+.escalate-group {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  padding: 5px 8px 3px;
+  margin: 2px -4px 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  background: var(--bg);
+}
+.escalate-group:first-child { margin-top: 0; }
+/* The poster control in the event drawer's edit form. */
+.poster-edit { display: flex; flex-direction: column; gap: 8px; }
+.poster-edit-thumb {
+  width: 96px;
+  height: auto;
+  max-height: 128px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.poster-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.poster-edit-status:empty { display: none; }
 .escalate-btn-row { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* ── Donate parish-card button ── */
