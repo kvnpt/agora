@@ -486,3 +486,57 @@ test('a parish contact can only propose about their own parishes', async () => {
   assert.equal((await call('POST', '/api/admin/proposals',
     { capability: 'parish.delete', subject: PARISH_B, payload: { disposition: 'purge' } })).status, 403);
 });
+
+// ── the bootstrap flip ──
+//
+// An empty table means everybody Access lets in is an owner; the first row ends
+// that rule. If the first row is not the caller's own, they have just removed
+// their own access in one press, and the only way back is SQL against
+// production. The panel asked them to remember; this refuses.
+
+test('the first row cannot be somebody else\'s', async () => {
+  const { raw, call } = fresh(null);
+  const ping = await call('GET', '/api/admin/ping');
+  assert.equal(ping.body.bootstrap, true, 'this test is about the bootstrap state');
+
+  const r = await call('PUT', '/api/admin/people/deacon@example.org',
+    { role: 'parish', parishIds: [PARISH_A] });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /Add yourself \(dev\) as an owner first/);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM admin_roles').get().n, 0,
+    'the row was written, and the caller is now locked out');
+
+  // Still an owner afterwards — the refusal cost them nothing.
+  assert.equal((await call('GET', '/api/admin/ping')).body.role, 'owner');
+});
+
+test('the first row may be your own, as an owner and not as anything else', async () => {
+  for (const role of ['editor', 'parish']) {
+    const { call } = fresh(null);
+    const r = await call('PUT', '/api/admin/people/dev',
+      { role, parishIds: [PARISH_A] });
+    assert.equal(r.status, 409, `first row as ${role} was allowed`);
+    assert.match(r.body.error, /first row/);
+  }
+
+  const { raw, call } = fresh(null);
+  assert.equal((await call('PUT', '/api/admin/people/dev', { role: 'owner' })).status, 200);
+  assert.equal(raw.prepare("SELECT role FROM admin_roles WHERE email='dev'").get().role, 'owner');
+  // And the rule has flipped: they are now an owner by ROW, not by absence.
+  const ping = await call('GET', '/api/admin/ping');
+  assert.equal(ping.body.role, 'owner');
+  assert.equal(ping.body.bootstrap, false);
+});
+
+test('once the first row exists the guard steps aside', async () => {
+  // Handing the site over is still possible — it is three presses, and each of
+  // them is reversible.
+  const { raw, call } = fresh(null);
+  assert.equal((await call('PUT', '/api/admin/people/dev', { role: 'owner' })).status, 200);
+  assert.equal((await call('PUT', '/api/admin/people/successor@example.org',
+    { role: 'owner' })).status, 200);
+  assert.equal((await call('DELETE', '/api/admin/people/dev')).status, 200);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM admin_roles').get().n, 1);
+  // And the caller is out, deliberately this time.
+  assert.equal((await call('GET', '/api/admin/ping')).status, 403);
+});

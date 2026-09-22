@@ -567,6 +567,11 @@ export function registerAdminRoutes(router) {
     const lastOwner = await wouldStrandTheTable(env.DB, email, b.role);
     if (lastOwner) return json({ error: lastOwner }, 409);
 
+    // …and the FIRST row cannot be somebody else's, for the same reason one
+    // press earlier. See wouldEndYourOwnAccess.
+    const lockout = await wouldEndYourOwnAccess(env.DB, email, b.role, c.who.identity);
+    if (lockout) return json({ error: lockout, field: 'role' }, 409);
+
     await env.DB.prepare(
       `INSERT INTO admin_roles (email, role, parish_ids, note, added_by)
        VALUES (?,?,?,?,?)
@@ -594,6 +599,43 @@ export function registerAdminRoutes(router) {
    * admin_roles and nobody can be added, so the only way back is SQL against
    * production.
    */
+  /**
+   * The bootstrap flip, guarded.
+   *
+   * An empty `admin_roles` means everybody Access lets in is an owner. The
+   * FIRST row ends that rule, and if it is not the caller's own they have just
+   * removed their own access in one press — recoverable only with SQL against
+   * production. The panel says "add yourself as an owner first" in an orange
+   * box, which is a sentence asking somebody to remember rather than a guard.
+   *
+   * `wouldStrandTheTable` below does not cover this: with no rows there are no
+   * owners, so its first test passes and it returns nothing to say.
+   *
+   * Three presses instead of one for the case where somebody genuinely means
+   * to hand the site over — add yourself, add them, remove yourself — and each
+   * of the three is reversible.
+   */
+  async function wouldEndYourOwnAccess(db, email, newRole, caller) {
+    let n = 0;
+    try {
+      const r = await db.prepare('SELECT COUNT(*) AS n FROM admin_roles').first();
+      n = r ? r.n : 0;
+    } catch { return null; }
+    if (n > 0) return null;                       // not the flip
+
+    const me = String(caller || '').trim().toLowerCase();
+    if (me && email === me && newRole === 'owner') return null;
+    if (!me) {
+      // Nothing identifies this caller, so there is no row that would keep
+      // them in — whatever is written here locks them out.
+      return 'Access is not telling this site who you are, so no row here can '
+        + 'keep you in. An owner row has to be created in D1 directly.';
+    }
+    return 'This is the first row, and writing it ends the rule that makes '
+      + `everybody an owner. Add yourself (${caller}) as an owner first, or `
+      + 'nobody will be able to edit this list again.';
+  }
+
   async function wouldStrandTheTable(db, email, newRole) {
     let owners = [];
     try {

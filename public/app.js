@@ -8102,15 +8102,21 @@ function _newEventDefaultDate(tz) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
 }
 
-/** Which parishes this account may also list the event at. */
+/**
+ * Every parish the event could be listed at, own parish first.
+ *
+ * Deliberately NOT narrowed to the ones this account may write. It was, and
+ * that made the ask unreachable by the only people it is for: a parish
+ * contact's list came back holding nothing but their own parish, so they could
+ * never tick another one, never meet the refusal, and never be offered the way
+ * forward. `_needsAsk` marks the rest instead — the answer to "may I" is not
+ * "this parish does not exist", it is "an owner decides".
+ */
 function _newEventParishRows(parish) {
   const own = { ...parish, _isOwn: true };
   const others = (state.parishes || [])
     .filter(p => p.id !== parish.id && p.id !== '_unassigned')
-    // A parish contact may not write a row that makes an event appear at
-    // somebody else's parish, and the route refuses it — so the list does not
-    // offer it either. An owner or an editor sees every parish.
-    .filter(p => adminMay('event.edit', p.id))
+    .map(p => ({ ...p, _needsAsk: !adminMay('event.edit', p.id) }))
     .sort((a, b) => {
       const ah = a.jurisdiction === parish.jurisdiction ? 0 : 1;
       const bh = b.jurisdiction === parish.jurisdiction ? 0 : 1;
@@ -8154,15 +8160,59 @@ function _renderNewEventReplaces() {
     const when = new Intl.DateTimeFormat('en-AU', {
       timeZone: tzOf(e), hour: 'numeric', minute: '2-digit',
     }).format(new Date(e.start_utc));
+    // The parish rides on the input so the ask check does not have to look the
+    // candidate back up out of a list that is rebuilt on every tick.
+    const askTag = adminMay('event.edit', e.parish_id) ? '' : '<em class="ask-tag">needs an owner</em>';
     const label = document.createElement('label');
     label.className = 'escalate-item';
-    label.innerHTML = `<input type="checkbox" value="${esc(String(e.id))}">` +
-      `<span class="escalate-item-label">${esc(e.title)}` +
+    label.innerHTML = `<input type="checkbox" value="${esc(String(e.id))}"` +
+      ` data-parish-id="${esc(e.parish_id || '')}" onchange="agoraSyncNewEventAsk()">` +
+      `<span class="escalate-item-label">${esc(e.title)}${askTag}` +
       `<small>${esc(when)} · ${esc(e.parish_name || '')}</small></span>`;
     return label.outerHTML;
   }).join('');
+  _syncNewEventAskState();
 }
 window._renderNewEventReplaces = _renderNewEventReplaces;
+
+/** Is anything ticked that this account may not write itself? */
+function _newEventAskNeeded() {
+  const parishes = [...document.querySelectorAll('#new-event-parishes input:checked:not([data-own])')];
+  const targets = [...document.querySelectorAll('#new-event-replaces input:checked')];
+  return parishes.some(cb => !adminMay('event.edit', cb.value))
+      || targets.some(cb => !adminMay('event.edit', cb.dataset.parishId || ''));
+}
+
+/**
+ * Say, before the press, that this one is going to be an ask.
+ *
+ * The refusal path below still exists and is still the truth — the Worker
+ * decides, not this — but finding out only afterwards makes a deliberate act
+ * read as a failure. So the reason box appears the moment something out of
+ * reach is ticked, and the button says what it is about to do.
+ */
+function _syncNewEventAskState() {
+  const ask = document.getElementById('new-event-ask');
+  const save = document.getElementById('new-event-save');
+  if (!ask || !save) return;
+  // Already sent, or already refused by the Worker — neither is a state to
+  // paint over.
+  if (ask.classList.contains('ne-ask-sent') || _newEventRefusedBody) return;
+
+  const needed = _newEventAskNeeded();
+  const sendBtn = document.getElementById('new-event-ask-send');
+  if (sendBtn) sendBtn.hidden = true;      // the main button carries it in this mode
+  ask.hidden = !needed;
+  save.textContent = needed ? 'Add event & ask' : 'Add event';
+  if (needed) {
+    const what = document.getElementById('new-event-ask-what');
+    if (what) {
+      what.innerHTML = 'Some of what is ticked belongs to another parish, so an owner '
+        + 'decides that part. Your event is added at your own parish either way.';
+    }
+  }
+}
+window.agoraSyncNewEventAsk = _syncNewEventAskState;
 
 /** Re-ask what the chosen date holds. Bound to the date field's change. */
 window.agoraNewEventDateChanged = async function () {
@@ -8237,10 +8287,13 @@ window.openNewEventDialog = function (parishId) {
     // holds the additions and never the home parish.
     const ownAttr = p._isOwn ? ' checked data-own="1"' : '';
     const ownTag = p._isOwn ? '<em class="own-tag">own</em>' : '';
+    // Marked, not greyed out: the row is tickable, and ticking it turns the
+    // press into an ask rather than into a refusal.
+    const askTag = p._needsAsk ? '<em class="ask-tag">needs an owner</em>' : '';
     const label = document.createElement('label');
     label.className = 'escalate-item';
     label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"${ownAttr} onchange="_renderNewEventReplaces()">` +
-      `<span class="escalate-item-label">${esc(p.name)}${ownTag}` +
+      `<span class="escalate-item-label">${esc(p.name)}${ownTag}${askTag}` +
       `<small>${esc(capitalize(p.jurisdiction || ''))}</small></span>`;
     return label.outerHTML;
   }).join('');
@@ -8272,6 +8325,8 @@ function _resetNewEventAsk() {
   if (form) form.hidden = false;
   const reason = document.getElementById('new-event-ask-reason');
   if (reason) reason.value = '';
+  const save = document.getElementById('new-event-save');
+  if (save) save.textContent = 'Add event';
 }
 
 /**
@@ -8296,6 +8351,10 @@ function _offerNewEventAsk(body, refusal) {
       `<br><br>Your event will be added at your own parish now either way.`
     : `${esc(refusal.error || 'An owner has to approve part of this.')}`;
   ask.hidden = false;
+  // In this mode the block carries its own button: the main one has already
+  // been pressed and was refused.
+  const sendBtn = document.getElementById('new-event-ask-send');
+  if (sendBtn) sendBtn.hidden = false;
   const reason = document.getElementById('new-event-ask-reason');
   if (reason) requestAnimationFrame(() => reason.focus());
 }
@@ -8322,20 +8381,7 @@ async function _sendNewEventAsk() {
       errEl.hidden = false;
       return;
     }
-    // The answer lands where the question was asked. No toast in this app, and
-    // closing on success would leave nothing saying the ask had gone anywhere.
-    const ask = document.getElementById('new-event-ask');
-    const form = document.getElementById('new-event-form');
-    const actions = document.getElementById('new-event-actions');
-    if (form) form.hidden = true;
-    if (actions) actions.hidden = true;
-    if (ask) {
-      ask.classList.add('ne-ask-sent');
-      ask.innerHTML =
-        `<div class="ne-ask-what">Asked. It is on file at your own parish already; ` +
-        `an owner sees the rest under <b>Asks</b> in the admin panel.</div>` +
-        `<button class="ps-btn ps-btn-admin" type="button" onclick="closeNewEventDialog()">Done</button>`;
-    }
+    _showNewEventAskSent();
     // The event exists now, so the feed has to be re-read whether or not the
     // ask is ever approved.
     await _afterNewEvent(body, payload);
@@ -8346,6 +8392,30 @@ async function _sendNewEventAsk() {
   } finally {
     btn.disabled = false;
   }
+}
+
+/**
+ * The answer, where the question was asked.
+ *
+ * No toast in this app, and closing on success would leave nothing saying the
+ * ask had gone anywhere — the half that waits on an owner has nothing to show
+ * for itself on the sheet.
+ */
+function _showNewEventAskSent() {
+  const ask = document.getElementById('new-event-ask');
+  const form = document.getElementById('new-event-form');
+  const actions = document.getElementById('new-event-actions');
+  const err = document.getElementById('new-event-error');
+  if (form) form.hidden = true;
+  if (actions) actions.hidden = true;
+  if (err) { err.hidden = true; err.textContent = ''; }
+  if (!ask) return;
+  ask.hidden = false;
+  ask.classList.add('ne-ask-sent');
+  ask.innerHTML =
+    `<div class="ne-ask-what">Asked. It is on file at your own parish already; ` +
+    `an owner sees the rest under <b>Asks</b> in the admin panel.</div>` +
+    `<button class="ps-btn ps-btn-admin" type="button" onclick="closeNewEventDialog()">Done</button>`;
 }
 
 /** Widen the window far enough to hold the new event, re-read, and pin it. */
@@ -8414,6 +8484,15 @@ window.saveNewEvent = async function () {
       .map(cb => cb.value),
   };
 
+  // Something ticked is out of reach, and the dialog already said so — send
+  // the reason with the press rather than making them meet a refusal first.
+  // The Worker decides regardless: if it disagrees, the 403 below still opens
+  // the ask block with what it named.
+  if (_newEventAskNeeded()) {
+    const reason = (document.getElementById('new-event-ask-reason') || {}).value || '';
+    body.propose = reason.trim() || true;
+  }
+
   const btn = document.getElementById('new-event-save');
   btn.disabled = true;
   try {
@@ -8435,6 +8514,14 @@ window.saveNewEvent = async function () {
       // field the Worker would not take — so it is shown rather than flattened
       // into "failed".
       return fail((payload && payload.error) || `The event was refused (${res.status}).`);
+    }
+    // An ask stays open on its confirmation; a plain save closes, because the
+    // pinned card below IS the confirmation.
+    if (payload && payload.proposal_id) {
+      _showNewEventAskSent();
+      await _afterNewEvent(body, payload);
+      refreshOpenAsks();
+      return;
     }
     window.closeNewEventDialog();
     // A date past the loaded horizon would save and then appear to have done

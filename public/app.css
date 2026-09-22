@@ -1500,6 +1500,24 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
 .badge-combined { background: #ccf0f0; color: #0e7070; }
 .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: var(--accent-bg); color: var(--accent-text); border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
+/* Sibling of .own-tag: "this one is not yours to write". Warm rather than red,
+   because it is not a refusal — the row is still tickable, and ticking it turns
+   the press into an ask. */
+.ask-tag {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--morning) 14%, transparent);
+  color: var(--morning);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 5px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) {
+  .ask-tag { background: color-mix(in srgb, #e59544 18%, transparent); color: #e59544; }
+}
 .badge-live { background: var(--live); color: var(--text-inverse); display: inline-flex; align-items: center; gap: 4px; }
 .badge-live .live-dot { background: var(--text-inverse); }
 .badge-live-soon { background: var(--live-soon-bg); color: var(--live-soon-text); }
