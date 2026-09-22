@@ -6426,7 +6426,7 @@ function addServiceHTML(parishId) {
         <input data-af="title" class="sef-full" placeholder="Divine Liturgy">
         <select data-af="day_of_week">${DAYS.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('')}</select>
         <input data-af="start_time" type="time" value="09:00">
-        <select data-af="event_type">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+        <select data-af="event_type" class="sef-full">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
       </div>
       ${womPickerHTML('data-af="week_of_month"')}
       <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add service</button>

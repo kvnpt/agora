@@ -1970,6 +1970,18 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .schedule-edit-grid .sef-full {
   grid-column: 1 / -1;
 }
+/* Below about 330px two columns stop clearing the 119px a 12-hour time input
+   asks for, and 320px is a real phone. Stack rather than clip "09:00 AM" to
+   "09:00 A" — a time input squeezed too small does not overflow, it just
+   drops characters, so nothing in the layout would have said it was wrong.
+   .schedule-add-grid needs no rule of its own: its columns are auto-fit at
+   minmax(120px, 1fr), so it drops to one column here by itself. This grid
+   keeps an explicit two-column shape instead because its rows are PAIRED —
+   day beside type, start beside end — and auto-fit would pull all four onto
+   one row as soon as the sheet was wide enough to hold them. */
+@media (max-width: 330px) {
+  .schedule-edit-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .wom-checkboxes {
   display: flex;
   flex-wrap: wrap;
@@ -4049,9 +4061,21 @@ button.ps-avatar { cursor: pointer; }
   padding-top: 10px;
   border-top: 1px dashed var(--border-light);
 }
+/* A column is never narrower than the time input needs, and the row takes as
+   many as fit. Three equal columns were the bug: a native <input type="time">
+   in a 12-hour locale is "09:00 AM" plus the clock button and asks for 119px,
+   a weekday name asks for 107px, and a third of a phone is about 109px — so
+   the time input read "09:00 AI". It does not overflow when it is squeezed, it
+   clips its own fields, which is why nothing in the layout said anything was
+   wrong. 120px is that measured need, stated as the constraint rather than as
+   a column count somebody has to recompute when the padding changes: two
+   columns on a phone, one at 320px, more on a wide sheet. The event type is
+   the short control (68px for "liturgy") and carries .sef-full, so the row
+   underneath is its own rather than a third of the width the other two
+   needed. */
 .schedule-add-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 6px;
 }
 .schedule-add-grid .sef-full { grid-column: 1 / -1; }
