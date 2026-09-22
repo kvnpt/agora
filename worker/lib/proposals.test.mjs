@@ -7,15 +7,61 @@ import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen }
 
 const ok = (c, subject, payload) => validateProposal({ capability: c, subject, payload });
 
-test('only the three refused capabilities can be proposed', async () => {
+test('only an ask with nowhere else to go can be proposed', async () => {
   // Not a general approval queue. Ordinary edits just happen — the moderation
-  // subsystem died with the VM and is not coming back.
-  assert.deepEqual(PROPOSABLE, ['parish.delete', 'parish.acronym', 'colors.edit']);
+  // subsystem died with the VM and is not coming back. Three capability
+  // refusals, plus the one scope refusal a combine can be.
+  assert.deepEqual(PROPOSABLE,
+    ['parish.delete', 'parish.acronym', 'colors.edit', 'event.combine']);
   for (const c of ['parish.edit', 'schedule.delete', 'people.manage', 'adapter.run', '']) {
     const r = validateProposal({ capability: c, subject: 'x', payload: {} });
     assert.equal(r.ok, false, `${c} should not be proposable`);
     assert.match(r.error, /not something that can be proposed/);
   }
+});
+
+test('a combine proposal carries the whole desired state', async () => {
+  // Not the refused half. `writeCombine` removes whatever a target state does
+  // not name, so a payload holding only the out-of-scope targets would strip
+  // the in-scope ones the moment it was approved.
+  const r = ok('event.combine', '42',
+    { additive_parish_ids: [' p1 ', 'p1', 'p2'], replaced_event_ids: [7, '9:2026-09-27', '', null] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.payload.additive_parish_ids, ['p1', 'p2'], 'trimmed and deduped');
+  // Ids stay STRINGS and are not classified here: which of these is a stored
+  // one-off and which a projected occurrence is a question for the approving
+  // route, asked against the database as it is then.
+  assert.deepEqual(r.payload.replaced_event_ids, ['7', '9:2026-09-27']);
+});
+
+test('a combine proposal has to ask for something', async () => {
+  for (const payload of [{}, { additive_parish_ids: [], replaced_event_ids: [] },
+                         { additive_parish_ids: 'p1' }]) {
+    const r = ok('event.combine', '42', payload);
+    assert.equal(r.ok, false, `${JSON.stringify(payload)} passed`);
+    assert.match(r.error, /name a parish to appear at, or a service to absorb/);
+  }
+});
+
+test('a combine reads as a sentence, in names and not ids', async () => {
+  const both = describeProposal('event.combine',
+    { additive_parish_ids: ['p1'], replaced_event_ids: ['9:2026-09-27'] },
+    { subject: 'Deanery Liturgy', parishes: ['St Nicholas, Bankstown'],
+      targets: ['Sunday Divine Liturgy at St Nicholas, Bankstown on 2026-09-27'] });
+  assert.match(both, /^List “Deanery Liturgy” at St Nicholas, Bankstown, and absorb /);
+  // The consequence, not just the verb: an owner is about to make a service
+  // stop being its own card.
+  assert.match(both, /still renders, as a tombstone/);
+
+  const addOnly = describeProposal('event.combine',
+    { additive_parish_ids: ['p1', 'p2'], replaced_event_ids: [] },
+    { subject: 'Vigil', parishes: ['St Elias', "St Mary's"], targets: [] });
+  assert.equal(addOnly, `List “Vigil” at St Elias and St Mary's.`);
+
+  // An empty target state is a legitimate ask — "take it back off them".
+  const none = describeProposal('event.combine',
+    { additive_parish_ids: [], replaced_event_ids: [] }, { subject: 'Vigil' });
+  assert.match(none, /Take “Vigil” off every other parish/);
 });
 
 test('a proposal has to name what it is about', async () => {

@@ -1,6 +1,11 @@
 const TZ = 'Australia/Sydney';
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const LITURGICAL_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
+// What an event or a rule may BE, in the order every picker offers it. Written
+// down once: this was the same literal in three places in this file, which is
+// how one list becomes three that disagree — see jurisdiction-colors.js for the
+// table that already had to be rescued from exactly that.
+const EVENT_TYPES = ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other'];
 
 // Archdiocese events page URLs
 const ARCHDIOCESE_EVENTS = {
@@ -34,6 +39,17 @@ const state = {
   parishes: [],
   user: null,
   isAdmin: false,
+
+  // Which account this is, as /api/admin/ping answers it: `role`, the parishes
+  // a parish-scoped contact is confined to, and the capability map the guards
+  // themselves consult. The app has always kept `isAdmin` and thrown the rest
+  // of that response away, which was fine while every control it gated was
+  // "signed in or not" — it stops being fine the moment a control belongs to
+  // one parish's contact and not to another's.
+  //
+  // Convenience only, exactly as in /admin: every route re-checks server-side,
+  // and a button this leaves on screen still gets a 403.
+  adminWho: { role: null, parishIds: [], can: {}, openAsks: 0 },
 
   // Which parish is being EDITED, or null. Signing in and editing are two
   // states, not one: before this, every admin control was on screen the whole
@@ -1624,6 +1640,23 @@ async function checkAdmin() {
   const ping = await fetch('/api/admin/ping').catch(() => null);
   state.isAdmin = !!(ping && ping.ok);
 
+  // The rest of the same answer. `can` is the capability map from
+  // worker/lib/roles.mjs, so a control hidden here and a route that refuses
+  // consult one list rather than two that can disagree.
+  let who = null;
+  if (state.isAdmin) who = await ping.json().catch(() => null);
+  state.adminWho = who
+    ? {
+        role: who.role || null,
+        parishIds: who.parishIds || [],
+        can: who.can || {},
+        // Asks waiting on THIS person. The Worker already answers zero for
+        // anybody who cannot decide one, so the dot below needs no second
+        // opinion about who it is for.
+        openAsks: who.openAsks || 0,
+      }
+    : { role: null, parishIds: [], can: {}, openAsks: 0 };
+
   // Remembered only so the NEXT page load knows before this answer arrives:
   // init runs checkAdmin alongside fetchParishes rather than before it, so the
   // first bundle fetch has already gone out by the time `state.isAdmin` is set,
@@ -1641,11 +1674,37 @@ async function checkAdmin() {
   // The button itself is always there. What the answer decides is what is
   // BEHIND it: the panel and the way out, or the way in.
   syncAccountMenu();
+  // A sheet opened from a deep link is painted before this answer exists, so
+  // the add button has to be reconsidered once the role is known.
+  syncParishAddEventFab();
   // .fm-admin-sep was the filter-menu divider before Admin. Admin is now a
   // menu item; the selector may not exist anymore — guard.
   const adminSep = document.querySelector('.fm-admin-sep');
   if (adminSep) adminSep.hidden = !state.isAdmin;
 }
+
+/**
+ * May this account do `capability`, and to this particular parish?
+ *
+ * The same two questions the Worker asks in that order — `can(role, cap)` then
+ * `mayTouchParish` — so a control this hides is a control the route refuses.
+ * Only the `parish` role is scoped; an owner and an editor act across the
+ * table, which is why the parish id is checked second and not first.
+ *
+ * `state.isAdmin` alone is not an answer to either. It says Cloudflare Access
+ * let this browser through, and since roles landed that is the door rather than
+ * the desk.
+ */
+function adminMay(capability, parishId = null) {
+  if (!state.isAdmin) return false;
+  const who = state.adminWho || {};
+  // The bootstrap case (an empty admin_roles) comes back as an owner with the
+  // whole map true, so there is no separate branch for "before roles existed".
+  if (!who.can || !who.can[capability]) return false;
+  if (who.role !== 'parish') return true;
+  return !!parishId && (who.parishIds || []).includes(parishId);
+}
+window.agoraAdminMay = adminMay;
 
 function toggleAdminControlsVisibility() {
   const hiding = localStorage.getItem('hideAdminControls') === 'true';
@@ -1726,11 +1785,41 @@ function syncAccountMenu() {
   if (admin) admin.hidden = !state.isAdmin;
   if (logout) logout.hidden = !state.isAdmin;
   const btn = document.getElementById('btn-account');
+  // Something is waiting to be decided. `openAsks` is already zero for anybody
+  // who cannot decide one — a dot on somebody who can only look at it is noise
+  // — so this asks how many, not who.
+  const asks = (state.adminWho && state.adminWho.openAsks) || 0;
+  const dot = document.getElementById('account-dot');
+  if (dot) dot.hidden = !(state.isAdmin && asks > 0);
   if (btn) {
     btn.classList.toggle('signed-in', !!state.isAdmin);
-    btn.setAttribute('aria-label', state.isAdmin ? 'Account' : 'Sign in');
-    btn.title = state.isAdmin ? 'Account' : 'Sign in';
+    // The count goes in the label, not in the dot: nine pixels cannot carry a
+    // number, and a screen reader hears nothing at all from a coloured circle.
+    const label = !state.isAdmin ? 'Sign in'
+      : asks ? `Account — ${asks} ${asks === 1 ? 'ask' : 'asks'} waiting`
+      : 'Account';
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
   }
+}
+
+/**
+ * Re-read how many asks are waiting, without a page load.
+ *
+ * The count rides on /api/admin/ping because that is the one request already
+ * answering "who am I and what does this browser need to know". Filing an ask
+ * from the parish sheet changes it, and a dot that only appeared on the next
+ * load would miss the one moment the person is looking at it.
+ */
+async function refreshOpenAsks() {
+  if (!state.isAdmin) return;
+  try {
+    const res = await fetch('/api/admin/ping', { cache: 'no-store' });
+    if (!res.ok) return;
+    const who = await res.json();
+    state.adminWho = { ...state.adminWho, openAsks: who.openAsks || 0 };
+    syncAccountMenu();
+  } catch { /* offline — the dot keeps whatever it last knew */ }
 }
 
 // ── Mode bar ──
@@ -4150,6 +4239,18 @@ function initParishSheet() {
     scrollState = 'idle';
   }, { passive: true });
 
+  // The add-an-event button. Bound once here rather than re-bound on every
+  // render, and it reads the parish off its own dataset — syncParishAddEventFab
+  // is the one place that decides which parish it belongs to and whether it is
+  // there at all.
+  const addFab = document.getElementById('parish-add-event-fab');
+  if (addFab) {
+    addFab.addEventListener('click', () => {
+      const pid = addFab.dataset.parishId;
+      if (pid) window.openNewEventDialog(pid);
+    });
+  }
+
   // Close via the public closeParishSheet wrapper so the implicit
   // single-pill filter (set on open) gets cleared on dismiss too.
   closeBtn.addEventListener('click', () => {
@@ -4184,6 +4285,7 @@ function initParishSheet() {
     sheet.setAttribute('aria-hidden', 'false');
     window.agoraParishSheetVisible = true;
     document.body.classList.add('parish-sheet-open');
+    syncParishAddEventFab();
     state.parishFilters = { socialOnly: false, englishOnly: false, englishStrict: false };
     syncFiltersButton();
     syncEnglishButton();
@@ -4241,6 +4343,7 @@ function initParishSheet() {
     // Release FAB ownership so main sheet's pending/next snapTo repositions it.
     window.agoraParishSheetVisible = false;
     document.body.classList.remove('parish-sheet-open');
+    syncParishAddEventFab();
     syncFiltersButton();
     syncEnglishButton();
     // Keep state._openEventId so the URL remains shareable for the event.
@@ -6167,7 +6270,7 @@ function renderScheduleDaysHTML(items) {
     if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
     byDay.get(item.day_of_week).push(item);
   }
-  const types = ['liturgy','prayer','feast','talk','youth','social','other'];
+  const types = EVENT_TYPES;
   let html = '';
   for (const [day, scheds] of byDay) {
     html += `<div class="schedule-day">${DAYS[day]}</div>`;
@@ -6273,7 +6376,7 @@ function refusedServicesHTML() {
  * on a phone.
  */
 function addServiceHTML(parishId) {
-  const types = ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other'];
+  const types = EVENT_TYPES;
   const pid = esc(parishId);
   return `
     <div class="schedule-add" data-parish-id="${pid}">
@@ -6757,7 +6860,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
         <div class="edit-row"><label>Description</label><textarea id="edit-desc-${evt.id}">${esc(evt.description || '')}</textarea></div>
         <div class="edit-row"><label>Type</label>
           <select id="edit-type-${evt.id}">
-            ${['liturgy','prayer','feast','talk','youth','social','other'].map(t =>
+            ${EVENT_TYPES.map(t =>
               `<option value="${t}" ${evt.event_type === t ? 'selected' : ''}>${t}</option>`
             ).join('')}
           </select>
@@ -7933,6 +8036,421 @@ window.closePublicEscalateModal = function() {
   document.getElementById('escalate-backdrop').classList.remove('open');
   _escalatePubEventId = null;
 };
+
+// ── Adding a one-off event at a parish ────────────────────────────────────
+//
+// The parish sheet's add button, and the dialog behind it.
+//
+// WHY THE FAB IS NOT BEHIND EDIT MODE. Edit mode exists so a signed-in person
+// reads the sheet a visitor reads — no pencils down the timetable, no logo
+// button on the avatar, no form sitting in the DOM behind display:none. This is
+// not one of those. It does not alter anything the sheet is showing; it makes
+// something that is not on the sheet at all yet, and it floats clear of the
+// content rather than living in it. What it IS gated on is the capability, per
+// parish: an owner and an editor see it on every sheet, a parish contact sees it
+// on their own parishes only, and nobody else ever does.
+//
+// WHY THE COMBINE IS IN THE SAME DIALOG. The reason for the event is often the
+// combine: a deanery liturgy at the cathedral exists BECAUSE four parishes are
+// not holding their own that morning. Asking about it afterwards would publish
+// the new card beside the service it stands in for and leave the pair up for as
+// long as the second step took — or forever, if nobody took it. So the dialog
+// asks all three questions and POST /api/admin/events takes all three answers,
+// rolling the event back if the combine is refused.
+//
+// The two lists are the same `.escalate-item` rows the drawer's combine dialog
+// uses, on purpose: it is one mechanism and should not read as two features.
+
+let _newEventParishId = null;
+// What the date in the form could replace, as /api/admin/events/candidates
+// answered. Re-fetched when the date changes, because the date is the only
+// thing that changes the answer.
+let _newEventCandidates = [];
+// Which reply is still wanted. Typing through a date field fires a change per
+// keystroke on some browsers, and an early request landing last would show the
+// wrong day's services as replaceable.
+let _newEventSeq = 0;
+// The body that was refused, kept so "Ask an owner" can re-send exactly what
+// was asked for rather than re-reading a form the person may have touched
+// since. Cleared whenever the dialog is opened or closed.
+let _newEventRefusedBody = null;
+
+/**
+ * Show the add button when this account may write an event at the parish on
+ * screen, and hide it otherwise.
+ *
+ * Called from the sheet's open and close, from a full re-render, and from
+ * checkAdmin — the ping resolves after the first paint, so the very first sheet
+ * of a session is rendered before the answer exists.
+ */
+function syncParishAddEventFab() {
+  const fab = document.getElementById('parish-add-event-fab');
+  if (!fab) return;
+  const pid = window.agoraParishSheetVisible ? state.parishSheetFocus : null;
+  const show = !!pid && adminMay('event.edit', pid);
+  fab.hidden = !show;
+  if (show) fab.dataset.parishId = pid;
+  else delete fab.dataset.parishId;
+  // The list's last card would otherwise sit permanently under the button.
+  document.body.classList.toggle('parish-add-fab', show);
+}
+window.agoraSyncParishAddEventFab = syncParishAddEventFab;
+
+/** Today, or the focused date, as the parish's own calendar reads it. */
+function _newEventDefaultDate(tz) {
+  if (state._dateFocus) return state._dateFocus;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+}
+
+/** Which parishes this account may also list the event at. */
+function _newEventParishRows(parish) {
+  const own = { ...parish, _isOwn: true };
+  const others = (state.parishes || [])
+    .filter(p => p.id !== parish.id && p.id !== '_unassigned')
+    // A parish contact may not write a row that makes an event appear at
+    // somebody else's parish, and the route refuses it — so the list does not
+    // offer it either. An owner or an editor sees every parish.
+    .filter(p => adminMay('event.edit', p.id))
+    .sort((a, b) => {
+      const ah = a.jurisdiction === parish.jurisdiction ? 0 : 1;
+      const bh = b.jurisdiction === parish.jurisdiction ? 0 : 1;
+      return ah - bh
+        || String(a.jurisdiction || '').localeCompare(String(b.jurisdiction || ''))
+        || String(a.name || '').localeCompare(String(b.name || ''));
+    });
+  return [own, ...others];
+}
+
+/**
+ * The replaceable list, narrowed to the parishes that are ticked above it.
+ *
+ * A candidate id is either an integer (a stored one-off, replaced through
+ * `event_replaces`) or "scheduleId:YYYY-MM-DD" (a projected occurrence,
+ * replaced through a `combined` override). Nothing here has to know which —
+ * the value travels as a string and the Worker routes it by shape.
+ */
+function _renderNewEventReplaces() {
+  const listEl = document.getElementById('new-event-replaces');
+  if (!listEl) return;
+  const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
+  const checked = new Set([...document.querySelectorAll('#new-event-parishes input:checked')]
+    .map(cb => cb.value));
+  if (!document.getElementById('ne-date').value) {
+    listEl.innerHTML = '<div class="escalate-empty">Pick a date to see what it could replace</div>';
+    return;
+  }
+  const visible = _newEventCandidates.filter(e => checked.has(e.parish_id));
+  if (!visible.length) {
+    listEl.innerHTML = '<div class="escalate-empty">Nothing on file at the ticked parishes that day</div>';
+    return;
+  }
+  const tzOf = (row) => {
+    const p = (state.parishes || []).find(x => x.id === row.parish_id);
+    return (p && p.timezone) || (parish && parish.timezone) || TZ;
+  };
+  listEl.innerHTML = visible.map(e => {
+    // The candidate's OWN parish time, which is the time somebody would turn up
+    // at — the same rule the cards follow.
+    const when = new Intl.DateTimeFormat('en-AU', {
+      timeZone: tzOf(e), hour: 'numeric', minute: '2-digit',
+    }).format(new Date(e.start_utc));
+    const label = document.createElement('label');
+    label.className = 'escalate-item';
+    label.innerHTML = `<input type="checkbox" value="${esc(String(e.id))}">` +
+      `<span class="escalate-item-label">${esc(e.title)}` +
+      `<small>${esc(when)} · ${esc(e.parish_name || '')}</small></span>`;
+    return label.outerHTML;
+  }).join('');
+}
+window._renderNewEventReplaces = _renderNewEventReplaces;
+
+/** Re-ask what the chosen date holds. Bound to the date field's change. */
+window.agoraNewEventDateChanged = async function () {
+  const listEl = document.getElementById('new-event-replaces');
+  const dateEl = document.getElementById('ne-date');
+  if (!listEl || !dateEl) return;
+  const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
+  const date = dateEl.value;
+  const seq = ++_newEventSeq;
+  if (!date || !parish) {
+    _newEventCandidates = [];
+    _renderNewEventReplaces();
+    return;
+  }
+  listEl.innerHTML = '<div class="escalate-empty">Loading…</div>';
+  // `tz` is what makes this the PARISH's day rather than Sydney's — it is the
+  // difference between seeing and not seeing a midnight Paschal liturgy at an
+  // Auckland parish.
+  const tz = parish.timezone || '';
+  const qs = `date=${encodeURIComponent(date)}${tz ? `&tz=${encodeURIComponent(tz)}` : ''}`;
+  let rows = [];
+  try {
+    const res = await fetch(`/api/admin/events/candidates?${qs}`);
+    if (res.ok) rows = await res.json();
+  } catch { /* offline, or the session expired — an empty list says so */ }
+  if (seq !== _newEventSeq) return;
+  _newEventCandidates = Array.isArray(rows) ? rows : [];
+  _renderNewEventReplaces();
+};
+
+function _newEventEsc(e) { if (e.key === 'Escape') window.closeNewEventDialog(); }
+
+window.openNewEventDialog = function (parishId) {
+  const parish = (state.parishes || []).find(p => p.id === parishId);
+  const backdrop = document.getElementById('new-event-backdrop');
+  if (!parish || !backdrop) return;
+  // Re-checked on open as well as on render: the sheet may have been painted
+  // before the ping answered, and a dialog is a worse place to find out.
+  if (!adminMay('event.edit', parishId)) return;
+
+  _newEventParishId = parishId;
+  _newEventCandidates = [];
+  _newEventSeq++;
+
+  const tz = parish.timezone || TZ;
+  document.getElementById('new-event-sub').textContent =
+    `At ${parish.name}. One date — a service that runs every week is a rule, not an event.`;
+  document.getElementById('ne-tz-hint').textContent =
+    `${tz.split('/').pop().replace(/_/g, ' ')} time, the way the parish publishes it.`;
+
+  const typeEl = document.getElementById('ne-type');
+  typeEl.innerHTML = EVENT_TYPES
+    .map(t => `<option value="${t}"${t === 'feast' ? ' selected' : ''}>${capitalize(t)}</option>`)
+    .join('');
+
+  document.getElementById('ne-title').value = '';
+  document.getElementById('ne-date').value = _newEventDefaultDate(tz);
+  document.getElementById('ne-start').value = '09:00';
+  document.getElementById('ne-end').value = '';
+  document.getElementById('ne-desc').value = '';
+  document.getElementById('ne-langs').value = '';
+  document.getElementById('ne-location').value = '';
+  const errEl = document.getElementById('new-event-error');
+  errEl.hidden = true;
+  errEl.textContent = '';
+  _resetNewEventAsk();
+
+  const rows = _newEventParishRows(parish);
+  document.getElementById('new-event-parishes').innerHTML = rows.map(p => {
+    // The event's own parish is ticked and marked `data-own`, which is how the
+    // submit tells "it is here" from "it also appears here" — `event_parishes`
+    // holds the additions and never the home parish.
+    const ownAttr = p._isOwn ? ' checked data-own="1"' : '';
+    const ownTag = p._isOwn ? '<em class="own-tag">own</em>' : '';
+    const label = document.createElement('label');
+    label.className = 'escalate-item';
+    label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"${ownAttr} onchange="_renderNewEventReplaces()">` +
+      `<span class="escalate-item-label">${esc(p.name)}${ownTag}` +
+      `<small>${esc(capitalize(p.jurisdiction || ''))}</small></span>`;
+    return label.outerHTML;
+  }).join('');
+
+  backdrop.classList.add('open');
+  document.addEventListener('keydown', _newEventEsc);
+  window.agoraNewEventDateChanged();
+  requestAnimationFrame(() => document.getElementById('ne-title').focus());
+};
+
+window.closeNewEventDialog = function () {
+  const backdrop = document.getElementById('new-event-backdrop');
+  if (backdrop) backdrop.classList.remove('open');
+  document.removeEventListener('keydown', _newEventEsc);
+  _newEventParishId = null;
+  _newEventCandidates = [];
+  _newEventSeq++;
+  _resetNewEventAsk();
+};
+
+/** Put the ask block back to hidden and empty. */
+function _resetNewEventAsk() {
+  _newEventRefusedBody = null;
+  const ask = document.getElementById('new-event-ask');
+  const actions = document.getElementById('new-event-actions');
+  if (ask) { ask.hidden = true; ask.classList.remove('ne-ask-sent'); }
+  if (actions) actions.hidden = false;
+  const form = document.getElementById('new-event-form');
+  if (form) form.hidden = false;
+  const reason = document.getElementById('new-event-ask-reason');
+  if (reason) reason.value = '';
+}
+
+/**
+ * Offer to carry an ask the Worker just refused.
+ *
+ * A parish contact may combine freely at their own parish and at nobody
+ * else's, which is the one thing on this dialog they can want and not have.
+ * The refusal names exactly what was out of reach — the Worker sends the
+ * labels, because "some parish is not yours" is not something anybody can act
+ * on — and the ask goes off with the event, the targets and the reason
+ * attached, which is what it would lose travelling by any other channel.
+ */
+function _offerNewEventAsk(body, refusal) {
+  _newEventRefusedBody = body;
+  const ask = document.getElementById('new-event-ask');
+  const what = document.getElementById('new-event-ask-what');
+  if (!ask || !what) return;
+  const outside = Array.isArray(refusal.outside) ? refusal.outside : [];
+  what.innerHTML = outside.length
+    ? `These belong to other parishes, so an owner decides:<br>` +
+      outside.map(o => `<b>${esc(o.label)}</b>`).join('<br>') +
+      `<br><br>Your event will be added at your own parish now either way.`
+    : `${esc(refusal.error || 'An owner has to approve part of this.')}`;
+  ask.hidden = false;
+  const reason = document.getElementById('new-event-ask-reason');
+  if (reason) requestAnimationFrame(() => reason.focus());
+}
+
+/** Send it. The same body, with `propose` carrying the reason. */
+async function _sendNewEventAsk() {
+  const body = _newEventRefusedBody;
+  const btn = document.getElementById('new-event-ask-send');
+  const errEl = document.getElementById('new-event-error');
+  if (!body || !btn) return;
+  const reason = (document.getElementById('new-event-ask-reason') || {}).value || '';
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // `propose` is the flag AND the reason. An ask with no reason still
+      // beats a refusal nobody can act on, so an empty box is allowed.
+      body: JSON.stringify({ ...body, propose: reason.trim() || true }),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      errEl.textContent = (payload && payload.error) || `That could not be sent (${res.status}).`;
+      errEl.hidden = false;
+      return;
+    }
+    // The answer lands where the question was asked. No toast in this app, and
+    // closing on success would leave nothing saying the ask had gone anywhere.
+    const ask = document.getElementById('new-event-ask');
+    const form = document.getElementById('new-event-form');
+    const actions = document.getElementById('new-event-actions');
+    if (form) form.hidden = true;
+    if (actions) actions.hidden = true;
+    if (ask) {
+      ask.classList.add('ne-ask-sent');
+      ask.innerHTML =
+        `<div class="ne-ask-what">Asked. It is on file at your own parish already; ` +
+        `an owner sees the rest under <b>Asks</b> in the admin panel.</div>` +
+        `<button class="ps-btn ps-btn-admin" type="button" onclick="closeNewEventDialog()">Done</button>`;
+    }
+    // The event exists now, so the feed has to be re-read whether or not the
+    // ask is ever approved.
+    await _afterNewEvent(body, payload);
+    // And the dot, in case the person who asked is also somebody who can
+    // decide. An owner in another browser still learns about it on their next
+    // load — nothing here polls, and a dot is not worth a heartbeat.
+    refreshOpenAsks();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Widen the window far enough to hold the new event, re-read, and pin it. */
+async function _afterNewEvent(body, payload) {
+  const date = String(body.start_utc || '').slice(0, 10);
+  const needed = daysUntil(date) + HORIZON_STEP_DAYS;
+  if (needed > (state._horizonDays || 0)) state._horizonDays = needed;
+  await fetchEvents({ fresh: true, keepCount: true });
+  const newId = payload && payload.id != null ? String(payload.id) : null;
+  if (state.parishSheetFocus) {
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true, focusEventId: newId });
+  }
+}
+
+window.saveNewEvent = async function () {
+  const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
+  const errEl = document.getElementById('new-event-error');
+  if (!parish || !errEl) return;
+  const fail = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+  // Cleared, not just hidden: a stale sentence left in the node is a sentence
+  // the next press can flash before its own answer arrives.
+  errEl.textContent = '';
+  errEl.hidden = true;
+
+  const title = document.getElementById('ne-title').value.trim();
+  const date = document.getElementById('ne-date').value;
+  const start = document.getElementById('ne-start').value;
+  const end = document.getElementById('ne-end').value;
+  if (!title) return fail('The event needs a title.');
+  if (!date) return fail('The event needs a date.');
+  if (!start) return fail('The event needs a start time.');
+
+  const tz = parish.timezone || TZ;
+  // What was typed is the parish's wall clock; the row stores an instant. The
+  // conversion is the shared one — see agoraBundle.localToUtc, which reaches
+  // into the same /shared/tz.mjs the projection uses rather than letting this
+  // file grow a second copy of the offset maths.
+  const start_utc = await window.agoraBundle.localToUtc(tz, date, start);
+  let end_utc = null;
+  if (end) {
+    end_utc = await window.agoraBundle.localToUtc(tz, date, end);
+    // An end time earlier than the start is the next morning, not a mistake:
+    // the Paschal liturgy starts before midnight and finishes after it.
+    if (Date.parse(end_utc) <= Date.parse(start_utc)) {
+      const next = new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+      end_utc = await window.agoraBundle.localToUtc(tz, next, end);
+    }
+  }
+
+  const langs = document.getElementById('ne-langs').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const body = {
+    parish_id: parish.id,
+    title,
+    start_utc,
+    end_utc,
+    event_type: document.getElementById('ne-type').value,
+    description: document.getElementById('ne-desc').value.trim() || null,
+    languages: langs.length ? JSON.stringify(langs) : null,
+    location_override: document.getElementById('ne-location').value.trim() || null,
+    additive_parish_ids: [...document.querySelectorAll('#new-event-parishes input:checked:not([data-own])')]
+      .map(cb => cb.value),
+    // Ids stay strings: an integer is a stored one-off and "sid:date" is a
+    // projected occurrence, and the Worker classifies each.
+    replaced_event_ids: [...document.querySelectorAll('#new-event-replaces input:checked')]
+      .map(cb => cb.value),
+  };
+
+  const btn = document.getElementById('new-event-save');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      // Part of this reaches a parish that is not theirs. Not a dead end: the
+      // refusal carries the way forward, and the ask goes off with the event,
+      // the exact targets and a reason attached.
+      if (res.status === 403 && payload && payload.proposable) {
+        fail(payload.error || 'An owner has to approve part of this.');
+        return _offerNewEventAsk(body, payload);
+      }
+      // Everything else is a sentence worth reading as it stands — a ruling, a
+      // field the Worker would not take — so it is shown rather than flattened
+      // into "failed".
+      return fail((payload && payload.error) || `The event was refused (${res.status}).`);
+    }
+    window.closeNewEventDialog();
+    // A date past the loaded horizon would save and then appear to have done
+    // nothing, so the window is widened before the re-read and the new card is
+    // pinned under the parish header — the answer to "did that work" is the
+    // event itself. Pinned through opts rather than state._openEventId: this
+    // is feedback on a press, not a surface worth rewriting the URL for.
+    await _afterNewEvent(body, payload);
+  } catch {
+    return fail('The event could not be saved — check the connection and try again.');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+window.agoraSendNewEventAsk = _sendNewEventAsk;
 
 // ── Donate parish-picker dialog ──
 // Opened by the /donate and /<juris>/donate deep links (and as a fallback when a

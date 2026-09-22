@@ -69,6 +69,7 @@ runs. `005` adds instead, which costs one column and no window.
 
 | File | Adds | For |
 |---|---|---|
+| `011-event-combine-proposals.sql` | `'event.combine'` on `admin_proposals.capability`'s CHECK | A parish contact may combine at their own parish and nobody else's; this lets the refusal become an ask instead of a dead end. **Rebuilds the table** — SQLite cannot alter a CHECK — which is safe here for the reasons the file argues and is not a precedent for `parishes`. |
 | `010-info-overrides.sql` | `info_overrides` | Which source wins when several describe the same parish, and the rulings made against that ladder — the two Elimbah Vespers a re-import would otherwise have recreated. Empty table = every import behaves exactly as before. **Applied to production 2026-09-17** |
 | `009-admin-roles-and-attribution.sql` | `admin_roles`, `admin_proposals`, `pdf_source_overrides`; `updated_at`/`updated_by` on `parishes` and `schedules`; `updated_by` on `schedule_overrides` | Written after the fact. All of it was applied to production on 17 September 2026 one `--command` at a time from `docs/admin-panel.md` and never recorded here, which is the failure the top of this file describes. **Applied to production 2026-09-17** |
 | `008-parish-links.sql` | `parish_links` | A parish's own short links beyond the four it has columns for — a festival, a building fund, a bookstall. **Applied to production 2026-09-12** |

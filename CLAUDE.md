@@ -151,7 +151,9 @@ is what makes `start_time` meaningful.
 venue's opening hours. Only "is it on right now" depends on the viewer's actual moment.
 
 **Combine is three mechanisms**, routed by the shape of the target id
-(`POST /api/admin/events/:id/escalate`):
+(`POST /api/admin/events/:id/escalate`, and `POST /api/admin/events`, which
+takes the same two lists so a one-off entered *because* it replaces something
+never exists for a round trip beside the thing it replaces):
 
 | Capability | Mechanism | Target id |
 |---|---|---|
@@ -161,6 +163,17 @@ venue's opening hours. Only "is it on right now" depends on the viewer's actual 
 
 `event_replaces` is described as legacy in old comments. It is pre-v26 but **not**
 redundant: it is the only path for combining against a stored one-off.
+
+A combine is the one write whose target is **not** the parish in the URL, which
+makes it the one a parish contact can use to reach out of their own scope. So
+it is scoped per target, and the refusal is not a dead end: the same request
+with `propose` set applies the half that IS theirs and files the rest as an
+`event.combine` row in `admin_proposals` — their parish's side of a deanery
+liturgy should not wait on an owner, and the other parish's side should not
+happen because somebody ticked a box. The ask carries the **whole** desired
+state, because `writeCombine` is a target state and removes what it is not
+told; a payload holding only the refused half would strip the applied half on
+approval.
 
 **Dedup decides which of two competing rows becomes one card** (`merge.mjs`): a
 `week_of_month` rule beats a generic weekly one, a stored one-off beats a schedule
@@ -270,6 +283,17 @@ A secret reaches `env` as a **string** (a Worker secret) or as an **object with
 takes either. Do not compare a binding for truthiness and call it configured —
 an object always passes, and the value then renders as `[object Object]`.
 
+**An ask is a refusal with somewhere to go.** `admin_proposals` holds the four
+things somebody was refused and the panel could carry for them — a parish
+delete, an acronym, a jurisdiction colour, and a combine reaching another
+parish. The first three are *capability* refusals and the fourth is a *scope*
+refusal, which is why nothing in `roles.mjs` grants `event.combine` and the
+events routes raise it themselves. An owner decides; `/api/admin/ping` counts
+what is open and the main app puts a red dot on the account icon, for a
+decider only — a dot on somebody who can only look at it is noise. It is still
+**not a moderation queue**: ordinary edits are never proposed, they just
+happen.
+
 **Who may do what lives in `admin_roles`.** Cloudflare Access decides who
 reaches `/admin`; that table decides what they may touch once inside —
 owner, editor, or a parish contact scoped to their own parishes. Routes name
@@ -290,6 +314,17 @@ renders — the sheet or the main services panel — exactly when its own parish
 the one open. `hideAdminControls` predates this and survives only on the event
 drawer, where the buttons are still inline; it was a preference for making
 tools go away, which is what a mode does by default.
+
+The parish sheet's **add-an-event button** is the one control outside that
+mode, and deliberately: the mode exists so a signed-in person reads the sheet a
+visitor reads, and this alters nothing the sheet is showing — it makes a
+one-off that is not on the sheet at all yet, from a circle floating clear of
+the content rather than a pencil sitting in it. What it *is* gated on is the
+capability, per parish, which is why `state.adminWho` now keeps the whole
+`/api/admin/ping` answer and not just "signed in": `adminMay('event.edit', pid)`
+asks the two questions the Worker asks, in the order it asks them, so a button
+that is absent and a route that refuses cannot disagree. An owner and an editor
+see it on every sheet; a parish contact sees it on their own parishes only.
 
 **Admin fails closed.** With `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` unset, every
 `/api/admin/*` request is refused. The Access JWT's signature is verified against the

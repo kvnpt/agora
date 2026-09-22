@@ -559,23 +559,40 @@ CREATE TABLE admin_roles (
 --
 -- WHAT THIS IS NOT. Not a general approval queue, and deliberately not a way to
 -- moderate ordinary edits — the WhatsApp moderation subsystem was deleted with
--- the VM and is not coming back. Only the three capabilities an editor is
--- refused can become a proposal, because those are the only asks that have
--- nowhere else to go.
+-- the VM and is not coming back. Only an ask with nowhere else to go becomes a
+-- proposal.
 --
--- The payload is JSON because the three shapes have nothing in common: a delete
+-- 'event.combine' is the fourth and is a different shape from the other three.
+-- Those are CAPABILITY refusals: an editor may not delete a parish anywhere.
+-- This one is a SCOPE refusal — a parish contact may combine all day at their
+-- own parish, and a combine is the one write whose target is somebody else's.
+-- The ask is the same shape either way ("I cannot do this, here is what I
+-- wanted and why"), so it lives in the same table rather than growing a second
+-- one that would need its own panel and its own red dot.
+--
+-- The payload is JSON because the shapes have nothing in common: a delete
 -- carries what to do with the events, an acronym carries the new slug, a colour
--- carries a hex. Reading it is the approving route's job, and it re-validates
--- everything rather than trusting a row that has been sitting in a table.
+-- carries a hex, a combine carries the two target lists. Reading it is the
+-- approving route's job, and it re-validates everything rather than trusting a
+-- row that has been sitting in a table.
+--
+-- A combine's payload is the WHOLE desired state, not the part that was
+-- refused. `applyEscalation` is idempotent on a target state — anything not
+-- named is removed — so a payload holding only the out-of-scope half would
+-- strip the half that was applied at once, the moment it was approved.
 CREATE TABLE admin_proposals (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
 
-  -- The capability the proposer was refused: 'parish.delete', 'parish.acronym'
-  -- or 'colors.edit'. Checked against that list on the way in, so a row can
-  -- never ask for something the approving route does not know how to do.
-  capability  TEXT NOT NULL CHECK(capability IN ('parish.delete','parish.acronym','colors.edit')),
+  -- What the proposer was refused. Checked against this list on the way in, so
+  -- a row can never ask for something the approving route does not know how to
+  -- do. The first three are capabilities an editor lacks; 'event.combine' is a
+  -- scope refusal — see the note above.
+  capability  TEXT NOT NULL
+                CHECK(capability IN ('parish.delete','parish.acronym','colors.edit','event.combine')),
 
-  -- What it is about: a parish id, or a jurisdiction for a colour.
+  -- What it is about: a parish id, a jurisdiction for a colour, or the id of
+  -- the event being combined. Only a parish subject is scoped on the way in,
+  -- which is why the combine's own scoping reads the event's parish instead.
   subject     TEXT NOT NULL,
 
   -- The change itself, shaped by `capability`.
