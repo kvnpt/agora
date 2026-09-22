@@ -377,6 +377,19 @@
     </div>
   </div>
 
+  <!-- Add a one-off event at the open parish.
+       OUTSIDE the sheet, and that is not tidiness. The sheet is as tall as the
+       viewport and slid down by its snap offset, so its own bottom edge is
+       half a screen below the fold — a control anchored there would be
+       invisible at every snap but full. Fixed to the viewport's bottom right
+       it is always over the sheet, because an open sheet always reaches the
+       bottom of the screen, and it holds still while the sheet is dragged
+       rather than swimming with it.
+       Hidden until /api/admin/ping says this account may write an event at
+       THIS parish — see syncParishAddEventFab. -->
+  <button id="parish-add-event-fab" class="ps-fab" type="button" hidden
+          aria-label="Add an event at this parish"></button>
+
   <!-- Event detail panel -->
   <div id="event-detail" class="detail-panel hidden">
     <div class="detail-grab-handle"></div>
@@ -455,6 +468,60 @@
       <div class="escalate-btn-row">
         <button class="btn-outline" onclick="closePublicEscalateModal()">Cancel</button>
         <button class="btn-primary" id="escalate-pub-confirm" onclick="confirmPublicEscalate()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Adding a one-off event at a parish, from the parish sheet's FAB.
+       One dialog and not three steps, because the three things it asks are one
+       decision: a deanery liturgy at the cathedral that the other parishes are
+       coming to and that stands in for their own Sunday morning is entered in a
+       single breath, and a flow that made the combine a second visit would
+       leave a card beside the service it replaces for as long as it took.
+         · the event itself
+         · "also appears at" -> event_parishes
+         · "replaces"        -> event_replaces for a stored one-off, a
+                                'combined' schedule_override for a rule's
+                                occurrence. Routed by the shape of the id; see
+                                the combine table in CLAUDE.md. -->
+  <div class="escalate-backdrop" id="new-event-backdrop" onclick="if(event.target===this)closeNewEventDialog()">
+    <div class="escalate-modal new-event-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeNewEventDialog()">&times;</button>
+      <h2>Add an event</h2>
+      <div class="escalate-modal-sub" id="new-event-sub"></div>
+
+      <div class="ne-form" id="new-event-form">
+        <div class="edit-row"><label for="ne-title">Title</label><input id="ne-title" placeholder="Feast of the Dormition"></div>
+        <div class="edit-row"><label for="ne-date">Date</label><input type="date" id="ne-date" onchange="agoraNewEventDateChanged()"></div>
+        <div class="ne-grid">
+          <div class="edit-row"><label for="ne-start">Starts</label><input type="time" id="ne-start" value="09:00"></div>
+          <div class="edit-row"><label for="ne-end">Ends</label><input type="time" id="ne-end"></div>
+        </div>
+        <div class="edit-row-hint" id="ne-tz-hint"></div>
+        <div class="edit-row">
+          <label for="ne-type">Kind</label>
+          <select id="ne-type"></select>
+        </div>
+        <div class="edit-row"><label for="ne-desc">Description</label><textarea id="ne-desc" rows="3" placeholder="Optional"></textarea></div>
+        <div class="edit-row"><label for="ne-langs">Languages</label><input id="ne-langs" placeholder="English, Greek"></div>
+        <div class="edit-row">
+          <label for="ne-location">Held elsewhere</label>
+          <input id="ne-location" placeholder="Leave empty if it is at the parish">
+          <div class="edit-row-hint">A venue for this one event. The parish's own address and pin are untouched.</div>
+        </div>
+      </div>
+
+      <div class="escalate-section-title">Also appears at</div>
+      <div class="escalate-list" id="new-event-parishes"></div>
+
+      <div class="escalate-section-title">Replaces at those parishes (optional)</div>
+      <div class="escalate-list" id="new-event-replaces"><div class="escalate-empty">Pick a date to see what it could replace</div></div>
+      <div class="edit-row-hint ne-replace-hint">Whatever is ticked here stops being its own card and renders as a tombstone pointing at this event — nothing disappears.</div>
+
+      <div class="ne-error" id="new-event-error" hidden></div>
+      <div class="escalate-btn-row">
+        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeNewEventDialog()">Cancel</button>
+        <button class="btn-save" type="button" id="new-event-save" onclick="saveNewEvent()">Add event</button>
       </div>
     </div>
   </div>

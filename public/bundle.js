@@ -175,6 +175,26 @@ window.agoraBundle = (function () {
     return inst ? { ...inst, id: String(inst.id) } : null;
   }
 
+  /**
+   * A parish's wall clock -> a UTC instant, through the same /shared/ module
+   * the projection uses.
+   *
+   * Recurrence rules store LOCAL time and one-off events store UTC — the
+   * asymmetry is deliberate and d1/schema.sql argues it at length — so the
+   * moment a person types a date and a time into a form, something has to
+   * cross between the two. That something is `exactLocalToEpoch`, which
+   * already handles the two days a year a zone has two offsets.
+   *
+   * Exposed here rather than reimplemented in app.js, which is a classic
+   * script and cannot import: a second copy of the offset maths in the app is
+   * precisely the drift /shared/ exists to prevent, and it would be a copy
+   * nothing in the suite runs.
+   */
+  async function localToUtc(zone, dateStr, timeStr) {
+    const m = await modules();
+    return new Date(m.exactLocalToEpoch(zone, dateStr, timeStr)).toISOString();
+  }
+
   const parishes = () => (raw && raw.parishes) || [];
 
   // The bundle carries parish columns under the aliases the projection wants
@@ -191,5 +211,5 @@ window.agoraBundle = (function () {
   }));
   const isLoaded = () => !!raw;
 
-  return { load, feed, resolveEvent, parishes, schedules, isLoaded, get raw() { return raw; } };
+  return { load, feed, resolveEvent, localToUtc, parishes, schedules, isLoaded, get raw() { return raw; } };
 })();

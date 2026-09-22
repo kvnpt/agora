@@ -10,6 +10,7 @@ import { json, readJson } from '../lib/router.mjs';
 import { requireAdmin, adminIdentity } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
+import { exactLocalToEpoch } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
@@ -191,6 +192,138 @@ async function suppressedSlot(db, parishId, dayOfWeek, startTime) {
   }, 409);
 }
 
+/**
+ * Apply a combine to one event: which parishes it also appears at, and which
+ * existing occurrences it absorbs.
+ *
+ * Lifted out of POST /events/:id/escalate so the create path can take the same
+ * three arguments. An event entered *because* it replaces the 9am liturgy has
+ * no moment where it exists without that fact, and two requests would give it
+ * one — the window where the deanery liturgy is on file and the liturgy it
+ * stands in for is still showing beside it.
+ *
+ * Returns a `json()` refusal, or null when the write went through.
+ */
+async function applyEscalation(c, event, body) {
+  const db = c.env.DB;
+  const { additive_parish_ids = [], replaced_event_ids = [], approve = false } = body;
+
+  // Targets split by id shape: integers are stored one-offs (event_replaces),
+  // "sid:date" are schedule instances (v26 combined overrides).
+  const synthTargets = new Set(), intTargets = new Set();
+  for (const rid of replaced_event_ids) {
+    if (parseInstanceId(rid)) synthTargets.add(String(rid));
+    else if (/^\d+$/.test(String(rid))) intTargets.add(Number(rid));
+  }
+  const targetParishes = new Set(
+    additive_parish_ids.filter(pid => typeof pid === 'string' && pid !== event.parish_id)
+  );
+
+  // A combine reaches OTHER parishes' rows, so it is the one place where the
+  // parish being written to is not the one named in the URL. Only the parish
+  // role is scoped, so the lookups that answer "whose occurrence is this"
+  // are skipped entirely for an owner or an editor.
+  if (c.who.role === 'parish') {
+    for (const pid of targetParishes) {
+      const scoped = outOfScope(c, pid);
+      if (scoped) return scoped;
+    }
+    for (const rid of intTargets) {
+      const row = await db.prepare('SELECT parish_id FROM events WHERE id = ?').bind(rid).first();
+      const scoped = outOfScope(c, row && row.parish_id);
+      if (scoped) return scoped;
+    }
+    for (const sid of synthTargets) {
+      const { scheduleId } = parseInstanceId(sid);
+      const row = await db.prepare('SELECT parish_id FROM schedules WHERE id = ?').bind(scheduleId).first();
+      const scoped = outOfScope(c, row && row.parish_id);
+      if (scoped) return scoped;
+    }
+  }
+
+  const [curP, curR, curC] = await Promise.all([
+    db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(event.id).all(),
+    db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').bind(event.id).all(),
+    db.prepare("SELECT schedule_id, occurrence_date FROM schedule_overrides WHERE combined_into_event_id = ? AND kind = 'combined'").bind(event.id).all(),
+  ]);
+  const currentParishes = (curP.results || []).map(r => r.parish_id);
+  const currentReplaces = (curR.results || []).map(r => r.replaced_event_id);
+  const currentCombined = (curC.results || []).map(r => `${r.schedule_id}:${r.occurrence_date}`);
+
+  const stmts = [];
+  if (approve) {
+    stmts.push(db.prepare(
+      "UPDATE events SET status='approved', updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?"
+    ).bind(event.id));
+  }
+
+  // Additive parishes.
+  for (const pid of targetParishes) {
+    if (!currentParishes.includes(pid)) {
+      stmts.push(db.prepare('INSERT OR IGNORE INTO event_parishes (event_id, parish_id) VALUES (?,?)').bind(event.id, pid));
+    }
+  }
+  for (const pid of currentParishes) {
+    if (!targetParishes.has(pid)) {
+      stmts.push(db.prepare('DELETE FROM event_parishes WHERE event_id=? AND parish_id=?').bind(event.id, pid));
+    }
+  }
+
+  // Stored one-off bases.
+  for (const rid of intTargets) {
+    if (!currentReplaces.includes(rid)) {
+      stmts.push(db.prepare('INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?,?)').bind(event.id, rid));
+      stmts.push(db.prepare(
+        "UPDATE events SET status='replaced', mutation_type='replaced', updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?"
+      ).bind(rid));
+    }
+  }
+  for (const rid of currentReplaces) {
+    if (!intTargets.has(rid)) {
+      stmts.push(db.prepare('DELETE FROM event_replaces WHERE replacing_event_id=? AND replaced_event_id=?').bind(event.id, rid));
+      stmts.push(db.prepare(
+        `UPDATE events SET status='approved',
+           mutation_type = CASE WHEN schedule_id IS NOT NULL THEN 'scheduled' ELSE 'headless' END,
+           updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
+         WHERE id=? AND mutation_type='replaced'`
+      ).bind(rid));
+    }
+  }
+
+  // One batch, so a bad parish id rolls the whole change back rather than
+  // leaving half a combine behind.
+  if (stmts.length) await db.batch(stmts);
+
+  // Schedule instances go through the override helpers (multi-step each).
+  for (const sid of synthTargets) {
+    if (!currentCombined.includes(sid)) {
+      const p = parseInstanceId(sid);
+      await setCombined(db, p.scheduleId, p.date, event.id);
+    }
+  }
+  for (const sid of currentCombined) {
+    if (!synthTargets.has(sid)) {
+      const p = parseInstanceId(sid);
+      await clearCombined(db, p.scheduleId, p.date);
+    }
+  }
+  return null;
+}
+
+/** An event's row plus the two halves of its combine, as both routes answer. */
+async function eventWithEscalation(db, id) {
+  const [row, addl, repl] = await Promise.all([
+    db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first(),
+    db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(id).all(),
+    db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').bind(id).all(),
+  ]);
+  return {
+    ...row,
+    additional_parishes: (addl.results || []).map(r => r.parish_id),
+    replaces: (repl.results || []).map(r => r.replaced_event_id),
+  };
+}
+
 // Keep an event's coordinates in step with its parish, unless it has an override.
 async function syncEventCoordsForParish(db, parishId) {
   if (!parishId || parishId === '_unassigned') return;
@@ -343,16 +476,33 @@ export function registerAdminRoutes(router) {
 
   // ── events ──
 
-  // Candidates for a combine, on one Sydney-local date: stored one-offs plus
-  // schedule instances. A UTC range of [prev-day 13:00, day 14:00] covers the
-  // full local day regardless of DST.
+  // Candidates for a combine on one local date: stored one-offs plus schedule
+  // instances.
+  //
+  // `tz` is the parish's IANA zone and gives the exact local day, using the
+  // same tz module the projection does. Without it the range is the original
+  // [prev-day 13:00, day 14:00] UTC, which is a Sydney day plus slop — good
+  // enough from Perth to Sydney and NOT good enough in New Zealand, where it
+  // starts at 02:00 local and so cannot see the midnight Paschal liturgy that
+  // is the single most likely service anybody combines against. The fallback
+  // stays because the parameter is optional and a caller without a parish in
+  // hand should still get an answer.
   router.get('/api/admin/events/candidates', guarded(async ({ env, query }) => {
     const date = query.get('date');
     const excludeId = query.get('exclude_id');
     if (!date) return json({ error: 'date required (YYYY-MM-DD)' }, 400);
-    const [y, m, d] = date.split('-').map(Number);
-    const from = new Date(Date.UTC(y, m - 1, d - 1, 13, 0, 0)).toISOString();
-    const to = new Date(Date.UTC(y, m - 1, d, 14, 0, 0)).toISOString();
+    const tz = query.get('tz');
+    let from, to;
+    if (tz && isResolvableTimezone(tz)) {
+      from = new Date(exactLocalToEpoch(tz, date, '00:00')).toISOString();
+      // Local midnight the next day, exclusive — the queries below are
+      // [from, to).
+      to = new Date(exactLocalToEpoch(tz, date, '23:59') + 60000).toISOString();
+    } else {
+      const [y, m, d] = date.split('-').map(Number);
+      from = new Date(Date.UTC(y, m - 1, d - 1, 13, 0, 0)).toISOString();
+      to = new Date(Date.UTC(y, m - 1, d, 14, 0, 0)).toISOString();
+    }
 
     const oneOffs = await env.DB.prepare(
       `SELECT e.id, e.title, e.start_utc, e.end_utc, e.parish_id, p.name AS parish_name,
@@ -374,6 +524,96 @@ export function registerAdminRoutes(router) {
 
     return json([...(oneOffs.results || []), ...instances]
       .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)));
+  }));
+
+  // POST an event — the one-off somebody types in, as against the ones a scrape
+  // writes and the ones a rule projects.
+  //
+  // It closes a gap: every other way into `events` was an adapter or a PATCH of
+  // a row that already existed, so the only way to put a deanery liturgy or a
+  // parish feast on the site was to write an adapter for it. The parish sheet's
+  // add button is the caller.
+  //
+  // `event.edit` rather than an `event.create` of its own. A new capability that
+  // all three roles held would carry no information and would be one more thing
+  // to keep in step; what actually needs saying about a create is WHICH parish,
+  // and that is `outOfScope` below rather than a capability.
+  //
+  // The combine travels in the same request. An event entered because it
+  // replaces the 9am liturgy should not exist for a round trip alongside the
+  // liturgy it replaces — see applyEscalation.
+  router.post('/api/admin/events', guarded('event.edit', async (c) => {
+    const { env, request } = c;
+    const b = await readJson(request);
+    const { parish_id, title } = b;
+    if (!parish_id || !title || !b.start_utc) {
+      return json({ error: 'parish_id, title and start_utc are required' }, 400);
+    }
+    // Scoped on the parish being written TO — for a create there is no existing
+    // row to read the scope off.
+    const scoped = outOfScope(c, parish_id);
+    if (scoped) return scoped;
+
+    // A one-off stores a real instant, so the caller does the timezone work and
+    // this only checks that what arrived is a moment. `schedules.start_time` is
+    // the opposite and deliberately so; d1/schema.sql says why at length.
+    const instant = (v) => {
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? new Date(t).toISOString() : null;
+    };
+    const startUtc = instant(b.start_utc);
+    if (!startUtc) return json({ error: 'start_utc must be an instant, e.g. 2026-09-27T23:00:00.000Z' }, 400);
+    const endUtc = b.end_utc ? instant(b.end_utc) : null;
+    if (b.end_utc && !endUtc) return json({ error: 'end_utc must be an instant' }, 400);
+    if (endUtc && Date.parse(endUtc) < Date.parse(startUtc)) {
+      return json({ error: 'end_utc is before start_utc' }, 400);
+    }
+
+    const parish = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?')
+      .bind(parish_id).first();
+    if (!parish) return json({ error: 'Invalid parish_id' }, 400);
+
+    // No suppressedSlot check, deliberately. A ruling on a schedule slot says a
+    // RECURRING claim about that slot is wrong; one date somebody entered by
+    // hand is not that claim, and refusing it would make the ruling a blackout.
+
+    // `source_adapter` is what the bundle query filters on ('schedule' is scar
+    // tissue from the nightly generator), and 'manual' is what says a person
+    // typed this. 'headless' is the mutation_type for a one-off with no rule
+    // behind it, matching what the adapters write.
+    const row = await env.DB.prepare(
+      `INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
+         location_override, lat, lng, event_type, status, mutation_type, languages,
+         hide_live, parish_scoped)
+       VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?) RETURNING *`
+    ).bind(
+      parish_id, title, b.description || null, startUtc, endUtc,
+      b.location_override || null, parish.lat, parish.lng,
+      b.event_type || 'other', b.languages || null,
+      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0,
+    ).first();
+
+    // A venue of its own gets its own dot. Best-effort: a geocoder that cannot
+    // find it leaves the parish's coordinates, which is where the service is
+    // unless somebody says otherwise.
+    if (b.location_override) {
+      const coords = await geocode(b.location_override);
+      if (coords) {
+        await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
+          .bind(coords.lat, coords.lng, row.id).run();
+      }
+    }
+
+    const refusedCombine = await applyEscalation(c, row, b);
+    if (refusedCombine) {
+      // The event is written and the combine is not, which is the one outcome
+      // worth undoing: it would leave a card beside the service it was entered
+      // to replace, with nothing saying the combine had been asked for.
+      await env.DB.prepare('DELETE FROM events WHERE id = ?').bind(row.id).run();
+      return refusedCombine;
+    }
+
+    return json(await eventWithEscalation(env.DB, row.id), 201);
   }));
 
   // PATCH an event. A synthetic id writes an override instead of mutating a row.
@@ -482,102 +722,15 @@ export function registerAdminRoutes(router) {
 
   // Set the desired combine state. Idempotent: the body is the target state,
   // and anything not named is removed.
-  router.post('/api/admin/events/:id/escalate', guarded('event.edit', async ({ env, params, request }) => {
-    const db = env.DB;
-    const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(params.id).first();
+  router.post('/api/admin/events/:id/escalate', guarded('event.edit', async (c) => {
+    const db = c.env.DB;
+    const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(c.params.id).first();
     if (!event) return json({ error: 'Event not found' }, 404);
 
-    const body = await readJson(request);
-    const { additive_parish_ids = [], replaced_event_ids = [], approve = false } = body;
+    const refused = await applyEscalation(c, event, await readJson(c.request));
+    if (refused) return refused;
 
-    // Targets split by id shape: integers are stored one-offs (event_replaces),
-    // "sid:date" are schedule instances (v26 combined overrides).
-    const synthTargets = new Set(), intTargets = new Set();
-    for (const rid of replaced_event_ids) {
-      if (parseInstanceId(rid)) synthTargets.add(String(rid));
-      else if (/^\d+$/.test(String(rid))) intTargets.add(Number(rid));
-    }
-    const targetParishes = new Set(
-      additive_parish_ids.filter(pid => typeof pid === 'string' && pid !== event.parish_id)
-    );
-
-    const [curP, curR, curC] = await Promise.all([
-      db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(event.id).all(),
-      db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').bind(event.id).all(),
-      db.prepare("SELECT schedule_id, occurrence_date FROM schedule_overrides WHERE combined_into_event_id = ? AND kind = 'combined'").bind(event.id).all(),
-    ]);
-    const currentParishes = (curP.results || []).map(r => r.parish_id);
-    const currentReplaces = (curR.results || []).map(r => r.replaced_event_id);
-    const currentCombined = (curC.results || []).map(r => `${r.schedule_id}:${r.occurrence_date}`);
-
-    const stmts = [];
-    if (approve) {
-      stmts.push(db.prepare(
-        "UPDATE events SET status='approved', updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?"
-      ).bind(event.id));
-    }
-
-    // Additive parishes.
-    for (const pid of targetParishes) {
-      if (!currentParishes.includes(pid)) {
-        stmts.push(db.prepare('INSERT OR IGNORE INTO event_parishes (event_id, parish_id) VALUES (?,?)').bind(event.id, pid));
-      }
-    }
-    for (const pid of currentParishes) {
-      if (!targetParishes.has(pid)) {
-        stmts.push(db.prepare('DELETE FROM event_parishes WHERE event_id=? AND parish_id=?').bind(event.id, pid));
-      }
-    }
-
-    // Stored one-off bases.
-    for (const rid of intTargets) {
-      if (!currentReplaces.includes(rid)) {
-        stmts.push(db.prepare('INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?,?)').bind(event.id, rid));
-        stmts.push(db.prepare(
-          "UPDATE events SET status='replaced', mutation_type='replaced', updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?"
-        ).bind(rid));
-      }
-    }
-    for (const rid of currentReplaces) {
-      if (!intTargets.has(rid)) {
-        stmts.push(db.prepare('DELETE FROM event_replaces WHERE replacing_event_id=? AND replaced_event_id=?').bind(event.id, rid));
-        stmts.push(db.prepare(
-          `UPDATE events SET status='approved',
-             mutation_type = CASE WHEN schedule_id IS NOT NULL THEN 'scheduled' ELSE 'headless' END,
-             updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
-           WHERE id=? AND mutation_type='replaced'`
-        ).bind(rid));
-      }
-    }
-
-    // One batch, so a bad parish id rolls the whole change back rather than
-    // leaving half a combine behind.
-    if (stmts.length) await db.batch(stmts);
-
-    // Schedule instances go through the override helpers (multi-step each).
-    for (const sid of synthTargets) {
-      if (!currentCombined.includes(sid)) {
-        const p = parseInstanceId(sid);
-        await setCombined(db, p.scheduleId, p.date, event.id);
-      }
-    }
-    for (const sid of currentCombined) {
-      if (!synthTargets.has(sid)) {
-        const p = parseInstanceId(sid);
-        await clearCombined(db, p.scheduleId, p.date);
-      }
-    }
-
-    const [updated, addl, repl] = await Promise.all([
-      db.prepare('SELECT * FROM events WHERE id = ?').bind(event.id).first(),
-      db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(event.id).all(),
-      db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').bind(event.id).all(),
-    ]);
-    return json({
-      ...updated,
-      additional_parishes: (addl.results || []).map(r => r.parish_id),
-      replaces: (repl.results || []).map(r => r.replaced_event_id),
-    });
+    return json(await eventWithEscalation(db, event.id));
   }));
 
   // ── a parish's own links ──
