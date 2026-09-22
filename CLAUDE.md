@@ -274,6 +274,18 @@ its author did to check it, and the PR should say what that was. Reproducing the
 fault against the old code first and then re-measuring is the honest version.
 "Tests pass" is not, when no test ran the line that changed.
 
+**`docs/browser-checks.md` is how to do that here** — driving the app with
+Playwright, the console noise that is environmental rather than yours, and the
+`/api/bundle` cache that makes a write you just made look like it never
+happened.
+
+It also records where the risk actually sits, which is not where it feels like
+it sits. Two bugs shipped in one week with full test coverage of their logic and
+a broken **way in**: a combine ask whose parish list came back empty for the
+only role that needed it, and a notices panel whose render was unreachable
+behind an early return. Neither was a logic error; neither could fail a test.
+Test the behaviour, then open the thing and check the door is there.
+
 ```bash
 npm run deploy       # the same thing, if you do have a terminal
 ```
@@ -340,6 +352,22 @@ Combine and the form. `hideAdminControls` is **gone** — it was a remembered
 preference for making tools go away, which is what a mode does by default, and
 two modes now cover everything it did.
 
+**Three different things are called "hide", and only one of them hides an
+event.** Worth knowing before reaching for one:
+
+| | Where | What it does |
+|---|---|---|
+| `status='hidden'`, override `kind='hidden'` | the row, or the override | Drops it from the feed entirely. **Not a tombstone** — no card, no "CANCELLED", gone |
+| `hide_live` | `events`/`schedules`, patchable per occurrence | Nothing to do with hiding. Suppresses the **Watch Live** badge for that one service |
+| `parish_scoped` | same | Shows only on its parish's own card, never in the main feed |
+
+`filterByStatus` in `merge.mjs` passes `approved`, `cancelled` and `combined` —
+the last two still render, as tombstones, because nothing disappears.
+`hidden` is the deliberate exception and is for something that should never
+have been published: a duplicate, a mistake. It is **not** for a service that is
+not running. `DELETE` on a projected occurrence writes a `hidden` override, not
+a delete; the rule and the other weeks survive.
+
 **Cancel and Suppress are confirmed, because they look like neighbours and
 behave nothing alike.** A cancellation stays on the feed as a tombstone so
 somebody who would have turned up sees it is off; a suppression takes the
@@ -392,6 +420,27 @@ means the repo is not a backup — `npm run db:export` and D1's Time Travel are.
 
 `d1/seed-parishes.sql` is **generated** from `seeds/parishes.js` by
 `npm run gen:seed`. Edit the JS, regenerate, commit both. CI fails if they diverge.
+
+**A schema change is two files, and CI now says so.** The baseline cannot
+rebuild a live database, so anything structural needs a matching file in
+`d1/migrations/`. `npm run check:migrations` builds a database from the previous
+baseline, applies the migrations this branch adds, and diffs it against a fresh
+one — columns *and their order*, CHECK constraints, indexes. It runs on every
+pull request. A comment-only edit to the baseline passes without a migration,
+which is most of the edits it gets.
+
+**Apply the migration to production BEFORE merging, not after.** Merging is
+deploying, and both orderings of the mistake fail quietly:
+
+- deploy first, and a column named in an `INSERT (cols…)` fails **every** write
+  to that table until the migration lands — adding `patch_poster_path` would
+  have broken cancel, modify, combine and hide, not just posters;
+- migrate first and it is always safe, because the deployed code does not
+  reference the new column yet.
+
+CI catches the two files disagreeing. It cannot catch production being behind,
+so check it: `npx wrangler d1 execute agora --remote --command "SELECT …"`
+before the merge.
 
 The seed is safe to re-run — every statement inserts only if the row is missing.
 Parishes get `ON CONFLICT(id) DO NOTHING`; schedules have an AUTOINCREMENT id and

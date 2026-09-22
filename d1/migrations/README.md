@@ -11,6 +11,18 @@ The rule is that both change together. A baseline the live database does not
 match is worse than no baseline, because everything downstream — the seed, the
 tests, a new contributor's local copy — trusts it.
 
+**CI enforces it now.** `npm run check:migrations` builds a database from the
+previous baseline, applies the migrations the branch adds, and diffs it against
+a fresh one — columns and their ORDER, CHECK constraints (which `PRAGMA
+table_info` cannot see, and which migration 011 changed), and indexes (which a
+table rebuild drops, so a rebuild has to recreate them). Run it locally before
+committing; it reads uncommitted migration files too.
+
+**Apply the migration to production before the merge.** Merging is deploying.
+Deploy-first fails quietly and broadly — a column named in an `INSERT (cols…)`
+fails every write to that table, not just the new feature's. Migrate-first is
+always safe, because the deployed code does not reference the new column yet.
+
 ## Applying one
 
 With a `D1:Edit` token in the environment, which is the route to prefer:

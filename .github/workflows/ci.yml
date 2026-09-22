@@ -23,6 +23,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # check-migrations.mjs reads the PREVIOUS baseline out of git, so the
+          # shallow default clone is not enough — it needs the base commit.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -66,6 +70,17 @@ jobs:
             if (!n || !s) { console.error('seed produced nothing:', { parishes: n, schedules: s }); process.exit(1); }
             console.log('schema + seed ok:', n, 'parishes,', s, 'rules');
           "
+
+      # d1/schema.sql is a baseline, not a migration chain: a live database
+      # cannot be rebuilt from it, so a structural change reaches production
+      # only if a file in d1/migrations/ makes it. Forgetting fails QUIETLY —
+      # a column named in an INSERT fails every write to that table once the
+      # code deploys ahead of the column, not just the new feature's. This is
+      # the manual procedure in d1/migrations/README.md, enforced.
+      - name: The baseline matches a database migrated forward
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          node scripts/check-migrations.mjs "${BASE:-HEAD~1}"
 
       # The D1 seed is generated from seeds/parishes.js. If someone edits one
       # without regenerating the other they diverge silently, so check here.
