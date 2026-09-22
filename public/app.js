@@ -8195,9 +8195,18 @@ function _syncNewEventAskState() {
   const ask = document.getElementById('new-event-ask');
   const save = document.getElementById('new-event-save');
   if (!ask || !save) return;
-  // Already sent, or already refused by the Worker — neither is a state to
-  // paint over.
-  if (ask.classList.contains('ne-ask-sent') || _newEventRefusedBody) return;
+  // Sent is the one state not to paint over — the form is gone and the block
+  // is the receipt.
+  if (ask.classList.contains('ne-ask-sent')) return;
+  // A refusal is about a body that was sent. Touching the form makes it a body
+  // that no longer exists, so the held copy goes with it: otherwise unticking
+  // the parish that caused the refusal would leave a button that asks for it
+  // anyway.
+  if (_newEventRefusedBody) {
+    _newEventRefusedBody = null;
+    const err = document.getElementById('new-event-error');
+    if (err) { err.hidden = true; err.textContent = ''; }
+  }
 
   const needed = _newEventAskNeeded();
   const sendBtn = document.getElementById('new-event-ask-send');
