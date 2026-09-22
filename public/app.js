@@ -6,6 +6,10 @@ const LITURGICAL_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
 // how one list becomes three that disagree — see jurisdiction-colors.js for the
 // table that already had to be rescued from exactly that.
 const EVENT_TYPES = ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other'];
+// Which weeks of the month a rule runs on, in the order every picker offers
+// them. Mirrors VALID_WEEKS in worker/routes/admin.mjs, which refuses anything
+// else — a picker offering a sixth value could only ever produce a 400.
+const WEEKS_OF_MONTH = ['first', 'second', 'third', 'fourth', 'last'];
 
 // Archdiocese events page URLs
 const ARCHDIOCESE_EVENTS = {
@@ -2106,10 +2110,11 @@ function renderParishPills() {
       style = `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);`;
     }
     const activeClass = (allActive || isSelected) ? 'active' : '';
-    // Selected pills get an inline × so the user can dismiss the focus
-    // without re-tapping the pill (matches the filter-stack chip pattern).
-    const xHtml = isSelected ? `<span class="parish-pill-x" data-clear-parish="${esc(p.id)}" aria-hidden="true">✕</span>` : '';
-    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}${xHtml}</button>`;
+    // No × on a selected pill. It was a second, smaller target inside a
+    // target that already deselects — tapping the pill is the way off it,
+    // both here and in the picker — and the glyph cost the acronym the room
+    // it needed on the one row where every pill is an abbreviation already.
+    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}</button>`;
   }
   list.innerHTML = html;
   if (row) row.classList.toggle('multi-parish', !!state.filters.multiParish);
@@ -2124,26 +2129,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const row = document.getElementById('parish-filter-row');
 
   row.addEventListener('click', e => {
-    // X on a selected pill → clear that parish from the selection. Doesn't
-    // toggle the pill or open a parish card — just dismiss.
-    const x = e.target.closest('.parish-pill-x');
-    if (x) {
-      e.stopPropagation();
-      const pid = x.dataset.clearParish;
-      if (state.filters.parishIds) {
-        state.filters.parishIds.delete(pid);
-        if (state.filters.parishIds.size === 0) state.filters.parishIds = null;
-      }
-      if (state.parishFocus === pid) state.parishFocus = null;
-      if (typeof window.closeParishSheet === 'function' && state.parishSheetFocus === pid) {
-        window.closeParishSheet();
-      }
-      renderParishPills();
-      renderCurrentView({ fit: true });
-      syncURL();
-      return;
-    }
-
     const pill = e.target.closest('.parish-pill');
     if (!pill) return;
 
@@ -6290,15 +6275,26 @@ function renderScheduleDaysHTML(items) {
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
       const editing = canEdit(s);
-      const editBtn = editing ? `<button class="schedule-edit-btn" data-sid="${s.id}" title="Edit this service">✎</button>` : '';
       const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
-      // The row is the way into the rule: tapping it focuses that rule's next
-      // occurrence at that parish. data-sched-focus carries both halves
-      // because the main services panel renders rows for every parish at once.
+      // The row is the way in, and the mode decides what it opens.
+      //
+      // Reading, it focuses that rule's next occurrence at that parish.
+      // Editing, it opens the rule's own form — there is no pencil beside it
+      // any more. That pencil was an 11px glyph at 45% opacity wedged between
+      // the languages chip and the chevron, on a row that is already a button
+      // and already the full width of the panel; nothing put inside the row
+      // beats the row itself as a target. And narrowing the feed to one rule
+      // is not what somebody who has just said they are editing is asking
+      // for, so in edit mode the row no longer does it at all.
+      //
+      // data-sched-parish carries the parish because the main services panel
+      // renders rows for every parish at once.
       const focused = state.parishScheduleFocus
         && (state.parishScheduleFocus.ruleIds || []).includes(s.id);
-      html += `<div class="schedule-item${focused ? ' focused' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}" role="button" tabindex="0">`;
-      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${editBtn}<img class="si-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt=""></div>`;
+      const rowAttrs = editing ? ' data-sched-editable="1" aria-expanded="false"' : '';
+      const chevIcon = editing ? 'ph:pencil-simple-bold' : 'ph:caret-right-bold';
+      html += `<div class="schedule-item${focused ? ' focused' : ''}${editing ? ' editable' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}"${rowAttrs} role="button" tabindex="0">`;
+      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}<img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></div>`;
       if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
       // Only when the rule meets somewhere other than the parish's own address.
       // Silence means the parish address, which the sheet has already shown —
@@ -6307,7 +6303,15 @@ function renderScheduleDaysHTML(items) {
       html += `</div>`;
       if (editing) {
         const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
-        html += `<div class="schedule-edit-form" id="sef-${s.id}" style="display:none;" onclick="event.stopPropagation()">
+        // No id. The main services panel and the parish sheet BOTH render this
+        // parish's rules, and both are in the document at once — an id here is
+        // two elements answering to one name, and getElementById hands back
+        // whichever the markup happened to put first, which is the services
+        // panel sitting behind the sheet. That is what a tap on the pencil used
+        // to open: the right form, on the wrong surface, under the sheet the
+        // person was looking at. Every lookup below walks from the row or the
+        // button that was pressed instead.
+        html += `<div class="schedule-edit-form" data-sid="${s.id}" style="display:none;" onclick="event.stopPropagation()">
           <div class="schedule-edit-grid">
             <input data-f="title" class="sef-full" value="${esc(s.title)}" placeholder="Title">
             <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
@@ -6317,12 +6321,7 @@ function renderScheduleDaysHTML(items) {
             <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
             <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
           </div>
-          <div class="wom-checkboxes" data-f="week_of_month">
-            <span class="wom-label">Weeks:</span>
-            ${['first','second','third','fourth','last'].map(w =>
-              `<label class="wom-check"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
-            ).join('')}
-          </div>
+          ${womPickerHTML('data-f="week_of_month"', womChecked)}
           <div class="sef-toggles">
             <label class="wom-check"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> No live badge</label>
             <label class="wom-check"><input type="checkbox" data-f="parish_scoped" ${s.parish_scoped?'checked':''}> Parish only</label>
@@ -6339,6 +6338,33 @@ function renderScheduleDaysHTML(items) {
   // reader wants the times first and the provenance second.
   html += scheduleSourceHTML(items);
   return html;
+}
+
+/** What a picker is holding, in the shape the column takes. NULL is every week. */
+function readWomPicker(el) {
+  if (!el) return null;
+  const checked = [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+  return checked.length ? checked.join(',') : null;
+}
+
+/**
+ * Which weeks of the month a rule runs on — the same control on the form that
+ * edits a rule and the form that creates one.
+ *
+ * Nothing checked means every week, which is what the column's NULL means, so
+ * the row says so rather than leaving a reader to infer it from five empty
+ * boxes. It reads as a qualification on the day beside it: "Sunday" with
+ * nothing ticked is every Sunday, "Sunday" with 1st and 3rd ticked is the rule
+ * the parish actually publishes.
+ */
+function womPickerHTML(attr, checked = []) {
+  return `<div class="wom-checkboxes" ${attr}>
+      <span class="wom-label">Weeks</span>
+      ${WEEKS_OF_MONTH.map(w =>
+        `<label class="wom-check"><input type="checkbox" value="${w}"${checked.includes(w) ? ' checked' : ''}> ${w}</label>`
+      ).join('')}
+      <span class="wom-hint">none = every week</span>
+    </div>`;
 }
 
 /**
@@ -6380,10 +6406,16 @@ function refusedServicesHTML() {
  *
  * On the parish's own sheet rather than only in /admin, because the moment
  * somebody notices a missing service is while they are looking at the parish
- * that is missing it. The four fields here are the four the route requires;
- * everything else — languages, weeks of the month, a borrowed address — is
- * on the row's own form once it exists, which keeps this short enough to use
- * on a phone.
+ * that is missing it. Four fields the route requires, and the weeks; the rest
+ * — languages, an end time, a borrowed address — is on the row's own form
+ * once it exists, which keeps this short enough to use on a phone.
+ *
+ * The weeks are here and not deferred with the rest because leaving them out
+ * is not the same kind of omission. A rule with no languages renders without a
+ * chip; a rule with no weeks is a WEEKLY rule, and the lens starts projecting
+ * it onto every week of the horizon the moment it is written. A 1st-Saturday
+ * Liturgy entered without its weeks publishes three services that nobody is
+ * holding, between creating it and coming back to fix it.
  */
 function addServiceHTML(parishId) {
   const types = EVENT_TYPES;
@@ -6394,8 +6426,9 @@ function addServiceHTML(parishId) {
         <input data-af="title" class="sef-full" placeholder="Divine Liturgy">
         <select data-af="day_of_week">${DAYS.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('')}</select>
         <input data-af="start_time" type="time" value="09:00">
-        <select data-af="event_type">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+        <select data-af="event_type" class="sef-full">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
       </div>
+      ${womPickerHTML('data-af="week_of_month"')}
       <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add service</button>
     </div>`;
 }
@@ -6403,25 +6436,19 @@ function addServiceHTML(parishId) {
 // Bind toggle/save/delete handlers for every admin schedule-edit affordance
 // under `container`. Idempotent: tied to elements, not global state.
 function wireScheduleAdminHandlers(container) {
-  container.querySelectorAll('.schedule-edit-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const form = document.getElementById('sef-' + btn.dataset.sid);
-      if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
-    });
-  });
+  // No binding for opening a form: the row opens it, and the row is bound once
+  // for the whole document in initScheduleRowTaps. See renderScheduleDaysHTML.
   container.querySelectorAll('.schedule-save-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const id = btn.dataset.sid;
-      const form = document.getElementById('sef-' + id);
+      const form = btn.closest('.schedule-edit-form');
       if (!form) return;
       const data = {};
       form.querySelectorAll('[data-f]').forEach(input => {
         const field = input.dataset.f;
         if (field === 'week_of_month') {
-          const checked = [...input.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
-          data[field] = checked.length ? checked.join(',') : null;
+          data[field] = readWomPicker(input);
         } else if (field === 'hide_live' || field === 'parish_scoped') {
           data[field] = input.checked ? 1 : 0;
         } else {
@@ -6488,6 +6515,9 @@ function wireScheduleAdminHandlers(container) {
       const read = (f) => wrap.querySelector(`[data-af="${f}"]`).value;
       const title = read('title').trim();
       if (!title) { alert('Give the service a name.'); return; }
+      // Nothing ticked is every week, which the column spells NULL — not an
+      // empty string, which would fail the route's week_of_month check.
+      const weeks = readWomPicker(wrap.querySelector('[data-af="week_of_month"]'));
       const res = await fetch('/api/admin/schedules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6497,10 +6527,13 @@ function wireScheduleAdminHandlers(container) {
           day_of_week: parseInt(read('day_of_week'), 10),
           start_time: read('start_time'),
           event_type: read('event_type'),
+          week_of_month: weeks,
         }),
       });
       if (res.ok) {
         wrap.querySelector('[data-af="title"]').value = '';
+        wrap.querySelectorAll('[data-af="week_of_month"] input[type=checkbox]')
+          .forEach(cb => { cb.checked = false; });
         fetchSchedules({ fresh: true });
         return;
       }
@@ -6633,8 +6666,11 @@ function renderServices() {
   // directly rather than just setting a header focus on the main list).
   container.querySelectorAll('.parish-schedule').forEach(card => {
     card.addEventListener('click', e => {
-      // Don't hijack admin edit buttons inside the card
-      if (e.target.closest('.schedule-edit-btn, .schedule-save-btn, .schedule-del-btn, .schedule-edit-form')) return;
+      // Don't hijack the admin controls inside the card. An editable row is
+      // one of them now — while its parish is in edit mode the row opens the
+      // rule's form in place, and opening the parish sheet over it would take
+      // that form off the screen the instant it appeared.
+      if (e.target.closest('[data-sched-editable], .schedule-save-btn, .schedule-del-btn, .schedule-edit-form')) return;
       const pid = card.dataset.parishId;
       if (typeof window.openParishSheet === 'function') window.openParishSheet(pid);
     });
@@ -7230,11 +7266,11 @@ window.agoraClearEventPoster = async function (id) {
 /** Re-read so the card, the drawer and the parish sheet all show it. */
 async function _afterPosterChange() {
   await fetchEvents({ fresh: true, keepCount: true });
-  if (state._openEventId) {
-    collapseEventCardDOM({ instant: true });
-    scheduleRenderEvents(0);
+  repaintOpenEventDrawer();
+  // Also with no drawer open: the poster shows on the collapsed card too.
+  if (state.parishSheetFocus && !state._openEventId) {
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
   }
-  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
 }
 
 /**
@@ -7249,14 +7285,38 @@ function clearEventEditMode() {
   if (state.eventEditMode) state.eventEditMode = null;
 }
 
+/**
+ * Tear the open drawer down and let it be built again with what changed.
+ *
+ * There are TWO renderers that can put it back, and which one owns the card
+ * depends on where it was tapped: `renderEvents` for the main feed, and the
+ * parish sheet's own render for a card inside the sheet. `renderEvents`
+ * returns immediately while the sheet is up — it has to, the card pool is
+ * shared and it would otherwise move the sheet's mounted cards into the
+ * hidden list behind it — so a collapse followed by `scheduleRenderEvents`
+ * alone left the sheet holding nothing.
+ *
+ * That is what "Edit" did to a pinned occurrence: the details vanished and no
+ * form arrived, because the only thing that could have drawn the form was the
+ * render that had just declined to run. Both are called here; the one that is
+ * not showing does nothing.
+ */
+function repaintOpenEventDrawer() {
+  if (!state._openEventId) return;
+  collapseEventCardDOM({ instant: true });
+  scheduleRenderEvents(0);
+  if (state.parishSheetFocus) {
+    // fullRender, because the partial refresh leaves the pinned slot alone
+    // — and under a schedule focus the pinned slot is the card in question.
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
+  }
+}
+
 window.setEventEditMode = function (id) {
   const next = id == null ? null : String(id);
   if (state.eventEditMode === next) return;
   state.eventEditMode = next;
-  if (state._openEventId) {
-    collapseEventCardDOM({ instant: true });
-    scheduleRenderEvents(0);
-  }
+  repaintOpenEventDrawer();
 };
 
 window.saveEvent = async function(id) {
@@ -7292,10 +7352,7 @@ window.saveEvent = async function(id) {
     // { fresh: true } bypasses the 60s browser cache on /api/events so the
     // just-written change is actually visible (otherwise stale read wins).
     await fetchEvents({ fresh: true });
-    if (state._openEventId) {
-      collapseEventCardDOM({ instant: true });
-      scheduleRenderEvents(0);
-    }
+    repaintOpenEventDrawer();
   }
 };
 
@@ -9333,8 +9390,9 @@ function initScheduleRowTaps() {
   const activate = (e) => {
     const row = e.target.closest('[data-sched-focus]');
     if (!row) return;
-    // The admin ✎ and its form live inside the row and own their own taps.
-    if (e.target.closest('.schedule-edit-btn, .schedule-edit-form')) return;
+    // The form sits after the row rather than inside it, but a stray tap that
+    // lands on it is still not a tap on the row.
+    if (e.target.closest('.schedule-edit-form')) return;
     if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     const sid = Number(row.dataset.schedFocus);
@@ -9342,6 +9400,15 @@ function initScheduleRowTaps() {
       || row.closest('[data-parish-id]')?.dataset.parishId
       || state.parishSheetFocus;
     if (!pid || !Number.isFinite(sid)) return;
+    // While this rule's parish is in edit mode, the row IS the way into the
+    // rule: it opens the form and does not touch the focus. Somebody who has
+    // said they are editing wants to change the 9am, not narrow the feed to
+    // it — and the focus they may already have set stays exactly as it was,
+    // with the banner's X still the way out of it.
+    if (row.dataset.schedEditable) {
+      toggleScheduleEditForm(row, sid);
+      return;
+    }
     // Tapping the focused row again is the third way out, alongside the
     // banner's X and the pinned card's.
     if (state.parishScheduleFocus && state.parishScheduleFocus.scheduleId === sid) {
@@ -9352,6 +9419,40 @@ function initScheduleRowTaps() {
   };
   document.addEventListener('click', activate);
   document.addEventListener('keydown', activate);
+}
+
+/**
+ * Open this rule's form, closing whichever one was open.
+ *
+ * One at a time because these panels are tall — the form is eleven controls
+ * and a delete — and two of them open in a bottom sheet pushes the second
+ * rule's fields off the bottom of the phone, under a row that looks like it
+ * did nothing.
+ */
+function toggleScheduleEditForm(row, sid) {
+  // The form is the row's own next sibling. Not `sef-${sid}` — see the note
+  // where it is built: that name belongs to two elements at once.
+  const form = row.nextElementSibling;
+  if (!form || !form.classList.contains('schedule-edit-form')
+      || String(form.dataset.sid) !== String(sid)) return;
+  const opening = form.style.display === 'none';
+  // .parish-schedule is the block a parish's rules render into on BOTH
+  // surfaces — the sheet's timetable and the main services panel, which
+  // stacks one per parish.
+  const panel = row.closest('.parish-schedule') || document;
+  panel.querySelectorAll('.schedule-edit-form').forEach(f => {
+    if (f === form) return;
+    f.style.display = 'none';
+    const owner = f.previousElementSibling;
+    if (owner && owner.dataset.schedEditable) {
+      owner.classList.remove('editing-open');
+      owner.setAttribute('aria-expanded', 'false');
+    }
+  });
+  form.style.display = opening ? 'block' : 'none';
+  row.classList.toggle('editing-open', opening);
+  row.setAttribute('aria-expanded', String(opening));
+  if (opening) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function wireAcronymHint(root, parishId) {

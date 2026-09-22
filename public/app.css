@@ -1032,22 +1032,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .parish-pill:hover { color: var(--text-secondary); border-color: var(--border); }
 .pill-dist { opacity: 0.45; font-weight: 500; margin-left: 2px; }
-/* × on a selected pill — tap to drop just that pill from the selection
-   without re-toggling. Sized small enough to nest without dwarfing the
-   acronym; opacity bumps on pill hover so it stays discoverable. */
-.parish-pill-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 6px;
-  font-size: 9px;
-  line-height: 1;
-  opacity: 0.7;
-  padding: 1px 2px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-}
-.parish-pill:hover .parish-pill-x { opacity: 1; }
 .parish-pill.active {
   color: var(--bg);
   border-color: transparent;
@@ -1879,6 +1863,16 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .schedule-item[data-sched-focus]:hover .si-chev { opacity: 0.7; }
 @media (prefers-color-scheme: dark) { .si-chev { filter: brightness(0) invert(1); } }
+/* Editing: the row IS the pencil. The glyph at its end says which of the two
+   things a tap does here, and it sits up where the chevron was rather than
+   wedged between the chips, so the whole row stays one target. */
+.schedule-item.editable .si-chev { opacity: 0.55; }
+.schedule-item.editable:hover .si-chev { opacity: 0.9; }
+.schedule-item.editable.editing-open {
+  background: var(--surface-2);
+  border-radius: 8px 8px 0 0;
+}
+.schedule-item.editable.editing-open .si-chev { opacity: 0.9; }
 .si-main {
   display: flex;
   align-items: baseline;
@@ -1945,18 +1939,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   padding: 1px 5px;
   border-radius: 3px;
 }
-.schedule-edit-btn {
-  flex: none;
-  background: none;
-  border: none;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 2px;
-  opacity: 0.45;
-  line-height: 1;
-}
-.schedule-edit-btn:hover { opacity: 1; }
 .schedule-edit-form {
   padding: 8px;
   margin: 2px 0 4px;
@@ -1988,6 +1970,18 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .schedule-edit-grid .sef-full {
   grid-column: 1 / -1;
 }
+/* Below about 330px two columns stop clearing the 119px a 12-hour time input
+   asks for, and 320px is a real phone. Stack rather than clip "09:00 AM" to
+   "09:00 A" — a time input squeezed too small does not overflow, it just
+   drops characters, so nothing in the layout would have said it was wrong.
+   .schedule-add-grid needs no rule of its own: its columns are auto-fit at
+   minmax(120px, 1fr), so it drops to one column here by itself. This grid
+   keeps an explicit two-column shape instead because its rows are PAIRED —
+   day beside type, start beside end — and auto-fit would pull all four onto
+   one row as soon as the sheet was wide enough to hold them. */
+@media (max-width: 330px) {
+  .schedule-edit-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .wom-checkboxes {
   display: flex;
   flex-wrap: wrap;
@@ -2008,6 +2002,13 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 11px !important;
 }
 .wom-check input { width: auto; font-size: 11px !important; }
+/* Nothing ticked is every week. Said out loud because five empty boxes read
+   as "not filled in yet" just as easily as they read as "every week". */
+.wom-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: italic;
+}
 .sef-toggles {
   display: flex;
   flex-wrap: wrap;
@@ -4060,9 +4061,21 @@ button.ps-avatar { cursor: pointer; }
   padding-top: 10px;
   border-top: 1px dashed var(--border-light);
 }
+/* A column is never narrower than the time input needs, and the row takes as
+   many as fit. Three equal columns were the bug: a native <input type="time">
+   in a 12-hour locale is "09:00 AM" plus the clock button and asks for 119px,
+   a weekday name asks for 107px, and a third of a phone is about 109px — so
+   the time input read "09:00 AI". It does not overflow when it is squeezed, it
+   clips its own fields, which is why nothing in the layout said anything was
+   wrong. 120px is that measured need, stated as the constraint rather than as
+   a column count somebody has to recompute when the padding changes: two
+   columns on a phone, one at 320px, more on a wide sheet. The event type is
+   the short control (68px for "liturgy") and carries .sef-full, so the row
+   underneath is its own rather than a third of the width the other two
+   needed. */
 .schedule-add-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 6px;
 }
 .schedule-add-grid .sef-full { grid-column: 1 / -1; }
