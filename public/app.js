@@ -1575,6 +1575,20 @@ async function fetchSchedules(opts = {}) {
   if (window.lsLog) window.lsLog('✓ schedules loaded (' + state.schedules.length + ')');
   if (window.lsProgress) window.lsProgress(0.75);
   renderServices();
+  // The parish sheet draws the SAME rules from the same state, and every write
+  // that gets here came from a control ON that sheet — the inline add, a
+  // schedule pencil, a delete. Refreshing `state` and repainting only the
+  // services panel left the sheet the admin was looking at showing the list as
+  // it was before their write, which reads exactly like the save failing.
+  //
+  // Only on `fresh`, which is only ever set by those writes. A routine reload —
+  // a mode switch, a filter — must not redraw a sheet somebody is reading.
+  //
+  // The partial path, not fullRender: it repaints the events and the timetable
+  // and deliberately leaves the header, the actions row and the edit form
+  // alone, so this cannot throw away a half-typed form beside the one control
+  // that was just used.
+  if (opts.fresh && state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
   updateMap(state, { fit: !!opts.fit });
 }
 
@@ -1609,6 +1623,20 @@ async function checkAdmin() {
   // answered 200 with index.html and the OR was quietly reading a parse failure.
   const ping = await fetch('/api/admin/ping').catch(() => null);
   state.isAdmin = !!(ping && ping.ok);
+
+  // Remembered only so the NEXT page load knows before this answer arrives:
+  // init runs checkAdmin alongside fetchParishes rather than before it, so the
+  // first bundle fetch has already gone out by the time `state.isAdmin` is set,
+  // and that is the one fetch a stale cache ruins. bundle.js reads this to
+  // decide whether to bypass the browser's HTTP cache — see cacheInit there.
+  //
+  // It is a cache hint and never a permission: nothing is unlocked by it, the
+  // panel follows `state.isAdmin` above, and every admin route verifies the
+  // Access JWT server-side regardless of what any browser claims.
+  try {
+    if (state.isAdmin) localStorage.setItem('agora.wasAdmin', '1');
+    else localStorage.removeItem('agora.wasAdmin');
+  } catch { /* private window, or storage blocked — the hint is optional */ }
 
   // The button itself is always there. What the answer decides is what is
   // BEHIND it: the panel and the way out, or the way in.

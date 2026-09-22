@@ -48,6 +48,36 @@ window.agoraBundle = (function () {
   }
 
   /**
+   * Whether this fetch may be answered from the browser's own HTTP cache.
+   *
+   * `/api/bundle` is served `max-age=60, stale-while-revalidate=600`, and the
+   * SWR half is the part that bites: for ten minutes past the first minute the
+   * browser will hand back a stale body WITHOUT asking, revalidating behind it.
+   * For a reader that is the whole point — the client re-derives "now" locally,
+   * so a slightly old set of rules still projects a correct feed.
+   *
+   * For the admin who just wrote a rule it is a bug, and a confusing one: a
+   * hard reload does not clear it, because a script-issued `fetch()` is not
+   * covered by the reload's cache bypass. The symptom is a new service that
+   * refuses to appear in the session that added it while a private window shows
+   * it at once — a private window having no HTTP cache to be stale.
+   *
+   * `fresh` is the write path and is unconditional. The admin flag is a HINT
+   * and nothing else: it is read from localStorage so it is known on the very
+   * first load, when `checkAdmin()` has not answered yet (init runs it
+   * alongside `fetchParishes`, not before it). Being wrong costs one uncached
+   * request and can grant nothing — every admin route verifies the Access JWT
+   * server-side, and this value never reaches one.
+   */
+  function cacheInit(opts) {
+    if (opts.fresh) return { cache: 'no-store' };
+    let hinted = false;
+    try { hinted = localStorage.getItem('agora.wasAdmin') === '1'; } catch { /* private window */ }
+    const live = window.agoraState && window.agoraState.isAdmin;
+    return (hinted || live) ? { cache: 'no-store' } : {};
+  }
+
+  /**
    * Fetch the bundle. Cheap enough to re-fetch, but deduped so concurrent
    * callers share one request.
    *
@@ -76,7 +106,7 @@ window.agoraBundle = (function () {
 
     inflight = (async () => {
       await modules();
-      const res = await fetch(`/api/bundle?${params}`, opts.fresh ? { cache: 'no-store' } : {});
+      const res = await fetch(`/api/bundle?${params}`, cacheInit(opts));
       if (!res.ok) throw new Error(`bundle ${res.status}`);
       raw = await res.json();
       // What the SERVER says it answered with, not what we asked for — it

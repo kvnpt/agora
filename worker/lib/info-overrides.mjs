@@ -13,9 +13,12 @@
 
 import tiers from '../../public/shared/source-tiers.js';
 
-const { outranks, isTier, tierLabel, SOURCE_TIERS } = tiers;
+const { outranks, isTier, tierLabel, SOURCE_TIERS, sourceTier } = tiers;
 
-export { outranks, isTier, tierLabel, SOURCE_TIERS };
+// `sourceTier` travels with the rest: the import scripts need to ask what tier
+// a row they are about to overwrite already carries, and a second derivation
+// written on the import side is exactly the drift this module exists to stop.
+export { outranks, isTier, tierLabel, SOURCE_TIERS, sourceTier };
 
 /**
  * The parish columns a ruling may be made about.
