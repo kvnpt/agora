@@ -943,6 +943,102 @@ export function registerAdminRoutes(router) {
     return json({ ok: true });
   }));
 
+  // ── posters ──
+  //
+  // `events.poster_path` is the one piece of the WhatsApp ingestor still doing
+  // its job: a parish sent a flyer, Claude Vision read it, and the image stayed
+  // with the row. The pipeline went with the VM; the column, the R2 prefix and
+  // the rendering all survived, and until now nothing could put a new one up.
+  //
+  // ONE ROUTE FOR BOTH SHAPES, like every other event route here. An integer
+  // id writes the column; a "sid:date" writes patch_poster_path on that
+  // occurrence's override, which is the only place a projected instance can
+  // hold anything — a rule has no poster because a weekly liturgy has no flyer.
+  const POSTER_EXTS = ['png', 'jpg', 'webp', 'gif'];
+  const posterKey = (id, ext) => `posters/${String(id).replace(':', '-')}.${ext}`;
+  const posterKeys = (id) => POSTER_EXTS.map(e => posterKey(id, e));
+
+  /** The parish an event id belongs to, whichever shape it is. */
+  async function eventParish(db, id) {
+    const inst = parseInstanceId(id);
+    if (inst) {
+      const row = await db.prepare('SELECT parish_id FROM schedules WHERE id = ?')
+        .bind(inst.scheduleId).first();
+      return row ? row.parish_id : null;
+    }
+    const row = await db.prepare('SELECT parish_id FROM events WHERE id = ?').bind(id).first();
+    return row ? row.parish_id : null;
+  }
+
+  /** Point an event or an occurrence at a poster path (or null to clear it). */
+  async function setPosterPath(env, id, path) {
+    const inst = parseInstanceId(id);
+    if (inst) {
+      // Through applyAdminEdit so the override gets the right `kind`, and so
+      // clearing the only patch on it drops the row rather than leaving a
+      // 'modified' override that modifies nothing.
+      const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, { poster_path: path });
+      return r.error ? r : { ok: true };
+    }
+    await env.DB.prepare(
+      "UPDATE events SET poster_path = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?"
+    ).bind(path, id).run();
+    return { ok: true };
+  }
+
+  router.post('/api/admin/events/:id/poster', guarded('event.edit', async (c) => {
+    const { env, params, request } = c;
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+
+    const parishId = await eventParish(env.DB, params.id);
+    if (!parishId) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+
+    const contentType = request.headers.get('content-type') || '';
+    const ext = contentType.includes('png') ? 'png'
+              : contentType.includes('webp') ? 'webp'
+              : contentType.includes('gif') ? 'gif' : 'jpg';
+
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return json({ error: 'No data received' }, 400);
+    // Bigger than a logo on purpose: a poster is a full-bleed image somebody
+    // photographs off a noticeboard, and the client already squares a logo down
+    // before upload while a poster keeps its shape.
+    if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
+
+    const key = posterKey(params.id, ext);
+    await env.ASSETS_BUCKET.put(key, body, {
+      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
+    });
+    const stale = posterKeys(params.id).filter(k => k !== key);
+    if (stale.length) await env.ASSETS_BUCKET.delete(stale);
+
+    // ?v= for the same reason a logo carries one: assets.mjs caches posters for
+    // a day, a replacement usually overwrites the same key, and without this
+    // everybody keeps yesterday's flyer for 24 hours.
+    const posterPath = `/${key}?v=${Date.now()}`;
+    const r = await setPosterPath(env, params.id, posterPath);
+    if (r.error) return json({ error: r.error }, r.code || 400);
+    return json({ id: params.id, poster_path: posterPath });
+  }));
+
+  router.delete('/api/admin/events/:id/poster', guarded('event.edit', async (c) => {
+    const { env, params } = c;
+    const parishId = await eventParish(env.DB, params.id);
+    if (!parishId) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+
+    // The objects go too, not just the column — a flyer put up by mistake
+    // should stop being served, and nulling the path alone leaves it fetchable
+    // at a URL derivable from the event id. Same reasoning as the logo delete.
+    if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(posterKeys(params.id));
+    const r = await setPosterPath(env, params.id, null);
+    if (r.error) return json({ error: r.error }, r.code || 400);
+    return json({ id: params.id, poster_path: null });
+  }));
+
   // ── combine ──
 
   router.get('/api/admin/events/:id/escalation', guarded(async ({ env, params }) => {

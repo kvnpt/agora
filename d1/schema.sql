@@ -311,6 +311,17 @@ CREATE TABLE schedule_overrides (
   -- arrived later, by ALTER (d1/migrations/009), and ALTER appends.
   updated_by              TEXT,
 
+  -- A poster for THIS occurrence, as '/posters/<key>' in R2.
+  --
+  -- Unlike every other patch_* above it has nothing to fall back to: a RULE has
+  -- no poster, because a weekly liturgy does not have a flyer. So this is not
+  -- "the rule's value, overridden" — it is the only place an occurrence's
+  -- poster can live, and NULL means there isn't one rather than "inherit".
+  --
+  -- Last, by the same append rule as `source` and `updated_by` above: it
+  -- arrived by ALTER (d1/migrations/012) and ALTER appends.
+  patch_poster_path       TEXT,
+
   UNIQUE(schedule_id, occurrence_date)
 );
 

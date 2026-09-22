@@ -6874,6 +6874,14 @@ function renderEventDrawerHTML(evt, opts = {}) {
         <div class="edit-row"><label>Address (override)</label><input id="edit-location-${evt.id}" placeholder="Leave blank to use parish address" value="${esc(evt.location_override || '')}"></div>
         ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
         <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
+        <!-- The poster. Outside Save deliberately: it is a file going to R2
+             rather than a field going to the row, it has its own endpoint, and
+             a picture that uploads when you pick it is what everybody expects
+             a picture to do. The same reasoning the logo editor already uses. -->
+        <div class="edit-row">
+          <label>Poster</label>
+          ${posterEditorHTML(evt)}
+        </div>
         <div style="margin-top:8px;display:flex;gap:8px;">
           <button class="btn-save" onclick="saveEvent(${eid})">Save</button>
         </div>
@@ -7091,6 +7099,116 @@ function showParishDetail(parishId) {
     backdrop.addEventListener('click', closeDetail);
     document.body.appendChild(backdrop);
   }
+}
+
+/**
+ * The poster control, for a stored event or a projected occurrence alike.
+ *
+ * A rule has no poster — a weekly liturgy has no flyer — so on an occurrence
+ * this writes `patch_poster_path` on that one date's override and the weeks
+ * either side are untouched. The Worker routes on the shape of the id; nothing
+ * here has to know which it is holding.
+ */
+function posterEditorHTML(evt) {
+  const eid = esc(String(evt.id));
+  const has = !!evt.poster_path;
+  return `
+    <div class="poster-edit" data-event-id="${eid}">
+      ${has ? `<img class="poster-edit-thumb" src="${esc(evt.poster_path)}" alt="">` : ''}
+      <div class="poster-edit-actions">
+        <button class="ps-btn ps-btn-admin" type="button"
+                onclick="agoraPickEventPoster('${eid}')">${glyph('ph:image-square')}${has ? 'Replace' : 'Add a poster'}</button>
+        ${has ? `<button class="ps-btn ps-btn-danger" type="button"
+                onclick="agoraClearEventPoster('${eid}')">${glyph('ph:trash')}Remove</button>` : ''}
+      </div>
+      <div class="edit-row-hint poster-edit-status" data-poster-status></div>
+    </div>`;
+}
+
+/** The one hidden file input, reused — a fresh one per render leaks listeners. */
+function _posterInput() {
+  let el = document.getElementById('agora-poster-input');
+  if (!el) {
+    el = document.createElement('input');
+    el.type = 'file';
+    el.id = 'agora-poster-input';
+    el.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    el.hidden = true;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+const _posterStatus = (id, msg, bad) => {
+  const box = document.querySelector(`.poster-edit[data-event-id="${CSS.escape(String(id))}"] [data-poster-status]`);
+  if (box) {
+    box.textContent = msg || '';
+    box.classList.toggle('edit-row-hint-bad', !!bad);
+  }
+};
+
+/**
+ * Send one image to an event's poster endpoint.
+ *
+ * Raw body rather than multipart, matching the logo upload: the Worker reads
+ * `arrayBuffer()` and takes the extension off the content type, so there is
+ * nothing to parse and no boundary to get wrong.
+ */
+async function uploadEventPoster(id, file) {
+  if (!file) return { error: 'No file chosen.' };
+  // Refused here as well as at the Worker so an 8 MB phone photo does not go up
+  // the wire only to be turned away at the other end.
+  if (file.size > 8 * 1024 * 1024) return { error: 'That poster is over 8 MB — the limit the Worker takes.' };
+  try {
+    const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}/poster`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'image/jpeg' },
+      body: file,
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { error: (body && body.error) || `The poster was refused (${res.status}).` };
+    return body;
+  } catch {
+    return { error: 'The poster could not be uploaded — check the connection.' };
+  }
+}
+
+window.agoraPickEventPoster = function (id) {
+  const input = _posterInput();
+  input.value = '';
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    _posterStatus(id, 'Uploading…');
+    const r = await uploadEventPoster(id, file);
+    if (r.error) return _posterStatus(id, r.error, true);
+    _posterStatus(id, 'Poster saved.');
+    await _afterPosterChange();
+  };
+  input.click();
+};
+
+window.agoraClearEventPoster = async function (id) {
+  if (!confirm('Take this poster off the event?')) return;
+  _posterStatus(id, 'Removing…');
+  try {
+    const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}/poster`, { method: 'DELETE' });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return _posterStatus(id, (body && body.error) || `That failed (${res.status}).`, true);
+  } catch {
+    return _posterStatus(id, 'That failed — check the connection.', true);
+  }
+  await _afterPosterChange();
+};
+
+/** Re-read so the card, the drawer and the parish sheet all show it. */
+async function _afterPosterChange() {
+  await fetchEvents({ fresh: true, keepCount: true });
+  if (state._openEventId) {
+    collapseEventCardDOM({ instant: true });
+    scheduleRenderEvents(0);
+  }
+  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
 }
 
 window.toggleEditEvent = function(id) {
@@ -8114,18 +8232,40 @@ function _newEventDefaultDate(tz) {
  */
 function _newEventParishRows(parish) {
   const own = { ...parish, _isOwn: true };
+  // Distance from the EVENT'S parish, not from the viewer.
+  //
+  // The viewer may be anywhere, may have refused geolocation, and is usually
+  // not at the church — whereas a deanery liturgy at Redfern is attended by the
+  // parishes near Redfern, so the cathedral is the anchor that makes "nearby"
+  // mean what it means here. It also needs no permission and gives the same
+  // order to everybody, which a list you tick a dozen boxes in should.
+  //
+  // A parish with no pin sorts last within its jurisdiction rather than first:
+  // Infinity beats any real distance to the bottom.
+  const km = (p) => (parish.lat != null && p.lat != null)
+    ? haversineKm(parish.lat, parish.lng, p.lat, p.lng)
+    : Infinity;
   const others = (state.parishes || [])
     .filter(p => p.id !== parish.id && p.id !== '_unassigned')
-    .map(p => ({ ...p, _needsAsk: !adminMay('event.edit', p.id) }))
+    .map(p => ({ ...p, _needsAsk: !adminMay('event.edit', p.id), _km: km(p) }))
     .sort((a, b) => {
+      // Jurisdiction first and the event's own jurisdiction ahead of the rest,
+      // because a combine is nearly always within one; distance second, so
+      // "every Antiochian parish in Sydney" is a run of adjacent rows to tick
+      // rather than a hunt through an alphabet.
       const ah = a.jurisdiction === parish.jurisdiction ? 0 : 1;
       const bh = b.jurisdiction === parish.jurisdiction ? 0 : 1;
       return ah - bh
         || String(a.jurisdiction || '').localeCompare(String(b.jurisdiction || ''))
+        || a._km - b._km
         || String(a.name || '').localeCompare(String(b.name || ''));
     });
   return [own, ...others];
 }
+
+/** "12 km" — the distance that decides the order, said out loud. */
+const _kmLabel = (km) => (km == null || !Number.isFinite(km))
+  ? '' : (km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`);
 
 /**
  * The replaceable list, narrowed to the parishes that are ticked above it.
@@ -8284,13 +8424,23 @@ window.openNewEventDialog = function (parishId) {
   document.getElementById('ne-desc').value = '';
   document.getElementById('ne-langs').value = '';
   document.getElementById('ne-location').value = '';
+  const posterEl = document.getElementById('ne-poster');
+  if (posterEl) posterEl.value = '';
   const errEl = document.getElementById('new-event-error');
   errEl.hidden = true;
   errEl.textContent = '';
   _resetNewEventAsk();
 
   const rows = _newEventParishRows(parish);
+  // A heading whenever the jurisdiction changes. The rows are already grouped
+  // by the sort, so this is a label on a run rather than a regrouping.
+  let lastJuris = null;
   document.getElementById('new-event-parishes').innerHTML = rows.map(p => {
+    let head = '';
+    if (!p._isOwn && p.jurisdiction !== lastJuris) {
+      lastJuris = p.jurisdiction;
+      head = `<div class="escalate-group">${esc(capitalize(p.jurisdiction || 'Other'))} Orthodox</div>`;
+    }
     // The event's own parish is ticked and marked `data-own`, which is how the
     // submit tells "it is here" from "it also appears here" — `event_parishes`
     // holds the additions and never the home parish.
@@ -8301,10 +8451,11 @@ window.openNewEventDialog = function (parishId) {
     const askTag = p._needsAsk ? '<em class="ask-tag">needs an owner</em>' : '';
     const label = document.createElement('label');
     label.className = 'escalate-item';
+    const dist = p._isOwn ? '' : _kmLabel(p._km);
     label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"${ownAttr} onchange="_renderNewEventReplaces()">` +
       `<span class="escalate-item-label">${esc(p.name)}${ownTag}${askTag}` +
-      `<small>${esc(capitalize(p.jurisdiction || ''))}</small></span>`;
-    return label.outerHTML;
+      `<small>${esc(dist || capitalize(p.jurisdiction || ''))}</small></span>`;
+    return head + label.outerHTML;
   }).join('');
 
   backdrop.classList.add('open');
@@ -8427,6 +8578,21 @@ function _showNewEventAskSent() {
     `<button class="ps-btn ps-btn-admin" type="button" onclick="closeNewEventDialog()">Done</button>`;
 }
 
+/**
+ * Put the chosen poster on the event that was just made.
+ *
+ * After the create and not with it: the R2 key is derived from the event id,
+ * and there is no id until the row exists. A failure here leaves the event —
+ * which is the right way round, the poster being the part you can add later.
+ */
+async function _uploadNewEventPoster(payload) {
+  const input = document.getElementById('ne-poster');
+  const file = input && input.files && input.files[0];
+  if (!file || !payload || payload.id == null) return null;
+  const r = await uploadEventPoster(String(payload.id), file);
+  return r && r.error ? r.error : null;
+}
+
 /** Widen the window far enough to hold the new event, re-read, and pin it. */
 async function _afterNewEvent(body, payload) {
   const date = String(body.start_utc || '').slice(0, 10);
@@ -8524,12 +8690,22 @@ window.saveNewEvent = async function () {
       // into "failed".
       return fail((payload && payload.error) || `The event was refused (${res.status}).`);
     }
+    // Before the re-read, so the pinned card comes back with the poster on it.
+    const posterError = await _uploadNewEventPoster(payload);
+
     // An ask stays open on its confirmation; a plain save closes, because the
     // pinned card below IS the confirmation.
     if (payload && payload.proposal_id) {
       _showNewEventAskSent();
       await _afterNewEvent(body, payload);
       refreshOpenAsks();
+      return;
+    }
+    // The event is on file; a poster that would not go up is worth saying so
+    // rather than closing over, because nothing on the card would show it.
+    if (posterError) {
+      fail(`The event was added, but the poster was not: ${posterError}`);
+      await _afterNewEvent(body, payload);
       return;
     }
     window.closeNewEventDialog();

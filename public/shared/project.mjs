@@ -77,6 +77,9 @@ export function project(s, date, o, cache) {
     languages: (o && o.patch_languages != null) ? o.patch_languages : s.languages,
     hide_live: (o && o.patch_hide_live != null) ? o.patch_hide_live : (s.hide_live || 0),
     parish_scoped: (o && o.patch_parish_scoped != null) ? o.patch_parish_scoped : (s.parish_scoped || 0),
+    // A rule has no poster, so this is the override's or nothing — see
+    // schedule_overrides.patch_poster_path in d1/schema.sql.
+    poster_path: (o && o.patch_poster_path) || null,
     source_url: null,
     source_hash: `schedule-${s.id}-${date}`,
     confidence: 'schedule',

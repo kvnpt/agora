@@ -138,6 +138,20 @@ a ruling only the Worker could see is a ruling the import ignores.
 cancellation is a *tombstone* that still renders, so someone who would otherwise turn up
 at church sees "CANCELLED" rather than the service silently vanishing.
 
+A corollary that cost a bug: editing a field on an occurrence **keeps whatever
+that occurrence already is**. `applyAdminEdit` used to set `kind='modified'` for
+any edit naming a display field, so correcting the title of a cancelled service
+— or putting a poster on it — dropped the tombstone and put the service back on
+the feed. Reviving is `status: 'approved'` and nothing else should do it.
+
+**A poster belongs to an occurrence, not to a rule.** `events.poster_path` is
+the last working piece of the WhatsApp ingestor and is still rendered on feasts,
+talks, socials and youth events. A rule has no poster — a weekly liturgy has no
+flyer — so `schedule_overrides.patch_poster_path` is the only place a projected
+instance can hold one, and it is the one `patch_*` where NULL means "there
+isn't one" rather than "inherit". `POST /api/admin/events/:id/poster` takes both
+id shapes and routes on the shape, like every other event route.
+
 **Recurrence rules store LOCAL time; one-off events store UTC.** This is deliberate and
 is documented at length in `d1/schema.sql`. For a recurring service the wall clock is the
 invariant — a 9am liturgy stays 9am across a DST boundary — so normalising it to UTC would
