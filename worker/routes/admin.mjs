@@ -517,6 +517,11 @@ export function registerAdminRoutes(router) {
     // zero for everybody but a decider — the same boundary
     // /proposals/:id/decide draws with `people.manage`.
     openAsks: can(c.who.role, 'people.manage') ? await openAskCount(c.env.DB) : 0,
+    // …and what has been done TO this account's parishes that they have not
+    // looked at. A parish contact decides nothing, so `openAsks` is zero for
+    // them — this is the half of the dot that is theirs.
+    parishNotices: (await parishNotices(c.env.DB, myParishes(c), c.who.identity))
+      .filter(n => !n.seen).length,
   })));
 
   // ── people ──
@@ -1088,6 +1093,151 @@ export function registerAdminRoutes(router) {
     const proposalId = ask ? await insertProposal(c.env, ask, await editor(c)) : null;
 
     return json({ ...await eventWithEscalation(db, event.id), proposal_id: proposalId });
+  }));
+
+  // ── what was done to your parish ──
+  //
+  // A combine reaches parishes that are not the event's own, and an owner may
+  // do it without asking — waiting on a quorum of parish contacts, most of whom
+  // do not exist, would mean a deanery liturgy never gets published. The parish
+  // it happens TO should still hear about it from the panel rather than by
+  // noticing their own Sunday struck through.
+  //
+  // So: told, not asked. And a veto after the fact rather than a gate before
+  // it — fast to act on, impossible to deadlock.
+  //
+  // The notices are DERIVED from the rows that already exist. Nothing is
+  // written when a combine happens; this reads `event_parishes` and the
+  // 'combined' overrides back for the parishes this account holds. A stored
+  // copy would be a second answer to a question the rows already answer, and it
+  // would go stale the moment somebody withdrew.
+
+  /** Which parishes this account is a contact for. Empty for most accounts. */
+  const myParishes = (c) => (c.who.parishIds || []).filter(Boolean);
+
+  /**
+   * Everything another parish's event is doing at yours.
+   *
+   * Two shapes, because a combine is two mechanisms: `listed` is an
+   * `event_parishes` row putting their event on your card, `absorbed` is a
+   * 'combined' override turning one of your occurrences into a tombstone
+   * pointing at it.
+   */
+  async function parishNotices(db, parishIds, identity) {
+    if (!parishIds.length) return [];
+    const marks = parishIds.map(() => '?').join(',');
+
+    const listed = await db.prepare(
+      `SELECT ep.parish_id, ep.event_id, e.title, e.start_utc, e.parish_id AS owner_parish,
+              p.name AS owner_name, e.updated_at
+       FROM event_parishes ep
+       JOIN events e ON e.id = ep.event_id
+       JOIN parishes p ON p.id = e.parish_id
+       WHERE ep.parish_id IN (${marks})`
+    ).bind(...parishIds).all().catch(() => ({ results: [] }));
+
+    const absorbed = await db.prepare(
+      `SELECT s.parish_id, o.combined_into_event_id AS event_id, o.occurrence_date,
+              s.title AS mine_title, e.title, e.start_utc, e.parish_id AS owner_parish,
+              p.name AS owner_name, o.updated_at
+       FROM schedule_overrides o
+       JOIN schedules s ON s.id = o.schedule_id
+       JOIN events e ON e.id = o.combined_into_event_id
+       JOIN parishes p ON p.id = e.parish_id
+       WHERE o.kind = 'combined' AND s.parish_id IN (${marks})`
+    ).bind(...parishIds).all().catch(() => ({ results: [] }));
+
+    const seen = await db.prepare(
+      `SELECT parish_id, event_id FROM parish_notices_seen WHERE seen_by = ? AND parish_id IN (${marks})`
+    ).bind(identity || '', ...parishIds).all().catch(() => ({ results: [] }));
+    const seenKeys = new Set((seen.results || []).map(r => `${r.parish_id}|${r.event_id}`));
+
+    const rows = [];
+    for (const r of (listed.results || [])) {
+      rows.push({
+        kind: 'listed', parish_id: r.parish_id, event_id: r.event_id,
+        title: r.title, start_utc: r.start_utc,
+        owner_parish: r.owner_parish, owner_name: r.owner_name,
+        detail: `“${r.title}” at ${r.owner_name} is listed at your parish.`,
+        seen: seenKeys.has(`${r.parish_id}|${r.event_id}`),
+        updated_at: r.updated_at,
+      });
+    }
+    for (const r of (absorbed.results || [])) {
+      rows.push({
+        kind: 'absorbed', parish_id: r.parish_id, event_id: r.event_id,
+        title: r.title, start_utc: r.start_utc, occurrence_date: r.occurrence_date,
+        owner_parish: r.owner_parish, owner_name: r.owner_name,
+        detail: `Your “${r.mine_title}” on ${readableDate(r.occurrence_date)} is combined into ` +
+                `“${r.title}” at ${r.owner_name}, so it renders as a tombstone pointing there.`,
+        seen: seenKeys.has(`${r.parish_id}|${r.event_id}`),
+        updated_at: r.updated_at,
+      });
+    }
+    // Newest first: the thing somebody has not seen is the thing just done.
+    return rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  }
+  // The identity is an ARGUMENT and never module state: a Worker isolate is
+  // shared across requests, so a `let` up here would let one caller's identity
+  // decide what another caller has already seen.
+  router.get('/api/admin/parish-notices', guarded(async (c) =>
+    json(await parishNotices(c.env.DB, myParishes(c), c.who.identity))));
+
+  /** Mark one involvement read, so the dot can mean something. */
+  router.post('/api/admin/parish-notices/seen', guarded(async (c) => {
+    const b = await readJson(c.request);
+    const scoped = outOfScope(c, b.parish_id);
+    if (scoped) return scoped;
+    if (!/^\d+$/.test(String(b.event_id))) return json({ error: 'event_id is required' }, 400);
+    await c.env.DB.prepare(
+      `INSERT INTO parish_notices_seen (parish_id, event_id, seen_by) VALUES (?,?,?)
+       ON CONFLICT(parish_id, event_id, seen_by) DO NOTHING`
+    ).bind(b.parish_id, Number(b.event_id), c.who.identity || '').run();
+    return json({ ok: true });
+  }));
+
+  /**
+   * Take my parish out of somebody else's event.
+   *
+   * The veto. Both halves at once, because "take my parish out of this" is one
+   * thing to a person and two rows to the database: the `event_parishes` row
+   * that lists it, and any 'combined' override of THEIR OWN rules pointing at
+   * it. The event itself is untouched — this is not a delete, and it reaches
+   * nothing at the parish that owns it.
+   */
+  router.post('/api/admin/parishes/:id/withdraw', guarded('event.edit', async (c) => {
+    const { env, params } = c;
+    const scoped = outOfScope(c, params.id);
+    if (scoped) return scoped;
+    const b = await readJson(c.request);
+    if (!/^\d+$/.test(String(b.event_id))) return json({ error: 'event_id is required' }, 400);
+    const eventId = Number(b.event_id);
+
+    const event = await env.DB.prepare('SELECT id, parish_id FROM events WHERE id = ?')
+      .bind(eventId).first();
+    if (!event) return json({ error: 'Event not found' }, 404);
+    if (event.parish_id === params.id) {
+      // Withdrawing the event's OWN parish would leave it belonging nowhere.
+      // Deleting it is a different act with a different button.
+      return json({ error: 'That event belongs to this parish. Delete it instead of withdrawing it.' }, 400);
+    }
+
+    await env.DB.prepare('DELETE FROM event_parishes WHERE event_id = ? AND parish_id = ?')
+      .bind(eventId, params.id).run();
+
+    // Their own absorbed occurrences come back, one at a time through the
+    // override helper so a restored instance is a deleted row rather than a
+    // lingering 'combined' with nothing to combine into.
+    const mine = await env.DB.prepare(
+      `SELECT o.schedule_id, o.occurrence_date FROM schedule_overrides o
+       JOIN schedules s ON s.id = o.schedule_id
+       WHERE o.kind = 'combined' AND o.combined_into_event_id = ? AND s.parish_id = ?`
+    ).bind(eventId, params.id).all().catch(() => ({ results: [] }));
+    for (const r of (mine.results || [])) {
+      await clearCombined(env.DB, r.schedule_id, r.occurrence_date);
+    }
+
+    return json({ ok: true, parish_id: params.id, event_id: eventId, restored: (mine.results || []).length });
   }));
 
   // ── a parish's own links ──
@@ -1929,11 +2079,22 @@ export function registerAdminRoutes(router) {
   //
   // Anybody with a role may propose. Only an owner may decide — which is the
   // same boundary the three capabilities already draw, expressed once more.
+  // `mine=1` returns THIS account's own asks whatever their status, which is
+  // the only way a proposer ever learns the outcome: the default is open-only,
+  // so the moment an owner decided one it vanished from the list — and
+  // `decision_note` exists precisely because "a decline with no note is a
+  // refusal the proposer cannot learn anything from". It was written and never
+  // read by anybody.
   router.get('/api/admin/proposals', guarded(async ({ env, query, ...c }) => {
+    const mine = query.get('mine') === '1';
     const status = query.get('status') || 'open';
-    const r = await env.DB.prepare(
-      `SELECT * FROM admin_proposals WHERE status = ? ORDER BY created_at DESC LIMIT 200`
-    ).bind(status).all().catch(() => ({ results: [] }));
+    const r = mine
+      ? await env.DB.prepare(
+          `SELECT * FROM admin_proposals WHERE proposed_by = ? ORDER BY created_at DESC LIMIT 200`
+        ).bind(c.who.identity || '').all().catch(() => ({ results: [] }))
+      : await env.DB.prepare(
+          `SELECT * FROM admin_proposals WHERE status = ? ORDER BY created_at DESC LIMIT 200`
+        ).bind(status).all().catch(() => ({ results: [] }));
 
     const parishes = new Map(((await env.DB.prepare(
       "SELECT id, name FROM parishes").all().catch(() => ({ results: [] }))).results || [])

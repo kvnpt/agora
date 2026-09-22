@@ -49,19 +49,31 @@ const state = {
   //
   // Convenience only, exactly as in /admin: every route re-checks server-side,
   // and a button this leaves on screen still gets a 403.
-  adminWho: { role: null, parishIds: [], can: {}, openAsks: 0 },
+  adminWho: { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0 },
 
   // Which parish is being EDITED, or null. Signing in and editing are two
   // states, not one: before this, every admin control was on screen the whole
   // time a signed-in person looked at a parish, so the sheet an owner saw was
   // never the sheet a visitor saw. `hideAdminControls` was the plaster — a
   // preference to make the tools go away, remembered forever, and easy to
-  // leave on and then wonder where the buttons went.
+  // leave on and then wonder where the buttons went. It is gone; the drawer
+  // has `eventEditMode` below and the two modes cover everything it did.
   //
   // One parish at a time, deliberately. Edit mode is entered from a parish's
   // own sheet and covers everything on it, its service times included, so
   // "which parish" is never a question.
   parishEditMode: null,
+
+  // Which EVENT is being edited, or null. The drawer's twin of
+  // parishEditMode, and for the same reason: every admin control on an event
+  // card used to be on screen the whole time somebody was signed in, so the
+  // drawer an owner saw was never the drawer a visitor saw. `hideAdminControls`
+  // was the plaster — a preference to make the tools go away, remembered
+  // forever, and easy to leave on and then wonder where the buttons went.
+  //
+  // One event at a time, deliberately: the mode is entered from a drawer and
+  // covers that drawer, so "which event" is never a question.
+  eventEditMode: null,
 
   // The rulings for the parish being edited: which source won, and which
   // services a source publishes that do not run. Fetched when edit mode is
@@ -1654,8 +1666,12 @@ async function checkAdmin() {
         // anybody who cannot decide one, so the dot below needs no second
         // opinion about who it is for.
         openAsks: who.openAsks || 0,
+        // …and what another parish's event is doing at theirs that they have
+        // not looked at. An owner decides asks; a parish contact decides
+        // nothing and gets this half instead. Most accounts have neither.
+        parishNotices: who.parishNotices || 0,
       }
-    : { role: null, parishIds: [], can: {}, openAsks: 0 };
+    : { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0 };
 
   // Remembered only so the NEXT page load knows before this answer arrives:
   // init runs checkAdmin alongside fetchParishes rather than before it, so the
@@ -1705,23 +1721,6 @@ function adminMay(capability, parishId = null) {
   return !!parishId && (who.parishIds || []).includes(parishId);
 }
 window.agoraAdminMay = adminMay;
-
-function toggleAdminControlsVisibility() {
-  const hiding = localStorage.getItem('hideAdminControls') === 'true';
-  localStorage.setItem('hideAdminControls', hiding ? 'false' : 'true');
-  document.querySelectorAll('.admin-actions-group').forEach(el => {
-    el.style.display = hiding ? '' : 'none';
-  });
-  document.querySelectorAll('.btn-admin-controls-pill').forEach(el => {
-    // The pill carries a masked glyph alongside its label now, so relabel
-    // the label span rather than assigning textContent over both.
-    const label = el.querySelector('.btn-admin-controls-label');
-    if (label) label.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
-    else el.textContent = hiding ? 'Hide admin controls' : 'Show admin controls';
-    const g = el.querySelector('.ps-btn-glyph');
-    if (g) g.style.setProperty('--glyph', `url(https://api.iconify.design/ph:${hiding ? 'eye-slash' : 'eye'}.svg)`);
-  });
-}
 
 function _initLogout() {
   const btn = document.getElementById('btn-logout');
@@ -1785,18 +1784,25 @@ function syncAccountMenu() {
   if (admin) admin.hidden = !state.isAdmin;
   if (logout) logout.hidden = !state.isAdmin;
   const btn = document.getElementById('btn-account');
-  // Something is waiting to be decided. `openAsks` is already zero for anybody
-  // who cannot decide one — a dot on somebody who can only look at it is noise
-  // — so this asks how many, not who.
-  const asks = (state.adminWho && state.adminWho.openAsks) || 0;
+  // Something is waiting for this person. Two halves that never both apply:
+  // `openAsks` is an owner's queue and is zero for anybody who cannot decide
+  // one; `parishNotices` is what was done to a contact's own parishes and is
+  // zero for anybody who is not one. The Worker answers both, so this asks how
+  // many rather than who.
+  const who = state.adminWho || {};
+  const asks = who.openAsks || 0;
+  const notices = who.parishNotices || 0;
   const dot = document.getElementById('account-dot');
-  if (dot) dot.hidden = !(state.isAdmin && asks > 0);
+  if (dot) dot.hidden = !(state.isAdmin && (asks + notices) > 0);
   if (btn) {
     btn.classList.toggle('signed-in', !!state.isAdmin);
     // The count goes in the label, not in the dot: nine pixels cannot carry a
     // number, and a screen reader hears nothing at all from a coloured circle.
+    const parts = [];
+    if (asks) parts.push(`${asks} ${asks === 1 ? 'ask' : 'asks'} waiting`);
+    if (notices) parts.push(`${notices} new at your ${notices === 1 ? 'parish' : 'parishes'}`);
     const label = !state.isAdmin ? 'Sign in'
-      : asks ? `Account — ${asks} ${asks === 1 ? 'ask' : 'asks'} waiting`
+      : parts.length ? `Account — ${parts.join(', ')}`
       : 'Account';
     btn.setAttribute('aria-label', label);
     btn.title = label;
@@ -1817,7 +1823,11 @@ async function refreshOpenAsks() {
     const res = await fetch('/api/admin/ping', { cache: 'no-store' });
     if (!res.ok) return;
     const who = await res.json();
-    state.adminWho = { ...state.adminWho, openAsks: who.openAsks || 0 };
+    state.adminWho = {
+      ...state.adminWho,
+      openAsks: who.openAsks || 0,
+      parishNotices: who.parishNotices || 0,
+    };
     syncAccountMenu();
   } catch { /* offline — the dot keeps whatever it last knew */ }
 }
@@ -4875,10 +4885,10 @@ function renderParishSheetContent(parishId, opts = {}) {
     // reading state alone — which is also why the Delete has moved inside the
     // form: it is not something to keep a thumb's width from Directions.
     //
-    // `hideAdminControls` is deliberately NOT consulted here. It exists to get
-    // admin clutter out of the way, and edit mode has removed the clutter it
-    // was hiding; it still governs the event cards, where the buttons are
-    // still inline.
+    // There is no "hide admin controls" preference any more. It was a
+    // remembered toggle for getting clutter out of the way, and both sheets
+    // now have a mode that does the same thing by default — the clutter is
+    // absent until somebody says they are editing.
     parishAdminHtml = `
       <div class="ps-actions ps-admin-actions">
         <button class="ps-btn ${editing ? 'ps-btn-admin ps-editing' : 'ps-btn-ghost'}" type="button"
@@ -6650,6 +6660,11 @@ function expandEventCard(id, opts = {}) {
   const evt = state.events.find(e => e.id === id);
   if (!evt) return;
 
+  // Editing belongs to the drawer it was entered from. Opening a different
+  // event with the mode still set would bring up somebody else's card already
+  // spread open, which is the surprise the mode exists to end.
+  if (state.eventEditMode && state.eventEditMode !== String(id)) clearEventEditMode();
+
   // Caller can hand us the specific card element to expand (e.g. stream copy
   // vs pinned copy of the same focused event). Fall back to the first match.
   const card = opts.card || root.querySelector(`.event-card[data-id="${id}"]`);
@@ -6825,11 +6840,17 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ? `<a class="btn-service-book" href="https://www.antiochian.org.au/holy-week-service-books" target="_blank" rel="noopener"><img src="https://api.iconify.design/ph:book-open.svg" alt="" class="btn-service-book-icon">Service Book</a>`
     : '';
 
+  // Admin controls on the drawer follow the MODE, not a remembered preference.
+  //
+  // One pencil until somebody says they are editing; then the whole toolkit,
+  // the same bargain the parish sheet strikes. Nothing is painted and hidden —
+  // entering the mode re-renders, so there is no form behind display:none for a
+  // visitor's drawer to be carrying around.
+  const evtEditing = state.isAdmin && state.eventEditMode === String(evt.id);
   let adminActions = '';
   if (state.isAdmin) {
     const isCancelled = evt.status === 'cancelled';
     const isHidden = evt.status === 'hidden';
-    const hiding = localStorage.getItem('hideAdminControls') === 'true';
     const isHeadless = evt.mutation_type === 'headless';
     const isScheduleOrigin = evt.source_adapter === 'schedule' || evt.mutation_type === 'scheduled' || evt.mutation_type === 'adapted';
     // ids are JSON-quoted so synthetic schedule instance ids ("13:2026-07-04")
@@ -6837,25 +6858,30 @@ function renderEventDrawerHTML(evt, opts = {}) {
     // survive the outer onclick="..." attribute (HTML parser would otherwise
     // terminate the attribute at the first inner ").
     const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
-    adminActions = `
-      <div class="admin-actions-group" style="${hiding ? 'display:none' : ''}">
+    adminActions = evtEditing ? `
+      <div class="admin-actions-group">
         <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${eid},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
-        ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unhide' : 'Hide'}</button>` : ''}
+        ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
         ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
-        <button class="btn-outline" onclick="toggleEditEvent(${eid})">Edit</button>
         ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
-      </div>
-      ${adminVisibilityPill(hiding, '')}`;
+        <button class="btn-outline btn-event-edit-done" onclick="setEventEditMode(null)">${glyph('ph:check')}Done</button>
+      </div>` : `
+      <div class="admin-actions-group">
+        <button class="btn-outline btn-event-edit" onclick="setEventEditMode(${eid})">${glyph('ph:pencil-simple')}Edit</button>
+      </div>`;
   }
 
+  // Built only while editing. Painting the whole form and hiding it is how the
+  // reading drawer ended up carrying the toolkit, and entering the mode
+  // re-renders anyway, so there is nothing to keep warm.
   let editForm = '';
-  if (state.isAdmin) {
+  if (evtEditing) {
     const parishOpts = state.parishes.filter(p => p.id !== '_unassigned').map(p =>
       `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`
     ).join('');
     const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
     editForm = `
-      <div class="detail-edit-form" id="edit-form-${evt.id}" style="display:none;">
+      <div class="detail-edit-form" id="edit-form-${evt.id}">
         <div class="edit-row"><label>Title</label><input id="edit-title-${evt.id}" value="${esc(evt.title)}"></div>
         <div class="edit-row"><label>Description</label><textarea id="edit-desc-${evt.id}">${esc(evt.description || '')}</textarea></div>
         <div class="edit-row"><label>Type</label>
@@ -7211,9 +7237,26 @@ async function _afterPosterChange() {
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
 }
 
-window.toggleEditEvent = function(id) {
-  const form = document.getElementById(`edit-form-${id}`);
-  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+/**
+ * Turn editing on for ONE event, or off entirely.
+ *
+ * Re-renders rather than toggling a `display`, because the point of the mode is
+ * that the controls are not in the document at all until somebody asks for
+ * them — see `state.eventEditMode`.
+ */
+/** Editing belongs to the open drawer; closing it leaves the mode behind. */
+function clearEventEditMode() {
+  if (state.eventEditMode) state.eventEditMode = null;
+}
+
+window.setEventEditMode = function (id) {
+  const next = id == null ? null : String(id);
+  if (state.eventEditMode === next) return;
+  state.eventEditMode = next;
+  if (state._openEventId) {
+    collapseEventCardDOM({ instant: true });
+    scheduleRenderEvents(0);
+  }
 };
 
 window.saveEvent = async function(id) {
@@ -7256,7 +7299,24 @@ window.saveEvent = async function(id) {
   }
 };
 
+// What each of these actually does, in the words somebody needs before doing it.
+//
+// Cancel and Suppress look like neighbours and behave nothing alike, which is
+// the whole reason they are confirmed: a cancellation STAYS on the feed as a
+// tombstone so a person who would have turned up sees it is off, and a
+// suppression takes the service off the site with no notice at all. Reaching
+// for the wrong one sends somebody to a locked church.
+const EVENT_STATUS_CONFIRM = {
+  cancelled: 'Mark this as CANCELLED?\n\nIt stays on the feed, struck through, so anyone who '
+    + 'would have turned up sees that it is off.',
+  hidden: 'SUPPRESS this?\n\nIt disappears from the site with no notice — nobody is told it is '
+    + 'off. Use Cancel instead for a service that is simply not running this week.',
+  approved: null,
+};
+
 window.setEventStatus = async function(id, status) {
+  const ask = EVENT_STATUS_CONFIRM[status];
+  if (ask && !confirm(ask)) return;
   const res = await fetch(`/api/admin/events/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -8925,6 +8985,7 @@ function closeDetail() {
   // the events stream below, URL at /<acronym>. Also collapse any copy
   // of the same card expanded in the main list (hidden behind the sheet)
   // so it doesn't re-appear when the sheet closes.
+  clearEventEditMode();
   const pinned = document.querySelector('.ps-pinned-event .event-card.expanded');
   if (pinned && state.parishSheetFocus && typeof renderParishSheetContent === 'function') {
     const pid = state.parishSheetFocus;
@@ -9321,22 +9382,6 @@ function wireAcronymHint(root, parishId) {
 // one element covers every state in both schemes. See app.css.
 function glyph(name) {
   return `<span class="ps-btn-glyph" style="--glyph:url(https://api.iconify.design/${esc(name)}.svg)" aria-hidden="true"></span>`;
-}
-
-// The show/hide toggle. Rendered on the EVENT drawer only, now that the
-// parish sheet has an edit mode — there, the tools are absent until somebody
-// says they are editing, so a preference for hiding them has nothing left to
-// hide. An event card's admin buttons are still inline, which is what this
-// still answers for.
-//
-// Relabelled from toggleAdminControlsVisibility, so the label and glyph live
-// here rather than in two literals that can drift.
-// The label is its own span because the button now has a glyph child that a
-// textContent assignment would wipe out.
-function adminVisibilityPill(hiding, extraClass) {
-  return `<button class="${extraClass} btn-admin-controls-pill" type="button" onclick="toggleAdminControlsVisibility()">`
-    + glyph(hiding ? 'ph:eye' : 'ph:eye-slash')
-    + `<span class="btn-admin-controls-label">${hiding ? 'Show admin controls' : 'Hide admin controls'}</span></button>`;
 }
 
 // Returns a readable schedule-item label for week_of_month, e.g. "1st, 3rd Sunday"

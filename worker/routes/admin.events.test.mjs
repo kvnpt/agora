@@ -888,3 +888,160 @@ test('without R2 bound the upload says so rather than half-writing', async () =>
   assert.equal(r.status, 503);
   assert.equal(f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(made.body.id).poster_path, null);
 });
+
+// ── told, not asked ──
+//
+// An owner may combine across parishes without asking, because waiting on a
+// quorum of contacts who mostly do not exist would mean a deanery liturgy never
+// gets published. The parish it happens to still hears about it, and can take
+// itself back out. The notice is derived from the rows that already exist.
+
+test('a contact is told what another parish\'s event is doing at theirs', async () => {
+  const f = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(f.raw);
+  contact(f.raw, mine);
+
+  // An owner does the combine, reaching into `mine` both ways.
+  f.raw.prepare("UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'").run();
+  const myInst = await firstInstance(f.db, mine);
+  const made = await f.call('POST', '/api/admin/events', {
+    parish_id: theirs, title: 'Deanery Liturgy', start_utc: myInst.start_utc,
+    additive_parish_ids: [mine], replaced_event_ids: [myInst.id],
+  });
+  assert.equal(made.status, 201, made.body && made.body.error);
+
+  // Back as the contact.
+  contact(f.raw, mine);
+  f.raw.prepare("UPDATE admin_roles SET role='parish' WHERE email='dev'").run();
+  const notices = await f.call('GET', '/api/admin/parish-notices');
+  assert.equal(notices.status, 200);
+  assert.equal(notices.body.length, 2, JSON.stringify(notices.body));
+  const kinds = notices.body.map(n => n.kind).sort();
+  assert.deepEqual(kinds, ['absorbed', 'listed']);
+  // Sentences, not ids — the reader is a parish priest, not a DBA.
+  const absorbed = notices.body.find(n => n.kind === 'absorbed');
+  assert.match(absorbed.detail, /is combined into “Deanery Liturgy”/);
+  assert.match(absorbed.detail, /tombstone/);
+  assert.ok(notices.body.every(n => n.seen === false));
+
+  // And the dot counts them, for somebody who decides nothing.
+  const ping = await f.call('GET', '/api/admin/ping');
+  assert.equal(ping.body.openAsks, 0, 'a contact decides nothing');
+  assert.equal(ping.body.parishNotices, 2);
+});
+
+test('marking one seen takes it off the dot but leaves it on the list', async () => {
+  const f = fresh({ role: 'owner' });
+  const [mine, theirs] = twoParishes(f.raw);
+  const made = await f.call('POST', '/api/admin/events', {
+    parish_id: theirs, title: 'Deanery Liturgy', start_utc: '2026-09-20T23:00:00.000Z',
+    additive_parish_ids: [mine],
+  });
+  f.raw.prepare("UPDATE admin_roles SET role='parish', parish_ids=? WHERE email='dev'")
+    .run(JSON.stringify([mine]));
+
+  assert.equal((await f.call('GET', '/api/admin/ping')).body.parishNotices, 1);
+  const seen = await f.call('POST', '/api/admin/parish-notices/seen',
+    { parish_id: mine, event_id: made.body.id });
+  assert.equal(seen.status, 200);
+  assert.equal((await f.call('GET', '/api/admin/ping')).body.parishNotices, 0);
+  // Still there — seen is not gone.
+  const after = await f.call('GET', '/api/admin/parish-notices');
+  assert.equal(after.body.length, 1);
+  assert.equal(after.body[0].seen, true);
+  // Idempotent.
+  assert.equal((await f.call('POST', '/api/admin/parish-notices/seen',
+    { parish_id: mine, event_id: made.body.id })).status, 200);
+});
+
+test('withdrawing takes the parish out and gives its occurrence back', async () => {
+  const f = fresh({ role: 'owner' });
+  const [mine, theirs] = twoParishes(f.raw);
+  const myInst = await firstInstance(f.db, mine);
+  const made = await f.call('POST', '/api/admin/events', {
+    parish_id: theirs, title: 'Deanery Liturgy', start_utc: myInst.start_utc,
+    additive_parish_ids: [mine], replaced_event_ids: [myInst.id],
+  });
+  assert.equal(made.status, 201);
+  const [sid, date] = splitInstance(myInst.id);
+  assert.equal((await expandOne(f.db, sid, date)).status, 'combined');
+
+  f.raw.prepare("UPDATE admin_roles SET role='parish', parish_ids=? WHERE email='dev'")
+    .run(JSON.stringify([mine]));
+  const out = await f.call('POST', `/api/admin/parishes/${mine}/withdraw`, { event_id: made.body.id });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal(out.body.restored, 1);
+
+  // Their Sunday is back, and the listing is gone.
+  assert.equal((await expandOne(f.db, sid, date)).status, 'approved');
+  assert.equal(f.raw.prepare(
+    'SELECT COUNT(*) AS n FROM event_parishes WHERE event_id = ?').get(made.body.id).n, 0);
+  // The event itself is untouched — this is not a delete, and it reaches
+  // nothing at the parish that owns it.
+  assert.equal(f.raw.prepare('SELECT parish_id FROM events WHERE id = ?').get(made.body.id).parish_id, theirs);
+  assert.equal((await f.call('GET', '/api/admin/parish-notices')).body.length, 0);
+});
+
+test('a contact cannot withdraw another parish, or the event\'s own', async () => {
+  const f = fresh({ role: 'owner' });
+  const [mine, theirs] = twoParishes(f.raw);
+  const made = await f.call('POST', '/api/admin/events', {
+    parish_id: theirs, title: 'Deanery Liturgy', start_utc: '2026-09-20T23:00:00.000Z',
+    additive_parish_ids: [mine],
+  });
+  f.raw.prepare("UPDATE admin_roles SET role='parish', parish_ids=? WHERE email='dev'")
+    .run(JSON.stringify([mine]));
+
+  const other = await f.call('POST', `/api/admin/parishes/${theirs}/withdraw`, { event_id: made.body.id });
+  assert.equal(other.status, 403);
+  assert.match(other.body.error, /not one of yours/);
+  assert.equal(f.raw.prepare(
+    'SELECT COUNT(*) AS n FROM event_parishes WHERE event_id = ?').get(made.body.id).n, 1);
+
+  // And the owning parish cannot be withdrawn from its own event — that would
+  // leave it belonging nowhere, and deleting is a different button.
+  f.raw.prepare("UPDATE admin_roles SET parish_ids=? WHERE email='dev'").run(JSON.stringify([theirs]));
+  const own = await f.call('POST', `/api/admin/parishes/${theirs}/withdraw`, { event_id: made.body.id });
+  assert.equal(own.status, 400);
+  assert.match(own.body.error, /Delete it instead/);
+});
+
+test('an account with no parishes has no notices and no dot from them', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a, b] = twoParishes(f.raw);
+  await f.call('POST', '/api/admin/events', {
+    parish_id: b, title: 'Deanery Liturgy', start_utc: '2026-09-20T23:00:00.000Z',
+    additive_parish_ids: [a],
+  });
+  assert.deepEqual((await f.call('GET', '/api/admin/parish-notices')).body, []);
+  assert.equal((await f.call('GET', '/api/admin/ping')).body.parishNotices, 0);
+});
+
+// ── a decided ask stops vanishing ──
+
+test('a proposer can read their own ask after it is decided, note and all', async () => {
+  const f = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(f.raw);
+  contact(f.raw, mine);
+  const made = await f.call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: '2026-09-20T23:00:00.000Z',
+    additive_parish_ids: [theirs], propose: 'Joint feast',
+  });
+  assert.equal(made.status, 201);
+
+  // The default list is open-only, which is what made it vanish.
+  assert.equal((await f.call('GET', '/api/admin/proposals')).body.length, 1);
+  assert.equal((await f.call('GET', '/api/admin/proposals?mine=1')).body.length, 1);
+
+  f.raw.prepare("UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'").run();
+  assert.equal((await f.call('POST', `/api/admin/proposals/${made.body.proposal_id}/decide`,
+    { decision: 'decline', note: 'Not this year — we have our own vigil.' })).status, 200);
+
+  assert.equal((await f.call('GET', '/api/admin/proposals')).body.length, 0, 'still open?');
+  const mineList = await f.call('GET', '/api/admin/proposals?mine=1');
+  assert.equal(mineList.body.length, 1, 'the proposer lost sight of their own ask');
+  assert.equal(mineList.body[0].status, 'declined');
+  // The note is the whole point of forcing one.
+  assert.equal(mineList.body[0].decisionNote, 'Not this year — we have our own vigil.');
+  assert.equal(mineList.body[0].decidedBy, 'dev');
+});

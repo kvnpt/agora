@@ -264,6 +264,7 @@
     .review-section-header { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 4px 0 6px; border-bottom: 1px solid var(--border-light); margin-bottom: 8px; }
     .review-section + .review-section { margin-top: 20px; }
     .source-msg { font-size: 11px; color: var(--muted); background: var(--soft-bg); border-radius: 2px; padding: 4px 6px; margin-top: 6px; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow: hidden; }
+    .ask-unseen { border-left-color: var(--danger, #dc3545) !important; }
     .review-poster { display: block; width: 60px; height: auto; border-radius: 3px; border: 1px solid var(--border-light); margin-top: 6px; cursor: zoom-in; }
     .review-poster-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
     .review-poster-row .source-msg { flex: 1; margin-top: 0; }
@@ -634,6 +635,28 @@
       <h3>Asks</h3>
       <p class="card-meta" style="margin:0 0 12px;" id="proposals-intro"></p>
       <div id="proposal-list"></div>
+
+      <!-- What was decided about an ask YOU made. The list above is open asks
+           only, so the moment an owner decided one it disappeared — and the
+           decline note, which exists so a refusal teaches the proposer
+           something, was written and never read by anybody. -->
+      <div id="my-asks-block" hidden>
+        <h3 style="margin-top:22px;">Your asks, decided</h3>
+        <div id="my-asks-list"></div>
+      </div>
+
+      <!-- Told, not asked. An owner may combine across parishes without
+           waiting on a quorum of contacts who mostly do not exist; the parish
+           it happens to should still hear it here rather than by noticing
+           their own Sunday struck through. Withdrawing is the veto. -->
+      <div id="parish-notices-block" hidden>
+        <h3 style="margin-top:22px;">At your parishes</h3>
+        <p class="card-meta" style="margin:0 0 12px;">
+          What another parish's event is doing at yours. Taking your parish out
+          leaves their event alone and gives you back any service of yours it absorbed.
+        </p>
+        <div id="parish-notices-list"></div>
+      </div>
     </div>
 
     <!-- Where each jurisdiction's rows came from, and how long ago.
@@ -2873,15 +2896,27 @@
     // ── Asks ──
     let proposals = [];
 
+    let myAsks = [];
+    let parishNotices = [];
+
     async function loadProposals() {
-      proposals = await fetch('/api/admin/proposals', { headers })
-        .then(r => r.ok ? r.json() : []).catch(() => []);
+      [proposals, myAsks, parishNotices] = await Promise.all([
+        fetch('/api/admin/proposals', { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        // Own asks, whatever their status — the only way to learn an outcome.
+        fetch('/api/admin/proposals?mine=1', { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/admin/parish-notices', { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+      ]);
     }
 
     function renderProposals() {
       const el = document.getElementById('proposal-list');
       if (!el) return;
       document.getElementById('count-proposals').textContent = proposals.length;
+      // Before the empty-list early return below. These two are not about open
+      // asks — a contact with notices and no asks is the common case, and
+      // rendering them after that return meant they never rendered at all.
+      renderMyAsks();
+      renderParishNotices();
       const decider = may('people.manage');
       document.getElementById('proposals-intro').textContent = decider
         ? 'Changes somebody has asked an owner to make. Each one names what it would do and why.'
@@ -2908,6 +2943,75 @@
         b.addEventListener('click', () => decideProposal(Number(b.dataset.decide), b.dataset.decision)));
       el.querySelectorAll('[data-withdraw]').forEach(b =>
         b.addEventListener('click', () => withdrawProposal(Number(b.dataset.withdraw))));
+    }
+
+    /** The outcome of an ask you made, which used to just disappear. */
+    function renderMyAsks() {
+      const block = document.getElementById('my-asks-block');
+      const el = document.getElementById('my-asks-list');
+      if (!block || !el) return;
+      const decided = myAsks.filter(a => a.status !== 'open');
+      block.hidden = !decided.length;
+      // Emptied, not just hidden: rows left behind would come back the moment
+      // the block was shown again, describing something already dealt with.
+      if (!decided.length) { el.innerHTML = ''; return; }
+      el.innerHTML = decided.map(a => `
+        <div class="ask">
+          <div class="ask-what">${a.summary ? esc(a.summary) : esc(a.capability)}</div>
+          <div class="ask-meta">
+            <b>${esc(a.status)}</b>${a.decidedBy ? ' by ' + esc(a.decidedBy) : ''}
+            ${a.decidedAt ? ' \u00b7 ' + relativeTime(a.decidedAt) : ''}
+          </div>
+          ${a.decisionNote ? `<div class="ask-why">\u201c${esc(a.decisionNote)}\u201d</div>` : ''}
+        </div>`).join('');
+    }
+
+    /** What somebody else's event is doing at a parish you are the contact for. */
+    function renderParishNotices() {
+      const block = document.getElementById('parish-notices-block');
+      const el = document.getElementById('parish-notices-list');
+      if (!block || !el) return;
+      block.hidden = !parishNotices.length;
+      if (!parishNotices.length) { el.innerHTML = ''; return; }
+      el.innerHTML = parishNotices.map(n => `
+        <div class="ask${n.seen ? '' : ' ask-unseen'}">
+          <div class="ask-what">${esc(n.detail)}</div>
+          <div class="ask-meta">${esc(n.owner_name)}${n.seen ? '' : ' \u00b7 new'}</div>
+          <div class="btn-row">
+            <button class="btn btn-outline" data-notice-withdraw="${esc(n.parish_id)}"
+                    data-notice-event="${n.event_id}">Take my parish out</button>
+            ${n.seen ? '' : `<button class="btn btn-outline" data-notice-seen="${esc(n.parish_id)}"
+                    data-notice-event="${n.event_id}">Mark read</button>`}
+          </div>
+        </div>`).join('');
+
+      el.querySelectorAll('[data-notice-withdraw]').forEach(b =>
+        b.addEventListener('click', () => withdrawParish(b.dataset.noticeWithdraw, Number(b.dataset.noticeEvent))));
+      el.querySelectorAll('[data-notice-seen]').forEach(b =>
+        b.addEventListener('click', () => markNoticeSeen(b.dataset.noticeSeen, Number(b.dataset.noticeEvent))));
+    }
+
+    async function withdrawParish(parishId, eventId) {
+      if (!confirm('Take your parish out of this event?\n\nTheir event stays as it is. Any service of yours it absorbed comes back on the feed.')) return;
+      const res = await fetch(`/api/admin/parishes/${encodeURIComponent(parishId)}/withdraw`, {
+        method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ event_id: eventId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+      toast(body.restored ? `Withdrawn \u2014 ${body.restored} service back on the feed` : 'Withdrawn');
+      await loadProposals();
+      renderProposals();
+    }
+
+    async function markNoticeSeen(parishId, eventId) {
+      const res = await fetch('/api/admin/parish-notices/seen', {
+        method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ parish_id: parishId, event_id: eventId }),
+      });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      await loadProposals();
+      renderProposals();
     }
 
     async function decideProposal(id, decision) {
