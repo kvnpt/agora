@@ -9,7 +9,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { parishId, reconcile, buildUpsert } from './parish-import.mjs';
+import { parishId, reconcile, buildUpsert, heldFields } from './parish-import.mjs';
 
 // The Antiochian rows as seeded by hand, before any scraping.
 const SEEDED = [
@@ -266,4 +266,90 @@ test('provenance is refreshed as a pair, and human work still is not', () => {
   assert.doesNotMatch(out, /languages=excluded/);
   assert.doesNotMatch(out, /color=excluded/);
   assert.doesNotMatch(out, /jurisdiction=excluded/);
+});
+
+// ── A better source survives the scrape ────────────────────────────────
+//
+// The gap these close: `buildUpsert` honoured explicit `info_overrides` pins
+// and nothing else, so a jurisdiction re-run rewrote every unpinned column —
+// including the provenance saying the parish's own site was the source, which
+// is not a pinnable field and so had no way to defend itself. St Demetrios,
+// Salisbury Plain was the case: its address and pin were held by an admin
+// ruling while `info_source_ref` pointing at the parish's own website was not,
+// so the next Greek run would have quietly reinstated the archdiocese.
+
+const GREEK_DIRECTORY = 'https://greekorthodox.org.au/churches/';
+
+/** `reconcile` attaches the existing row as `matched`; that is what carries the incumbent's tier. */
+const withIncumbent = (matched) => ({ ...ROW, matched: { id: ROW.id, ...matched } });
+
+test('a jurisdiction scrape leaves a parish-sourced row entirely alone', () => {
+  const out = buildUpsert([withIncumbent({
+    info_source_type: 'website',
+    info_source_ref: 'https://saintdimitrios.org.au/contact/',
+  })], { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+
+  assert.match(out, /ON CONFLICT\(id\) DO NOTHING;/);
+  // Not one column, and in particular not the provenance that made it immune.
+  assert.doesNotMatch(out, /DO UPDATE SET/);
+  assert.doesNotMatch(out, /info_source_ref=excluded/);
+  assert.doesNotMatch(out, /address=excluded/);
+});
+
+test('and leaves a row a person typed alone too', () => {
+  const out = buildUpsert([withIncumbent({ info_source_type: 'person', info_source_ref: 'Kevin P.' })],
+    { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+  assert.match(out, /ON CONFLICT\(id\) DO NOTHING;/);
+});
+
+// THE REGRESSION THAT MATTERS. `outranks` refuses ties, and 281 of the 293
+// production rows were written by a jurisdiction run against that jurisdiction's
+// own directory. If a tie held, every one of them would freeze at its first
+// import and no re-run could ever correct anything again.
+test('a directory re-reading its OWN rows still refreshes them', () => {
+  const out = buildUpsert([withIncumbent({
+    info_source_type: 'import',
+    info_source_ref: 'https://greekorthodox.org.au/churches/st-nicholas-darwin/',
+  })], { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+
+  assert.match(out, /DO UPDATE SET/);
+  assert.match(out, /address=excluded\.address/);
+  assert.match(out, /info_source_ref=excluded\.info_source_ref/);
+  assert.doesNotMatch(out, /DO NOTHING/);
+});
+
+test('and a jurisdiction scrape may still upgrade a third-party aggregator row', () => {
+  const out = buildUpsert([withIncumbent({
+    info_source_type: 'import',
+    info_source_ref: 'https://orthodox-world.org/en/i/10315/australia/',
+  })], { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+  assert.match(out, /DO UPDATE SET/);
+});
+
+test('a row nobody has matched yet is unaffected — there is no incumbent', () => {
+  const out = buildUpsert([ROW], { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+  assert.match(out, /DO UPDATE SET/);
+});
+
+test('the plan says which parishes were left alone and why', () => {
+  const rows = [withIncumbent({
+    info_source_type: 'website',
+    info_source_ref: 'https://saintdimitrios.org.au/contact/',
+  })];
+  const held = heldFields(rows, { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+
+  assert.equal(held.length, 1, 'a whole parish declined and the plan said nothing');
+  assert.equal(held[0].whole_row, true);
+  assert.equal(held[0].incumbent_tier, 'parish');
+  // Every refreshable column, because that is what DO NOTHING actually leaves.
+  assert.ok(held[0].held.some((f) => f.field === 'info_source_ref'));
+  assert.ok(held[0].held.some((f) => f.field === 'address'));
+});
+
+test('heldFields reports nothing for an ordinary refresh', () => {
+  const rows = [withIncumbent({
+    info_source_type: 'import',
+    info_source_ref: 'https://greekorthodox.org.au/churches/st-nicholas-darwin/',
+  })];
+  assert.deepEqual(heldFields(rows, { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY }), []);
 });
