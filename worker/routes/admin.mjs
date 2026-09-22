@@ -193,53 +193,93 @@ async function suppressedSlot(db, parishId, dayOfWeek, startTime) {
 }
 
 /**
- * Apply a combine to one event: which parishes it also appears at, and which
- * existing occurrences it absorbs.
+ * What a combine body is asking for, split by whose parishes it touches.
  *
- * Lifted out of POST /events/:id/escalate so the create path can take the same
- * three arguments. An event entered *because* it replaces the 9am liturgy has
- * no moment where it exists without that fact, and two requests would give it
- * one — the window where the deanery liturgy is on file and the liturgy it
- * stands in for is still showing beside it.
+ * Only the `parish` role is scoped, so an owner or an editor gets the whole ask
+ * back as `mine` without a single lookup. For a parish contact each target has
+ * to be resolved to a parish: an additive id IS one, an integer names a stored
+ * event, a "sid:date" names a rule's occurrence. A target that no longer exists
+ * resolves to no parish, which reads as not-theirs — the right answer, and the
+ * reason the label says so rather than naming a parish.
  *
- * Returns a `json()` refusal, or null when the write went through.
+ * @returns {{ wanted, mine, outside: Array<{id: string, label: string}> }}
+ *   `wanted` is everything asked for, `mine` the subset this account may write,
+ *   `outside` the rest with a sentence apiece.
  */
-async function applyEscalation(c, event, body) {
+async function scopeSplit(c, event, body) {
   const db = c.env.DB;
   const { additive_parish_ids = [], replaced_event_ids = [], approve = false } = body;
 
   // Targets split by id shape: integers are stored one-offs (event_replaces),
   // "sid:date" are schedule instances (v26 combined overrides).
-  const synthTargets = new Set(), intTargets = new Set();
+  const synths = new Set(), ints = new Set();
   for (const rid of replaced_event_ids) {
-    if (parseInstanceId(rid)) synthTargets.add(String(rid));
-    else if (/^\d+$/.test(String(rid))) intTargets.add(Number(rid));
+    if (parseInstanceId(rid)) synths.add(String(rid));
+    else if (/^\d+$/.test(String(rid))) ints.add(Number(rid));
   }
-  const targetParishes = new Set(
+  const parishes = new Set(
     additive_parish_ids.filter(pid => typeof pid === 'string' && pid !== event.parish_id)
   );
+  const wanted = { parishes, ints, synths, approve };
 
-  // A combine reaches OTHER parishes' rows, so it is the one place where the
-  // parish being written to is not the one named in the URL. Only the parish
-  // role is scoped, so the lookups that answer "whose occurrence is this"
-  // are skipped entirely for an owner or an editor.
-  if (c.who.role === 'parish') {
-    for (const pid of targetParishes) {
-      const scoped = outOfScope(c, pid);
-      if (scoped) return scoped;
-    }
-    for (const rid of intTargets) {
-      const row = await db.prepare('SELECT parish_id FROM events WHERE id = ?').bind(rid).first();
-      const scoped = outOfScope(c, row && row.parish_id);
-      if (scoped) return scoped;
-    }
-    for (const sid of synthTargets) {
-      const { scheduleId } = parseInstanceId(sid);
-      const row = await db.prepare('SELECT parish_id FROM schedules WHERE id = ?').bind(scheduleId).first();
-      const scoped = outOfScope(c, row && row.parish_id);
-      if (scoped) return scoped;
-    }
+  if (c.who.role !== 'parish') return { wanted, mine: wanted, outside: [] };
+
+  const outside = [];
+  const mine = { parishes: new Set(), ints: new Set(), synths: new Set(), approve };
+
+  for (const pid of parishes) {
+    if (mayTouchParish(c.who, pid)) { mine.parishes.add(pid); continue; }
+    const p = await db.prepare('SELECT name FROM parishes WHERE id = ?').bind(pid).first();
+    outside.push({ id: pid, label: p ? p.name : pid });
   }
+  for (const rid of ints) {
+    const row = await db.prepare(
+      `SELECT e.title, e.parish_id, p.name AS parish_name FROM events e
+       LEFT JOIN parishes p ON p.id = e.parish_id WHERE e.id = ?`).bind(rid).first();
+    if (row && mayTouchParish(c.who, row.parish_id)) { mine.ints.add(rid); continue; }
+    outside.push({
+      id: String(rid),
+      label: row ? `${row.title} at ${row.parish_name || row.parish_id}` : `event ${rid}`,
+    });
+  }
+  for (const sid of synths) {
+    const { scheduleId, date } = parseInstanceId(sid);
+    const row = await db.prepare(
+      `SELECT s.title, s.parish_id, p.name AS parish_name FROM schedules s
+       LEFT JOIN parishes p ON p.id = s.parish_id WHERE s.id = ?`).bind(scheduleId).first();
+    if (row && mayTouchParish(c.who, row.parish_id)) { mine.synths.add(sid); continue; }
+    outside.push({
+      id: sid,
+      label: row ? `${row.title} at ${row.parish_name || row.parish_id} on ${date}` : `service ${sid}`,
+    });
+  }
+  return { wanted, mine, outside };
+}
+
+/**
+ * The refusal, with the way forward attached.
+ *
+ * Shaped like the capability refusals in `guarded`, and for the same reason:
+ * a bare 403 turns the owner into a help desk reached by some other channel,
+ * and the request arrives stripped of the context that produced it. `outside`
+ * travels so the panel can name what it would be asking about, rather than
+ * repeating "some parish is not yours".
+ */
+const combineRefusal = (c, event, split) => json({
+  error: split.outside.length === 1
+    ? `${split.outside[0].label} is not one of yours — ask an owner to combine it.`
+    : `${split.outside.length} of those belong to other parishes — ask an owner to combine them.`,
+  role: c.who.role,
+  // The panel reads this to offer "ask an owner" instead of just the refusal.
+  proposable: true,
+  capability: 'event.combine',
+  subject: String(event.id),
+  outside: split.outside,
+}, 403);
+
+/** Carry out one combine target state. Idempotent: what is not named is removed. */
+async function writeCombine(db, event, target) {
+  const { parishes, ints, synths, approve } = target;
 
   const [curP, curR, curC] = await Promise.all([
     db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(event.id).all(),
@@ -258,19 +298,19 @@ async function applyEscalation(c, event, body) {
   }
 
   // Additive parishes.
-  for (const pid of targetParishes) {
+  for (const pid of parishes) {
     if (!currentParishes.includes(pid)) {
       stmts.push(db.prepare('INSERT OR IGNORE INTO event_parishes (event_id, parish_id) VALUES (?,?)').bind(event.id, pid));
     }
   }
   for (const pid of currentParishes) {
-    if (!targetParishes.has(pid)) {
+    if (!parishes.has(pid)) {
       stmts.push(db.prepare('DELETE FROM event_parishes WHERE event_id=? AND parish_id=?').bind(event.id, pid));
     }
   }
 
   // Stored one-off bases.
-  for (const rid of intTargets) {
+  for (const rid of ints) {
     if (!currentReplaces.includes(rid)) {
       stmts.push(db.prepare('INSERT OR IGNORE INTO event_replaces (replacing_event_id, replaced_event_id) VALUES (?,?)').bind(event.id, rid));
       stmts.push(db.prepare(
@@ -279,7 +319,7 @@ async function applyEscalation(c, event, body) {
     }
   }
   for (const rid of currentReplaces) {
-    if (!intTargets.has(rid)) {
+    if (!ints.has(rid)) {
       stmts.push(db.prepare('DELETE FROM event_replaces WHERE replacing_event_id=? AND replaced_event_id=?').bind(event.id, rid));
       stmts.push(db.prepare(
         `UPDATE events SET status='approved',
@@ -295,19 +335,114 @@ async function applyEscalation(c, event, body) {
   if (stmts.length) await db.batch(stmts);
 
   // Schedule instances go through the override helpers (multi-step each).
-  for (const sid of synthTargets) {
+  for (const sid of synths) {
     if (!currentCombined.includes(sid)) {
       const p = parseInstanceId(sid);
       await setCombined(db, p.scheduleId, p.date, event.id);
     }
   }
   for (const sid of currentCombined) {
-    if (!synthTargets.has(sid)) {
+    if (!synths.has(sid)) {
       const p = parseInstanceId(sid);
       await clearCombined(db, p.scheduleId, p.date);
     }
   }
-  return null;
+}
+
+/**
+ * Apply a combine to one event: which parishes it also appears at, and which
+ * existing occurrences it absorbs.
+ *
+ * Lifted out of POST /events/:id/escalate so the create path can take the same
+ * three arguments. An event entered *because* it replaces the 9am liturgy has
+ * no moment where it exists without that fact, and two requests would give it
+ * one — the window where the deanery liturgy is on file and the liturgy it
+ * stands in for is still showing beside it.
+ *
+ * A combine is also the only write whose target is not the parish in the URL,
+ * so for a parish contact it is the one that can reach out of their own scope.
+ * Three outcomes, not two:
+ *
+ *   everything theirs        -> written, `ask` null
+ *   some not, `propose` off  -> 403 with the way forward attached, nothing written
+ *   some not, `propose` on   -> their half written now, the WHOLE desired state
+ *                               returned as `ask` for the caller to file
+ *
+ * The third is the point: their own parish's half of a deanery liturgy should
+ * not sit unpublished for however long an owner takes to answer, and the half
+ * that is not theirs should not happen because they ticked a box.
+ *
+ * @returns {{ refused: Response|null, ask: object|null }}
+ */
+async function applyEscalation(c, event, body) {
+  const split = await scopeSplit(c, event, body);
+  const asking = split.outside.length > 0;
+  // A reason is what makes an ask worth reading, but an ask with none still
+  // beats a refusal nobody can act on — so `propose` is the flag and the
+  // reason rides beside it.
+  const wantsToAsk = asking && !!body.propose;
+
+  if (asking && !wantsToAsk) return { refused: combineRefusal(c, event, split), ask: null };
+
+  await writeCombine(c.env.DB, event, wantsToAsk ? split.mine : split.wanted);
+
+  return {
+    refused: null,
+    // The whole desired state, not the refused half — worker/lib/proposals.mjs
+    // says why at length. Approving replays this through writeCombine as the
+    // owner, and that call removes anything the payload does not name.
+    ask: wantsToAsk ? {
+      capability: 'event.combine',
+      subject: String(event.id),
+      payload: {
+        additive_parish_ids: [...split.wanted.parishes],
+        replaced_event_ids: [...split.wanted.ints, ...split.wanted.synths].map(String),
+      },
+      reason: typeof body.propose === 'string' ? body.propose : (body.reason || ''),
+    } : null,
+  };
+}
+
+/** Store an ask. One place, so the events routes and /proposals write one shape. */
+async function insertProposal(env, { capability, subject, payload, reason }, who) {
+  const row = await env.DB.prepare(
+    `INSERT INTO admin_proposals (capability, subject, payload, reason, proposed_by)
+     VALUES (?,?,?,?,?) RETURNING id`
+  ).bind(capability, String(subject).trim(), JSON.stringify(payload),
+         String(reason || '').trim() || null, who).first();
+  return row.id;
+}
+
+/**
+ * Names for a combine ask, resolved against the database as it is NOW.
+ *
+ * Not stored with the payload on purpose: a proposal can sit for a week, and a
+ * sentence naming a parish by the name it had when somebody asked is a sentence
+ * about a parish that may since have been renamed. An id that no longer
+ * resolves keeps its id, which is what tells the owner the ask has gone stale.
+ */
+async function combineNames(db, payload) {
+  const parishes = [];
+  for (const pid of payload.additive_parish_ids || []) {
+    const p = await db.prepare('SELECT name FROM parishes WHERE id = ?').bind(pid).first();
+    parishes.push(p ? p.name : pid);
+  }
+  const targets = [];
+  for (const rid of payload.replaced_event_ids || []) {
+    const inst = parseInstanceId(rid);
+    if (inst) {
+      const row = await db.prepare(
+        `SELECT s.title, p.name AS parish_name FROM schedules s
+         LEFT JOIN parishes p ON p.id = s.parish_id WHERE s.id = ?`).bind(inst.scheduleId).first();
+      targets.push(row ? `${row.title} at ${row.parish_name || '?'} on ${readableDate(inst.date)}` : rid);
+      continue;
+    }
+    const row = await db.prepare(
+      `SELECT e.title, p.name AS parish_name FROM events e
+       LEFT JOIN parishes p ON p.id = e.parish_id WHERE e.id = ?`).bind(rid).first();
+    targets.push(row ? `${row.title} at ${row.parish_name || '?'}` : rid);
+  }
+  return { parishes, targets };
 }
 
 /** An event's row plus the two halves of its combine, as both routes answer. */
@@ -322,6 +457,29 @@ async function eventWithEscalation(db, id) {
     additional_parishes: (addl.results || []).map(r => r.parish_id),
     replaces: (repl.results || []).map(r => r.replaced_event_id),
   };
+}
+
+/**
+ * 'YYYY-MM-DD' as a person reads it — "27 Sep 2026".
+ *
+ * Formatted in UTC because an occurrence_date is a bare calendar date in the
+ * parish's own local time, not an instant: reading it in any other zone would
+ * shift some of them by a day.
+ */
+function readableDate(date) {
+  const t = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(t)) return date;
+  return new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric',
+  }).format(new Date(t));
+}
+
+/** How many asks are open. A missing table reads as none, never as an error. */
+async function openAskCount(db) {
+  const row = await db.prepare(
+    "SELECT COUNT(*) AS n FROM admin_proposals WHERE status = 'open'"
+  ).first().catch(() => null);
+  return row ? row.n : 0;
 }
 
 // Keep an event's coordinates in step with its parish, unless it has an override.
@@ -349,6 +507,16 @@ export function registerAdminRoutes(router) {
     // 403 cannot disagree. It is convenience, never enforcement — every guard
     // above re-checks server-side.
     ...rolePayload(c.who),
+    // How many asks are waiting on THIS person, which is what the main app's
+    // account icon puts a dot on.
+    //
+    // Here rather than in a poll of its own: ping is already the one request
+    // that answers "who am I and what does this browser need to know", it runs
+    // on every load, and the count is a covering read of
+    // idx_admin_proposals_open. A dot nobody can act on is noise, so it is
+    // zero for everybody but a decider — the same boundary
+    // /proposals/:id/decide draws with `people.manage`.
+    openAsks: can(c.who.role, 'people.manage') ? await openAskCount(c.env.DB) : 0,
   })));
 
   // ── people ──
@@ -604,30 +772,54 @@ export function registerAdminRoutes(router) {
       }
     }
 
-    const refusedCombine = await applyEscalation(c, row, b);
-    if (refusedCombine) {
+    const { refused, ask } = await applyEscalation(c, row, b);
+    if (refused) {
       // The event is written and the combine is not, which is the one outcome
       // worth undoing: it would leave a card beside the service it was entered
       // to replace, with nothing saying the combine had been asked for.
+      //
+      // Undone rather than kept, even though the refusal now offers to carry
+      // the ask: the panel re-sends the whole thing with `propose` set, and a
+      // half-made event waiting for that second press is a row nothing on
+      // screen accounts for.
       await env.DB.prepare('DELETE FROM events WHERE id = ?').bind(row.id).run();
-      return refusedCombine;
+      return refused;
     }
 
-    return json(await eventWithEscalation(env.DB, row.id), 201);
+    // The event exists at their own parish either way — only the half that
+    // reaches another parish waits on an owner.
+    const proposalId = ask ? await insertProposal(env, ask, await editor(c)) : null;
+
+    return json({ ...await eventWithEscalation(env.DB, row.id), proposal_id: proposalId }, 201);
   }));
 
   // PATCH an event. A synthetic id writes an override instead of mutating a row.
-  router.patch('/api/admin/events/:id', guarded('event.edit', async ({ env, params, request }) => {
+  //
+  // Scoped both ways round, which took two lookups rather than one. A synthetic
+  // id names a RULE's occurrence, so the parish is the rule's; an integer names
+  // a stored row, so it is the row's. Neither is in the URL, and without this a
+  // parish contact could rename any event at any parish — `event.edit` is on
+  // all three role lists precisely because the scoping is supposed to be what
+  // holds them to their own.
+  router.patch('/api/admin/events/:id', guarded('event.edit', async (c) => {
+    const { env, params, request } = c;
     const body = await readJson(request);
 
     const inst = parseInstanceId(params.id);
     if (inst) {
+      const rule = await env.DB.prepare('SELECT parish_id FROM schedules WHERE id = ?')
+        .bind(inst.scheduleId).first();
+      if (!rule) return json({ error: 'Event not found' }, 404);
+      const scopedRule = outOfScope(c, rule.parish_id);
+      if (scopedRule) return scopedRule;
       const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, body);
       return r.error ? json({ error: r.error }, r.code || 400) : json(r.instance);
     }
 
     const event = await env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(params.id).first();
     if (!event) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, event.parish_id);
+    if (scoped) return scoped;
 
     const {
       status, parish_id, title, description, start_utc, end_utc, event_type,
@@ -652,6 +844,11 @@ export function registerAdminRoutes(router) {
     if (parish_scoped !== undefined) put('parish_scoped', parish_scoped ? 1 : 0);
 
     if (parish_id && parish_id !== event.parish_id) {
+      // Checked against where it is GOING as well as where it is: handing an
+      // event to a parish that is not yours is a write to that parish, and
+      // handing one away is how a scope is escaped in a single PATCH.
+      const scopedMove = outOfScope(c, parish_id);
+      if (scopedMove) return scopedMove;
       const p = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?').bind(parish_id).first();
       if (!p) return json({ error: 'Invalid parish_id' }, 400);
       put('parish_id', parish_id); put('lat', p.lat); put('lng', p.lng);
@@ -680,14 +877,26 @@ export function registerAdminRoutes(router) {
   }));
 
   // DELETE. A synthetic id is suppressed with a 'hidden' override — the rule lives on.
-  router.delete('/api/admin/events/:id', guarded('event.edit', async ({ env, params }) => {
+  //
+  // Scoped the same two ways as the PATCH above, and it is the one that matters
+  // most: this is the only route here that destroys a row outright.
+  router.delete('/api/admin/events/:id', guarded('event.edit', async (c) => {
+    const { env, params } = c;
     const inst = parseInstanceId(params.id);
     if (inst) {
+      const rule = await env.DB.prepare('SELECT parish_id FROM schedules WHERE id = ?')
+        .bind(inst.scheduleId).first();
+      if (!rule) return json({ error: 'Event not found' }, 404);
+      const scopedRule = outOfScope(c, rule.parish_id);
+      if (scopedRule) return scopedRule;
       const r = await hideInstance(env.DB, inst.scheduleId, inst.date);
       return r.error ? json({ error: r.error }, r.code || 400) : json({ ok: true });
     }
-    const event = await env.DB.prepare('SELECT id FROM events WHERE id = ?').bind(params.id).first();
+    const event = await env.DB.prepare('SELECT id, parish_id FROM events WHERE id = ?')
+      .bind(params.id).first();
     if (!event) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, event.parish_id);
+    if (scoped) return scoped;
     await env.DB.prepare('DELETE FROM events WHERE id = ?').bind(params.id).run();
     return json({ ok: true });
   }));
@@ -726,11 +935,21 @@ export function registerAdminRoutes(router) {
     const db = c.env.DB;
     const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(c.params.id).first();
     if (!event) return json({ error: 'Event not found' }, 404);
+    // The EVENT, before its targets. applyEscalation scopes what a combine
+    // reaches; this scopes whose combine it is. Without it the body's own
+    // semantics were the hole — "anything not named is removed", so an empty
+    // body named nothing and stripped every parish and every absorbed service
+    // off any event on the site, targets it never had to be allowed to touch
+    // included. A refusal here and not an ask: somebody else's event is not
+    // theirs to ask about, which is the same answer POST /proposals gives.
+    const scoped = outOfScope(c, event.parish_id);
+    if (scoped) return scoped;
 
-    const refused = await applyEscalation(c, event, await readJson(c.request));
+    const { refused, ask } = await applyEscalation(c, event, await readJson(c.request));
     if (refused) return refused;
+    const proposalId = ask ? await insertProposal(c.env, ask, await editor(c)) : null;
 
-    return json(await eventWithEscalation(db, event.id));
+    return json({ ...await eventWithEscalation(db, event.id), proposal_id: proposalId });
   }));
 
   // ── a parish's own links ──
@@ -1582,21 +1801,38 @@ export function registerAdminRoutes(router) {
       "SELECT id, name FROM parishes").all().catch(() => ({ results: [] }))).results || [])
       .map(p => [p.id, p.name]));
 
-    return json((r.results || []).map(row => {
+    // Resolved per row rather than per table: a combine's subject is an event
+    // and its targets are other parishes' events and rules, and there is no
+    // point loading every one of those to describe the handful that are asked
+    // about. Names come from the database as it is NOW — a sentence naming a
+    // parish by the name it had a week ago describes something else.
+    const rows = [];
+    for (const row of (r.results || [])) {
       const payload = readPayload(row.payload);
+      let subjectName = parishes.get(row.subject) || row.subject;
+      let names = { transferTo: payload ? parishes.get(payload.transferTo) || payload.transferTo : null };
+      if (row.capability === 'event.combine') {
+        const ev = await env.DB.prepare('SELECT title FROM events WHERE id = ?')
+          .bind(row.subject).first().catch(() => null);
+        // A gone event keeps its id, which is what tells the owner the ask has
+        // gone stale rather than quietly reading as being about nothing.
+        subjectName = ev ? ev.title : `event ${row.subject}`;
+        if (payload) names = { ...names, ...await combineNames(env.DB, payload) };
+      }
+      rows.push({ row, payload, subjectName, names });
+    }
+
+    return json(rows.map(({ row, payload, subjectName, names }) => {
       return {
         id: row.id,
         capability: row.capability,
         subject: row.subject,
-        subjectName: parishes.get(row.subject) || row.subject,
+        subjectName,
         payload,
         // Null when the row is unreadable — the list still renders, and that
         // one proposal simply cannot be approved.
         summary: payload
-          ? describeProposal(row.capability, payload, {
-              subject: parishes.get(row.subject) || row.subject,
-              transferTo: parishes.get(payload.transferTo) || payload.transferTo,
-            })
+          ? describeProposal(row.capability, payload, { ...names, subject: subjectName })
           : null,
         reason: row.reason || null,
         status: row.status,
@@ -1618,7 +1854,11 @@ export function registerAdminRoutes(router) {
     // Proposing something you could simply do is a confusing dead end: the ask
     // would sit waiting for an owner to approve what the proposer could have
     // pressed themselves.
-    if (can(c.who.role, b.capability)) {
+    //
+    // 'event.combine' is not a capability — `can()` answers false for every
+    // role, owner included — so the question there is not "may you" but "is
+    // any of it out of your reach", answered below once the event is known.
+    if (b.capability !== 'event.combine' && can(c.who.role, b.capability)) {
       return json({
         error: `You can do that yourself — no need to propose it.`,
         capability: b.capability,
@@ -1627,21 +1867,34 @@ export function registerAdminRoutes(router) {
     const v = validateProposal(b);
     if (!v.ok) return json({ error: v.error }, 400);
 
-    // A parish contact may only propose about their own parishes, for the same
-    // reason they may only edit them.
-    if (b.capability !== 'colors.edit') {
+    if (b.capability === 'event.combine') {
+      // The subject is an event, so the scope question is about the parish the
+      // event belongs to: asking to combine somebody else's event is not an
+      // ask, it is the thing they were refused wearing a different hat.
+      const ev = await env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(b.subject).first();
+      if (!ev) return json({ error: 'That event no longer exists.' }, 404);
+      const scoped = outOfScope(c, ev.parish_id);
+      if (scoped) return scoped;
+      // And if every target is already theirs, there is nothing to ask for.
+      const split = await scopeSplit(c, ev, v.payload);
+      if (!split.outside.length) {
+        return json({
+          error: 'You can do that yourself — no need to ask.',
+          capability: b.capability,
+        }, 400);
+      }
+    } else if (b.capability !== 'colors.edit') {
+      // A parish contact may only propose about their own parishes, for the
+      // same reason they may only edit them.
       const scoped = outOfScope(c, b.subject);
       if (scoped) return scoped;
     }
 
-    const who = await editor(c);
-    const row = await env.DB.prepare(
-      `INSERT INTO admin_proposals (capability, subject, payload, reason, proposed_by)
-       VALUES (?,?,?,?,?) RETURNING id`
-    ).bind(b.capability, b.subject.trim(), JSON.stringify(v.payload),
-           (b.reason || '').trim() || null, who).first();
+    const id = await insertProposal(env, {
+      capability: b.capability, subject: b.subject, payload: v.payload, reason: b.reason,
+    }, await editor(c));
 
-    return json({ id: row.id, status: 'open' }, 201);
+    return json({ id, status: 'open' }, 201);
   }));
 
   // Withdraw your own. Not a decision — it is the proposer saying never mind,
@@ -1707,6 +1960,49 @@ export function registerAdminRoutes(router) {
   /** Carry out an approved proposal, re-checking the world as it is now. */
   async function applyProposal(env, row, payload, who) {
     const now = NOW();
+
+    if (row.capability === 'event.combine') {
+      const event = await env.DB.prepare('SELECT * FROM events WHERE id = ?')
+        .bind(row.subject).first();
+      // A week is long enough for the event to have been deleted, and a
+      // combine with nothing to combine into would write rows pointing at a
+      // row that is gone.
+      if (!event) return { error: 'The event this was about no longer exists.', status: 410 };
+
+      // Every target re-checked against the database as it is now, for the
+      // same reason an acronym's clash is checked here and not when the ask
+      // was made: a parish can be deleted, and a rule can be deleted, while a
+      // proposal waits. A target that has gone is dropped rather than failing
+      // the approval — the rest of the ask is still what was wanted, and a
+      // service that no longer exists does not need absorbing.
+      const gone = [];
+      const parishIds = [];
+      for (const pid of payload.additive_parish_ids || []) {
+        const p = await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(pid).first();
+        if (p) parishIds.push(pid); else gone.push(pid);
+      }
+      const targetIds = [];
+      for (const rid of payload.replaced_event_ids || []) {
+        const inst = parseInstanceId(rid);
+        const found = inst
+          ? await env.DB.prepare('SELECT id FROM schedules WHERE id = ?').bind(inst.scheduleId).first()
+          : await env.DB.prepare('SELECT id FROM events WHERE id = ?').bind(rid).first();
+        if (found) targetIds.push(rid); else gone.push(rid);
+      }
+
+      // Written as the DECIDER, whose role is owner — so the scope split that
+      // refused the proposer does not run, which is the whole point of their
+      // having asked. `writeCombine` takes the target state directly for the
+      // same reason: applyEscalation's job is deciding whether somebody may,
+      // and that has just been decided by a person.
+      await writeCombine(env.DB, event, {
+        parishes: new Set(parishIds.filter(pid => pid !== event.parish_id)),
+        ints: new Set(targetIds.filter(r => !parseInstanceId(r)).map(Number)),
+        synths: new Set(targetIds.filter(r => parseInstanceId(r)).map(String)),
+        approve: false,
+      });
+      return { applied: 'combined', dropped: gone.length ? gone : undefined };
+    }
 
     if (row.capability === 'colors.edit') {
       if (!HEX.test(payload.color)) return { error: 'That is no longer a valid colour.' };

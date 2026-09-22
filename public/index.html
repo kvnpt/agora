@@ -322,6 +322,11 @@
                   aria-haspopup="menu" aria-expanded="false" aria-label="Account" title="Account">
             <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
             <span class="mode-bar-pill-label">Account</span>
+            <!-- Something is waiting for this person to decide. Shown only to
+                 an account that can actually decide it — see syncAccountMenu.
+                 aria-hidden because the button's own label carries the count:
+                 a dot announced as "dot" tells a screen reader nothing. -->
+            <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
           </button>
         </div>
       </div>
@@ -519,7 +524,22 @@
       <div class="edit-row-hint ne-replace-hint">Whatever is ticked here stops being its own card and renders as a tombstone pointing at this event — nothing disappears.</div>
 
       <div class="ne-error" id="new-event-error" hidden></div>
-      <div class="escalate-btn-row">
+
+      <!-- The way forward, where the refusal happened.
+           A parish contact may combine freely at their own parish and not at
+           anybody else's, which is the one thing on this dialog they can want
+           and not have. A bare 403 would send them to find an owner through
+           some other channel, and the ask would arrive stripped of the context
+           that produced it — so the refusal offers to carry it instead, with
+           the event, the exact targets and the reason travelling together.
+           Same bargain /admin already strikes for a delete or an acronym. -->
+      <div class="ne-ask" id="new-event-ask" hidden>
+        <div class="ne-ask-what" id="new-event-ask-what"></div>
+        <input id="new-event-ask-reason" placeholder="Why — the owner reads this">
+        <button class="ps-btn ps-btn-admin" type="button" id="new-event-ask-send" onclick="agoraSendNewEventAsk()">Ask an owner</button>
+      </div>
+
+      <div class="escalate-btn-row" id="new-event-actions">
         <button class="ps-btn ps-btn-ghost" type="button" onclick="closeNewEventDialog()">Cancel</button>
         <button class="btn-save" type="button" id="new-event-save" onclick="saveNewEvent()">Add event</button>
       </div>

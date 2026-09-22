@@ -488,6 +488,10 @@ input, select, textarea {
 /* Account is icon-only and round: a 34px circle the size of the row, with the
    label kept in the markup for a screen reader rather than deleted. */
 .mode-bar-pill.fm-account {
+  /* The containing block for .account-dot. .mode-bar-pill is not positioned,
+     so without this the dot would anchor to the mode bar and sit at its
+     corner rather than the button's. */
+  position: relative;
   width: 34px;
   height: 34px;
   padding: 0;
@@ -514,6 +518,31 @@ input, select, textarea {
   border-color: var(--text);
 }
 .mode-bar-pill.fm-account[aria-expanded="true"] .mode-bar-pill-icon { filter: brightness(0) invert(1); }
+
+/* Something is waiting for this person to decide.
+   A dot and not a number: the count is in the label for anyone who needs it,
+   and at 34px a badge with a digit in it is a smudge. Positioned against the
+   button, which is why .mode-bar-pill.fm-account carries `position: relative`
+   above — the base pill class does not. */
+.account-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  /* Ringed in the bar's own background so the dot reads as sitting ON the
+     button rather than as part of the glyph, in both schemes. */
+  box-shadow: 0 0 0 2px var(--bg);
+  pointer-events: none;
+}
+.account-dot[hidden] { display: none; }
+/* Open, the button fills with --text and the ring has to follow it or the dot
+   sits in a pale halo on a dark circle. */
+.mode-bar-pill.fm-account[aria-expanded="true"] .account-dot {
+  box-shadow: 0 0 0 2px var(--text);
+}
 
 /* The menu behind it. Anchored to the mode bar (position: relative) at its
    right edge, under the button. */
@@ -4360,6 +4389,42 @@ button.ps-avatar { cursor: pointer; }
   border-radius: 10px;
 }
 .ne-error[hidden] { display: none; }
+/* The offer to carry the ask, rendered where the refusal was. Accent rather
+   than danger: nothing has gone wrong, there is simply somebody else to ask. */
+.ne-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid var(--accent-ring);
+  border-radius: 12px;
+}
+.ne-ask[hidden] { display: none; }
+.ne-ask-what { font-size: 12px; line-height: 1.45; color: var(--text); }
+.ne-ask-what b { font-weight: 600; }
+.ne-ask input {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.ne-ask input:focus { outline: none; border-color: var(--accent); }
+.ne-ask button { align-self: flex-start; }
+/* Sent. Same block, so the answer lands where the question was asked. */
+.ne-ask-sent {
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+
 
 /* ── Placing a parish's pin by hand ──────────────────────────────────── */
 .pin-modal { position: relative; max-width: 460px; }

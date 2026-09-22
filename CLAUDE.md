@@ -164,6 +164,17 @@ never exists for a round trip beside the thing it replaces):
 `event_replaces` is described as legacy in old comments. It is pre-v26 but **not**
 redundant: it is the only path for combining against a stored one-off.
 
+A combine is the one write whose target is **not** the parish in the URL, which
+makes it the one a parish contact can use to reach out of their own scope. So
+it is scoped per target, and the refusal is not a dead end: the same request
+with `propose` set applies the half that IS theirs and files the rest as an
+`event.combine` row in `admin_proposals` — their parish's side of a deanery
+liturgy should not wait on an owner, and the other parish's side should not
+happen because somebody ticked a box. The ask carries the **whole** desired
+state, because `writeCombine` is a target state and removes what it is not
+told; a payload holding only the refused half would strip the applied half on
+approval.
+
 **Dedup decides which of two competing rows becomes one card** (`merge.mjs`): a
 `week_of_month` rule beats a generic weekly one, a stored one-off beats a schedule
 instance, then most-recently-updated. That middle rule is load-bearing — it is how a
@@ -271,6 +282,17 @@ A secret reaches `env` as a **string** (a Worker secret) or as an **object with
 `.get()`** (a Secrets Store binding). `readSecret()` in `worker/lib/auth.mjs`
 takes either. Do not compare a binding for truthiness and call it configured —
 an object always passes, and the value then renders as `[object Object]`.
+
+**An ask is a refusal with somewhere to go.** `admin_proposals` holds the four
+things somebody was refused and the panel could carry for them — a parish
+delete, an acronym, a jurisdiction colour, and a combine reaching another
+parish. The first three are *capability* refusals and the fourth is a *scope*
+refusal, which is why nothing in `roles.mjs` grants `event.combine` and the
+events routes raise it themselves. An owner decides; `/api/admin/ping` counts
+what is open and the main app puts a red dot on the account icon, for a
+decider only — a dot on somebody who can only look at it is noise. It is still
+**not a moderation queue**: ordinary edits are never proposed, they just
+happen.
 
 **Who may do what lives in `admin_roles`.** Cloudflare Access decides who
 reaches `/admin`; that table decides what they may touch once inside —

@@ -73,14 +73,20 @@ function fresh(roleRow) {
 const FROM = '2026-09-01T00:00:00.000Z';
 const TO = '2026-10-01T00:00:00.000Z';
 
-/** Two seeded parishes that both have rules, so a combine has somewhere to go. */
-function twoParishes(raw) {
+/** Seeded parishes that have rules, so a combine has somewhere to go. */
+function twoParishes(raw, want = 2) {
   const rows = raw.prepare(
     `SELECT DISTINCT p.id FROM parishes p JOIN schedules s ON s.parish_id = p.id
      WHERE p.id != '_unassigned' ORDER BY p.id`
   ).all();
-  assert.ok(rows.length >= 2, 'the seed should have rules at two parishes');
-  return [rows[0].id, rows[1].id];
+  assert.ok(rows.length >= want, `the seed should have rules at ${want} parishes`);
+  return rows.slice(0, want).map(r => r.id);
+}
+
+/** A synthetic id back to the [scheduleId, date] pair expandOne takes. */
+function splitInstance(id) {
+  const [sid, date] = String(id).split(':');
+  return [Number(sid), date];
 }
 
 /** The first projected occurrence at `parishId` inside the window. */
@@ -359,4 +365,363 @@ test('candidates cover the PARISH\'s local day when the zone is named', async ()
   // A zone this runtime cannot resolve falls back rather than 500ing.
   const junk = await call('GET', '/api/admin/events/candidates?date=2026-04-13&tz=Mars/Olympus');
   assert.equal(junk.status, 200);
+});
+
+// ── asking for what is out of reach ──
+//
+// A parish contact may combine freely at their own parish and at nobody
+// else's. The refusal is not the end of it: the same request with `propose`
+// set applies their half and files the rest as an ask, which is what the
+// owner sees under Asks and what puts the dot on the account icon.
+
+/** The dev identity as a contact for exactly one parish. */
+function contact(raw, parishId) {
+  raw.prepare('UPDATE admin_roles SET parish_ids = ? WHERE email = ?')
+    .run(JSON.stringify([parishId]), 'dev');
+}
+
+test('the refusal names what was out of reach, and offers to carry it', async () => {
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const inst = await firstInstance(db, theirs);
+
+  const r = await call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: inst.start_utc,
+    additive_parish_ids: [theirs], replaced_event_ids: [inst.id],
+  });
+  assert.equal(r.status, 403);
+  assert.equal(r.body.proposable, true, 'a dead end is what this exists to stop');
+  assert.equal(r.body.capability, 'event.combine');
+  // Named, not counted: "some parish is not yours" is not something anybody
+  // can act on.
+  assert.equal(r.body.outside.length, 2);
+  const theirName = raw.prepare('SELECT name FROM parishes WHERE id = ?').get(theirs).name;
+  assert.ok(r.body.outside.every(o => o.label.includes(theirName)), JSON.stringify(r.body.outside));
+  // Nothing written, event included.
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM events').get().n, 0);
+});
+
+test('proposing applies their own half now and asks for the rest', async () => {
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const ours = await firstInstance(db, mine);
+  const yours = await firstInstance(db, theirs);
+
+  const r = await call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: ours.start_utc,
+    additive_parish_ids: [theirs],
+    replaced_event_ids: [ours.id, yours.id],
+    propose: 'We are joining them for the feast',
+  });
+  assert.equal(r.status, 201, r.body && r.body.error);
+
+  // Their own parish's half is live: the deanery liturgy should not sit
+  // unpublished for however long an owner takes to answer.
+  const ourAfter = await expandOne(db, ...splitInstance(ours.id));
+  assert.equal(ourAfter.status, 'combined');
+  // The other parish's is untouched until somebody decides.
+  const theirAfter = await expandOne(db, ...splitInstance(yours.id));
+  assert.equal(theirAfter.status, 'approved');
+  assert.equal(
+    raw.prepare('SELECT COUNT(*) AS n FROM event_parishes WHERE event_id = ?').get(r.body.id).n, 0);
+
+  const ask = raw.prepare('SELECT * FROM admin_proposals').get();
+  assert.ok(ask, 'nothing was filed');
+  assert.equal(r.body.proposal_id, ask.id);
+  assert.equal(ask.capability, 'event.combine');
+  assert.equal(ask.subject, String(r.body.id));
+  assert.equal(ask.status, 'open');
+  assert.equal(ask.proposed_by, 'dev');
+  assert.equal(ask.reason, 'We are joining them for the feast');
+  // The WHOLE desired state, not the refused half — approving replays it
+  // through a path that removes whatever the payload does not name.
+  const payload = JSON.parse(ask.payload);
+  assert.deepEqual(payload.additive_parish_ids, [theirs]);
+  assert.deepEqual([...payload.replaced_event_ids].sort(), [ours.id, yours.id].sort());
+});
+
+test('an owner sees it as a sentence about parishes, not ids', async () => {
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const yours = await firstInstance(db, theirs);
+  const created = await call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: yours.start_utc,
+    additive_parish_ids: [theirs], replaced_event_ids: [yours.id], propose: 'Joint feast',
+  });
+  assert.equal(created.status, 201);
+
+  // Read as the owner the ask is for.
+  raw.prepare("UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'").run();
+  const list = await call('GET', '/api/admin/proposals');
+  assert.equal(list.status, 200);
+  const row = list.body.find(p => p.capability === 'event.combine');
+  assert.ok(row, 'the ask is missing from the panel');
+  assert.equal(row.subjectName, 'Deanery Liturgy');
+  const theirName = raw.prepare('SELECT name FROM parishes WHERE id = ?').get(theirs).name;
+  assert.match(row.summary, /^List “Deanery Liturgy” at /);
+  assert.ok(row.summary.includes(theirName), row.summary);
+  assert.match(row.summary, /tombstone/, 'the consequence, not just the verb');
+  // A date somebody reads, not the join key it is stored as.
+  // "6 Sept 2026" — en-AU's short month is three letters or four.
+  assert.match(row.summary, / on \d{1,2} [A-Z][a-z]{2,4} \d{4}/, row.summary);
+  assert.ok(!row.summary.includes(yours.id), 'a synthetic id leaked into the sentence');
+  assert.equal(row.reason, 'Joint feast');
+});
+
+test('approving carries out the whole ask; declining carries out none of it', async () => {
+  for (const decision of ['approve', 'decline']) {
+    const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+    const [mine, theirs] = twoParishes(raw);
+    contact(raw, mine);
+    const yours = await firstInstance(db, theirs);
+    const created = await call('POST', '/api/admin/events', {
+      parish_id: mine, title: 'Deanery Liturgy', start_utc: yours.start_utc,
+      additive_parish_ids: [theirs], replaced_event_ids: [yours.id], propose: 'Joint feast',
+    });
+    assert.equal(created.status, 201);
+    const askId = created.body.proposal_id;
+
+    raw.prepare("UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'").run();
+    const decided = await call('POST', `/api/admin/proposals/${askId}/decide`,
+      { decision, note: 'ok' });
+    assert.equal(decided.status, 200, JSON.stringify(decided.body));
+
+    const after = await expandOne(db, ...splitInstance(yours.id));
+    const crossRows = raw.prepare(
+      'SELECT COUNT(*) AS n FROM event_parishes WHERE event_id = ?').get(created.body.id).n;
+    if (decision === 'approve') {
+      assert.equal(after.status, 'combined', 'approval did not carry out the ask');
+      assert.equal(after.combined_into_event_id, created.body.id);
+      assert.equal(crossRows, 1);
+    } else {
+      assert.equal(after.status, 'approved', 'a decline changed the world');
+      assert.equal(crossRows, 0);
+    }
+    assert.equal(
+      raw.prepare('SELECT status FROM admin_proposals WHERE id = ?').get(askId).status,
+      decision === 'approve' ? 'approved' : 'declined');
+  }
+});
+
+test('an ask whose targets have since gone is applied without them', async () => {
+  // A row can sit for a week. A parish deleted in the meantime is not a reason
+  // to refuse the rest of what was asked for.
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const yours = await firstInstance(db, theirs);
+  const created = await call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: yours.start_utc,
+    additive_parish_ids: [theirs, 'a-parish-that-never-was'],
+    replaced_event_ids: [yours.id], propose: 'Joint feast',
+  });
+  assert.equal(created.status, 201);
+
+  raw.prepare("UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'").run();
+  const decided = await call('POST', `/api/admin/proposals/${created.body.proposal_id}/decide`,
+    { decision: 'approve' });
+  assert.equal(decided.status, 200, JSON.stringify(decided.body));
+  assert.deepEqual(decided.body.dropped, ['a-parish-that-never-was']);
+  assert.equal((await expandOne(db, ...splitInstance(yours.id))).status, 'combined');
+});
+
+test('an ask about an event that has since been deleted cannot be approved', async () => {
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const yours = await firstInstance(db, theirs);
+  const created = await call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: yours.start_utc,
+    additive_parish_ids: [theirs], propose: 'Joint feast',
+  });
+  assert.equal(created.status, 201);
+  raw.prepare('DELETE FROM events WHERE id = ?').run(created.body.id);
+
+  raw.prepare("UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'").run();
+  const decided = await call('POST', `/api/admin/proposals/${created.body.proposal_id}/decide`,
+    { decision: 'approve' });
+  assert.equal(decided.status, 410);
+  assert.match(decided.body.error, /no longer exists/);
+});
+
+test('an owner combining is never turned into an ask', async () => {
+  // `propose` is a flag on a refusal, not a mode. An owner is refused nothing,
+  // so the combine simply happens and no row is filed.
+  const { raw, db, call } = fresh({ role: 'owner' });
+  const [home, other] = twoParishes(raw);
+  const inst = await firstInstance(db, other);
+  const r = await call('POST', '/api/admin/events', {
+    parish_id: home, title: 'Deanery Liturgy', start_utc: inst.start_utc,
+    additive_parish_ids: [other], replaced_event_ids: [inst.id], propose: 'please',
+  });
+  assert.equal(r.status, 201, r.body && r.body.error);
+  assert.equal(r.body.proposal_id, null);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM admin_proposals').get().n, 0);
+  assert.equal((await expandOne(db, ...splitInstance(inst.id))).status, 'combined');
+});
+
+test('a contact cannot ask about somebody else\'s event, or ask for what they already have', async () => {
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const ours = await firstInstance(db, mine);
+
+  // Their own event, but every target already theirs: there is nothing to ask.
+  const own = await call('POST', '/api/admin/events',
+    { parish_id: mine, title: 'Ours', start_utc: ours.start_utc });
+  assert.equal(own.status, 201);
+  const pointless = await call('POST', '/api/admin/proposals', {
+    capability: 'event.combine', subject: String(own.body.id),
+    payload: { replaced_event_ids: [ours.id] },
+  });
+  assert.equal(pointless.status, 400);
+  assert.match(pointless.body.error, /do that yourself/);
+
+  // Somebody else's event is not theirs to ask about either — that is the
+  // refusal wearing a different hat.
+  const p = raw.prepare('SELECT lat, lng FROM parishes WHERE id = ?').get(theirs);
+  raw.prepare("INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, source_hash, lat, lng)"
+    + " VALUES (?, 'manual','Theirs','2026-09-20T08:00:00.000Z','feast','h-t',?,?)").run(theirs, p.lat, p.lng);
+  const notMine = raw.prepare("SELECT id FROM events WHERE source_hash='h-t'").get().id;
+  const sneaky = await call('POST', '/api/admin/proposals', {
+    capability: 'event.combine', subject: String(notMine),
+    payload: { additive_parish_ids: [mine] },
+  });
+  assert.equal(sneaky.status, 403);
+  assert.match(sneaky.body.error, /not one of yours/);
+});
+
+// ── the dot ──
+
+test('the account icon counts asks only for somebody who can decide one', async () => {
+  const { raw, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+
+  assert.equal((await call('GET', '/api/admin/ping')).body.openAsks, 0);
+  await call('POST', '/api/admin/events', {
+    parish_id: mine, title: 'Deanery Liturgy', start_utc: '2026-09-20T23:00:00.000Z',
+    additive_parish_ids: [theirs], propose: 'Joint feast',
+  });
+  // Still zero: a dot on somebody who can only look at it is noise.
+  assert.equal((await call('GET', '/api/admin/ping')).body.openAsks, 0);
+
+  raw.prepare("UPDATE admin_roles SET role='editor', parish_ids=NULL WHERE email='dev'").run();
+  assert.equal((await call('GET', '/api/admin/ping')).body.openAsks, 0,
+    'an editor cannot decide one either');
+
+  raw.prepare("UPDATE admin_roles SET role='owner' WHERE email='dev'").run();
+  const ping = await call('GET', '/api/admin/ping');
+  assert.equal(ping.body.openAsks, 1);
+
+  const id = raw.prepare('SELECT id FROM admin_proposals').get().id;
+  await call('POST', `/api/admin/proposals/${id}/decide`, { decision: 'decline', note: 'no' });
+  assert.equal((await call('GET', '/api/admin/ping')).body.openAsks, 0,
+    'a decided ask is not still waiting');
+});
+
+// ── the subject, as against the targets ──
+//
+// `applyEscalation` scopes what a combine REACHES. These scope whose event it
+// is in the first place, which is a different question and was not being asked
+// at all: `event.edit` is on all three role lists precisely because the parish
+// scoping is supposed to be what holds a contact to their own.
+
+test('a contact cannot strip the combine off somebody else\'s event', async () => {
+  // The hole the body's own semantics opened: escalate is a target state and
+  // removes anything it is not told about, so an EMPTY body named no targets,
+  // ran no target check, and cleared every parish and every absorbed service
+  // off any event on the site.
+  const { raw, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs, third] = twoParishes(raw, 3);
+  contact(raw, mine);
+
+  const p = raw.prepare('SELECT lat, lng FROM parishes WHERE id = ?').get(theirs);
+  raw.prepare("INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, source_hash, lat, lng)"
+    + " VALUES (?, 'manual','Theirs','2026-09-20T08:00:00.000Z','feast','h-t',?,?)").run(theirs, p.lat, p.lng);
+  const ev = raw.prepare("SELECT id FROM events WHERE source_hash='h-t'").get().id;
+  raw.prepare('INSERT INTO event_parishes (event_id, parish_id) VALUES (?,?)').run(ev, third);
+
+  const r = await call('POST', `/api/admin/events/${ev}/escalate`,
+    { additive_parish_ids: [], replaced_event_ids: [] });
+  assert.equal(r.status, 403);
+  assert.match(r.body.error, /not one of yours/);
+  assert.equal(
+    raw.prepare('SELECT COUNT(*) AS n FROM event_parishes WHERE event_id = ?').get(ev).n, 1,
+    'the combine was cleared by somebody with no claim on the event');
+});
+
+test('a contact cannot edit or delete another parish\'s event', async () => {
+  const { raw, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const p = raw.prepare('SELECT lat, lng FROM parishes WHERE id = ?').get(theirs);
+  raw.prepare("INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, source_hash, lat, lng)"
+    + " VALUES (?, 'manual','Theirs','2026-09-20T08:00:00.000Z','feast','h-t',?,?)").run(theirs, p.lat, p.lng);
+  const ev = raw.prepare("SELECT id FROM events WHERE source_hash='h-t'").get().id;
+
+  assert.equal((await call('PATCH', `/api/admin/events/${ev}`, { title: 'Renamed' })).status, 403);
+  assert.equal(raw.prepare('SELECT title FROM events WHERE id = ?').get(ev).title, 'Theirs');
+  assert.equal((await call('DELETE', `/api/admin/events/${ev}`)).status, 403);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM events WHERE id = ?').get(ev).n, 1);
+
+  // Their own is untouched by the guard.
+  const ours = await call('POST', '/api/admin/events',
+    { parish_id: mine, title: 'Ours', start_utc: '2026-09-20T23:00:00.000Z' });
+  assert.equal(ours.status, 201);
+  assert.equal((await call('PATCH', `/api/admin/events/${ours.body.id}`, { title: 'Renamed' })).status, 200);
+  assert.equal((await call('DELETE', `/api/admin/events/${ours.body.id}`)).status, 200);
+});
+
+test('a contact cannot move an event out of, or into, their own parish', async () => {
+  // Scoped against where it is GOING as well as where it is: handing an event
+  // to a parish that is not yours is a write to that parish, and handing one
+  // away is how a scope is escaped in a single PATCH.
+  const { raw, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const ours = await call('POST', '/api/admin/events',
+    { parish_id: mine, title: 'Ours', start_utc: '2026-09-20T23:00:00.000Z' });
+  assert.equal(ours.status, 201);
+
+  const moved = await call('PATCH', `/api/admin/events/${ours.body.id}`, { parish_id: theirs });
+  assert.equal(moved.status, 403);
+  assert.equal(raw.prepare('SELECT parish_id FROM events WHERE id = ?').get(ours.body.id).parish_id, mine);
+});
+
+test('a contact cannot patch or hide another parish\'s occurrence', async () => {
+  // A synthetic id names a RULE's occurrence, so the parish is the rule's and
+  // is nowhere in the URL.
+  const { raw, db, call } = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(raw);
+  contact(raw, mine);
+  const ours = await firstInstance(db, mine);
+  const yours = await firstInstance(db, theirs);
+
+  assert.equal((await call('PATCH', `/api/admin/events/${yours.id}`, { title: 'Renamed' })).status, 403);
+  assert.equal((await call('DELETE', `/api/admin/events/${yours.id}`)).status, 403);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 0);
+
+  // Their own rule's occurrence still edits.
+  assert.equal((await call('PATCH', `/api/admin/events/${ours.id}`, { title: 'This week only' })).status, 200);
+});
+
+test('an owner and an editor are unaffected by all of it', async () => {
+  for (const role of ['owner', 'editor']) {
+    const { raw, db, call } = fresh({ role });
+    const [home, other] = twoParishes(raw);
+    const inst = await firstInstance(db, other);
+    const made = await call('POST', '/api/admin/events',
+      { parish_id: other, title: 'Theirs', start_utc: '2026-09-20T23:00:00.000Z' });
+    assert.equal(made.status, 201, `${role} create`);
+    assert.equal((await call('PATCH', `/api/admin/events/${made.body.id}`, { title: 'R' })).status, 200, `${role} patch`);
+    assert.equal((await call('PATCH', `/api/admin/events/${made.body.id}`, { parish_id: home })).status, 200, `${role} move`);
+    assert.equal((await call('POST', `/api/admin/events/${made.body.id}/escalate`,
+      { additive_parish_ids: [other] })).status, 200, `${role} escalate`);
+    assert.equal((await call('PATCH', `/api/admin/events/${inst.id}`, { title: 'R' })).status, 200, `${role} patch instance`);
+    assert.equal((await call('DELETE', `/api/admin/events/${made.body.id}`)).status, 200, `${role} delete`);
+  }
 });

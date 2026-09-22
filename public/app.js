@@ -49,7 +49,7 @@ const state = {
   //
   // Convenience only, exactly as in /admin: every route re-checks server-side,
   // and a button this leaves on screen still gets a 403.
-  adminWho: { role: null, parishIds: [], can: {} },
+  adminWho: { role: null, parishIds: [], can: {}, openAsks: 0 },
 
   // Which parish is being EDITED, or null. Signing in and editing are two
   // states, not one: before this, every admin control was on screen the whole
@@ -1646,8 +1646,16 @@ async function checkAdmin() {
   let who = null;
   if (state.isAdmin) who = await ping.json().catch(() => null);
   state.adminWho = who
-    ? { role: who.role || null, parishIds: who.parishIds || [], can: who.can || {} }
-    : { role: null, parishIds: [], can: {} };
+    ? {
+        role: who.role || null,
+        parishIds: who.parishIds || [],
+        can: who.can || {},
+        // Asks waiting on THIS person. The Worker already answers zero for
+        // anybody who cannot decide one, so the dot below needs no second
+        // opinion about who it is for.
+        openAsks: who.openAsks || 0,
+      }
+    : { role: null, parishIds: [], can: {}, openAsks: 0 };
 
   // Remembered only so the NEXT page load knows before this answer arrives:
   // init runs checkAdmin alongside fetchParishes rather than before it, so the
@@ -1777,11 +1785,41 @@ function syncAccountMenu() {
   if (admin) admin.hidden = !state.isAdmin;
   if (logout) logout.hidden = !state.isAdmin;
   const btn = document.getElementById('btn-account');
+  // Something is waiting to be decided. `openAsks` is already zero for anybody
+  // who cannot decide one — a dot on somebody who can only look at it is noise
+  // — so this asks how many, not who.
+  const asks = (state.adminWho && state.adminWho.openAsks) || 0;
+  const dot = document.getElementById('account-dot');
+  if (dot) dot.hidden = !(state.isAdmin && asks > 0);
   if (btn) {
     btn.classList.toggle('signed-in', !!state.isAdmin);
-    btn.setAttribute('aria-label', state.isAdmin ? 'Account' : 'Sign in');
-    btn.title = state.isAdmin ? 'Account' : 'Sign in';
+    // The count goes in the label, not in the dot: nine pixels cannot carry a
+    // number, and a screen reader hears nothing at all from a coloured circle.
+    const label = !state.isAdmin ? 'Sign in'
+      : asks ? `Account — ${asks} ${asks === 1 ? 'ask' : 'asks'} waiting`
+      : 'Account';
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
   }
+}
+
+/**
+ * Re-read how many asks are waiting, without a page load.
+ *
+ * The count rides on /api/admin/ping because that is the one request already
+ * answering "who am I and what does this browser need to know". Filing an ask
+ * from the parish sheet changes it, and a dot that only appeared on the next
+ * load would miss the one moment the person is looking at it.
+ */
+async function refreshOpenAsks() {
+  if (!state.isAdmin) return;
+  try {
+    const res = await fetch('/api/admin/ping', { cache: 'no-store' });
+    if (!res.ok) return;
+    const who = await res.json();
+    state.adminWho = { ...state.adminWho, openAsks: who.openAsks || 0 };
+    syncAccountMenu();
+  } catch { /* offline — the dot keeps whatever it last knew */ }
 }
 
 // ── Mode bar ──
@@ -8032,6 +8070,10 @@ let _newEventCandidates = [];
 // keystroke on some browsers, and an early request landing last would show the
 // wrong day's services as replaceable.
 let _newEventSeq = 0;
+// The body that was refused, kept so "Ask an owner" can re-send exactly what
+// was asked for rather than re-reading a form the person may have touched
+// since. Cleared whenever the dialog is opened or closed.
+let _newEventRefusedBody = null;
 
 /**
  * Show the add button when this account may write an event at the parish on
@@ -8186,6 +8228,7 @@ window.openNewEventDialog = function (parishId) {
   const errEl = document.getElementById('new-event-error');
   errEl.hidden = true;
   errEl.textContent = '';
+  _resetNewEventAsk();
 
   const rows = _newEventParishRows(parish);
   document.getElementById('new-event-parishes').innerHTML = rows.map(p => {
@@ -8215,7 +8258,107 @@ window.closeNewEventDialog = function () {
   _newEventParishId = null;
   _newEventCandidates = [];
   _newEventSeq++;
+  _resetNewEventAsk();
 };
+
+/** Put the ask block back to hidden and empty. */
+function _resetNewEventAsk() {
+  _newEventRefusedBody = null;
+  const ask = document.getElementById('new-event-ask');
+  const actions = document.getElementById('new-event-actions');
+  if (ask) { ask.hidden = true; ask.classList.remove('ne-ask-sent'); }
+  if (actions) actions.hidden = false;
+  const form = document.getElementById('new-event-form');
+  if (form) form.hidden = false;
+  const reason = document.getElementById('new-event-ask-reason');
+  if (reason) reason.value = '';
+}
+
+/**
+ * Offer to carry an ask the Worker just refused.
+ *
+ * A parish contact may combine freely at their own parish and at nobody
+ * else's, which is the one thing on this dialog they can want and not have.
+ * The refusal names exactly what was out of reach — the Worker sends the
+ * labels, because "some parish is not yours" is not something anybody can act
+ * on — and the ask goes off with the event, the targets and the reason
+ * attached, which is what it would lose travelling by any other channel.
+ */
+function _offerNewEventAsk(body, refusal) {
+  _newEventRefusedBody = body;
+  const ask = document.getElementById('new-event-ask');
+  const what = document.getElementById('new-event-ask-what');
+  if (!ask || !what) return;
+  const outside = Array.isArray(refusal.outside) ? refusal.outside : [];
+  what.innerHTML = outside.length
+    ? `These belong to other parishes, so an owner decides:<br>` +
+      outside.map(o => `<b>${esc(o.label)}</b>`).join('<br>') +
+      `<br><br>Your event will be added at your own parish now either way.`
+    : `${esc(refusal.error || 'An owner has to approve part of this.')}`;
+  ask.hidden = false;
+  const reason = document.getElementById('new-event-ask-reason');
+  if (reason) requestAnimationFrame(() => reason.focus());
+}
+
+/** Send it. The same body, with `propose` carrying the reason. */
+async function _sendNewEventAsk() {
+  const body = _newEventRefusedBody;
+  const btn = document.getElementById('new-event-ask-send');
+  const errEl = document.getElementById('new-event-error');
+  if (!body || !btn) return;
+  const reason = (document.getElementById('new-event-ask-reason') || {}).value || '';
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // `propose` is the flag AND the reason. An ask with no reason still
+      // beats a refusal nobody can act on, so an empty box is allowed.
+      body: JSON.stringify({ ...body, propose: reason.trim() || true }),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      errEl.textContent = (payload && payload.error) || `That could not be sent (${res.status}).`;
+      errEl.hidden = false;
+      return;
+    }
+    // The answer lands where the question was asked. No toast in this app, and
+    // closing on success would leave nothing saying the ask had gone anywhere.
+    const ask = document.getElementById('new-event-ask');
+    const form = document.getElementById('new-event-form');
+    const actions = document.getElementById('new-event-actions');
+    if (form) form.hidden = true;
+    if (actions) actions.hidden = true;
+    if (ask) {
+      ask.classList.add('ne-ask-sent');
+      ask.innerHTML =
+        `<div class="ne-ask-what">Asked. It is on file at your own parish already; ` +
+        `an owner sees the rest under <b>Asks</b> in the admin panel.</div>` +
+        `<button class="ps-btn ps-btn-admin" type="button" onclick="closeNewEventDialog()">Done</button>`;
+    }
+    // The event exists now, so the feed has to be re-read whether or not the
+    // ask is ever approved.
+    await _afterNewEvent(body, payload);
+    // And the dot, in case the person who asked is also somebody who can
+    // decide. An owner in another browser still learns about it on their next
+    // load — nothing here polls, and a dot is not worth a heartbeat.
+    refreshOpenAsks();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Widen the window far enough to hold the new event, re-read, and pin it. */
+async function _afterNewEvent(body, payload) {
+  const date = String(body.start_utc || '').slice(0, 10);
+  const needed = daysUntil(date) + HORIZON_STEP_DAYS;
+  if (needed > (state._horizonDays || 0)) state._horizonDays = needed;
+  await fetchEvents({ fresh: true, keepCount: true });
+  const newId = payload && payload.id != null ? String(payload.id) : null;
+  if (state.parishSheetFocus) {
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true, focusEventId: newId });
+  }
+}
 
 window.saveNewEvent = async function () {
   const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
@@ -8281,31 +8424,33 @@ window.saveNewEvent = async function () {
     });
     const payload = await res.json().catch(() => null);
     if (!res.ok) {
-      // The Worker's refusals are sentences worth reading — a parish outside
-      // this account's list, a role that cannot do this — so they are shown
-      // rather than flattened into "failed".
+      // Part of this reaches a parish that is not theirs. Not a dead end: the
+      // refusal carries the way forward, and the ask goes off with the event,
+      // the exact targets and a reason attached.
+      if (res.status === 403 && payload && payload.proposable) {
+        fail(payload.error || 'An owner has to approve part of this.');
+        return _offerNewEventAsk(body, payload);
+      }
+      // Everything else is a sentence worth reading as it stands — a ruling, a
+      // field the Worker would not take — so it is shown rather than flattened
+      // into "failed".
       return fail((payload && payload.error) || `The event was refused (${res.status}).`);
     }
-    const newId = payload && payload.id != null ? String(payload.id) : null;
     window.closeNewEventDialog();
     // A date past the loaded horizon would save and then appear to have done
-    // nothing. Widen far enough to reach it before re-reading, the same way a
-    // date focus does.
-    const needed = daysUntil(date) + HORIZON_STEP_DAYS;
-    if (needed > (state._horizonDays || 0)) state._horizonDays = needed;
-    await fetchEvents({ fresh: true, keepCount: true });
-    // Pin the new card under the parish header, so the answer to "did that
-    // work" is the event itself. Through opts rather than state._openEventId:
-    // this is feedback on a press, not a surface worth rewriting the URL for.
-    if (state.parishSheetFocus) {
-      renderParishSheetContent(state.parishSheetFocus, { fullRender: true, focusEventId: newId });
-    }
+    // nothing, so the window is widened before the re-read and the new card is
+    // pinned under the parish header — the answer to "did that work" is the
+    // event itself. Pinned through opts rather than state._openEventId: this
+    // is feedback on a press, not a surface worth rewriting the URL for.
+    await _afterNewEvent(body, payload);
   } catch {
     return fail('The event could not be saved — check the connection and try again.');
   } finally {
     btn.disabled = false;
   }
 };
+
+window.agoraSendNewEventAsk = _sendNewEventAsk;
 
 // ── Donate parish-picker dialog ──
 // Opened by the /donate and /<juris>/donate deep links (and as a fallback when a
