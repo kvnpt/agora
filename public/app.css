@@ -2284,22 +2284,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
    only fills on hover, and the visibility toggle stays muted, so matching
    the pills doesn't flatten the difference between editing a parish and
    deleting one. */
-.btn-admin-controls-pill {
-  color: var(--text-secondary);
-  border-color: var(--border);
-  background: none;
-  white-space: nowrap;
-}
-.btn-admin-controls-pill:hover {
-  background: var(--surface-2);
-  color: var(--text);
-  border-color: var(--border);
-}
 /* Event drawer: .detail-actions gives its buttons a 4px radius, so the
    admin ones need the pill geometry restated at higher specificity to sit
    level with the .btn-action pills in the same row. */
-.detail-actions .admin-actions-group > button,
-.detail-actions .btn-admin-controls-pill {
+.detail-actions .admin-actions-group > button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2312,10 +2300,18 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   background: var(--surface);
   color: var(--text);
 }
-.detail-actions .btn-admin-controls-pill {
-  background: none;
-  color: var(--text-secondary);
-  font-weight: 500;
+/* Entering and leaving the drawer's edit mode. The pencil is the only admin
+   control on a drawer nobody is editing, and Done is the same button wearing a
+   tick — so they share a shape rather than reading as two features. */
+.detail-actions .btn-event-edit,
+.detail-actions .btn-event-edit-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.detail-actions .btn-event-edit-done {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
 }
 .detail-actions .btn-danger {
   background: none;
@@ -3985,8 +3981,8 @@ button.ps-avatar { cursor: pointer; }
 }
 
 /* ── Admin controls in the parish sheet ──────────────────────────────
-   Its own row under the public actions, in the same pill vocabulary. See
-   the .btn-admin-controls-pill block above for why. */
+   Its own row under the public actions, in the same pill vocabulary as the
+   public buttons beside it. */
 .ps-admin-actions {
   margin-top: 8px;
   align-items: center;

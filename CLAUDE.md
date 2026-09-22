@@ -297,6 +297,15 @@ A secret reaches `env` as a **string** (a Worker secret) or as an **object with
 takes either. Do not compare a binding for truthiness and call it configured —
 an object always passes, and the value then renders as `[object Object]`.
 
+**Told, not asked.** An owner may combine across parishes without waiting on
+the parishes it touches, because a quorum of contacts who mostly do not exist
+would mean a deanery liturgy never gets published. The parish it happens TO
+still hears about it: `/api/admin/parish-notices` reads `event_parishes` and the
+`combined` overrides back for the parishes an account holds, and **Take my
+parish out** is a veto after the fact — fast to act on, impossible to deadlock.
+The notice is *derived*, like the feed and the source tiers; `parish_notices_seen`
+holds only the one thing that cannot be, which is whether a person has looked.
+
 **An ask is a refusal with somewhere to go.** `admin_proposals` holds the four
 things somebody was refused and the panel could carry for them — a parish
 delete, an acronym, a jurisdiction colour, and a combine reaching another
@@ -325,9 +334,17 @@ Until then the sheet is the sheet a visitor sees: no schedule pencils, no logo
 button, no form in the DOM behind `display:none`. Edit mode covers everything
 on that sheet including the service times, and a rule is editable wherever it
 renders — the sheet or the main services panel — exactly when its own parish is
-the one open. `hideAdminControls` predates this and survives only on the event
-drawer, where the buttons are still inline; it was a preference for making
-tools go away, which is what a mode does by default.
+the one open. `state.eventEditMode` is the same thing for the event drawer: one
+pencil until somebody says they are editing, then Cancel, Suppress, Delete,
+Combine and the form. `hideAdminControls` is **gone** — it was a remembered
+preference for making tools go away, which is what a mode does by default, and
+two modes now cover everything it did.
+
+**Cancel and Suppress are confirmed, because they look like neighbours and
+behave nothing alike.** A cancellation stays on the feed as a tombstone so
+somebody who would have turned up sees it is off; a suppression takes the
+service off the site with no notice at all. Reaching for the wrong one sends
+somebody to a locked church, so each says which it is before it does it.
 
 The parish sheet's **add-an-event button** is the one control outside that
 mode, and deliberately: the mode exists so a signed-in person reads the sheet a

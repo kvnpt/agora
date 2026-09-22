@@ -628,6 +628,39 @@ CREATE TABLE admin_proposals (
 CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- parish_notices_seen — which cross-parish listings a contact has looked at
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- A combine writes rows about a parish that is not the event's own: an
+-- `event_parishes` row lists somebody else's event at your church, and a
+-- 'combined' override turns your Sunday into a tombstone pointing at it. An
+-- owner may do both without asking, which is the right call — waiting on a
+-- quorum of parish contacts, most of whom do not exist, would mean a deanery
+-- liturgy never gets published.
+--
+-- But the parish it happens TO should not find out by noticing their own
+-- Sunday struck through. So the involvements are shown back to them, and they
+-- can take their parish out of one. That is a veto after the fact rather than a
+-- gate before it: fast to act on, impossible to deadlock.
+--
+-- THE NOTICE ITSELF IS DERIVED and not stored. It is whatever `event_parishes`
+-- and `schedule_overrides` currently say about your parishes — the same reason
+-- the feed is projected from rules and the source tiers are computed from the
+-- URL. A stored copy would be a second answer to a question the rows already
+-- answer, and it would go stale the moment somebody withdrew.
+--
+-- What CANNOT be derived is whether a person has looked, so that is all this
+-- table holds. One row per (parish, event, person): a parish with two contacts
+-- does not mark the other's notice read.
+CREATE TABLE parish_notices_seen (
+  parish_id TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  event_id  INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  seen_by   TEXT NOT NULL,
+  seen_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  PRIMARY KEY (parish_id, event_id, seen_by)
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- info_overrides — which source wins, per parish, per fact
 -- ─────────────────────────────────────────────────────────────────────────
 --
