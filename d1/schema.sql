@@ -204,7 +204,32 @@ CREATE TABLE schedules (
   -- (d1/migrations/009) and ALTER can only append, so a database migrated
   -- forward and one built from this file have to agree down to column order.
   updated_at        TEXT,
-  updated_by        TEXT
+  updated_by        TEXT,
+
+  -- The fortnight. NULL = not a fortnightly rule, and every week that
+  -- week_of_month allows. 'a' or 'b' = alternate weeks, forever.
+  --
+  -- `week_of_month` was the only qualifier a rule had and it cannot spell a
+  -- fortnight. docs/parish-ingestion.md records the cost: Coburg's Compline and
+  -- its Youth Group both alternate with St Vasilios Brunswick, and both rules
+  -- were dropped rather than written as month positions that would put a
+  -- service at Coburg on the Tuesdays it is at Brunswick.
+  --
+  -- A PARITY, NOT A START DATE. Calendar apps anchor a fortnight to its first
+  -- occurrence; there is nowhere here to put one. `effective_from` is a
+  -- validity window — "this rule has been true since" — and making it double as
+  -- the phase would mean recording a rule's history moved which week the
+  -- service falls on. A parity is a property of the date instead, which is what
+  -- the lens wants: no anchor, and right looking backwards as well as forwards,
+  -- which a deep link to a date years ago needs.
+  --
+  -- Which weeks are A is public/shared/recurrence.mjs, per ISO year through
+  -- 2126 and generated so the alternation carries across a 53-week year. It is
+  -- mutually exclusive with week_of_month — the two together over-constrain —
+  -- and that is enforced in the routes, not by a CHECK, because adding one
+  -- would mean rebuilding `schedules` and schedule_overrides references it ON
+  -- DELETE CASCADE. See d1/migrations/014.
+  week_parity       TEXT     -- NULL | 'a' | 'b'
 );
 
 CREATE INDEX idx_schedules_parish ON schedules(parish_id);
@@ -328,6 +353,59 @@ CREATE TABLE schedule_overrides (
 CREATE INDEX idx_overrides_schedule ON schedule_overrides(schedule_id);
 CREATE INDEX idx_overrides_combined ON schedule_overrides(combined_into_event_id);
 CREATE INDEX idx_overrides_date     ON schedule_overrides(occurrence_date);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- schedule_breaks — a stretch of dates a service is not running
+--
+-- A parish shut between Christmas and Theophany, a hall closed for works, a
+-- priest away for a month. This is to a RANGE what schedule_overrides is to a
+-- DATE, and the reason it is not just a range of those rows: a six-week break
+-- on a daily rule would be forty-two of them, editing the window would mean
+-- deleting and rewriting them, UNIQUE(schedule_id, occurrence_date) would
+-- clobber any per-date override already there, and nothing would record that
+-- the forty-two were ONE decision with one reason.
+--
+-- It renders. project.mjs gives a covered occurrence status 'break' and
+-- is_tombstone 1, filterByStatus passes it, and the card reads BREAK with the
+-- note under it — the same bargain cancellation makes, for the same reason:
+-- somebody who would otherwise turn up at church is told, rather than finding
+-- the service quietly absent. It is NOT 'hidden', which is for something that
+-- should never have been published.
+--
+-- Living outside schedule_overrides also makes it immune to tombstone.mjs,
+-- which withdraws an adapter's cancellation when a service reappears in a
+-- scrape. A break is a person's decision about the future, and a scrape that
+-- cannot see it must not be able to lift it.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE schedule_breaks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id   TEXT NOT NULL REFERENCES parishes(id),
+
+  -- NULL = every rule at this parish, which is the common case: a parish
+  -- shutting for Christmas shuts all of it, and naming each rule would be a row
+  -- per service and one of them forgotten. Set = that one rule.
+  schedule_id INTEGER REFERENCES schedules(id) ON DELETE CASCADE,
+
+  -- 'YYYY-MM-DD' LOCAL to the parish, inclusive at both ends — the same date
+  -- space schedule_overrides.occurrence_date joins on.
+  from_date   TEXT NOT NULL,
+  to_date     TEXT NOT NULL,
+
+  -- Why. NOT NULL for the reason info_overrides.note is NOT NULL: a service
+  -- that is off with no reason given is indistinguishable from a mistake. This
+  -- one is also rendered to a visitor, so it is the whole of what they are told.
+  note        TEXT NOT NULL,
+
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_by  TEXT,
+
+  CHECK (to_date >= from_date)
+);
+
+CREATE INDEX idx_breaks_parish   ON schedule_breaks(parish_id);
+CREATE INDEX idx_breaks_schedule ON schedule_breaks(schedule_id);
+CREATE INDEX idx_breaks_window   ON schedule_breaks(from_date, to_date);
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Combine / cross-parish

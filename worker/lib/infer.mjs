@@ -24,7 +24,7 @@
 // nothing unexplained.
 
 import { localPartsOf } from '../../public/shared/tz.mjs';
-import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
+import { matchesWeekOfMonth, weekAbOf, matchesWeekParity } from '../../public/shared/recurrence.mjs';
 
 const QUALIFIERS = ['first', 'second', 'third', 'fourth', 'last'];
 const DAY_MS = 86400000;
@@ -53,6 +53,23 @@ function fitsExactly(candidate, dates, from, to, dow) {
   return got.length === want.size && got.every(d => want.has(d));
 }
 
+/**
+ * Does one fortnight reproduce these dates exactly? Returns 'a'/'b', or null.
+ *
+ * Same bar as every other rule here and for the same reason: every occurrence
+ * explained AND every gap explained. A fortnightly rule that is half right is
+ * worse than none, because absence-driven tombstoning would then mark the weeks
+ * it got wrong as cancelled — services that are running, publicly called off.
+ */
+function parityFor(dates, from, to, dow) {
+  const parities = new Set(dates.map(weekAbOf));
+  if (parities.size !== 1) return null;             // straddles both weeks
+  const parity = [...parities][0];
+  const want = new Set(dates);
+  const got = weekdayDatesIn(from, to, dow).filter(d => matchesWeekParity(d, parity));
+  return (got.length === want.size && got.every(d => want.has(d))) ? parity : null;
+}
+
 /** The smallest set of qualifiers covering every observed date, or null. */
 function qualifierFor(dates, from, to, dow) {
   const needed = new Set();
@@ -69,12 +86,16 @@ function qualifierFor(dates, from, to, dow) {
  * Is this equally well explained as "every N weeks"? Returns the reading, or
  * null when no interval fits or when the two agree everywhere that matters.
  *
- * schedules has no interval column — week_of_month is the only way to say
- * anything other than weekly — so a fortnightly series can only be written as a
- * set of month positions. Over a window where every month happens to have four
- * of the weekday, the two readings are indistinguishable, and they diverge the
- * first time one has five. That divergence is a real fork about a real service,
- * and the data cannot settle it, so it gets reported rather than guessed.
+ * This used to be the end of the road. `schedules` had no way to say anything
+ * but weekly or a set of month positions, so a fortnightly series could only be
+ * written as month positions — which agree with it over a window where every
+ * month happens to have four of the weekday, and diverge the first time one has
+ * five. The fork was real, the data could not settle it, and the series was
+ * withheld.
+ *
+ * `week_parity` settles it: a fortnight now has a spelling of its own, and the
+ * fork only survives for intervals that do NOT (every third week, every
+ * fourth). Those are still reported rather than guessed.
  */
 function intervalReading(dates, qualifier, dow) {
   if (dates.length < 3) return null;
@@ -163,7 +184,33 @@ export function inferSchedules(occurrences, {
 
     // Weekly first: it is the simplest rule and the one most services follow.
     if (fitsExactly(null, dates, from, to, g.dow)) {
-      proposals.push({ rule: { ...base, week_of_month: null }, support, confidence: 'high', ambiguity: null });
+      proposals.push({
+        rule: { ...base, week_of_month: null, week_parity: null },
+        support, confidence: 'high', ambiguity: null,
+      });
+      continue;
+    }
+
+    // The fortnight, before month positions are tried at all.
+    //
+    // Order matters, and this is the case that decided it. Good Shepherd's
+    // FOUNDATIONS course fits 'second,last' exactly over the observed window
+    // AND fits one fortnight exactly — but the readings diverge on 22 November
+    // 2026, when the course runs and 'second,last' says nothing, while
+    // inventing one on the 29th when it does not. Both spellings fit the
+    // sample; only one of them is what the parish is doing. A series that
+    // alternates IS a fortnight, and saying so plainly beats a set of month
+    // positions that happens to agree for a while.
+    const parity = parityFor(dates, from, to, g.dow);
+    if (parity) {
+      proposals.push({
+        rule: { ...base, week_of_month: null, week_parity: parity },
+        support,
+        // Four dates is two clean gaps of a fortnight; below that, "every two
+        // weeks" and "the 1st and 3rd" are the same two observations.
+        confidence: dates.length >= 4 ? 'high' : 'low',
+        ambiguity: null,
+      });
       continue;
     }
 
@@ -171,25 +218,21 @@ export function inferSchedules(occurrences, {
     if (qualifier) {
       const interval = intervalReading(dates, qualifier, g.dow);
       if (interval) {
-        // Withheld, not offered at low confidence. Both readings fit the sample
-        // and they disagree about a real date, so proposing one is a coin flip
-        // that renders as fact — and the coin came up wrong when we checked:
-        // Good Shepherd's fortnightly course runs on 22 November 2026, which
-        // 'second,last' omits while also inventing one on the 29th.
-        //
-        // schedules has no interval column and is not getting one; fortnightly
-        // services are rare enough that leaving them as scraped one-off events
-        // costs less than a rule that can express them wrongly.
+        // Still withheld, but the set this catches is now much smaller: a
+        // fortnight has its own spelling and was taken above, so what reaches
+        // here is every third or fourth week, which `schedules` genuinely
+        // cannot express. Both readings fit the sample and disagree about a
+        // real date, so proposing one is a coin flip that renders as fact.
         unexplained.push({
           ...base, support,
           why: `${interval.label} fits these dates as well as '${qualifier}' does, and ` +
-               `schedules cannot express an interval. They disagree first on ` +
-               `${interval.firstDivergence}, so neither is safe to assume.`,
+               `schedules can express a fortnight but not this interval. They disagree ` +
+               `first on ${interval.firstDivergence}, so neither is safe to assume.`,
         });
         continue;
       }
       proposals.push({
-        rule: { ...base, week_of_month: qualifier },
+        rule: { ...base, week_of_month: qualifier, week_parity: null },
         support,
         // Month positions need to be seen repeating before they mean much: two
         // first-Sundays is also two 28-day gaps.

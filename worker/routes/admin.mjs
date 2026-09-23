@@ -1622,6 +1622,37 @@ export function registerAdminRoutes(router) {
   }));
 
   const VALID_WEEKS = new Set(['first', 'second', 'third', 'fourth', 'last']);
+  const VALID_PARITIES = new Set(['a', 'b']);
+
+  /**
+   * The two week qualifiers a rule may carry, and why it may not carry both.
+   *
+   * Together they over-constrain: "1st and 3rd Saturday" AND "week B" matches
+   * roughly a quarter of the Saturdays it appears to name, which reads as a
+   * broken projection rather than as a contradiction somebody typed. This is
+   * the check because `schedules` cannot take one — SQLite would have to
+   * rebuild the table to add a CHECK, and schedule_overrides references it ON
+   * DELETE CASCADE, so the rebuild would cascade-delete every override.
+   *
+   * `have` is what the row will hold AFTER the write, so a PATCH clearing one
+   * and setting the other in the same body is allowed.
+   */
+  function weekQualifierError(have) {
+    const wom = have.week_of_month;
+    const parity = have.week_parity;
+    if (wom && wom.split(',').some(w => !VALID_WEEKS.has(w.trim()))) {
+      return 'week_of_month values must be: first, second, third, fourth, last';
+    }
+    if (parity && !VALID_PARITIES.has(String(parity).toLowerCase())) {
+      return "week_parity must be 'a' or 'b' — which of the two alternating weeks";
+    }
+    if (wom && parity) {
+      return 'A rule is either week-of-month or fortnightly, not both. Together they '
+           + 'match about a quarter of the days they name, which looks like a bug '
+           + 'rather than a decision. Clear one.';
+    }
+    return null;
+  }
 
   // ── schedule proposals ──
   //
@@ -1771,9 +1802,11 @@ export function registerAdminRoutes(router) {
     // place the scope can be checked — there is no existing row to read it off.
     const scoped = outOfScope(c, parish_id);
     if (scoped) return scoped;
-    if (b.week_of_month && b.week_of_month.split(',').some(w => !VALID_WEEKS.has(w.trim()))) {
-      return json({ error: 'week_of_month values must be: first, second, third, fourth, last' }, 400);
-    }
+    const qErr = weekQualifierError({
+      week_of_month: b.week_of_month || null,
+      week_parity: b.week_parity || null,
+    });
+    if (qErr) return json({ error: qErr }, 400);
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(parish_id).first()) {
       return json({ error: 'Invalid parish_id' }, 400);
     }
@@ -1781,12 +1814,13 @@ export function registerAdminRoutes(router) {
     if (refused) return refused;
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
-        languages, week_of_month, hide_live, parish_scoped, location_override)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
+        languages, week_of_month, hide_live, parish_scoped, location_override, week_parity)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
       b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
       b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
+      b.week_parity ? String(b.week_parity).toLowerCase() : null,
     ).first();
     return json(row, 201);
   }));
@@ -1798,8 +1832,8 @@ export function registerAdminRoutes(router) {
   // anybody has looked since, and until now the API refused them, so the field
   // the schema treats as load-bearing could not be filled in from anywhere.
   const SCHEDULE_EDITABLE = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type',
-    'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped',
-    'effective_from', 'effective_to', 'location_override',
+    'active', 'languages', 'week_of_month', 'week_parity', 'concurrent', 'hide_live',
+    'parish_scoped', 'effective_from', 'effective_to', 'location_override',
     'source_name', 'source_ref', 'source_checked_at'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
@@ -1825,6 +1859,22 @@ export function registerAdminRoutes(router) {
       );
       if (refused) return refused;
     }
+    // Checked against what the row will HOLD, not against what the body names,
+    // so a body that clears week_of_month and sets week_parity in one go is a
+    // legal move from one qualifier to the other rather than a moment where
+    // both are set.
+    if (b.week_of_month !== undefined || b.week_parity !== undefined) {
+      const at = await env.DB.prepare(
+        'SELECT week_of_month, week_parity FROM schedules WHERE id = ?'
+      ).bind(params.id).first();
+      const qErr = weekQualifierError({
+        week_of_month: (b.week_of_month !== undefined ? b.week_of_month : at.week_of_month) || null,
+        week_parity: (b.week_parity !== undefined ? b.week_parity : at.week_parity) || null,
+      });
+      if (qErr) return json({ error: qErr }, 400);
+      if (b.week_parity) b.week_parity = String(b.week_parity).toLowerCase();
+    }
+
     const sets = [], vals = [];
     for (const k of SCHEDULE_EDITABLE) {
       if (b[k] !== undefined) {
@@ -1885,6 +1935,128 @@ export function registerAdminRoutes(router) {
     // schedule_overrides cascade via FK.
     await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(params.id).run();
     return json({ ok: true, ruling, ruling_note: ruling ? describeOverride(ruling) : null });
+  }));
+
+  // ── breaks ──
+  //
+  // A stretch of dates a service is not running. One row per decision, and it
+  // RENDERS — a covered occurrence comes back as a BREAK tombstone with the
+  // note under it, not as a gap. The reasoning is the one cancellation already
+  // makes: somebody who would otherwise turn up at church is told.
+  //
+  // Scoped on the parish, like every other write here. `schedule_id` NULL means
+  // every rule at that parish, which is the case a Christmas closure actually
+  // is — so the scope is checked against `parish_id`, which is present either
+  // way, rather than against the rule.
+
+  const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+
+  /** Validate a break body against the parish it claims, or return an error. */
+  async function readBreak(env, b, { parishId = null } = {}) {
+    const from = String(b.from_date || '').slice(0, 10);
+    const to = String(b.to_date || '').slice(0, 10);
+    if (!isDate(from) || !isDate(to)) {
+      return { error: 'from_date and to_date are required, as YYYY-MM-DD' };
+    }
+    if (to < from) return { error: 'The break ends before it starts.' };
+    // NOT NULL in the schema, and refused here rather than defaulted: a break
+    // with no reason is indistinguishable from a mistake, and this note is the
+    // whole of what a visitor is told about why the service is off.
+    const note = String(b.note || '').trim();
+    if (!note) {
+      return { error: 'Say why — it is what the card shows in place of the service.' };
+    }
+
+    let scheduleId = b.schedule_id == null || b.schedule_id === '' ? null : Number(b.schedule_id);
+    let parish = parishId;
+    if (scheduleId != null) {
+      if (!Number.isInteger(scheduleId)) return { error: 'schedule_id must be a rule id or null' };
+      const rule = await env.DB.prepare('SELECT id, parish_id FROM schedules WHERE id = ?')
+        .bind(scheduleId).first();
+      if (!rule) return { error: 'Schedule not found' };
+      // The rule decides the parish, so a body cannot put one parish's break on
+      // another parish's rule by naming both.
+      parish = rule.parish_id;
+    }
+    if (!parish) return { error: 'parish_id or schedule_id is required' };
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(parish).first()) {
+      return { error: 'Invalid parish_id' };
+    }
+    return { row: { parish_id: parish, schedule_id: scheduleId, from_date: from, to_date: to, note } };
+  }
+
+  // Public-side reads live on the bundle; this is the panel's own list.
+  router.get('/api/admin/breaks', guarded(async ({ env, query }) => {
+    const parish = query.get('parish');
+    const r = await env.DB.prepare(
+      `SELECT b.*, s.title AS schedule_title, p.name AS parish_name
+       FROM schedule_breaks b
+       JOIN parishes p ON b.parish_id = p.id
+       LEFT JOIN schedules s ON b.schedule_id = s.id
+       ${parish ? 'WHERE b.parish_id = ?' : ''}
+       ORDER BY b.from_date DESC`
+    ).bind(...(parish ? [parish] : [])).all();
+    return json(r.results || []);
+  }));
+
+  router.post('/api/admin/breaks', guarded('override.edit', async (c) => {
+    const { env, request } = c;
+    const b = await readJson(request);
+    const v = await readBreak(env, b, { parishId: b.parish_id || null });
+    if (v.error) return json({ error: v.error }, 400);
+    const scoped = outOfScope(c, v.row.parish_id);
+    if (scoped) return scoped;
+    const row = await env.DB.prepare(
+      `INSERT INTO schedule_breaks (parish_id, schedule_id, from_date, to_date, note, updated_by)
+       VALUES (?,?,?,?,?,?) RETURNING *`
+    ).bind(v.row.parish_id, v.row.schedule_id, v.row.from_date, v.row.to_date,
+           v.row.note, await editor(c)).first();
+    return json(row, 201);
+  }));
+
+  router.patch('/api/admin/breaks/:id', guarded('override.edit', async (c) => {
+    const { env, params, request } = c;
+    const cur = await env.DB.prepare('SELECT * FROM schedule_breaks WHERE id = ?')
+      .bind(params.id).first();
+    if (!cur) return json({ error: 'Break not found' }, 404);
+    const scoped = outOfScope(c, cur.parish_id);
+    if (scoped) return scoped;
+    const b = await readJson(request);
+    // Merged onto the existing row, so a body that moves only the end date does
+    // not have to restate the reason.
+    const v = await readBreak(env, {
+      from_date: b.from_date ?? cur.from_date,
+      to_date: b.to_date ?? cur.to_date,
+      note: b.note ?? cur.note,
+      schedule_id: b.schedule_id === undefined ? cur.schedule_id : b.schedule_id,
+      parish_id: cur.parish_id,
+    }, { parishId: cur.parish_id });
+    if (v.error) return json({ error: v.error }, 400);
+    const moved = outOfScope(c, v.row.parish_id);
+    if (moved) return moved;
+    await env.DB.prepare(
+      `UPDATE schedule_breaks
+       SET parish_id = ?, schedule_id = ?, from_date = ?, to_date = ?, note = ?,
+           updated_at = ?, updated_by = ?
+       WHERE id = ?`
+    ).bind(v.row.parish_id, v.row.schedule_id, v.row.from_date, v.row.to_date, v.row.note,
+           NOW(), await editor(c), params.id).run();
+    return json(await env.DB.prepare('SELECT * FROM schedule_breaks WHERE id = ?')
+      .bind(params.id).first());
+  }));
+
+  // Lifting a break is a plain delete: it is a statement about a stretch of
+  // dates, and a lifted one leaves nothing behind to record — the services it
+  // was covering simply run again, which is what the rule said all along.
+  router.delete('/api/admin/breaks/:id', guarded('override.edit', async (c) => {
+    const { env, params } = c;
+    const cur = await env.DB.prepare('SELECT parish_id FROM schedule_breaks WHERE id = ?')
+      .bind(params.id).first();
+    if (!cur) return json({ error: 'Break not found' }, 404);
+    const scoped = outOfScope(c, cur.parish_id);
+    if (scoped) return scoped;
+    await env.DB.prepare('DELETE FROM schedule_breaks WHERE id = ?').bind(params.id).run();
+    return json({ ok: true });
   }));
 
   // Every extension a logo has ever been stored under. A re-upload that

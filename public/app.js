@@ -4471,9 +4471,12 @@ function scheduleFocusLabel(focus) {
   return [day, part, title].filter(Boolean).join(' ') + (langs ? ` in ${langs}` : '');
 }
 
-/** "Sunday", or "1st and 3rd Saturday" when the rule is week-of-month. */
+/** "Sunday", "1st and 3rd Saturday", or "alternate Sundays". */
 function womDescribeDay(rule) {
   const day = DAYS[rule.day_of_week] || '';
+  // "Alternate Sundays" is how a parish writes it, and it is what the
+  // ingestion notes found on the pages this exists for.
+  if (rule.week_parity) return `alternate ${day}s`;
   if (!rule.week_of_month) return day;
   const map = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
   const parts = String(rule.week_of_month).split(',').map(w => map[w.trim()] || w.trim());
@@ -6199,6 +6202,14 @@ function renderEventCard(evt) {
   // feast). Shown struck-through, parish-page only (see app.js scoped filter).
   const isCombined = evt.status === 'combined';
   const combinedTombBadge = isCombined ? `<span class="event-badge badge-combined">COMBINED</span>` : '';
+  // A break is the third tombstone. It renders for the same reason the other
+  // two do — somebody who would otherwise turn up at church is told — and it
+  // carries its reason on the card, because "BREAK" alone leaves a reader
+  // wondering whether the site is broken.
+  const isBreak = evt.status === 'break';
+  const breakBadge = isBreak ? `<span class="event-badge badge-break">BREAK</span>` : '';
+  const breakNoteHtml = (isBreak && evt.break_note)
+    ? `<div class="event-break-row">${esc(evt.break_note)}</div>` : '';
   // Feast override surfaced for this occurrence (e.g. a normal Sunday that is a feast).
   const feastHtml = evt.feast ? `<div class="event-feast-row" style="font-size:12px;opacity:.75;margin-top:2px;">✛ ${esc(evt.feast)}</div>` : '';
 
@@ -6209,14 +6220,14 @@ function renderEventCard(evt) {
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
 
-  const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, combinedTombBadge, cancelledBadge].filter(Boolean).join('');
+  const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, combinedTombBadge, cancelledBadge, breakBadge].filter(Boolean).join('');
 
   // Show event address only when it differs from the parish's own address.
   const altAddr = (evt.address && evt.address !== evt.parish_address) ? evt.address : null;
   const altAddrHtml = altAddr ? `<div class="event-address-row">${esc(altAddr)}</div>` : '';
 
   return `
-    <div class="event-card${(isCancelled || isCombined) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
+    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-time">${time}</span>
@@ -6227,6 +6238,7 @@ function renderEventCard(evt) {
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
         ${feastHtml}
+        ${breakNoteHtml}
         ${altAddrHtml}
       </div>
       ${posterImg}
@@ -6273,7 +6285,7 @@ function renderScheduleDaysHTML(items) {
       const t = formatTime12(s.start_time);
       const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
-      const womLabel = womDisplayLabel(s.week_of_month, DAYS[day]);
+      const womLabel = womDisplayLabel(s, DAYS[day]);
       const editing = canEdit(s);
       const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
       // The row is the way in, and the mode decides what it opens.
@@ -6294,15 +6306,20 @@ function renderScheduleDaysHTML(items) {
       const rowAttrs = editing ? ' data-sched-editable="1" aria-expanded="false"' : '';
       const chevIcon = editing ? 'ph:pencil-simple-bold' : 'ph:caret-right-bold';
       html += `<div class="schedule-item${focused ? ' focused' : ''}${editing ? ' editable' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}"${rowAttrs} role="button" tabindex="0">`;
-      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}<img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></div>`;
+      const onBreak = scheduleBreakNow(s);
+      const breakChip = onBreak ? `<span class="schedule-item-break">on break</span>` : '';
+      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${breakChip}<img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></div>`;
       if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
+      // While a rule is on a break the timetable still shows its time — the
+      // rule has not changed — but the honest reading of the row is "not this
+      // week", and the one thing a reader wants next is when it comes back.
+      if (onBreak) html += `<div class="si-break">${scheduleBreakLine(s, onBreak)}</div>`;
       // Only when the rule meets somewhere other than the parish's own address.
       // Silence means the parish address, which the sheet has already shown —
       // repeating it under every row would bury the one line that differs.
       if (s.location_override) html += `<div class="si-where">${esc(s.location_override)}</div>`;
       html += `</div>`;
       if (editing) {
-        const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
         // No id. The main services panel and the parish sheet BOTH render this
         // parish's rules, and both are in the document at once — an id here is
         // two elements answering to one name, and getElementById hands back
@@ -6321,7 +6338,7 @@ function renderScheduleDaysHTML(items) {
             <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
             <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
           </div>
-          ${womPickerHTML('data-f="week_of_month"', womChecked)}
+          ${cadencePickerHTML('data-f="cadence"', s)}
           <div class="sef-toggles">
             <label class="wom-check"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> No live badge</label>
             <label class="wom-check"><input type="checkbox" data-f="parish_scoped" ${s.parish_scoped?'checked':''}> Parish only</label>
@@ -6340,31 +6357,197 @@ function renderScheduleDaysHTML(items) {
   return html;
 }
 
-/** What a picker is holding, in the shape the column takes. NULL is every week. */
-function readWomPicker(el) {
-  if (!el) return null;
-  const checked = [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
-  return checked.length ? checked.join(',') : null;
+/** The break covering this rule TODAY, or null. */
+function scheduleBreakNow(rule) {
+  const breaks = (window.agoraBundle && window.agoraBundle.breaks && window.agoraBundle.breaks()) || [];
+  if (!breaks.length) return null;
+  // Today in the PARISH's zone, not the viewer's — the same rule the rest of
+  // the app follows, and the reason a parish in Perth is not on a break three
+  // hours early because somebody is reading in Auckland.
+  const today = parishToday(rule.timezone || rule.p_timezone);
+  return breaks.find(b =>
+    (b.schedule_id != null
+      ? String(b.schedule_id) === String(rule.id)
+      : b.parish_id === rule.parish_id)
+    && today >= b.from_date && today <= b.to_date) || null;
+}
+
+/** 'YYYY-MM-DD' where this parish is now. */
+function parishToday(zone) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: zone || TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+/** "On a break until 6 Jan — back Sunday 10 Jan. Christmas break" */
+function scheduleBreakLine(rule, brk) {
+  const fmt = (d) => new Intl.DateTimeFormat('en-AU',
+    { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(d + 'T00:00:00Z'));
+  const resume = nextRunAfterBreaks(rule);
+  const back = resume ? `back ${fmt(resume)}` : 'no return date set';
+  const why = brk.note ? ` · ${esc(brk.note)}` : '';
+  return `${esc(back)}${why}`;
 }
 
 /**
- * Which weeks of the month a rule runs on — the same control on the form that
- * edits a rule and the form that creates one.
+ * The first date this rule runs again, skipping every break in its way.
  *
- * Nothing checked means every week, which is what the column's NULL means, so
- * the row says so rather than leaving a reader to infer it from five empty
- * boxes. It reads as a qualification on the day beside it: "Sunday" with
- * nothing ticked is every Sunday, "Sunday" with 1st and 3rd ticked is the rule
- * the parish actually publishes.
+ * The day after the break ends is the wrong answer and the tempting one: a
+ * break that ends on a Wednesday does not bring a Sunday service back on
+ * Thursday, and a fortnightly rule may not return for another two weeks. So
+ * this walks the rule's OWN occurrences, through the same shared projection
+ * the feed uses rather than a second copy of the maths here.
  */
-function womPickerHTML(attr, checked = []) {
-  return `<div class="wom-checkboxes" ${attr}>
-      <span class="wom-label">Weeks</span>
-      ${WEEKS_OF_MONTH.map(w =>
-        `<label class="wom-check"><input type="checkbox" value="${w}"${checked.includes(w) ? ' checked' : ''}> ${w}</label>`
-      ).join('')}
-      <span class="wom-hint">none = every week</span>
+function nextRunAfterBreaks(rule) {
+  const b = window.agoraBundle;
+  if (!b || !b.nextOccurrenceAfterBreak) return null;
+  return b.nextOccurrenceAfterBreak(rule, parishToday(rule.timezone || rule.p_timezone), b.breaks());
+}
+
+/**
+ * How often a rule runs, read back in the shape the two columns take.
+ *
+ * Returns both, always, because they are mutually exclusive and the Worker
+ * refuses a row holding both: a save that set one without clearing the other
+ * would be rejected, or worse accepted into a rule matching a quarter of the
+ * days it names. Answering for both every time is what makes switching between
+ * them a single move.
+ */
+function readCadencePicker(el) {
+  if (!el) return { week_of_month: null, week_parity: null };
+  const mode = (el.querySelector('input[type=radio][data-cad-mode]:checked') || {}).value || 'weekly';
+  if (mode === 'wom') {
+    const checked = [...el.querySelectorAll('[data-cad-body=\"wom\"] input[type=checkbox]:checked')]
+      .map(cb => cb.value);
+    // Every box cleared is the same statement as "every week", and writing an
+    // empty string would fail the route's check.
+    return { week_of_month: checked.length ? checked.join(',') : null, week_parity: null };
+  }
+  if (mode === 'fortnight') {
+    const p = el.querySelector('[data-cad-body=\"fortnight\"] input[type=radio]:checked');
+    return { week_of_month: null, week_parity: p ? p.value : 'a' };
+  }
+  return { week_of_month: null, week_parity: null };
+}
+
+/** The next `n` dates a rule on `dow` and fortnight `parity` would run. */
+function fortnightDates(dow, parity, n = 3) {
+  const ab = window.agoraBundle && window.agoraBundle.weekAbOf;
+  if (!ab) return [];
+  const out = [];
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 400 && out.length < n; i++) {
+    const iso = new Date(d.getTime() + i * 86400000).toISOString().slice(0, 10);
+    if (new Date(iso + 'T00:00:00Z').getUTCDay() !== dow) continue;
+    if (ab(iso) !== parity) continue;
+    out.push(iso);
+  }
+  return out;
+}
+
+/** "5 Oct, 19 Oct, 2 Nov" — the dates a fortnight actually lands on. */
+function fortnightPreview(dow, parity) {
+  const dates = fortnightDates(dow, parity);
+  if (!dates.length) return '';
+  return dates.map(d => new Intl.DateTimeFormat('en-AU',
+    { day: 'numeric', month: 'short' }).format(new Date(d + 'T00:00:00Z'))).join(', ');
+}
+
+/**
+ * How often a rule runs — one control, three answers, on the form that creates
+ * a rule and the form that edits one.
+ *
+ * ONE control rather than two, because week_of_month and week_parity cannot
+ * both be set. Offered as two independent pickers they would look combinable,
+ * and "1st and 3rd Saturday" AND "week B" is a rule that matches about a
+ * quarter of the Saturdays it names — which reads as a broken projection
+ * rather than as the contradiction it is. The Worker refuses the pair; this
+ * makes it unaskable.
+ *
+ * The fortnight is offered as DATES, never as "week A" or an ISO week number.
+ * Nobody thinks in those, and the only thing a person needs to know is which
+ * of the two alternating weeks is theirs — which the next three dates answer
+ * and no label can. They re-render when the weekday changes, because picking
+ * Saturday after picking a fortnight would otherwise leave Sundays on screen.
+ */
+function cadencePickerHTML(attr, rule = {}) {
+  const uid = `cad${Math.random().toString(36).slice(2, 8)}`;
+  const wom = rule.week_of_month
+    ? String(rule.week_of_month).split(',').map(w => w.trim()) : [];
+  const parity = rule.week_parity ? String(rule.week_parity).toLowerCase() : null;
+  const mode = parity ? 'fortnight' : (wom.length ? 'wom' : 'weekly');
+  const dow = Number.isInteger(rule.day_of_week) ? rule.day_of_week : 0;
+  const radio = (value, label) =>
+    `<label class="cad-mode"><input type="radio" name="${uid}" data-cad-mode value="${value}"${
+      mode === value ? ' checked' : ''}> ${label}</label>`;
+  const parityChoice = (value) =>
+    `<label class="cad-week"><input type="radio" name="${uid}p" value="${value}"${
+      (parity || 'a') === value ? ' checked' : ''}><span class="cad-week-dates" data-cad-dates="${value}">${
+      esc(fortnightPreview(dow, value)) || '…'}</span></label>`;
+
+  return `<div class="cadence" ${attr}>
+      <div class="cad-modes">
+        <span class="wom-label">Runs</span>
+        ${radio('weekly', 'every week')}
+        ${radio('wom', 'some weeks of the month')}
+        ${radio('fortnight', 'fortnightly')}
+      </div>
+      <div class="cad-body" data-cad-body="wom"${mode === 'wom' ? '' : ' hidden'}>
+        ${WEEKS_OF_MONTH.map(w =>
+          `<label class="wom-check"><input type="checkbox" value="${w}"${
+            wom.includes(w) ? ' checked' : ''}> ${w}</label>`).join('')}
+      </div>
+      <div class="cad-body cad-fortnight" data-cad-body="fortnight"${mode === 'fortnight' ? '' : ' hidden'}>
+        <span class="wom-label">which weeks</span>
+        ${parityChoice('a')}
+        ${parityChoice('b')}
+      </div>
     </div>`;
+}
+
+/**
+ * Make one cadence picker live: show the body its mode names, and keep the
+ * fortnight's dates honest when the weekday changes underneath it.
+ */
+function wireCadencePickers(container) {
+  container.querySelectorAll('.cadence').forEach(cad => {
+    if (cad._cadBound) return;
+    cad._cadBound = true;
+
+    const paint = () => {
+      const mode = (cad.querySelector('input[data-cad-mode]:checked') || {}).value || 'weekly';
+      cad.querySelectorAll('[data-cad-body]').forEach(b => {
+        b.hidden = b.dataset.cadBody !== mode;
+      });
+    };
+    // The weekday lives in the form around this control, under data-f on an
+    // edit form and data-af on the add form.
+    const daySelect = () => {
+      const form = cad.closest('.schedule-edit-form, .schedule-add');
+      return form && form.querySelector('[data-f="day_of_week"], [data-af="day_of_week"]');
+    };
+    const repaintDates = () => {
+      const sel = daySelect();
+      const dow = sel ? parseInt(sel.value, 10) : 0;
+      cad.querySelectorAll('[data-cad-dates]').forEach(span => {
+        span.textContent = fortnightPreview(dow, span.dataset.cadDates) || '…';
+      });
+    };
+
+    cad.addEventListener('change', () => { paint(); repaintDates(); });
+    const sel = daySelect();
+    if (sel && !sel._cadDayBound) {
+      sel._cadDayBound = true;
+      sel.addEventListener('change', repaintDates);
+    }
+    paint();
+    repaintDates();
+  });
 }
 
 /**
@@ -6428,7 +6611,7 @@ function addServiceHTML(parishId) {
         <input data-af="start_time" type="time" value="09:00">
         <select data-af="event_type" class="sef-full">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
       </div>
-      ${womPickerHTML('data-af="week_of_month"')}
+      ${cadencePickerHTML('data-af="cadence"')}
       <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add service</button>
     </div>`;
 }
@@ -6438,6 +6621,7 @@ function addServiceHTML(parishId) {
 function wireScheduleAdminHandlers(container) {
   // No binding for opening a form: the row opens it, and the row is bound once
   // for the whole document in initScheduleRowTaps. See renderScheduleDaysHTML.
+  wireCadencePickers(container);
   container.querySelectorAll('.schedule-save-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -6447,8 +6631,11 @@ function wireScheduleAdminHandlers(container) {
       const data = {};
       form.querySelectorAll('[data-f]').forEach(input => {
         const field = input.dataset.f;
-        if (field === 'week_of_month') {
-          data[field] = readWomPicker(input);
+        if (field === 'cadence') {
+          // Both columns, every time — see readCadencePicker. Sending only the
+          // one that changed is how a rule ends up holding a qualifier the
+          // person thought they had swapped away from.
+          Object.assign(data, readCadencePicker(input));
         } else if (field === 'hide_live' || field === 'parish_scoped') {
           data[field] = input.checked ? 1 : 0;
         } else {
@@ -6515,9 +6702,9 @@ function wireScheduleAdminHandlers(container) {
       const read = (f) => wrap.querySelector(`[data-af="${f}"]`).value;
       const title = read('title').trim();
       if (!title) { alert('Give the service a name.'); return; }
-      // Nothing ticked is every week, which the column spells NULL — not an
-      // empty string, which would fail the route's week_of_month check.
-      const weeks = readWomPicker(wrap.querySelector('[data-af="week_of_month"]'));
+      // Every week is NULL in both columns — not an empty string, which would
+      // fail the route's check.
+      const cadence = readCadencePicker(wrap.querySelector('[data-af="cadence"]'));
       const res = await fetch('/api/admin/schedules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6527,13 +6714,19 @@ function wireScheduleAdminHandlers(container) {
           day_of_week: parseInt(read('day_of_week'), 10),
           start_time: read('start_time'),
           event_type: read('event_type'),
-          week_of_month: weeks,
+          ...cadence,
         }),
       });
       if (res.ok) {
         wrap.querySelector('[data-af="title"]').value = '';
-        wrap.querySelectorAll('[data-af="week_of_month"] input[type=checkbox]')
-          .forEach(cb => { cb.checked = false; });
+        // Back to "every week", so the next service added does not silently
+        // inherit the cadence of the one before it.
+        const cad = wrap.querySelector('[data-af="cadence"]');
+        if (cad) {
+          cad.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+          const weekly = cad.querySelector('input[data-cad-mode][value="weekly"]');
+          if (weekly) { weekly.checked = true; weekly.dispatchEvent(new Event('change', { bubbles: true })); }
+        }
         fetchSchedules({ fresh: true });
         return;
       }
@@ -6894,9 +7087,21 @@ function renderEventDrawerHTML(evt, opts = {}) {
     // survive the outer onclick="..." attribute (HTML parser would otherwise
     // terminate the attribute at the first inner ").
     const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
+    // Break sits with Cancel and Suppress because it is the third answer to the
+    // same question, and the one people actually reach for most: this service
+    // is off for a while. Only on a projected occurrence — a break is a
+    // statement about a RULE over a stretch of dates, and a stored one-off has
+    // no rule to make it about.
+    const onBreak = evt.status === 'break';
+    const breakBtn = isScheduleOrigin
+      ? (onBreak
+        ? `<button class="btn-outline btn-break-event" onclick="openBreakEditor(${eid})">On break — edit</button>`
+        : `<button class="btn-outline btn-break-event" onclick="openBreakEditor(${eid})">Break…</button>`)
+      : '';
     adminActions = evtEditing ? `
       <div class="admin-actions-group">
         <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${eid},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
+        ${breakBtn}
         ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
         ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
         ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
@@ -7943,6 +8148,209 @@ window.openParishLinks = async function(parishId) {
   };
   document.getElementById('links-save').onclick = () => _saveParishLinks();
 };
+
+// ── Breaks ───────────────────────────────────────────────────────────────
+//
+// A stretch of dates a service is not running: a parish shut between Christmas
+// and Theophany, a hall closed for works, a priest away.
+//
+// It is the third answer beside Cancel and Suppress and behaves like neither.
+// A cancellation is one date. A suppression takes a service off the site with
+// no notice at all. A break is a RANGE that still renders — every occurrence
+// inside it comes back as a BREAK tombstone carrying the reason, and the
+// parish's timetable says when the service is back. That is the same bargain
+// cancellation makes, held for longer: somebody who would otherwise turn up at
+// church is told.
+
+const _breakDraft = { scheduleId: null, parishId: null, editingId: null };
+
+/** Whether this occurrence's rule can carry a break, and for which parish. */
+function _breakTargetOf(id) {
+  const parsed = window.agoraBundle && window.agoraBundle.raw
+    ? (id.includes(':') ? { scheduleId: Number(String(id).split(':')[0]) } : null)
+    : null;
+  if (!parsed) return null;
+  const rule = (state.schedules || []).find(s => String(s.id) === String(parsed.scheduleId));
+  return rule ? { scheduleId: rule.id, parishId: rule.parish_id, rule } : null;
+}
+
+window.openBreakEditor = function (id) {
+  const target = _breakTargetOf(String(id));
+  if (!target) { alert('A break belongs to a recurring service.'); return; }
+  const parish = state.parishes.find(p => p.id === target.parishId);
+  _breakDraft.scheduleId = target.scheduleId;
+  _breakDraft.parishId = target.parishId;
+  _breakDraft.editingId = null;
+
+  document.getElementById('break-modal-sub').textContent =
+    `${target.rule.title} · ${(parish && parish.name) || target.parishId}`;
+
+  // Default the window to the occurrence that was open, because that is the
+  // service the person was looking at when they reached for this.
+  const date = String(id).split(':')[1] || parishToday(parish && parish.timezone);
+  document.getElementById('break-from').value = date;
+  document.getElementById('break-to').value = date;
+  document.getElementById('break-note').value = '';
+
+  _renderBreakScope();
+  _renderExistingBreaks();
+  _paintBreakHint();
+  ['break-from', 'break-to'].forEach(f => {
+    document.getElementById(f).oninput = _paintBreakHint;
+  });
+  document.getElementById('break-scope').onchange = _paintBreakHint;
+  document.getElementById('break-save').onclick = _saveBreak;
+  document.getElementById('break-backdrop').classList.add('open');
+};
+
+window.closeBreakEditor = function () {
+  document.getElementById('break-backdrop').classList.remove('open');
+  _breakDraft.editingId = null;
+};
+
+/** One rule, or every rule at the parish — the choice the table's NULL encodes. */
+function _renderBreakScope() {
+  const rule = (state.schedules || []).find(s => String(s.id) === String(_breakDraft.scheduleId));
+  const parish = state.parishes.find(p => p.id === _breakDraft.parishId);
+  document.getElementById('break-scope').innerHTML = `
+    <label class="break-scope-opt"><input type="radio" name="break-scope" value="rule" checked>
+      just ${esc(rule ? rule.title : 'this service')}</label>
+    <label class="break-scope-opt"><input type="radio" name="break-scope" value="parish">
+      everything at ${esc((parish && parish.name) || 'this parish')}</label>`;
+}
+
+const _breakScope = () =>
+  (document.querySelector('input[name="break-scope"]:checked') || {}).value || 'rule';
+
+/** Say what the window will actually do, in dates rather than in counts. */
+function _paintBreakHint() {
+  const hint = document.getElementById('break-hint');
+  const from = document.getElementById('break-from').value;
+  const to = document.getElementById('break-to').value;
+  if (!from || !to) { hint.textContent = ''; return; }
+  if (to < from) { hint.textContent = 'The break ends before it starts.'; return; }
+  const rule = (state.schedules || []).find(s => String(s.id) === String(_breakDraft.scheduleId));
+  if (!rule) { hint.textContent = ''; return; }
+  // Count this rule's own occurrences inside the window, which is the number
+  // that means something — "18 days" does not say whether a service is affected.
+  let n = 0;
+  for (let t = Date.parse(from + 'T00:00:00Z'); t <= Date.parse(to + 'T00:00:00Z'); t += 86400000) {
+    const d = new Date(t).toISOString().slice(0, 10);
+    if (new Date(d + 'T00:00:00Z').getUTCDay() !== rule.day_of_week) continue;
+    if (rule.week_of_month && !_matchesWom(d, rule.week_of_month)) continue;
+    if (rule.week_parity && window.agoraBundle.weekAbOf
+        && window.agoraBundle.weekAbOf(d) !== String(rule.week_parity).toLowerCase()) continue;
+    n++;
+  }
+  const scope = _breakScope() === 'parish' ? 'every service at this parish' : 'this service';
+  hint.textContent = n
+    ? `${n} occurrence${n === 1 ? '' : 's'} of this rule marked BREAK, and ${scope} with it. They still show, struck through, with your reason.`
+    : 'No occurrence of this rule falls in that window.';
+}
+
+/** week_of_month, for the hint only — the projection's own copy is the real one. */
+function _matchesWom(dateStr, qualifier) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const dom = d.getUTCDate();
+  const next = new Date(d); next.setUTCDate(dom + 7);
+  const hasNext = next.getUTCMonth() === d.getUTCMonth();
+  return String(qualifier).split(',').some(q => {
+    switch (q.trim()) {
+      case 'first': return dom <= 7;
+      case 'second': return dom >= 8 && dom <= 14;
+      case 'third': return dom >= 15 && dom <= 21;
+      case 'fourth': return dom >= 22 && dom <= 28 && hasNext;
+      case 'last': return !hasNext;
+      default: return false;
+    }
+  });
+}
+
+/** Breaks already covering this rule, each liftable in one press. */
+function _renderExistingBreaks() {
+  const host = document.getElementById('break-existing');
+  const rule = (state.schedules || []).find(s => String(s.id) === String(_breakDraft.scheduleId));
+  const rows = ((window.agoraBundle && window.agoraBundle.breaks()) || []).filter(b =>
+    b.schedule_id != null
+      ? String(b.schedule_id) === String(_breakDraft.scheduleId)
+      : b.parish_id === _breakDraft.parishId);
+  if (!rows.length) { host.innerHTML = ''; return; }
+  const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+    .format(new Date(d + 'T00:00:00Z'));
+  host.innerHTML = `
+    <div class="break-existing-head">Already on file</div>
+    ${rows.map(b => `
+      <div class="break-existing-row">
+        <div class="break-existing-top">
+          <span class="break-existing-when">${esc(fmt(b.from_date))} – ${esc(fmt(b.to_date))}</span>
+          <span class="break-existing-scope">${b.schedule_id == null ? 'whole parish' : esc(rule ? rule.title : 'this service')}</span>
+          <button class="break-lift" type="button" data-lift="${b.id}">Lift</button>
+        </div>
+        ${b.note ? `<div class="break-existing-note">${esc(b.note)}</div>` : ''}
+      </div>`).join('')}`;
+  host.querySelectorAll('[data-lift]').forEach(btn => {
+    btn.addEventListener('click', () => _liftBreak(btn.dataset.lift, btn));
+  });
+}
+
+async function _saveBreak() {
+  const btn = document.getElementById('break-save');
+  const from = document.getElementById('break-from').value;
+  const to = document.getElementById('break-to').value;
+  const note = document.getElementById('break-note').value.trim();
+  if (!from || !to) { alert('A break needs a start and an end.'); return; }
+  if (to < from) { alert('The break ends before it starts.'); return; }
+  // Refused rather than defaulted: the note is the whole of what a visitor is
+  // told in place of the service, and "" would tell them nothing.
+  if (!note) { alert('Say why — it is what the card shows in place of the service.'); return; }
+
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/breaks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        schedule_id: _breakScope() === 'parish' ? null : _breakDraft.scheduleId,
+        parish_id: _breakDraft.parishId,
+        from_date: from,
+        to_date: to,
+        note,
+      }),
+    });
+    if (!res.ok) { alert(await adminErrorText(res)); return; }
+    await _afterBreakChange();
+    window.closeBreakEditor();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function _liftBreak(id, btn) {
+  if (!confirm('Lift this break?\n\nThe services it covers go back to running as the rule says.')) return;
+  btn.disabled = true;
+  const res = await fetch(`/api/admin/breaks/${id}`, { method: 'DELETE' });
+  if (!res.ok) { btn.disabled = false; alert(await adminErrorText(res)); return; }
+  await _afterBreakChange();
+  _renderExistingBreaks();
+  _paintBreakHint();
+}
+
+/**
+ * Re-read and repaint everything a break touches.
+ *
+ * `fresh` because /api/bundle is served stale-while-revalidate for ten
+ * minutes, and a break you just set would otherwise look like it never
+ * happened — docs/browser-checks.md calls this the trap that wastes an hour.
+ */
+async function _afterBreakChange() {
+  await window.agoraBundle.load({ fresh: true });
+  await fetchSchedules({ fresh: true });
+  await fetchEvents({ fresh: true, keepCount: true });
+  repaintOpenEventDrawer();
+  if (state.parishSheetFocus && !state._openEventId) {
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
+  }
+}
 
 window.closeParishLinks = function() {
   document.getElementById('links-backdrop').classList.remove('open');
@@ -9485,11 +9893,24 @@ function glyph(name) {
   return `<span class="ps-btn-glyph" style="--glyph:url(https://api.iconify.design/${esc(name)}.svg)" aria-hidden="true"></span>`;
 }
 
-// Returns a readable schedule-item label for week_of_month, e.g. "1st, 3rd Sunday"
-function womDisplayLabel(qualifier, dayName) {
+// The line under a timetable row saying which weeks it runs: "1st, 3rd Sunday",
+// or "fortnightly · next 5 Oct". A weekly rule says nothing, because every
+// week is what a row already means.
+function womDisplayLabel(rule, dayName) {
+  if (rule && rule.week_parity) {
+    const next = fortnightDates(rule.day_of_week, String(rule.week_parity).toLowerCase(), 1)[0];
+    const when = next
+      ? ` · next ${new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+          .format(new Date(next + 'T00:00:00Z'))}`
+      : '';
+    // The date matters more than the word: "fortnightly" alone leaves a reader
+    // to work out which fortnight, which is the one thing they cannot.
+    return `<span class="schedule-item-wom">fortnightly${esc(when)}</span>`;
+  }
+  const qualifier = rule && rule.week_of_month;
   if (!qualifier) return '';
   const map = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
-  const parts = qualifier.split(',').map(q => map[q.trim()] || q.trim()).join(', ');
+  const parts = String(qualifier).split(',').map(q => map[q.trim()] || q.trim()).join(', ');
   return `<span class="schedule-item-wom">${esc(parts)} ${esc(dayName)}</span>`;
 }
 

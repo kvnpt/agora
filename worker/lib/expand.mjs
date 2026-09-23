@@ -6,9 +6,15 @@
 // public feed ships rows and the browser expands them.
 
 import { OffsetCache } from '../../public/shared/tz.mjs';
-import { expandFrom, project, isValidOccurrence, parseInstanceId } from '../../public/shared/project.mjs';
+import {
+  expandFrom, project, isValidOccurrence, parseInstanceId,
+  breaksFor, breakCovering, nextOccurrenceAfterBreak,
+} from '../../public/shared/project.mjs';
 
-export { expandFrom, project, isValidOccurrence, parseInstanceId };
+export {
+  expandFrom, project, isValidOccurrence, parseInstanceId,
+  breaksFor, breakCovering, nextOccurrenceAfterBreak,
+};
 
 const DAY_MS = 86400000;
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -46,11 +52,32 @@ export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null } 
     : 'SELECT * FROM schedule_overrides WHERE occurrence_date BETWEEN ? AND ?';
   const ovArgs = scheduleId ? [scheduleId, startStr, endStr] : [startStr, endStr];
 
-  const [schedules, overrides] = await Promise.all([
+  // Breaks overlapping the window. Ranges, so the test is an overlap rather
+  // than a BETWEEN — a break that started in December and runs into February is
+  // the whole point and would fall out of a containment test.
+  //
+  // Not narrowed by scheduleId even when one is given: a parish-wide break
+  // (schedule_id NULL) speaks for that rule too, and narrowing on the column
+  // would drop exactly the row that silences it.
+  const brSql = `
+    SELECT b.* FROM schedule_breaks b
+    WHERE b.from_date <= ? AND b.to_date >= ?
+      ${scheduleId ? 'AND (b.schedule_id = ? OR b.schedule_id IS NULL)' : ''}
+  `;
+  const brArgs = scheduleId ? [endStr, startStr, scheduleId] : [endStr, startStr];
+
+  const [schedules, overrides, breaks] = await Promise.all([
     db.prepare(schedSql).bind(...schedArgs).all(),
     db.prepare(ovSql).bind(...ovArgs).all(),
+    // Catch, so a bundle is still served while migration 014 has not run — the
+    // same guard the parish_links read carries in the bundle route.
+    db.prepare(brSql).bind(...brArgs).all().catch(() => ({ results: [] })),
   ]);
-  return { schedules: schedules.results || [], overrides: overrides.results || [] };
+  return {
+    schedules: schedules.results || [],
+    overrides: overrides.results || [],
+    breaks: breaks.results || [],
+  };
 }
 
 /**
@@ -74,5 +101,23 @@ export async function expandOne(db, scheduleId, date, { cache = new OffsetCache(
   const o = await db.prepare(
     'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
   ).bind(scheduleId, date).first();
-  return project(s, date, o, cache);
+  if (o) return project(s, date, o, cache);
+
+  // No override — but a break may still speak for this date, and a deep link
+  // into one has to resolve to the tombstone rather than to the service. Same
+  // precedence as expandFrom: the explicit row wins, the window fills the gaps.
+  const b = await db.prepare(
+    `SELECT * FROM schedule_breaks
+     WHERE from_date <= ? AND to_date >= ?
+       AND (schedule_id = ? OR (schedule_id IS NULL AND parish_id = ?))
+     ORDER BY from_date LIMIT 1`
+  ).bind(date, date, scheduleId, s.parish_id).first().catch(() => null);
+
+  return project(s, date, b ? {
+    kind: 'break',
+    break_from: b.from_date,
+    break_until: b.to_date,
+    break_note: b.note || null,
+    updated_at: b.updated_at || null,
+  } : null, cache);
 }

@@ -861,6 +861,32 @@
       ? window.AgoraTimezones.timezoneLabel(tz)
       : String(tz || '').split('/').pop().replace(/_/g, ' '));
 
+    // ── The fortnight ──
+    //
+    // recurrence.mjs is an ES module and this page is classic scripts, so it is
+    // pulled in dynamically once and cached. A second copy of the week table
+    // here would be exactly the drift /shared/ exists to prevent, and it would
+    // be a copy no test runs.
+    let _recurrence = null;
+    const recurrenceReady = import('/shared/recurrence.mjs')
+      .then(m => { _recurrence = m; })
+      .catch(() => { /* the form still saves; only the date preview is lost */ });
+
+    /** "5 Oct, 19 Oct, 2 Nov" — the dates one fortnight actually lands on. */
+    function fortnightPreviewFor(dow, parity, n = 3) {
+      if (!_recurrence) return parity === 'a' ? 'week A' : 'week B';
+      const out = [];
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      for (let i = 0; i < 400 && out.length < n; i++) {
+        const iso = new Date(start.getTime() + i * 86400000).toISOString().slice(0, 10);
+        if (new Date(iso + 'T00:00:00Z').getUTCDay() !== dow) continue;
+        if (_recurrence.weekAbOf(iso) !== parity) continue;
+        out.push(iso);
+      }
+      return out.map(d => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+        .format(new Date(d + 'T00:00:00Z'))).join(', ') || (parity === 'a' ? 'week A' : 'week B');
+    }
+
     const tzOptions = (selected) => TZS.map(z =>
       `<option value="${esc(z.tz)}"${z.tz === selected ? ' selected' : ''}>` +
       `${esc(z.label)}${z.note ? ' \u2014 ' + esc(z.note) : ''}</option>`).join('');
@@ -967,7 +993,11 @@
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
         loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(),
-        loadJurisdictions(), loadRulings()]);
+        loadJurisdictions(), loadRulings(),
+        // Awaited with the rest so the fortnight radios render with their
+        // dates on the first paint rather than saying "week A" until something
+        // else re-renders them.
+        recurrenceReady]);
       // After loadAdapters, which is what says whether any PDF adapter exists.
       await loadWorkflow();
       renderAll();
@@ -2026,7 +2056,10 @@
         const activeCount = scheds.filter(s => s.active).length;
         const schedHtml = scheds.map(s => {
           const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
-          const womLabel = s.week_of_month ? ` &middot; ${s.week_of_month}` : '';
+          const cadMode = s.week_parity ? 'fortnight' : (s.week_of_month ? 'wom' : 'weekly');
+          const womLabel = s.week_parity
+            ? ` &middot; fortnightly (week ${esc(String(s.week_parity).toUpperCase())})`
+            : (s.week_of_month ? ` &middot; ${s.week_of_month}` : '');
           return `
             <div class="card expand-trigger ${s.active ? '' : 'sched-card inactive'}" onclick="toggleExpand('se-${s.id}')">
               <div class="sched-card">
@@ -2053,11 +2086,25 @@
                   <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages"></div>
                   <div class="field full"><label>Address</label><input value="${esc(s.location_override || '')}" data-field="location_override" placeholder="Blank — meets at the parish's own address"></div>
                 </div>
-                <div class="field" style="margin-top:8px;">
-                  <label>Weeks (blank = every week)</label>
-                  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;" data-field="week_of_month">
+                <!-- One control, three answers. week_of_month and week_parity
+                     cannot both be set — the Worker refuses the pair — so
+                     offering them as two pickers would make an impossible rule
+                     look askable. -->
+                <div class="field" style="margin-top:8px;" data-field="cadence">
+                  <label>How often</label>
+                  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
+                    ${[['weekly','every week'],['wom','some weeks of the month'],['fortnight','fortnightly']].map(([v,l]) =>
+                      `<label style="display:flex;align-items:center;gap:3px;font-size:13px;"><input type="radio" name="cad-${s.id}" data-cad-mode value="${v}" ${cadMode===v?'checked':''}> ${l}</label>`
+                    ).join('')}
+                  </div>
+                  <div data-cad-body="wom" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;${cadMode==='wom'?'':'display:none;'}">
                     ${['first','second','third','fourth','last'].map(w =>
                       `<label style="display:flex;align-items:center;gap:3px;font-size:13px;"><input type="checkbox" value="${w}" ${womChecked.includes(w)?'checked':''}> ${w}</label>`
+                    ).join('')}
+                  </div>
+                  <div data-cad-body="fortnight" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;${cadMode==='fortnight'?'':'display:none;'}">
+                    ${['a','b'].map(v =>
+                      `<label style="display:flex;align-items:center;gap:4px;font-size:13px;"><input type="radio" name="cadp-${s.id}" value="${v}" ${(s.week_parity||'a')===v?'checked':''}> <span style="font-variant-numeric:tabular-nums;">${esc(fortnightPreviewFor(s.day_of_week, v))}</span></label>`
                     ).join('')}
                   </div>
                 </div>
@@ -2142,15 +2189,36 @@
       if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
     });
 
+    // One delegated listener rather than a wiring pass: the schedule cards are
+    // rebuilt from HTML on every loadAll(), so per-card handlers would have to
+    // be re-attached each time and would accumulate if they were not.
+    document.addEventListener('change', (e) => {
+      const radio = e.target.closest('input[data-cad-mode]');
+      if (!radio) return;
+      const field = radio.closest('[data-field="cadence"]');
+      if (!field) return;
+      field.querySelectorAll('[data-cad-body]').forEach(b => {
+        b.style.display = b.dataset.cadBody === radio.value ? 'flex' : 'none';
+      });
+    });
+
     async function saveSchedule(id) {
       const c = document.getElementById('se-' + id);
       const data = {};
       c.querySelectorAll('[data-field]').forEach(el => {
         const field = el.dataset.f || el.dataset.field;
         if (!field) return;
-        if (field === 'week_of_month') {
-          const checked = [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
-          data[field] = checked.length ? checked.join(',') : null;
+        if (field === 'cadence') {
+          // Both columns every time: they are mutually exclusive, so sending
+          // only the one that changed leaves a rule holding a qualifier the
+          // person thought they had swapped away from — and the Worker would
+          // refuse the pair anyway.
+          const mode = (el.querySelector('input[data-cad-mode]:checked') || {}).value || 'weekly';
+          const checked = [...el.querySelectorAll('[data-cad-body="wom"] input[type=checkbox]:checked')]
+            .map(cb => cb.value);
+          const parity = el.querySelector('[data-cad-body="fortnight"] input[type=radio]:checked');
+          data.week_of_month = mode === 'wom' && checked.length ? checked.join(',') : null;
+          data.week_parity = mode === 'fortnight' ? (parity ? parity.value : 'a') : null;
         } else if (field === 'concurrent' || field === 'hide_live' || field === 'parish_scoped') {
           data[field] = el.checked ? 1 : 0;
         } else if (el.tagName === 'DIV') {

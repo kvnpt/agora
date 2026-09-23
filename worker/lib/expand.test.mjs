@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { expandWindow, expandOne, parseInstanceId, isValidOccurrence } from './expand.mjs';
-import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
+import { matchesWeekOfMonth, weekAbOf } from '../../public/shared/recurrence.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -207,4 +207,55 @@ test('isValidOccurrence honours week_of_month and effective ranges', () => {
   const ranged = { ...s, effective_from: '2026-09-10', effective_to: '2026-09-20' };
   assert.strictEqual(isValidOccurrence(ranged, '2026-09-06'), false);
   assert.strictEqual(isValidOccurrence(ranged, '2026-09-13'), true);
+});
+
+// ── The fortnight ────────────────────────────────────────────────────────
+
+test('isValidOccurrence honours week_parity, and a deep link into one resolves', async () => {
+  const s = { day_of_week: 0, week_of_month: null, week_parity: null,
+              effective_from: null, effective_to: null };
+  // NULL is not a fortnightly rule and every Sunday is valid.
+  assert.strictEqual(isValidOccurrence(s, '2026-09-06'), true);
+  assert.strictEqual(isValidOccurrence(s, '2026-09-13'), true);
+
+  // Set, and consecutive Sundays disagree — which is the whole of "fortnightly".
+  const a = { ...s, week_parity: weekAbOf('2026-09-13') };
+  assert.strictEqual(isValidOccurrence(a, '2026-09-13'), true);
+  assert.strictEqual(isValidOccurrence(a, '2026-09-20'), false);
+  assert.strictEqual(isValidOccurrence(a, '2026-09-27'), true);
+
+  // The other fortnight is exactly the complement.
+  const b = { ...s, week_parity: a.week_parity === 'a' ? 'b' : 'a' };
+  for (const d of ['2026-09-13', '2026-09-20', '2026-09-27']) {
+    assert.notStrictEqual(isValidOccurrence(a, d), isValidOccurrence(b, d));
+  }
+});
+
+test('a fortnightly rule projects half the occurrences a weekly one does', async () => {
+  const raw = buildD1();
+  const db = new D1(raw);
+  const rule = raw.prepare('SELECT * FROM schedules WHERE active = 1 LIMIT 1').get();
+
+  const weekly = (await expandWindow(db, FROM, TO, { scheduleId: rule.id })).length;
+  raw.prepare('UPDATE schedules SET week_parity = ? WHERE id = ?').run('a', rule.id);
+  const fortnightly = await expandWindow(db, FROM, TO, { scheduleId: rule.id });
+
+  assert.ok(Math.abs(fortnightly.length - weekly / 2) <= 1,
+    `${weekly} weekly occurrences became ${fortnightly.length}, expected about half`);
+
+  // Every date it does produce is a week-A date, and the gaps are a fortnight.
+  const dates = fortnightly.map(i => parseInstanceId(i.id).date).sort();
+  assert.ok(dates.every(d => weekAbOf(d) === 'a'));
+  const gaps = new Set(dates.slice(1).map((d, i) =>
+    (Date.parse(d) - Date.parse(dates[i])) / 86400000));
+  assert.deepStrictEqual([...gaps], [14], `gaps were ${[...gaps]}`);
+
+  // And a deep link to one of them still resolves, which is the property the
+  // synthetic id exists for.
+  const one = await expandOne(db, rule.id, dates[1]);
+  assert.ok(one, `a link to ${dates[1]} should resolve`);
+  assert.strictEqual(one.id, `${rule.id}:${dates[1]}`);
+  // …while the week in between does not, because the rule does not run then.
+  const between = new Date(Date.parse(dates[0]) + 7 * 86400000).toISOString().slice(0, 10);
+  assert.strictEqual(await expandOne(db, rule.id, between), null);
 });
