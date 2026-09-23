@@ -932,10 +932,13 @@ function applyParishSlugs() {
   const norm = s => (s || '').toLowerCase().replace(/\s+/g, '');
   const resolved = [];
   for (const slug of slugs) {
+    // The acronym is the public link. The parish id is the fallback, so a
+    // parish nobody has given an acronym yet is still addressable — /admin's
+    // "View in app" needs a door into every parish card, not most of them.
     const match = state.parishes.find(p => {
       if (p.id === '_unassigned') return false;
       return p.acronym && norm(p.acronym) === norm(slug);
-    });
+    }) || state.parishes.find(p => p.id !== '_unassigned' && norm(p.id) === norm(slug));
     if (match) resolved.push(match);
     else console.warn('applyParishSlugs: no parish for slug', slug);
   }

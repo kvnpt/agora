@@ -463,6 +463,64 @@
     .color-repaint { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
     .color-repaint input { width: auto; accent-color: var(--accent); }
 
+    /* ── Service kinds ──────────────────────────────────────────────────
+       The main app's badge palette, so a Liturgy is the same purple here as
+       on the feed. The kind comes from public/shared/services.js — the title
+       decides, event_type is the fallback — which is the classification the
+       app filters by, so a badge here and a chip there cannot disagree. */
+    .kb { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 11px; font-size: 11.5px; font-weight: 600; white-space: nowrap; background: var(--kb-bg, #eee); color: var(--kb-fg, #555); }
+    .kb b { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .kb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kb-fg); flex: none; }
+    .k-liturgy    { --kb-bg: #efe0ef; --kb-fg: #6b2d6b; }
+    .k-matins     { --kb-bg: #f5e6d6; --kb-fg: #7a4a20; }
+    .k-vespers    { --kb-bg: #dde6f4; --kb-fg: #2d4a7a; }
+    .k-paraklesis { --kb-bg: #dcecf0; --kb-fg: #1f5a66; }
+    .k-compline   { --kb-bg: #e2e0f4; --kb-fg: #3e3a80; }
+    .k-bible-study{ --kb-bg: #f3ead6; --kb-fg: #7a5a20; }
+    .k-confession { --kb-bg: #f6e0e6; --kb-fg: #8a2f4a; }
+    .k-feast      { --kb-bg: #f5ecd0; --kb-fg: #7a6520; }
+    .k-prayer     { --kb-bg: #dde6f4; --kb-fg: #2d4a7a; }
+    .k-talk       { --kb-bg: #f0e8d5; --kb-fg: #7a5a20; }
+    .k-youth      { --kb-bg: #d8ebf6; --kb-fg: #2d5a8a; }
+    .k-social     { --kb-bg: #d9ecd9; --kb-fg: #2d6a2d; }
+    .k-other      { --kb-bg: #ececef; --kb-fg: #555a62; }
+    @media (prefers-color-scheme: dark) {
+      .k-liturgy    { --kb-bg: #3a2840; --kb-fg: #d4a3d4; }
+      .k-matins     { --kb-bg: #3a2820; --kb-fg: #d4a682; }
+      .k-vespers, .k-prayer { --kb-bg: #1f2a3a; --kb-fg: #9bb8e0; }
+      .k-paraklesis { --kb-bg: #1b3035; --kb-fg: #92c8d2; }
+      .k-compline   { --kb-bg: #26243d; --kb-fg: #b2acec; }
+      .k-bible-study, .k-talk { --kb-bg: #3a2f1c; --kb-fg: #d4b682; }
+      .k-confession { --kb-bg: #3a2029; --kb-fg: #e6a3b8; }
+      .k-feast      { --kb-bg: #3a3220; --kb-fg: #d4c082; }
+      .k-youth      { --kb-bg: #1c303d; --kb-fg: #a8c8de; }
+      .k-social     { --kb-bg: #1f2e1f; --kb-fg: #a3c8a3; }
+      .k-other      { --kb-bg: #26272c; --kb-fg: #aaaaaa; }
+    }
+    .pill .kb-dot { width: 9px; height: 9px; }
+
+    /* ── Service times, grouped by jurisdiction then parish ── */
+    .jur-block { margin-bottom: 22px; }
+    .jur-block-head { display: flex; align-items: center; gap: 10px; margin: 0 2px 10px; }
+    .jur-block-swatch { width: 14px; height: 14px; border-radius: 4px; background: var(--jc); flex: none; }
+    .jur-block-name { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+    .jur-block-meta { font-size: 12.5px; color: var(--muted); }
+    .jur-block-rule { flex: 1; height: 1px; background: var(--border-light); }
+    .parish-group { border-left: 4px solid var(--pc, var(--border-light)); }
+    .parish-group-top { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+    .parish-group-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .kb-row { display: flex; gap: 5px; flex-wrap: wrap; }
+    .parish-group-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; }
+    .parish-group-tools .card-meta { margin: 0; }
+    .run-meter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .run-meter i { display: inline-block; width: 36px; height: 5px; border-radius: 3px; background: var(--border-light); overflow: hidden; position: relative; }
+    .run-meter i::after { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--pct); background: var(--success); border-radius: 3px; }
+    .when { flex: none; width: 58px; text-align: center; border-radius: var(--radius-sm); padding: 5px 0; background: var(--kb-bg); color: var(--kb-fg); line-height: 1.15; }
+    .when b { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+    .when span { display: block; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .sched-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .card.inactive .when { filter: grayscale(1); opacity: 0.6; }
+
     .infer-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--border-light); font-size: 13.5px; cursor: pointer; }
     .infer-row input { margin-top: 3px; accent-color: var(--accent); }
     .infer-dim { color: var(--muted); font-size: 12.5px; }
@@ -492,6 +550,7 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
   </svg>
 
@@ -616,6 +675,7 @@
       </div>
       <div class="toolbar">
         <div class="pill-row" data-juris-pills aria-label="Jurisdiction"></div>
+        <div class="pill-row" id="kind-chips" aria-label="Service"></div>
         <div class="pill-row" id="schedule-chips" aria-label="Status">
           <button type="button" class="pill" data-sfilter="" aria-pressed="true">All times</button>
           <button type="button" class="pill" data-sfilter="active">Running</button>
@@ -1894,12 +1954,66 @@
       unsourced: (s) => !s.source_name && !s.source_ref,
     };
 
-    function filteredSchedules() {
+    // ── What kind of service a rule is ──
+    //
+    // AgoraServices.serviceOf is the main app's classifier (the title decides,
+    // event_type is the fallback). What it cannot name falls back to the
+    // rule's event_type, so every rule gets exactly one badge.
+    const KIND_LABEL = {
+      liturgy: 'Liturgy', matins: 'Matins', vespers: 'Vespers', paraklesis: 'Paraklesis',
+      compline: 'Compline', 'bible-study': 'Bible Study', confession: 'Confession', feast: 'Feast',
+      prayer: 'Prayer', talk: 'Talk', youth: 'Youth', social: 'Social', other: 'Other',
+    };
+    const KIND_ORDER = Object.keys(KIND_LABEL);
+    // One exception to "the title decides": a rule typed social, youth or talk
+    // is not a service, whatever its title says — "Coffee after Liturgy" is a
+    // social, and badging it Liturgy would count it among the services. Bible
+    // Study survives the exception because it IS a talk, just a named one.
+    const NOT_A_SERVICE = ['social', 'youth', 'talk'];
+    function kindOf(s) {
+      const S = window.AgoraServices;
+      const svc = S ? S.serviceOf(s) : null;
+      if (NOT_A_SERVICE.includes(s.event_type) && svc !== 'bible-study') return s.event_type;
+      if (svc && KIND_LABEL[svc]) return svc;
+      return KIND_LABEL[s.event_type] ? s.event_type : 'other';
+    }
+    const kindBadge = (k, n) =>
+      `<span class="kb k-${esc(k)}"><span class="kb-dot"></span>${esc(KIND_LABEL[k] || k)}${n != null ? ` <b>${n}</b>` : ''}</span>`;
+
+    // The filter pills. "Other" is everything the named ones do not cover,
+    // so the row always partitions the list.
+    const KIND_FILTERS = ['liturgy', 'matins', 'vespers', 'bible-study', 'social'];
+    let kindFilter = '';
+    const kindPasses = (s) => !kindFilter
+      || (kindFilter === 'other' ? !KIND_FILTERS.includes(kindOf(s)) : kindOf(s) === kindFilter);
+
+    function schedulesBeforeKind() {
       const pred = SCHEDULE_FILTERS[scheduleFilter];
       return schedules.filter(s => inMyScope(s.parish_id) &&
         (!activeJurisdiction || s.parish_jurisdiction === activeJurisdiction) &&
         (!pred || pred(s)));
     }
+
+    function filteredSchedules() {
+      return schedulesBeforeKind().filter(kindPasses);
+    }
+
+    function renderKindPills() {
+      const el = document.getElementById('kind-chips');
+      if (!el) return;
+      const base = schedulesBeforeKind();
+      const n = (k) => base.filter(s => k === 'other'
+        ? !KIND_FILTERS.includes(kindOf(s)) : kindOf(s) === k).length;
+      el.innerHTML = `<button type="button" class="pill" data-kfilter="" aria-pressed="${!kindFilter}">All services <span class="pill-n">${base.length}</span></button>`
+        + [...KIND_FILTERS, 'other'].map(k => `
+          <button type="button" class="pill k-${k}" data-kfilter="${k}" aria-pressed="${kindFilter === k}">
+            <span class="kb-dot"></span>${esc(KIND_LABEL[k])} <span class="pill-n">${n(k)}</span>
+          </button>`).join('');
+    }
+
+    /** The parish's card in the main app. Its acronym is its public link; a
+        parish without one is reached by id, which the app also resolves. */
+    const appParishUrl = (p) => '/' + encodeURIComponent(slugNorm(p && p.acronym) || (p && p.id) || '');
 
     function renderStats() {
       const shown = filteredParishes().filter(p => p.id !== '_unassigned').length;
@@ -2071,6 +2185,7 @@
             <div class="btn-row">
               <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save changes</button>
               <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')"><svg class="ic" style="width:16px;height:16px;"><use href="#i-pin"/></svg>Find pin</button>
+              <a class="btn btn-outline" href="${esc(appParishUrl(p))}" target="_blank" rel="noopener" title="Open this parish's card in the app, in a new tab"><svg class="ic" style="width:16px;height:16px;"><use href="#i-external"/></svg>View in app</a>
               ${may('parish.delete')
                 ? `<button class="btn btn-ghost-danger push" onclick="openDeleteParish('${esc(p.id)}')"><svg class="ic" style="width:16px;height:16px;"><use href="#i-trash"/></svg>Delete parish</button>`
                 : `<button class="btn btn-ghost-danger push" onclick="offerProposal('parish.delete', '${esc(p.id)}')">Ask to delete\u2026</button>`}
@@ -2418,12 +2533,19 @@
       loadAll();
     });
 
-    // ── Schedules grouped by parish ──
+    // ── Schedules, grouped by jurisdiction and then by parish ──
+    //
+    // Which parishes are open survives a re-render: flipping one rule's switch
+    // reloads everything, and collapsing the group you were working in is the
+    // opposite of what the switch was for.
+    const openGroups = new Set();
+
     function renderScheduleList() {
+      renderKindPills();
       const c = document.getElementById('schedule-list');
       const scheds = filteredSchedules();
       if (!scheds.length) {
-        c.innerHTML = `<div class="empty">${scheduleFilter || activeJurisdiction
+        c.innerHTML = `<div class="empty">${scheduleFilter || activeJurisdiction || kindFilter
           ? 'No service times match that.' : 'No service times yet. Press + to add one.'}</div>`;
         return;
       }
@@ -2431,16 +2553,44 @@
       const types = ['liturgy','prayer','feast','talk','youth','social','other'];
       const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
 
-      // Group by parish
-      const byParish = new Map();
+      // Jurisdiction → parish → rules, each rule in week order.
+      const byJur = new Map();
       for (const s of scheds) {
-        if (!byParish.has(s.parish_id)) byParish.set(s.parish_id, { name: s.parish_name, scheds: [] });
-        byParish.get(s.parish_id).scheds.push(s);
+        const j = s.parish_jurisdiction || 'other';
+        if (!byJur.has(j)) byJur.set(j, new Map());
+        const ps = byJur.get(j);
+        if (!ps.has(s.parish_id)) ps.set(s.parish_id, { name: s.parish_name, scheds: [] });
+        ps.get(s.parish_id).scheds.push(s);
       }
+      const jOrder = (j) => { const i = Object.keys(JURIS_LABEL).indexOf(j); return i < 0 ? 99 : i; };
+      const byWeek = (a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time));
 
-      c.innerHTML = [...byParish.entries()].map(([pid, { name, scheds }]) => {
+      c.innerHTML = [...byJur.entries()].sort((a, b) => jOrder(a[0]) - jOrder(b[0])).map(([jur, ps]) => {
+        const groups = [...ps.entries()].sort((a, b) => String(a[1].name).localeCompare(String(b[1].name)));
+        const ruleCount = groups.reduce((n, [, g]) => n + g.scheds.length, 0);
+        return `
+        <div class="jur-block" style="--jc:${esc(jurisEffective(jur))}">
+          <div class="jur-block-head">
+            <span class="jur-block-swatch"></span>
+            <span class="jur-block-name">${esc(JURIS_LABEL[jur] || jur)}</span>
+            <span class="jur-block-meta">${groups.length} parish${groups.length === 1 ? '' : 'es'} &middot; ${ruleCount} rule${ruleCount === 1 ? '' : 's'}</span>
+            <span class="jur-block-rule"></span>
+          </div>
+          ${groups.map(([pid, g]) => parishGroupHtml(pid, g.name, g.scheds.sort(byWeek), jur)).join('')}
+        </div>`;
+      }).join('');
+    }
+
+    function parishGroupHtml(pid, name, scheds, jur) {
+        const types = ['liturgy','prayer','feast','talk','youth','social','other'];
+        const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
+        const parish = parishes.find(p => p.id === pid);
         const activeCount = scheds.filter(s => s.active).length;
+        const counts = {};
+        for (const s of scheds) { const k = kindOf(s); counts[k] = (counts[k] || 0) + 1; }
+        const badges = KIND_ORDER.filter(k => counts[k]).map(k => kindBadge(k, counts[k])).join('');
         const schedHtml = scheds.map(s => {
+          const kind = kindOf(s);
           const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
           const cadMode = s.week_parity ? 'fortnight' : (s.week_of_month ? 'wom' : 'weekly');
           const womLabel = s.week_parity
@@ -2451,9 +2601,10 @@
               <div class="sched-card list-row" role="button" tabindex="0"
                    onclick="if(!event.target.closest('.menu-wrap,.switch'))toggleExpand('se-${s.id}')"
                    onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleExpand('se-${s.id}')}">
+                <div class="when k-${esc(kind)}"><b>${DAYS[s.day_of_week].slice(0, 3)}</b><span>${esc(s.start_time)}</span></div>
                 <div class="list-row-main">
-                  <div class="card-title">${esc(s.title)}</div>
-                  <div class="card-meta" style="white-space:normal;">${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} &middot; ${esc(s.event_type)}${s.languages ? ' &middot; ' + esc(parseLangs(s.languages)) : ''}${womLabel}${s.active ? '' : ' &middot; switched off'}</div>
+                  <div class="sched-title-line"><span class="card-title">${esc(s.title)}</span>${kindBadge(kind)}</div>
+                  <div class="card-meta" style="white-space:normal;">${s.end_time ? 'until ' + esc(s.end_time) : 'no end time'}${womLabel || ' &middot; every week'}${s.languages ? ' &middot; ' + esc(parseLangs(s.languages)) : ''}${s.active ? '' : ' &middot; switched off'}</div>
                 </div>
                 <label class="switch" title="${s.active ? 'Running — switch off' : 'Switched off — turn on'}">
                   <input type="checkbox" ${s.active ? 'checked' : ''} aria-label="Running"
@@ -2554,22 +2705,39 @@
             </div>`;
         }).join('');
 
+        const pct = scheds.length ? Math.round(100 * activeCount / scheds.length) : 0;
         return `
-          <div class="parish-group" id="pg-${esc(pid)}">
-            <div class="parish-group-header" onclick="toggleParishGroup('${esc(pid)}')">
-              <div>
-                <span class="parish-group-name">${esc(name)}</span>
-                <span class="parish-group-meta"> &middot; ${activeCount}/${scheds.length} active</span>
+          <div class="parish-group${openGroups.has(pid) ? ' open' : ''}" id="pg-${esc(pid)}"
+               style="--pc:${esc((parish && parish.color) || jurisEffective(jur))}">
+            <div class="parish-group-header" role="button" tabindex="0" aria-expanded="${openGroups.has(pid)}"
+                 onclick="toggleParishGroup('${esc(pid)}')"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleParishGroup('${esc(pid)}')}">
+              <div class="parish-group-top">
+                <div class="parish-group-line">
+                  <span class="parish-group-name">${esc(name)}</span>
+                  <span class="run-meter" title="${activeCount} of ${scheds.length} running" style="--pct:${pct}%"><i></i>${activeCount}/${scheds.length} running</span>
+                </div>
+                <div class="kb-row">${badges}</div>
               </div>
               <span class="parish-group-chevron"><svg class="ic"><use href="#i-chev"/></svg></span>
             </div>
-            <div class="parish-group-body">${schedHtml}</div>
+            <div class="parish-group-body">
+              <div class="parish-group-tools">
+                <a class="btn btn-outline" href="${esc(appParishUrl(parish || { id: pid }))}" target="_blank" rel="noopener"
+                   title="Open this parish's card in the app, in a new tab"><svg class="ic" style="width:16px;height:16px;"><use href="#i-external"/></svg>View in app</a>
+                ${parish && parish.timezone ? `<span class="card-meta">Times in ${esc(tzLabel(parish.timezone))}</span>` : ''}
+              </div>
+              ${schedHtml}
+            </div>
           </div>`;
-      }).join('');
     }
 
     function toggleParishGroup(pid) {
-      document.getElementById('pg-' + pid).classList.toggle('open');
+      const g = document.getElementById('pg-' + pid);
+      const open = g.classList.toggle('open');
+      if (open) openGroups.add(pid); else openGroups.delete(pid);
+      const h = g.querySelector('.parish-group-header');
+      if (h) h.setAttribute('aria-expanded', String(open));
     }
 
     document.getElementById('schedule-form').addEventListener('submit', async e => {
@@ -3849,6 +4017,14 @@
     wirePills('override-chips', 'ofilter', () => overrideFilter, v => { overrideFilter = v; }, renderOverrides);
     wirePills('schedule-chips', 'sfilter', () => scheduleFilter, v => { scheduleFilter = v; },
       () => { renderScheduleList(); renderStats(); });
+    document.getElementById('kind-chips').addEventListener('click', (e) => {
+      const pill = e.target.closest('.pill');
+      if (!pill) return;
+      const v = pill.dataset.kfilter || '';
+      kindFilter = v === kindFilter ? '' : v;
+      renderScheduleList();
+      renderStats();
+    });
     wirePills('adapter-chips', 'afilter', () => adapterFilter, v => { adapterFilter = v; }, renderAdapterList);
     wirePills('people-chips', 'pfilter', () => peopleFilter, v => { peopleFilter = v; }, renderPeople);
 
