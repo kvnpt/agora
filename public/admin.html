@@ -6,357 +6,432 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#15161a" media="(prefers-color-scheme: dark)">
-  <title>Agora Admin</title>
+  <title>Admin — Orthodox Services &amp; Events</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
       color-scheme: light dark;
       --bg: #fff;
       --surface: #fff;
-      --surface-2: #f5f5f5;
-      --page-bg: #fafafa;
-      --text: #111;
+      --surface-2: #f3f4f6;
+      --page-bg: #f6f7f9;
+      --text: #111318;
       --text-inverse: #fff;
-      --muted: #888;
-      --border: #ddd;
-      --border-light: #eee;
-      --backdrop: rgba(0,0,0,0.4);
-      --soft-bg: #f7f7f7;
-      --raw-bg: #f4f4f4;
-      --radius: 3px;
-      --accent: #111;
+      --muted: #6b7280;
+      --border: #d9dce1;
+      --border-light: #e9ebef;
+      --backdrop: rgba(15,17,21,0.45);
+      --soft-bg: #f3f4f6;
+      --raw-bg: #f3f4f6;
+      --radius: 10px;
+      --radius-sm: 6px;
+      /* The main app's blue, so the two surfaces read as one product. */
+      --accent: #2c6cb4;
+      --accent-bg: #e8f0fa;
+      --accent-text: #1f5696;
+      --accent-ring: rgba(44,108,180,0.22);
+      --danger: #dc3545;
+      --danger-bg: #fdecee;
+      --success: #16a34a;
+      --warn: #d97706;
+      --shadow-sm: 0 1px 2px rgba(15,17,21,0.06);
+      --shadow-md: 0 4px 16px rgba(15,17,21,0.10);
+      --shadow-lg: 0 12px 40px rgba(15,17,21,0.18);
+      --topbar-h: 56px;
+      --drawer-w: 256px;
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #15161a;
         --surface: #15161a;
-        --surface-2: #1c1d22;
+        --surface-2: #1f2026;
         --page-bg: #0b0b0d;
-        --text: #f0f0f0;
+        --text: #f0f0f2;
         --text-inverse: #0b0b0d;
-        --muted: #a8a8a8;
-        --border: #2e2e35;
-        --border-light: #1f1f25;
-        --backdrop: rgba(0,0,0,0.7);
-        --soft-bg: #1c1d22;
-        --raw-bg: #1c1d22;
-        --accent: #f0f0f0;
+        --muted: #9ca0a8;
+        --border: #30313a;
+        --border-light: #23242b;
+        --backdrop: rgba(0,0,0,0.65);
+        --soft-bg: #1f2026;
+        --raw-bg: #1f2026;
+        --accent: #5b8fd6;
+        --accent-bg: #1c2638;
+        --accent-text: #9cc0f0;
+        --accent-ring: rgba(91,143,214,0.3);
+        --danger: #f06b6b;
+        --danger-bg: #2d1a1a;
+        --shadow-sm: none;
+        --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+        --shadow-lg: 0 12px 40px rgba(0,0,0,0.6);
       }
     }
     body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; background: var(--page-bg); color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-    input, select, textarea { font-size: 16px !important; }
+    input, select, textarea { font-size: 16px !important; color: var(--text); }
+    a { color: var(--accent); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+    svg.ic { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-    /* Layout */
-    .admin-header { padding: 12px 20px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .admin-header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-    .admin-header a { font-size: 12px; color: var(--muted); text-decoration: none; }
-    .admin-header a:hover { color: var(--text); }
-    .header-right { display: flex; align-items: center; gap: 10px; }
-    /* Who is editing. Noise with one admin; the first thing you want to check
-       the moment more than one person has a login. */
-    .admin-identity { font-size: 11px; color: var(--muted); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #jurisdiction-filter { font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
-    main { max-width: 680px; margin: 0 auto; padding: 16px; }
+    /* ── Top bar ──────────────────────────────────────────────────────
+       Three things, in order of how often they are reached for: the menu,
+       where you are, and the way back to the site. The last is a filled
+       button on purpose — it was a grey 12px link in a corner. */
+    .topbar { position: sticky; top: 0; z-index: 50; height: calc(var(--topbar-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--border-light); }
+    .topbar-title { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar-spacer { flex: 1; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; border: none; background: none; color: var(--text); cursor: pointer; flex: none; position: relative; }
+    .icon-btn:hover { background: var(--surface-2); }
+    .icon-btn:focus-visible, .btn:focus-visible, .pill:focus-visible, .nav-item:focus-visible, .fab:focus-visible, .back-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+    .back-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px 0 10px; border-radius: 18px; background: var(--accent); color: #fff; font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; flex: none; }
+    .back-btn:hover { filter: brightness(1.08); }
+    .back-btn svg.ic { width: 18px; height: 18px; }
+    @media (max-width: 359px) { .back-btn .long { display: none; } }
+    @media (min-width: 360px) { .back-btn .short { display: none; } }
+    .nav-dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); border: 2px solid var(--bg); }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-bg); color: var(--accent-text); font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; text-transform: uppercase; }
 
-    /* Tabs with counts */
-    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
-    .tab { padding: 8px 14px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
-    .tab:hover { color: var(--text); }
-    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
-    .tab-count { font-size: 10px; font-weight: 700; background: var(--border-light); color: var(--muted); padding: 1px 5px; border-radius: 8px; min-width: 18px; text-align: center; }
-    .tab.active .tab-count { background: var(--accent); color: var(--text-inverse); }
+    /* ── Menus ── one component for the account menu and every "⋯" on a row. */
+    .menu-wrap { position: relative; display: inline-flex; }
+    .menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 210px; max-width: min(320px, calc(100vw - 24px)); background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 6px; z-index: 80; }
+    .menu[hidden] { display: none; }
+    .menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: none; background: none; border-radius: var(--radius-sm); font: inherit; font-size: 13.5px; color: var(--text); text-align: left; cursor: pointer; text-decoration: none; }
+    .menu-item:hover { background: var(--surface-2); }
+    .menu-item.danger { color: var(--danger); }
+    .menu-item svg.ic { width: 18px; height: 18px; color: var(--muted); }
+    .menu-item.danger svg.ic { color: var(--danger); }
+    .menu-sep { height: 1px; background: var(--border-light); margin: 6px 4px; }
+    .menu-label { padding: 6px 10px 4px; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .admin-identity { display: block; font-size: 13px; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Navigation drawer ─────────────────────────────────────────────
+       Off-canvas behind the hamburger on a phone; pinned open beside the
+       content once there is room for both. Grouped, because eight flat tabs
+       said nothing about which ones are daily work and which are settings
+       visited twice a year. */
+    .drawer { position: fixed; top: 0; bottom: 0; left: 0; width: var(--drawer-w); max-width: 86vw; z-index: 70; background: var(--bg); border-right: 1px solid var(--border-light); display: flex; flex-direction: column; transform: translateX(-100%); transition: transform 0.22s ease; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    body.drawer-open .drawer { transform: none; box-shadow: var(--shadow-lg); }
+    .drawer-scrim { position: fixed; inset: 0; z-index: 60; background: var(--backdrop); opacity: 0; pointer-events: none; transition: opacity 0.22s ease; }
+    body.drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
+    .drawer-head { height: var(--topbar-h); display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--border-light); flex: none; }
+    .drawer-brand { flex: 1; min-width: 0; }
+    .drawer-brand b { display: block; font-size: 15px; font-weight: 700; }
+    .drawer-brand span { display: block; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .drawer-nav { flex: 1; overflow-y: auto; padding: 8px 10px 16px; }
+    .nav-group { margin-top: 14px; }
+    .nav-group:first-child { margin-top: 4px; }
+    .nav-group[hidden] { display: none; }
+    .nav-group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 10px 6px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border: none; background: none; border-radius: var(--radius-sm); font: inherit; font-size: 14px; font-weight: 500; color: var(--text); cursor: pointer; text-align: left; }
+    .nav-item:hover { background: var(--surface-2); }
+    .nav-item svg.ic { color: var(--muted); }
+    .nav-item.active { background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
+    .nav-item.active svg.ic { color: var(--accent-text); }
+    .nav-item[hidden] { display: none; }
+    .nav-label { flex: 1; }
+    .tab-count { font-size: 11px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 20px; text-align: right; }
+    .nav-item.active .tab-count { color: var(--accent-text); }
+    .tab-count.alert { background: var(--danger); color: #fff; border-radius: 10px; padding: 0 6px; text-align: center; }
+    .drawer-foot { flex: none; padding: 12px; border-top: 1px solid var(--border-light); }
+    .drawer-foot .back-btn { width: 100%; justify-content: center; height: 40px; border-radius: 20px; }
+    .drawer-foot .back-btn .short { display: none; }
+    .drawer-foot .back-btn .long { display: inline; }
+
+    @media (min-width: 960px) {
+      .drawer { transform: none; top: 0; z-index: 40; }
+      .drawer-scrim, .drawer-close { display: none; }
+      body.drawer-open .drawer { box-shadow: none; }
+      .topbar, main { margin-left: var(--drawer-w); }
+      #menu-btn { display: none; }
+      .topbar { padding-left: 24px; }
+    }
+
+    main { max-width: 760px; margin: 0 auto; padding: 20px 16px calc(110px + env(safe-area-inset-bottom)); }
+    @media (min-width: 960px) { main { margin-left: calc(var(--drawer-w) + max(0px, (100vw - var(--drawer-w) - 760px) / 2)); } }
 
     .section { display: none; }
     .section.active { display: block; }
 
-    /* Finding one parish among several hundred. */
-    .finder { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
-    .finder input[type=search] { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
-    .chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .chip { font-size: 11px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg); color: var(--muted); cursor: pointer; }
-    .chip:hover { color: var(--text); }
-    .chip[aria-pressed="true"] { background: var(--accent); color: var(--text-inverse); border-color: var(--accent); }
-    .finder-count { font-size: 11px; color: var(--muted); }
+    /* ── Section hierarchy ── title, one line of why, then the tools. */
+    .section-head { margin-bottom: 14px; }
+    .section-head h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+    .section-lead { font-size: 13.5px; color: var(--muted); margin-top: 6px; line-height: 1.55; max-width: 62ch; }
+    .section-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .subhead { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 26px 0 10px; }
+    h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
+
+    /* ── Toolbar: search and filter pills ── */
+    .toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+    .search { position: relative; }
+    .search svg.ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--muted); pointer-events: none; }
+    .search input { width: 100%; height: 42px; padding: 0 14px 0 38px; border: 1px solid var(--border); border-radius: 21px; background: var(--bg); color: var(--text); }
+    .search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+    .pill-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 1px; margin: -1px; }
+    .pill-row::-webkit-scrollbar { display: none; }
+    .pill-row[hidden] { display: none; }
+    .pill { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+    .pill:hover { background: var(--surface-2); }
+    .pill[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--text-inverse); }
+    .pill .pill-n { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .pill[aria-pressed="true"] .pill-n { color: inherit; opacity: 0.7; }
+    .pill-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .finder-count { font-size: 12px; color: var(--muted); }
+
+    /* ── The plus ─────────────────────────────────────────────────────
+       One dedicated control for "add", in the same place on every section
+       that has something to add, instead of a collapsed "Add Parish ▶"
+       heading that read like a section title. Its label follows the
+       section, so it always says what it will make. */
+    .fab { position: fixed; z-index: 45; right: max(20px, calc(16px + env(safe-area-inset-right))); bottom: max(20px, calc(16px + env(safe-area-inset-bottom))); height: 56px; min-width: 56px; padding: 0 20px 0 16px; border: none; border-radius: 28px; background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; box-shadow: var(--shadow-md), 0 2px 6px rgba(44,108,180,0.35); transition: transform 0.15s ease, filter 0.15s; }
+    .fab:hover { filter: brightness(1.08); }
+    .fab:active { transform: scale(0.96); }
+    .fab svg.ic { width: 24px; height: 24px; stroke-width: 2.4; }
+    .fab[hidden] { display: none; }
+    @media (max-width: 540px) { .fab { padding: 0; width: 56px; } .fab .fab-label { display: none; } }
+
+    /* ── Cards and lists ── */
+    .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); }
+    .card.warn { border-left: 3px solid var(--warn); }
+    .card-title { font-weight: 600; font-size: 14.5px; }
+    .card-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .list-row { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+    .list-row-main { min-width: 0; flex: 1; }
+    .list-row-main .card-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chev { color: var(--muted); transition: transform 0.2s; flex: none; }
+    .card.open > .list-row .chev, .parish-group.open .parish-group-chevron { transform: rotate(180deg); }
+    .parish-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-light); flex: none; }
+    .parish-initial { width: 36px; height: 36px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; }
+    @media (max-width: 540px) { .list-row > .tag { display: none; } }
+    .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--muted); white-space: nowrap; text-transform: capitalize; }
 
     /* Provenance — where a row's claim came from, and who last touched it. */
-    .prov { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-light); }
-    .prov-head { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
-    .prov-line { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
-    .verified { color: #22c55e; font-weight: 600; }
+    .prov { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+    .prov-head { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .prov-line { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .verified { color: var(--success); font-weight: 600; }
     .unverified { color: var(--muted); }
 
     /* A ruling about which source wins. Deliberately quiet: these are read far
        more often than they are made, and the one that matters is whichever one
        explains why an import left something out. */
     .ruling { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between;
-              padding: 6px 0; border-bottom: 1px dashed var(--border-light); font-size: 12px; }
+              padding: 7px 0; border-bottom: 1px dashed var(--border-light); font-size: 12.5px; }
     .ruling:last-of-type { border-bottom: 0; }
     .ruling-text { min-width: 0; }
     .ruling-tier { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase;
-                   letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px;
-                   background: var(--border-light); color: var(--muted); margin-right: 5px;
+                   letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px;
+                   background: var(--surface-2); color: var(--muted); margin-right: 5px;
                    vertical-align: 1px; }
-    .ruling-note { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+    .ruling-note { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .ruling-add { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-    .ruling-add select, .ruling-add input { font-size: 12px; padding: 4px 6px; }
+    .ruling-add select, .ruling-add input { font-size: 13px !important; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
     .ruling-add input { flex: 1 1 200px; min-width: 0; }
     /* On a jurisdiction card: what the next re-run will refuse. */
-    .jur-refuse { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
+    .jur-refuse { margin-top: 10px; font-size: 12px; color: var(--muted); }
     .jur-refuse b { color: var(--text); font-weight: 600; }
 
-    .bootstrap-note { font-size: 12.5px; line-height: 1.5; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-bg, #f9ecdd); color: #a35a12; border: 1px solid #e8c9a0; margin-bottom: 12px; }
+    .bootstrap-note { font-size: 13px; line-height: 1.55; padding: 12px 14px; border-radius: var(--radius); background: #fdf3e4; color: #8a4b0f; border: 1px solid #efd3aa; margin-bottom: 14px; }
     @media (prefers-color-scheme: dark) { .bootstrap-note { background: #2c2113; color: #e59544; border-color: #4a3a1e; } }
-    .role-explain { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
-    .person-row { display: flex; align-items: baseline; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
-    .person-email { font-weight: 600; font-size: 13.5px; }
-    .person-role { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; background: var(--soft-bg); color: var(--muted); }
-    .person-meta { font-size: 11.5px; color: var(--muted); }
+    .role-explain { font-size: 12.5px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    .person-row { display: flex; align-items: center; gap: 12px; }
+    .person-main { flex: 1; min-width: 0; }
+    .person-email { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+    .person-role { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 10px; background: var(--accent-bg); color: var(--accent-text); margin-left: 6px; vertical-align: 1px; }
+    .person-meta { font-size: 12px; color: var(--muted); }
 
-    .ov-row { display: flex; gap: 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
-    .ov-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; white-space: nowrap; }
-    .ov-cancelled { background: #f9e4e4; color: #d33a3a; }
-    .ov-modified  { background: #f9ecdd; color: #c26a18; }
-    .ov-combined  { background: #e8d5e8; color: #6b2d6b; }
+    .ov-row { display: flex; gap: 12px; align-items: flex-start; }
+    .ov-badges { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; flex: none; width: 92px; }
+    .ov-kind { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .ov-cancelled { background: #f9e4e4; color: #c62f2f; }
+    .ov-modified  { background: #f9ecdd; color: #b25c10; }
+    .ov-combined  { background: #efe1ef; color: #6b2d6b; }
     .ov-hidden    { background: var(--soft-bg); color: var(--muted); }
     @media (prefers-color-scheme: dark) {
       .ov-cancelled { background: #2d1a1a; color: #f06b6b; }
       .ov-modified  { background: #2c2113; color: #e59544; }
       .ov-combined  { background: #3a223a; color: #c79ac7; }
     }
-    .ov-machine { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 2px; background: #e0ecf8; color: #2d5a8a; white-space: nowrap; }
+    .ov-machine { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 10px; background: #e0ecf8; color: #2d5a8a; white-space: nowrap; }
     @media (prefers-color-scheme: dark) { .ov-machine { background: #17233a; color: #7aa5f5; } }
-    .ov-when { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
-    .ov-what { font-size: 13px; min-width: 0; }
-    .ov-meta { font-size: 11px; color: var(--muted); }
+    .ov-when { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .ov-what { font-size: 13.5px; min-width: 0; flex: 1; }
+    .ov-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .ov-actions { display: flex; gap: 6px; flex: none; }
+    @media (max-width: 540px) {
+      .ov-row { flex-wrap: wrap; }
+      .ov-badges { flex-direction: row; width: auto; flex-wrap: wrap; }
+      .ov-actions { width: 100%; }
+    }
 
-    .ask { border: 1px solid var(--border-light); border-left: 3px solid #e67e22; border-radius: var(--radius); padding: 12px; margin-bottom: 8px; background: var(--bg); }
-    .ask-what { font-size: 13.5px; font-weight: 500; }
-    .ask-why { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
-    .ask-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .ask { border: 1px solid var(--border-light); border-left: 3px solid var(--warn); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--bg); box-shadow: var(--shadow-sm); }
+    .ask-what { font-size: 14px; font-weight: 500; }
+    .ask-why { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    .ask-meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .ask-unseen { border-left-color: var(--danger) !important; }
 
     /* Jurisdictions — staleness, coverage, and what it takes to re-read. */
-    .jur { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--bg); }
-    .jur.due { border-left: 3px solid #e67e22; }
+    .jur { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; background: var(--bg); box-shadow: var(--shadow-sm); }
+    .jur.due { border-left: 3px solid var(--warn); }
     .jur.never { border-left: 3px solid var(--border); }
     .jur-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-    .jur-name { font-weight: 600; font-size: 15px; }
-    .jur-dir { font-size: 11.5px; color: var(--muted); }
+    .jur-name { font-weight: 650; font-size: 16px; }
+    .jur-dir { font-size: 12px; color: var(--muted); }
     .jur-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
     @media (max-width: 560px) { .jur-grid { grid-template-columns: 1fr; } }
-    .jur-half { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 10px; }
-    .jur-half h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
-    .jur-big { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .jur-sub { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
-    .jur-age { font-size: 12px; font-weight: 600; margin-top: 6px; }
-    .age-fresh { color: #22c55e; }
-    .age-stale { color: #e67e22; }
-    .age-overdue { color: #ef4444; }
+    .jur-half { background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px; }
+    .jur-half h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+    .jur-big { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .jur-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+    .jur-age { font-size: 12.5px; font-weight: 600; margin-top: 6px; }
+    .age-fresh { color: var(--success); }
+    .age-stale { color: var(--warn); }
+    .age-overdue { color: var(--danger); }
     .age-never { color: var(--muted); }
-    .jur-notes { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+    .jur-notes { font-size: 13px; color: var(--muted); line-height: 1.55; margin-top: 12px; }
     .jur-how { margin-top: 10px; font-size: 12px; }
-    .jur-cmd { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: var(--soft-bg); border-radius: var(--radius); padding: 8px 10px; margin-top: 6px; overflow-x: auto; white-space: pre; }
-    .jur-auto { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
-    .jur-auto.person { color: #e67e22; }
-
-    /* Cards */
-    .card { background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
-    .card.warn { border-left: 3px solid #e67e22; }
-    .card-title { font-weight: 600; font-size: 14px; }
-    .card-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .jur-cmd { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--soft-bg); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; overflow-x: auto; white-space: pre; }
+    .jur-auto { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    .jur-auto.person { color: var(--warn); }
 
     /* Form elements */
-    .field { margin-top: 8px; }
-    .field label { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; }
-    .field input:not([type=checkbox]):not([type=radio]), .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; background: var(--bg); }
-    .field textarea { resize: vertical; min-height: 48px; }
+    .field { margin-top: 10px; }
+    .field > label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+    .field input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=file]), .field select, .field textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: inherit; background: var(--bg); }
+    .field input[type=color] { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
+    .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+    .field textarea { resize: vertical; min-height: 60px; }
     .field-row { display: flex; gap: 8px; }
     .field-row > .field { flex: 1; min-width: 0; }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 400; color: var(--text); cursor: pointer; margin-top: 10px; }
+    .check input { width: 16px; height: 16px; accent-color: var(--accent); }
 
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
     .grid .full { grid-column: 1 / -1; }
     @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
 
     /* Buttons */
-    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: var(--radius); cursor: pointer; border: 1px solid transparent; transition: opacity 0.15s; }
-    .btn:hover { opacity: 0.85; }
-    .btn-primary { background: var(--accent); color: var(--text-inverse); }
-    .btn-approve { background: #22c55e; color: #fff; }
-    .btn-reject { background: #ef4444; color: #fff; }
-    .btn-outline { background: none; color: var(--text); border-color: var(--border); }
-    .btn-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; font: inherit; font-size: 13px; font-weight: 600; border-radius: 17px; cursor: pointer; border: 1px solid transparent; text-decoration: none; white-space: nowrap; transition: filter 0.15s, background 0.15s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+    .btn-approve { background: var(--success); color: #fff; }
+    .btn-reject { background: var(--danger); color: #fff; }
+    .btn-outline { background: var(--bg); color: var(--text); border-color: var(--border); }
+    .btn-outline:hover:not(:disabled) { background: var(--surface-2); }
+    .btn-ghost-danger { background: none; color: var(--danger); border-color: transparent; }
+    .btn-ghost-danger:hover { background: var(--danger-bg); }
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .btn-row .push { margin-left: auto; }
 
-    /* Badges */
-    .badge { display: inline-block; font-size: 9px; font-weight: 500; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; }
-    .badge-liturgy { background: #e8d5e8; color: #6b2d6b; }
-    .badge-prayer { background: #d5e0f0; color: #2d4a7a; }
-    .badge-feast { background: #f5ecd0; color: #7a6520; }
-    .badge-talk { background: #f0e8d5; color: #7a5a20; }
-    .badge-youth { background: #d0e8f5; color: #2d5a8a; }
-    .badge-social { background: #d5ead5; color: #2d6a2d; }
-    .badge-other { background: #f0f0f0; color: #555; }
-
-    /* Sender row */
-    .sender-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
-    .sender-phone { font-family: monospace; font-size: 12px; color: var(--muted); min-width: 110px; }
-    .sender-name-input { flex: 1; min-width: 100px; padding: 4px 6px; border: 1px solid var(--border-light); border-radius: var(--radius); }
-    .sender-status-select { padding: 4px 6px; border: 1px solid var(--border-light); border-radius: var(--radius); }
-    .sender-seen { font-size: 10px; color: var(--muted); }
+    /* Switch — a rule is on or it is off, and a toggle says which at a glance. */
+    .switch { position: relative; display: inline-flex; width: 40px; height: 24px; flex: none; cursor: pointer; }
+    .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .switch span { position: absolute; inset: 0; border-radius: 12px; background: var(--border); transition: background 0.15s; }
+    .switch span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: transform 0.15s; }
+    .switch input:checked + span { background: var(--success); }
+    .switch input:checked + span::after { transform: translateX(16px); }
+    .switch input:focus-visible + span { box-shadow: 0 0 0 3px var(--accent-ring); }
 
     /* Expandable */
-    .expandable { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); }
+    .expandable { display: none; margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--border-light); cursor: auto; }
     .expandable.open { display: block; }
-    .expand-trigger { cursor: pointer; }
 
     /* The source line on a scraper card — what the parish's own file says. */
-    .src-block { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 3px; }
-    .src-line { font-size: 12px; color: var(--muted); line-height: 1.45; word-break: break-word; }
+    .src-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 4px; }
+    .src-line { font-size: 12.5px; color: var(--muted); line-height: 1.45; word-break: break-word; }
     .src-line a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
-    .src-line b.bad { color: #ef4444; }
-    .src-line b.warn { color: #e67e22; }
+    .src-line b.bad { color: var(--danger); }
+    .src-line b.warn { color: var(--warn); }
     .src-dim { color: var(--muted); opacity: 0.8; }
-    .src-problem { color: #e67e22; }
-    .src-line.warn { color: #e67e22; }
+    .src-problem { color: var(--warn); }
+    .src-line.warn { color: var(--warn); }
     /* The overtaken case: a card reporting a failure a later extraction fixed. */
     .src-overtaken { color: #2563eb; }
     @media (prefers-color-scheme: dark) { .src-overtaken { color: #7aa5f5; } }
 
-    .src-url { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-    .src-url label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .src-url { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .src-url label { font-size: 12px; font-weight: 600; color: var(--muted); }
     .src-url-row { display: flex; gap: 6px; flex-wrap: wrap; }
-    .src-url-row input { flex: 1; min-width: 200px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); font-size: 12px !important; }
-    .src-badge { font-size: 9px; font-weight: 500; text-transform: none; letter-spacing: 0; background: var(--soft-bg); color: var(--muted); padding: 1px 5px; border-radius: 2px; }
-    .src-url code { font-size: 11px; word-break: break-all; }
+    .src-url-row input { flex: 1; min-width: 200px; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 13px !important; }
+    .src-badge { font-size: 10px; font-weight: 600; background: var(--soft-bg); color: var(--muted); padding: 1px 6px; border-radius: 8px; }
+    .src-url code { font-size: 11.5px; word-break: break-all; }
 
-    .workflow-status { margin: 0 0 12px; }
-    .workflow-line { font-size: 12px; color: var(--muted); padding: 7px 10px; background: var(--soft-bg); border-radius: var(--radius); }
+    .adapter-pace { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light); font-size: 13px; flex-wrap: wrap; }
+    .adapter-pace label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    .adapter-pace select { padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); font-size: 13px !important; }
+
+    .workflow-status { margin: 0 0 14px; }
+    .workflow-line { font-size: 12.5px; color: var(--muted); padding: 10px 14px; background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); }
     .workflow-line a { color: var(--text); }
-    .workflow-line b.good { color: #22c55e; }
-    .workflow-line b.bad { color: #ef4444; }
-    .workflow-line b.running { color: #e67e22; }
+    .workflow-line b.good { color: var(--success); }
+    .workflow-line b.bad { color: var(--danger); }
+    .workflow-line b.running { color: var(--warn); }
 
-    /* Schedule card */
-    .sched-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .sched-card.inactive { opacity: 0.4; }
+    /* Schedule rows */
+    .sched-card { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .card.inactive .list-row-main { opacity: 0.5; }
 
     /* Parish group accordion */
-    .parish-group { margin-bottom: 8px; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg); overflow: hidden; }
-    .parish-group-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; cursor: pointer; background: var(--page-bg); user-select: none; }
+    .parish-group { margin-bottom: 10px; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg); overflow: visible; box-shadow: var(--shadow-sm); }
+    .parish-group-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; cursor: pointer; user-select: none; border-radius: var(--radius); }
     .parish-group-header:hover { background: var(--surface-2); }
-    .parish-group-name { font-weight: 600; font-size: 13px; }
-    .parish-group-meta { font-size: 11px; color: var(--muted); }
-    .parish-group-chevron { font-size: 11px; color: var(--muted); transition: transform 0.2s; }
-    .parish-group.open .parish-group-chevron { transform: rotate(180deg); }
-    .parish-group-body { display: none; border-top: 1px solid var(--border-light); }
+    .parish-group-name { font-weight: 600; font-size: 14.5px; }
+    .parish-group-meta { font-size: 12px; color: var(--muted); }
+    .parish-group-chevron { color: var(--muted); transition: transform 0.2s; display: inline-flex; }
+    .parish-group-body { display: none; border-top: 1px solid var(--border-light); padding: 10px; }
     .parish-group.open .parish-group-body { display: block; }
-    .parish-group-body .card { margin: 8px; border-radius: var(--radius); }
+    .parish-group-body .card { box-shadow: none; background: var(--page-bg); }
+    .parish-group-body .card:last-child { margin-bottom: 0; }
 
     /* Toast */
-    .toast { position: fixed; bottom: max(16px, calc(16px + env(safe-area-inset-bottom))); right: max(16px, calc(16px + env(safe-area-inset-right))); padding: 8px 16px; border-radius: var(--radius); color: #fff; font-size: 13px; z-index: 2000; transition: opacity 0.3s; }
-    .toast-success { background: #22c55e; }
-    .toast-error { background: #ef4444; }
+    .toast { position: fixed; left: 50%; bottom: max(90px, calc(90px + env(safe-area-inset-bottom))); transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 10px 18px; border-radius: 20px; color: #fff; font-size: 13.5px; font-weight: 500; z-index: 2000; transition: opacity 0.3s; box-shadow: var(--shadow-md); }
+    .toast-success { background: #1f2937; }
+    .toast-error { background: var(--danger); }
+    @media (prefers-color-scheme: dark) { .toast-success { background: #f0f0f2; color: #111318; } }
 
     /* Empty */
-    .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+    .empty { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 13.5px; background: var(--bg); border: 1px dashed var(--border); border-radius: var(--radius); }
 
-    h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 8px; }
-
-    /* Review sections */
-    .review-section-header { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 4px 0 6px; border-bottom: 1px solid var(--border-light); margin-bottom: 8px; }
-    .review-section + .review-section { margin-top: 20px; }
-    .source-msg { font-size: 11px; color: var(--muted); background: var(--soft-bg); border-radius: 2px; padding: 4px 6px; margin-top: 6px; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow: hidden; }
-    .ask-unseen { border-left-color: var(--danger, #dc3545) !important; }
-    .review-poster { display: block; width: 60px; height: auto; border-radius: 3px; border: 1px solid var(--border-light); margin-top: 6px; cursor: zoom-in; }
-    .review-poster-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
-    .review-poster-row .source-msg { flex: 1; margin-top: 0; }
-    .diff-row { display: flex; gap: 8px; margin-top: 4px; font-size: 12px; }
-    .diff-old { color: #ef4444; text-decoration: line-through; flex: 1; min-width: 0; }
-    .diff-new { color: #22c55e; flex: 1; min-width: 0; }
-    .raw-response { display: none; margin-top: 8px; padding: 8px; background: var(--raw-bg); border-radius: 2px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; color: var(--text); }
-    .raw-response.open { display: block; }
-
-    /* By Message view */
-    .run-card { position: relative; }
-    .run-card.warn { border-left: 3px solid #e67e22; }
-    .run-card.highlight { box-shadow: 0 0 0 2px #fbbf24; transition: box-shadow 0.5s ease; }
-    .run-summary { font-size: 13px; margin-top: 6px; color: var(--text); }
-    .run-question { font-size: 13px; margin-top: 6px; padding: 6px 8px; background: #fef3c7; border-left: 2px solid #e67e22; border-radius: 2px; color: #7a4a10; }
-    .run-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
-    .conf-low { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
-    .run-status { font-size: 9px; font-weight: 500; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; }
-    .run-status-failed { background: #fee2e2; color: #991b1b; }
-    .run-status-skipped { background: #e5e7eb; color: #4b5563; }
-    .run-status-running { background: #dbeafe; color: #1e40af; }
-    .run-pending { font-size: 9px; font-weight: 500; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
-    .run-detail { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); }
-    .run-detail.open { display: block; }
-    .run-child-group { margin-bottom: 10px; }
-    .run-child-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
-    .run-child { padding: 6px 8px; background: var(--page-bg); border-radius: 2px; margin-bottom: 4px; font-size: 12px; }
-    .run-child .card-meta { margin-top: 1px; }
-    .status-approved { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #dcfce7; color: #166534; }
-    .status-pending_review, .status-pending { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
-    .status-rejected { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #fee2e2; color: #991b1b; }
-    .status-cancelled { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; }
-    .status-replaced { font-size: 9px; font-weight: 500; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
-
-    /* Mutation type badges */
-    .mutation-adapted { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #fef3c7; color: #92400e; }
-    .mutation-headless { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #dbeafe; color: #1e40af; }
-    .mutation-replaced { font-size: 9px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
-
-    /* Visibility is the `hidden` attribute, not a display rule: the old rule set
-       display:none here, so clearing the inline style on sign-in fell straight
-       back to it and the button never appeared. */
-    #logout-btn { font-size: 12px; padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: none; cursor: pointer; color: var(--muted); }
-    #logout-btn:hover { color: #ef4444; border-color: #ef4444; }
-    .sender-sessions-panel { width: 100%; margin-top: 6px; }
-    .sender-sessions-panel table { width: 100%; font-size: 11px; border-collapse: collapse; }
-    .sender-sessions-panel th { text-align: left; padding: 2px 4px; color: var(--muted); font-weight: 500; }
-    .sender-sessions-panel td { padding: 3px 4px; border-bottom: 1px solid var(--border-light); }
-
-    /* Escalate modal */
+    /* Modals — a centred dialog on a desktop, a sheet from the bottom on a
+       phone, which is where the thumb already is. */
     .modal-backdrop { display: none; position: fixed; inset: 0; background: var(--backdrop); z-index: 1000; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
     .modal-backdrop.open { display: flex; }
-    .modal { background: var(--bg); border-radius: 4px; padding: 20px; max-width: 540px; width: 100%; max-height: 80vh; overflow-y: auto; }
-    .modal h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-    .modal-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
-    .modal-section { margin-bottom: 16px; }
-    .modal-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 8px; }
-    .modal-event-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 2px; padding: 4px; }
-    .modal-event-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 2px; cursor: pointer; }
-    .modal-event-item:hover { background: var(--surface-2); }
-    .modal-event-item input[type=checkbox] { flex-shrink: 0; }
-    .modal-event-label { font-size: 12px; line-height: 1.4; }
-    .modal-event-label small { display: block; color: var(--muted); font-size: 11px; }
-    .modal-parish-grid { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
-    .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: #e8eaff; color: #4455cc; border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
-    .delete-choice { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; cursor: pointer; }
-    .delete-select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); margin: 2px 0 6px 24px; max-width: calc(100% - 24px); }
-    .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .modal { background: var(--bg); border-radius: 16px; padding: 20px; max-width: 560px; width: 100%; max-height: 86vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+    .modal-head { display: flex; align-items: flex-start; gap: 8px; margin: -4px -8px 4px 0; }
+    .modal-head h2 { flex: 1; }
+    .modal h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px; }
+    .modal-subtitle { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+    .modal-section-title { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 8px; }
+    .modal-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+    .modal-btn-row .push-left { margin-right: auto; }
+    @media (max-width: 540px) {
+      .modal-backdrop { align-items: flex-end; padding: 0; }
+      .modal { border-radius: 16px 16px 0 0; max-height: 92vh; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+    }
+    .delete-choice { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding: 6px 0; cursor: pointer; }
+    .delete-select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); margin: 2px 0 6px 24px; max-width: calc(100% - 24px); }
 
     /* Short links, one row each. The slug is shown as the URL it makes,
        because the question being answered is "what happens when somebody types
        orthodoxy.au/smg/raffle" and a field holding only the destination does
        not answer it. */
-    .link-row { padding: 9px 0; border-bottom: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 5px; }
+    .link-row { padding: 10px 0; border-bottom: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 6px; }
     .link-row:last-of-type { border-bottom: none; }
     .link-row-head { display: flex; align-items: center; gap: 8px; }
-    .link-row-name { font-size: 12px; font-weight: 600; }
-    .link-row-slug, .link-row-preview { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .link-row-name { font-size: 13px; font-weight: 600; }
+    .link-row-slug, .link-row-preview { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
     .link-row-slug { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .link-row-preview b { color: var(--text); }
-    .link-row input { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+    .link-row input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); }
     .link-row-slug-input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .link-row-del { flex: none; width: 26px; height: 26px; border: none; border-radius: 50%; background: none; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; }
-    .link-row-del:hover { color: #c0392b; background: var(--surface-2); }
+    .link-row-del { flex: none; width: 28px; height: 28px; border: none; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+    .link-row-del:hover { color: var(--danger); background: var(--surface-2); }
 
     /* ── Archdiocese colours ────────────────────────────────────────────
        Two comparison strips and a grid of editors. The strips are the point
-       of the tab: swatches edge to edge with no gap between them, because a
-       gap is what makes two colours that are hard to tell apart on a map look
-       distinct on a settings page. Both schemes are drawn at once — the site
-       follows the viewer's, and a hue that separates on white can collapse on
-       near-black. */
+       of the section: swatches edge to edge with no gap between them, because
+       a gap is what makes two colours that are hard to tell apart on a map
+       look distinct on a settings page. Both schemes are drawn at once — the
+       site follows the viewer's, and a hue that separates on white can
+       collapse on near-black. */
     .color-compare { display: grid; gap: 8px; margin-bottom: 16px; }
     .color-strip { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
     .color-strip[data-scheme=light] { background: #fff; }
@@ -365,109 +440,195 @@
     /* Drawn at the size the map draws them: a 10px dot is the whole of what
        distinguishes two jurisdictions on a screen holding two hundred. */
     .color-strip-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-    .color-strip-bar { width: 100%; height: 18px; border-radius: 2px; }
-    .color-strip-name { font-size: 9px; letter-spacing: 0.02em; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .color-strip-bar { width: 100%; height: 18px; border-radius: 3px; }
+    .color-strip-name { font-size: 9.5px; letter-spacing: 0.02em; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
     .color-strip[data-scheme=light] .color-strip-name { color: #555; }
     .color-strip[data-scheme=dark] .color-strip-name { color: #bbb; }
 
-    .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-    .color-cell { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 7px; }
-    .color-cell.changed { border-color: var(--text); }
+    .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .color-cell { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px; background: var(--bg); display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-sm); }
+    .color-cell.changed { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
     .color-cell-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-    .color-cell-name { font-size: 12px; font-weight: 600; text-transform: capitalize; }
-    .color-cell-count { font-size: 10px; color: var(--muted); }
-    .color-cell input[type=color] { width: 100%; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 2px; background: none; cursor: pointer; }
+    .color-cell-name { font-size: 13px; font-weight: 600; text-transform: capitalize; }
+    .color-cell-count { font-size: 11px; color: var(--muted); }
+    .color-cell input[type=color] { width: 100%; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
     .color-cell input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
-    .color-cell input[type=color]::-webkit-color-swatch { border: none; border-radius: 1px; }
-    .color-cell input[type=text] { width: 100%; padding: 5px 7px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px !important; text-transform: lowercase; border: 1px solid var(--border); border-radius: 2px; background: var(--bg); color: var(--text); }
-    .color-cell input[type=text].invalid { border-color: #c0392b; }
+    .color-cell input[type=color]::-webkit-color-swatch { border: none; border-radius: 4px; }
+    .color-cell input[type=text] { width: 100%; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px !important; text-transform: lowercase; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); }
+    .color-cell input[type=text].invalid { border-color: var(--danger); }
     .color-cell-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 16px; }
-    .color-cell-state { font-size: 10px; color: var(--muted); }
-    .color-cell-reset { font-size: 10px; background: none; border: none; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 0; }
-    .color-cell-reset:hover { color: var(--text); }
-    .color-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
-    .color-repaint { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-    .color-repaint input { width: auto; }
+    .color-cell-state { font-size: 11px; color: var(--muted); }
+    .color-cell-reset { font-size: 11px; background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font-weight: 600; }
+    .color-actions { position: sticky; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); box-shadow: var(--shadow-md); }
+    .color-repaint { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+    .color-repaint input { width: auto; accent-color: var(--accent); }
+
+    /* ── Service kinds ──────────────────────────────────────────────────
+       The main app's badge palette, so a Liturgy is the same purple here as
+       on the feed. The kind comes from public/shared/services.js — the title
+       decides, event_type is the fallback — which is the classification the
+       app filters by, so a badge here and a chip there cannot disagree. */
+    .kb { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 11px; font-size: 11.5px; font-weight: 600; white-space: nowrap; background: var(--kb-bg, #eee); color: var(--kb-fg, #555); }
+    .kb b { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .kb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kb-fg); flex: none; }
+    .k-liturgy    { --kb-bg: #efe0ef; --kb-fg: #6b2d6b; }
+    .k-matins     { --kb-bg: #f5e6d6; --kb-fg: #7a4a20; }
+    .k-vespers    { --kb-bg: #dde6f4; --kb-fg: #2d4a7a; }
+    .k-paraklesis { --kb-bg: #dcecf0; --kb-fg: #1f5a66; }
+    .k-compline   { --kb-bg: #e2e0f4; --kb-fg: #3e3a80; }
+    .k-bible-study{ --kb-bg: #f3ead6; --kb-fg: #7a5a20; }
+    .k-confession { --kb-bg: #f6e0e6; --kb-fg: #8a2f4a; }
+    .k-feast      { --kb-bg: #f5ecd0; --kb-fg: #7a6520; }
+    .k-prayer     { --kb-bg: #dde6f4; --kb-fg: #2d4a7a; }
+    .k-talk       { --kb-bg: #f0e8d5; --kb-fg: #7a5a20; }
+    .k-youth      { --kb-bg: #d8ebf6; --kb-fg: #2d5a8a; }
+    .k-social     { --kb-bg: #d9ecd9; --kb-fg: #2d6a2d; }
+    .k-other      { --kb-bg: #ececef; --kb-fg: #555a62; }
+    @media (prefers-color-scheme: dark) {
+      .k-liturgy    { --kb-bg: #3a2840; --kb-fg: #d4a3d4; }
+      .k-matins     { --kb-bg: #3a2820; --kb-fg: #d4a682; }
+      .k-vespers, .k-prayer { --kb-bg: #1f2a3a; --kb-fg: #9bb8e0; }
+      .k-paraklesis { --kb-bg: #1b3035; --kb-fg: #92c8d2; }
+      .k-compline   { --kb-bg: #26243d; --kb-fg: #b2acec; }
+      .k-bible-study, .k-talk { --kb-bg: #3a2f1c; --kb-fg: #d4b682; }
+      .k-confession { --kb-bg: #3a2029; --kb-fg: #e6a3b8; }
+      .k-feast      { --kb-bg: #3a3220; --kb-fg: #d4c082; }
+      .k-youth      { --kb-bg: #1c303d; --kb-fg: #a8c8de; }
+      .k-social     { --kb-bg: #1f2e1f; --kb-fg: #a3c8a3; }
+      .k-other      { --kb-bg: #26272c; --kb-fg: #aaaaaa; }
+    }
+    .pill .kb-dot { width: 9px; height: 9px; }
+
+    /* ── Service times, grouped by jurisdiction then parish ── */
+    .jur-block { margin-bottom: 22px; }
+    .jur-block-head { display: flex; align-items: center; gap: 10px; margin: 0 2px 10px; }
+    .jur-block-swatch { width: 14px; height: 14px; border-radius: 4px; background: var(--jc); flex: none; }
+    .jur-block-name { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+    .jur-block-meta { font-size: 12.5px; color: var(--muted); }
+    .jur-block-rule { flex: 1; height: 1px; background: var(--border-light); }
+    .parish-group { border-left: 4px solid var(--pc, var(--border-light)); }
+    .parish-group-top { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+    .parish-group-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .kb-row { display: flex; gap: 5px; flex-wrap: wrap; }
+    .parish-group-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; }
+    .parish-group-tools .card-meta { margin: 0; }
+    .run-meter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .run-meter i { display: inline-block; width: 36px; height: 5px; border-radius: 3px; background: var(--border-light); overflow: hidden; position: relative; }
+    .run-meter i::after { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--pct); background: var(--success); border-radius: 3px; }
+    .when { flex: none; width: 58px; text-align: center; border-radius: var(--radius-sm); padding: 5px 0; background: var(--kb-bg); color: var(--kb-fg); line-height: 1.15; }
+    .when b { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+    .when span { display: block; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .sched-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .card.inactive .when { filter: grayscale(1); opacity: 0.6; }
+
+    .infer-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--border-light); font-size: 13.5px; cursor: pointer; }
+    .infer-row input { margin-top: 3px; accent-color: var(--accent); }
+    .infer-dim { color: var(--muted); font-size: 12.5px; }
   </style>
 </head>
 <body>
-  <div class="admin-header">
-    <h1>Agora Admin</h1>
-    <div class="header-right">
-      <select id="jurisdiction-filter">
-        <option value="">All jurisdictions</option>
-        <option value="antiochian">Antiochian</option>
-        <option value="greek">Greek</option>
-        <option value="serbian">Serbian</option>
-        <option value="russian">Russian</option>
-        <option value="romanian">Romanian</option>
-        <option value="macedonian">Macedonian</option>
-        <option value="other">Other</option>
-      </select>
-      <span id="admin-identity" class="admin-identity" hidden></span>
-      <a href="/">Back to site</a>
-      <button id="logout-btn" hidden>Log out</button>
+  <!-- Icons, drawn once and <use>d everywhere. Inline rather than the icon
+       CDN the main app uses: this page must work when that host is blocked,
+       and a menu button with no glyph is a blank circle nobody presses. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+    <symbol id="i-church" viewBox="0 0 24 24"><path d="M12 2v4M10 4h4M6 22V11l6-5 6 5v11M3 22h18M10 22v-4a2 2 0 0 1 4 0v4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-calendar-x" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M10 14l4 4M14 14l-4 4"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 1 10-10c0 2.5-2 3.5-3.5 3.5H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 12 22z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10.5" r="1"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 9M22 21a7 7 0 0 0-5-6.7"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <button type="button" class="icon-btn" id="menu-btn" aria-label="Open menu" aria-controls="drawer" aria-expanded="false">
+      <svg class="ic"><use href="#i-menu"/></svg>
+      <span class="nav-dot" id="menu-dot" hidden></span>
+    </button>
+    <div class="topbar-title" id="topbar-title">Parishes</div>
+    <div class="topbar-spacer"></div>
+    <a class="back-btn" href="/" title="Back to the site">
+      <svg class="ic"><use href="#i-back"/></svg>
+      <span class="long">Back to app</span><span class="short">App</span>
+    </a>
+    <div class="menu-wrap">
+      <button type="button" class="icon-btn" data-menu="account-menu" aria-label="Account" aria-haspopup="menu">
+        <span class="avatar" id="account-avatar">?</span>
+      </button>
+      <div class="menu" id="account-menu" role="menu" hidden>
+        <div class="menu-label">Signed in as</div>
+        <div class="menu-label" style="padding-top:0;">
+          <span id="admin-identity" class="admin-identity" hidden></span>
+        </div>
+        <div class="menu-label" id="account-role" style="padding-top:0;"></div>
+        <div class="menu-sep"></div>
+        <a class="menu-item" href="/" role="menuitem"><svg class="ic"><use href="#i-back"/></svg>Back to app</a>
+        <button type="button" class="menu-item danger" id="logout-btn" role="menuitem" hidden><svg class="ic"><use href="#i-logout"/></svg>Log out</button>
+      </div>
     </div>
-  </div>
+  </header>
+
+  <div class="drawer-scrim" id="drawer-scrim"></div>
+  <nav class="drawer" id="drawer" aria-label="Admin sections">
+    <div class="drawer-head">
+      <div class="drawer-brand">
+        <b>Admin</b>
+        <span>Orthodox Services &amp; Events</span>
+      </div>
+      <button type="button" class="icon-btn drawer-close" id="drawer-close" aria-label="Close menu">
+        <svg class="ic"><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <div class="drawer-nav">
+      <!-- Grouped by what somebody comes here to do. `data-needs` is the
+           capability a section's controls require; applyRoleToChrome hides the
+           ones this account would only be refused by. -->
+      <div class="nav-group">
+        <div class="nav-group-label">Content</div>
+        <button type="button" class="nav-item active" data-tab="parishes"><svg class="ic"><use href="#i-church"/></svg><span class="nav-label">Parishes</span><span class="tab-count" id="count-parishes">0</span></button>
+        <button type="button" class="nav-item" data-tab="schedules"><svg class="ic"><use href="#i-clock"/></svg><span class="nav-label">Service times</span><span class="tab-count" id="count-schedules">0</span></button>
+        <button type="button" class="nav-item" data-tab="overrides"><svg class="ic"><use href="#i-calendar-x"/></svg><span class="nav-label">Changes</span><span class="tab-count" id="count-overrides">0</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Inbox</div>
+        <button type="button" class="nav-item" data-tab="proposals"><svg class="ic"><use href="#i-inbox"/></svg><span class="nav-label">Asks</span><span class="tab-count" id="count-proposals">0</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Sources</div>
+        <button type="button" class="nav-item" data-tab="adapters" data-needs="adapter.run"><svg class="ic"><use href="#i-refresh"/></svg><span class="nav-label">Scrapers</span><span class="tab-count" id="count-adapters">0</span></button>
+        <button type="button" class="nav-item" data-tab="jurisdictions" data-needs="people.manage"><svg class="ic"><use href="#i-globe"/></svg><span class="nav-label">Jurisdictions</span><span class="tab-count" id="count-jurisdictions">0</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Settings</div>
+        <button type="button" class="nav-item" data-tab="colors" data-needs="colors.edit"><svg class="ic"><use href="#i-palette"/></svg><span class="nav-label">Colours</span><span class="tab-count" id="count-colors">0</span></button>
+        <button type="button" class="nav-item" data-tab="people" data-needs="people.manage"><svg class="ic"><use href="#i-users"/></svg><span class="nav-label">People</span><span class="tab-count" id="count-people">0</span></button>
+      </div>
+    </div>
+    <div class="drawer-foot">
+      <a class="back-btn" href="/"><svg class="ic"><use href="#i-back"/></svg><span class="long">Back to app</span><span class="short">App</span></a>
+    </div>
+  </nav>
 
   <main>
-    <div class="tabs">
-      <button class="tab active" data-tab="parishes">Parishes <span class="tab-count" id="count-parishes">0</span></button>
-      <button class="tab" data-tab="schedules">Schedules <span class="tab-count" id="count-schedules">0</span></button>
-      <button class="tab" data-tab="overrides">Changes <span class="tab-count" id="count-overrides">0</span></button>
-      <button class="tab" data-tab="adapters" data-needs="adapter.run">Adapters <span class="tab-count" id="count-adapters">0</span></button>
-      <button class="tab" data-tab="colors" data-needs="colors.edit">Colours <span class="tab-count" id="count-colors">0</span></button>
-      <button class="tab" data-tab="people" data-needs="people.manage">People <span class="tab-count" id="count-people">0</span></button>
-      <button class="tab" data-tab="proposals">Asks <span class="tab-count" id="count-proposals">0</span></button>
-      <button class="tab" data-tab="jurisdictions" data-needs="people.manage">Jurisdictions <span class="tab-count" id="count-jurisdictions">0</span></button>
-    </div>
-
-    <div id="section-parishes" class="section active">
-      <h3 class="expand-trigger" onclick="toggleExpand('add-parish-form')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Add Parish <span id="add-parish-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
-      <div id="add-parish-form" class="expandable">
-      <form id="parish-form" class="card" style="margin-top:8px;">
-        <div class="grid">
-          <div class="field"><label>Nickname</label><input name="name" required placeholder="St Mary's, Mount Pritchard"></div>
-          <div class="field"><label>Full Name</label><input name="full_name" placeholder="St Mary's Antiochian Orthodox Church of the Dormition"></div>
-          <div class="field"><label>Jurisdiction</label>
-            <select name="jurisdiction" required>
-              <option value="antiochian">Antiochian</option>
-              <option value="greek">Greek</option>
-              <option value="serbian">Serbian</option>
-              <option value="russian">Russian</option>
-              <option value="romanian">Romanian</option>
-              <option value="macedonian">Macedonian</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div class="field full"><label>Address</label><input name="address" placeholder="161 George St, Redfern NSW 2016"></div>
-          <div class="field"><label>Latitude</label><input name="lat" type="number" step="any" required placeholder="-33.8920"></div>
-          <div class="field"><label>Longitude</label><input name="lng" type="number" step="any" required placeholder="151.2050"></div>
-          <!-- Required, and deliberately not defaulted in the markup.
-               parishes.timezone is what turns a rule's local start_time into an
-               instant; this field did not exist, the API defaulted it to
-               Sydney, and that is wrong for 188 of the 293 parishes in
-               production. Nothing downstream can notice, so it is asked here. -->
-          <div class="field full"><label>Timezone</label>
-            <select name="timezone" id="add-parish-tz" required></select>
-          </div>
-          <div class="field"><label>Website</label><input name="website" placeholder="https://..."></div>
-          <div class="field"><label>Email</label><input name="email" type="email" placeholder="parish@example.com"></div>
-          <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
-          <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
-          <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
-          <!-- Donate / payment / raffle / gala and any custom link live in the
-               Links editor on the parish's own card below, not here: a parish
-               is added with a name and a pin, and its links are set once it
-               exists and has an acronym for them to hang off. -->
-        </div>
-        <div class="btn-row">
-          <button type="submit" class="btn btn-primary">Add Parish</button>
-          <button type="button" class="btn btn-outline" id="geocode-btn">Geocode Address</button>
-        </div>
-      </form>
+    <section id="section-parishes" class="section active" data-title="Parishes">
+      <div class="section-head">
+        <h2>Parishes</h2>
+        <p class="section-lead">Every church on the map. Open one to edit its details, links and where its information comes from.</p>
       </div>
-      <h3 style="margin-top: 20px;">Existing Parishes</h3>
 
       <!-- 293 parishes, one flat list, filterable only by jurisdiction — and
            Greek alone is 135. For somebody who knows the data that is friction;
@@ -477,100 +638,150 @@
            The saved filters are the questions an editor actually has. They are
            not decoration: each one is a gap somebody has to close, and none of
            them was answerable before. -->
-      <div class="finder">
-        <input type="search" id="parish-search" placeholder="Search name, address, acronym…"
-               autocomplete="off" spellcheck="false">
-        <div class="chips" id="parish-chips">
-          <button type="button" class="chip" data-filter="" aria-pressed="true">All</button>
-          <button type="button" class="chip" data-filter="no-schedules">No rules</button>
-          <button type="button" class="chip" data-filter="no-address">No address</button>
-          <button type="button" class="chip" data-filter="no-acronym">No acronym</button>
-          <button type="button" class="chip" data-filter="stale">Not checked in 6mo</button>
-          <button type="button" class="chip" data-filter="unverified">Never verified</button>
+      <div class="toolbar">
+        <label class="search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input type="search" id="parish-search" placeholder="Search name, address, acronym…"
+                 autocomplete="off" spellcheck="false" aria-label="Search parishes">
+        </label>
+        <div class="pill-row" data-juris-pills aria-label="Jurisdiction"></div>
+        <div class="pill-row" id="parish-chips" aria-label="Needs attention">
+          <button type="button" class="pill" data-filter="" aria-pressed="true">All parishes</button>
+          <button type="button" class="pill" data-filter="no-schedules">No service times</button>
+          <button type="button" class="pill" data-filter="no-address">No address</button>
+          <button type="button" class="pill" data-filter="no-acronym">No acronym</button>
+          <button type="button" class="pill" data-filter="stale">Not checked in 6mo</button>
+          <button type="button" class="pill" data-filter="unverified">Never verified</button>
         </div>
         <div class="finder-count" id="parish-count"></div>
       </div>
 
       <div id="parish-list"></div>
-    </div>
+    </section>
 
-    <div id="section-schedules" class="section">
-
-      <!-- Rules inferred from what has actually been scraped.
-           Scraped events say what is on inside whatever window the source
-           covered; rules say what is on afterwards. This is the bridge, and it
-           asks rather than acts: an accepted rule projects indefinitely, and
-           once absence drives tombstoning a wrong one starts marking real
-           services cancelled. -->
-      <h3 class="expand-trigger" onclick="toggleExpand('infer-panel')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Infer rules from scraped events <span id="infer-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
-      <div id="infer-panel" class="expandable">
-        <div class="card" style="margin-top:8px;">
-          <div class="grid">
-            <div class="field"><label>Parish</label><select id="infer-parish-select"></select></div>
-            <div class="field" style="align-self:end;"><button type="button" id="infer-btn" class="btn">Find rules</button></div>
-          </div>
-          <div id="infer-results" style="margin-top:10px;"></div>
+    <section id="section-schedules" class="section" data-title="Service times">
+      <div class="section-head">
+        <h2>Service times</h2>
+        <p class="section-lead">The recurring rules every service card is projected from. One rule is every Sunday it describes.</p>
+        <div class="section-actions">
+          <!-- Rules inferred from what has actually been scraped.
+               Scraped events say what is on inside whatever window the source
+               covered; rules say what is on afterwards. This is the bridge, and
+               it asks rather than acts: an accepted rule projects indefinitely,
+               and once absence drives tombstoning a wrong one starts marking
+               real services cancelled. -->
+          <button type="button" class="btn btn-outline" id="open-infer"><svg class="ic" style="width:16px;height:16px;"><use href="#i-spark"/></svg>Infer from scraped events</button>
         </div>
       </div>
-
-      <h3 class="expand-trigger" onclick="toggleExpand('add-schedule-form')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">Add Schedule <span id="add-schedule-chevron" style="font-size:11px;transition:transform 0.2s;">▶</span></h3>
-      <div id="add-schedule-form" class="expandable">
-      <form id="schedule-form" class="card" style="margin-top:8px;">
-        <div class="grid">
-          <div class="field"><label>Parish</label><select name="parish_id" required id="schedule-parish-select"></select></div>
-          <div class="field"><label>Day</label>
-            <select name="day_of_week" required>
-              <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
-              <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
-            </select>
-          </div>
-          <!-- The zone is the SELECTED PARISH'S, not Sydney's. schema.sql
-               documents start_time as local to parishes.timezone, and a label
-               reading "Sydney" over a Perth parish's service invites somebody
-               to convert a time that should be typed exactly as the parish
-               prints it. -->
-          <div class="field"><label>Start <span data-sched-tz>(Sydney)</span></label><input name="start_time" type="time" required></div>
-          <div class="field"><label>End <span data-sched-tz>(Sydney)</span></label><input name="end_time" type="time"></div>
-          <div class="field"><label>Title</label><input name="title" required placeholder="Sunday Divine Liturgy"></div>
-          <div class="field"><label>Type</label>
-            <select name="event_type">
-              <option value="liturgy">Liturgy</option><option value="prayer">Prayer</option><option value="feast">Feast</option>
-              <option value="talk">Talk</option><option value="youth">Youth</option><option value="social">Social</option><option value="other">Other</option>
-            </select>
-          </div>
-          <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic, Greek"></div>
-          <div class="field full"><label>Address</label><input name="location_override" placeholder="Blank — meets at the parish's own address"></div>
+      <div class="toolbar">
+        <div class="pill-row" data-juris-pills aria-label="Jurisdiction"></div>
+        <div class="pill-row" id="kind-chips" aria-label="Service"></div>
+        <div class="pill-row" id="schedule-chips" aria-label="Status">
+          <button type="button" class="pill" data-sfilter="" aria-pressed="true">All times</button>
+          <button type="button" class="pill" data-sfilter="active">Running</button>
+          <button type="button" class="pill" data-sfilter="inactive">Switched off</button>
+          <button type="button" class="pill" data-sfilter="unsourced">No source</button>
         </div>
-        <div class="field" style="margin-top:8px;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
-            <input type="checkbox" name="hide_live">
-            Never show live badge (e.g. Confession, in-person only)
-          </label>
-        </div>
-        <div class="field" style="margin-top:6px;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
-            <input type="checkbox" name="parish_scoped">
-            Parish-only (hidden unless filtered to parish)
-          </label>
-        </div>
-        <div class="btn-row"><button type="submit" class="btn btn-primary">Add Schedule</button></div>
-      </form>
       </div>
-      <h3 style="margin-top: 20px;">Existing Schedules</h3>
       <div id="schedule-list"></div>
-    </div>
+    </section>
+
+    <!-- Every exception to the rhythm, in one place.
+         A cancellation, a moved service, a combined one — and the ones nobody
+         pressed a button for: applyTombstones writes cancellations from
+         ABSENCE, which is the most consequential thing here that happens on its
+         own, and nothing listed them. -->
+    <section id="section-overrides" class="section" data-title="Changes">
+      <div class="section-head">
+        <h2>Changes to the rhythm</h2>
+        <p class="section-lead">
+          Every cancellation, move and combine in force. The ones marked
+          <b>automatic</b> were written by a scraper from a service disappearing from its
+          source — those are the ones worth a second look.
+        </p>
+      </div>
+      <div class="toolbar">
+        <div class="pill-row" id="override-chips" aria-label="Kind">
+          <button type="button" class="pill" data-ofilter="" aria-pressed="true">All</button>
+          <button type="button" class="pill" data-ofilter="cancelled">Cancelled</button>
+          <button type="button" class="pill" data-ofilter="modified">Moved</button>
+          <button type="button" class="pill" data-ofilter="combined">Combined</button>
+          <button type="button" class="pill" data-ofilter="hidden">Hidden</button>
+          <button type="button" class="pill" data-ofilter="machine">Automatic</button>
+        </div>
+      </div>
+      <div id="override-list"></div>
+    </section>
+
+    <!-- The asks an editor cannot carry out themselves. -->
+    <section id="section-proposals" class="section" data-title="Asks">
+      <div class="section-head">
+        <h2>Asks</h2>
+        <p class="section-lead" id="proposals-intro"></p>
+      </div>
+      <div id="proposal-list"></div>
+
+      <!-- What was decided about an ask YOU made. The list above is open asks
+           only, so the moment an owner decided one it disappeared — and the
+           decline note, which exists so a refusal teaches the proposer
+           something, was written and never read by anybody. -->
+      <div id="my-asks-block" hidden>
+        <div class="subhead">Your asks, decided</div>
+        <div id="my-asks-list"></div>
+      </div>
+
+      <!-- Told, not asked. An owner may combine across parishes without
+           waiting on a quorum of contacts who mostly do not exist; the parish
+           it happens to should still hear it here rather than by noticing
+           their own Sunday struck through. Withdrawing is the veto. -->
+      <div id="parish-notices-block" hidden>
+        <div class="subhead">At your parishes</div>
+        <p class="section-lead" style="margin:0 0 12px;">
+          What another parish's event is doing at yours. Taking your parish out
+          leaves their event alone and gives you back any service of yours it absorbed.
+        </p>
+        <div id="parish-notices-list"></div>
+      </div>
+    </section>
 
     <!-- Scraping. The cron fires HOURLY and adapter_settings decides what an
          hour is allowed to do; this is how you see what it did and make it
          happen now. adapter_runs is the only record of a scrape, so a source
          going quiet looks like a run finding zero events, not like nothing
          happening — which is why the card also reads the parish's file. -->
-    <div id="section-adapters" class="section">
-      <h3>Scrapers</h3>
-      <p class="card-meta" style="margin:0 0 12px;">Registered in <code>worker/lib/adapters.mjs</code>. The Cron Trigger fires hourly and each scraper’s own interval decides whether that hour does anything; the buttons below ignore both.</p>
+    <section id="section-adapters" class="section" data-title="Scrapers">
+      <div class="section-head">
+        <h2>Scrapers</h2>
+        <p class="section-lead">Registered in <code>worker/lib/adapters.mjs</code>. The Cron Trigger fires hourly and each scraper’s own interval decides whether that hour does anything; the buttons below ignore both.</p>
+      </div>
+      <div class="toolbar">
+        <div class="pill-row" id="adapter-chips" aria-label="Status">
+          <button type="button" class="pill" data-afilter="" aria-pressed="true">All</button>
+          <button type="button" class="pill" data-afilter="attention">Needs attention</button>
+          <button type="button" class="pill" data-afilter="paused">Paused</button>
+          <button type="button" class="pill" data-afilter="pdf">PDF</button>
+        </div>
+      </div>
       <div id="workflow-status" class="workflow-status"></div>
       <div id="adapter-list"></div>
-    </div>
+    </section>
+
+    <!-- Where each jurisdiction's rows came from, and how long ago.
+         Six directories were scraped into D1 over four days and then nothing
+         watched them. info_checked_at and source_checked_at have recorded when
+         we last looked all along; nothing read them back, so "which of these is
+         most overdue" had no answer short of a SQL console. -->
+    <section id="section-jurisdictions" class="section" data-title="Jurisdictions">
+      <div class="section-head">
+        <h2>Jurisdictions</h2>
+        <p class="section-lead">
+          How old each jurisdiction's parish details and service times are, and what it
+          takes to re-read them. A re-run refreshes what nobody has checked and
+          <em>cannot</em> overwrite a pin somebody has confirmed in person.
+        </p>
+      </div>
+      <div id="jurisdiction-list"></div>
+    </section>
 
     <!-- The archdiocese colours, together.
          Six hues picked one at a time in code and never seen next to each
@@ -582,13 +793,15 @@
          public/shared/jurisdiction-colors.js stays the default table. Saving
          writes an override row; Reset deletes it and the file's colour comes
          back. -->
-    <div id="section-colors" class="section">
-      <h3>Archdiocese colours</h3>
-      <p class="card-meta" style="margin:0 0 12px;">
-        Map dots and labels always draw these. A parish card draws the parish's own colour,
-        which starts as its jurisdiction's — tick <em>repaint</em> below to carry a change
-        through to the cards that have not been given a colour of their own.
-      </p>
+    <section id="section-colors" class="section" data-title="Colours">
+      <div class="section-head">
+        <h2>Archdiocese colours</h2>
+        <p class="section-lead">
+          Map dots and labels always draw these. A parish card draws the parish's own colour,
+          which starts as its jurisdiction's — tick <em>repaint</em> below to carry a change
+          through to the cards that have not been given a colour of their own.
+        </p>
+      </div>
 
       <div class="color-compare">
         <div class="color-strip" id="color-strip-light" data-scheme="light"></div>
@@ -603,90 +816,168 @@
           <span>Repaint parish cards still using the old colour</span>
         </label>
         <div class="btn-row" style="margin:0;">
+          <button type="button" class="btn btn-outline" id="color-revert">Discard</button>
           <button type="button" class="btn btn-primary" id="color-save">Save colours</button>
-          <button type="button" class="btn btn-outline" id="color-revert">Discard changes</button>
         </div>
       </div>
-    </div>
-    <!-- Every exception to the rhythm, in one place.
-         A cancellation, a moved service, a combined one — and the ones nobody
-         pressed a button for: applyTombstones writes cancellations from
-         ABSENCE, which is the most consequential thing here that happens on its
-         own, and nothing listed them. -->
-    <div id="section-overrides" class="section">
-      <h3>Changes to the rhythm</h3>
-      <p class="card-meta" style="margin:0 0 12px;">
-        Every cancellation, move and combine in force. The ones marked
-        <b>automatic</b> were written by a scraper from a service disappearing from its
-        source — those are the ones worth a second look.
-      </p>
-      <div class="chips" id="override-chips" style="margin-bottom:10px;">
-        <button type="button" class="chip" data-ofilter="" aria-pressed="true">All</button>
-        <button type="button" class="chip" data-ofilter="cancelled">Cancelled</button>
-        <button type="button" class="chip" data-ofilter="modified">Moved</button>
-        <button type="button" class="chip" data-ofilter="combined">Combined</button>
-        <button type="button" class="chip" data-ofilter="machine">Automatic</button>
-      </div>
-      <div id="override-list"></div>
-    </div>
-
-    <!-- The asks an editor cannot carry out themselves. -->
-    <div id="section-proposals" class="section">
-      <h3>Asks</h3>
-      <p class="card-meta" style="margin:0 0 12px;" id="proposals-intro"></p>
-      <div id="proposal-list"></div>
-
-      <!-- What was decided about an ask YOU made. The list above is open asks
-           only, so the moment an owner decided one it disappeared — and the
-           decline note, which exists so a refusal teaches the proposer
-           something, was written and never read by anybody. -->
-      <div id="my-asks-block" hidden>
-        <h3 style="margin-top:22px;">Your asks, decided</h3>
-        <div id="my-asks-list"></div>
-      </div>
-
-      <!-- Told, not asked. An owner may combine across parishes without
-           waiting on a quorum of contacts who mostly do not exist; the parish
-           it happens to should still hear it here rather than by noticing
-           their own Sunday struck through. Withdrawing is the veto. -->
-      <div id="parish-notices-block" hidden>
-        <h3 style="margin-top:22px;">At your parishes</h3>
-        <p class="card-meta" style="margin:0 0 12px;">
-          What another parish's event is doing at yours. Taking your parish out
-          leaves their event alone and gives you back any service of yours it absorbed.
-        </p>
-        <div id="parish-notices-list"></div>
-      </div>
-    </div>
-
-    <!-- Where each jurisdiction's rows came from, and how long ago.
-         Six directories were scraped into D1 over four days and then nothing
-         watched them. info_checked_at and source_checked_at have recorded when
-         we last looked all along; nothing read them back, so "which of these is
-         most overdue" had no answer short of a SQL console. -->
-    <div id="section-jurisdictions" class="section">
-      <h3>Jurisdictions</h3>
-      <p class="card-meta" style="margin:0 0 12px;">
-        How old each jurisdiction's parish details and service times are, and what it
-        takes to re-read them. A re-run refreshes what nobody has checked and
-        <em>cannot</em> overwrite a pin somebody has confirmed in person.
-      </p>
-      <div id="jurisdiction-list"></div>
-    </div>
+    </section>
 
     <!-- Who may sign in, and what they may touch.
          Owner-only: an editor who could edit this could make themselves an
          owner, which is not a role boundary at all. -->
-    <div id="section-people" class="section">
-      <h3>People</h3>
-      <p class="card-meta" style="margin:0 0 12px;">
-        Cloudflare Access decides who can reach <code>/admin</code> at all. This decides
-        what they may do once they are in. Add the address Access signs them in with.
-      </p>
+    <section id="section-people" class="section" data-title="People">
+      <div class="section-head">
+        <h2>People</h2>
+        <p class="section-lead">
+          Cloudflare Access decides who can reach <code>/admin</code> at all. This decides
+          what they may do once they are in. Add people with the address Access signs them in with.
+        </p>
+      </div>
 
       <div id="people-bootstrap" class="bootstrap-note" hidden></div>
 
-      <form id="person-form" class="card">
+      <div class="toolbar">
+        <div class="pill-row" id="people-chips" aria-label="Role">
+          <button type="button" class="pill" data-pfilter="" aria-pressed="true">Everyone</button>
+          <button type="button" class="pill" data-pfilter="owner">Owners</button>
+          <button type="button" class="pill" data-pfilter="editor">Editors</button>
+          <button type="button" class="pill" data-pfilter="parish">Parish contacts</button>
+        </div>
+      </div>
+      <div id="people-list"></div>
+    </section>
+  </main>
+
+  <!-- The one way to add anything. Which dialog it opens, and what its label
+       says, follows the section on screen; on a section with nothing to add,
+       or for a role that cannot add there, it is not drawn at all. -->
+  <button type="button" class="fab" id="fab" hidden>
+    <svg class="ic"><use href="#i-plus"/></svg><span class="fab-label" id="fab-label">Add</span>
+  </button>
+
+  <!-- ── Adding a parish ── -->
+  <div class="modal-backdrop" id="add-parish-backdrop" onclick="if(event.target===this)closeModal('add-parish-backdrop')">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-parish-title">
+      <div class="modal-head">
+        <h2 id="add-parish-title">New parish</h2>
+        <button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('add-parish-backdrop')"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-subtitle">A name and a pin are enough to start. Links, logo and acronym are set on its card once it exists.</div>
+      <form id="parish-form">
+        <div class="grid">
+          <div class="field"><label>Nickname</label><input name="name" required placeholder="St Mary's, Mount Pritchard"></div>
+          <div class="field"><label>Full name</label><input name="full_name" placeholder="St Mary's Antiochian Orthodox Church of the Dormition"></div>
+          <div class="field"><label>Jurisdiction</label>
+            <select name="jurisdiction" required>
+              <option value="antiochian">Antiochian</option>
+              <option value="greek">Greek</option>
+              <option value="serbian">Serbian</option>
+              <option value="russian">Russian</option>
+              <option value="romanian">Romanian</option>
+              <option value="macedonian">Macedonian</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <!-- Required, and deliberately not defaulted in the markup.
+               parishes.timezone is what turns a rule's local start_time into an
+               instant; this field did not exist, the API defaulted it to
+               Sydney, and that is wrong for 188 of the 293 parishes in
+               production. Nothing downstream can notice, so it is asked here. -->
+          <div class="field"><label>Timezone</label>
+            <select name="timezone" id="add-parish-tz" required></select>
+          </div>
+          <div class="field full"><label>Address</label><input name="address" placeholder="161 George St, Redfern NSW 2016"></div>
+          <div class="field"><label>Latitude</label><input name="lat" type="number" step="any" required placeholder="-33.8920"></div>
+          <div class="field"><label>Longitude</label><input name="lng" type="number" step="any" required placeholder="151.2050"></div>
+          <div class="field full"><button type="button" class="btn btn-outline" id="geocode-btn"><svg class="ic" style="width:16px;height:16px;"><use href="#i-pin"/></svg>Find the pin from the address</button></div>
+          <div class="field"><label>Website</label><input name="website" placeholder="https://..."></div>
+          <div class="field"><label>Email</label><input name="email" type="email" placeholder="parish@example.com"></div>
+          <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
+          <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
+          <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
+          <!-- Donate / payment / raffle / gala and any custom link live in the
+               Links editor on the parish's own card, not here: a parish is
+               added with a name and a pin, and its links are set once it
+               exists and has an acronym for them to hang off. -->
+        </div>
+        <div class="modal-btn-row">
+          <button type="button" class="btn btn-outline" onclick="closeModal('add-parish-backdrop')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add parish</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Adding a service time ── -->
+  <div class="modal-backdrop" id="add-schedule-backdrop" onclick="if(event.target===this)closeModal('add-schedule-backdrop')">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-schedule-title">
+      <div class="modal-head">
+        <h2 id="add-schedule-title">New service time</h2>
+        <button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('add-schedule-backdrop')"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-subtitle">A weekly rule. Times are typed exactly as the parish prints them, in the parish's own timezone.</div>
+      <form id="schedule-form">
+        <div class="grid">
+          <div class="field full"><label>Parish</label><select name="parish_id" required id="schedule-parish-select"></select></div>
+          <div class="field"><label>Title</label><input name="title" required placeholder="Sunday Divine Liturgy"></div>
+          <div class="field"><label>Type</label>
+            <select name="event_type">
+              <option value="liturgy">Liturgy</option><option value="prayer">Prayer</option><option value="feast">Feast</option>
+              <option value="talk">Talk</option><option value="youth">Youth</option><option value="social">Social</option><option value="other">Other</option>
+            </select>
+          </div>
+          <div class="field full"><label>Day</label>
+            <select name="day_of_week" required>
+              <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+              <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
+            </select>
+          </div>
+          <!-- The zone is the SELECTED PARISH'S, not Sydney's. schema.sql
+               documents start_time as local to parishes.timezone, and a label
+               reading "Sydney" over a Perth parish's service invites somebody
+               to convert a time that should be typed exactly as the parish
+               prints it. -->
+          <div class="field"><label>Start <span data-sched-tz>(Sydney)</span></label><input name="start_time" type="time" required></div>
+          <div class="field"><label>End <span data-sched-tz>(Sydney)</span></label><input name="end_time" type="time"></div>
+          <div class="field full"><label>Languages</label><input name="languages" placeholder="English, Arabic, Greek"></div>
+          <div class="field full"><label>Address</label><input name="location_override" placeholder="Blank — meets at the parish's own address"></div>
+        </div>
+        <label class="check"><input type="checkbox" name="hide_live"> Never show live badge (e.g. Confession, in-person only)</label>
+        <label class="check"><input type="checkbox" name="parish_scoped"> Parish-only (hidden unless filtered to parish)</label>
+        <div class="modal-btn-row">
+          <button type="button" class="btn btn-outline" onclick="closeModal('add-schedule-backdrop')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add service time</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Inferring rules from what was scraped ── -->
+  <div class="modal-backdrop" id="infer-backdrop" onclick="if(event.target===this)closeModal('infer-backdrop')">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="infer-title">
+      <div class="modal-head">
+        <h2 id="infer-title">Infer service times</h2>
+        <button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('infer-backdrop')"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-subtitle">Proposes a rule only when it reproduces every scraped date exactly. Nothing is added until you accept it.</div>
+      <div id="infer-panel">
+        <div class="field-row" style="align-items:flex-end;">
+          <div class="field"><label>Parish</label><select id="infer-parish-select"></select></div>
+          <div class="field" style="flex:none;"><button type="button" id="infer-btn" class="btn btn-primary" style="height:38px;">Find rules</button></div>
+        </div>
+        <div id="infer-results" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Adding or editing a person ── -->
+  <div class="modal-backdrop" id="person-backdrop" onclick="if(event.target===this)closeModal('person-backdrop')">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="person-title">
+      <div class="modal-head">
+        <h2 id="person-title">Add a person</h2>
+        <button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('person-backdrop')"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <form id="person-form">
         <div class="grid">
           <div class="field full"><label>Email</label>
             <input name="email" required placeholder="deacon@example.org" autocomplete="off"></div>
@@ -706,13 +997,13 @@
           </div>
         </div>
         <div class="role-explain" id="role-explain"></div>
-        <div class="btn-row"><button type="submit" class="btn btn-primary">Save person</button></div>
+        <div class="modal-btn-row">
+          <button type="button" class="btn btn-outline" onclick="closeModal('person-backdrop')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save person</button>
+        </div>
       </form>
-
-      <h3 style="margin-top:20px;">Who has access</h3>
-      <div id="people-list"></div>
     </div>
-  </main>
+  </div>
 
   <!-- Every short link a parish hands out. The four with columns of their own
        (donate, payment, raffle, gala) and the ones without, edited together
@@ -720,10 +1011,13 @@
        that is how they are stored. -->
   <div class="modal-backdrop" id="links-backdrop" onclick="if(event.target===this)closeLinksEditor()">
     <div class="modal">
-      <h2>Short links</h2>
+      <div class="modal-head">
+        <h2>Short links</h2>
+        <button type="button" class="icon-btn" aria-label="Close" onclick="closeLinksEditor()"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
       <div class="modal-subtitle" id="links-modal-sub"></div>
       <div id="links-rows"></div>
-      <button type="button" class="btn btn-outline" id="links-add" style="margin-top:10px;">Add a link</button>
+      <button type="button" class="btn btn-outline" id="links-add" style="margin-top:10px;"><svg class="ic" style="width:16px;height:16px;"><use href="#i-plus"/></svg>Add a link</button>
       <div class="modal-btn-row">
         <button type="button" class="btn btn-outline" onclick="closeLinksEditor()">Cancel</button>
         <button type="button" class="btn btn-primary" id="links-save">Save links</button>
@@ -950,20 +1244,129 @@
       me.role !== 'parish' || me.parishIds.includes(parishId);
     const headers = { 'Content-Type': 'application/json' };
 
-    // Jurisdiction filter
-    document.getElementById('jurisdiction-filter').addEventListener('change', e => {
-      activeJurisdiction = e.target.value;
+    // ── Jurisdiction pills ──
+    //
+    // Were a <select> in the header that silently narrowed two sections and
+    // did nothing on the other six. Now pills, drawn on the two sections they
+    // actually filter, and kept in step so switching section keeps the slice.
+    const JURIS_LABEL = { antiochian: 'Antiochian', greek: 'Greek', serbian: 'Serbian',
+      russian: 'Russian', romanian: 'Romanian', macedonian: 'Macedonian', other: 'Other' };
+
+    function renderJurisPills() {
+      const counts = {};
+      for (const p of parishes) {
+        if (p.id === '_unassigned' || !inMyScope(p.id)) continue;
+        counts[p.jurisdiction] = (counts[p.jurisdiction] || 0) + 1;
+      }
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      const pill = (value, label, n, swatch) => `
+        <button type="button" class="pill" data-juris="${esc(value)}" aria-pressed="${activeJurisdiction === value}">
+          ${swatch ? `<span class="pill-swatch" style="background:${esc(swatch)}"></span>` : ''}${esc(label)}
+          <span class="pill-n">${n}</span>
+        </button>`;
+      const html = pill('', 'All jurisdictions', total) + Object.keys(JURIS_LABEL)
+        .filter(j => counts[j])
+        .map(j => pill(j, JURIS_LABEL[j], counts[j], jurisEffective(j))).join('');
+      document.querySelectorAll('[data-juris-pills]').forEach(el => {
+        el.innerHTML = html;
+        // A parish contact's jurisdiction filter is noise: their parishes are
+        // already a short, fixed list.
+        el.hidden = me.role === 'parish';
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-juris-pills] .pill');
+      if (!b) return;
+      activeJurisdiction = b.dataset.juris === activeJurisdiction ? '' : b.dataset.juris;
       renderAll();
     });
 
-    // Tabs
-    document.querySelectorAll('.tab').forEach(btn => {
+    // ── Navigation ──
+    //
+    // A drawer behind the hamburger on a phone, pinned open on a wide screen.
+    // The section on screen is kept in the URL hash, so a reload — or a link
+    // somebody pastes into a message — lands where it was.
+    const drawerMq = window.matchMedia('(min-width: 960px)');
+    function setDrawer(open) {
+      document.body.classList.toggle('drawer-open', open && !drawerMq.matches);
+      document.getElementById('menu-btn').setAttribute('aria-expanded', String(open));
+    }
+    document.getElementById('menu-btn').addEventListener('click', () => setDrawer(true));
+    document.getElementById('drawer-close').addEventListener('click', () => setDrawer(false));
+    document.getElementById('drawer-scrim').addEventListener('click', () => setDrawer(false));
+
+    document.querySelectorAll('.nav-item').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('section-' + btn.dataset.tab).classList.add('active');
+        activateTab(btn.dataset.tab);
+        setDrawer(false);
+        window.scrollTo({ top: 0 });
       });
+    });
+
+    window.addEventListener('hashchange', () => {
+      const t = location.hash.slice(1);
+      if (t && t !== currentTab) activateTab(t);
+    });
+
+    // ── Menus ── one delegated handler for every "⋯" and the account menu.
+    function closeMenus(except) {
+      document.querySelectorAll('.menu').forEach(m => { if (m !== except) m.hidden = true; });
+    }
+    document.addEventListener('click', (e) => {
+      const trigger = e.target.closest('[data-menu]');
+      if (trigger) {
+        e.stopPropagation();
+        const menu = document.getElementById(trigger.dataset.menu);
+        closeMenus(menu);
+        if (menu) menu.hidden = !menu.hidden;
+        return;
+      }
+      // A press on an item runs its own handler, then the menu goes away.
+      if (!e.target.closest('.menu') || e.target.closest('.menu-item')) closeMenus();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      closeMenus();
+      setDrawer(false);
+      const open = [...document.querySelectorAll('.modal-backdrop.open')].pop();
+      if (open) open.onclick({ target: open });
+    });
+
+    // ── Dialogs ──
+    window.openModal = function (id) {
+      document.getElementById(id).classList.add('open');
+      const first = document.querySelector(`#${id} input:not([type=hidden]):not([disabled]), #${id} select`);
+      if (first && !matchMedia('(pointer: coarse)').matches) first.focus();
+    };
+    window.closeModal = function (id) {
+      document.getElementById(id).classList.remove('open');
+    };
+
+    // ── The plus ──
+    //
+    // What it adds on each section, and the capability that has to be held
+    // for it to be drawn. Adding a person is gated on the section itself.
+    const FAB = {
+      parishes: { label: 'Parish', needs: 'parish.create', open: () => openModal('add-parish-backdrop') },
+      schedules: { label: 'Service time', needs: null, open: () => { renderParishSelects(); openModal('add-schedule-backdrop'); } },
+      people: { label: 'Person', needs: 'people.manage', open: () => openPersonForm() },
+    };
+    function updateFab() {
+      const f = FAB[currentTab];
+      const fab = document.getElementById('fab');
+      // A parish contact can add service times only to their own parishes;
+      // with none there is nothing the form could save.
+      const usable = f && (!f.needs || may(f.needs))
+        && (currentTab !== 'schedules' || filteredParishes().some(p => p.id !== '_unassigned'));
+      fab.hidden = !usable;
+      if (!usable) return;
+      document.getElementById('fab-label').textContent = f.label;
+      fab.setAttribute('aria-label', 'Add ' + f.label.toLowerCase());
+    }
+    document.getElementById('fab').addEventListener('click', () => {
+      const f = FAB[currentTab];
+      if (f) f.open();
     });
 
     // Why every admin failure goes through here.
@@ -1004,6 +1407,7 @@
     }
 
     function renderAll() {
+      renderJurisPills();
       renderStats();
       renderParishList();
       renderScheduleList();
@@ -1022,6 +1426,7 @@
       // somebody changed the dropdown, which is the wrong way round for the
       // control whose whole job is to explain itself.
       if (may('people.manage')) syncRoleForm();
+      updateFab();
     }
 
     // ── A parish's short links ──
@@ -1387,13 +1792,14 @@
       out.replaceChildren();
 
       const head = document.createElement('div');
-      head.style.cssText = 'font-size:12px;color:#666;margin-bottom:8px;';
+      head.className = 'infer-dim';
+      head.style.marginBottom = '8px';
       head.textContent = `${r.events_considered} scraped event(s) considered, in ${r.parish.timezone}.`;
       out.append(head);
 
       if (!r.proposals.length && !r.unexplained.length) {
         const p = document.createElement('p');
-        p.style.cssText = 'font-size:13px;color:#666;';
+        p.className = 'infer-dim';
         p.textContent = 'Nothing to infer. This parish has no scraped events yet.';
         out.append(p);
         return;
@@ -1401,12 +1807,11 @@
 
       for (const prop of r.proposals) {
         const row = document.createElement('label');
-        row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #eee;font-size:13px;cursor:pointer;';
+        row.className = 'infer-row';
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.className = 'infer-pick';
         cb.dataset.rule = JSON.stringify(prop.rule);
-        cb.style.marginTop = '3px';
         // Already on file: nothing to accept, and ticking it would be a no-op.
         cb.disabled = prop.existing_schedule_id != null;
         cb.checked = !cb.disabled && prop.confidence === 'high';
@@ -1416,7 +1821,7 @@
         t.style.fontWeight = '600';
         t.textContent = prop.rule.title;
         const d = document.createElement('div');
-        d.style.cssText = 'color:#666;font-size:12px;';
+        d.className = 'infer-dim';
         d.textContent = `${ruleLine(prop.rule)} \u00b7 seen ${prop.support.count}\u00d7` +
           (prop.confidence === 'low' ? ' \u00b7 low confidence' : '') +
           (prop.existing_schedule_id != null ? ' \u00b7 already on file' : '');
@@ -1430,14 +1835,16 @@
       // leaving it looking like the scrape missed something.
       if (r.unexplained.length) {
         const h = document.createElement('div');
-        h.style.cssText = 'margin-top:12px;font-size:12px;font-weight:600;color:#666;';
+        h.className = 'modal-section-title';
+        h.style.marginTop = '14px';
         h.textContent = 'No rule proposed';
         out.append(h);
         for (const u of r.unexplained) {
           const row = document.createElement('div');
-          row.style.cssText = 'padding:6px 0;border-bottom:1px solid #f2f2f2;font-size:12px;color:#666;';
+          row.className = 'infer-dim';
+          row.style.cssText = 'padding:7px 0;border-bottom:1px solid var(--border-light);';
           const t = document.createElement('span');
-          t.style.color = '#333';
+          t.style.color = 'var(--text)';
           t.textContent = `${u.title} \u2014 ${ruleLine(u)}: `;
           row.append(t, document.createTextNode(u.why));
           out.append(row);
@@ -1447,8 +1854,8 @@
       if (r.proposals.some(p => p.existing_schedule_id == null)) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'btn';
-        btn.style.marginTop = '10px';
+        btn.className = 'btn btn-primary';
+        btn.style.marginTop = '14px';
         btn.textContent = 'Accept ticked rules';
         btn.addEventListener('click', () => acceptRules(btn));
         out.append(btn);
@@ -1537,10 +1944,76 @@
         (!pred || pred(p)) &&
         matchesQuery(p, q));
     }
-    function filteredSchedules() {
-      return schedules.filter(s => inMyScope(s.parish_id) &&
-        (!activeJurisdiction || s.parish_jurisdiction === activeJurisdiction));
+    // The status pills on Service times. "No source" is the one worth a
+    // filter of its own: a rule citing nothing was typed by hand, and nothing
+    // will ever tell anybody it has gone stale.
+    let scheduleFilter = '';
+    const SCHEDULE_FILTERS = {
+      active: (s) => !!s.active,
+      inactive: (s) => !s.active,
+      unsourced: (s) => !s.source_name && !s.source_ref,
+    };
+
+    // ── What kind of service a rule is ──
+    //
+    // AgoraServices.serviceOf is the main app's classifier (the title decides,
+    // event_type is the fallback). What it cannot name falls back to the
+    // rule's event_type, so every rule gets exactly one badge.
+    const KIND_LABEL = {
+      liturgy: 'Liturgy', matins: 'Matins', vespers: 'Vespers', paraklesis: 'Paraklesis',
+      compline: 'Compline', 'bible-study': 'Bible Study', confession: 'Confession', feast: 'Feast',
+      prayer: 'Prayer', talk: 'Talk', youth: 'Youth', social: 'Social', other: 'Other',
+    };
+    const KIND_ORDER = Object.keys(KIND_LABEL);
+    // One exception to "the title decides": a rule typed social, youth or talk
+    // is not a service, whatever its title says — "Coffee after Liturgy" is a
+    // social, and badging it Liturgy would count it among the services. Bible
+    // Study survives the exception because it IS a talk, just a named one.
+    const NOT_A_SERVICE = ['social', 'youth', 'talk'];
+    function kindOf(s) {
+      const S = window.AgoraServices;
+      const svc = S ? S.serviceOf(s) : null;
+      if (NOT_A_SERVICE.includes(s.event_type) && svc !== 'bible-study') return s.event_type;
+      if (svc && KIND_LABEL[svc]) return svc;
+      return KIND_LABEL[s.event_type] ? s.event_type : 'other';
     }
+    const kindBadge = (k, n) =>
+      `<span class="kb k-${esc(k)}"><span class="kb-dot"></span>${esc(KIND_LABEL[k] || k)}${n != null ? ` <b>${n}</b>` : ''}</span>`;
+
+    // The filter pills. "Other" is everything the named ones do not cover,
+    // so the row always partitions the list.
+    const KIND_FILTERS = ['liturgy', 'matins', 'vespers', 'bible-study', 'social'];
+    let kindFilter = '';
+    const kindPasses = (s) => !kindFilter
+      || (kindFilter === 'other' ? !KIND_FILTERS.includes(kindOf(s)) : kindOf(s) === kindFilter);
+
+    function schedulesBeforeKind() {
+      const pred = SCHEDULE_FILTERS[scheduleFilter];
+      return schedules.filter(s => inMyScope(s.parish_id) &&
+        (!activeJurisdiction || s.parish_jurisdiction === activeJurisdiction) &&
+        (!pred || pred(s)));
+    }
+
+    function filteredSchedules() {
+      return schedulesBeforeKind().filter(kindPasses);
+    }
+
+    function renderKindPills() {
+      const el = document.getElementById('kind-chips');
+      if (!el) return;
+      const base = schedulesBeforeKind();
+      const n = (k) => base.filter(s => k === 'other'
+        ? !KIND_FILTERS.includes(kindOf(s)) : kindOf(s) === k).length;
+      el.innerHTML = `<button type="button" class="pill" data-kfilter="" aria-pressed="${!kindFilter}">All services <span class="pill-n">${base.length}</span></button>`
+        + [...KIND_FILTERS, 'other'].map(k => `
+          <button type="button" class="pill k-${k}" data-kfilter="${k}" aria-pressed="${kindFilter === k}">
+            <span class="kb-dot"></span>${esc(KIND_LABEL[k])} <span class="pill-n">${n(k)}</span>
+          </button>`).join('');
+    }
+
+    /** The parish's card in the main app. Its acronym is its public link; a
+        parish without one is reached by id, which the app also resolves. */
+    const appParishUrl = (p) => '/' + encodeURIComponent(slugNorm(p && p.acronym) || (p && p.id) || '');
 
     function renderStats() {
       const shown = filteredParishes().filter(p => p.id !== '_unassigned').length;
@@ -1595,13 +2068,21 @@
       return new Date(d.getTime() - offset * 3600000).toISOString();
     }
 
+    let currentTab = 'parishes';
     function activateTab(tabName) {
-      const btn = document.querySelector(`.tab[data-tab="${tabName}"]`);
-      if (!btn) return;
-      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      const btn = document.querySelector(`.nav-item[data-tab="${tabName}"]`);
+      if (!btn || btn.hidden) return;
+      document.querySelectorAll('.nav-item').forEach(b => {
+        b.classList.toggle('active', b === btn);
+        if (b === btn) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+      });
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('section-' + tabName).classList.add('active');
+      const section = document.getElementById('section-' + tabName);
+      section.classList.add('active');
+      currentTab = tabName;
+      document.getElementById('topbar-title').textContent = section.dataset.title || '';
+      if (location.hash.slice(1) !== tabName) history.replaceState(null, '', '#' + tabName);
+      updateFab();
     }
 
     // ── Parishes ──
@@ -1621,16 +2102,23 @@
       }
       c.innerHTML = fps.map(p => {
         const langs = parseLangsField(p.languages);
+        const mark = p.color || jurisEffective(p.jurisdiction);
         return `
-        <div class="card expand-trigger" onclick="toggleParishCard('${esc(p.id)}')">
-          <div style="display:flex;align-items:center;gap:8px;">
-            ${p.logo_path ? `<img src="${esc(p.logo_path)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border-light);" alt="">` : ''}
-            <div style="min-width:0;">
+        <div class="card" id="pc-${esc(p.id)}">
+          <div class="list-row" role="button" tabindex="0" aria-expanded="false"
+               onclick="toggleParishCard('${esc(p.id)}')"
+               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleParishCard('${esc(p.id)}')}">
+            ${p.logo_path
+              ? `<img class="parish-logo" src="${esc(p.logo_path)}" alt="">`
+              : `<span class="parish-initial" style="background:${esc(mark)}">${esc((p.name || '?').replace(/^(St\.?|Saints?|Holy)\s+/i, '').charAt(0))}</span>`}
+            <div class="list-row-main">
               <div class="card-title">${esc(p.name)}${p.info_verified_at ? ' <span class="verified" title="Somebody has confirmed this against the place itself">\u2713</span>' : ''}</div>
-              <div class="card-meta">${esc(p.jurisdiction)} &middot; ${esc(p.address || 'No address')}${langs ? ' &middot; ' + esc(langs) : ''}</div>
+              <div class="card-meta">${esc(p.address || 'No address')}${langs ? ' &middot; ' + esc(langs) : ''}</div>
             </div>
+            <span class="tag">${esc(p.jurisdiction)}</span>
+            <svg class="ic chev"><use href="#i-chev"/></svg>
           </div>
-          <div class="expandable" id="pe-${esc(p.id)}" onclick="event.stopPropagation()"></div>
+          <div class="expandable" id="pe-${esc(p.id)}"></div>
         </div>`;
       }).join('');
     }
@@ -1647,7 +2135,13 @@
         holder.innerHTML = parishFormHtml(parishes.find(x => x.id === id));
         holder.dataset.built = '1';
       }
-      holder.classList.toggle('open');
+      const open = holder.classList.toggle('open');
+      const card = document.getElementById('pc-' + id);
+      if (card) {
+        card.classList.toggle('open', open);
+        const row = card.querySelector('.list-row');
+        if (row) row.setAttribute('aria-expanded', String(open));
+      }
     };
 
     function parishFormHtml(p) {
@@ -1689,11 +2183,12 @@
             ${provenanceHtml(p)}
             ${rulingsHtml(p)}
             <div class="btn-row">
-              <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save</button>
-              <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')">Geocode Address</button>
+              <button class="btn btn-primary" onclick="saveParish('${esc(p.id)}')">Save changes</button>
+              <button class="btn btn-outline" onclick="geocodeParish('${esc(p.id)}')"><svg class="ic" style="width:16px;height:16px;"><use href="#i-pin"/></svg>Find pin</button>
+              <a class="btn btn-outline" href="${esc(appParishUrl(p))}" target="_blank" rel="noopener" title="Open this parish's card in the app, in a new tab"><svg class="ic" style="width:16px;height:16px;"><use href="#i-external"/></svg>View in app</a>
               ${may('parish.delete')
-                ? `<button class="btn btn-reject" onclick="openDeleteParish('${esc(p.id)}')">Delete</button>`
-                : `<button class="btn btn-outline" onclick="offerProposal('parish.delete', '${esc(p.id)}')">Ask to delete\u2026</button>`}
+                ? `<button class="btn btn-ghost-danger push" onclick="openDeleteParish('${esc(p.id)}')"><svg class="ic" style="width:16px;height:16px;"><use href="#i-trash"/></svg>Delete parish</button>`
+                : `<button class="btn btn-ghost-danger push" onclick="offerProposal('parish.delete', '${esc(p.id)}')">Ask to delete\u2026</button>`}
             </div>`;
     }
 
@@ -1867,11 +2362,13 @@
       }
     }
 
+    /** Open or close a card's expandable body, turning the card's chevron with it. */
     function toggleExpand(id) {
-      document.getElementById(id).classList.toggle('open');
-      const chevronMap = { 'add-parish-form': 'add-parish-chevron', 'add-schedule-form': 'add-schedule-chevron' };
-      const chevron = document.getElementById(chevronMap[id]);
-      if (chevron) chevron.style.transform = document.getElementById(id).classList.contains('open') ? 'rotate(90deg)' : '';
+      const el = document.getElementById(id);
+      if (!el) return;
+      const open = el.classList.toggle('open');
+      const card = el.closest('.card');
+      if (card) card.classList.toggle('open', open);
     }
 
     // Two ways an acronym fails. It can clash with another parish, which this
@@ -1943,7 +2440,7 @@
         timezone: f.timezone.value,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Parish added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
+      if (res.ok) { toast('Parish added'); f.reset(); closeModal('add-parish-backdrop'); loadAll(); } else toast(await adminError(res), 'error');
     });
 
     // ── Deleting a parish ──
@@ -2036,43 +2533,94 @@
       loadAll();
     });
 
-    // ── Schedules grouped by parish ──
+    // ── Schedules, grouped by jurisdiction and then by parish ──
+    //
+    // Which parishes are open survives a re-render: flipping one rule's switch
+    // reloads everything, and collapsing the group you were working in is the
+    // opposite of what the switch was for.
+    const openGroups = new Set();
+
     function renderScheduleList() {
+      renderKindPills();
       const c = document.getElementById('schedule-list');
       const scheds = filteredSchedules();
-      if (!scheds.length) { c.innerHTML = '<div class="empty">No schedules configured</div>'; return; }
+      if (!scheds.length) {
+        c.innerHTML = `<div class="empty">${scheduleFilter || activeJurisdiction || kindFilter
+          ? 'No service times match that.' : 'No service times yet. Press + to add one.'}</div>`;
+        return;
+      }
 
       const types = ['liturgy','prayer','feast','talk','youth','social','other'];
       const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
 
-      // Group by parish
-      const byParish = new Map();
+      // Jurisdiction → parish → rules, each rule in week order.
+      const byJur = new Map();
       for (const s of scheds) {
-        if (!byParish.has(s.parish_id)) byParish.set(s.parish_id, { name: s.parish_name, scheds: [] });
-        byParish.get(s.parish_id).scheds.push(s);
+        const j = s.parish_jurisdiction || 'other';
+        if (!byJur.has(j)) byJur.set(j, new Map());
+        const ps = byJur.get(j);
+        if (!ps.has(s.parish_id)) ps.set(s.parish_id, { name: s.parish_name, scheds: [] });
+        ps.get(s.parish_id).scheds.push(s);
       }
+      const jOrder = (j) => { const i = Object.keys(JURIS_LABEL).indexOf(j); return i < 0 ? 99 : i; };
+      const byWeek = (a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time));
 
-      c.innerHTML = [...byParish.entries()].map(([pid, { name, scheds }]) => {
+      c.innerHTML = [...byJur.entries()].sort((a, b) => jOrder(a[0]) - jOrder(b[0])).map(([jur, ps]) => {
+        const groups = [...ps.entries()].sort((a, b) => String(a[1].name).localeCompare(String(b[1].name)));
+        const ruleCount = groups.reduce((n, [, g]) => n + g.scheds.length, 0);
+        return `
+        <div class="jur-block" style="--jc:${esc(jurisEffective(jur))}">
+          <div class="jur-block-head">
+            <span class="jur-block-swatch"></span>
+            <span class="jur-block-name">${esc(JURIS_LABEL[jur] || jur)}</span>
+            <span class="jur-block-meta">${groups.length} parish${groups.length === 1 ? '' : 'es'} &middot; ${ruleCount} rule${ruleCount === 1 ? '' : 's'}</span>
+            <span class="jur-block-rule"></span>
+          </div>
+          ${groups.map(([pid, g]) => parishGroupHtml(pid, g.name, g.scheds.sort(byWeek), jur)).join('')}
+        </div>`;
+      }).join('');
+    }
+
+    function parishGroupHtml(pid, name, scheds, jur) {
+        const types = ['liturgy','prayer','feast','talk','youth','social','other'];
+        const parseLangs = v => { try { return JSON.parse(v || '[]').join(', '); } catch { return v || ''; } };
+        const parish = parishes.find(p => p.id === pid);
         const activeCount = scheds.filter(s => s.active).length;
+        const counts = {};
+        for (const s of scheds) { const k = kindOf(s); counts[k] = (counts[k] || 0) + 1; }
+        const badges = KIND_ORDER.filter(k => counts[k]).map(k => kindBadge(k, counts[k])).join('');
         const schedHtml = scheds.map(s => {
+          const kind = kindOf(s);
           const womChecked = s.week_of_month ? s.week_of_month.split(',').map(w => w.trim()) : [];
           const cadMode = s.week_parity ? 'fortnight' : (s.week_of_month ? 'wom' : 'weekly');
           const womLabel = s.week_parity
             ? ` &middot; fortnightly (week ${esc(String(s.week_parity).toUpperCase())})`
             : (s.week_of_month ? ` &middot; ${s.week_of_month}` : '');
           return `
-            <div class="card expand-trigger ${s.active ? '' : 'sched-card inactive'}" onclick="toggleExpand('se-${s.id}')">
-              <div class="sched-card">
-                <div>
-                  <div class="card-title">${esc(s.title)}</div>
-                  <div class="card-meta">${DAYS[s.day_of_week]} ${esc(s.start_time)}${s.end_time ? '–' + esc(s.end_time) : ''} &middot; ${esc(s.event_type)}${s.languages ? ' &middot; ' + esc(parseLangs(s.languages)) : ''}${womLabel}${s.active ? '' : ' &middot; INACTIVE'}</div>
+            <div class="card${s.active ? '' : ' inactive'}">
+              <div class="sched-card list-row" role="button" tabindex="0"
+                   onclick="if(!event.target.closest('.menu-wrap,.switch'))toggleExpand('se-${s.id}')"
+                   onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleExpand('se-${s.id}')}">
+                <div class="when k-${esc(kind)}"><b>${DAYS[s.day_of_week].slice(0, 3)}</b><span>${esc(s.start_time)}</span></div>
+                <div class="list-row-main">
+                  <div class="sched-title-line"><span class="card-title">${esc(s.title)}</span>${kindBadge(kind)}</div>
+                  <div class="card-meta" style="white-space:normal;">${s.end_time ? 'until ' + esc(s.end_time) : 'no end time'}${womLabel || ' &middot; every week'}${s.languages ? ' &middot; ' + esc(parseLangs(s.languages)) : ''}${s.active ? '' : ' &middot; switched off'}</div>
                 </div>
-                <div style="display:flex;gap:4px;">
-                  <button class="btn btn-outline" onclick="event.stopPropagation();toggleSchedule(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'Disable' : 'Enable'}</button>
-                  ${may('schedule.delete') ? `<button class="btn btn-reject" onclick="event.stopPropagation();deleteSchedule(${s.id})">Delete</button>` : ''}
-                </div>
+                <label class="switch" title="${s.active ? 'Running — switch off' : 'Switched off — turn on'}">
+                  <input type="checkbox" ${s.active ? 'checked' : ''} aria-label="Running"
+                         onchange="toggleSchedule(${s.id}, this.checked ? 1 : 0)">
+                  <span></span>
+                </label>
+                ${may('schedule.delete') ? `
+                <div class="menu-wrap">
+                  <button type="button" class="icon-btn" data-menu="sm-${s.id}" aria-label="More actions" aria-haspopup="menu"><svg class="ic"><use href="#i-more"/></svg></button>
+                  <div class="menu" id="sm-${s.id}" role="menu" hidden>
+                    <button type="button" class="menu-item" role="menuitem" onclick="toggleExpand('se-${s.id}')"><svg class="ic"><use href="#i-clock"/></svg>Edit</button>
+                    <button type="button" class="menu-item danger" role="menuitem" onclick="deleteSchedule(${s.id})"><svg class="ic"><use href="#i-trash"/></svg>Delete…</button>
+                  </div>
+                </div>` : ''}
               </div>
-              <div class="expandable" id="se-${s.id}" onclick="event.stopPropagation()">
+              <div class="expandable" id="se-${s.id}">
                 <div class="grid">
                   <div class="field"><label>Title</label><input value="${esc(s.title)}" data-field="title"></div>
                   <div class="field"><label>Day</label>
@@ -2157,22 +2705,39 @@
             </div>`;
         }).join('');
 
+        const pct = scheds.length ? Math.round(100 * activeCount / scheds.length) : 0;
         return `
-          <div class="parish-group" id="pg-${esc(pid)}">
-            <div class="parish-group-header" onclick="toggleParishGroup('${esc(pid)}')">
-              <div>
-                <span class="parish-group-name">${esc(name)}</span>
-                <span class="parish-group-meta"> &middot; ${activeCount}/${scheds.length} active</span>
+          <div class="parish-group${openGroups.has(pid) ? ' open' : ''}" id="pg-${esc(pid)}"
+               style="--pc:${esc((parish && parish.color) || jurisEffective(jur))}">
+            <div class="parish-group-header" role="button" tabindex="0" aria-expanded="${openGroups.has(pid)}"
+                 onclick="toggleParishGroup('${esc(pid)}')"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleParishGroup('${esc(pid)}')}">
+              <div class="parish-group-top">
+                <div class="parish-group-line">
+                  <span class="parish-group-name">${esc(name)}</span>
+                  <span class="run-meter" title="${activeCount} of ${scheds.length} running" style="--pct:${pct}%"><i></i>${activeCount}/${scheds.length} running</span>
+                </div>
+                <div class="kb-row">${badges}</div>
               </div>
-              <span class="parish-group-chevron">▼</span>
+              <span class="parish-group-chevron"><svg class="ic"><use href="#i-chev"/></svg></span>
             </div>
-            <div class="parish-group-body">${schedHtml}</div>
+            <div class="parish-group-body">
+              <div class="parish-group-tools">
+                <a class="btn btn-outline" href="${esc(appParishUrl(parish || { id: pid }))}" target="_blank" rel="noopener"
+                   title="Open this parish's card in the app, in a new tab"><svg class="ic" style="width:16px;height:16px;"><use href="#i-external"/></svg>View in app</a>
+                ${parish && parish.timezone ? `<span class="card-meta">Times in ${esc(tzLabel(parish.timezone))}</span>` : ''}
+              </div>
+              ${schedHtml}
+            </div>
           </div>`;
-      }).join('');
     }
 
     function toggleParishGroup(pid) {
-      document.getElementById('pg-' + pid).classList.toggle('open');
+      const g = document.getElementById('pg-' + pid);
+      const open = g.classList.toggle('open');
+      if (open) openGroups.add(pid); else openGroups.delete(pid);
+      const h = g.querySelector('.parish-group-header');
+      if (h) h.setAttribute('aria-expanded', String(open));
     }
 
     document.getElementById('schedule-form').addEventListener('submit', async e => {
@@ -2186,7 +2751,7 @@
         // column — an empty string would render as an address that is nothing.
         location_override: f.location_override.value.trim() || null };
       const res = await fetch('/api/admin/schedules', { method: 'POST', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Schedule added'); f.reset(); loadAll(); } else toast(await adminError(res), 'error');
+      if (res.ok) { toast('Service time added'); f.reset(); closeModal('add-schedule-backdrop'); loadAll(); } else toast(await adminError(res), 'error');
     });
 
     // One delegated listener rather than a wiring pass: the schedule cards are
@@ -2330,12 +2895,13 @@
 
     // Geocode (add parish form)
     document.getElementById('geocode-btn').addEventListener('click', async () => {
-      const addr = document.querySelector('[name="address"]').value;
+      const pf = document.getElementById('parish-form');
+      const addr = pf.address.value;
       if (!addr) return toast('Enter address first', 'error');
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`);
         const r = await res.json();
-        if (r.length) { document.querySelector('[name="lat"]').value = parseFloat(r[0].lat).toFixed(4); document.querySelector('[name="lng"]').value = parseFloat(r[0].lon).toFixed(4); toast('Geocoded'); }
+        if (r.length) { pf.lat.value = parseFloat(r[0].lat).toFixed(4); pf.lng.value = parseFloat(r[0].lon).toFixed(4); toast('Geocoded'); }
         else toast('Not found', 'error');
       } catch { toast('Geocode failed', 'error'); }
     });
@@ -2436,7 +3002,15 @@
       const c = document.getElementById('adapter-list');
       if (!adapters.length) { c.innerHTML = '<div class="empty">No adapters registered</div>'; return; }
 
-      c.innerHTML = adapters.map(a => {
+      const shown = adapters.filter(a => {
+        if (adapterFilter === 'attention') return adapterNeedsAttention(a);
+        if (adapterFilter === 'paused') return !a.enabled;
+        if (adapterFilter === 'pdf') return a.sourceType === 'parish-pdf';
+        return true;
+      });
+      if (!shown.length) { c.innerHTML = '<div class="empty">No scrapers match that.</div>'; return; }
+
+      c.innerHTML = shown.map(a => {
         const r = a.run;
         const parish = parishes.find(p => p.id === a.parishId);
         const isPdf = a.sourceType === 'parish-pdf';
@@ -2492,11 +3066,7 @@
           : `<button class="btn btn-outline" data-run-adapter="${esc(a.id)}"
                      ${a.pending ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Run now</button>`;
 
-        const warn = a.pending || (r && !r.healthy)
-          || (cov && (cov.state === 'expired' || cov.state === 'ending'))
-          || (a.source && a.source.present && a.source.coverage
-              && ['expired', 'ending'].includes(a.source.coverage.state))
-          || (a.source && !a.source.present);
+        const warn = adapterNeedsAttention(a);
 
         return `
           <div class="card${warn ? ' warn' : ''}">
@@ -2525,12 +3095,12 @@
                  take effect at the next tick with no deploy. Neither button
                  above is bound by them — asking explicitly is not a timer
                  going off. -->
-            <div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);font-size:12px;">
-              <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
-                <input type="checkbox" data-adapter-enabled="${esc(a.id)}" ${a.enabled ? 'checked' : ''}>
+            <div class="adapter-pace">
+              <label>
+                <span class="switch"><input type="checkbox" data-adapter-enabled="${esc(a.id)}" ${a.enabled ? 'checked' : ''}><span></span></span>
                 Scrape automatically
               </label>
-              <label style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+              <label style="margin-left:auto;">
                 Every
                 <select data-adapter-interval="${esc(a.id)}" ${a.enabled ? '' : 'disabled'}>
                   ${INTERVALS.map(m => `<option value="${m}"${m === a.intervalMinutes ? ' selected' : ''}>${intervalLabel(m)}</option>`).join('')}
@@ -2568,16 +3138,26 @@
       });
     }
 
-    /** Jump to Schedules with this parish already inferred. */
+    /** Open the infer dialog with this parish already inferred. */
     function proposeFor(parishId) {
-      activateTab('schedules');
-      const panel = document.getElementById('infer-panel');
-      if (!panel.classList.contains('open')) toggleExpand('infer-panel');
       const sel = document.getElementById('infer-parish-select');
       if (sel) sel.value = parishId;
-      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      openModal('infer-backdrop');
       findRules();
     }
+
+    // The same test the card's amber edge uses, so the "Needs attention" pill
+    // and the cards it shows cannot disagree.
+    function adapterNeedsAttention(a) {
+      const r = a.run;
+      const cov = (r && r.coverage) || null;
+      return !!(a.pending || (r && !r.healthy)
+        || (cov && (cov.state === 'expired' || cov.state === 'ending'))
+        || (a.source && a.source.present && a.source.coverage
+            && ['expired', 'ending'].includes(a.source.coverage.state))
+        || (a.source && !a.source.present));
+    }
+    let adapterFilter = '';
 
     // isDue() reports WHY, in its own vocabulary, because it is a pure function
     // with a test. "never-run" is its way of saying "due, because it has never
@@ -2819,20 +3399,28 @@
         note.hidden = true;
       }
 
-      if (!people.length) { el.innerHTML = '<div class="empty">Nobody listed</div>'; return; }
-      el.innerHTML = people.map(p => {
+      if (!people.length) { el.innerHTML = '<div class="empty">Nobody listed yet. Press + to add the first person.</div>'; return; }
+      const shown = people.filter(p => !peopleFilter || p.role === peopleFilter);
+      if (!shown.length) { el.innerHTML = '<div class="empty">Nobody with that role.</div>'; return; }
+      el.innerHTML = shown.map((p, i) => {
         const names = p.parishIds
           .map(id => (parishes.find(x => x.id === id) || {}).name || id);
-        return `<div class="person-row">
-          <span class="person-email">${esc(p.email)}</span>
-          <span class="person-role">${esc(p.role)}</span>
-          ${names.length ? `<span class="person-meta">${esc(names.join(', '))}</span>` : ''}
-          ${p.note ? `<span class="person-meta">\u00b7 ${esc(p.note)}</span>` : ''}
-          <span class="person-meta" style="margin-left:auto;">
-            ${p.addedBy ? 'added by ' + esc(p.addedBy) + ' \u00b7 ' : ''}${relativeTime(p.createdAt)}
-          </span>
-          <button class="btn btn-outline" data-person-edit="${esc(p.email)}">Edit</button>
-          <button class="btn btn-reject" data-person-remove="${esc(p.email)}">Remove</button>
+        return `<div class="card person-row">
+          <span class="avatar">${esc(p.email.charAt(0))}</span>
+          <div class="person-main">
+            <div><span class="person-email">${esc(p.email)}</span><span class="person-role">${esc(p.role)}</span></div>
+            ${names.length ? `<div class="person-meta">${esc(names.join(', '))}</div>` : ''}
+            <div class="person-meta">
+              ${p.note ? esc(p.note) + ' \u00b7 ' : ''}${p.addedBy ? 'added by ' + esc(p.addedBy) + ' \u00b7 ' : ''}${relativeTime(p.createdAt)}
+            </div>
+          </div>
+          <div class="menu-wrap">
+            <button type="button" class="icon-btn" data-menu="pm-${i}" aria-label="Actions for ${esc(p.email)}" aria-haspopup="menu"><svg class="ic"><use href="#i-more"/></svg></button>
+            <div class="menu" id="pm-${i}" role="menu" hidden>
+              <button type="button" class="menu-item" role="menuitem" data-person-edit="${esc(p.email)}"><svg class="ic"><use href="#i-users"/></svg>Edit role</button>
+              <button type="button" class="menu-item danger" role="menuitem" data-person-remove="${esc(p.email)}"><svg class="ic"><use href="#i-trash"/></svg>Remove\u2026</button>
+            </div>
+          </div>
         </div>`;
       }).join('');
 
@@ -2857,10 +3445,25 @@
       document.getElementById('role-explain').textContent = ROLE_EXPLAIN[role] || '';
     }
 
+    let peopleFilter = '';
+
+    /** The person dialog: blank for the plus, filled for "Edit role". */
+    function openPersonForm() {
+      const f = document.getElementById('person-form');
+      f.reset();
+      document.getElementById('person-title').textContent = 'Add a person';
+      renderPersonParishes();
+      [...document.getElementById('person-parishes').options].forEach(o => { o.selected = false; });
+      syncRoleForm();
+      openModal('person-backdrop');
+    }
+
     function fillPersonForm(email) {
       const p = people.find(x => x.email === email);
       if (!p) return;
       const f = document.getElementById('person-form');
+      document.getElementById('person-title').textContent = 'Edit ' + p.email;
+      openModal('person-backdrop');
       f.email.value = p.email;
       f.role.value = p.role;
       f.note.value = p.note || '';
@@ -2869,7 +3472,6 @@
       [...document.getElementById('person-parishes').options].forEach(o => {
         o.selected = p.parishIds.includes(o.value);
       });
-      f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     async function removePerson(email) {
@@ -2922,10 +3524,12 @@
       }
 
       el.innerHTML = shown.map(o => `
-        <div class="ov-row">
-          <span class="ov-when">${esc(o.date)}</span>
-          <span class="ov-kind ov-${esc(o.kind)}">${esc(KIND_WORD[o.kind] || o.kind)}</span>
-          ${o.byMachine ? `<span class="ov-machine" title="Written by ${esc(o.source)} from the service disappearing from its source">automatic</span>` : ''}
+        <div class="card ov-row">
+          <span class="ov-badges">
+            <span class="ov-when">${esc(o.date)}</span>
+            <span class="ov-kind ov-${esc(o.kind)}">${esc(KIND_WORD[o.kind] || o.kind)}</span>
+            ${o.byMachine ? `<span class="ov-machine" title="Written by ${esc(o.source)} from the service disappearing from its source">automatic</span>` : ''}
+          </span>
           <span class="ov-what">
             ${overrideSummary(o)}
             <div class="ov-meta">${esc(o.parishName)}${o.note ? ' \u00b7 ' + esc(o.note) : ''}</div>
@@ -2934,12 +3538,12 @@
               ${o.createdAt ? ' \u00b7 ' + relativeTime(o.createdAt) : ''}
             </div>
           </span>
-          <span style="margin-left:auto;display:flex;gap:5px;">
+          <span class="ov-actions">
             <!-- Straight at the card on the public site. The synthetic id is
                  addressable, so this resolves even though the occurrence has
                  never been a row. -->
             <a class="btn btn-outline" href="/${esc(o.instanceId)}" target="_blank" rel="noopener">Open</a>
-            ${may('override.edit') ? `<button class="btn btn-reject" data-undo-override="${o.id}">Undo</button>` : ''}
+            ${may('override.edit') ? `<button class="btn btn-ghost-danger" data-undo-override="${o.id}">Undo</button>` : ''}
           </span>
         </div>`).join('');
 
@@ -2979,7 +3583,13 @@
     function renderProposals() {
       const el = document.getElementById('proposal-list');
       if (!el) return;
-      document.getElementById('count-proposals').textContent = proposals.length;
+      const countEl = document.getElementById('count-proposals');
+      countEl.textContent = proposals.length;
+      // Open asks are work only for somebody who can decide them; for anybody
+      // else a red count is noise about their own pending requests.
+      const waiting = may('people.manage') && proposals.length > 0;
+      countEl.classList.toggle('alert', waiting);
+      document.getElementById('menu-dot').hidden = !waiting;
       // Before the empty-list early return below. These two are not about open
       // asks — a contact with notices and no asks is the common case, and
       // rendering them after that return meant they never rendered at all.
@@ -3351,26 +3961,19 @@
      * answers 403.
      */
     function applyRoleToChrome() {
-      document.querySelectorAll('.tab[data-needs]').forEach(btn => {
+      document.querySelectorAll('.nav-item[data-needs]').forEach(btn => {
         btn.hidden = !may(btn.dataset.needs);
       });
-      // The Add Parish form, for a role that cannot add one.
-      const addParish = document.querySelector('h3[onclick*="add-parish-form"]');
-      if (addParish) addParish.hidden = !may('parish.create');
-      const addParishForm = document.getElementById('add-parish-form');
-      if (addParishForm && !may('parish.create')) addParishForm.hidden = true;
+      // A group whose every section is hidden would be a heading over nothing.
+      document.querySelectorAll('.nav-group').forEach(g => {
+        g.hidden = ![...g.querySelectorAll('.nav-item')].some(b => !b.hidden);
+      });
 
-      // If the active tab is one they cannot use, move to the first they can.
-      const active = document.querySelector('.tab.active');
-      if (active && active.hidden) {
-        const first = [...document.querySelectorAll('.tab')].find(t => !t.hidden);
-        if (first) activateTab(first.dataset.tab);
-      }
-
-      // A parish contact's jurisdiction filter is noise: their parishes are
-      // already a short, fixed list.
-      const jf = document.getElementById('jurisdiction-filter');
-      if (jf) jf.hidden = me.role === 'parish';
+      // The section in the URL if they may see it, otherwise the first they can.
+      const wanted = document.querySelector(`.nav-item[data-tab="${CSS.escape(location.hash.slice(1))}"]`);
+      const first = [...document.querySelectorAll('.nav-item')].find(t => !t.hidden);
+      const target = wanted && !wanted.hidden ? wanted : first;
+      if (target) activateTab(target.dataset.tab);
     }
 
     function blockPage(title, detail) {
@@ -3386,20 +3989,44 @@
       btn.textContent = 'Reload';
       btn.style.cssText = 'font-size:13px;padding:6px 14px;cursor:pointer;';
       btn.addEventListener('click', () => location.reload());
-      wrap.append(h, d, btn);
+      const back = document.createElement('a');
+      back.href = '/';
+      back.textContent = 'Back to app';
+      back.style.cssText = 'font-size:13px;margin-left:12px;';
+      wrap.append(h, d, btn, back);
       document.body.replaceChildren(wrap);
     }
 
     document.getElementById('infer-btn').addEventListener('click', findRules);
+    document.getElementById('open-infer').addEventListener('click', () => openModal('infer-backdrop'));
 
-    document.getElementById('override-chips').addEventListener('click', (e) => {
-      const chip = e.target.closest('.chip');
-      if (!chip) return;
-      overrideFilter = (chip.dataset.ofilter === overrideFilter) ? '' : chip.dataset.ofilter;
-      document.querySelectorAll('#override-chips .chip').forEach(c =>
-        c.setAttribute('aria-pressed', String((c.dataset.ofilter || '') === overrideFilter)));
-      renderOverrides();
+    // Every pill row works the same way: pressing the active pill again clears
+    // it, so there is always a way back to the whole list without hunting for
+    // "All".
+    function wirePills(rowId, key, get, set, render) {
+      document.getElementById(rowId).addEventListener('click', (e) => {
+        const pill = e.target.closest('.pill');
+        if (!pill) return;
+        const v = pill.dataset[key] || '';
+        set(v === get() ? '' : v);
+        document.querySelectorAll(`#${rowId} .pill`).forEach(c =>
+          c.setAttribute('aria-pressed', String((c.dataset[key] || '') === get())));
+        render();
+      });
+    }
+    wirePills('override-chips', 'ofilter', () => overrideFilter, v => { overrideFilter = v; }, renderOverrides);
+    wirePills('schedule-chips', 'sfilter', () => scheduleFilter, v => { scheduleFilter = v; },
+      () => { renderScheduleList(); renderStats(); });
+    document.getElementById('kind-chips').addEventListener('click', (e) => {
+      const pill = e.target.closest('.pill');
+      if (!pill) return;
+      const v = pill.dataset.kfilter || '';
+      kindFilter = v === kindFilter ? '' : v;
+      renderScheduleList();
+      renderStats();
     });
+    wirePills('adapter-chips', 'afilter', () => adapterFilter, v => { adapterFilter = v; }, renderAdapterList);
+    wirePills('people-chips', 'pfilter', () => peopleFilter, v => { peopleFilter = v; }, renderPeople);
 
     document.getElementById('person-role').addEventListener('change', syncRoleForm);
     document.getElementById('person-form').addEventListener('submit', async (e) => {
@@ -3414,6 +4041,7 @@
       if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
       toast(`${body.email} is now ${body.role}`);
       f.reset();
+      closeModal('person-backdrop');
       syncRoleForm();
       await loadPeople();
       renderPeople();
@@ -3431,17 +4059,8 @@
       searchTimer = setTimeout(() => { renderParishList(); renderStats(); }, 120);
     });
 
-    document.getElementById('parish-chips').addEventListener('click', (e) => {
-      const chip = e.target.closest('.chip');
-      if (!chip) return;
-      // Pressing the active chip again clears it, so there is always a way back
-      // to the whole list without hunting for "All".
-      parishFilter = (chip.dataset.filter === parishFilter) ? '' : chip.dataset.filter;
-      document.querySelectorAll('#parish-chips .chip').forEach(c =>
-        c.setAttribute('aria-pressed', String((c.dataset.filter || '') === parishFilter)));
-      renderParishList();
-      renderStats();
-    });
+    wirePills('parish-chips', 'filter', () => parishFilter, v => { parishFilter = v; },
+      () => { renderParishList(); renderStats(); });
 
     // The Add Schedule form's time labels follow whichever parish is picked.
     document.getElementById('schedule-parish-select')
@@ -3498,8 +4117,8 @@
         // at all, which fails safe.
         let tried = true;
         try {
-          tried = sessionStorage.getItem('agora-access-retry') === '1';
-          if (!tried) sessionStorage.setItem('agora-access-retry', '1');
+          tried = sessionStorage.getItem('admin-access-retry') === '1';
+          if (!tried) sessionStorage.setItem('admin-access-retry', '1');
         } catch { /* storage blocked — show the message instead of looping */ }
 
         if (!tried) {
@@ -3512,7 +4131,7 @@
       }
 
       // Signed in: forget the retry flag so the next expiry gets its own attempt.
-      try { sessionStorage.removeItem('agora-access-retry'); } catch { /* fine */ }
+      try { sessionStorage.removeItem('admin-access-retry'); } catch { /* fine */ }
 
       document.getElementById('logout-btn').hidden = false;
 
@@ -3543,8 +4162,12 @@
             ? 'AGORA_DEV_ADMIN is set — this bypasses Cloudflare Access and is only for wrangler dev.'
             : `Signed in to Cloudflare Access as ${who}`;
           el.hidden = false;
+          document.getElementById('account-avatar').textContent = who === 'dev' ? 'D' : who.charAt(0);
         }
       } catch { /* the panel works without knowing who you are */ }
+      document.getElementById('account-role').textContent = me.bootstrap
+        ? 'Owner (nobody listed yet)'
+        : (me.role ? me.role.charAt(0).toUpperCase() + me.role.slice(1) : 'No role');
 
       await loadAll();
     })();
