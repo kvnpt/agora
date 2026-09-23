@@ -1481,8 +1481,19 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .badge-feast { background: #f5ecd0; color: #7a6520; }
 .badge-other { background: #f0f0f0; color: #555; }
 .badge-cancelled { background: #f0f0f0; color: #888; }
+/* Why the service is off, on the card itself. A BREAK badge with no reason
+   reads as a fault in the site rather than as a decision somebody made. */
+.event-break-row {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 2px;
+}
 .badge-bilingual { background: #e0f0e8; color: #1a6640; }
 .badge-combined { background: #ccf0f0; color: #0e7070; }
+/* The third tombstone. Warmer than a cancellation because it is a longer and
+   less alarming statement — the parish is away for a stretch, not this one
+   service called off — but still plainly not a service that is running. */
+.badge-break { background: #f6e6cc; color: #8a5a10; }
 .own-tag { font-style: normal; font-size: 10px; font-weight: 600; background: var(--accent-bg); color: var(--accent-text); border-radius: 3px; padding: 1px 4px; margin-left: 5px; vertical-align: middle; }
 /* Sibling of .own-tag: "this one is not yours to write". Warm rather than red,
    because it is not a refusal — the row is still tickable, and ticking it turns
@@ -1929,6 +1940,28 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .si-wom { font-size: 10px; color: var(--text-muted); }
 .si-where { font-size: 10px; }
+/* A rule that is not running at the moment. Quiet, because the row is still
+   the parish's real timetable — the break is a qualification on it, not a
+   replacement for it. */
+.schedule-item-break {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #8a5a10;
+  background: #f6e6cc;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.si-break {
+  padding: 0 0 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+@media (prefers-color-scheme: dark) {
+  .schedule-item-break { background: #382d18; color: #e3b86a; }
+}
 .schedule-item-scope {
   flex: none;
   font-size: 9.5px;
@@ -2211,6 +2244,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   .badge-fundraiser{ background: #1f2e1f; color: #a3c8a3; }
   .badge-bilingual { background: #1c2e25; color: #9ad4b8; }
   .badge-combined  { background: #1a3434; color: #9ad4d4; }
+  .badge-break     { background: #382d18; color: #e3b86a; }
   .badge-other     { background: #26272c; color: #aaaaaa; }
   .badge-cancelled { background: #26272c; color: #888888; }
 }
@@ -4711,4 +4745,177 @@ button.ps-avatar { cursor: pointer; }
 @keyframes ls-log-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Breaks ──────────────────────────────────────────────────────────────
+   A stretch of dates a service is not running. Its own dialog because it is a
+   statement about a RANGE, and because the commonest one covers the whole
+   parish rather than the one rule the person happened to open. */
+.break-modal { max-width: 460px; }
+.break-existing {
+  margin: 4px 0 12px;
+}
+.break-existing-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+/* The dates and the scope on one line, the reason under it. Squeezed into one
+   flex row the reason had to wrap inside itself, and "Christmas break" came
+   out as "Christ mas break" — a note nobody can read is not a note. */
+.break-existing-row {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.break-existing-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.break-existing-when { font-weight: 600; flex: none; }
+.break-existing-scope {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #8a5a10;
+  background: #f6e6cc;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.break-existing-note {
+  margin-top: 3px;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+.break-existing-scope { flex: none; }
+.break-lift {
+  flex: none;
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.break-lift:hover { border-color: var(--text-muted); }
+.break-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.break-scope-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+/* Two dates side by side, and one column each when the pair stops clearing
+   what a native date input asks for — the same measured limit the schedule
+   forms hit at 320px. */
+.break-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.break-dates label,
+.break-note-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.break-note-label { margin-top: 10px; }
+.break-dates input,
+.break-note-label input {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 0;
+  box-sizing: border-box;
+}
+/* What the window will actually do, in occurrences rather than in days — "18
+   days" does not say whether a service is affected. */
+.break-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 1.2em;
+}
+@media (prefers-color-scheme: dark) {
+  .break-existing-scope { background: #382d18; color: #e3b86a; }
+}
+
+/* ── How often a rule runs ───────────────────────────────────────────────
+   One control, three answers. week_of_month and week_parity cannot both be
+   set, so offering them as two pickers would make an impossible rule look
+   askable. */
+.cadence { margin-top: 8px; }
+.cad-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.cad-mode {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.cad-mode input { width: auto; }
+.cad-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 2px;
+  font-size: 11px;
+}
+.cad-body[hidden] { display: none; }
+/* The fortnight is offered as DATES. Nobody thinks in week numbers, and the
+   only thing a person cannot work out for themselves is which of the two
+   alternating weeks is theirs — which the next three dates answer outright. */
+.cad-week {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.cad-week input { width: auto; }
+.cad-week-dates {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text);
+}
+.cad-week:has(input:checked) {
+  border-color: var(--text);
+  background: var(--surface-2);
 }

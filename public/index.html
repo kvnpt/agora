@@ -645,5 +645,33 @@
       </div>
     </div>
   </div>
+
+  <!-- A break: a stretch of dates a service is not running. Its own dialog
+       rather than a field on the schedule form, because it is a statement
+       about a RANGE and the commonest one covers the whole parish rather than
+       the rule the person happens to be looking at. -->
+  <div class="escalate-backdrop" id="break-backdrop" onclick="if(event.target===this)closeBreakEditor()">
+    <div class="escalate-modal break-modal">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeBreakEditor()">&times;</button>
+      <h2>Break</h2>
+      <div class="escalate-modal-sub" id="break-modal-sub"></div>
+      <div class="break-existing" id="break-existing"></div>
+      <div class="break-form">
+        <div class="break-scope" id="break-scope"></div>
+        <div class="break-dates">
+          <label>From<input type="date" id="break-from"></label>
+          <label>To<input type="date" id="break-to"></label>
+        </div>
+        <label class="break-note-label">Why
+          <input type="text" id="break-note" placeholder="Christmas break" maxlength="120">
+        </label>
+        <div class="break-hint" id="break-hint"></div>
+      </div>
+      <div class="escalate-btn-row">
+        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeBreakEditor()">Cancel</button>
+        <button class="btn-save" type="button" id="break-save">Set break</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

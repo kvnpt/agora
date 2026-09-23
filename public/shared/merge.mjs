@@ -22,12 +22,17 @@ export function partitionKey(e) {
 }
 
 // Winner within a partition:
-//   1. a week_of_month-specific rule beats a generic weekly one
+//   1. a rule that names WHICH weeks beats a generic weekly one — a
+//      week_of_month rule or a fortnightly one. Both are the same kind of
+//      claim ("not every week, these weeks"), and both are more specific than
+//      a bare weekly rule at the same time and title, so they rank together.
 //   2. a stored one-off beats a schedule instance  <- the load-bearing rule:
 //      a scraped or hand-entered event supersedes its recurring twin
 //   3. most recently updated
+const qualified = (e) => (e.week_of_month || e.week_parity) ? 0 : 1;
+
 export function preferenceCmp(a, b) {
-  const womA = a.week_of_month ? 0 : 1, womB = b.week_of_month ? 0 : 1;
+  const womA = qualified(a), womB = qualified(b);
   if (womA !== womB) return womA - womB;
   const schA = a.source_adapter === 'schedule' ? 1 : 0, schB = b.source_adapter === 'schedule' ? 1 : 0;
   if (schA !== schB) return schA - schB;
@@ -53,7 +58,8 @@ export function dedupe(events) {
 export function filterByStatus(events, status) {
   if (status) return events.filter(e => e.status === status);
   return events.filter(e =>
-    e.status === 'approved' || e.status === 'cancelled' || e.status === 'combined');
+    e.status === 'approved' || e.status === 'cancelled'
+    || e.status === 'combined' || e.status === 'break');
 }
 
 /** Attach cross-parish links. Only integer-id rows (stored events) can have them. */

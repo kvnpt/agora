@@ -68,6 +68,10 @@ export function registerPublicRoutes(router) {
       parishes: parishes.results || [],
       schedules: rows.schedules,
       overrides: rows.overrides,
+      // The break windows overlapping this window. Rows, like the rest of the
+      // bundle — the browser decides which occurrences they silence, because
+      // the browser is where the projection happens.
+      breaks: rows.breaks || [],
       events: oneOffs.results || [],
       event_parishes: cross.results || [],
       // Carried in the bundle rather than fetched separately: every reader of a

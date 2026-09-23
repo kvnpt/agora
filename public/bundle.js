@@ -37,12 +37,17 @@ window.agoraBundle = (function () {
 
   async function modules() {
     if (!mods) {
-      const [project, merge, tz] = await Promise.all([
+      const [project, merge, tz, recurrence] = await Promise.all([
         import('/shared/project.mjs'),
         import('/shared/merge.mjs'),
         import('/shared/tz.mjs'),
+        // The app needs the week table directly, not only through the
+        // projection: the fortnightly picker has to SHOW which dates a rule
+        // would run on, and a second copy of that arithmetic in app.js is
+        // exactly the drift /shared/ exists to prevent.
+        import('/shared/recurrence.mjs'),
       ]);
-      mods = { ...project, ...merge, ...tz };
+      mods = { ...project, ...merge, ...tz, ...recurrence };
     }
     return mods;
   }
@@ -171,7 +176,17 @@ window.agoraBundle = (function () {
     if (!s || !mods.isValidOccurrence(s, parsed.date)) return null;
     const o = (raw.overrides || []).find(
       x => x.schedule_id === parsed.scheduleId && x.occurrence_date === parsed.date);
-    const inst = mods.project(s, parsed.date, o, new mods.OffsetCache());
+    // A break speaks for this date when no override does, exactly as it does
+    // inside expandFrom. Without this a deep link into a break resolved to the
+    // service running — the one card the break exists to replace.
+    const b = o ? null : mods.breakCovering(s, parsed.date, raw.breaks);
+    const inst = mods.project(s, parsed.date, o || (b ? {
+      kind: 'break',
+      break_from: b.from_date,
+      break_until: b.to_date,
+      break_note: b.note || null,
+      updated_at: b.updated_at || null,
+    } : null), new mods.OffsetCache());
     return inst ? { ...inst, id: String(inst.id) } : null;
   }
 
@@ -211,5 +226,39 @@ window.agoraBundle = (function () {
   }));
   const isLoaded = () => !!raw;
 
-  return { load, feed, resolveEvent, localToUtc, parishes, schedules, isLoaded, get raw() { return raw; } };
+  // The break windows the current window carries. The app needs the rows
+  // themselves and not only their effect on the feed: a timetable row says "on
+  // a break, back on the 12th", and that sentence is about the RULE rather than
+  // about any occurrence the feed happens to be showing.
+  const breaks = () => (raw && raw.breaks) || [];
+
+  /**
+   * Which fortnight a date falls in — 'a', 'b', or null before the modules
+   * have loaded.
+   *
+   * Exposed for the same reason `localToUtc` is: app.js is a classic script
+   * and cannot import, and the fortnightly picker has to SHOW the dates a rule
+   * would run on or nobody can tell which of the two weeks they just picked.
+   * A second copy of the week table in the app is precisely the drift
+   * /shared/ exists to prevent, and it would be a copy no test runs.
+   *
+   * Synchronous, because it is called from a render. Null degrades to a picker
+   * without its date preview rather than to a wrong one.
+   */
+  const weekAbOf = (dateStr) => (mods ? mods.weekAbOf(dateStr) : null);
+
+  /**
+   * The first date a rule runs again on or after `from`, stepping over its
+   * breaks. Same reasoning as weekAbOf: the timetable says "back Sun 10 Jan"
+   * and the arithmetic behind that sentence is the projection's, not a second
+   * copy in app.js that nothing runs.
+   */
+  const nextOccurrenceAfterBreak = (rule, from, brs) =>
+    (mods ? mods.nextOccurrenceAfterBreak(rule, from, brs || breaks()) : null);
+
+  return {
+    load, feed, resolveEvent, localToUtc, parishes, schedules, breaks, weekAbOf,
+    nextOccurrenceAfterBreak, isLoaded,
+    get raw() { return raw; },
+  };
 })();

@@ -24,7 +24,7 @@
 //      written, on every request.
 
 import { OffsetCache, localDateOf } from './tz.mjs';
-import { matchesWeekOfMonth } from './recurrence.mjs';
+import { matchesWeekOfMonth, matchesWeekParity } from './recurrence.mjs';
 
 const DAY_MS = 86400000;
 
@@ -51,7 +51,11 @@ export function project(s, date, o, cache) {
   const kind = o ? o.kind : null;
   const startTime = (o && o.patch_start_time) || s.start_time;
   const endTime = (o && o.patch_end_time != null) ? o.patch_end_time : s.end_time;
-  const isTombstone = kind === 'cancelled' || kind === 'combined';
+  // A break is a tombstone like the other two: the service is not running and
+  // somebody who would have turned up is told so, rather than finding the card
+  // quietly absent. It is the only kind that arrives without a row of its own
+  // in schedule_overrides — expandFrom synthesises it from the break window.
+  const isTombstone = kind === 'cancelled' || kind === 'combined' || kind === 'break';
   return {
     id: `${s.id}:${date}`,                  // stable synthetic id (doubles as service_key)
     parish_id: s.parish_id,
@@ -88,9 +92,17 @@ export function project(s, date, o, cache) {
     status: kind === 'cancelled' ? 'cancelled'
           : kind === 'combined'  ? 'combined'
           : kind === 'hidden'    ? 'hidden'
+          : kind === 'break'     ? 'break'
           : 'approved',
     is_tombstone: isTombstone ? 1 : 0,
     combined_into_event_id: (o && o.combined_into_event_id) || null,
+    // Only set on a break, and carried so the card can say WHY and the
+    // timetable can say when the service comes back. A break is a statement
+    // about a stretch of dates, and an instance inside it that could not name
+    // its own stretch would be a tombstone with nothing to explain it.
+    break_from: (o && o.break_from) || null,
+    break_until: (o && o.break_until) || null,
+    break_note: (o && o.break_note) || null,
     created_at: s.created_at,
     updated_at: o ? o.updated_at : s.created_at,
     parish_name: s.parish_name,
@@ -113,9 +125,50 @@ export function isValidOccurrence(s, date) {
   const dow = new Date(date + 'T00:00:00Z').getUTCDay();
   if (dow !== s.day_of_week) return false;
   if (!matchesWeekOfMonth(date, s.week_of_month)) return false;
+  if (!matchesWeekParity(date, s.week_parity)) return false;
   if (s.effective_from && date < s.effective_from) return false;
   if (s.effective_to && date > s.effective_to) return false;
   return true;
+}
+
+/**
+ * Break windows that speak for this rule, soonest first.
+ *
+ * A row with no `schedule_id` is the whole parish — the case that is actually
+ * common, since a parish shutting for Christmas shuts all of it and naming
+ * every rule would be a row per service and one of them forgotten.
+ */
+export function breaksFor(s, breaks) {
+  return (breaks || [])
+    .filter(b => (b.schedule_id != null
+      ? String(b.schedule_id) === String(s.id)
+      : b.parish_id === s.parish_id))
+    .sort((a, b) => String(a.from_date).localeCompare(String(b.from_date)));
+}
+
+/** The break covering this date, or null. */
+export function breakCovering(s, date, breaks) {
+  return breaksFor(s, breaks).find(b => date >= b.from_date && date <= b.to_date) || null;
+}
+
+/**
+ * The first date this rule runs again on or after `date`, skipping its breaks.
+ *
+ * Bounded rather than open-ended: a rule whose break runs to 2030 is a rule
+ * somebody should fix, not a loop this should spend a year finding the end of.
+ * Null means "not within the horizon", and the caller says "on a break" without
+ * naming a date rather than inventing one.
+ */
+export function nextOccurrenceAfterBreak(s, date, breaks, { horizonDays = 400 } = {}) {
+  const start = Date.parse(date + 'T00:00:00Z');
+  if (Number.isNaN(start)) return null;
+  for (let i = 0; i <= horizonDays; i++) {
+    const d = new Date(start + i * DAY_MS).toISOString().slice(0, 10);
+    if (!isValidOccurrence(s, d)) continue;
+    if (breakCovering(s, d, breaks)) continue;
+    return d;
+  }
+  return null;
 }
 
 /**
@@ -128,7 +181,7 @@ export function isValidOccurrence(s, date) {
  * two can't drift — which was the standing objection to moving the lens
  * client-side.
  */
-export function expandFrom({ schedules, overrides }, fromUtc, toUtc, { cache = new OffsetCache() } = {}) {
+export function expandFrom({ schedules, overrides, breaks }, fromUtc, toUtc, { cache = new OffsetCache() } = {}) {
   const fromMs = Date.parse(fromUtc);
   const toMs = Date.parse(toUtc);
 
@@ -143,11 +196,35 @@ export function expandFrom({ schedules, overrides }, fromUtc, toUtc, { cache = n
     let byDow = indexes.get(zone);
     if (!byDow) { byDow = dateIndexFor(zone, fromMs, toMs); indexes.set(zone, byDow); }
 
+    // Narrowed once per rule rather than once per date: a parish-wide break is
+    // a row every rule at that parish has to consider.
+    const mine = breaksFor(s, breaks);
+
     for (const date of byDow[s.day_of_week] || []) {
       if (!matchesWeekOfMonth(date, s.week_of_month)) continue;
+      if (!matchesWeekParity(date, s.week_parity)) continue;
       if (s.effective_from && date < s.effective_from) continue;
       if (s.effective_to && date > s.effective_to) continue;
-      const inst = project(s, date, ov[`${s.id}:${date}`], cache);
+
+      // An explicit override beats the break, always. A break says "nothing
+      // this fortnight"; an override on one of those dates is somebody having
+      // said something about that date in particular, and the narrower
+      // statement is the later thought. It is also how a single service is
+      // reinstated mid-break without cutting the break in two.
+      let o = ov[`${s.id}:${date}`];
+      if (!o) {
+        const b = mine.find(x => date >= x.from_date && date <= x.to_date);
+        if (b) {
+          o = {
+            kind: 'break',
+            break_from: b.from_date,
+            break_until: b.to_date,
+            break_note: b.note || null,
+            updated_at: b.updated_at || null,
+          };
+        }
+      }
+      const inst = project(s, date, o, cache);
       const startMs = Date.parse(inst.start_utc);
       if (startMs < fromMs || startMs > toMs) continue;
       out.push(inst);
