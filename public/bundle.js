@@ -37,7 +37,7 @@ window.agoraBundle = (function () {
 
   async function modules() {
     if (!mods) {
-      const [project, merge, tz, recurrence] = await Promise.all([
+      const [project, merge, tz, recurrence, parishJoin] = await Promise.all([
         import('/shared/project.mjs'),
         import('/shared/merge.mjs'),
         import('/shared/tz.mjs'),
@@ -46,40 +46,32 @@ window.agoraBundle = (function () {
         // would run on, and a second copy of that arithmetic in app.js is
         // exactly the drift /shared/ exists to prevent.
         import('/shared/recurrence.mjs'),
+        // Puts each rule's parish fields back: the bundle sends a rule's own
+        // columns only, and the projection reads the parish_* copies.
+        import('/shared/parish-join.mjs'),
       ]);
-      mods = { ...project, ...merge, ...tz, ...recurrence };
+      mods = { ...project, ...merge, ...tz, ...recurrence, ...parishJoin };
     }
     return mods;
   }
 
   /**
-   * Whether this fetch may be answered from the browser's own HTTP cache.
+   * How this fetch may use the browser's HTTP cache.
    *
-   * `/api/bundle` is served `max-age=60, stale-while-revalidate=600`, and the
-   * SWR half is the part that bites: for ten minutes past the first minute the
-   * browser will hand back a stale body WITHOUT asking, revalidating behind it.
-   * For a reader that is the whole point — the client re-derives "now" locally,
-   * so a slightly old set of rules still projects a correct feed.
+   * `/api/bundle` is served `no-cache` with an ETag, so the browser always
+   * asks, and an unchanged bundle comes back as a 304 with no body. That is
+   * what makes an edit in /admin show the moment somebody returns to the app —
+   * it used to be `max-age=60, stale-while-revalidate=600`, under which a
+   * script's fetch() was answered from the browser's copy for up to eleven
+   * minutes without a request, and a localStorage hint tried (and on the way
+   * back from /admin failed) to spot the admins it hurt.
    *
-   * For the admin who just wrote a rule it is a bug, and a confusing one: a
-   * hard reload does not clear it, because a script-issued `fetch()` is not
-   * covered by the reload's cache bypass. The symptom is a new service that
-   * refuses to appear in the session that added it while a private window shows
-   * it at once — a private window having no HTTP cache to be stale.
-   *
-   * `fresh` is the write path and is unconditional. The admin flag is a HINT
-   * and nothing else: it is read from localStorage so it is known on the very
-   * first load, when `checkAdmin()` has not answered yet (init runs it
-   * alongside `fetchParishes`, not before it). Being wrong costs one uncached
-   * request and can grant nothing — every admin route verifies the Access JWT
-   * server-side, and this value never reaches one.
+   * `fresh` — the write path — says the same thing explicitly. It is already
+   * what the default does; spelling it out keeps a write from ever depending
+   * on a header somebody later relaxes.
    */
   function cacheInit(opts) {
-    if (opts.fresh) return { cache: 'no-store' };
-    let hinted = false;
-    try { hinted = localStorage.getItem('agora.wasAdmin') === '1'; } catch { /* private window */ }
-    const live = window.agoraState && window.agoraState.isAdmin;
-    return (hinted || live) ? { cache: 'no-store' } : {};
+    return opts.fresh ? { cache: 'no-cache' } : {};
   }
 
   /**
@@ -110,10 +102,18 @@ window.agoraBundle = (function () {
     if (reqTo) params.set('to', reqTo);
 
     inflight = (async () => {
-      await modules();
-      const res = await fetch(`/api/bundle?${params}`, cacheInit(opts));
+      // The request and the four /shared/ modules together, not one after the
+      // other: on a first load the imports alone are a round trip, and
+      // nothing in them is needed to ASK for the bundle — only to use it.
+      const [res] = await Promise.all([
+        fetch(`/api/bundle?${params}`, cacheInit(opts)),
+        modules(),
+      ]);
       if (!res.ok) throw new Error(`bundle ${res.status}`);
       raw = await res.json();
+      // Each rule arrives with its own columns only; give it its parish's
+      // back, from the list in the same payload, before anything projects it.
+      raw.schedules = mods.joinParishes(raw.schedules, raw.parishes);
       // What the SERVER says it answered with, not what we asked for — it
       // applies its own default when a bound is missing.
       held = { from: (raw.window && raw.window.from) || reqFrom, to: (raw.window && raw.window.to) || reqTo };

@@ -111,22 +111,30 @@ await page.waitForFunction(() => window.agoraState && window.agoraState.isAdmin 
 await page.waitForTimeout(1800);   // parishes + first render
 ```
 
-## The trap that will waste an hour
+## The trap that used to waste an hour
 
-**`/api/bundle` is served `max-age=60, stale-while-revalidate=600`.** A bare
-`fetch('/api/bundle')` in a probe gets the cached body, so a write you just made
-appears not to have happened. This looked exactly like a broken write once and
-was not.
+`/api/bundle` was served `max-age=60, stale-while-revalidate=600`, and a bare
+`fetch('/api/bundle')` handed back the browser's copy without asking — so a
+write you had just made looked like it never happened, in probes and, worse, in
+the app after pressing Back to app in /admin.
 
-Read state through the app, which bypasses the cache on the write path:
+It is now `no-cache` with an ETag (`worker/lib/data-version.mjs`): the browser
+asks every time and gets a 304 when nothing moved. Every successful write under
+`/api/admin/` bumps a data version, which is also what the edge cache keys the
+body on. So a plain `fetch('/api/bundle')` after a write is current.
 
-```js
-await page.evaluate(() => window.agoraState.events)     // good
-await page.evaluate(() => fetch('/api/bundle'))         // stale, silently
-await page.evaluate(() => fetch('/api/bundle', { cache: 'no-store' }))  // fine
-```
+Two things can still look stale, and neither is the browser:
 
-`agoraBundle.load({ fresh: true })` is what the app itself uses after a write.
+- **Another Cloudflare location** trusts its copy of the version for 15
+  seconds. The location that took the write updates at once, and a browser
+  script talks to one location, so this bites only when comparing two
+  machines.
+- **A write that never went through the Worker** — an import run from a
+  terminal straight into D1 — does not bump the version. Its body stays cached
+  for up to ten minutes. Bump by hand (any admin write does it) if you need it
+  sooner.
+
+`x-data-version` on the response says which version answered.
 
 ## Useful handles the app exposes
 

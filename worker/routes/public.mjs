@@ -17,16 +17,29 @@ import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
 import { coverageState, coverageMessage } from '../lib/coverage.mjs';
+import { cachedJson } from '../lib/data-version.mjs';
 
 // A generous default. The client picks the window it actually renders; this only
 // bounds how many rows travel, and rows are far cheaper than instances.
 const DEFAULT_WINDOW_DAYS = 120;
 const DAY_MS = 86400000;
 
+// The default window starts at a UTC midnight, not at "now minus a day" to the
+// millisecond. The bounds are part of what the edge caches the answer under,
+// and a bound that moved every millisecond made every request a new key.
 function windowFrom(query) {
-  const from = query.get('from') || new Date(Date.now() - DAY_MS).toISOString();
+  const dayStart = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+  const from = query.get('from') || new Date(dayStart - DAY_MS).toISOString();
   const to = query.get('to') || new Date(Date.parse(from) + DEFAULT_WINDOW_DAYS * DAY_MS).toISOString();
   return { from, to };
+}
+
+// Who last edited a row is an admin's email address. Admin reads carry it;
+// nothing served here does — the same line /api/parishes has always drawn.
+function withoutAuthor(row) {
+  if (!row || !('updated_by' in row)) return row;
+  const { updated_by, ...rest } = row;   // eslint-disable-line no-unused-vars
+  return rest;
 }
 
 const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
@@ -37,11 +50,24 @@ const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timez
 
 export function registerPublicRoutes(router) {
   // GET /api/bundle — everything the client needs to build the feed itself.
-  router.get('/api/bundle', async ({ env, query }) => {
+  //
+  // Served through cachedJson: an ETag on every response, `no-cache` so the
+  // browser asks every time, and the body kept at the edge under the data
+  // version so asking rarely reaches D1. lib/data-version.mjs has the why.
+  router.get('/api/bundle', async ({ env, query, request, ctx }) => {
     const { from, to } = windowFrom(query);
+    return cachedJson({
+      request, env, ctx,
+      name: `bundle?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      build: () => buildBundle(env, from, to),
+    });
+  });
 
+  async function buildBundle(env, from, to) {
     const [rows, parishes, oneOffs, cross, jurisColors, links] = await Promise.all([
-      fetchWindowRows(env.DB, from, to),
+      // Each rule's own columns only; the browser joins the parish back on
+      // (public/shared/parish-join.mjs), from the list travelling alongside.
+      fetchWindowRows(env.DB, from, to, { withParish: false }),
       env.DB.prepare(`SELECT ${PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
       env.DB.prepare(
         `SELECT e.*, p.name AS parish_name, p.jurisdiction, p.address AS parish_address,
@@ -62,17 +88,19 @@ export function registerPublicRoutes(router) {
         .all().catch(() => ({ results: [] })),
     ]);
 
-    return json({
+    return {
+      // No build timestamp. The ETag is a hash of this body, and a clock in it
+      // would make every rebuild look like new data and cost every browser a
+      // full download for nothing.
       window: { from, to },
-      generated_at: new Date().toISOString(),
       parishes: parishes.results || [],
-      schedules: rows.schedules,
-      overrides: rows.overrides,
+      schedules: rows.schedules.map(withoutAuthor),
+      overrides: rows.overrides.map(withoutAuthor),
       // The break windows overlapping this window. Rows, like the rest of the
       // bundle — the browser decides which occurrences they silence, because
       // the browser is where the projection happens.
-      breaks: rows.breaks || [],
-      events: oneOffs.results || [],
+      breaks: (rows.breaks || []).map(withoutAuthor),
+      events: (oneOffs.results || []).map(withoutAuthor),
       event_parishes: cross.results || [],
       // Carried in the bundle rather than fetched separately: every reader of a
       // jurisdiction colour runs during the first render, so a second round
@@ -80,12 +108,8 @@ export function registerPublicRoutes(router) {
       // the new ones.
       jurisdiction_colors: jurisColors,
       parish_links: links.results || [],
-    }, 200, {
-      // Rules change rarely. The client re-derives "now" locally, so a stale-ish
-      // bundle is still correct — only newly-added events are missed, briefly.
-      'cache-control': 'public, max-age=60, stale-while-revalidate=600',
-    });
-  });
+    };
+  }
 
   // GET /api/parishes
   router.get('/api/parishes', async ({ env }) => {
@@ -131,7 +155,7 @@ export function registerPublicRoutes(router) {
     const stmt = jurisdiction
       ? env.DB.prepare(sql).bind(jurisdiction)
       : env.DB.prepare(sql);
-    return json((await stmt.all()).results || []);
+    return json(((await stmt.all()).results || []).map(withoutAuthor));
   });
 
   // GET /api/events/:id — integer id (stored) or "scheduleId:YYYY-MM-DD" (instance).

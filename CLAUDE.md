@@ -51,6 +51,26 @@ the Worker's CPU near zero (it matters — Workers Free meters 10ms of CPU per r
 and makes the response cacheable, since rules change rarely while a feed is stale the
 moment "now" moves.
 
+**The bundle is asked for every time, and asking is cheap.** `/api/bundle`
+is `Cache-Control: no-cache` with an ETag that is a hash of the body, so a
+browser never answers from its own copy and an unchanged bundle is a bodiless
+304. The body is kept in the edge cache under a *data version* — one small R2
+object, `meta/data-version` — that every successful write under `/api/admin/`
+and every cron run bumps (`worker/lib/data-version.mjs`), so asking rarely
+reaches D1 and an edit is what the admin's next load of the app gets. It was
+`max-age=60, stale-while-revalidate=600` until an edit in /admin kept not
+showing on the way back to the app. The version is in R2 rather than D1 so that
+no migration has to land first. A write that bypasses the Worker (an import
+from a terminal) does not bump it and shows within ten minutes, when the edge
+copy expires.
+
+On the wire a schedule rule carries **its own columns only**: `languages` and
+`location_override` are its to set, and where either is null the parish's is
+what shows. Everything else — name, pin, zone, website — is the parish's, and
+the browser joins it back from the parish list in the same response
+(`public/shared/parish-join.mjs`, the one list the Worker's SQL join is also
+built from). Nothing public carries `updated_by`; it is an admin's email.
+
 **Synthetic ids.** A projected occurrence has the id `"<scheduleId>:YYYY-MM-DD"`, e.g.
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.
@@ -276,8 +296,8 @@ fault against the old code first and then re-measuring is the honest version.
 
 **`docs/browser-checks.md` is how to do that here** — driving the app with
 Playwright, the console noise that is environmental rather than yours, and the
-`/api/bundle` cache that makes a write you just made look like it never
-happened.
+way `/api/bundle` is cached, which used to make a write you had just made
+look like it never happened.
 
 It also records where the risk actually sits, which is not where it feels like
 it sits. Two bugs shipped in one week with full test coverage of their logic and

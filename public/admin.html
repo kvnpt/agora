@@ -630,6 +630,10 @@
         <p class="section-lead">Every church on the map. Open one to edit its details, links and where its information comes from.</p>
       </div>
 
+      <!-- Logos uploaded before they were shrunk on the way up. Offered, not
+           done behind anybody's back: it replaces a file somebody chose. -->
+      <div id="logo-shrink" class="bootstrap-note" hidden></div>
+
       <!-- 293 parishes, one flat list, filterable only by jurisdiction — and
            Greek alone is 135. For somebody who knows the data that is friction;
            for a sub-admin asked to fix one parish's phone number, FINDING the
@@ -1133,6 +1137,9 @@
   <script src="/shared/services.js"></script>
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
+  <!-- Logos are shrunk before they are uploaded, by the same code the app's
+       cropper uses. -->
+  <script src="/shared/logo-image.js"></script>
   <!-- The parish timezone table. Shared for the same reason the colours are:
        parishes.timezone is what makes a rule's local start_time an instant,
        and a second list of zones would be a second chance to get one wrong. -->
@@ -1393,6 +1400,70 @@
       setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2500);
     }
 
+    // ── Oversized logos ──
+    //
+    // Every logo is shrunk before upload now (/shared/logo-image.js), but the
+    // ones already stored were 512px PNGs of up to half a megabyte, and they
+    // were the heaviest thing on a first visit. This finds them — a one-byte
+    // ranged read says the size without downloading the image — and offers
+    // to put each through the same shrink and the same upload route a
+    // replacement would take.
+    const LOGO_OVERSIZE = 60 * 1024;
+    let oversizedLogos = [];
+
+    async function checkLogoSizes() {
+      if (!may('logo.edit') || !window.AgoraLogo) return;
+      const candidates = parishes.filter(p => p.logo_path && inMyScope(p.id) && !/\.svg(\?|$)/.test(p.logo_path));
+      const sized = await Promise.all(candidates.map(async (p) => {
+        const r = await fetch(p.logo_path, { headers: { Range: 'bytes=0-0' } }).catch(() => null);
+        if (!r || !r.ok) return { p, bytes: 0 };
+        const total = /\/(\d+)$/.exec(r.headers.get('content-range') || '');
+        return { p, bytes: total ? Number(total[1]) : Number(r.headers.get('content-length') || 0) };
+      }));
+      oversizedLogos = sized.filter(x => x.bytes > LOGO_OVERSIZE);
+      renderLogoShrink();
+    }
+
+    const kb = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
+
+    function renderLogoShrink(progress) {
+      const el = document.getElementById('logo-shrink');
+      if (!el) return;
+      el.hidden = !oversizedLogos.length;
+      if (!oversizedLogos.length) return;
+      const total = oversizedLogos.reduce((n, x) => n + x.bytes, 0);
+      const n = oversizedLogos.length;
+      el.innerHTML = progress
+        ? esc(progress)
+        : `<b>${n} parish logo${n === 1 ? ' is' : 's are'} ${kb(total)} between them</b> — far more than the
+           44px they are drawn at, and every first visit to the site downloads them.
+           Shrinking makes each a ${window.AgoraLogo.LOGO_SIZE}px WebP of a few KB that looks the same on screen.
+           <div class="btn-row" style="margin-top:10px;"><button type="button" class="btn btn-primary" id="logo-shrink-go">Shrink ${n === 1 ? 'it' : 'them'}</button></div>`;
+      const go = document.getElementById('logo-shrink-go');
+      if (go) go.addEventListener('click', shrinkOversizedLogos);
+    }
+
+    async function shrinkOversizedLogos() {
+      const todo = oversizedLogos.slice();
+      let done = 0, before = 0, after = 0;
+      for (const { p, bytes } of todo) {
+        renderLogoShrink(`Shrinking ${p.name}… (${done + 1} of ${todo.length})`);
+        try {
+          const src = await fetch(p.logo_path);
+          if (!src.ok) throw new Error(`could not read ${p.name}'s logo`);
+          const blob = await window.AgoraLogo.shrinkToSquare(await src.blob());
+          const res = await fetch(`/api/admin/parishes/${encodeURIComponent(p.id)}/logo`,
+            { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+          if (!res.ok) throw new Error(await adminError(res));
+          done++; before += bytes; after += blob.size;
+        } catch (err) {
+          toast(`${p.name}: ${err.message}`, 'error');
+        }
+      }
+      if (done) toast(`${done} logo${done === 1 ? '' : 's'} shrunk — ${kb(before)} down to ${kb(after)}`);
+      await loadAll();
+    }
+
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
         loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(),
@@ -1404,6 +1475,8 @@
       // After loadAdapters, which is what says whether any PDF adapter exists.
       await loadWorkflow();
       renderAll();
+      // Not awaited: a handful of one-byte reads, and nothing else waits on them.
+      checkLogoSizes();
     }
 
     function renderAll() {
@@ -2424,9 +2497,16 @@
       toast(err.error || await adminError(res), 'error');
     }
 
+    // Square, small and WebP before it leaves the browser — the file somebody
+    // picks is usually a photograph several megabytes across, and the largest
+    // place a logo is drawn is 44px wide. /shared/logo-image.js says more.
     async function uploadLogo(id, input) {
       const file = input.files[0]; if (!file) return;
-      const res = await fetch(`/api/admin/parishes/${id}/logo`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
+      let body = file;
+      try {
+        if (window.AgoraLogo) body = await window.AgoraLogo.shrinkToSquare(file);
+      } catch (err) { toast(err.message || 'Could not read that image', 'error'); return; }
+      const res = await fetch(`/api/admin/parishes/${id}/logo`, { method: 'POST', headers: { 'Content-Type': body.type || file.type }, body });
       if (res.ok) { toast('Logo uploaded'); loadAll(); } else toast(await adminError(res), 'error');
     }
 

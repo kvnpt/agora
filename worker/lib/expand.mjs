@@ -6,6 +6,7 @@
 // public feed ships rows and the browser expands them.
 
 import { OffsetCache } from '../../public/shared/tz.mjs';
+import { PARISH_JOIN_SQL } from '../../public/shared/parish-join.mjs';
 import {
   expandFrom, project, isValidOccurrence, parseInstanceId,
   breaksFor, breakCovering, nextOccurrenceAfterBreak,
@@ -19,26 +20,26 @@ export {
 const DAY_MS = 86400000;
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
 
-const PARISH_COLS = `
-  p.lat AS p_lat, p.lng AS p_lng, p.timezone AS p_timezone,
-  p.name AS parish_name, p.jurisdiction AS parish_jurisdiction,
-  p.address AS parish_address, p.website AS parish_website,
-  p.logo_path AS parish_logo, p.languages AS parish_languages,
-  p.acronym AS parish_acronym, p.color AS parish_color, p.live_url AS parish_live_url
-`;
+// The parish fields a rule borrows. One list, shared with the browser's own
+// join (public/shared/parish-join.mjs), because the bundle no longer sends
+// them — see there.
+const PARISH_COLS = PARISH_JOIN_SQL;
 
 /**
- * Fetch the rows a window needs. Returns what expandFrom consumes, and is also
- * exactly what the bundle endpoint ships to the client.
+ * Fetch the rows a window needs. Returns what expandFrom consumes.
+ *
+ * `withParish: false` is the bundle's shape: each rule's own columns and no
+ * parish copies, which the browser re-attaches from the parish list sent
+ * alongside. Everything that projects on the server keeps the join.
  */
-export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null } = {}) {
+export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, withParish = true } = {}) {
   // Widen by a day so no zone's local date is excluded by UTC skew (max real
   // offset is under 15 hours).
   const startStr = isoDate(Date.parse(fromUtc) - DAY_MS);
   const endStr = isoDate(Date.parse(toUtc) + DAY_MS);
 
   const schedSql = `
-    SELECT s.*, ${PARISH_COLS}
+    SELECT s.*${withParish ? `, ${PARISH_COLS}` : ''}
     FROM schedules s JOIN parishes p ON s.parish_id = p.id
     WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''}
       AND (s.effective_from IS NULL OR s.effective_from <= ?)
