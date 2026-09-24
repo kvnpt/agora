@@ -9,6 +9,7 @@ import { registerPublicRoutes } from './routes/public.mjs';
 import { registerAdminRoutes } from './routes/admin.mjs';
 import { registerAssetRoutes } from './routes/assets.mjs';
 import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
+import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 
 const router = new Router();
 registerPublicRoutes(router);
@@ -79,6 +80,15 @@ export default {
   async fetch(request, env, ctx) {
     try {
       const res = await router.handle(request, env, ctx);
+      // A write that landed moves the data version, so the next /api/bundle
+      // anybody asks for — the admin's own first, on this same location — is
+      // rebuilt rather than served from a cache holding the old answer. Before
+      // returning, not after: the redirect back to the app can beat a
+      // waitUntil. A failed bump must not fail a write that succeeded.
+      if (res && isDataWrite(request, res)) {
+        await bumpVersion(env, new URL(request.url).origin)
+          .catch(err => console.error(`[data-version] bump failed: ${err.message}`));
+      }
       if (res) return res;
     } catch (err) {
       return json({ error: 'Internal error', detail: err.message }, 500);
@@ -122,5 +132,11 @@ export default {
         console.error(`[cron] ${due[i].id} failed: ${r.reason?.message || r.reason}`);
       }
     });
+
+    // A scrape writes events and tombstones, so it moves the data version like
+    // an admin write does. There is no request here, so no origin: the R2
+    // object moves and every location picks it up within VERSION_TTL.
+    await bumpVersion(env, null)
+      .catch(err => console.error(`[data-version] bump failed: ${err.message}`));
   },
 };

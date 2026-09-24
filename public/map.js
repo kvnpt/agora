@@ -170,6 +170,11 @@ let map = null;
 let styleLoaded = false;
 let pendingUpdate = null;          // queued updateMap call if style not ready
 let parishesById = new Map();      // populated at initMap; fast lookup for click handler
+let initStarted = false;           // initMap is async; a second call mid-await must not build a second map
+// The first "fit to every parish" is owed until the parishes are here. The map
+// is created before /api/bundle answers now (the basemap needs nothing from
+// it), so on a first load the style is often ready while the list is empty.
+let initialFitPending = false;
 const logoRegistered = new Set();   // parish ids whose focus_<id> sprite is registered
 
 // ── Bounds helpers (replace L.latLngBounds.pad). MapLibre fitBounds takes
@@ -253,7 +258,8 @@ async function buildBaseStyle() {
 
 // ── initMap ────────────────────────────────────────────────────────────
 async function initMap(state) {
-  if (map) return;
+  if (map || initStarted) return;
+  initStarted = true;
 
   if (!window.__pmtilesRegistered) {
     const proto = new pmtiles.Protocol();
@@ -291,10 +297,13 @@ async function initMap(state) {
     // Register sprites BEFORE any layer tries to render them — otherwise the
     // symbol layers report "image missing" and skip drawing for the first
     // render frames, which is what made cluster icons vanish at low zoom.
-    await Promise.allSettled([
-      registerGrapeSprites(),
-      registerParishLogos(state.parishes || [])
-    ]);
+    await registerGrapeSprites().catch(() => {});
+    // Logos are NOT awaited. They are one parish's focus sprite each, drawn
+    // only once that parish is picked, and awaiting them held every dot on the
+    // map back behind the slowest image — which, at 512px PNGs of up to half a
+    // megabyte, was most of a first load. A picked parish whose logo is still
+    // on its way shows the plain dot and repaints when it lands.
+    registerParishLogos(state.parishes || []).then(() => map && map.triggerRepaint());
     map.triggerRepaint();
 
     styleLoaded = true;
@@ -306,13 +315,10 @@ async function initMap(state) {
     // is fired on a 150 ms setTimeout from init.
     const cameraOwned = state.parishSheetFocus || state.parishFocus || state._openEventId;
 
-    // Fresh session (no cached location): fit to all parishes.
+    // Fresh session (no cached location): fit to all parishes — now, or when
+    // they arrive.
     if (!state.locationActive && !cameraOwned) {
-      const pts = (state.parishes || []).filter(p => p.id !== '_unassigned' && p.lat != null && p.lng != null);
-      if (pts.length) {
-        const b = padBounds(boundsFromPoints(pts), 0.05);
-        map.fitBounds(b, { maxZoom: 6, animate: false });
-      }
+      if (!fitToAllParishes(state)) initialFitPending = true;
     }
 
     // Drain pending update if any. Strip fit when a deep-link already owns
@@ -845,6 +851,14 @@ function setupDeclutterOnZoom() {
 }
 
 // ── updateMap: rebuild GeoJSON, apply feature state ────────────────────
+/** Frame every parish. False when there are none yet to frame. */
+function fitToAllParishes(state) {
+  const pts = (state.parishes || []).filter(p => p.id !== '_unassigned' && p.lat != null && p.lng != null);
+  if (!pts.length) return false;
+  map.fitBounds(padBounds(boundsFromPoints(pts), 0.05), { maxZoom: 6, animate: false });
+  return true;
+}
+
 function updateMap(state, opts = {}) {
   if (!map) return;
   if (!styleLoaded) {
@@ -861,7 +875,16 @@ function updateMap(state, opts = {}) {
   if (state.parishes && state.parishes.length !== parishesById.size) {
     parishesById.clear();
     for (const p of state.parishes) parishesById.set(p.id, p);
-    registerParishLogos(state.parishes);
+    registerParishLogos(state.parishes).then(() => map && map.triggerRepaint());
+  }
+
+  // The first-load fit the style could not do because the list was not here
+  // yet. Re-checks what the load handler checked: a location or a deep link
+  // that arrived in the meantime owns the camera, and wins.
+  if (initialFitPending && state.parishes && state.parishes.length) {
+    initialFitPending = false;
+    const cameraOwned = state.parishSheetFocus || state.parishFocus || state._openEventId;
+    if (!state.locationActive && !cameraOwned && !opts.fit) fitToAllParishes(state);
   }
 
   // Active set: parishes whose events/schedules pass the current filters.

@@ -456,6 +456,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   disablePullToRefresh();
   loadCachedLocation();
   if (window.lsProgress) window.lsProgress(0.15);
+  // The map starts before the data, not after it. The basemap — style, tiles,
+  // glyphs, sprites — needs nothing from /api/bundle, and waiting for the
+  // bundle first put a full server round trip in front of every tile. The
+  // dots join it when updateMap runs below; until then map.js queues.
+  if (window.lsLog) window.lsLog('Initialising MapLibre…');
+  initMap(state);
   await Promise.all([fetchParishes(), checkAdmin()]);
   _initLogout();
   applyParishSlugs();
@@ -499,8 +505,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   state._initialLoad = true;
   applyStartMode();
   updateArchdioceseEventsBanner();
-  if (window.lsLog) window.lsLog('Initialising MapLibre…');
-  initMap(state);
+  // The layout has settled around the map since it was created (the sheet,
+  // the chips), so measure again before the first real draw.
+  if (window.agoraMap) window.agoraMap.resize();
   updateMap(state);
   if (window.lsLog) window.lsLog('✓ map ready');
   if (window.lsProgress) window.lsProgress(0.9);
@@ -1680,20 +1687,6 @@ async function checkAdmin() {
       }
     : { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0 };
 
-  // Remembered only so the NEXT page load knows before this answer arrives:
-  // init runs checkAdmin alongside fetchParishes rather than before it, so the
-  // first bundle fetch has already gone out by the time `state.isAdmin` is set,
-  // and that is the one fetch a stale cache ruins. bundle.js reads this to
-  // decide whether to bypass the browser's HTTP cache — see cacheInit there.
-  //
-  // It is a cache hint and never a permission: nothing is unlocked by it, the
-  // panel follows `state.isAdmin` above, and every admin route verifies the
-  // Access JWT server-side regardless of what any browser claims.
-  try {
-    if (state.isAdmin) localStorage.setItem('agora.wasAdmin', '1');
-    else localStorage.removeItem('agora.wasAdmin');
-  } catch { /* private window, or storage blocked — the hint is optional */ }
-
   // The button itself is always there. What the answer decides is what is
   // BEHIND it: the panel and the way out, or the way in.
   syncAccountMenu();
@@ -1933,10 +1926,16 @@ async function applyStartMode() {
     state.mode = 'services';
     servicesBtn.classList.add('active');
     showView('services');
-    await fetchSchedules({ fit: true });
+    await fetchSchedules();
   } else {
-    await fetchEvents({ fit: true });
+    await fetchEvents();
   }
+  // No `fit` on these two. The first frame of a fresh session is every parish
+  // (map.js, fitToAllParishes), and it always was: these asked for a fit, but
+  // they ran before the map existed and updateMap dropped the request. Now
+  // that the map is created before the bundle arrives the request would land
+  // and frame the week's events instead — a change nobody decided on. A place
+  // in the URL still frames that place, just below.
   delete state._startMode;
   // Frame the region explicitly rather than relying on the fetch above having
   // done it. The fit rides on the events path, and a region whose parishes
@@ -8019,10 +8018,12 @@ window.deleteParish = async function(id) {
 //
 // Cropping is client-side because there is nowhere else for it to happen:
 // a Worker has no image pipeline, and adding one for this would be a
-// dependency and a CPU bill for something a canvas already does. The
-// export is a square 512px PNG, which also means a 4 MB photograph off a
-// phone reaches R2 as ~100 KB — the avatar it becomes is 44px wide.
-const LOGO_EXPORT_SIZE = 512;
+// dependency and a CPU bill for something a canvas already does. The export
+// is square and AgoraLogo.LOGO_SIZE on a side, encoded as WebP where the
+// browser can — public/shared/logo-image.js, shared with /admin's upload.
+// It was a 512px PNG, which put crests of up to 480 KB on every first load
+// for an avatar 44px wide.
+const LOGO_EXPORT_SIZE = (window.AgoraLogo && window.AgoraLogo.LOGO_SIZE) || 192;
 
 const _logo = {
   parishId: null,
@@ -8542,9 +8543,11 @@ window.saveParishLogoCrop = async function() {
   // Square, not circular: every surface that shows a logo already rounds it
   // (border-radius in the sheet, an arc clip on the map sprite). Baking the
   // circle in would only lose the corners for whatever renders it flat.
-  const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+  const blob = window.AgoraLogo
+    ? await window.AgoraLogo.encodeCanvas(out)
+    : await new Promise(r => out.toBlob(r, 'image/png'));
   if (!blob) { alert('Could not render the crop.'); return; }
-  await _uploadParishLogo(blob, 'image/png');
+  await _uploadParishLogo(blob, blob.type || 'image/png');
 };
 
 async function _uploadParishLogo(body, contentType) {
