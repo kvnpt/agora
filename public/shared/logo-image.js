@@ -7,9 +7,14 @@
 //
 // So every logo is encoded here before it leaves the browser, by whichever
 // editor uploads it (the parish sheet's cropper, /admin's file field): square,
-// LOGO_SIZE on a side, WebP where the browser can write it and PNG where it
-// cannot (older Safari cannot encode WebP from a canvas, and says so by
-// handing back a PNG). A Worker has no image pipeline, and this is a canvas's
+// LOGO_SIZE on a side, WebP where the browser can write it. Safari cannot
+// encode WebP from a canvas, and says so by quietly handing back a PNG — which
+// is what the first production shrink got, from an iPhone: 192px PNGs of
+// photographed crests at 30–90 KB, the largest two still over the line that
+// offered to shrink them, so the offer came straight back after every press.
+// Where WebP is not available the answer is JPEG (7–15 KB for the same five),
+// and PNG only for an image that actually has transparent pixels, which JPEG
+// would paint black. A Worker has no image pipeline, and this is a canvas's
 // work anyway.
 //
 // 192px covers the largest place a logo appears — the 44px sheet avatar at a
@@ -23,13 +28,28 @@
 
   const toBlob = (canvas, type, q) => new Promise(r => canvas.toBlob(r, type, q));
 
-  /** A canvas as WebP if the browser can write it, else PNG. */
+  const JPEG_QUALITY = 0.85;
+
+  /** Does any pixel let the background through? */
+  function hasTransparency(canvas) {
+    try {
+      const px = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let i = 3; i < px.length; i += 4) if (px[i] < 255) return true;
+      return false;
+    } catch {
+      return true;   // unreadable (tainted): keep the format that cannot lose alpha
+    }
+  }
+
+  /** A canvas as WebP if the browser can write it; else JPEG, or PNG if it needs alpha. */
   async function encodeCanvas(canvas) {
     const webp = await toBlob(canvas, 'image/webp', WEBP_QUALITY);
     // A browser that cannot encode WebP does not fail — it quietly returns a
     // PNG. Check what came back rather than what was asked for.
     if (webp && webp.type === 'image/webp') return webp;
-    return toBlob(canvas, 'image/png');
+    if (hasTransparency(canvas)) return toBlob(canvas, 'image/png');
+    const jpeg = await toBlob(canvas, 'image/jpeg', JPEG_QUALITY);
+    return (jpeg && jpeg.type === 'image/jpeg') ? jpeg : toBlob(canvas, 'image/png');
   }
 
   function loadImage(src) {

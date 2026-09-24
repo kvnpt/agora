@@ -1408,8 +1408,14 @@
     // ranged read says the size without downloading the image — and offers
     // to put each through the same shrink and the same upload route a
     // replacement would take.
-    const LOGO_OVERSIZE = 60 * 1024;
-    let oversizedLogos = [];
+    //
+    // The shrink is done BEFORE anything is offered, and a logo is offered
+    // only if the result is really smaller. Offering on size alone looped:
+    // a browser that could not write WebP produced a PNG still over the line,
+    // and the same offer came back after every press, forever.
+    const LOGO_OVERSIZE = 25 * 1024;   // a 192px logo is 5–15 KB; well over this is worth doing
+    const WORTH_IT = 0.8;              // offer only a result at most 80% the size
+    let oversizedLogos = [];           // { p, bytes, blob }
 
     async function checkLogoSizes() {
       if (!may('logo.edit') || !window.AgoraLogo) return;
@@ -1420,7 +1426,15 @@
         const total = /\/(\d+)$/.exec(r.headers.get('content-range') || '');
         return { p, bytes: total ? Number(total[1]) : Number(r.headers.get('content-length') || 0) };
       }));
-      oversizedLogos = sized.filter(x => x.bytes > LOGO_OVERSIZE);
+      const shrunk = await Promise.all(sized.filter(x => x.bytes > LOGO_OVERSIZE).map(async (x) => {
+        try {
+          const src = await fetch(x.p.logo_path);
+          if (!src.ok) return null;
+          const blob = await window.AgoraLogo.shrinkToSquare(await src.blob());
+          return blob.size <= x.bytes * WORTH_IT ? { ...x, blob } : null;
+        } catch { return null; }
+      }));
+      oversizedLogos = shrunk.filter(Boolean);
       renderLogoShrink();
     }
 
@@ -1432,12 +1446,14 @@
       el.hidden = !oversizedLogos.length;
       if (!oversizedLogos.length) return;
       const total = oversizedLogos.reduce((n, x) => n + x.bytes, 0);
+      const after = oversizedLogos.reduce((n, x) => n + x.blob.size, 0);
       const n = oversizedLogos.length;
       el.innerHTML = progress
         ? esc(progress)
-        : `<b>${n} parish logo${n === 1 ? ' is' : 's are'} ${kb(total)} between them</b> — far more than the
-           44px they are drawn at, and every first visit to the site downloads them.
-           Shrinking makes each a ${window.AgoraLogo.LOGO_SIZE}px WebP of a few KB that looks the same on screen.
+        : `<b>${n} parish logo${n === 1 ? ' is' : 's are'} ${kb(total)} between them</b> — more than the
+           44px they are drawn at needs, and every first visit to the site downloads them.
+           Shrunk, they would be ${kb(after)} and look the same on screen:
+           ${esc(oversizedLogos.map(x => x.p.name).join(', '))}.
            <div class="btn-row" style="margin-top:10px;"><button type="button" class="btn btn-primary" id="logo-shrink-go">Shrink ${n === 1 ? 'it' : 'them'}</button></div>`;
       const go = document.getElementById('logo-shrink-go');
       if (go) go.addEventListener('click', shrinkOversizedLogos);
@@ -1446,12 +1462,11 @@
     async function shrinkOversizedLogos() {
       const todo = oversizedLogos.slice();
       let done = 0, before = 0, after = 0;
-      for (const { p, bytes } of todo) {
+      for (const { p, bytes, blob } of todo) {
         renderLogoShrink(`Shrinking ${p.name}… (${done + 1} of ${todo.length})`);
         try {
-          const src = await fetch(p.logo_path);
-          if (!src.ok) throw new Error(`could not read ${p.name}'s logo`);
-          const blob = await window.AgoraLogo.shrinkToSquare(await src.blob());
+          // Already made when the offer was, which is what let the offer
+          // promise a size; the upload is all that is left.
           const res = await fetch(`/api/admin/parishes/${encodeURIComponent(p.id)}/logo`,
             { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
           if (!res.ok) throw new Error(await adminError(res));
