@@ -149,6 +149,23 @@ switched it on again. `info_verified_at` is the parish-side equivalent and is
 all-or-nothing; a pin is per field, so holding that parish's address does not
 also stop a re-run correcting the phone number nobody has looked at.
 
+Two derivations sit on that ladder and should not be confused. `sourceTier` is
+where a row's details **came from**, and it stays honest because the sheet
+renders it. `governingTier` is who a scrape must **defer to**: a parish with a
+website of its own speaks at `parish` however the row was filled in, so a
+jurisdiction re-read holds every such row and only the parishes without one
+fall back to the directory. No script reads parish *details* off a parish site
+yet, so a held row's address and phone change by hand — `heldFields` lists
+them on every run.
+
+An edit in /admin is a claim by a person, and the PATCH route records it
+without being asked (`adminEditProvenance`): a save that changes a detail
+makes the source "Parish Contact" (`info_source_type='person'`), stamps
+`info_checked_at` now, and pins each changed field at `admin` — unless that
+same save set the source or picked a check date itself. Both forms post every
+field, so "changed" means different from the stored row, not present. A colour
+or a link says nothing about the details and leaves the provenance alone.
+
 Served **publicly** at `/api/info-overrides`, minus `updated_by`. The importers
 are scripts run from a terminal with no Cloudflare credential — the same
 argument that put `pdf_source_overrides` on a public route, and a stronger one:

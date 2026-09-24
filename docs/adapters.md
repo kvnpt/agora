@@ -405,3 +405,76 @@ Once a parish has settled on a new URL, move it into `pdf-sources.mjs` anyway
 and reset the override: the file is still the thing a reader looks at to learn
 where a parish publishes, and a permanent truth living only in a database row
 is how the next person comes to be surprised.
+
+# A parish that publishes on Facebook
+
+Archangel Michael, Crows Nest publishes one thing: a monthly bulletin, as an
+image, on its Facebook page (`facebook.com/ArchMichaelGOC`). There is no
+website behind it, no calendar and no PDF, and Facebook serves a login wall to
+every automated client — so none of the paths above reach it. September 2026
+was entered by hand from the image: one Sunday rule inferred with
+`worker/lib/infer.mjs`, four `modified` overrides carrying each Sunday's
+commemoration, six one-offs for the weekday feasts and the two Paraklesis
+services, and every one of them pointing at **one** poster object,
+`/posters/greek-archangelmichael-crowsnest-2026-09.png`. That object's key is
+not derived from any event id, so no event's poster delete can take it out
+from under the others.
+
+The Paraklesis did not become a rule. Two Mondays (7th and 21st) fit both "first
+and third Monday" and "alternate Mondays", `inferSchedules` wants three
+sightings before it proposes anything, and October's bulletin is what decides
+between them.
+
+## Getting the next bulletin in without a VPS
+
+Reading Facebook is the wrong problem. The bulletin is an image the parish
+already makes and already sends somewhere; the job is to give it a door into
+the Worker, then do what was done by hand above. Ranked by what they cost:
+
+**1. The WhatsApp webhook, pointed at the Worker.** This is the old flow with
+the VPS removed. The WhatsApp Business Cloud API delivers a webhook to any HTTPS
+URL, and `orthodoxy.au/api/ingest/whatsapp` can be one: a GET answering Meta's
+verify challenge, a POST taking the message. Everything after that is I/O, which
+is why it fits in a Worker at all — CPU time is metered, waiting on a fetch is
+not:
+
+- fetch the image from the Graph API (a `WHATSAPP_TOKEN` secret) and stream it
+  straight into R2 under a key of its own, never base64'd in the Worker;
+- call Claude (Haiku 4.5, vision) with the image as a **URL** — the R2 object is
+  already public under `/posters/` — so the Worker never holds the bytes either;
+- ask for rows in the shape `/admin` already writes: per dated service, either a
+  one-off (`title`, local start/end, `event_type`, `languages`) or an override
+  of an existing rule (`schedule_id`, date, `patch_feast`, `patch_start_time`…),
+  with the rule list passed in the prompt so it can say which is which;
+- write nothing to the feed. Store the batch as a proposal, and reply on
+  WhatsApp with a link to it.
+
+The sender is the authentication: only a number mapped to a parish contact in
+`admin_roles` is read, and only for that contact's parishes.
+
+**2. Email, for a parish that does not use WhatsApp.** Cloudflare Email Routing
+hands a message to an Email Worker the same way — `bulletin@orthodoxy.au`, or one
+address per parish. The rest is identical. MIME parsing is the one step that is
+CPU rather than I/O, and a 1MB attachment can push past the Free plan's 10ms; that
+is the plan limit to check before choosing this over WhatsApp.
+
+**3. An "Import a flyer" button in `/admin`**, fed by the same extraction. It
+needs no channel at all and covers every parish that sends a picture, however
+it arrives — the admin drops the image in and reviews the rows. Build this
+first: it is the smallest piece, and 1 and 2 are just other ways of calling it.
+
+**The review is not optional**, and it is not a moderation queue for ordinary
+edits either. It exists because what is being approved was *read by a model*
+from a photograph: a misread "7:30" as "1:30" sends somebody to a locked church,
+which is the asymmetry `tombstone.mjs` is built around. The proposal is
+one-press — the rows arrive pre-filled, pre-matched to rules, all pointing at
+the one poster — and `admin_proposals` is where a refused-and-carried ask
+already lives, so it wants a fifth kind rather than a second table.
+
+**What was ruled out.** The Graph API reads a Page only with a token the Page's
+own admin grants, and public-page access needs Meta's app review, which a
+project this size will not get. A headless browser in a GitHub Action gets the
+login wall, and breaks whenever Facebook changes its markup. Paid Facebook-to-RSS
+services scrape against Facebook's terms and give text, not the image. And if a
+parish can be persuaded to keep a Google Calendar, the existing calendar adapter
+needs nothing new at all — worth asking before building anything.

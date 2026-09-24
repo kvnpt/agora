@@ -116,8 +116,31 @@
     return 'directory';
   }
 
+  /**
+   * Which tier gets the last word on this parish's details.
+   *
+   * `sourceTier` answers where the stored details CAME from, and it has to stay
+   * honest because the parish sheet renders it. This answers a different
+   * question — who a scrape must defer to — and a parish that has a website of
+   * its own is read from that website: the parish talking about itself outranks
+   * its jurisdiction's directory whichever of them happened to fill the row in.
+   * So a jurisdiction re-read leaves every parish with a website alone, and
+   * only the rest fall back to the directory.
+   *
+   * Never lower than `sourceTier`: a row a person typed (`admin`) stays theirs
+   * whether or not the parish has a site.
+   *
+   * Derived, like `sourceTier`, and for the same reason: `website` is already
+   * on the row, and a stored tier would be one more column to drift from it.
+   */
+  function governingTier(parish, jurisdictionDirectory) {
+    const from = sourceTier(parish, jurisdictionDirectory);
+    if (!parish || !host(parish.website)) return from;
+    return outranks(from, 'parish') ? from : 'parish';
+  }
+
   const api = {
-    SOURCE_TIERS, TIER_IDS, tierRank, outranks, tierLabel, isTier, sourceTier,
+    SOURCE_TIERS, TIER_IDS, tierRank, outranks, tierLabel, isTier, sourceTier, governingTier,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AGORA_SOURCE_TIERS = api;

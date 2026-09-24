@@ -327,3 +327,34 @@ test('lifting a ruling that is not there is a 404, not a 500', async () => {
   const r = await call('DELETE', '/api/admin/info-overrides/99999');
   assert.equal(r.status, 404);
 });
+
+// ── an edit in /admin is a claim by a person ───────────────────────────────
+
+test('editing a detail in /admin makes the row the parish contact’s, checked today, held per field', async () => {
+  const { call, raw } = fresh();
+  const before = raw.prepare('SELECT * FROM parishes WHERE id=?').get(PARISH);
+  const r = await call('PATCH', `/api/admin/parishes/${PARISH}`, {
+    ...before, phone: '0404 172 171', updated_at: undefined, updated_by: undefined,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.info_source_type, 'person');
+  assert.equal(r.body.info_source_name, 'Parish Contact');
+  assert.equal(r.body.info_source_ref, null);
+  assert.equal(r.body.info_checked_at.slice(0, 10), new Date().toISOString().slice(0, 10));
+  const pins = raw.prepare("SELECT subject, tier, note FROM info_overrides WHERE target='field'").all();
+  assert.deepEqual(pins.map(p => [p.subject, p.tier]), [['phone', 'admin']]);
+  assert.doesNotMatch(pins[0].note, /@/, 'the note is public; the editor belongs in updated_by');
+  // The public route serves it to the import scripts, which is what makes it bite.
+  const pub = await call('GET', '/api/info-overrides');
+  assert.ok(pub.body.some(p => p.parish_id === PARISH && p.subject === 'phone'));
+});
+
+test('a save that changes nothing about the details leaves the provenance alone', async () => {
+  const { call, raw } = fresh();
+  const before = raw.prepare('SELECT * FROM parishes WHERE id=?').get(PARISH);
+  const r = await call('PATCH', `/api/admin/parishes/${PARISH}`, { color: '#123456' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.info_source_type, before.info_source_type);
+  assert.equal(r.body.info_checked_at, before.info_checked_at);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM info_overrides').get().n, 0);
+});

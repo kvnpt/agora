@@ -12,11 +12,11 @@ import { createRequire } from 'node:module';
 import {
   slotKey, parseSlot, indexOverrides, mayWriteField, pinnedFields,
   suppressionFor, pinFor, validateOverride, describeOverride,
-  publicOverridePayload, readInfoOverrides, PINNABLE_FIELDS,
+  publicOverridePayload, readInfoOverrides, PINNABLE_FIELDS, adminEditProvenance,
 } from './info-overrides.mjs';
 
 const require = createRequire(import.meta.url);
-const { outranks, tierRank, sourceTier, SOURCE_TIERS, tierLabel } =
+const { outranks, tierRank, sourceTier, governingTier, SOURCE_TIERS, tierLabel } =
   require('../../public/shared/source-tiers.js');
 
 const ELIMBAH = 'antiochian-stmarymagdalene-elimbah';
@@ -323,4 +323,88 @@ test('a missing table reads as no rulings, and nothing else does', async () => {
 
   const broken = { prepare: () => ({ all: async () => { throw new Error('D1_ERROR: network'); } }) };
   await assert.rejects(() => readInfoOverrides(broken), /network/);
+});
+
+// ── governingTier: a parish with a website speaks for itself ───────────────
+
+test('a parish with a website is governed at the parish tier, whatever filled the row', () => {
+  const dir = 'https://greekorthodox.org.au';
+  const row = { info_source_type: 'import', info_source_ref: 'https://greekorthodox.org.au/churches/x/' };
+  assert.equal(sourceTier(row, dir), 'jurisdiction', 'provenance stays honest');
+  assert.equal(governingTier(row, dir), 'jurisdiction');
+  assert.equal(governingTier({ ...row, website: 'https://facebook.com/ArchMichaelGOC' }, dir), 'parish');
+  assert.equal(governingTier({ ...row, website: '   ' }, dir), 'jurisdiction', 'a blank website is no website');
+  // Never lower than where the row came from: a person's row stays theirs.
+  assert.equal(governingTier({ info_source_type: 'person', website: 'https://x.example' }, dir), 'admin');
+  assert.equal(governingTier(null, dir), null);
+});
+
+// ── adminEditProvenance: an edit in /admin says who says so ────────────────
+
+const STORED = {
+  phone: '(02) 9436 1957', website: null, address: '49-59 Holterman St', lat: -33.8, lng: 151.2,
+  color: '#0061fe',
+  info_source_type: 'import', info_source_name: 'Greek Orthodox Archdiocese of Australia',
+  info_source_ref: 'https://greekorthodox.org.au/churches/st-michael/',
+  info_checked_at: '2026-09-15T15:02:20.591Z',
+};
+const NOW = '2026-09-24T05:00:00Z';
+
+test('changing a detail makes the source the parish contact, checked now, and pins the field', () => {
+  const r = adminEditProvenance(STORED, { phone: '0404 172 171' }, { now: NOW });
+  assert.deepEqual(r.changed, ['phone']);
+  assert.deepEqual(r.sets, {
+    info_source_type: 'person', info_source_name: 'Parish Contact', info_source_ref: null,
+    info_checked_at: NOW,
+  });
+  assert.deepEqual(r.pinFields, ['phone']);
+  assert.equal(sourceTier({ ...STORED, ...r.sets }, null), 'admin');
+});
+
+test('a form that posts every field counts only what changed', () => {
+  // The in-app sheet and /admin both post the whole form, source fields
+  // included, and /admin posts the checked date back as a bare day.
+  const body = { ...STORED, phone: '(02) 9436 1957 ', info_checked_at: '2026-09-15' };
+  const r = adminEditProvenance(STORED, body, { now: NOW });
+  assert.deepEqual(r.changed, []);
+  assert.deepEqual(r.pinFields, []);
+  assert.equal(r.sets.info_checked_at, STORED.info_checked_at,
+    'an untouched day must not round the stored timestamp down to midnight');
+  assert.equal(r.sets.info_source_type, undefined);
+});
+
+test('a colour change says nothing about the details', () => {
+  const r = adminEditProvenance(STORED, { color: '#ff0000' }, { now: NOW });
+  assert.deepEqual(r.sets, {});
+});
+
+test('a source the admin set in the same save stands, and so does a day they picked', () => {
+  const r = adminEditProvenance(STORED, {
+    phone: '0404 172 171', info_source_type: 'website', info_source_name: 'Parish bulletin',
+    info_source_ref: 'https://facebook.com/ArchMichaelGOC', info_checked_at: '2026-09-20',
+  }, { now: NOW });
+  assert.equal(r.sets.info_source_type, undefined);
+  assert.equal(r.sets.info_checked_at, '2026-09-20');
+  assert.deepEqual(r.pinFields, ['phone']);
+});
+
+test('editing only the source still stamps the check', () => {
+  const r = adminEditProvenance(STORED, { info_source_name: 'Parish bulletin' }, { now: NOW });
+  assert.deepEqual(r.sets, { info_checked_at: NOW });
+  assert.deepEqual(r.pinFields, []);
+});
+
+test('an address pins its coordinates; coordinates alone pin nothing', () => {
+  const addr = adminEditProvenance(STORED, { address: '49-59 Holtermann St' }, { now: NOW });
+  assert.deepEqual(addr.pinFields, ['address', 'lat', 'lng']);
+  const dot = adminEditProvenance(STORED, { lat: -33.81, lng: 151.21 }, { now: NOW });
+  assert.equal(dot.sets.info_source_name, 'Parish Contact', 'moving the dot is still an edit');
+  assert.deepEqual(dot.pinFields, [], 'a re-located dot is the geocoder again, not a checked fact');
+  assert.equal(adminEditProvenance(STORED, { lat: '-33.8', lng: 151.2 }, { now: NOW }).changed.length, 0,
+    'the same coordinates as a string are not a change');
+});
+
+test('a field the caller pins itself is left to the caller', () => {
+  const r = adminEditProvenance(STORED, { phone: '1' }, { now: NOW, explicitPins: ['phone'] });
+  assert.deepEqual(r.pinFields, []);
 });
