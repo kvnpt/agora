@@ -4694,7 +4694,8 @@ function refreshParishContentPortion(parishId, opts = {}) {
   const streamEl = contentEl.querySelector('.ps-events-list');
   if (streamEl) {
     if (parishEvents.length) {
-      renderStream(streamEl, parishEvents, { parishMode: true, groupByParish: true, showCount: state._parishEventsShowCount || 30 });
+      renderStream(streamEl, parishEvents, { parishMode: true, groupByParish: true, omitNow: true, showCount: state._parishEventsShowCount || 30 });
+      renderParishNow(contentEl, parishEvents);
     } else {
       streamEl.replaceChildren();
     }
@@ -4777,7 +4778,30 @@ function refreshParishContentPortion(parishId, opts = {}) {
 }
 window.agoraRefreshParishContentPortion = refreshParishContentPortion;
 
+/**
+ * Paint the parish sheet, keeping the reader where they were.
+ *
+ * A full rebuild replaces the sheet's whole content, and a scroller whose
+ * content is replaced lands at the top — so every save that re-renders (a rule,
+ * an occurrence, edit mode on or off, a focus set or cleared) threw somebody
+ * back to the parish's name from wherever they were working. The partial path
+ * already kept its place; this makes the full one keep it too.
+ *
+ * Only for the SAME parish. Opening a different one starts at its top, which
+ * is where a new sheet should start. Restored synchronously and not in a frame:
+ * a caller that deliberately scrolls afterwards (entering edit mode brings the
+ * form into view) must win over the restore, not be undone by it a frame later.
+ */
 function renderParishSheetContent(parishId, opts = {}) {
+  const scrollEl = document.getElementById('parish-sheet-scroll');
+  const contentEl = document.getElementById('parish-sheet-content');
+  const sameParish = !!(contentEl && contentEl._psParishId === parishId);
+  const top = scrollEl ? scrollEl.scrollTop : 0;
+  paintParishSheetContent(parishId, opts);
+  if (sameParish && scrollEl && scrollEl.scrollTop !== top) scrollEl.scrollTop = top;
+}
+
+function paintParishSheetContent(parishId, opts = {}) {
   const parish = state.parishes.find(p => p.id === parishId);
   if (!parish) return;
 
@@ -5045,6 +5069,7 @@ function renderParishSheetContent(parishId, opts = {}) {
       <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>
+    <div class="ps-now"></div>
     ${parishEditFormHtml || ''}
     <!-- Sticky filter pill row above the events list. Operates on
          parishFilters (scoped local state, separate from main). It sits
@@ -5273,7 +5298,8 @@ function renderParishSheetContent(parishId, opts = {}) {
       // Use the same day-grouping structure as the main list (day-section/
       // day-hdr) so visuals stay aligned. parishMode kept just for the
       // show-more pagination handler swap.
-      renderStream(streamEl, streamEvents, { parishMode: true, groupByParish: true, showCount: state._parishEventsShowCount || 30 });
+      renderStream(streamEl, streamEvents, { parishMode: true, groupByParish: true, omitNow: true, showCount: state._parishEventsShowCount || 30 });
+      renderParishNow(contentEl, streamEvents);
     } else {
       streamEl.replaceChildren();
     }
@@ -5307,6 +5333,9 @@ function renderParishSheetContent(parishId, opts = {}) {
     // Only re-expand if _openEventId matches — respects user collapse between
     // renders (don't re-open what they just closed).
     const scopeEl = document.getElementById('parish-sheet-scroll');
+    // Open before this paint, and not a fresh focus asked for by the caller:
+    // the re-expand below is restoring state, not answering a tap.
+    const restoring = !!state._openEventId && !opts.focusEventId;
     if (opts.focusEventId && !state._openEventId) {
       state._openEventId = opts.focusEventId;
     }
@@ -5323,7 +5352,7 @@ function renderParishSheetContent(parishId, opts = {}) {
         // doesn't see the collapsed-card frame before the expand.
         // Subsequent re-renders are routed through refreshParishContentPortion
         // which keeps the pinned event intact (no destroy → re-expand cycle).
-        expandEventCard(state._openEventId, { scope: scopeEl, card: preferred || undefined });
+        expandEventCard(state._openEventId, { scope: scopeEl, card: preferred || undefined, keepScroll: restoring });
       }
     }
   }
@@ -5842,6 +5871,59 @@ function renderSubDaySections(events, html, reserveHost, opts = {}) {
   return html;
 }
 
+/**
+ * "Happening now" at the top of a parish sheet.
+ *
+ * The stream already had the bucket, but on a parish sheet the stream starts
+ * below the whole service-times timetable, so a Vigil running right now sat a
+ * full screen down, under the rules for next Sunday. Somebody opening a
+ * parish's card while something is on there wants that first.
+ *
+ * Tombstones stay out: a cancelled service is not happening now, and it still
+ * shows in the stream as the tombstone it is. Recomputed on every paint of the
+ * sheet, full or partial, so it follows the same data as the stream beneath.
+ */
+function renderParishNow(contentEl, events) {
+  const slot = contentEl && contentEl.querySelector('.ps-now');
+  if (!slot) return;
+  const now = Date.now();
+  const live = (events || []).filter(e => {
+    if (e.is_tombstone || (e.status && e.status !== 'approved')) return false;
+    const start = Date.parse(e.start_utc);
+    const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
+    return start <= now && end >= now;
+  });
+  if (!live.length) { slot.replaceChildren(); return; }
+  const openId = state._openEventId;
+  slot.innerHTML = `<div class="happening-now-section">
+      <div class="section-header"><span class="now-dot"></span>Happening now</div>
+      ${sortEvents(live).map(e => renderEventCard(e)).join('')}
+    </div>`;
+  if (!slot._cardsBound) {
+    slot._cardsBound = true;
+    slot.addEventListener('click', (ev) => {
+      if (ev.target.closest('.event-card-drawer') || ev.target.closest('.event-card-close')) return;
+      const card = ev.target.closest('.event-card');
+      if (!card || !slot.contains(card)) return;
+      const scope = document.getElementById('parish-sheet-scroll');
+      if (card.classList.contains('expanded')) {
+        collapseEventCardDOM({ scope });
+        delete state._openEventId;
+        syncURL();
+      } else {
+        expandEventCard(card.dataset.id, { scope, card });
+      }
+    });
+  }
+  // A re-paint while one of these was open keeps it open.
+  if (openId) {
+    const card = slot.querySelector(`.event-card[data-id="${CSS.escape(openId)}"]`);
+    if (card && !card.classList.contains('expanded')) {
+      expandEventCard(openId, { scope: document.getElementById('parish-sheet-scroll'), card, keepScroll: true });
+    }
+  }
+}
+
 // Single continuous stream: optional Earlier-today chip, then Today phase
 // buckets (Happening now / Later today), then day-grouped events through the
 // rest of the loaded window. Sort toggle reorders within morning/evening
@@ -5862,7 +5944,9 @@ function renderStream(container, events, opts = {}) {
     const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
     const isToday = dayKey(e.start_utc) === todayKey;
     if (isToday && !dateFocus) {
-      if (start <= now && end >= now) happeningNow.push(e);
+      // The parish sheet shows these at its top instead (renderParishNow), so
+      // they are left out here rather than drawn twice.
+      if (start <= now && end >= now) { if (!opts.omitNow) happeningNow.push(e); }
       else if (start > now) laterToday.push(e);
       else earlierToday.push(e);
     } else {
@@ -6441,10 +6525,12 @@ function fortnightDates(dow, parity, n = 3) {
   const ab = window.agoraBundle && window.agoraBundle.weekAbOf;
   if (!ab) return [];
   const out = [];
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
+  // Counted from TODAY'S DATE, as a date. It used to start from local midnight
+  // run through toISOString, which east of Greenwich is yesterday in UTC — so
+  // in Sydney the first "next" date could be one that had already passed.
+  const today = Date.parse(localTodayIso() + 'T00:00:00Z');
   for (let i = 0; i < 400 && out.length < n; i++) {
-    const iso = new Date(d.getTime() + i * 86400000).toISOString().slice(0, 10);
+    const iso = new Date(today + i * 86400000).toISOString().slice(0, 10);
     if (new Date(iso + 'T00:00:00Z').getUTCDay() !== dow) continue;
     if (ab(iso) !== parity) continue;
     out.push(iso);
@@ -6452,12 +6538,47 @@ function fortnightDates(dow, parity, n = 3) {
   return out;
 }
 
-/** "5 Oct, 19 Oct, 2 Nov" — the dates a fortnight actually lands on. */
+/** Today's date where the viewer is, as 'YYYY-MM-DD'. */
+function localTodayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * The first date of a fortnight, said the way a person would say it.
+ *
+ * The two choices are always one this week and one next, so the words are what
+ * tell them apart: "This Sunday, 27 Sep" against "Next Sunday, 4 Oct". The date
+ * stays beside the words because "next Sunday" means the coming one to half of
+ * Australia and the one after that to the other half — the date settles it.
+ */
+function naturalFirstDate(iso) {
+  const days = Math.round((Date.parse(iso + 'T00:00:00Z')
+    - Date.parse(localTodayIso() + 'T00:00:00Z')) / 86400000);
+  const date = new Date(iso + 'T00:00:00Z');
+  const short = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date);
+  const day = DAYS[date.getUTCDay()];
+  if (days === 0) return `Today, ${short}`;
+  if (days === 1) return `Tomorrow, ${short}`;
+  if (days < 7) return `This ${day}, ${short}`;
+  if (days < 14) return `Next ${day}, ${short}`;
+  return `${day} ${short}`;
+}
+
+/** "This Sunday, 27 Sep · then 11 Oct, 25 Oct" — where a fortnight lands. */
 function fortnightPreview(dow, parity) {
   const dates = fortnightDates(dow, parity);
   if (!dates.length) return '';
-  return dates.map(d => new Intl.DateTimeFormat('en-AU',
-    { day: 'numeric', month: 'short' }).format(new Date(d + 'T00:00:00Z'))).join(', ');
+  const rest = dates.slice(1).map(d => new Intl.DateTimeFormat('en-AU',
+    { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(d + 'T00:00:00Z')));
+  return naturalFirstDate(dates[0]) + (rest.length ? ` · then ${rest.join(', ')}` : '');
+}
+
+/** Which fortnight comes round first, so it can be offered first. */
+function parityOrder(dow) {
+  const a = fortnightDates(dow, 'a', 1)[0] || '';
+  const b = fortnightDates(dow, 'b', 1)[0] || '';
+  return b && (!a || b < a) ? ['b', 'a'] : ['a', 'b'];
 }
 
 /**
@@ -6505,9 +6626,8 @@ function cadencePickerHTML(attr, rule = {}) {
             wom.includes(w) ? ' checked' : ''}> ${w}</label>`).join('')}
       </div>
       <div class="cad-body cad-fortnight" data-cad-body="fortnight"${mode === 'fortnight' ? '' : ' hidden'}>
-        <span class="wom-label">which weeks</span>
-        ${parityChoice('a')}
-        ${parityChoice('b')}
+        <span class="wom-label">starting</span>
+        ${parityOrder(dow).map(parityChoice).join('')}
       </div>
     </div>`;
 }
@@ -6539,6 +6659,14 @@ function wireCadencePickers(container) {
       cad.querySelectorAll('[data-cad-dates]').forEach(span => {
         span.textContent = fortnightPreview(dow, span.dataset.cadDates) || '…';
       });
+      // Soonest first, whichever weekday it is now.
+      const body = cad.querySelector('[data-cad-body="fortnight"]');
+      if (body) {
+        for (const p of parityOrder(dow)) {
+          const label = body.querySelector(`[data-cad-dates="${p}"]`)?.closest('label');
+          if (label) body.appendChild(label);
+        }
+      }
     };
 
     cad.addEventListener('change', () => { paint(); repaintDates(); });
@@ -6935,6 +7063,13 @@ function expandEventCard(id, opts = {}) {
 
   state._openEventId = id;
   syncURL();
+
+  // A card being put back the way it already was — the sheet re-rendered
+  // around an event somebody had open — is not a tap, and must not move the
+  // reader. Without this every save made with an event open slid the parish
+  // sheet from wherever they were to that card, which from a rule further
+  // down the sheet read as "it scrolled back to the top".
+  if (opts.keepScroll) return;
 
   // Always snap the host sheet to FULL when an event expands. Whether the
   // tap originated in the main bottom-sheet or the parish-sheet, the user
