@@ -13,12 +13,12 @@
 
 import tiers from '../../public/shared/source-tiers.js';
 
-const { outranks, isTier, tierLabel, SOURCE_TIERS, sourceTier } = tiers;
+const { outranks, isTier, tierLabel, SOURCE_TIERS, sourceTier, governingTier } = tiers;
 
 // `sourceTier` travels with the rest: the import scripts need to ask what tier
 // a row they are about to overwrite already carries, and a second derivation
 // written on the import side is exactly the drift this module exists to stop.
-export { outranks, isTier, tierLabel, SOURCE_TIERS, sourceTier };
+export { outranks, isTier, tierLabel, SOURCE_TIERS, sourceTier, governingTier };
 
 /**
  * The parish columns a ruling may be made about.
@@ -256,6 +256,80 @@ export function describeOverride(row) {
     return `${when} — kept as stored, on ${on}. A weaker source may not rewrite it.`;
   }
   return `${row.subject} — held on ${on}. A weaker source may not overwrite it.`;
+}
+
+/** What an edit in /admin records as its source. */
+export const ADMIN_SOURCE_NAME = 'Parish Contact';
+
+const SOURCE_COLUMNS = ['info_source_type', 'info_source_name', 'info_source_ref'];
+
+// '' and null are the same absence, a form posts '' for a field left empty, and
+// lat/lng arrive as numbers from one client and strings from another.
+const blank = (v) => v === undefined || v === null || String(v).trim() === '';
+function sameValue(field, a, b) {
+  if (blank(a) || blank(b)) return blank(a) && blank(b);
+  if (field === 'lat' || field === 'lng') return Math.abs(Number(a) - Number(b)) < 1e-7;
+  return String(a).trim() === String(b).trim();
+}
+
+/**
+ * What a person saving a parish in /admin says about where the row came from.
+ *
+ * Both forms post EVERY field on every save, so presence proves nothing: the
+ * details that changed are found by comparing against the stored row, and only
+ * those count as somebody having typed something.
+ *
+ * A save that changes any detail is a claim by a person, so:
+ *
+ *   - the row's source becomes "Parish Contact" (`info_source_type='person'`,
+ *     which the ladder reads as `admin`) — unless the same save set the source
+ *     itself, in which case they said where it came from and that stands;
+ *   - `info_checked_at` becomes now — unless they picked a different day, which
+ *     is them saying when they looked;
+ *   - each changed field is pinned at `admin`, so no import below it rewrites
+ *     that field even if the row's source is later changed back. An address
+ *     brings its coordinates, which are one fact. Coordinates moved WITHOUT the
+ *     address are not pinned: a re-located dot is the geocoder's answer again,
+ *     and the hand-placed case already sends its own `pin`.
+ *
+ * A save that changes only the source still stamps the check, because editing
+ * where a row came from is looking at it. A save that changes neither — a
+ * colour, a logo link — leaves the provenance alone, since it says nothing
+ * about whether the details are right.
+ *
+ * `explicitPins` are fields the caller asked to pin itself. They are left out
+ * of the automatic ones so a malformed request is reported rather than quietly
+ * replaced by a ruling the caller did not ask for.
+ */
+export function adminEditProvenance(stored, body, { now, explicitPins = [] } = {}) {
+  const changed = PINNABLE_FIELDS.filter((f) => body[f] !== undefined && !sameValue(f, body[f], stored[f]));
+  const sourceSet = SOURCE_COLUMNS.some((f) => body[f] !== undefined && !sameValue(f, body[f], stored[f]));
+  // A day picker cannot say what second somebody looked, so the same DAY is the
+  // same check; /admin posts the bare date back even when nobody touched it.
+  const day = (v) => (blank(v) ? '' : String(v).slice(0, 10));
+  const checkedSet = body.info_checked_at !== undefined
+    && day(body.info_checked_at) !== day(stored.info_checked_at);
+
+  const sets = {};
+  if (!changed.length && !sourceSet) {
+    // Nothing about the details moved. Keep the stored timestamp rather than
+    // letting a date-only echo round it down to midnight.
+    if (body.info_checked_at !== undefined && !checkedSet) sets.info_checked_at = stored.info_checked_at;
+    return { changed, sets, pinFields: [] };
+  }
+  if (changed.length && !sourceSet) {
+    sets.info_source_type = 'person';
+    sets.info_source_name = ADMIN_SOURCE_NAME;
+    // The old ref named the directory, and a person is not at a URL.
+    sets.info_source_ref = null;
+  }
+  sets.info_checked_at = checkedSet ? body.info_checked_at : now;
+
+  const pinFields = [...new Set(changed.flatMap((f) => {
+    if (f === 'lat' || f === 'lng') return [];
+    return FIELD_GROUPS[f] || [f];
+  }))].filter((f) => !explicitPins.includes(f));
+  return { changed, sets, pinFields };
 }
 
 /**

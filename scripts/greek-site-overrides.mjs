@@ -136,6 +136,20 @@ export const SITE_OVERRIDES = {
     unreachable: 'egress gateway answers 502 to CONNECT',
   },
 
+  // ── Publishes only on Facebook, and that page is its site of record ──
+  //
+  // The exception to the Facebook rule below, made by the owner, for a parish
+  // whose monthly bulletin names the page as the place it publishes. It is
+  // recorded as the website so the parish sheet links it and the ladder treats
+  // it as the parish speaking; it is `unreachable` because no crawl can read
+  // Facebook, so the service times arrive from the bulletin instead
+  // (docs/adapters.md, "A parish that publishes on Facebook").
+  'greek-archangelmichael-crowsnest': {
+    website: 'https://facebook.com/ArchMichaelGOC',
+    found: 'the parish\'s September 2026 bulletin, which also gives Fr Timothy\'s mobile as the parish phone',
+    unreachable: 'Facebook serves a login wall to every automated client',
+  },
+
   // ── Looked for, and there is nothing to find ──────────────────────────────
   //
   // Every one of these was searched by name and suburb. Each has a Facebook
@@ -150,7 +164,6 @@ export const SITE_OVERRIDES = {
   'greek-steustathios-southmelbourne': { website: null, found: 'searched; Facebook only' },
   'greek-stsconstantine-newtown': { website: null, found: 'searched; Facebook only' },
   'greek-holycross-wollongong': { website: null, found: 'searched; Facebook only' },
-  'greek-archangelmichael-crowsnest': { website: null, found: 'searched; Facebook and YouTube only' },
   'greek-transfiguration-earlwood': { website: null, found: 'searched; Facebook only' },
   'greek-stsophia-paddington': { website: null, found: 'searched; no site of its own' },
   'greek-stspyridon-clayton': { website: null, found: 'searched; Facebook only' },

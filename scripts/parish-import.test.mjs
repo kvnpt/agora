@@ -353,3 +353,28 @@ test('heldFields reports nothing for an ordinary refresh', () => {
   })];
   assert.deepEqual(heldFields(rows, { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY }), []);
 });
+
+// A parish with a website of its own is read from that website, so the
+// directory holds off it — however the row was filled in. Archangel Michael,
+// Crows Nest is the case: its bulletin names a Facebook page and a mobile, and
+// the Archdiocese directory still has no website and an old landline.
+test('a jurisdiction scrape leaves a parish with its own website alone, whoever filled the row in', () => {
+  const rows = [withIncumbent({
+    info_source_type: 'import',
+    info_source_ref: 'https://greekorthodox.org.au/churches/st-michael/',
+    website: 'https://facebook.com/ArchMichaelGOC',
+  })];
+  const out = buildUpsert(rows, { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+  assert.match(out, /ON CONFLICT\(id\) DO NOTHING;/);
+  const held = heldFields(rows, { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+  assert.equal(held[0].incumbent_tier, 'parish', 'the plan should say the parish site is why');
+});
+
+test('a parish with no website still falls back to the directory', () => {
+  const out = buildUpsert([withIncumbent({
+    info_source_type: 'import',
+    info_source_ref: 'https://greekorthodox.org.au/churches/st-michael/',
+    website: '',
+  })], { tier: 'jurisdiction', jurisdictionDirectory: GREEK_DIRECTORY });
+  assert.match(out, /DO UPDATE SET/);
+});

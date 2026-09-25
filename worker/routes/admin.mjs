@@ -21,7 +21,8 @@ import { pdfSourceOverrides, applyOverride, isHttpUrl } from '../lib/pdf-source-
 import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parseParishIds } from '../lib/roles.mjs';
 import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen } from '../lib/proposals.mjs';
 import { readInfoOverrides, validateOverride, describeOverride, slotKey,
-         parseSlot, PINNABLE_FIELDS, FIELD_GROUPS, SOURCE_TIERS }
+         parseSlot, PINNABLE_FIELDS, FIELD_GROUPS, SOURCE_TIERS,
+         adminEditProvenance, ADMIN_SOURCE_NAME }
   from '../lib/info-overrides.mjs';
 import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
          daysSince, staleness } from '../lib/jurisdictions.mjs';
@@ -1513,9 +1514,20 @@ export function registerAdminRoutes(router) {
     const tzBad = timezoneProblem(b.timezone);
     if (tzBad) return json({ error: tzBad, field: 'timezone' }, 400);
 
+    // Who says so, and when we last looked — worked out from what this save
+    // actually changes, since both forms post every field every time.
+    // info-overrides.mjs has the reasoning.
+    const explicitPins = b.pin && typeof b.pin === 'object'
+      ? (Array.isArray(b.pin.fields) ? b.pin.fields : [b.pin.field])
+          .flatMap(f => FIELD_GROUPS[f] || [f])
+      : [];
+    const provenance = adminEditProvenance(parish, b, { now: NOW(), explicitPins });
+
     const sets = [], vals = [];
     for (const k of PARISH_EDITABLE) {
-      if (b[k] !== undefined) { sets.push(`${k} = ?`); vals.push(b[k]); }
+      if (b[k] === undefined && provenance.sets[k] === undefined) continue;
+      sets.push(`${k} = ?`);
+      vals.push(provenance.sets[k] !== undefined ? provenance.sets[k] : b[k]);
     }
     if (!sets.length) return json({ error: 'No valid fields to update' }, 400);
 
@@ -1554,6 +1566,25 @@ export function registerAdminRoutes(router) {
     // whole row or none of it. A pin is per field.
     const pins = [];
     const pinErrors = [];
+
+    // Every detail a person changed is held against the imports, per field,
+    // without anybody having to ask. Written first so an explicit `pin` below
+    // — which carries its own tier and reason — replaces it for the same field.
+    // Not reported in `pins`: those answer the caller's own request.
+    if (provenance.pinFields.length) {
+      const who = await editor(c);
+      for (const field of provenance.pinFields) {
+        const v = validateOverride({
+          parish_id: id, target: 'field', decision: 'pin', field, tier: 'admin',
+          source_name: ADMIN_SOURCE_NAME,
+          // Not the editor's email: the note is public at /api/info-overrides,
+          // and who typed it is what updated_by is for.
+          note: 'Typed in /admin; an import may not overwrite it.',
+        });
+        if (v.ok) await upsertInfoOverride(env.DB, v.row, who);
+      }
+    }
+
     if (b.pin && typeof b.pin === 'object') {
       const asked = Array.isArray(b.pin.fields) ? b.pin.fields : [b.pin.field];
       // An address and its coordinates are one fact. Pinning the words and

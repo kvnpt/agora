@@ -33,7 +33,7 @@
 //
 // Import-side only. Nothing in the Worker imports this.
 
-import { pinnedFields, sourceTier, outranks } from '../worker/lib/info-overrides.mjs';
+import { pinnedFields, governingTier, outranks } from '../worker/lib/info-overrides.mjs';
 
 const STOP = new Set(['the', 'of', 'our', 'and', 'a', 'an', 'in', 'at', 'for']);
 
@@ -274,8 +274,19 @@ const headFor = (r) => `INSERT INTO parishes (${COLUMNS.join(', ')}, info_verifi
  * no importer is outranked by — but it is worth passing, because a row wrongly
  * read as `directory` is a row this guard will not protect.
  */
+//
+// ── A PARISH WITH A WEBSITE ──
+//
+// The incumbent is read with `governingTier`, not `sourceTier`: a parish that
+// has a website of its own speaks at `parish` whatever filled the row in, so a
+// jurisdiction directory re-read holds every such row and only the parishes
+// with no site fall back to the directory. That is the owner's call, made
+// knowing its cost: no script yet reads parish DETAILS off a parish website
+// (the Greek site crawl reads service times), so a held row's address and
+// phone now change by hand or not at all — and `heldFields` lists every one,
+// so a run says what it declined rather than going quiet.
 function outrankedByIncumbent(row, tier, jurisdictionDirectory) {
-  const incumbent = row.matched ? sourceTier(row.matched, jurisdictionDirectory) : null;
+  const incumbent = row.matched ? governingTier(row.matched, jurisdictionDirectory) : null;
   return !!incumbent && outranks(incumbent, tier);
 }
 
@@ -324,7 +335,7 @@ export function heldFields(rows, { overrides = null, tier = 'jurisdiction', juri
     // silently declined a whole parish would be worse than the per-field
     // silence this function was written to end, not better.
     if (outrankedByIncumbent(r, tier, jurisdictionDirectory)) {
-      const incumbent = sourceTier(r.matched, jurisdictionDirectory);
+      const incumbent = governingTier(r.matched, jurisdictionDirectory);
       out.push({
         id: r.id,
         name: r.name,

@@ -23,7 +23,9 @@ import { SERVICE_TIMES, PUBLISHES_BUT_NOT_A_RULE } from './greek-service-times.m
 import { SITE_OVERRIDES } from './greek-site-overrides.mjs';
 import { normaliseUrl, sameSite } from './greek-directory.mjs';
 import { ADAPTERS } from '../worker/lib/adapters.mjs';
-import { indexOverrides, describeOverride } from '../worker/lib/info-overrides.mjs';
+import { indexOverrides, describeOverride, mayWriteField, sourceTier, governingTier, outranks }
+  from '../worker/lib/info-overrides.mjs';
+import { getJurisdiction } from '../worker/lib/jurisdictions.mjs';
 
 const PARISHES = 'https://agora.orthodoxy.au/api/parishes';
 const SCHEDULES = 'https://agora.orthodoxy.au/api/schedules';
@@ -103,21 +105,44 @@ const { updates, inserts, untouched, refused: ruled } = planWrite(rules, existin
 
 // ── websites ───────────────────────────────────────────────────────────────
 
+// Who may change a website, and whose check a directory re-read is.
+//
+// A curated SITE_OVERRIDES entry is a person's research written into this
+// repo, so it speaks at `admin`; the directory's link speaks at `jurisdiction`.
+// Neither may move a website pinned at a tier it does not outrank, and the
+// directory may not move one at all once the parish has a website of its own —
+// `governingTier` in public/shared/source-tiers.js: the parish's site is where
+// the parish is read from, and filling an EMPTY website is the directory's job.
+//
+// The check date follows PROVENANCE instead. A row whose details came from the
+// parish's own page or from a person was not re-read by reading the
+// Archdiocese, so it keeps the date somebody actually looked at its source.
+const DIRECTORY = getJurisdiction('greek').directory;
 const websiteChanges = [];
 const stampOnly = [];
+const websiteHeld = [];
 for (const row of report.parishes) {
   const parish = byId.get(row.id);
   if (!parish) continue;
   const override = SITE_OVERRIDES[row.id];
   const stored = normaliseUrl(parish.website);
   let next;
-  if (override && override.website !== undefined) next = override.website;
-  else if (row.directory_website) next = row.directory_website;
+  let by;
+  if (override && override.website !== undefined) { next = override.website; by = 'admin'; }
+  else if (row.directory_website) { next = row.directory_website; by = 'jurisdiction'; }
   else next = stored;
 
-  if (!sameSite(next, stored) && !(next === null && stored === null)) {
+  const differs = !sameSite(next, stored) && !(next === null && stored === null);
+  const heldBy = !differs ? null
+    : !mayWriteField(rulings, row.id, 'website', by) ? 'a ruling on the website'
+    : (stored && by === 'jurisdiction' && outranks(governingTier(parish, DIRECTORY), by))
+      ? 'the parish’s own website' : null;
+  if (heldBy) websiteHeld.push({ id: row.id, stored, next, heldBy });
+  else if (differs) {
     websiteChanges.push({ id: row.id, website: next, was: stored, why: override?.found || 'the directory' });
-  } else if (row.directory_ref) {
+    continue;
+  }
+  if (row.directory_ref && !outranks(sourceTier(parish, DIRECTORY), 'jurisdiction')) {
     stampOnly.push(row.id);
   }
 }
@@ -190,7 +215,13 @@ console.log(`\nWEBSITE CORRECTIONS (${websiteChanges.length}):`);
 for (const c of websiteChanges) {
   console.log(`  ${c.id.padEnd(38)} ${c.was || '(none)'}\n      -> ${c.website || '(cleared)'}   [${c.why}]`);
 }
-console.log(`\n${stampOnly.length} further rows keep the website they had; every row read gets info_checked_at = ${checkedAt}.`);
+if (websiteHeld.length) {
+  console.log(`\nWEBSITES HELD (${websiteHeld.length}) — the source outranks this run:`);
+  for (const h of websiteHeld) {
+    console.log(`  ${h.id.padEnd(38)} keeps ${h.stored || '(none)'}; offered ${h.next || '(cleared)'}   [${h.heldBy}]`);
+  }
+}
+console.log(`\n${stampOnly.length} further rows keep the website they had and get info_checked_at = ${checkedAt}; rows sourced from a parish or a person keep their own date.`);
 
 await writeFile(scheduleOut, `${buildScheduleSql({ updates, inserts })}\n`);
 // `website` omitted on the stamp-only rows, so their statement carries the
