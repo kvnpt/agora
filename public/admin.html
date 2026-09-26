@@ -460,8 +460,6 @@
     .color-cell-state { font-size: 11px; color: var(--muted); }
     .color-cell-reset { font-size: 11px; background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font-weight: 600; }
     .color-actions { position: sticky; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); box-shadow: var(--shadow-md); }
-    .color-repaint { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-    .color-repaint input { width: auto; accent-color: var(--accent); }
 
     /* ── Service kinds ──────────────────────────────────────────────────
        The main app's badge palette, so a Liturgy is the same purple here as
@@ -655,7 +653,6 @@
           <button type="button" class="pill" data-filter="no-address">No address</button>
           <button type="button" class="pill" data-filter="no-acronym">No acronym</button>
           <button type="button" class="pill" data-filter="stale">Not checked in 6mo</button>
-          <button type="button" class="pill" data-filter="unverified">Never verified</button>
         </div>
         <div class="finder-count" id="parish-count"></div>
       </div>
@@ -801,9 +798,9 @@
       <div class="section-head">
         <h2>Archdiocese colours</h2>
         <p class="section-lead">
-          Map dots and labels always draw these. A parish card draws the parish's own colour,
-          which starts as its jurisdiction's — tick <em>repaint</em> below to carry a change
-          through to the cards that have not been given a colour of their own.
+          Every parish draws its jurisdiction's colour — map dots, labels, cards and feed
+          lines alike. Parishes no longer have colours of their own, so a change here
+          reaches all of them.
         </p>
       </div>
 
@@ -815,10 +812,6 @@
       <div id="color-grid" class="color-grid"></div>
 
       <div class="color-actions">
-        <label class="color-repaint">
-          <input type="checkbox" id="color-repaint" checked>
-          <span>Repaint parish cards still using the old colour</span>
-        </label>
         <div class="btn-row" style="margin:0;">
           <button type="button" class="btn btn-outline" id="color-revert">Discard</button>
           <button type="button" class="btn btn-primary" id="color-save">Save colours</button>
@@ -1659,13 +1652,10 @@
       jurisDraft = Object.fromEntries(JURISDICTIONS.map(j => [j, jurisEffective(j)]));
     }
 
-    // How many parish cards a change would actually move. A parish given its
-    // own colour is not counted, which is the same rule the repaint applies —
-    // so the number on screen is the number that will change.
+    // How many parishes a change moves — all of them in the jurisdiction, since
+    // a parish no longer has a colour of its own.
     function followingCount(j) {
-      const cur = jurisEffective(j).toLowerCase();
-      return parishes.filter(p => p.id !== '_unassigned' && p.jurisdiction === j
-        && String(p.color || '').toLowerCase() === cur).length;
+      return parishes.filter(p => p.id !== '_unassigned' && p.jurisdiction === j).length;
     }
 
     function renderColors() {
@@ -1806,9 +1796,6 @@
       const changed = JURISDICTIONS.filter(j => jurisDraft[j].toLowerCase() !== jurisEffective(j).toLowerCase());
       if (!changed.length) { toast('Nothing changed'); return; }
 
-      // The old colour has to be read before the save, because the repaint
-      // asks "which parishes still carry THIS" and after the save it is gone.
-      const was = Object.fromEntries(changed.map(j => [j, jurisEffective(j)]));
       const colors = Object.fromEntries(changed.map(j => [
         // Back to the file's colour = no row at all, so a later change to the
         // file reaches this jurisdiction again.
@@ -1825,20 +1812,8 @@
         if (!res.ok) { toast(await adminError(res), 'error'); return; }
         jurisOverrides = await res.json();
 
-        let repainted = 0;
-        if (document.getElementById('color-repaint').checked) {
-          for (const j of changed) {
-            const r = await fetch('/api/admin/parishes/repaint', {
-              method: 'POST', headers,
-              body: JSON.stringify({ jurisdiction: j, from: was[j], to: jurisEffective(j) }),
-            });
-            if (r.ok) repainted += (await r.json()).repainted || 0;
-          }
-        }
         await loadAll();
-        toast(repainted
-          ? `Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}, ${repainted} parish${repainted === 1 ? '' : 'es'} repainted`
-          : `Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}`);
+        toast(`Saved — ${changed.length} colour${changed.length === 1 ? '' : 's'}`);
       } finally {
         btn.disabled = false; btn.textContent = label;
       }
@@ -2190,7 +2165,7 @@
       }
       c.innerHTML = fps.map(p => {
         const langs = parseLangsField(p.languages);
-        const mark = p.color || jurisEffective(p.jurisdiction);
+        const mark = jurisEffective(p.jurisdiction);
         return `
         <div class="card" id="pc-${esc(p.id)}">
           <div class="list-row" role="button" tabindex="0" aria-expanded="false"
@@ -2200,7 +2175,7 @@
               ? `<img class="parish-logo" src="${esc(p.logo_path)}" alt="">`
               : `<span class="parish-initial" style="background:${esc(mark)}">${esc((p.name || '?').replace(/^(St\.?|Saints?|Holy)\s+/i, '').charAt(0))}</span>`}
             <div class="list-row-main">
-              <div class="card-title">${esc(p.name)}${p.info_verified_at ? ' <span class="verified" title="Somebody has confirmed this against the place itself">\u2713</span>' : ''}</div>
+              <div class="card-title">${esc(p.name)}</div>
               <div class="card-meta">${esc(p.address || 'No address')}${langs ? ' &middot; ' + esc(langs) : ''}</div>
             </div>
             <span class="tag">${esc(p.jurisdiction)}</span>
@@ -2247,7 +2222,6 @@
               <div class="field"><label>Email</label><input value="${esc(p.email || '')}" data-field="email"></div>
               <div class="field"><label>Phone</label><input value="${esc(p.phone || '')}" data-field="phone"></div>
               <div class="field"><label>Acronym</label><input value="${esc(p.acronym || '')}" ${may('parish.acronym') ? '' : 'disabled title="Changing an acronym changes the parish\u2019s public link, so it is an owner\u2019s to do."'} data-field="acronym" oninput="checkAcronymClash(this, '${esc(p.id)}')"><span class="acronym-warn" style="font-size:11px;color:#e67e22;display:block;margin-top:2px;">${acronymClashMsg(p.acronym, p.id)}</span></div>
-              <div class="field"><label>Color</label><input type="color" value="${p.color || '#000000'}" data-field="color" style="height:32px;padding:2px;"></div>
               <div class="field"><label>Chant Style</label><input value="${esc(p.chant_style || '')}" data-field="chant_style"></div>
               <div class="field full"><label>Live URL</label><input value="${esc(p.live_url || '')}" data-field="live_url" placeholder="https://youtube.com/... (blank to clear)"></div>
               <div class="field full">
@@ -2393,7 +2367,6 @@
     // worst of it: the one field that stops a re-import moving a pin somebody
     // checked, settable only in SQL.
     function provenanceHtml(p) {
-      const verified = p.info_verified_at;
       return `
       <div class="prov">
         <div class="prov-head">Where this came from</div>
@@ -2416,18 +2389,6 @@
                    data-field="info_checked_at"></div>
         </div>
 
-        <!-- Deliberately a button and not a date field. It is not a value
-             somebody types; it is an assertion that a person went and looked at
-             the place, and it is stamped with who made it. -->
-        <div class="prov-line">
-          ${verified
-            ? `<span class="verified">\u2713 Confirmed in person</span> ${relativeTime(verified)}`
-            : `<span class="unverified">Nobody has confirmed this against the place itself.</span>`}
-          <button type="button" class="btn btn-outline" style="margin-left:6px;"
-                  onclick="toggleVerified('${esc(p.id)}', ${verified ? 'false' : 'true'})">
-            ${verified ? 'Withdraw' : 'I have been there'}
-          </button>
-        </div>
         ${p.updated_by || p.updated_at
           ? `<div class="prov-line">Last edited${p.updated_by ? ' by ' + esc(p.updated_by) : ''}${p.updated_at ? ' \u00b7 ' + relativeTime(p.updated_at) : ''}</div>`
           : ''}
@@ -3965,7 +3926,6 @@
               <div class="jur-big">${p.total}</div>
               <div class="jur-sub">
                 ${p.noWebsite} without a website${p.noAddress ? ` \u00b7 ${p.noAddress} without an address` : ''}
-                ${p.verified ? ` \u00b7 ${p.verified} confirmed in person` : ''}
               </div>
               <div class="jur-age ${pAge.cls}">${pAge.text}</div>
             </div>

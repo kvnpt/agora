@@ -115,7 +115,19 @@ CREATE TABLE parishes (
   -- typed it in. A scrape writes the first and never the second, because a
   -- scrape is not a person.
   updated_at  TEXT,
-  updated_by  TEXT
+  updated_by  TEXT,
+
+  -- The parish's own entry on Google Maps, as a link, when somebody has picked
+  -- it. NULL means none was picked and the sheet's Google Maps button opens the
+  -- pin (lat/lng) instead.
+  --
+  -- A place entry is worth more than the coordinates it sits on: it carries the
+  -- church's name, photos, and the entrance Google routes to, where a bare pin
+  -- opens as "dropped pin" in a car park. Chosen in the sheet's edit mode from
+  -- a Places search (POST /api/admin/places) or pasted as a link.
+  --
+  -- Last, because it arrived by ALTER (d1/migrations/015) and ALTER appends.
+  maps_url    TEXT
 );
 
 -- Sentinel parish for events whose parish is unknown.

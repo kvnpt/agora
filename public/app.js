@@ -67,6 +67,9 @@ const state = {
   // own sheet and covers everything on it, its service times included, so
   // "which parish" is never a question.
   parishEditMode: null,
+  // The timetable's own edit mode, separate from the details': one parish id
+  // or null. See parishTimetableHTML.
+  scheduleEditMode: null,
 
   // Which EVENT is being edited, or null. The drawer's twin of
   // parishEditMode, and for the same reason: every admin control on an event
@@ -900,9 +903,30 @@ function setParishScheduleFocus(parishId, spec, opts = {}) {
       openParishSheet(parishId, { focusEventId: state._openEventId, noServiceFocus: true });
     }
   } else if (typeof renderParishSheetContent === 'function') {
-    renderParishSheetContent(parishId, { fullRender: true, focusEventId: state._openEventId });
+    // The pinned occurrence still goes to the top, where a shared link puts it,
+    // but the reader is taken DOWN to the feed rather than back up to it: they
+    // tapped a row in the timetable, and what they asked for is the list of
+    // that service's dates, which starts under the filter row.
+    renderParishSheetContent(parishId, { fullRender: true, focusEventId: state._openEventId, scrollToFeed: true });
+    scrollParishSheetToFeed();
   }
   if (!opts.silent && typeof syncURL === 'function') syncURL();
+}
+
+/** Bring the parish sheet's feed — the focus banner, then the events — up under the sticky header and filter row. */
+function scrollParishSheetToFeed() {
+  const scroller = document.getElementById('parish-sheet-scroll');
+  const content = document.getElementById('parish-sheet-content');
+  if (!scroller || !content) return;
+  if (typeof window.agoraParishSheetSnapFull === 'function') window.agoraParishSheetSnapFull();
+  requestAnimationFrame(() => {
+    const target = content.querySelector('.ps-focus-banner') || content.querySelector('.ps-events-list');
+    if (!target) return;
+    const sheet = document.getElementById('parish-sheet');
+    const stack = sheet ? parseFloat(getComputedStyle(sheet).getPropertyValue('--ps-stack-h')) || 0 : 0;
+    const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - stack - 6;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  });
 }
 
 /** Focus exactly one rule — what tapping a schedule row means. */
@@ -4615,8 +4639,9 @@ function closeParishSheet() {
   // the timetable and deliberately leaves the header and the actions row as
   // they were — so the sheet came back reading "Done" with the mode already
   // off. Dropping the cached id makes that one re-open a full render.
-  if (state.parishEditMode) {
+  if (state.parishEditMode || state.scheduleEditMode) {
     state.parishEditMode = null;
+    state.scheduleEditMode = null;
     state.parishRulings = null;
     // A staged pin is part of the unsaved form and goes with it. Left behind,
     // it would be offered again the next time this parish is edited, as if it
@@ -4708,17 +4733,9 @@ function refreshParishContentPortion(parishId, opts = {}) {
       .filter(s => s.parish_id === parishId)
       .sort((a, b) => a.day_of_week - b.day_of_week)
   );
-  const psJurisColor = getJurisdictionColor(parish.jurisdiction);
-  const psJurisLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
   const existingSection = contentEl.querySelector('.ps-sched-section');
-  if (scheds.length) {
-    const innerHTML = `<div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
-      <div class="section-header jurisdiction-header">${esc(psJurisLabel)}</div>
-      <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
-        ${renderScheduleDaysHTML(scheds)}
-        ${state.isAdmin && state.parishEditMode === parishId ? refusedServicesHTML() + addServiceHTML(parishId) : ''}
-      </div>
-    </div>`;
+  if (scheds.length || mayEditTimetable(parishId)) {
+    const innerHTML = parishTimetableHTML(parish, scheds);
     if (existingSection) {
       existingSection.innerHTML = innerHTML;
     } else if (streamEl) {
@@ -4797,8 +4814,71 @@ function renderParishSheetContent(parishId, opts = {}) {
   const contentEl = document.getElementById('parish-sheet-content');
   const sameParish = !!(contentEl && contentEl._psParishId === parishId);
   const top = scrollEl ? scrollEl.scrollTop : 0;
+  // Whatever somebody was typing survives the rebuild too — see snapshotTyped.
+  const typed = sameParish ? snapshotTyped(contentEl) : null;
   paintParishSheetContent(parishId, opts);
+  if (typed) restoreTyped(contentEl, typed);
   if (sameParish && scrollEl && scrollEl.scrollTop !== top) scrollEl.scrollTop = top;
+}
+
+/**
+ * What somebody has typed and not saved, so a rebuild can put it back.
+ *
+ * Uploading a logo or a poster lands mid-edit, and both re-render what they
+ * belong to — the sheet's header, the event's drawer — which rebuilt every form
+ * around them from the stored row and threw away the title, the times, the
+ * address somebody was halfway through. Only fields that DIFFER from what was
+ * rendered are kept, so a value the save just changed underneath is not
+ * overwritten with the stale copy the user never touched.
+ *
+ * Keyed by id, which both the parish form and the event form carry, and for a
+ * rule's form by its rule id plus field — those have no ids, because the same
+ * rule renders in two places at once.
+ */
+function snapshotTyped(root) {
+  const out = new Map();
+  if (!root) return out;
+  root.querySelectorAll('input, textarea, select').forEach(el => {
+    if (el.type === 'file' || el.type === 'hidden') return;
+    const key = typedKey(el);
+    if (!key) return;
+    let dirty;
+    if (el.type === 'checkbox' || el.type === 'radio') dirty = el.checked !== el.defaultChecked;
+    else if (el.tagName === 'SELECT') dirty = [...el.options].some(o => o.selected !== o.defaultSelected);
+    else dirty = el.value !== el.defaultValue;
+    if (dirty) out.set(key, (el.type === 'checkbox' || el.type === 'radio') ? { checked: el.checked } : { value: el.value });
+  });
+  // Which rule forms were open, so the one being typed into stays open.
+  root.querySelectorAll('.schedule-edit-form[data-sid]').forEach(f => {
+    if (f.style.display !== 'none') out.set(`open:${f.dataset.sid}`, true);
+  });
+  return out;
+}
+
+function typedKey(el) {
+  if (el.id) return `#${el.id}`;
+  const form = el.closest('.schedule-edit-form[data-sid]');
+  const f = el.dataset.f || el.dataset.af;
+  if (form && f) return `sid:${form.dataset.sid}:${f}:${el.value && el.type === 'radio' ? el.value : ''}`;
+  const add = el.closest('.schedule-add');
+  if (add && el.dataset.af) return `add:${add.dataset.parishId}:${el.dataset.af}`;
+  return null;
+}
+
+function restoreTyped(root, snap) {
+  if (!root || !snap || !snap.size) return;
+  root.querySelectorAll('input, textarea, select').forEach(el => {
+    const v = snap.get(typedKey(el));
+    if (!v) return;
+    if ('checked' in v) el.checked = v.checked;
+    else el.value = v.value;
+  });
+  root.querySelectorAll('.schedule-edit-form[data-sid]').forEach(f => {
+    if (!snap.get(`open:${f.dataset.sid}`)) return;
+    f.style.display = '';
+    const row = f.previousElementSibling;
+    if (row) { row.classList.add('editing-open'); row.setAttribute('aria-expanded', 'true'); }
+  });
 }
 
 function paintParishSheetContent(parishId, opts = {}) {
@@ -4851,8 +4931,14 @@ function paintParishSheetContent(parishId, opts = {}) {
   const srcHtml = sourceLineHTML(
     parish.info_source_name, parish.info_source_ref, parish.info_checked_at, 'ps-source');
 
-  const dirBtn = parish.lat && parish.lng
-    ? `<a class="ps-btn ps-btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>`
+  // Opens the PLACE, not a route. Starting navigation from a tap was a
+  // commitment most readers were not making — they wanted to see where it is —
+  // and Google's own page has Directions one tap further on. The parish's own
+  // Maps entry when somebody has picked one (its name, photos, the entrance
+  // Google routes to); the pin otherwise.
+  const mapsHref = parishMapsHref(parish);
+  const dirBtn = mapsHref
+    ? `<a class="ps-btn ps-btn-primary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Google Maps</a>`
     : '';
   const webBtn = parish.website
     ? `<a class="ps-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
@@ -4884,109 +4970,28 @@ function paintParishSheetContent(parishId, opts = {}) {
   // pencil on a parish's face on every sheet an admin ever opened.
   const psEditing = state.isAdmin && state.parishEditMode === parishId;
 
-  // Admin controls + the edit form. Both follow the MODE, not a local toggle.
+  // Admin controls. Both follow the MODE, not a local toggle.
+  //
+  // Edit mode no longer opens a form under the sheet. Each thing the sheet
+  // shows turns into the control that edits it, where it already is — the name
+  // into a name field, the address into an address field, each action pill
+  // gains a pencil for the link behind it — so the sheet being edited is
+  // recognisably the sheet being read. The service times are a separate mode
+  // with their own pencil (parishTimetableHTML): editing a phone number and
+  // editing a timetable are different jobs, usually by different people.
   let parishAdminHtml = '';
-  let parishEditFormHtml = '';
-  if (state.isAdmin) {
+  if (state.isAdmin && adminMay('parish.edit', parishId)) {
     const pid = esc(parishId);
-    const editing = psEditing;
-    // ONE control, and it is a mode rather than a form toggle.
-    //
-    // This row used to carry Edit, Delete and a "hide admin controls" pill,
-    // and every schedule row carried its own pencil, so a signed-in person
-    // never saw the sheet a visitor sees. A pencil that turns editing ON for
-    // the whole sheet says the same thing in one affordance and leaves the
-    // reading state alone — which is also why the Delete has moved inside the
-    // form: it is not something to keep a thumb's width from Directions.
-    //
-    // There is no "hide admin controls" preference any more. It was a
-    // remembered toggle for getting clutter out of the way, and both sheets
-    // now have a mode that does the same thing by default — the clutter is
-    // absent until somebody says they are editing.
     parishAdminHtml = `
-      <div class="ps-actions ps-admin-actions">
-        <button class="ps-btn ${editing ? 'ps-btn-admin ps-editing' : 'ps-btn-ghost'}" type="button"
-                aria-pressed="${editing}"
-                onclick="${editing ? `finishParishEdit('${pid}')` : `setParishEditMode('${pid}', true)`}">
-          ${glyph(editing ? 'ph:check' : 'ph:pencil-simple')}${editing ? 'Done' : 'Edit'}
+      <div class="ps-actions ps-admin-actions${psEditing ? ' ps-edit-in' : ''}"${psEditing ? ' style="--i:8"' : ''}>
+        <button class="ps-btn ${psEditing ? 'ps-btn-admin ps-editing' : 'ps-btn-ghost'}" type="button"
+                aria-pressed="${psEditing}"
+                onclick="${psEditing ? `finishParishEdit('${pid}')` : `setParishEditMode('${pid}', true)`}">
+          ${glyph(psEditing ? 'ph:check' : 'ph:pencil-simple')}${psEditing ? 'Save' : 'Edit details'}
         </button>
-        ${editing ? `<span class="ps-edit-hint">Editing — every field on this sheet, service times included.</span>` : ''}
+        ${psEditing ? `<button class="ps-btn ps-btn-ghost" type="button" onclick="setParishEditMode('${pid}', false)">Cancel</button>` : ''}
+        ${psEditing && adminMay('parish.delete', parishId) ? `<button class="ps-btn ps-btn-danger ps-delete-parish" type="button" onclick="deleteParish('${pid}')">${glyph('ph:trash')}Delete parish</button>` : ''}
       </div>`;
-    // Mirrors the jurisdiction CHECK in d1/schema.sql. It listed
-    // 'ecumenical', which the constraint rejects, and omitted 'romanian',
-    // which it allows — so one option could only ever fail the save and one
-    // valid jurisdiction was unreachable from this form.
-    const jurisdictionOpts = ['antiochian','greek','macedonian','romanian','russian','serbian','other']
-      .map(j => `<option value="${j}"${parish.jurisdiction === j ? ' selected' : ''}>${capitalize(j)}</option>`)
-      .join('');
-    let langsVal = '';
-    try { langsVal = parish.languages ? JSON.parse(parish.languages).join(', ') : ''; } catch { langsVal = parish.languages || ''; }
-    // Built only while editing. Painting twenty controls and hiding them is
-    // how the reading sheet ended up carrying the whole toolkit — and since
-    // entering the mode re-renders anyway, there is nothing to keep warm.
-    parishEditFormHtml = editing ? `
-      <div class="detail-edit-form" id="ps-edit-form-${pid}">
-        <div class="edit-row">
-          <label>Logo</label>
-          <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLogoEditor('${pid}')">${glyph('ph:image-square')}${parish.logo_path ? 'Change logo' : 'Add logo'}</button>
-          <div class="edit-row-hint">Or tap the pencil on the avatar above.</div>
-        </div>
-        <div class="edit-row"><label>Short name</label><input id="pse-name-${pid}" value="${esc(parish.name || '')}"></div>
-        <div class="edit-row"><label>Full name</label><input id="pse-fullname-${pid}" value="${esc(parish.full_name || '')}"></div>
-        <div class="edit-row"><label>Jurisdiction</label><select id="pse-jurisdiction-${pid}">${jurisdictionOpts}</select></div>
-        <div class="edit-row">
-          <label>Address</label>
-          <input id="pse-address-${pid}" value="${esc(parish.address || '')}" oninput="parishAddressTyped('${pid}')">
-          <div class="pin-actions">
-            <button class="ps-btn ps-btn-admin" type="button" id="pse-locate-${pid}"
-                    onclick="geolocateParishPin('${pid}')">${glyph('ph:map-pin')}Locate pin</button>
-            <button class="ps-btn ps-btn-admin" type="button"
-                    onclick="openParishPinMover('${pid}')">${glyph('ph:crosshair-simple')}Move pin location</button>
-          </div>
-          <div class="pin-status" id="pse-pin-status-${pid}">${pinStatusHTML(parishId)}</div>
-        </div>
-        <div class="edit-row"><label>Website</label><input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}"></div>
-        <div class="edit-row"><label>Phone</label><input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}"></div>
-        <div class="edit-row"><label>Live URL</label><input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}"></div>
-        <div class="edit-row">
-          <label>Short links</label>
-          <button class="ps-btn ps-btn-admin" type="button" onclick="openParishLinks('${pid}')">${glyph('ph:link-simple')}Donate, pay, raffle, gala &amp; custom</button>
-          <div class="edit-row-hint">orthodoxy.au/${esc((parish.acronym || 'acronym').toLowerCase().replace(/\s+/g, ''))}/&lt;name&gt; — every link the parish hands out, in one place.</div>
-        </div>
-        <div class="edit-row">
-          <label>Color</label>
-          <input type="color" id="pse-color-${pid}" value="${esc(parish.color || rawJurisColor(parish.jurisdiction))}">
-          <div class="edit-row-hint">Cards, feed lines and event groups only — map dots and labels always draw the jurisdiction's colour.</div>
-        </div>
-        <div class="edit-row">
-          <label>Acronym</label>
-          <input id="pse-acro-${pid}" data-acronym-field value="${esc(parish.acronym || '')}">
-          <div class="edit-row-hint" data-acronym-hint>The parish's short link: orthodoxy.au/<span data-acronym-preview>${esc((parish.acronym || 'acronym').toLowerCase().replace(/\s+/g, ''))}</span></div>
-        </div>
-        <div class="edit-row"><label>Languages</label><input id="pse-langs-${pid}" placeholder="English, Arabic" value="${esc(langsVal)}"></div>
-        <div class="edit-row"><label>Source name</label><input id="pse-srcname-${pid}" placeholder="Parish website" value="${esc(parish.info_source_name || '')}"></div>
-        <div class="edit-row"><label>Source URL</label><input id="pse-srcref-${pid}" value="${esc(parish.info_source_ref || '')}"></div>
-        <div class="edit-row">
-          <label>Source checked</label>
-          <input type="date" id="pse-srcchecked-${pid}" value="${esc(String(parish.info_checked_at || '').slice(0, 10))}">
-          <div class="edit-row-hint">The day somebody last read that source. It is what the sheet shows as "Updated 3 months ago" — not a claim the details are still right.</div>
-        </div>
-        <!-- ONE button, because there was never a second thing to do here.
-             This row carried a green Save and a ghost Done, and the only
-             difference between them was that Done threw the edits away — a
-             distinction nothing on screen made, next to a button labelled as
-             if it were the way to finish. Saving IS finishing now, and the
-             header's Done does the same thing rather than a quieter one. -->
-        <div class="edit-form-actions">
-          <button class="btn-save" type="button" onclick="saveParish('${pid}')">Save</button>
-        </div>
-        <!-- Inside the form, and last. Deleting a parish is not a thing to
-             keep next to Directions, and it is not a thing to reach without
-             having said you are editing. -->
-        <div class="edit-form-danger">
-          <button class="ps-btn ps-btn-danger" type="button" onclick="deleteParish('${pid}')">${glyph('ph:trash')}Delete this parish</button>
-        </div>
-      </div>` : '';
   }
 
   // Service times — always shown when there are schedules (after the
@@ -4999,24 +5004,13 @@ function paintParishSheetContent(parishId, opts = {}) {
       .filter(s => s.parish_id === parishId)
       .sort((a, b) => a.day_of_week - b.day_of_week)
   );
-  const psJurisColor = getJurisdictionColor(parish.jurisdiction);
-  const psJurisLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
   let schedSectionHtml = '';
-  // In edit mode the section shows even with no rules: a parish whose times
-  // have never been entered is exactly the one somebody opens this to fix,
-  // and "there is nothing here" is not a reason to hide the way to add it.
-  if (scheds.length || psEditing) {
+  // Shown to somebody who may edit the times even with no rules: a parish whose
+  // times have never been entered is exactly the one somebody opens this to
+  // fix, and "there is nothing here" is not a reason to hide the pencil.
+  if (scheds.length || mayEditTimetable(parishId)) {
     schedSectionHtml = `
-      <div class="ps-section ps-sched-section">
-        <div class="jurisdiction-box" style="--juris-color:${esc(psJurisColor)}">
-          <div class="section-header jurisdiction-header">${esc(psJurisLabel)}</div>
-          <div class="parish-schedule head-suppressed" data-parish-id="${esc(parishId)}">
-            ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
-            ${psEditing ? refusedServicesHTML() : ''}
-            ${psEditing ? addServiceHTML(parishId) : ''}
-          </div>
-        </div>
-      </div>`;
+      <div class="ps-section ps-sched-section">${parishTimetableHTML(parish, scheds)}</div>`;
   }
 
   // Upcoming events across the same window as the main list. Prefer the
@@ -5050,8 +5044,9 @@ function paintParishSheetContent(parishId, opts = {}) {
   const streamEvents = parishEvents;
 
   contentEl.innerHTML = `
-    <div class="ps-header">
+    <div class="ps-header${psEditing ? ' ps-header-editing' : ''}">
       <${psEditing ? 'button type="button" data-logo-edit' : 'div'} class="ps-avatar${psEditing ? ' editing' : ''}" style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}${psEditing ? `<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span>` : ''}</${psEditing ? 'button' : 'div'}>
+      ${psEditing ? parishHeaderEditHTML(parish) : `
       <div class="ps-header-info">
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
@@ -5059,18 +5054,18 @@ function paintParishSheetContent(parishId, opts = {}) {
       <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
         <span class="ps-url-text" id="ps-url-text"></span>
         <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
-      </button>
+      </button>`}
     </div>
     ${focusedEvent ? '<div class="ps-pinned-event" id="ps-pinned-event"></div>' : ''}
+    ${psEditing ? parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) : `
     <div class="ps-section">
       ${addrHtml}
       ${webCopyHtml}
       ${srcHtml}
-      <div class="ps-actions" style="--parish-color:${esc(getParishDisplayColor(parish.color || '#333'))}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
+      <div class="ps-actions" style="--parish-color:${esc(color)}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
       ${parishAdminHtml}
-    </div>
+    </div>`}
     <div class="ps-now"></div>
-    ${parishEditFormHtml || ''}
     <!-- Sticky filter pill row above the events list. Operates on
          parishFilters (scoped local state, separate from main). It sits
          ABOVE the service times because the English pill prunes rows from
@@ -5202,6 +5197,8 @@ function paintParishSheetContent(parishId, opts = {}) {
       }, 1200);
     });
   });
+
+  if (psEditing) wireParishDetailsEdit(contentEl, parishId);
 
   // Wire URL button (copy) + paint current location.
   const urlBtn = contentEl.querySelector('#ps-url');
@@ -5335,7 +5332,7 @@ function paintParishSheetContent(parishId, opts = {}) {
     const scopeEl = document.getElementById('parish-sheet-scroll');
     // Open before this paint, and not a fresh focus asked for by the caller:
     // the re-expand below is restoring state, not answering a tap.
-    const restoring = !!state._openEventId && !opts.focusEventId;
+    const restoring = (!!state._openEventId && !opts.focusEventId) || !!opts.scrollToFeed;
     if (opts.focusEventId && !state._openEventId) {
       state._openEventId = opts.focusEventId;
     }
@@ -6357,7 +6354,7 @@ function renderScheduleDaysHTML(items) {
   // call sites passing the same flag is three chances for one to forget.
   // Edit mode belongs to a parish, so a rule is editable wherever it appears
   // exactly when its own parish is the one open for editing.
-  const canEdit = (s) => state.isAdmin && state.parishEditMode === s.parish_id;
+  const canEdit = (s) => state.isAdmin && state.scheduleEditMode === s.parish_id;
   const byDay = new Map();
   for (const item of items) {
     if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
@@ -6394,8 +6391,13 @@ function renderScheduleDaysHTML(items) {
       html += `<div class="schedule-item${focused ? ' focused' : ''}${editing ? ' editable' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}"${rowAttrs} role="button" tabindex="0">`;
       const onBreak = scheduleBreakNow(s);
       const breakChip = onBreak ? `<span class="schedule-item-break">on break</span>` : '';
-      html += `<div class="si-main"><span class="schedule-item-title">${esc(s.title)}</span><span class="schedule-item-time">${t}</span>${langLabel}${scopeLabel}${breakChip}<img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></div>`;
-      if (womLabel) html += `<div class="si-wom">${womLabel}</div>`;
+      // Time first, in a column of its own, so a day's services read down as a
+      // timetable does; the title follows at once, two lines at most, with the
+      // chevron at its end rather than out at the panel's edge. Everything that
+      // qualifies the row goes underneath, quieter.
+      html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span><img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></span></div>`;
+      const meta = `${womLabel}${langLabel}${scopeLabel}${breakChip}`;
+      if (meta) html += `<div class="si-meta">${meta}</div>`;
       // While a rule is on a break the timetable still shows its time — the
       // rule has not changed — but the honest reading of the row is "not this
       // week", and the one thing a reader wants next is when it comes back.
@@ -7607,12 +7609,16 @@ window.agoraClearEventPoster = async function (id) {
 
 /** Re-read so the card, the drawer and the parish sheet all show it. */
 async function _afterPosterChange() {
+  // Taken before the refetch, which repaints the drawer the person may still
+  // be typing in. See snapshotTyped.
+  const typed = snapshotTyped(document);
   await fetchEvents({ fresh: true, keepCount: true });
   repaintOpenEventDrawer();
   // Also with no drawer open: the poster shows on the collapsed card too.
   if (state.parishSheetFocus && !state._openEventId) {
     renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
   }
+  restoreTyped(document, typed);
 }
 
 /**
@@ -7736,6 +7742,293 @@ window.deleteEvent = async function(id) {
   }
 };
 
+/** Where the sheet's Google Maps button goes: the parish's own entry, or its pin. */
+function parishMapsHref(parish) {
+  if (!parish) return '';
+  if (parish.maps_url) return parish.maps_url;
+  if (parish.lat && parish.lng) return `https://www.google.com/maps/search/?api=1&query=${parish.lat},${parish.lng}`;
+  return '';
+}
+
+/** May the signed-in person change this parish's service times? The Worker asks the same. */
+function mayEditTimetable(parishId) {
+  return !!(state.isAdmin && adminMay('schedule.edit', parishId));
+}
+
+/**
+ * The service-times panel on a parish sheet.
+ *
+ * It carries the parish's logo and short name at its head, the way the same
+ * panel does on the main services list — the timetable is often screenshotted
+ * and sent on its own, and a block of times with no parish on it says nothing.
+ *
+ * Its own edit mode, entered from the pencil in that head. Editing the
+ * timetable used to be part of editing the parish, which meant correcting a
+ * phone number spread every rule's form and an "add a service" row across the
+ * sheet. Now the rows become editable only when somebody says they are editing
+ * the TIMES, and adding a service sits behind a + until it is asked for.
+ */
+function parishTimetableHTML(parish, scheds) {
+  const pid = parish.id;
+  const editing = state.isAdmin && state.scheduleEditMode === pid;
+  const jColor = getJurisdictionColor(parish.jurisdiction);
+  const jLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
+  const initial = (parish.name || parish.full_name || '?')[0].toUpperCase();
+  const avatar = parish.logo_path
+    ? `<div class="parish-schedule-avatar"><img src="${esc(parish.logo_path)}" alt=""></div>`
+    : `<div class="parish-schedule-avatar" style="background:${esc(jColor)}">${esc(initial)}</div>`;
+  const pencil = mayEditTimetable(pid)
+    ? `<button class="ps-sched-pencil${editing ? ' on' : ''}" type="button" data-sched-mode="${esc(pid)}"
+               aria-pressed="${editing}" aria-label="${editing ? 'Done editing service times' : 'Edit service times'}"
+               title="${editing ? 'Done' : 'Edit service times'}">${glyph(editing ? 'ph:check-bold' : 'ph:pencil-simple-fill')}${editing ? '<span>Done</span>' : ''}</button>`
+    : '';
+  return `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">
+      <div class="section-header jurisdiction-header">${esc(jLabel)}</div>
+      <div class="parish-schedule ps-timetable${editing ? ' editing' : ''}" data-parish-id="${esc(pid)}">
+        <div class="parish-schedule-head">
+          ${avatar}
+          <div class="parish-schedule-name">${esc(parish.name || parish.full_name || '')}</div>
+          ${pencil}
+        </div>
+        ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
+        ${editing ? `${refusedServicesHTML()}
+          <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add a service</span></button>
+          <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+/**
+ * Enter or leave the timetable's edit mode for one parish.
+ *
+ * Separate from `parishEditMode`: one is the parish's details, this is its
+ * rules, and either can be on without the other.
+ */
+window.setScheduleEditMode = function(id, on) {
+  const next = on ? id : null;
+  if (state.scheduleEditMode === next) return;
+  state.scheduleEditMode = next;
+  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
+  if (next) loadParishRulings(next, () => state.scheduleEditMode === next);
+  if (typeof renderServices === 'function') renderServices();
+};
+
+/** The rulings an edit mode shows (what imports are refused), fetched on entry. */
+function loadParishRulings(pid, stillWanted) {
+  fetch(`/api/info-overrides?parish=${encodeURIComponent(pid)}`)
+    .then(r => (r.ok ? r.json() : []))
+    .then(rows => {
+      if (!stillWanted()) return;
+      state.parishRulings = rows;
+      if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
+    })
+    .catch(() => { /* the forms still work without them */ });
+}
+
+// The timetable's own controls, bound once for the document: the panel is
+// rebuilt by both the full render and the partial refresh, and a listener on
+// the element would have to be re-bound after each.
+document.addEventListener('click', (e) => {
+  const mode = e.target.closest('[data-sched-mode]');
+  if (mode) {
+    e.stopPropagation();
+    const pid = mode.dataset.schedMode;
+    window.setScheduleEditMode(pid, state.scheduleEditMode !== pid);
+    return;
+  }
+  const add = e.target.closest('[data-sched-add]');
+  if (add) {
+    const wrap = add.nextElementSibling;
+    if (!wrap) return;
+    wrap.hidden = !wrap.hidden;
+    add.setAttribute('aria-expanded', String(!wrap.hidden));
+    add.classList.toggle('open', !wrap.hidden);
+    const label = add.querySelector('span');
+    if (label) label.textContent = wrap.hidden ? 'Add a service' : 'Close';
+    if (!wrap.hidden) {
+      const first = wrap.querySelector('[data-af="title"]');
+      if (first) first.focus({ preventScroll: true });
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+});
+
+/** The header's fields in edit mode: the name, the short name, the jurisdiction. */
+function parishHeaderEditHTML(parish) {
+  const pid = esc(parish.id);
+  // Mirrors the jurisdiction CHECK in d1/schema.sql.
+  const jurisdictionOpts = ['antiochian', 'greek', 'macedonian', 'romanian', 'russian', 'serbian', 'other']
+    .map(j => `<option value="${j}"${parish.jurisdiction === j ? ' selected' : ''}>${capitalize(j)} Orthodox</option>`)
+    .join('');
+  return `<div class="ps-header-info ps-edit-fields">
+      <input class="ps-name-input ps-edit-in" style="--i:0" id="pse-fullname-${pid}" aria-label="Full name"
+             placeholder="Full name" value="${esc(parish.full_name || parish.name || '')}">
+      <div class="ps-edit-row2 ps-edit-in" style="--i:1">
+        <input id="pse-name-${pid}" aria-label="Short name" placeholder="Short name" value="${esc(parish.name || '')}">
+        <select id="pse-jurisdiction-${pid}" aria-label="Jurisdiction">${jurisdictionOpts}</select>
+      </div>
+    </div>`;
+}
+
+/**
+ * The details section in edit mode: every line the reader sees, as the field
+ * that edits it, in the order it is read. The action pills stay pills and
+ * gain a pencil; a pill with nothing behind it yet appears dashed, so the way
+ * to add a phone number is where the Call button would be.
+ */
+function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
+  const pid = esc(parish.id);
+  let langsVal = '';
+  try { langsVal = parish.languages ? JSON.parse(parish.languages).join(', ') : ''; } catch { langsVal = parish.languages || ''; }
+  const acro = (parish.acronym || '').toLowerCase().replace(/\s+/g, '');
+  const pencil = `<span class="ps-btn-pencil" aria-hidden="true">${glyph('ph:pencil-simple-fill')}</span>`;
+  const linkBtn = (kind, label, has) =>
+    `<button type="button" class="ps-btn ps-btn-editable${has ? '' : ' ps-btn-empty'}${kind === 'maps' ? ' ps-btn-primary' : ''}" data-link-edit="${kind}">${esc(label)}${pencil}</button>`;
+  const hasLinks = !!(parish.donation_url || parish.raffle_url || parish.payment_url || parish.gala_url
+    || (state.parishLinks || []).some(l => l.parish_id === parish.id));
+  const suburb = String(parish.address || '').split(',').slice(-2, -1)[0] || '';
+  const mapsQuery = `${parish.full_name || parish.name || ''} ${suburb}`.trim();
+  return `
+    <div class="ps-section ps-details-editing" id="ps-edit-form-${pid}">
+      <label class="ps-field ps-edit-in" style="--i:2"><span>Address</span>
+        <input id="pse-address-${pid}" value="${esc(parish.address || '')}" oninput="parishAddressTyped('${pid}')" placeholder="Where the service is — the door somebody walks through">
+      </label>
+      <div class="pin-actions ps-edit-in" style="--i:3">
+        <button class="ps-btn ps-btn-admin" type="button" id="pse-locate-${pid}"
+                onclick="geolocateParishPin('${pid}')">${glyph('ph:map-pin')}Locate pin</button>
+        <button class="ps-btn ps-btn-admin" type="button"
+                onclick="openParishPinMover('${pid}')">${glyph('ph:crosshair-simple')}Move pin</button>
+      </div>
+      <div class="pin-status" id="pse-pin-status-${pid}">${pinStatusHTML(parish.id)}</div>
+      <label class="ps-field ps-edit-in" style="--i:4"><span>Website</span>
+        <input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}" placeholder="https://">
+      </label>
+      <div class="ps-field-pair ps-edit-in" style="--i:5">
+        <label class="ps-field"><span>Short link</span>
+          <input id="pse-acro-${pid}" data-acronym-field value="${esc(parish.acronym || '')}" placeholder="acronym">
+          <span class="edit-row-hint" data-acronym-hint>orthodoxy.au/<span data-acronym-preview>${esc(acro || 'acronym')}</span></span>
+        </label>
+        <label class="ps-field"><span>Languages</span>
+          <input id="pse-langs-${pid}" placeholder="English, Greek" value="${esc(langsVal)}">
+        </label>
+      </div>
+      <div class="ps-edit-in" style="--i:6">${srcHtml}</div>
+      <div class="ps-actions ps-edit-in" style="--i:7;--parish-color:${esc(getJurisdictionColor(parish.jurisdiction))}">
+        ${linkBtn('maps', 'Google Maps', true)}
+        ${linkBtn('website', 'Website', !!parish.website)}
+        ${linkBtn('phone', parish.phone ? 'Call' : 'Add phone', !!parish.phone)}
+        ${linkBtn('live', parish.live_url ? 'Watch Live' : 'Add live stream', !!parish.live_url)}
+        ${linkBtn('links', hasLinks ? 'Donate & links' : 'Add donate & links', hasLinks)}
+      </div>
+      <div class="ps-link-editor">
+        <div class="ps-link-field" data-link-field="phone" hidden>
+          <label class="ps-field"><span>Phone — what Call dials</span>
+            <input type="tel" id="pse-phone-${pid}" value="${esc(parish.phone || '')}" placeholder="02 9000 0000">
+          </label>
+        </div>
+        <div class="ps-link-field" data-link-field="live" hidden>
+          <label class="ps-field"><span>Live stream — what Watch Live opens</span>
+            <input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}" placeholder="https://youtube.com/…">
+          </label>
+        </div>
+        <div class="ps-link-field" data-link-field="maps" hidden>
+          <div class="ps-field"><span>Google Maps entry</span>
+            <div class="maps-current" id="pse-maps-current-${pid}">${parish.maps_url
+              ? 'A place is chosen — the button opens it.'
+              : 'None chosen — the button opens the pin from the address.'}</div>
+          </div>
+          <div class="maps-search">
+            <input id="pse-maps-q-${pid}" value="${esc(mapsQuery)}" aria-label="Search Google Maps"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();searchParishPlaces('${pid}')}">
+            <button class="ps-btn ps-btn-admin" type="button" onclick="searchParishPlaces('${pid}')">${glyph('ph:magnifying-glass')}Find</button>
+          </div>
+          <div class="maps-results" id="pse-maps-results-${pid}"></div>
+          <label class="ps-field"><span>Or paste its Google Maps link</span>
+            <input id="pse-maps-${pid}" value="${esc(parish.maps_url || '')}" placeholder="https://maps.app.goo.gl/…"
+                   oninput="document.getElementById('pse-maps-current-${pid}').textContent = this.value ? 'This link is chosen.' : 'None chosen — the button opens the pin from the address.'">
+          </label>
+          <button class="ps-btn ps-btn-ghost" type="button" onclick="clearParishMaps('${pid}')">Use the pin instead</button>
+        </div>
+      </div>
+      ${parishAdminHtml}
+    </div>`;
+}
+
+/** The pencils on the action pills: each opens the field behind its button. */
+function wireParishDetailsEdit(contentEl, parishId) {
+  contentEl.querySelectorAll('[data-link-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const kind = btn.dataset.linkEdit;
+      if (kind === 'links') { window.openParishLinks(parishId); return; }
+      if (kind === 'website') {
+        const el = document.getElementById(`pse-website-${parishId}`);
+        if (el) { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        return;
+      }
+      const field = contentEl.querySelector(`[data-link-field="${kind}"]`);
+      if (!field) return;
+      const opening = field.hidden;
+      contentEl.querySelectorAll('[data-link-field]').forEach(f => { f.hidden = true; });
+      contentEl.querySelectorAll('[data-link-edit]').forEach(b => b.classList.remove('open'));
+      field.hidden = !opening;
+      btn.classList.toggle('open', opening);
+      if (opening) {
+        const first = field.querySelector('input');
+        if (first) first.focus({ preventScroll: true });
+        field.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  });
+}
+
+/**
+ * Look the parish up on Google Maps and offer what comes back.
+ *
+ * Through the Worker (POST /api/admin/places), which holds the key. A
+ * deployment whose key cannot search Places says so, and the paste field and
+ * "use the pin" are right there — the button works either way.
+ */
+window.searchParishPlaces = async function(pid) {
+  const parish = state.parishes.find(p => p.id === pid) || {};
+  const q = (document.getElementById(`pse-maps-q-${pid}`) || {}).value || '';
+  const box = document.getElementById(`pse-maps-results-${pid}`);
+  if (!box || !q.trim()) return;
+  box.innerHTML = '<div class="maps-note">Searching…</div>';
+  let body = null;
+  try {
+    const res = await fetch('/api/admin/places', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q, lat: parish.lat, lng: parish.lng }),
+    });
+    body = await res.json().catch(() => null);
+  } catch { /* shown below */ }
+  const places = (body && body.places) || [];
+  if (!places.length) {
+    box.innerHTML = `<div class="maps-note">${esc((body && body.error) || 'Nothing found. Try the church’s name and suburb, or paste its link below.')}</div>`;
+    return;
+  }
+  box.innerHTML = places.map((pl, i) => `
+    <button type="button" class="maps-result" data-i="${i}">
+      <span class="maps-result-name">${esc(pl.name || '')}</span>
+      <span class="maps-result-addr">${esc(pl.address || '')}</span>
+    </button>`).join('');
+  box.querySelectorAll('.maps-result').forEach(b => b.addEventListener('click', () => {
+    const pl = places[Number(b.dataset.i)];
+    const input = document.getElementById(`pse-maps-${pid}`);
+    if (input) input.value = pl.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name || '')}&query_place_id=${encodeURIComponent(pl.id)}`;
+    const cur = document.getElementById(`pse-maps-current-${pid}`);
+    if (cur) cur.textContent = `Chosen: ${pl.name}${pl.address ? ' — ' + pl.address : ''}. Save to keep it.`;
+    box.querySelectorAll('.maps-result').forEach(x => x.classList.toggle('chosen', x === b));
+  }));
+};
+
+window.clearParishMaps = function(pid) {
+  const input = document.getElementById(`pse-maps-${pid}`);
+  if (input) input.value = '';
+  const cur = document.getElementById(`pse-maps-current-${pid}`);
+  if (cur) cur.textContent = 'None chosen — the button opens the pin from the address. Save to keep it.';
+};
+
 /**
  * Enter or leave edit mode for one parish.
  *
@@ -7753,7 +8046,6 @@ window.setParishEditMode = function(id, on) {
   const next = on ? id : null;
   if (state.parishEditMode === next) return;
   state.parishEditMode = next;
-  state.parishRulings = null;
   // Same reasoning as closing the sheet: a pin staged against one parish must
   // not still be staged when the mode moves to another, or to nothing.
   if (_pinDraft.parishId && _pinDraft.parishId !== next) clearPinDraft();
@@ -7761,26 +8053,6 @@ window.setParishEditMode = function(id, on) {
   // and the actions row alone — which is exactly the half that changes here.
   const open = state.parishSheetFocus;
   if (open) renderParishSheetContent(open, { fullRender: true });
-  // Then again once the rulings arrive. Not awaited, because edit mode has to
-  // open at once: a person who pressed a pencil is waiting on the form, not on
-  // an explanation of what a scrape will refuse.
-  if (next) {
-    fetch(`/api/info-overrides?parish=${encodeURIComponent(next)}`)
-      .then(r => (r.ok ? r.json() : []))
-      .then(rows => {
-        if (state.parishEditMode !== next) return;
-        state.parishRulings = rows;
-        if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
-      })
-      .catch(() => { /* the form still works without them */ });
-  }
-  if (next) {
-    const form = document.getElementById(`ps-edit-form-${next}`);
-    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-  // The main services panel renders the same rules, so its pencils have to
-  // come and go with the mode too.
-  if (typeof renderServices === 'function') renderServices();
 };
 
 // Kept so an old inline handler, a bookmarklet or a half-updated cached copy
@@ -8032,25 +8304,32 @@ window.confirmParishPin = function() {
 
 window.saveParish = async function(id) {
   const pid = id;
-  const langsRaw = document.getElementById(`pse-langs-${pid}`).value;
-  const langsArr = langsRaw ? langsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-  const data = {
-    name: document.getElementById(`pse-name-${pid}`).value,
-    full_name: document.getElementById(`pse-fullname-${pid}`).value || null,
-    jurisdiction: document.getElementById(`pse-jurisdiction-${pid}`).value,
-    address: document.getElementById(`pse-address-${pid}`).value || null,
-    website: document.getElementById(`pse-website-${pid}`).value || null,
-    phone: document.getElementById(`pse-phone-${pid}`).value || null,
-    live_url: document.getElementById(`pse-live-${pid}`).value || null,
-    color: document.getElementById(`pse-color-${pid}`).value,
-    acronym: document.getElementById(`pse-acro-${pid}`).value || null,
-    languages: langsArr.length ? JSON.stringify(langsArr) : null,
-    info_source_name: document.getElementById(`pse-srcname-${pid}`).value || null,
-    info_source_ref: document.getElementById(`pse-srcref-${pid}`).value || null,
-    info_checked_at: checkedAtFromInput(
-      document.getElementById(`pse-srcchecked-${pid}`).value,
-      (state.parishes.find(p => p.id === pid) || {}).info_checked_at),
+  const val = (name) => {
+    const el = document.getElementById(`pse-${name}-${pid}`);
+    return el ? el.value.trim() : undefined;
   };
+  const data = {};
+  const put = (col, v, { nullable = true } = {}) => {
+    if (v === undefined) return;
+    data[col] = nullable ? (v || null) : v;
+  };
+  // Only what the sheet shows. The source and the checked date are not here:
+  // they are stamped by the Worker from who saved and when (adminEditProvenance),
+  // and the colour is the jurisdiction's.
+  put('name', val('name'), { nullable: false });
+  put('full_name', val('fullname'));
+  put('jurisdiction', val('jurisdiction'), { nullable: false });
+  put('address', val('address'));
+  put('website', val('website'));
+  put('phone', val('phone'));
+  put('live_url', val('live'));
+  put('acronym', val('acro'));
+  put('maps_url', val('maps'));
+  const langsRaw = val('langs');
+  if (langsRaw !== undefined) {
+    const langsArr = langsRaw ? langsRaw.split(',').map(x => x.trim()).filter(Boolean) : [];
+    data.languages = langsArr.length ? JSON.stringify(langsArr) : null;
+  }
 
   // A staged pin goes as an explicit lat/lng, for both kinds.
   //
@@ -9842,17 +10121,18 @@ function relativeAge(iso, now = Date.now()) {
  * Shepherd's Confession were entered by hand and nobody recorded from where.
  */
 function scheduleSourceHTML(items) {
-  const bySource = new Map();
+  // ONE line: a timetable has one source, and it is whoever changed it last —
+  // an edit in /admin restamps every rule of the parish (stampTimetable in
+  // worker/routes/admin.mjs), and an import that re-reads one rule is then the
+  // latest change, which is also true. Rules with no source say nothing.
+  let latest = null;
   for (const s of items) {
     if (!s.source_name) continue;
-    const key = `${s.source_name}|${s.source_ref || ''}|${s.source_checked_at || ''}`;
-    if (!bySource.has(key)) {
-      bySource.set(key, { name: s.source_name, ref: s.source_ref || '', checked: s.source_checked_at || '' });
-    }
+    if (!latest || String(s.source_checked_at || '') > String(latest.source_checked_at || '')) latest = s;
   }
-  return [...bySource.values()]
-    .map(({ name, ref, checked }) => sourceLineHTML(name, ref, checked, 'sched-source'))
-    .join('');
+  return latest
+    ? sourceLineHTML(latest.source_name, latest.source_ref || '', latest.source_checked_at || '', 'sched-source')
+    : '';
 }
 
 /**

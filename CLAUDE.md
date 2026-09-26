@@ -160,9 +160,18 @@ them on every run.
 
 An edit in /admin is a claim by a person, and the PATCH route records it
 without being asked (`adminEditProvenance`): a save that changes a detail
-makes the source "Parish Contact" (`info_source_type='person'`), stamps
-`info_checked_at` now, and pins each changed field at `admin` — unless that
-same save set the source or picked a check date itself. Both forms post every
+makes the source that person — "Admin" for an owner or editor, "Parish
+Contact" for a parish contact (`adminSourceName`; `info_source_type='person'`)
+— stamps `info_checked_at` now, and pins each changed field at `admin`, unless
+that same save set the source or picked a check date itself.
+
+**A timetable has one source.** Rules still carry `source_*` columns, because
+importers write them, but a parish's timetable renders ONE provenance line: the
+most recent stamp among its rules. Any create, edit or delete of a rule in
+/admin restamps *every* rule of that parish with the editor's name and now
+(`stampTimetable`), so "Updated today · Parish Contact" is the timetable as it
+stands. An import that later re-reads one rule is then the most recent change,
+which is also true. Both forms post every
 field, so "changed" means different from the stored row, not present. A colour
 or a link says nothing about the details and leaves the provenance alone.
 
@@ -256,9 +265,13 @@ read — it exists because that table was three tables and two of them disagreed
 about Greek. `jurisdiction_colors` in D1 does not make it four: it holds only
 the rows */admin* → Colours has deliberately changed, absence means the file's
 value, and a reset deletes the row rather than writing the default into it.
-Changing a jurisdiction's colour does not touch `parishes.color`, which is a
-per-parish identity mark; the panel offers that as a separate, counted repaint
-of the rows still carrying the old colour.
+
+**Parishes have no colour of their own.** `parishes.color` is still a column and
+still in the payload, and `public/bundle.js` overwrites it with the
+jurisdiction's colour the moment the bundle lands — before the join copies it
+onto rules and events as `parish_color` — so every reader draws the
+jurisdiction's without being taught to. The panel no longer offers a parish
+colour or a repaint.
 
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and
@@ -377,13 +390,20 @@ means no access. That is the opposite of `adapter_settings`, where absence
 must never stop a scrape, and deliberately so: a missed scrape is fixed by
 the next one, a wrongly-granted delete is not.
 
-**Signed in is not the same as editing.** On the main app a parish sheet has
-one pencil, and `state.parishEditMode` holds the single parish it turns on.
-Until then the sheet is the sheet a visitor sees: no schedule pencils, no logo
-button, no form in the DOM behind `display:none`. Edit mode covers everything
-on that sheet including the service times, and a rule is editable wherever it
-renders — the sheet or the main services panel — exactly when its own parish is
-the one open. `state.eventEditMode` is the same thing for the event drawer: one
+**Signed in is not the same as editing.** A parish sheet has two modes, each
+behind its own pencil. `state.parishEditMode` is the parish's DETAILS: each
+thing the sheet shows turns into the field that edits it, in place, and each
+action pill gains a pencil for the link behind it — there is no form under the
+sheet. `state.scheduleEditMode` is its TIMETABLE, entered from the pencil in
+the timetable's own head; only then are rules editable (on the sheet or the
+main services panel) and adding a service sits behind a +. Until either is on
+the sheet is the sheet a visitor sees: no schedule pencils, no logo button, no
+form in the DOM behind `display:none`.
+
+The sheet's first button is **Google Maps**, and it opens the place, not a
+route: `parishes.maps_url` when somebody picked the parish's Maps entry (a
+Places search through `POST /api/admin/places`, or a pasted link), the pin
+otherwise. `state.eventEditMode` is the same thing for the event drawer: one
 pencil until somebody says they are editing, then Cancel, Suppress, Delete,
 Combine and the form. `hideAdminControls` is **gone** — it was a remembered
 preference for making tools go away, which is what a mode does by default, and

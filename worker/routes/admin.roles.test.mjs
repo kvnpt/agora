@@ -232,6 +232,28 @@ test('a rule edit is attributed too, and carries its source', async () => {
   assert.equal(row.updated_by, 'dev');
 });
 
+// One timetable, one source: whoever changed it last.
+test('a rule edit restamps the whole timetable with who made it', async () => {
+  const { raw, call } = fresh({ role: 'parish', parishIds: [PARISH_A] });
+  const rules = raw.prepare('SELECT id FROM schedules WHERE parish_id = ?').all(PARISH_A);
+  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, source_name, source_ref)
+               VALUES (?, 6, '18:00', 'Vespers', 'Antiochian Archdiocese', 'https://antiochian.org.au/x')`).run(PARISH_A);
+  const r = await call('PATCH', `/api/admin/schedules/${rules[0].id}`, { title: 'Divine Liturgy' });
+  assert.equal(r.status, 200, r.body && r.body.error);
+  const after = raw.prepare('SELECT source_name, source_ref, source_checked_at FROM schedules WHERE parish_id = ?').all(PARISH_A);
+  assert.ok(after.length >= 2);
+  assert.ok(after.every(x => x.source_name === 'Parish Contact' && x.source_ref === null),
+    'every rule of the parish should carry the one timetable source');
+  assert.ok(after.every(x => x.source_checked_at.slice(0, 10) === new Date().toISOString().slice(0, 10)));
+
+  // Deleting is a change too.
+  const other = raw.prepare("SELECT id FROM schedules WHERE parish_id = ? AND title = 'Vespers'").get(PARISH_A);
+  raw.prepare("UPDATE schedules SET source_name = 'Old' WHERE parish_id = ?").run(PARISH_A);
+  assert.equal((await call('DELETE', `/api/admin/schedules/${other.id}`)).status, 200);
+  assert.ok(raw.prepare('SELECT source_name FROM schedules WHERE parish_id = ?').all(PARISH_A)
+    .every(x => x.source_name === 'Parish Contact'));
+});
+
 // ── verification ──
 
 test('verifying a parish stamps info_verified_at with who did it', async () => {

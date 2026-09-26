@@ -350,8 +350,8 @@ const STORED = {
 };
 const NOW = '2026-09-24T05:00:00Z';
 
-test('changing a detail makes the source the parish contact, checked now, and pins the field', () => {
-  const r = adminEditProvenance(STORED, { phone: '0404 172 171' }, { now: NOW });
+test('changing a detail makes the source the editor, checked now, and pins the field', () => {
+  const r = adminEditProvenance(STORED, { phone: '0404 172 171' }, { now: NOW, sourceName: 'Parish Contact' });
   assert.deepEqual(r.changed, ['phone']);
   assert.deepEqual(r.sets, {
     info_source_type: 'person', info_source_name: 'Parish Contact', info_source_ref: null,
@@ -398,7 +398,7 @@ test('an address pins its coordinates; coordinates alone pin nothing', () => {
   const addr = adminEditProvenance(STORED, { address: '49-59 Holtermann St' }, { now: NOW });
   assert.deepEqual(addr.pinFields, ['address', 'lat', 'lng']);
   const dot = adminEditProvenance(STORED, { lat: -33.81, lng: 151.21 }, { now: NOW });
-  assert.equal(dot.sets.info_source_name, 'Parish Contact', 'moving the dot is still an edit');
+  assert.equal(dot.sets.info_source_name, 'Admin', 'moving the dot is still an edit, recorded as Admin by default');
   assert.deepEqual(dot.pinFields, [], 'a re-located dot is the geocoder again, not a checked fact');
   assert.equal(adminEditProvenance(STORED, { lat: '-33.8', lng: 151.2 }, { now: NOW }).changed.length, 0,
     'the same coordinates as a string are not a change');
@@ -407,4 +407,11 @@ test('an address pins its coordinates; coordinates alone pin nothing', () => {
 test('a field the caller pins itself is left to the caller', () => {
   const r = adminEditProvenance(STORED, { phone: '1' }, { now: NOW, explicitPins: ['phone'] });
   assert.deepEqual(r.pinFields, []);
+});
+
+test('an edit is recorded as Admin, or as Parish Contact for a parish contact', async () => {
+  const { adminSourceName } = await import('./info-overrides.mjs');
+  assert.equal(adminSourceName('owner'), 'Admin');
+  assert.equal(adminSourceName('editor'), 'Admin');
+  assert.equal(adminSourceName('parish'), 'Parish Contact');
 });

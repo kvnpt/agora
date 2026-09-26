@@ -258,8 +258,20 @@ export function describeOverride(row) {
   return `${row.subject} — held on ${on}. A weaker source may not overwrite it.`;
 }
 
-/** What an edit in /admin records as its source. */
-export const ADMIN_SOURCE_NAME = 'Parish Contact';
+/** What an edit in /admin records as its source, by who made it. */
+export const ADMIN_SOURCE_NAME = 'Admin';
+export const CONTACT_SOURCE_NAME = 'Parish Contact';
+
+/**
+ * The name an edit is recorded under.
+ *
+ * A parish contact speaks for the parish, which is the claim a reader cares
+ * about — "Updated today · Parish Contact" says the parish itself said so. An
+ * owner or editor is one of us, and says so.
+ */
+export function adminSourceName(role) {
+  return role === 'parish' ? CONTACT_SOURCE_NAME : ADMIN_SOURCE_NAME;
+}
 
 const SOURCE_COLUMNS = ['info_source_type', 'info_source_name', 'info_source_ref'];
 
@@ -281,7 +293,8 @@ function sameValue(field, a, b) {
  *
  * A save that changes any detail is a claim by a person, so:
  *
- *   - the row's source becomes "Parish Contact" (`info_source_type='person'`,
+ *   - the row's source becomes that person — "Admin", or "Parish Contact" for
+ *     a parish contact (`sourceName`; `info_source_type='person'`,
  *     which the ladder reads as `admin`) — unless the same save set the source
  *     itself, in which case they said where it came from and that stands;
  *   - `info_checked_at` becomes now — unless they picked a different day, which
@@ -301,7 +314,7 @@ function sameValue(field, a, b) {
  * of the automatic ones so a malformed request is reported rather than quietly
  * replaced by a ruling the caller did not ask for.
  */
-export function adminEditProvenance(stored, body, { now, explicitPins = [] } = {}) {
+export function adminEditProvenance(stored, body, { now, explicitPins = [], sourceName = ADMIN_SOURCE_NAME } = {}) {
   const changed = PINNABLE_FIELDS.filter((f) => body[f] !== undefined && !sameValue(f, body[f], stored[f]));
   const sourceSet = SOURCE_COLUMNS.some((f) => body[f] !== undefined && !sameValue(f, body[f], stored[f]));
   // A day picker cannot say what second somebody looked, so the same DAY is the
@@ -319,7 +332,7 @@ export function adminEditProvenance(stored, body, { now, explicitPins = [] } = {
   }
   if (changed.length && !sourceSet) {
     sets.info_source_type = 'person';
-    sets.info_source_name = ADMIN_SOURCE_NAME;
+    sets.info_source_name = sourceName;
     // The old ref named the directory, and a person is not at a URL.
     sets.info_source_ref = null;
   }

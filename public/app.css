@@ -1830,13 +1830,13 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   white-space: nowrap;
 }
 .schedule-day {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  margin-top: 8px;
-  margin-bottom: 1px;
+  margin-top: 14px;
+  margin-bottom: 3px;
 }
 .schedule-item {
   font-size: 13.5px;
@@ -1865,9 +1865,8 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   box-shadow: inset 2px 0 0 var(--juris-color, var(--accent));
 }
 .si-chev {
-  width: 11px;
-  height: 11px;
-  margin-left: auto;
+  width: 10px;
+  height: 10px;
   align-self: center;
   opacity: 0.35;
   flex: none;
@@ -1884,38 +1883,63 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border-radius: 8px 8px 0 0;
 }
 .schedule-item.editable.editing-open .si-chev { opacity: 0.9; }
+/* Time in a column of its own, then the title straight after it — a day's
+   services read down the page the way a printed timetable does, and the eye
+   no longer has to cross the panel to pair a title with its time. */
 .si-main {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--si-time-w, 66px) minmax(0, 1fr);
+  column-gap: 8px;
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0 6px;
-  padding: 2px 0 1px;
+  padding: 5px 0 2px;
 }
-.si-wom {
-  padding: 0 0 3px;
+.si-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+/* Everything that qualifies the row — which weeks, languages, "parish only",
+   a break — on one quiet line under the title, aligned with it. */
+.si-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 0 0 4px calc(var(--si-time-w, 66px) + 8px);
 }
 /* Where a rule meets, when that is not the parish's address. Same weight as
    the week-of-month line under it: both are qualifications on the row above,
    not content of their own. */
 .si-where {
-  padding: 0 0 3px;
+  padding: 0 0 4px calc(var(--si-time-w, 66px) + 8px);
   font-size: 11px;
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 .parish-schedule-head + .schedule-day { margin-top: 6px; }
+/* Two lines at most, then an ellipsis — a long title ("Sisterhood of Saints
+   Mary and Martha (Paraklesis Service)") should not push the day below it off
+   the panel. The full title is in the row's tooltip and on the event card. */
 .schedule-item-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--text);
+  font-size: 14.5px;
   font-weight: 500;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 .schedule-item-time {
-  flex: none;
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  font-size: 12.5px;
+  color: var(--text);
+  font-size: 13.5px;
+  white-space: nowrap;
 }
 .schedule-item-time .ampm {
   font-size: 0.78em;
@@ -1938,8 +1962,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 10px;
   color: var(--text-muted);
 }
-.si-wom { font-size: 10px; color: var(--text-muted); }
-.si-where { font-size: 10px; }
+.si-meta .schedule-item-wom { font-size: 11px; color: var(--text-muted); }
 /* A rule that is not running at the moment. Quiet, because the row is still
    the parish's real timetable — the break is a qualification on it, not a
    replacement for it. */
@@ -1954,7 +1977,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border-radius: 3px;
 }
 .si-break {
-  padding: 0 0 3px;
+  padding: 0 0 4px calc(var(--si-time-w, 66px) + 8px);
   font-size: 10px;
   color: var(--text-muted);
   overflow-wrap: anywhere;
@@ -4919,3 +4942,181 @@ button.ps-avatar { cursor: pointer; }
   border-color: var(--text);
   background: var(--surface-2);
 }
+
+
+/* ── The timetable on a parish sheet ─────────────────────────────────────
+   It carries the parish's logo and short name at its head, like the same
+   panel on the main services list, and its own edit mode behind a pencil. */
+.ps-timetable { cursor: default; }
+.ps-timetable:active { background: none; }
+.ps-timetable .parish-schedule-head { margin-bottom: 0; }
+.ps-sched-pencil {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms ease-out, opacity 120ms ease-out;
+}
+.ps-sched-pencil .ps-btn-glyph { width: 17px; height: 17px; }
+.ps-sched-pencil:hover { opacity: 0.88; }
+.ps-sched-pencil:active { transform: scale(0.94); }
+.ps-sched-pencil.on { background: var(--success, #2e7d32); color: #fff; }
+.ps-sched-add-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 7px 14px 7px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ps-sched-add-toggle .ps-btn-glyph { width: 14px; height: 14px; transition: transform 160ms ease-out; }
+.ps-sched-add-toggle.open .ps-btn-glyph { transform: rotate(45deg); }
+.ps-sched-add-wrap { margin-top: 8px; }
+
+/* ── Editing a parish in place ───────────────────────────────────────────
+   Each thing the sheet shows turns into the field that edits it, where it
+   already is, fading up one after another so the change reads as the same
+   sheet becoming editable rather than a form arriving under it. */
+@keyframes ps-edit-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+.ps-edit-in {
+  animation: ps-edit-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ps-edit-in { animation: none; }
+}
+.ps-header-editing { padding-bottom: 12px; }
+.ps-edit-fields { gap: 0; }
+.ps-edit-fields input,
+.ps-edit-fields select,
+.ps-field input,
+.ps-field select,
+.maps-search input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+.ps-edit-fields input:focus,
+.ps-edit-fields select:focus,
+.ps-field input:focus,
+.maps-search input:focus {
+  outline: none;
+  border-color: var(--text-secondary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 10%, transparent);
+}
+.ps-edit-fields .ps-name-input {
+  font-size: 17px;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+.ps-edit-row2 {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ps-edit-row2 > * { flex: 1 1 0; }
+.ps-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+.ps-field > span:first-child {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ps-field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+}
+.ps-details-editing .pin-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 4px; }
+.ps-details-editing .pin-status { margin-bottom: 10px; }
+.ps-details-editing .ps-actions { margin-top: 2px; }
+/* A pill that edits its link: the pencil rides on the pill itself. */
+.ps-btn-editable { gap: 7px; padding-right: 8px; }
+.ps-btn-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.ps-btn-pencil .ps-btn-glyph { width: 11px; height: 11px; }
+.ps-btn-empty {
+  border-style: dashed;
+  color: var(--text-secondary);
+  border-color: var(--border);
+  font-weight: 500;
+}
+.ps-btn-editable.open { box-shadow: 0 0 0 3px color-mix(in srgb, var(--parish-color, var(--text)) 25%, transparent); }
+.ps-link-editor { margin-top: 10px; }
+.ps-link-field {
+  padding: 12px 12px 4px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface-2);
+  animation: ps-edit-in 220ms ease-out both;
+}
+.maps-current { font-size: 13px; color: var(--text-secondary); }
+.maps-search { display: flex; gap: 6px; margin-bottom: 8px; }
+.maps-search .ps-btn { flex: none; gap: 5px; }
+.maps-results { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.maps-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+.maps-result:hover { border-color: var(--text-secondary); }
+.maps-result.chosen { border-color: var(--success, #2e7d32); box-shadow: 0 0 0 2px color-mix(in srgb, var(--success, #2e7d32) 30%, transparent); }
+.maps-result-name { font-size: 13.5px; font-weight: 600; }
+.maps-result-addr { font-size: 12px; color: var(--text-muted); }
+.maps-note { font-size: 12.5px; color: var(--text-secondary); padding: 2px 0 6px; }
+.ps-link-field > .ps-btn-ghost { margin-bottom: 10px; }
+.ps-delete-parish { margin-left: auto; }

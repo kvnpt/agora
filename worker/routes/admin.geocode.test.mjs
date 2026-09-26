@@ -213,13 +213,15 @@ test('a pin with no reason fails the ruling and keeps the save', async () => {
 test('the edit form offers one way to finish, and it saves', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
 
-  const actions = app.slice(app.indexOf('<div class="edit-form-actions">'));
+  // Edit mode is inline now, so the way out is the admin row: Save, and a
+  // Cancel that SAYS it throws the edits away. What must not come back is a
+  // second finishing button whose only difference is silently discarding.
+  const actions = app.slice(app.indexOf('<div class="ps-actions ps-admin-actions'));
   const row = actions.slice(0, actions.indexOf('</div>'));
-  assert.ok(row.includes("saveParish('${pid}')"), 'the form lost its Save');
-  assert.equal(
-    (row.match(/<button/g) || []).length, 1,
-    'a second button is back in the actions row — Save and Done were merged because the pair could only differ by discarding the edits',
-  );
+  assert.ok(row.includes("finishParishEdit('${pid}')"), 'the row lost its Save');
+  assert.ok(/'Save'/.test(row), 'the finishing button is not labelled Save');
+  assert.doesNotMatch(row, /'Done'/, 'a Done beside Save is the pair that differed only by discarding');
+  assert.ok(row.includes("setParishEditMode('${pid}', false)\">Cancel<"), 'leaving without saving must be labelled Cancel');
 
   // The header's Done is the same act, not a quieter one that drops the form.
   assert.ok(app.includes("finishParishEdit('${pid}')"), 'the header Done no longer saves');
