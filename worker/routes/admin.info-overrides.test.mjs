@@ -338,7 +338,8 @@ test('editing a detail in /admin makes the row the parish contact’s, checked t
   });
   assert.equal(r.status, 200);
   assert.equal(r.body.info_source_type, 'person');
-  assert.equal(r.body.info_source_name, 'Parish Contact');
+  // The bootstrap account is an owner, so the edit is the admin's.
+  assert.equal(r.body.info_source_name, 'Admin');
   assert.equal(r.body.info_source_ref, null);
   assert.equal(r.body.info_checked_at.slice(0, 10), new Date().toISOString().slice(0, 10));
   const pins = raw.prepare("SELECT subject, tier, note FROM info_overrides WHERE target='field'").all();

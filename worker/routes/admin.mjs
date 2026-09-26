@@ -9,6 +9,7 @@
 import { json, readJson } from '../lib/router.mjs';
 import { requireAdmin, adminIdentity } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
+import { readSecret } from '../lib/secrets.mjs';
 import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { exactLocalToEpoch } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
@@ -22,7 +23,7 @@ import { resolveRole, can, mayTouchParish, denial, rolePayload, ROLES, parsePari
 import { validateProposal, describeProposal, readPayload, PROPOSABLE, isOpen } from '../lib/proposals.mjs';
 import { readInfoOverrides, validateOverride, describeOverride, slotKey,
          parseSlot, PINNABLE_FIELDS, FIELD_GROUPS, SOURCE_TIERS,
-         adminEditProvenance, ADMIN_SOURCE_NAME }
+         adminEditProvenance, adminSourceName }
   from '../lib/info-overrides.mjs';
 import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
          daysSince, staleness } from '../lib/jurisdictions.mjs';
@@ -1427,6 +1428,63 @@ export function registerAdminRoutes(router) {
     return json({ ...coords, address });
   }));
 
+  // Find a parish's entry on Google Maps, WITHOUT writing anything.
+  //
+  // The sheet's Google Maps button is better pointed at the church's own place
+  // entry than at the pin it sits on, and nobody should have to go and copy a
+  // share link to do that. So this searches Places (New) with the key the
+  // Calendar adapter already holds, biased to the parish's pin, and the panel
+  // offers what comes back.
+  //
+  // It fails SOFT, the way github-actions.mjs does: a key without the Places
+  // API enabled answers 403, and the panel then falls back to a pasted link or
+  // to the pin itself — which is what the button opens anyway.
+  router.post('/api/admin/places', guarded('parish.edit', async ({ env, request }) => {
+    const b = await readJson(request);
+    const q = typeof b.query === 'string' ? b.query.trim() : '';
+    if (!q) return json({ error: 'Say what to search for.' }, 400);
+    const key = await readSecret(env.GOOGLE_API_KEY);
+    if (!key) return json({ configured: false, places: [], error: 'No Google API key on this deployment.' });
+    const body = { textQuery: q, maxResultCount: 6 };
+    if (Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng))) {
+      body.locationBias = { circle: { center: { latitude: Number(b.lat), longitude: Number(b.lng) }, radius: 5000 } };
+    }
+    let res;
+    try {
+      res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': key,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      return json({ configured: true, places: [], error: `Could not reach Google: ${e.message}` });
+    }
+    if (!res.ok) {
+      return json({
+        configured: res.status !== 403, places: [],
+        error: res.status === 403
+          ? 'The Google key on this deployment is not enabled for the Places API, so paste a link instead.'
+          : `Google answered ${res.status}.`,
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    return json({
+      configured: true,
+      places: (data.places || []).map(p => ({
+        id: p.id,
+        name: p.displayName && p.displayName.text,
+        address: p.formattedAddress || null,
+        lat: p.location ? p.location.latitude : null,
+        lng: p.location ? p.location.longitude : null,
+        url: p.googleMapsUri || null,
+      })),
+    });
+  }));
+
   router.post('/api/admin/parishes', guarded('parish.create', async ({ env, request }) => {
     const b = await readJson(request);
     const { name, jurisdiction, lat, lng } = b;
@@ -1483,7 +1541,7 @@ export function registerAdminRoutes(router) {
     'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url',
     'donation_url', 'raffle_url', 'payment_url', 'gala_url', 'timezone',
     'info_source_type', 'info_source_ref', 'info_source_name', 'info_checked_at',
-    'info_verified_at',
+    'info_verified_at', 'maps_url',
   ];
 
   router.patch('/api/admin/parishes/:id', guarded('parish.edit', async (c) => {
@@ -1513,6 +1571,11 @@ export function registerAdminRoutes(router) {
     }
     const tzBad = timezoneProblem(b.timezone);
     if (tzBad) return json({ error: tzBad, field: 'timezone' }, 400);
+    // A link the Google Maps button opens as-is, so only a web link — a
+    // javascript: URL here would run on every visitor's tap.
+    if (b.maps_url && !/^https:\/\/([a-z0-9-]+\.)*(google\.[a-z.]+|goo\.gl|maps\.app\.goo\.gl)\//i.test(String(b.maps_url))) {
+      return json({ error: 'That is not a Google Maps link.', field: 'maps_url' }, 400);
+    }
 
     // Who says so, and when we last looked — worked out from what this save
     // actually changes, since both forms post every field every time.
@@ -1521,7 +1584,8 @@ export function registerAdminRoutes(router) {
       ? (Array.isArray(b.pin.fields) ? b.pin.fields : [b.pin.field])
           .flatMap(f => FIELD_GROUPS[f] || [f])
       : [];
-    const provenance = adminEditProvenance(parish, b, { now: NOW(), explicitPins });
+    const sourceName = adminSourceName(c.who && c.who.role);
+    const provenance = adminEditProvenance(parish, b, { now: NOW(), explicitPins, sourceName });
 
     const sets = [], vals = [];
     for (const k of PARISH_EDITABLE) {
@@ -1576,7 +1640,7 @@ export function registerAdminRoutes(router) {
       for (const field of provenance.pinFields) {
         const v = validateOverride({
           parish_id: id, target: 'field', decision: 'pin', field, tier: 'admin',
-          source_name: ADMIN_SOURCE_NAME,
+          source_name: sourceName,
           // Not the editor's email: the note is public at /api/info-overrides,
           // and who typed it is what updated_by is for.
           note: 'Typed in /admin; an import may not overwrite it.',
@@ -1813,6 +1877,34 @@ export function registerAdminRoutes(router) {
 
   // ── schedules ──
 
+  /**
+   * A parish's timetable has ONE source: whoever changed it last.
+   *
+   * Every rule carried its own source_name/ref/checked_at, so a timetable that
+   * had been read off a directory and then corrected by hand rendered three
+   * provenance lines, and a rule a person added said nothing at all. A person
+   * changing any rule — adding, editing, deleting — is vouching for the
+   * timetable as it now stands, so every rule of that parish takes the edit's
+   * name and date, and the sheet shows the most recent stamp (scheduleSourceHTML
+   * in app.js). An import that later re-reads one rule restamps that rule and
+   * becomes the most recent change, which is also true.
+   */
+  //
+  // A write that names its own source (the /admin table can) keeps it, and it
+  // still becomes the whole timetable's: one timetable, one source.
+  async function stampTimetable(c, parishId, given = null) {
+    const named = given && given.source_name;
+    await c.env.DB.prepare(
+      'UPDATE schedules SET source_name = ?, source_ref = ?, source_checked_at = ? WHERE parish_id = ?'
+    ).bind(
+      named ? given.source_name : adminSourceName(c.who && c.who.role),
+      named ? (given.source_ref || null) : null,
+      named ? (given.source_checked_at || NOW()) : NOW(),
+      parishId,
+    ).run();
+  }
+
+
   router.get('/api/admin/schedules', guarded(async ({ env }) => {
     const r = await env.DB.prepare(
       `SELECT s.*, p.name AS parish_name, p.jurisdiction AS parish_jurisdiction, p.timezone
@@ -1853,7 +1945,8 @@ export function registerAdminRoutes(router) {
       b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
       b.week_parity ? String(b.week_parity).toLowerCase() : null,
     ).first();
-    return json(row, 201);
+    await stampTimetable(c, parish_id);
+    return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(row.id).first(), 201);
   }));
 
   // `source_*` joins the list. A recurrence rule is a claim about the FUTURE
@@ -1919,6 +2012,7 @@ export function registerAdminRoutes(router) {
     // v26: the edit shows up on the next read. No regeneration, no orphaned rows.
     await env.DB.prepare(`UPDATE schedules SET ${sets.join(', ')} WHERE id = ?`)
       .bind(...vals, params.id).run();
+    await stampTimetable(c, row.parish_id, b);
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(params.id).first());
   }));
 
@@ -1965,6 +2059,7 @@ export function registerAdminRoutes(router) {
     }
     // schedule_overrides cascade via FK.
     await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(params.id).run();
+    await stampTimetable(c, row.parish_id);
     return json({ ok: true, ruling, ruling_note: ruling ? describeOverride(ruling) : null });
   }));
 

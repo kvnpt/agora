@@ -111,6 +111,24 @@ window.agoraBundle = (function () {
       ]);
       if (!res.ok) throw new Error(`bundle ${res.status}`);
       raw = await res.json();
+      // Jurisdiction colour overrides first, because the next step reads them.
+      if (window.agoraSetJurisdictionColors) {
+        window.agoraSetJurisdictionColors(raw.jurisdiction_colors);
+      }
+      // A parish has no colour of its own any more: it is always its
+      // jurisdiction's. `parishes.color` is still in the table and still in
+      // the payload, and ignoring it HERE — before the join copies it onto
+      // every rule and event as parish_color — means every reader of a parish
+      // colour (cards, avatars, feed lines, map dots, the sheet) draws the
+      // jurisdiction's without each having to be taught to.
+      if (window.agoraJurisdictionColor) {
+        for (const p of raw.parishes || []) p.color = window.agoraJurisdictionColor(p.jurisdiction);
+        // Stored one-offs arrive with the parish's colour joined on by the
+        // Worker's SQL, so they are corrected here too.
+        for (const e of raw.events || []) {
+          if (e.jurisdiction) e.parish_color = window.agoraJurisdictionColor(e.jurisdiction);
+        }
+      }
       // Each rule arrives with its own columns only; give it its parish's
       // back, from the list in the same payload, before anything projects it.
       raw.schedules = mods.joinParishes(raw.schedules, raw.parishes);
@@ -123,9 +141,7 @@ window.agoraBundle = (function () {
       // map dots, chips, the parish sheet — runs during the render this load
       // triggers, so a caller that forgot the call would draw the old hue and
       // nothing would say why.
-      if (window.agoraSetJurisdictionColors) {
-        window.agoraSetJurisdictionColors(raw.jurisdiction_colors);
-      }
+      // (The overrides themselves were applied above, before the join.)
       // …with one exception to "runs during the render this load triggers":
       // the jurisdiction chips are painted once by initFilters, before this
       // resolves, and nothing re-paints them afterwards. They are the reason
