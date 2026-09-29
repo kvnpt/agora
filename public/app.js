@@ -231,9 +231,17 @@ window.clearDateFocus = function (opts = {}) {
 
 /** Repaint everything the focus shows through: both feeds and both chips. */
 function renderDateFocus({ rerender = true } = {}) {
-  if (rerender) {
+  // The date's pin belongs to the date. Moving the focus picks the new date's
+  // first event; clearing it takes the pin away.
+  const pin = state._dateFocusPin;
+  const pinMoved = !!(pin && pin.date !== state._dateFocus);
+  if (pinMoved) {
+    if (isSameId(state._openEventId, pin.id)) delete state._openEventId;
+    state._dateFocusPin = null;
+  }
+  if (rerender || pinMoved) {
     if (window.agoraParishSheetVisible && state.parishSheetFocus) {
-      renderParishSheetContent(state.parishSheetFocus, {});
+      renderParishSheetContent(state.parishSheetFocus, pinMoved || state._dateFocus ? { fullRender: true } : {});
     } else {
       renderEvents();
     }
@@ -852,12 +860,66 @@ function matchingRules(parishId, slug, dow) {
     && (dow == null || s.day_of_week === dow));
 }
 
-/** Projected instances from now on, in time order. */
+/**
+ * Projected instances from now on — or from the focused date on, when there is
+ * one — in time order. /sgr/liturgy/next-tue means the first Liturgy from next
+ * Tuesday, not the next one from today.
+ */
 function upcomingOccurrences() {
   const now = Date.now();
+  const from = state._dateFocus || null;
   return (state.events || [])
-    .filter(e => e.schedule_id != null && Date.parse(e.end_utc || e.start_utc) >= now)
+    .filter(e => e.schedule_id != null && Date.parse(e.end_utc || e.start_utc) >= now
+      && (!from || eventLocalDate(e) >= from))
     .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+}
+
+function isSameId(a, b) { return a != null && b != null && String(a) === String(b); }
+
+/** The date an event falls on where it happens, as 'YYYY-MM-DD'. */
+function eventLocalDate(e) {
+  return (e.start_local && String(e.start_local).slice(0, 10)) || isoDateSyd(e.start_utc);
+}
+
+/**
+ * The event a date focus pins on a parish sheet: the first one on or after the
+ * focused date, from the list the sheet is showing (so its filters apply).
+ *
+ * A date in the URL — /sgr/next-tue, /smg/2026-10-06 — is a question about a
+ * day at that parish, and the answer is what is on then, so it is pinned at the
+ * top and opened, exactly as a deep link to that event would be. A focus is a
+ * FROM, never a single day (dates.js): a quiet Tuesday pins Wednesday's
+ * service rather than nothing.
+ *
+ * Remembered per date in state._dateFocusPin, so the pin does not jump around
+ * while the list fills in, and so closing it with its X keeps it closed until
+ * the date changes. Not under a rule focus, which pins its own next occurrence.
+ */
+function dateFocusPinFor(events) {
+  const date = state._dateFocus;
+  if (!date || state.parishScheduleFocus) return null;
+  const held = state._dateFocusPin;
+  if (held && held.date === date && held.parish === state.parishSheetFocus) {
+    if (held.dismissed) return null;
+    const same = (events || []).find(e => e.id === held.id);
+    if (same) return same;
+  }
+  const first = (events || [])
+    .filter(e => !e.is_tombstone && eventLocalDate(e) >= date)
+    .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc))[0] || null;
+  if (!first) return null;
+  const isNew = !(held && held.date === date && held.parish === state.parishSheetFocus && held.id === first.id);
+  state._dateFocusPin = { date, parish: state.parishSheetFocus, id: first.id, dismissed: false };
+  // Opened the first time it is chosen, like a deep link; after that the reader
+  // may collapse it and it stays collapsed.
+  if (isNew) state._openEventId = first.id;
+  return first;
+}
+
+/** Is this open event just the date focus's pin? Then the URL already names it. */
+function isDateFocusPin(id) {
+  const pin = state._dateFocusPin;
+  return !!(pin && id != null && String(pin.id) === String(id) && pin.date === state._dateFocus);
 }
 
 /** The soonest occurrence of any of these rules. */
@@ -1060,7 +1122,8 @@ function buildPathSegs(opts = {}) {
   // The focused occurrence is already named by the parish + service pair, and
   // appending its id as well would make the shared link point at one date
   // rather than at "the next one" — which is the thing being linked to.
-  if (opts.includeEventId && state._openEventId && !state.parishScheduleFocus) {
+  if (opts.includeEventId && state._openEventId && !state.parishScheduleFocus
+      && !isDateFocusPin(state._openEventId)) {
     segs.push(String(state._openEventId));
   }
   return segs;
@@ -5034,9 +5097,9 @@ function paintParishSheetContent(parishId, opts = {}) {
   // Focused event hoist: when deep-linked via URL, pin the target event right
   // under the parish header so it's the first thing the user sees.
   const focusEventId = opts.focusEventId ?? state._openEventId ?? null;
-  const focusedEvent = focusEventId
+  const focusedEvent = (focusEventId
     ? parishEvents.find(e => e.id === focusEventId)
-    : null;
+    : null) || (focusEventId ? null : dateFocusPinFor(parishEvents));
   // Stream includes the focused event too so the user sees it in day-context.
   // Pinned copy is the expanded "highlight"; stream copy stays collapsed by
   // default. Tapping either expands that specific card and collapses the
@@ -5125,10 +5188,13 @@ function paintParishSheetContent(parishId, opts = {}) {
           clearParishScheduleFocus();
           return;
         }
+        const wasDatePin = isDateFocusPin(focusedEvent.id);
+        if (wasDatePin) state._dateFocusPin.dismissed = true;
         delete state._openEventId;
         collapseEventCardDOM();
         syncURL();
-        if (pid) renderParishSheetContent(pid, {});
+        // Full, so the pinned slot itself goes; the partial refresh leaves it.
+        if (pid) renderParishSheetContent(pid, wasDatePin ? { fullRender: true } : {});
       });
       pinned.appendChild(closeBtn);
     }
@@ -5395,7 +5461,11 @@ function paintParishSheetContent(parishId, opts = {}) {
           .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
         const sheetEl = document.getElementById('parish-sheet');
         if (sheetEl && !sheetEl.classList.contains('hidden')) {
-          renderParishSheetContent(parishId, { ...opts, parishEvents: filtered });
+          // A date focus whose first event only arrived with this fetch has no
+          // pinned slot yet, and the partial refresh does not build one.
+          const pinPending = !!state._dateFocus && !state.parishScheduleFocus
+            && !contentEl.querySelector('.ps-pinned-event');
+          renderParishSheetContent(parishId, { ...opts, parishEvents: filtered, fullRender: pinPending || opts.fullRender });
         }
       })
       .catch(() => {});
