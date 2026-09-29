@@ -861,16 +861,19 @@ function matchingRules(parishId, slug, dow) {
 }
 
 /**
- * Projected instances from now on — or from the focused date on, when there is
- * one — in time order. /sgr/liturgy/next-tue means the first Liturgy from next
- * Tuesday, not the next one from today.
+ * Projected instances from now on, in time order — narrowed by a date focus
+ * when there is one. A DAY in the URL means that day and no other:
+ * /sgr/liturgy/next-tue pins next Tuesday's Liturgy, and pins nothing when
+ * there is no Liturgy that Tuesday rather than reaching on to Wednesday's. A
+ * month is not a day, so under a month focus it is the first from that month.
  */
 function upcomingOccurrences() {
   const now = Date.now();
   const from = state._dateFocus || null;
+  const oneDay = from && state._dateFocusPrecision !== 'month';
   return (state.events || [])
     .filter(e => e.schedule_id != null && Date.parse(e.end_utc || e.start_utc) >= now
-      && (!from || eventLocalDate(e) >= from))
+      && (!from || (oneDay ? eventLocalDate(e) === from : eventLocalDate(e) >= from)))
     .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
 }
 
@@ -882,14 +885,16 @@ function eventLocalDate(e) {
 }
 
 /**
- * The event a date focus pins on a parish sheet: the first one on or after the
- * focused date, from the list the sheet is showing (so its filters apply).
+ * The event a date focus pins on a parish sheet: the first one ON the focused
+ * day, from the list the sheet is showing (so its filters apply).
  *
  * A date in the URL — /sgr/next-tue, /smg/2026-10-06 — is a question about a
  * day at that parish, and the answer is what is on then, so it is pinned at the
- * top and opened, exactly as a deep link to that event would be. A focus is a
- * FROM, never a single day (dates.js): a quiet Tuesday pins Wednesday's
- * service rather than nothing.
+ * top and opened, exactly as a deep link to that event would be. That day
+ * only: a quiet Tuesday pins nothing, because pinning Wednesday's service would
+ * answer a question nobody asked — the stream below still starts at the next
+ * thing on, which is where the focus-as-a-FROM (dates.js) already lives. A
+ * month focus is not a day and pins nothing.
  *
  * Remembered per date in state._dateFocusPin, so the pin does not jump around
  * while the list fills in, and so closing it with its X keeps it closed until
@@ -897,7 +902,7 @@ function eventLocalDate(e) {
  */
 function dateFocusPinFor(events) {
   const date = state._dateFocus;
-  if (!date || state.parishScheduleFocus) return null;
+  if (!date || state.parishScheduleFocus || state._dateFocusPrecision === 'month') return null;
   const held = state._dateFocusPin;
   if (held && held.date === date && held.parish === state.parishSheetFocus) {
     if (held.dismissed) return null;
@@ -905,7 +910,7 @@ function dateFocusPinFor(events) {
     if (same) return same;
   }
   const first = (events || [])
-    .filter(e => !e.is_tombstone && eventLocalDate(e) >= date)
+    .filter(e => !e.is_tombstone && eventLocalDate(e) === date)
     .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc))[0] || null;
   if (!first) return null;
   const isNew = !(held && held.date === date && held.parish === state.parishSheetFocus && held.id === first.id);
