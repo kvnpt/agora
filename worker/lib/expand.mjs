@@ -32,7 +32,7 @@ const PARISH_COLS = PARISH_JOIN_SQL;
  * parish copies, which the browser re-attaches from the parish list sent
  * alongside. Everything that projects on the server keeps the join.
  */
-export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, withParish = true } = {}) {
+export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, parishId = null, withParish = true } = {}) {
   // Widen by a day so no zone's local date is excluded by UTC skew (max real
   // offset is under 15 hours).
   const startStr = isoDate(Date.parse(fromUtc) - DAY_MS);
@@ -41,17 +41,25 @@ export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, w
   const schedSql = `
     SELECT s.*${withParish ? `, ${PARISH_COLS}` : ''}
     FROM schedules s JOIN parishes p ON s.parish_id = p.id
-    WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''}
+    WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''} ${parishId ? 'AND s.parish_id = ?' : ''}
       AND (s.effective_from IS NULL OR s.effective_from <= ?)
       AND (s.effective_to   IS NULL OR s.effective_to   >= ?)
   `;
-  const schedArgs = scheduleId ? [scheduleId, endStr, startStr] : [endStr, startStr];
+  const schedArgs = [
+    ...(scheduleId ? [scheduleId] : []), ...(parishId ? [parishId] : []), endStr, startStr,
+  ];
 
   // Window-filtered, unlike the Express version which loaded every override row.
+  // `parishId` narrows to one parish's rules — the lite page for a shared link
+  // (worker/routes/pages.mjs) needs one parish, not 293.
   const ovSql = scheduleId
     ? 'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date BETWEEN ? AND ?'
-    : 'SELECT * FROM schedule_overrides WHERE occurrence_date BETWEEN ? AND ?';
-  const ovArgs = scheduleId ? [scheduleId, startStr, endStr] : [startStr, endStr];
+    : parishId
+      ? `SELECT o.* FROM schedule_overrides o JOIN schedules s ON s.id = o.schedule_id
+         WHERE s.parish_id = ? AND o.occurrence_date BETWEEN ? AND ?`
+      : 'SELECT * FROM schedule_overrides WHERE occurrence_date BETWEEN ? AND ?';
+  const ovArgs = scheduleId ? [scheduleId, startStr, endStr]
+    : parishId ? [parishId, startStr, endStr] : [startStr, endStr];
 
   // Breaks overlapping the window. Ranges, so the test is an overlap rather
   // than a BETWEEN — a break that started in December and runs into February is
@@ -64,8 +72,11 @@ export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, w
     SELECT b.* FROM schedule_breaks b
     WHERE b.from_date <= ? AND b.to_date >= ?
       ${scheduleId ? 'AND (b.schedule_id = ? OR b.schedule_id IS NULL)' : ''}
+      ${parishId ? 'AND b.parish_id = ?' : ''}
   `;
-  const brArgs = scheduleId ? [endStr, startStr, scheduleId] : [endStr, startStr];
+  const brArgs = [
+    endStr, startStr, ...(scheduleId ? [scheduleId] : []), ...(parishId ? [parishId] : []),
+  ];
 
   const [schedules, overrides, breaks] = await Promise.all([
     db.prepare(schedSql).bind(...schedArgs).all(),

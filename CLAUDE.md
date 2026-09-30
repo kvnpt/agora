@@ -71,6 +71,20 @@ the browser joins it back from the parish list in the same response
 (`public/shared/parish-join.mjs`, the one list the Worker's SQL join is also
 built from). Nothing public carries `updated_by`; it is an admin's email.
 
+**A shared link is answered by the Worker, not the app.** A link to one
+parish or one event (`/sgr`, `/sgr/next-tue`, `/102`, `/42:2026-10-04`) gets
+a **lite card** — server-rendered by `worker/routes/pages.mjs` +
+`worker/lib/lite-page.mjs`, with its own title, preview image, canonical and
+JSON-LD — instead of the app booting behind a loading screen. It uses the
+app's lens and the app's grammar (`public/shared/url-state.js`, which
+`detectUrlState()` now calls too), fails open to the app, and is skipped for
+`?app` and for the `agora_admin` cookie the app sets while someone holds a
+role. `run_worker_first` is `/*` with negations to make this possible, and
+**a negation must never name an image extension** — negatives are tested
+first, and `!/*.png` would send `/posters/*.png` past the Worker's R2 proxy.
+Only parish pages are indexable for now; `docs/lite-pages.md` records why
+events wait.
+
 **Synthetic ids.** A projected occurrence has the id `"<scheduleId>:YYYY-MM-DD"`, e.g.
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.

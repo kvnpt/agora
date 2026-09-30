@@ -121,9 +121,12 @@ test('a service slug is never also a day or a jurisdiction', () => {
 
 test('app.js reads the registry and writes the segments back', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
+  // Days are parsed before services — in the shared grammar now.
+  const grammar = fs.readFileSync('public/shared/url-state.js', 'utf8');
+  assert.ok(grammar.indexOf('services.resolveDay(seg)') < grammar.indexOf('services.resolveService(seg)'),
+    'the URL grammar must read a weekday before a service');
   for (const needle of [
-    'resolveDaySlug(seg) !== null',      // days parsed before services
-    'resolveServiceSlug(seg)',
+    'AgoraUrlState.classifyPath(',
     'scheduleFocusBannerHtml',           // the "Showing …" row
     'data-schedule-focus-clear',         // its dismiss
     'data-sched-focus',                  // tappable schedule rows
