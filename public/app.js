@@ -7580,21 +7580,73 @@ function showParishDetail(parishId) {
  * this writes `patch_poster_path` on that one date's override and the weeks
  * either side are untouched. The Worker routes on the shape of the id; nothing
  * here has to know which it is holding.
+ *
+ * What a parish sends is usually a bulletin for a PERIOD, though, so "Put it
+ * on" can widen the upload to every occurrence of this service, or everything
+ * at the parish, between two dates — one object, pointed at by each service in
+ * the range (worker/lib/poster-range.mjs). The dates default to this service's
+ * month, which is the shape a monthly bulletin has.
  */
 function posterEditorHTML(evt) {
   const eid = esc(String(evt.id));
   const has = !!evt.poster_path;
+  const isRule = String(evt.id).includes(':');
+  const day = eventLocalDate(evt) || '';
+  const [y, m] = day.split('-').map(Number);
+  const monthStart = day ? `${day.slice(0, 7)}-01` : '';
+  const monthEnd = day ? `${day.slice(0, 7)}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}` : '';
+  // Shared = not the object this one service's own upload would have written,
+  // so taking it off here leaves it on the others.
+  const own = `/posters/${String(evt.id).replace(':', '-')}.`;
+  const shared = has && !String(evt.poster_path).startsWith(own);
+  const parish = evt.parish_name || 'this parish';
   return `
     <div class="poster-edit" data-event-id="${eid}">
       ${has ? `<img class="poster-edit-thumb" src="${esc(evt.poster_path)}" alt="">` : ''}
+      <label class="poster-scope">Put it on
+        <select data-poster-scope onchange="agoraPosterScope('${eid}')">
+          <option value="">this service only</option>
+          ${isRule ? `<option value="rule">every ${esc(evt.title || 'service like this')} from…</option>` : ''}
+          <option value="parish">everything at ${esc(parish)} from…</option>
+        </select>
+      </label>
+      <div class="poster-range" data-poster-range hidden>
+        <input type="date" data-poster-from value="${esc(monthStart)}" aria-label="From">
+        <span>to</span>
+        <input type="date" data-poster-until value="${esc(monthEnd)}" aria-label="Until">
+      </div>
       <div class="poster-edit-actions">
         <button class="ps-btn ps-btn-admin" type="button"
                 onclick="agoraPickEventPoster('${eid}')">${glyph('ph:image-square')}${has ? 'Replace' : 'Add a poster'}</button>
         ${has ? `<button class="ps-btn ps-btn-danger" type="button"
-                onclick="agoraClearEventPoster('${eid}')">${glyph('ph:trash')}Remove</button>` : ''}
+                onclick="agoraClearEventPoster('${eid}')">${glyph('ph:trash')}${shared ? 'Remove from this one' : 'Remove'}</button>` : ''}
+        ${shared ? `<button class="ps-btn ps-btn-danger" type="button"
+                onclick="agoraClearEventPoster('${eid}', true)">${glyph('ph:trash')}Remove everywhere</button>` : ''}
       </div>
       <div class="edit-row-hint poster-edit-status" data-poster-status></div>
     </div>`;
+}
+
+const _posterBox = (id) => document.querySelector(`.poster-edit[data-event-id="${CSS.escape(String(id))}"]`);
+
+/** Show the dates only once a range is chosen. */
+window.agoraPosterScope = function (id) {
+  const box = _posterBox(id);
+  if (!box) return;
+  const scope = box.querySelector('[data-poster-scope]').value;
+  box.querySelector('[data-poster-range]').hidden = !scope;
+};
+
+/** The range the control asks for, as a query string, or '' for one service. */
+function _posterRangeQuery(id) {
+  const box = _posterBox(id);
+  const scope = box && box.querySelector('[data-poster-scope]').value;
+  if (!scope) return { query: '' };
+  const from = box.querySelector('[data-poster-from]').value;
+  const until = box.querySelector('[data-poster-until]').value;
+  if (!from || !until) return { error: 'Pick the first and last day the poster covers.' };
+  if (from > until) return { error: 'The last day is before the first.' };
+  return { query: `?scope=${scope}&from=${from}&until=${until}` };
 }
 
 /** The one hidden file input, reused — a fresh one per render leaks listeners. */
@@ -7626,13 +7678,13 @@ const _posterStatus = (id, msg, bad) => {
  * `arrayBuffer()` and takes the extension off the content type, so there is
  * nothing to parse and no boundary to get wrong.
  */
-async function uploadEventPoster(id, file) {
+async function uploadEventPoster(id, file, query = '') {
   if (!file) return { error: 'No file chosen.' };
   // Refused here as well as at the Worker so an 8 MB phone photo does not go up
   // the wire only to be turned away at the other end.
   if (file.size > 8 * 1024 * 1024) return { error: 'That poster is over 8 MB — the limit the Worker takes.' };
   try {
-    const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}/poster`, {
+    const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}/poster${query}`, {
       method: 'POST',
       headers: { 'Content-Type': file.type || 'image/jpeg' },
       body: file,
@@ -7646,25 +7698,35 @@ async function uploadEventPoster(id, file) {
 }
 
 window.agoraPickEventPoster = function (id) {
+  // Checked before the file picker opens, so a bad range is said at once
+  // rather than after somebody has gone looking for the file.
+  const range = _posterRangeQuery(id);
+  if (range.error) return _posterStatus(id, range.error, true);
   const input = _posterInput();
   input.value = '';
   input.onchange = async () => {
     const file = input.files && input.files[0];
     if (!file) return;
     _posterStatus(id, 'Uploading…');
-    const r = await uploadEventPoster(id, file);
+    const r = await uploadEventPoster(id, file, range.query);
     if (r.error) return _posterStatus(id, r.error, true);
-    _posterStatus(id, 'Poster saved.');
+    const n = r.count || 1;
+    _posterStatus(id, n > 1 ? `Poster saved on ${n} services.` : 'Poster saved.');
     await _afterPosterChange();
   };
   input.click();
 };
 
-window.agoraClearEventPoster = async function (id) {
-  if (!confirm('Take this poster off the event?')) return;
+window.agoraClearEventPoster = async function (id, everywhere = false) {
+  const ask = everywhere
+    ? 'Take this poster off every service at this parish that shows it?'
+    : 'Take this poster off this service?';
+  if (!confirm(ask)) return;
   _posterStatus(id, 'Removing…');
   try {
-    const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}/poster`, { method: 'DELETE' });
+    const res = await fetch(
+      `/api/admin/events/${encodeURIComponent(id)}/poster${everywhere ? '?everywhere' : ''}`,
+      { method: 'DELETE' });
     const body = await res.json().catch(() => null);
     if (!res.ok) return _posterStatus(id, (body && body.error) || `That failed (${res.status}).`, true);
   } catch {

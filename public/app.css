@@ -4243,6 +4243,11 @@ button.ps-avatar { cursor: pointer; }
   border: 1px solid var(--border);
 }
 .poster-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.poster-scope { display: flex; flex-direction: column; gap: 4px; }
+.poster-scope select { width: 100%; }
+.poster-range { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.poster-range input { flex: 1 1 0; min-width: 0; width: auto; }
+.poster-range[hidden] { display: none; }
 .poster-edit-status:empty { display: none; }
 .escalate-btn-row { display: flex; gap: 8px; justify-content: flex-end; }
 

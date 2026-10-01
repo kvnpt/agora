@@ -212,6 +212,17 @@ instance can hold one, and it is the one `patch_*` where NULL means "there
 isn't one" rather than "inherit". `POST /api/admin/events/:id/poster` takes both
 id shapes and routes on the shape, like every other event route.
 
+What a parish sends is a bulletin for a **period**, so the same route takes
+`?scope=rule|parish&from=&until=` and points every occurrence in the range — of
+that rule, or of every rule at the parish plus its one-offs — at **one** object
+under a key of its own (`worker/lib/poster-range.mjs`). Still not the rule:
+next month's Liturgy must not carry this month's commemorations. A range skips
+a date a break silences (an override beats a break, so writing one there would
+bring the service back) and a hidden one, and keeps every other occurrence what
+it is. An object is deleted only once no event and no override names it, so
+taking a bulletin off one Sunday leaves the others; `DELETE …/poster?everywhere`
+takes it off the whole parish.
+
 **Recurrence rules store LOCAL time; one-off events store UTC.** This is deliberate and
 is documented at length in `d1/schema.sql`. For a recurring service the wall clock is the
 invariant — a 9am liturgy stays 9am across a DST boundary — so normalising it to UTC would

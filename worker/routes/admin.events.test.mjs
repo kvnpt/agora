@@ -1045,3 +1045,173 @@ test('a proposer can read their own ask after it is decided, note and all', asyn
   assert.equal(mineList.body[0].decisionNote, 'Not this year — we have our own vigil.');
   assert.equal(mineList.body[0].decidedBy, 'dev');
 });
+
+// ── one poster across a range ──
+//
+// A parish bulletin covers a period — Crows Nest's covers September — so the
+// upload names a range and every service in it points at ONE object. Not the
+// rule: next month's Liturgy must not carry this month's commemorations.
+
+const SEPT = 'scope=rule&from=2026-09-01&until=2026-09-30';
+
+/** Every occurrence of rule `sid` in September, by date. */
+async function septemberOf(db, sid) {
+  const all = await expandWindow(db, FROM, '2026-10-02T00:00:00.000Z');
+  return all.filter(e => e.schedule_id === sid && e.id.split(':')[1].startsWith('2026-09'));
+}
+
+test('a range poster lands on every occurrence of the rule in range, as one object', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid] = splitInstance(inst.id);
+  const sept = await septemberOf(f.db, sid);
+  assert.ok(sept.length >= 4, 'a weekly rule has four or five Septembers');
+
+  const r = await f.callRaw('POST', `/api/admin/events/${inst.id}/poster?${SEPT}`, png(), 'image/png');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.count, sept.length);
+  assert.match(r.body.poster_path, new RegExp(`^/posters/${parishId}-2026-09-01-2026-09-30-[a-z0-9]+\\.png$`));
+  assert.equal(b.store.size, 1, 'one object, not one per service');
+
+  for (const e of sept) {
+    assert.equal((await expandOne(f.db, sid, e.id.split(':')[1])).poster_path, r.body.poster_path, e.id);
+  }
+  // October is outside the bulletin.
+  const oct = (await expandWindow(f.db, '2026-10-02T00:00:00.000Z', '2026-10-31T00:00:00.000Z'))
+    .filter(e => e.schedule_id === sid);
+  assert.ok(oct.length && oct.every(e => !e.poster_path), 'the poster leaked past the range');
+});
+
+test('a parish range covers every rule and the one-offs in range, and nothing outside it', async () => {
+  const f = fresh({ role: 'editor' });
+  withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
+                 VALUES (?, 1, '18:00', 'Paraklesis', 'prayer')`).run(parishId);
+  const inRange = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'Feast', start_utc: '2026-09-07T23:00:00.000Z' });
+  const after = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'Later', start_utc: '2026-10-07T23:00:00.000Z' });
+
+  const r = await f.callRaw('POST',
+    `/api/admin/events/${inst.id}/poster?scope=parish&from=2026-09-01&until=2026-09-30`, png(), 'image/jpeg');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+
+  const sept = (await expandWindow(f.db, FROM, '2026-10-01T00:00:00.000Z'))
+    .filter(e => e.parish_id === parishId && e.id.split(':')[1] <= '2026-09-30');
+  assert.ok(sept.some(e => e.title === 'Paraklesis'), 'the second rule projects');
+  assert.ok(sept.every(e => e.poster_path === r.body.poster_path), 'a rule in range was missed');
+  const ev = (id) => f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(id).poster_path;
+  assert.equal(ev(inRange.body.id), r.body.poster_path);
+  assert.equal(ev(after.body.id), null);
+  assert.equal(r.body.count, sept.length + 1);
+});
+
+test('a range keeps what each occurrence is, and skips a break and a hidden one', async () => {
+  const f = fresh({ role: 'editor' });
+  withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid] = splitInstance(inst.id);
+  const dates = (await septemberOf(f.db, sid)).map(e => e.id.split(':')[1]);
+  const [cancelled, feast, hidden, onBreak] = dates;
+
+  await f.call('PATCH', `/api/admin/events/${sid}:${cancelled}`, { status: 'cancelled' });
+  await f.call('PATCH', `/api/admin/events/${sid}:${feast}`, { feast: 'Nativity of the Theotokos' });
+  await f.call('DELETE', `/api/admin/events/${sid}:${hidden}`);
+  f.raw.prepare(`INSERT INTO schedule_breaks (parish_id, schedule_id, from_date, to_date, note)
+                 VALUES (?, ?, ?, ?, 'Priest away')`).run(parishId, sid, onBreak, onBreak);
+
+  const r = await f.callRaw('POST', `/api/admin/events/${sid}:${cancelled}/poster?${SEPT}`, png(), 'image/png');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.count, dates.length - 2);
+
+  const c = await expandOne(f.db, sid, cancelled);
+  assert.equal(c.status, 'cancelled', 'the poster revived a cancelled service');
+  assert.equal(c.poster_path, r.body.poster_path);
+  const fe = await expandOne(f.db, sid, feast);
+  assert.equal(fe.feast, 'Nativity of the Theotokos', 'the poster wiped the commemoration');
+  assert.equal(fe.poster_path, r.body.poster_path);
+  const ov = (d) => f.raw.prepare(
+    'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sid, d);
+  assert.equal(ov(hidden).kind, 'hidden');
+  assert.equal(ov(hidden).patch_poster_path, null);
+  assert.equal(ov(onBreak), undefined, 'an override on a break date would bring the service back');
+  assert.equal((await expandOne(f.db, sid, onBreak)).is_tombstone, 1);
+});
+
+test('a bulletin is released only when nothing shows it, and comes down in one go', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid] = splitInstance(inst.id);
+  const dates = (await septemberOf(f.db, sid)).map(e => e.id.split(':')[1]);
+  await f.call('PATCH', `/api/admin/events/${sid}:${dates[1]}`, { feast: 'Exaltation of the Cross' });
+
+  const first = await f.callRaw('POST', `/api/admin/events/${inst.id}/poster?${SEPT}`, png(), 'image/png');
+  const key1 = first.body.poster_path.slice(1);
+
+  // Off one Sunday: the others keep it, so the object stays.
+  assert.equal((await f.call('DELETE', `/api/admin/events/${sid}:${dates[0]}/poster`)).status, 200);
+  assert.equal((await expandOne(f.db, sid, dates[0])).poster_path, null);
+  assert.equal((await expandOne(f.db, sid, dates[2])).poster_path, first.body.poster_path);
+  assert.ok(b.store.has(key1), 'a shared poster was deleted while others still show it');
+
+  // A corrected bulletin replaces it everywhere; the first is no longer shown, so it goes.
+  const second = await f.callRaw('POST', `/api/admin/events/${sid}:${dates[2]}/poster?${SEPT}`, png(), 'image/jpeg');
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.ok(!b.store.has(key1), 'the replaced bulletin was left behind in R2');
+  const key2 = second.body.poster_path.slice(1);
+
+  // Down everywhere at once: poster-only overrides go, the commemoration stays.
+  const del = await f.call('DELETE', `/api/admin/events/${sid}:${dates[2]}/poster?everywhere`);
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  assert.equal(del.body.count, dates.length);
+  for (const d of dates) assert.equal((await expandOne(f.db, sid, d)).poster_path, null, d);
+  assert.equal((await expandOne(f.db, sid, dates[1])).feast, 'Exaltation of the Cross');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 1);
+  assert.ok(!b.store.has(key2));
+});
+
+test('a range is refused before anything is stored when it cannot mean anything', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const made = await f.call('POST', '/api/admin/events',
+    { parish_id: parishId, title: 'Feast', start_utc: '2026-09-20T23:00:00.000Z' });
+  const bad = [
+    [inst.id, 'scope=rule&from=2026-10-01&until=2026-10-31'],   // does not include this service
+    [inst.id, 'scope=rule&from=2026-09-30&until=2026-09-01'],   // backwards
+    [inst.id, 'scope=rule&from=2026-09-01&until=2027-12-31'],   // over a year
+    [inst.id, 'scope=rule&from=2026-02-30&until=2026-09-30'],   // not a date
+    [inst.id, 'scope=forever&from=2026-09-01&until=2026-09-30'],
+    [made.body.id, 'scope=rule&from=2026-09-01&until=2026-09-30'], // a one-off has no rule
+  ];
+  for (const [id, q] of bad) {
+    const r = await f.callRaw('POST', `/api/admin/events/${id}/poster?${q}`, png(), 'image/png');
+    assert.equal(r.status, 400, `${q}: ${JSON.stringify(r.body)}`);
+  }
+  assert.equal(b.store.size, 0);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, 0);
+
+  // A one-off can anchor a parish range.
+  const ok = await f.callRaw('POST',
+    `/api/admin/events/${made.body.id}/poster?scope=parish&from=2026-09-01&until=2026-09-30`, png(), 'image/png');
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+});
+
+test('a parish contact cannot range a poster over another parish', async () => {
+  const f = fresh({ role: 'parish', parishIds: [] });
+  const b = withBucket(f);
+  const [mine, theirs] = twoParishes(f.raw);
+  contact(f.raw, mine);
+  const theirInst = await firstInstance(f.db, theirs);
+  const r = await f.callRaw('POST', `/api/admin/events/${theirInst.id}/poster?${SEPT}`, png(), 'image/png');
+  assert.equal(r.status, 403);
+  assert.equal(b.store.size, 0);
+});
