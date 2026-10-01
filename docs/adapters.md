@@ -420,6 +420,14 @@ services, and every one of them pointing at **one** poster object,
 not derived from any event id, so no event's poster delete can take it out
 from under the others.
 
+That is now something the app does: open any service in the range, turn on
+editing, set the poster's **Put it on** to "everything at <parish> from…" with
+the month's first and last day, and upload once. Every rule's occurrences and
+every one-off in those dates point at one object, keyed
+`posters/<parish>-<from>-<until>-<stamp>.<ext>` (`worker/lib/poster-range.mjs`).
+Next month's bulletin is the same action with next month's dates; the one it
+replaces is deleted from R2 once nothing shows it.
+
 The Paraklesis did not become a rule. Two Mondays (7th and 21st) fit both "first
 and third Monday" and "alternate Mondays", `inferSchedules` wants three
 sightings before it proposes anything, and October's bulletin is what decides

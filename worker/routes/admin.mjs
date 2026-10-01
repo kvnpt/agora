@@ -10,9 +10,12 @@ import { json, readJson } from '../lib/router.mjs';
 import { requireAdmin, adminIdentity } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { readSecret } from '../lib/secrets.mjs';
-import { expandWindow, expandOne, parseInstanceId } from '../lib/expand.mjs';
-import { exactLocalToEpoch } from '../../public/shared/tz.mjs';
+import { expandWindow, expandOne, parseInstanceId, fetchWindowRows } from '../lib/expand.mjs';
+import { exactLocalToEpoch, localDateOf } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
+import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
+  namesPoster }
+  from '../lib/poster-range.mjs';
 import { PENDING_PARISHES, ADAPTERS, getAdapter, runAdapter,
          adapterPacing, isDue, DEFAULT_INTERVAL_MINUTES } from '../lib/adapters.mjs';
 import { inferSchedules } from '../lib/infer.mjs';
@@ -965,18 +968,6 @@ export function registerAdminRoutes(router) {
   const posterKey = (id, ext) => `posters/${String(id).replace(':', '-')}.${ext}`;
   const posterKeys = (id) => POSTER_EXTS.map(e => posterKey(id, e));
 
-  /** The parish an event id belongs to, whichever shape it is. */
-  async function eventParish(db, id) {
-    const inst = parseInstanceId(id);
-    if (inst) {
-      const row = await db.prepare('SELECT parish_id FROM schedules WHERE id = ?')
-        .bind(inst.scheduleId).first();
-      return row ? row.parish_id : null;
-    }
-    const row = await db.prepare('SELECT parish_id FROM events WHERE id = ?').bind(id).first();
-    return row ? row.parish_id : null;
-  }
-
   /** Point an event or an occurrence at a poster path (or null to clear it). */
   async function setPosterPath(env, id, path) {
     const inst = parseInstanceId(id);
@@ -993,14 +984,55 @@ export function registerAdminRoutes(router) {
     return { ok: true };
   }
 
+  /**
+   * Where a poster upload is going: the anchor (the service it was made from),
+   * its parish and zone, its local date, and the poster it has now. Null when
+   * the id names nothing.
+   */
+  async function posterAnchor(db, id) {
+    const inst = parseInstanceId(id);
+    if (inst) {
+      const s = await db.prepare(
+        `SELECT s.parish_id, p.timezone FROM schedules s JOIN parishes p ON p.id = s.parish_id WHERE s.id = ?`
+      ).bind(inst.scheduleId).first();
+      if (!s) return null;
+      const o = await db.prepare(
+        'SELECT patch_poster_path FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
+      ).bind(inst.scheduleId, inst.date).first();
+      return { parishId: s.parish_id, zone: s.timezone || 'Australia/Sydney', date: inst.date,
+        scheduleId: inst.scheduleId, previous: (o && o.patch_poster_path) || null };
+    }
+    const e = await db.prepare(
+      `SELECT e.parish_id, e.start_utc, e.poster_path, p.timezone FROM events e
+       JOIN parishes p ON p.id = e.parish_id WHERE e.id = ?`
+    ).bind(id).first();
+    if (!e) return null;
+    const zone = e.timezone || 'Australia/Sydney';
+    return { parishId: e.parish_id, zone, date: localDateOf(zone, Date.parse(e.start_utc)),
+      scheduleId: null, previous: e.poster_path || null };
+  }
+
   router.post('/api/admin/events/:id/poster', guarded('event.edit', async (c) => {
     const { env, params, request } = c;
     if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
 
-    const parishId = await eventParish(env.DB, params.id);
-    if (!parishId) return json({ error: 'Event not found' }, 404);
+    const anchor = await posterAnchor(env.DB, params.id);
+    if (!anchor) return json({ error: 'Event not found' }, 404);
+    const parishId = anchor.parishId;
     const scoped = outOfScope(c, parishId);
     if (scoped) return scoped;
+
+    // ?scope=rule|parish&from=&until= puts ONE poster on every service in the
+    // range (lib/poster-range.mjs). Validated before the body is read, so a
+    // bad range costs nothing in R2.
+    const q = new URL(request.url).searchParams;
+    let range = null;
+    if (q.has('scope')) {
+      range = readRange(
+        { scope: q.get('scope'), from: q.get('from'), until: q.get('until') },
+        { anchorDate: anchor.date, anchorIsRule: !!anchor.scheduleId });
+      if (range.error) return json({ error: range.error }, 400);
+    }
 
     const contentType = request.headers.get('content-type') || '';
     const ext = contentType.includes('png') ? 'png'
@@ -1013,6 +1045,8 @@ export function registerAdminRoutes(router) {
     // photographs off a noticeboard, and the client already squares a logo down
     // before upload while a poster keeps its shape.
     if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
+
+    if (range) return putRangePoster(env, anchor, range, body, contentType, ext, params.id);
 
     const key = posterKey(params.id, ext);
     await env.ASSETS_BUCKET.put(key, body, {
@@ -1027,23 +1061,124 @@ export function registerAdminRoutes(router) {
     const posterPath = `/${key}?v=${Date.now()}`;
     const r = await setPosterPath(env, params.id, posterPath);
     if (r.error) return json({ error: r.error }, r.code || 400);
-    return json({ id: params.id, poster_path: posterPath });
+    // A bulletin this service was sharing is released if this was the last
+    // service still showing it.
+    await releaseUnused(env, [anchor.previous], { keep: key });
+    return json({ id: params.id, poster_path: posterPath, count: 1 });
   }));
 
+  /**
+   * One object for the whole range, under a key of its own — never derived
+   * from an event id, so no single service's poster delete can take it out
+   * from under the others. Every occurrence in range is pointed at it in one
+   * batch, then whatever those services showed before is released if nothing
+   * else still shows it (a corrected bulletin replacing the first one).
+   */
+  async function putRangePoster(env, anchor, range, body, contentType, ext, anchorId) {
+    const { scope, from, until } = range;
+    const fromUtc = new Date(Date.parse(from + 'T00:00:00Z') - 86400000).toISOString();
+    const toUtc = new Date(Date.parse(until + 'T00:00:00Z') + 2 * 86400000).toISOString();
+
+    const rows = await fetchWindowRows(env.DB, fromUtc, toUtc,
+      scope === 'rule' ? { scheduleId: anchor.scheduleId } : { parishId: anchor.parishId });
+    // fetchWindowRows keeps a parish-wide break when narrowed to one rule,
+    // which is right — it speaks for that rule too.
+    const targets = ruleTargets(rows, from, until);
+
+    let events = [];
+    if (scope === 'parish') {
+      const r = await env.DB.prepare(
+        `SELECT id, start_utc, poster_path FROM events
+         WHERE parish_id = ? AND source_adapter != 'schedule'
+           AND status NOT IN ('hidden', 'rejected')
+           AND start_utc >= ? AND start_utc <= ?`
+      ).bind(anchor.parishId, fromUtc, toUtc).all();
+      events = oneOffTargets(r.results || [], anchor.zone, from, until);
+    }
+    if (!targets.length && !events.length) {
+      return json({ error: `Nothing at this parish runs between ${from} and ${until}` }, 400);
+    }
+
+    const stamp = Date.now().toString(36);
+    const key = `posters/${anchor.parishId}-${from}-${until}-${stamp}.${ext}`;
+    await env.ASSETS_BUCKET.put(key, body, {
+      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
+    });
+    const posterPath = `/${key}`;
+
+    const stmts = overrideStatements(env.DB, targets, posterPath);
+    if (events.length) {
+      stmts.push(env.DB.prepare(
+        `UPDATE events SET poster_path = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+         WHERE id IN (${events.map(() => '?').join(',')})`
+      ).bind(posterPath, ...events.map(e => e.id)));
+    }
+    await env.DB.batch(stmts);
+
+    await releaseUnused(env, [
+      ...targets.map(t => t.previous), ...events.map(e => e.poster_path),
+    ], { keep: key });
+    return json({
+      id: anchorId, poster_path: posterPath, scope, from, until,
+      count: targets.length + events.length,
+    });
+  }
+
   router.delete('/api/admin/events/:id/poster', guarded('event.edit', async (c) => {
-    const { env, params } = c;
-    const parishId = await eventParish(env.DB, params.id);
-    if (!parishId) return json({ error: 'Event not found' }, 404);
-    const scoped = outOfScope(c, parishId);
+    const { env, params, request } = c;
+    const anchor = await posterAnchor(env.DB, params.id);
+    if (!anchor) return json({ error: 'Event not found' }, 404);
+    const scoped = outOfScope(c, anchor.parishId);
     if (scoped) return scoped;
+
+    // ?everywhere: off every service AT THIS PARISH that shows the same
+    // poster — the bulletin taken down in one go rather than Sunday by Sunday.
+    // Only this parish's: the same object somewhere else is not this
+    // contact's to remove, and it is released only if nothing names it.
+    const everywhere = new URL(request.url).searchParams.has('everywhere');
+    const sharedKey = posterKeyOf(anchor.previous);
+    let count = 1;
+    if (everywhere && sharedKey) {
+      const ovName = namesPoster('patch_poster_path', sharedKey);
+      const evName = namesPoster('poster_path', sharedKey);
+      const [ov, ev] = await env.DB.batch([
+        env.DB.prepare(
+          `DELETE FROM schedule_overrides
+           WHERE ${ovName.sql} AND kind = 'modified'
+             AND schedule_id IN (SELECT id FROM schedules WHERE parish_id = ?)
+             AND patch_title IS NULL AND patch_start_time IS NULL AND patch_end_time IS NULL
+             AND patch_event_type IS NULL AND patch_languages IS NULL AND patch_feast IS NULL
+             AND patch_description IS NULL AND patch_location_override IS NULL
+             AND patch_hide_live IS NULL AND patch_parish_scoped IS NULL
+             AND combined_into_event_id IS NULL`
+        ).bind(...ovName.args, anchor.parishId),
+        env.DB.prepare(
+          `UPDATE schedule_overrides SET patch_poster_path = NULL,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+           WHERE ${ovName.sql}
+             AND schedule_id IN (SELECT id FROM schedules WHERE parish_id = ?)`
+        ).bind(...ovName.args, anchor.parishId),
+      ]);
+      const evr = await env.DB.prepare(
+        `UPDATE events SET poster_path = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+         WHERE ${evName.sql} AND parish_id = ?`
+      ).bind(...evName.args, anchor.parishId).run();
+      count = ((ov && ov.meta && ov.meta.changes) || 0) + ((ev && ev.meta && ev.meta.changes) || 0)
+        + ((evr && evr.meta && evr.meta.changes) || 0);
+    } else {
+      const r = await setPosterPath(env, params.id, null);
+      if (r.error) return json({ error: r.error }, r.code || 400);
+    }
 
     // The objects go too, not just the column — a flyer put up by mistake
     // should stop being served, and nulling the path alone leaves it fetchable
     // at a URL derivable from the event id. Same reasoning as the logo delete.
-    if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(posterKeys(params.id));
-    const r = await setPosterPath(env, params.id, null);
-    if (r.error) return json({ error: r.error }, r.code || 400);
-    return json({ id: params.id, poster_path: null });
+    // A shared bulletin goes only once nothing else shows it.
+    if (env.ASSETS_BUCKET) {
+      await env.ASSETS_BUCKET.delete(posterKeys(params.id));
+      await releaseUnused(env, [anchor.previous]);
+    }
+    return json({ id: params.id, poster_path: null, count });
   }));
 
   // ── combine ──
