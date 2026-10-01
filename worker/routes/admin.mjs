@@ -13,6 +13,7 @@ import { readSecret } from '../lib/secrets.mjs';
 import { expandWindow, expandOne, parseInstanceId, fetchWindowRows, isValidOccurrence } from '../lib/expand.mjs';
 import { exactLocalToEpoch, localDateOf } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
+import { validateClaim, alreadyCovers, planGrant, describeClaim, ensureClaimsTable } from '../lib/claims.mjs';
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
   from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
@@ -481,13 +482,62 @@ function readableDate(date) {
   }).format(new Date(t));
 }
 
-/** How many asks are open. A missing table reads as none, never as an error. */
-async function openAskCount(db) {
-  const row = await db.prepare(
-    "SELECT COUNT(*) AS n FROM admin_proposals WHERE status = 'open'"
-  ).first().catch(() => null);
-  return row ? row.n : 0;
+/**
+ * Why Google refused a Places search, in words that say where to fix it.
+ *
+ * Every 403 used to read "not enabled for the Places API", which sent an owner
+ * who HAD enabled it hunting in the wrong place. Google's body names the
+ * reason, and the three common ones are each fixed somewhere different in the
+ * Cloud console — so say which, and quote Google after it.
+ */
+export function placesRefusal(status, body) {
+  const err = (body && body.error) || {};
+  const reasons = (err.details || []).map(d => d && d.reason).filter(Boolean);
+  const has = (r) => reasons.includes(r) || String(err.message || '').includes(r);
+  const google = err.message ? ` Google said: “${err.message}”` : '';
+  let why;
+  if (has('SERVICE_DISABLED')) {
+    why = 'Places API (New) is not enabled in the Google Cloud project this key belongs to — check it is the same project as the key (Credentials shows which).';
+  } else if (has('API_KEY_SERVICE_BLOCKED')) {
+    why = 'The key has API restrictions that do not include Places API (New). Credentials → this key → API restrictions → add it, keeping the Calendar API beside it.';
+  } else if (has('API_KEY_HTTP_REFERRER_BLOCKED') || has('API_KEY_IP_ADDRESS_BLOCKED')
+      || has('API_KEY_ANDROID_APP_BLOCKED') || has('API_KEY_IOS_APP_BLOCKED')) {
+    why = 'The key is restricted to certain websites or addresses, and this search runs on Cloudflare\u2019s servers. Credentials → this key → Application restrictions → None.';
+  } else if (has('API_KEY_INVALID')) {
+    why = 'Google does not recognise the key on this deployment.';
+  } else if (status === 403) {
+    why = 'Google refused the key for the Places API.';
+  } else {
+    why = `Google answered ${status}.`;
+  }
+  return `${why}${google} You can paste a Maps link instead.`;
 }
+
+/**
+ * How many asks are open — admin_proposals and parish claims together, since
+ * both wait on an owner. A missing table reads as none, never as an error.
+ */
+async function openAskCount(db) {
+  const [p, c] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS n FROM admin_proposals WHERE status = 'open'").first().catch(() => null),
+    db.prepare("SELECT COUNT(*) AS n FROM parish_claims WHERE status = 'open'").first().catch(() => null),
+  ]);
+  return (p ? p.n : 0) + (c ? c.n : 0);
+}
+
+/**
+ * Signed in, role or not. For the few routes a person with NO role must reach:
+ * saying who they are, and asking for a parish. Access has still verified the
+ * address — this only skips the "and you are on the list" half of `guarded`.
+ */
+const signedIn = (fn) => async (c) => {
+  const denied = await requireAdmin(c);
+  if (denied) return denied;
+  const identity = await adminIdentity(c);
+  if (!identity) return json({ error: 'Unauthorized' }, 401);
+  c.who = { ...(await resolveRole(c.env.DB, identity)), identity };
+  return fn(c);
+};
 
 // Keep an event's coordinates in step with its parish, unless it has an override.
 async function syncEventCoordsForParish(db, parishId) {
@@ -530,6 +580,109 @@ export function registerAdminRoutes(router) {
     parishNotices: (await parishNotices(c.env.DB, myParishes(c), c.who.identity))
       .filter(n => !n.seen).length,
   })));
+
+  // ── claims: "Is this your parish?" ──
+  //
+  // worker/lib/claims.mjs has the why. The claimant is signed in but usually
+  // has no role yet, so these two use `signedIn`, not `guarded`.
+
+  /** Who am I, for a page that must work for somebody with no role. */
+  router.get('/api/admin/whoami', signedIn(async (c) => {
+    const mine = await c.env.DB.prepare(
+      `SELECT k.id, k.parish_id, p.name AS parish_name, k.status, k.created_at, k.decided_at, k.decision_note
+       FROM parish_claims k LEFT JOIN parishes p ON p.id = k.parish_id
+       WHERE lower(k.email) = lower(?) ORDER BY k.created_at DESC LIMIT 20`
+    ).bind(c.who.identity).all().catch(() => ({ results: [] }));
+    return json({
+      identity: c.who.identity,
+      role: c.who.role || null,
+      parishIds: c.who.parishIds || [],
+      bootstrap: !!c.who.bootstrap,
+      claims: mine.results || [],
+    });
+  }));
+
+  router.post('/api/admin/claims', signedIn(async (c) => {
+    const { env, request } = c;
+    // With nobody listed, every signed-in person is already an owner — there
+    // is no list for a claim to be approved onto, and approving one would be
+    // the first row, which locks everybody else out. Refuse rather than start
+    // that by accident.
+    if (c.who.bootstrap) {
+      return json({ error: 'This site has no People list yet, so there is nothing to claim onto. Ask the owner to add themselves under People first.' }, 409);
+    }
+    const v = validateClaim(await readJson(request));
+    if (!v.ok) return json({ error: v.error }, 400);
+    const parish = await env.DB.prepare("SELECT id, name FROM parishes WHERE id = ? AND id != '_unassigned'")
+      .bind(v.claim.parish_id).first();
+    if (!parish) return json({ error: 'That parish was not found.' }, 404);
+    if (alreadyCovers(c.who, parish.id)) {
+      return json({ error: `You can already edit ${parish.name}.`, covered: true }, 409);
+    }
+    await ensureClaimsTable(env.DB);
+    const open = await env.DB.prepare(
+      "SELECT id FROM parish_claims WHERE lower(email) = lower(?) AND parish_id = ? AND status = 'open'"
+    ).bind(c.who.identity, parish.id).first();
+    if (open) return json({ id: open.id, status: 'open', already: true });
+    const row = await env.DB.prepare(
+      `INSERT INTO parish_claims (parish_id, email, name, relation, phone, note)
+       VALUES (?,?,?,?,?,?) RETURNING id`
+    ).bind(parish.id, c.who.identity, v.claim.name, v.claim.relation, v.claim.phone, v.claim.note).first();
+    return json({ id: row.id, status: 'open' }, 201);
+  }));
+
+  router.post('/api/admin/claims/:id/withdraw', signedIn(async (c) => {
+    const r = await c.env.DB.prepare(
+      `UPDATE parish_claims SET status = 'withdrawn', decided_at = ?
+       WHERE id = ? AND lower(email) = lower(?) AND status = 'open'`
+    ).bind(NOW(), c.params.id, c.who.identity).run().catch(() => null);
+    return r && r.meta && r.meta.changes ? json({ ok: true }) : json({ error: 'Nothing to withdraw.' }, 404);
+  }));
+
+  router.get('/api/admin/claims', guarded('people.manage', async ({ env }) => {
+    const r = await env.DB.prepare(
+      `SELECT k.*, p.name AS parish_name, p.acronym AS parish_acronym FROM parish_claims k
+       LEFT JOIN parishes p ON p.id = k.parish_id
+       ORDER BY (k.status = 'open') DESC, k.created_at DESC LIMIT 100`
+    ).all().catch(() => ({ results: [] }));
+    return json((r.results || []).map(k => ({ ...k, summary: describeClaim(k, k.parish_name) })));
+  }));
+
+  // Approving writes admin_roles — the same table People edits — and only
+  // ever adds: a contact gains this parish beside the ones they hold, and an
+  // owner or editor who claimed one is left as they are.
+  router.post('/api/admin/claims/:id/decide', guarded('people.manage', async (c) => {
+    const { env, params, request } = c;
+    const b = await readJson(request);
+    const approve = b.decision === 'approve';
+    if (!approve && b.decision !== 'decline') return json({ error: "decision must be 'approve' or 'decline'" }, 400);
+    const k = await env.DB.prepare('SELECT * FROM parish_claims WHERE id = ?').bind(params.id).first().catch(() => null);
+    if (!k) return json({ error: 'Claim not found' }, 404);
+    if (k.status !== 'open') return json({ error: `That claim is already ${k.status}.` }, 409);
+    const who = await editor(c);
+    let grant = { action: 'none' };
+    if (approve) {
+      const parish = await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(k.parish_id).first();
+      if (!parish) return json({ error: 'That parish no longer exists.' }, 409);
+      const email = String(k.email).trim().toLowerCase();
+      const row = await env.DB.prepare('SELECT email, role, parish_ids FROM admin_roles WHERE lower(email) = ?')
+        .bind(email).first();
+      grant = planGrant(row ? { role: row.role, parishIds: parseParishIds(row.parish_ids) } : null, k.parish_id);
+      if (grant.action === 'insert') {
+        await env.DB.prepare(
+          'INSERT INTO admin_roles (email, role, parish_ids, note, added_by) VALUES (?,?,?,?,?)'
+        ).bind(email, grant.role, JSON.stringify(grant.parishIds),
+          [k.name, k.relation].filter(Boolean).join(' — ') || null, who).run();
+      } else if (grant.action === 'update') {
+        await env.DB.prepare('UPDATE admin_roles SET parish_ids = ? WHERE lower(email) = ?')
+          .bind(JSON.stringify(grant.parishIds), email).run();
+      }
+    }
+    await env.DB.prepare(
+      'UPDATE parish_claims SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?'
+    ).bind(approve ? 'approved' : 'declined', who, NOW(), (b.note || '').trim() || null, params.id).run();
+    return json({ ok: true, status: approve ? 'approved' : 'declined', grant: grant.action });
+  }));
 
   // ── people ──
   //
@@ -1601,12 +1754,8 @@ export function registerAdminRoutes(router) {
       return json({ configured: true, places: [], error: `Could not reach Google: ${e.message}` });
     }
     if (!res.ok) {
-      return json({
-        configured: res.status !== 403, places: [],
-        error: res.status === 403
-          ? 'The Google key on this deployment is not enabled for the Places API, so paste a link instead.'
-          : `Google answered ${res.status}.`,
-      });
+      const g = await res.json().catch(() => null);
+      return json({ configured: res.status !== 403, places: [], error: placesRefusal(res.status, g) });
     }
     const data = await res.json().catch(() => ({}));
     return json({
@@ -2042,12 +2191,17 @@ export function registerAdminRoutes(router) {
   }
 
 
-  router.get('/api/admin/schedules', guarded(async ({ env }) => {
+  // Every rule, ended ones included — the bundle drops those, and the
+  // timetable's edit mode lists them so an end date can be cleared. `?parish=`
+  // narrows to one parish, which is all that view needs.
+  router.get('/api/admin/schedules', guarded(async ({ env, query }) => {
+    const parish = query.get('parish');
     const r = await env.DB.prepare(
       `SELECT s.*, p.name AS parish_name, p.jurisdiction AS parish_jurisdiction, p.timezone
        FROM schedules s JOIN parishes p ON s.parish_id = p.id
+       ${parish ? 'WHERE s.parish_id = ?' : ''}
        ORDER BY s.parish_id, s.day_of_week, s.start_time`
-    ).all();
+    ).bind(...(parish ? [parish] : [])).all();
     return json(r.results || []);
   }));
 

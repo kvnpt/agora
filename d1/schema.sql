@@ -718,6 +718,39 @@ CREATE TABLE admin_proposals (
 CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- parish_claims — "Is this your parish?"
+--
+-- Somebody asking to keep one parish's page right. Made by a VERIFIED address:
+-- the claimant signs in through Cloudflare Access first, and `email` is the
+-- one Access vouched for, never one typed into the form. An owner approving it
+-- grants a parish role in admin_roles (worker/lib/claims.mjs — grants only,
+-- never demotes).
+--
+-- Not an admin_proposals row: that table's capability CHECK would need a
+-- rebuild to widen, and a stranger asking to be let in is not an ask an
+-- editor was refused.
+--
+-- worker/lib/claims.mjs also creates this table IF NOT EXISTS on first use,
+-- with the same DDL, so a deploy that lands before migration 016 does not fail
+-- the first claim.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE parish_claims (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id     TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  relation      TEXT,
+  phone         TEXT,
+  note          TEXT,
+  status        TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','declined','withdrawn')),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  decided_by    TEXT,
+  decided_at    TEXT,
+  decision_note TEXT
+);
+CREATE INDEX idx_parish_claims_open ON parish_claims(status, created_at);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- parish_notices_seen — which cross-parish listings a contact has looked at
 -- ─────────────────────────────────────────────────────────────────────────
 --

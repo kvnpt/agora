@@ -4786,29 +4786,26 @@ function refreshParishContentPortion(parishId, opts = {}) {
   }
 
   // Schedule card refresh — recompute scheds + EN filter, replace inner.
-  // Mount the section if it didn't exist; remove if no scheds left.
+  // Mount the section if it didn't exist. Always present, even with no rules:
+  // a parish with no times on file is the one "Is this your parish?" is for.
   const scheds = filterParishSchedulesBySession(
     (state.schedules || [])
       .filter(s => s.parish_id === parishId)
       .sort((a, b) => a.day_of_week - b.day_of_week)
   );
   const existingSection = contentEl.querySelector('.ps-sched-section');
-  if (scheds.length || mayEditTimetable(parishId)) {
-    const innerHTML = parishTimetableHTML(parish, scheds);
-    if (existingSection) {
-      existingSection.innerHTML = innerHTML;
-    } else if (streamEl) {
-      const sec = document.createElement('div');
-      sec.className = 'ps-section ps-sched-section';
-      sec.innerHTML = innerHTML;
-      // Above the filter row, which sits between the service times and the
-      // events list — mounting before the stream instead would drop it on the
-      // wrong side of the pills.
-      const anchor = contentEl.querySelector('.ps-filter-row') || streamEl;
-      anchor.parentNode.insertBefore(sec, anchor);
-    }
-  } else if (existingSection) {
-    existingSection.remove();
+  const innerHTML = parishTimetableHTML(parish, scheds);
+  if (existingSection) {
+    existingSection.innerHTML = innerHTML;
+  } else if (streamEl) {
+    const sec = document.createElement('div');
+    sec.className = 'ps-section ps-sched-section';
+    sec.innerHTML = innerHTML;
+    // Above the filter row, which sits between the service times and the
+    // events list — mounting before the stream instead would drop it on the
+    // wrong side of the pills.
+    const anchor = contentEl.querySelector('.ps-filter-row') || streamEl;
+    anchor.parentNode.insertBefore(sec, anchor);
   }
 
   if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
@@ -5063,14 +5060,11 @@ function paintParishSheetContent(parishId, opts = {}) {
       .filter(s => s.parish_id === parishId)
       .sort((a, b) => a.day_of_week - b.day_of_week)
   );
-  let schedSectionHtml = '';
-  // Shown to somebody who may edit the times even with no rules: a parish whose
-  // times have never been entered is exactly the one somebody opens this to
-  // fix, and "there is nothing here" is not a reason to hide the pencil.
-  if (scheds.length || mayEditTimetable(parishId)) {
-    schedSectionHtml = `
+  // Shown even with no rules: a parish whose times have never been entered is
+  // exactly the one somebody opens this to fix — with the pencil, or with
+  // "Is this your parish?" for somebody who cannot edit it yet.
+  const schedSectionHtml = `
       <div class="ps-section ps-sched-section">${parishTimetableHTML(parish, scheds)}</div>`;
-  }
 
   // Upcoming events across the same window as the main list. Prefer the
   // async-fetched list when available; otherwise fall back to state.events
@@ -5115,6 +5109,7 @@ function paintParishSheetContent(parishId, opts = {}) {
         <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
       </button>`}
     </div>
+    ${contactGuideHTML(parish)}
     ${focusedEvent ? '<div class="ps-pinned-event" id="ps-pinned-event"></div>' : ''}
     ${psEditing ? parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) : `
     <div class="ps-section">
@@ -8192,12 +8187,118 @@ function parishTimetableHTML(parish, scheds) {
           ${pencil}
         </div>
         ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
-        ${editing ? `${refusedServicesHTML()}
+        ${editing ? `${endedServicesHTML(pid)}${refusedServicesHTML()}
           <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add a service</span></button>
           <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
       </div>
+      ${claimLinkHTML(parish, scheds)}
     </div>`;
 }
+
+/**
+ * "Is this your parish?" — the way in for somebody who could keep it right.
+ *
+ * Shown to anyone who cannot already edit this parish's times, visitors
+ * included: most parishes have nobody looking after their page, and the
+ * person who could is most likely to be reading it. The claim itself happens
+ * on /admin?claim=, behind Cloudflare Access, so the address on it is one
+ * Access verified (worker/lib/claims.mjs).
+ */
+function claimLinkHTML(parish, scheds) {
+  if (mayEditTimetable(parish.id)) return '';
+  const ask = scheds.length ? 'Is this your parish? Help keep its times right'
+    : 'Is this your parish? Add its service times';
+  return `<a class="ps-claim" href="/admin?claim=${encodeURIComponent(parish.id)}">${esc(ask)} \u2192</a>`;
+}
+
+/**
+ * Rules that have ended, under the timetable while it is being edited.
+ *
+ * An ended rule leaves the timetable, which is right for a reader and was a
+ * dead end for an admin: "clear the end date to bring it back" had nowhere to
+ * be done. The bundle does not carry them (it drops a rule that ended before
+ * its window), so they are fetched when the mode is entered.
+ */
+function endedServicesHTML(pid) {
+  const ended = (state.endedRules && state.endedRules.pid === pid) ? state.endedRules.rows : [];
+  if (!ended.length) return '';
+  const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+    .format(new Date(d + 'T00:00:00Z'));
+  return `
+    <details class="ps-ended">
+      <summary>Ended services (${ended.length})</summary>
+      ${ended.map(r => `
+        <div class="ps-ended-row">
+          <span>${esc(DAYS[r.day_of_week])} ${formatTime12(r.start_time)} · ${esc(r.title)} <em>ended ${esc(fmt(r.effective_to))}</em></span>
+          <button type="button" class="ps-ended-reopen" data-reopen-rule="${esc(String(r.id))}">Bring back</button>
+        </div>`).join('')}
+    </details>`;
+}
+
+/** Fetch this parish's ended rules for the edit view. */
+function loadEndedRules(pid) {
+  fetch(`/api/admin/schedules?parish=${encodeURIComponent(pid)}`)
+    .then(r => (r.ok ? r.json() : []))
+    .then(rows => {
+      if (state.scheduleEditMode !== pid) return;
+      const today = parishToday((rows[0] && rows[0].timezone) || TZ);
+      state.endedRules = { pid, rows: rows.filter(r => r.active && r.effective_to && r.effective_to < today) };
+      if (state.parishSheetFocus === pid) renderParishSheetContent(pid, { fullRender: true });
+    })
+    .catch(() => { /* the timetable still edits without them */ });
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-reopen-rule]');
+  if (!btn) return;
+  e.stopPropagation();
+  const id = btn.dataset.reopenRule;
+  const rule = state.endedRules && state.endedRules.rows.find(r => String(r.id) === id);
+  if (!rule) return;
+  if (!confirm(`Bring back ${rule.title}, ${DAYS[rule.day_of_week]} ${rule.start_time}?\n\n`
+    + 'It runs again from its next date, with any changes it still holds. If another service replaced it '
+    + '(a time change), bring it back only if both really run.')) return;
+  const res = await fetch(`/api/admin/schedules/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ effective_to: null }),
+  });
+  if (!res.ok) { alert(await adminErrorText(res)); return; }
+  await fetchSchedules({ fresh: true });
+  fetchEvents({ fresh: true, keepCount: true });
+  loadEndedRules(rule.parish_id);
+});
+
+/**
+ * A first look at their own parish, for somebody just made its contact.
+ *
+ * Once per parish per browser — a convenience, so localStorage is the right
+ * place and it fails safe (shown again) when storage is blocked.
+ */
+function contactGuideHTML(parish) {
+  const who = state.adminWho || {};
+  if (!state.isAdmin || who.role !== 'parish' || !(who.parishIds || []).includes(parish.id)) return '';
+  try { if (localStorage.getItem(`agora-guide:${parish.id}`)) return ''; } catch { /* show it */ }
+  return `
+    <div class="ps-guide" data-guide="${esc(parish.id)}">
+      <div class="ps-guide-title">You can now keep ${esc(parish.name)} up to date</div>
+      <ul>
+        <li><b>Its details</b> — the pencil by the parish name: address, phone, website, logo.</li>
+        <li><b>Service times</b> — the pencil on the timetable. Add, change or end a service; a service can start or end on a date.</li>
+        <li><b>One week is different</b> — open that service, tap <b>Edit</b>: change, cancel, or set a break. It asks whether you mean that date or every one after it.</li>
+        <li><b>A one-off event</b> — the round + button.</li>
+        <li><b>A monthly bulletin</b> — open any service in the month, <b>Edit → Poster → Put it on</b> everything from the 1st to the last day.</li>
+      </ul>
+      <button type="button" class="ps-guide-done" data-guide-done="${esc(parish.id)}">Got it</button>
+    </div>`;
+}
+
+document.addEventListener('click', (e) => {
+  const done = e.target.closest('[data-guide-done]');
+  if (!done) return;
+  try { localStorage.setItem(`agora-guide:${done.dataset.guideDone}`, '1'); } catch { /* fine */ }
+  const card = done.closest('.ps-guide');
+  if (card) card.remove();
+});
 
 /**
  * Enter or leave the timetable's edit mode for one parish.
@@ -8209,8 +8310,10 @@ window.setScheduleEditMode = function(id, on) {
   const next = on ? id : null;
   if (state.scheduleEditMode === next) return;
   state.scheduleEditMode = next;
+  state.endedRules = null;
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
   if (next) loadParishRulings(next, () => state.scheduleEditMode === next);
+  if (next) loadEndedRules(next);
   if (typeof renderServices === 'function') renderServices();
 };
 

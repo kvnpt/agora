@@ -261,6 +261,19 @@
       .ov-actions { width: 100%; }
     }
 
+    /* The claim page: a single card, readable on a phone, no panel chrome. */
+    .claim-page { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; box-sizing: border-box; background: var(--bg-secondary, #f5f5f5); }
+    .claim-card { width: 100%; max-width: 30rem; background: var(--bg, #fff); color: var(--text, #111); border: 1px solid var(--border-light, #ddd); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm); font-size: 15px; line-height: 1.5; }
+    .claim-kicker { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted, #666); }
+    .claim-card h1 { font-size: 22px; margin: 4px 0 10px; line-height: 1.2; }
+    .claim-form { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+    .claim-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+    .claim-form label span { font-weight: 400; color: var(--text-muted, #666); }
+    .claim-form input, .claim-form textarea { font: inherit; font-weight: 400; padding: 9px 10px; border: 1px solid var(--border, #ccc); border-radius: 8px; background: var(--bg, #fff); color: inherit; width: 100%; box-sizing: border-box; }
+    .claim-btn { display: inline-block; font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 8px; border: 0; background: var(--accent, #1f3a5f); color: #fff; cursor: pointer; text-decoration: none; }
+    .claim-btn.ghost { background: transparent; color: inherit; border: 1px solid var(--border, #ccc); }
+    .claim-error { color: #b91c1c; font-size: 13px; }
+    .claim-foot { margin-top: 18px; font-size: 12px; color: var(--text-muted, #666); }
     .ask { border: 1px solid var(--border-light); border-left: 3px solid var(--warn); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--bg); box-shadow: var(--shadow-sm); }
     .ask-what { font-size: 14px; font-weight: 500; }
     .ask-why { font-size: 13px; color: var(--muted); margin-top: 6px; }
@@ -720,6 +733,14 @@
         <h2>Asks</h2>
         <p class="section-lead" id="proposals-intro"></p>
       </div>
+      <!-- "Is this your parish?" — people asking to keep one parish right.
+           Above the asks because each one is a person waiting to be let in,
+           and approving it is the whole of what they need. -->
+      <div id="claims-block" hidden>
+        <div class="subhead">People asking to keep a parish up to date</div>
+        <div id="claim-list"></div>
+      </div>
+
       <div id="proposal-list"></div>
 
       <!-- What was decided about an ask YOU made. The list above is open asks
@@ -3627,7 +3648,12 @@
     let myAsks = [];
     let parishNotices = [];
 
+    let claims = [];
+
     async function loadProposals() {
+      claims = may('people.manage')
+        ? await fetch('/api/admin/claims', { headers }).then(r => r.ok ? r.json() : []).catch(() => [])
+        : [];
       [proposals, myAsks, parishNotices] = await Promise.all([
         fetch('/api/admin/proposals', { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
         // Own asks, whatever their status — the only way to learn an outcome.
@@ -3640,10 +3666,12 @@
       const el = document.getElementById('proposal-list');
       if (!el) return;
       const countEl = document.getElementById('count-proposals');
-      countEl.textContent = proposals.length;
+      const openClaims = claims.filter(k => k.status === 'open');
+      countEl.textContent = proposals.length + openClaims.length;
       // Open asks are work only for somebody who can decide them; for anybody
       // else a red count is noise about their own pending requests.
-      const waiting = may('people.manage') && proposals.length > 0;
+      const waiting = may('people.manage') && (proposals.length + openClaims.length) > 0;
+      renderClaims();
       countEl.classList.toggle('alert', waiting);
       document.getElementById('menu-dot').hidden = !waiting;
       // Before the empty-list early return below. These two are not about open
@@ -3677,6 +3705,53 @@
         b.addEventListener('click', () => decideProposal(Number(b.dataset.decide), b.dataset.decision)));
       el.querySelectorAll('[data-withdraw]').forEach(b =>
         b.addEventListener('click', () => withdrawProposal(Number(b.dataset.withdraw))));
+    }
+
+    /**
+     * Claims: somebody signed in (Access verified the address) asking to keep
+     * one parish right. Approving gives them that parish in People — added
+     * beside any they hold, never lowering a role.
+     */
+    function renderClaims() {
+      const block = document.getElementById('claims-block');
+      const el = document.getElementById('claim-list');
+      if (!block || !el) return;
+      const open = claims.filter(k => k.status === 'open');
+      const recent = claims.filter(k => k.status !== 'open').slice(0, 5);
+      block.hidden = !may('people.manage') || !(open.length || recent.length);
+      el.innerHTML = [...open, ...recent].map(k => `
+        <div class="ask"${k.status !== 'open' ? ' style="opacity:.7;border-left-color:var(--border-light);"' : ''}>
+          <div class="ask-what">${esc(k.summary)}</div>
+          <div class="ask-meta">${esc(k.email)}${k.phone ? ' \u00b7 ' + esc(k.phone) : ''} \u00b7 ${relativeTime(k.created_at)}</div>
+          ${k.note ? `<div class="ask-why">\u201c${esc(k.note)}\u201d</div>` : ''}
+          ${k.status === 'open' ? `
+            <div class="btn-row">
+              <button class="btn btn-approve" data-claim="${k.id}" data-decision="approve">Approve</button>
+              <button class="btn btn-outline" data-claim="${k.id}" data-decision="decline">Decline</button>
+            </div>` : `<div class="ask-meta"><b>${esc(k.status)}</b>${k.decided_by ? ' by ' + esc(k.decided_by) : ''}${k.decision_note ? ' \u2014 \u201c' + esc(k.decision_note) + '\u201d' : ''}</div>`}
+        </div>`).join('');
+      el.querySelectorAll('[data-claim]').forEach(b =>
+        b.addEventListener('click', () => decideClaim(Number(b.dataset.claim), b.dataset.decision)));
+    }
+
+    async function decideClaim(id, decision) {
+      const k = claims.find(x => x.id === id);
+      let note = null;
+      if (decision === 'decline') {
+        note = prompt('Why not? (Kept with the claim.)');
+        if (note === null) return;
+      } else if (!confirm(`${k.summary}\n\nApprove? ${k.email} will be able to edit ${k.parish_name || k.parish_id} — its details, service times and events — next time they sign in.`)) {
+        return;
+      }
+      const res = await fetch(`/api/admin/claims/${id}/decide`, {
+        method: 'POST', headers, body: JSON.stringify({ decision, note }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+      toast(decision === 'approve'
+        ? (body.grant === 'none' ? 'Approved — they could already edit it' : 'Approved — added to People')
+        : 'Declined');
+      await loadAll();
     }
 
     /** The outcome of an ask you made, which used to just disappear. */
@@ -4031,6 +4106,91 @@
       if (target) activateTab(target.dataset.tab);
     }
 
+    /**
+     * The claim page: who you are (Access verified it), which parish, and a
+     * short form. Replaces the panel entirely — the person here is usually not
+     * on the admin list and has no use for it.
+     */
+    async function claimPage(parishId) {
+      const res = await fetch('/api/admin/whoami', { headers }).catch(() => null);
+      if (!res || res.status === 401) {
+        // Not signed in yet: go through Access, and come back to this claim.
+        let tried = true;
+        try {
+          tried = sessionStorage.getItem('claim-access-retry') === '1';
+          if (!tried) sessionStorage.setItem('claim-access-retry', '1');
+        } catch { /* fall through to the message */ }
+        if (!tried) { location.replace(`/admin.html?claim=${encodeURIComponent(parishId)}`); return; }
+        blockPage('Could not sign you in.', 'Signing in did not produce a session. Try again from the parish page.');
+        return;
+      }
+      try { sessionStorage.removeItem('claim-access-retry'); } catch { /* fine */ }
+      if (!res.ok) { blockPage('Something went wrong.', await adminError(res)); return; }
+      const me = await res.json();
+      const parishes = await fetch('/api/parishes').then(r => r.ok ? r.json() : []).catch(() => []);
+      const parish = parishes.find(p => p.id === parishId);
+      const name = parish ? (parish.full_name || parish.name) : parishId;
+      const link = parish ? `/${encodeURIComponent((parish.acronym || parish.id).toLowerCase())}?app` : '/';
+      const mine = (me.claims || []).find(k => k.parish_id === parishId && k.status === 'open');
+      const covers = me.role === 'owner' || me.role === 'editor'
+        || (me.role === 'parish' && (me.parishIds || []).includes(parishId));
+
+      const wrap = document.createElement('div');
+      wrap.className = 'claim-page';
+      const page = (inner) => {
+        wrap.innerHTML = `
+          <div class="claim-card">
+            <div class="claim-kicker">orthodoxy.au</div>
+            <h1>${esc(name)}</h1>
+            ${inner}
+            <p class="claim-foot">Signed in as <b>${esc(me.identity)}</b> \u00b7 <a href="/cdn-cgi/access/logout">not you?</a> \u00b7 <a href="${esc(link)}">back to the parish</a></p>
+          </div>`;
+        document.body.replaceChildren(wrap);
+      };
+
+      if (!parish) { page('<p>That parish was not found. Go back and try from its page.</p>'); return; }
+      if (covers) {
+        page(`<p>You can already edit this parish. Open it, then use the pencils on its details and its service times.</p>
+              <p><a class="claim-btn" href="${esc(link)}">Open ${esc(parish.name)}</a></p>`);
+        return;
+      }
+      if (me.bootstrap) {
+        page('<p>This site has no list of people yet, so there is nothing to ask to join. The site owner needs to add themselves under People first.</p>');
+        return;
+      }
+      if (mine) {
+        page(`<p>Thanks — your request is with the site owner. Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times.</p>
+              <p><button type="button" class="claim-btn ghost" id="claim-withdraw">Withdraw the request</button></p>`);
+        document.getElementById('claim-withdraw').addEventListener('click', async () => {
+          await fetch(`/api/admin/claims/${mine.id}/withdraw`, { method: 'POST', headers });
+          location.reload();
+        });
+        return;
+      }
+      page(`
+        <p>Help keep this parish's page right: its service times, its events and its details. The site owner checks each request before giving access.</p>
+        <form id="claim-form" class="claim-form">
+          <label>Your name<input name="name" required maxlength="120" autocomplete="name"></label>
+          <label>Your role at the parish<input name="relation" maxlength="120" placeholder="Parish priest, secretary, council member…"></label>
+          <label>Phone <span>(optional — in case the owner wants to check)</span><input name="phone" maxlength="40" autocomplete="tel"></label>
+          <label>Anything else<textarea name="note" maxlength="1000" rows="3"></textarea></label>
+          <div class="claim-error" id="claim-error" hidden></div>
+          <button type="submit" class="claim-btn">Send the request</button>
+        </form>`);
+      document.getElementById('claim-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const r = await fetch('/api/admin/claims', {
+          method: 'POST', headers,
+          body: JSON.stringify({ parish_id: parishId, ...Object.fromEntries(f.entries()) }),
+        });
+        if (r.ok) { location.reload(); return; }
+        const err = document.getElementById('claim-error');
+        err.textContent = await adminError(r);
+        err.hidden = false;
+      });
+    }
+
     function blockPage(title, detail) {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'padding:2rem;font-family:sans-serif;max-width:34rem;';
@@ -4127,6 +4287,13 @@
       // asking. The old code also called /auth/whoami because magic-link phone
       // auth could authenticate someone the Caddy gate had not seen yet; that
       // endpoint and that whole subsystem went with the VM.
+      // "Is this your parish?" — /admin?claim=<parish id>. Reached from the
+      // parish sheet and the lite card. Answered before the panel, because the
+      // person arriving usually has no role at all and the panel would only
+      // tell them so.
+      const claimFor = new URLSearchParams(location.search).get('claim');
+      if (claimFor) { await claimPage(claimFor); return; }
+
       const ping = await fetch('/api/admin/ping', { headers }).catch(() => null);
 
       // 403 is new: Access let them in, and this deployment has an admin list
@@ -4134,8 +4301,13 @@
       // get in), and it has a different remedy — ask an owner, not reload.
       if (ping && ping.status === 403) {
         const detail = await ping.json().catch(() => ({}));
+        // Somebody with a claim waiting is not lost — say where it is.
+        const me = await fetch('/api/admin/whoami', { headers }).then(r => r.ok ? r.json() : null).catch(() => null);
+        const waiting = me && (me.claims || []).filter(k => k.status === 'open');
         blockPage('Signed in, but not on the admin list.',
-          detail.error || 'Ask an owner of this site to give your account a role.');
+          waiting && waiting.length
+            ? `Your request to keep ${waiting.map(k => k.parish_name || k.parish_id).join(', ')} up to date is waiting on an owner. Once it is approved, sign in again and the parish will have a pencil on it.`
+            : (detail.error || 'Ask an owner of this site to give your account a role — or open your parish in the app and choose \u201cIs this your parish?\u201d.'));
         return;
       }
 

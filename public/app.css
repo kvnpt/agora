@@ -5185,3 +5185,35 @@ button.ps-avatar { cursor: pointer; }
 .maps-note { font-size: 12.5px; color: var(--text-secondary); padding: 2px 0 6px; }
 .ps-link-field > .ps-btn-ghost { margin-bottom: 10px; }
 .ps-delete-parish { margin-left: auto; }
+
+/* "Is this your parish?" — under the timetable, quiet: it is an offer, not
+   part of the times. */
+.ps-claim {
+  display: block; margin: 8px 2px 0; font-size: 12px; color: var(--text-muted);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.ps-claim:hover { color: var(--text); }
+
+/* Ended rules, in the timetable's edit mode only. */
+.ps-ended { margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+.ps-ended summary { cursor: pointer; font-weight: 600; }
+.ps-ended-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.ps-ended-row em { font-style: normal; opacity: .8; }
+.ps-ended-reopen {
+  flex: none; font: inherit; font-size: 12px; font-weight: 600; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text); cursor: pointer;
+}
+
+/* First look at their own parish, for a new parish contact. */
+.ps-guide {
+  margin: 10px 16px; padding: 12px 14px; border-radius: 10px;
+  background: var(--bg-secondary, rgba(0,0,0,0.05)); border: 1px solid var(--border);
+  font-size: 13px; line-height: 1.45; color: var(--text);
+}
+.ps-guide-title { font-weight: 700; margin-bottom: 6px; }
+.ps-guide ul { margin: 0 0 10px; padding-left: 18px; }
+.ps-guide li { margin: 3px 0; }
+.ps-guide-done {
+  font: inherit; font-weight: 600; font-size: 13px; padding: 5px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
+}
