@@ -222,7 +222,10 @@ In **Zero Trust → Access → Applications → Add an application → Self-host
 
 - Application domain `orthodoxy.au`
 - **Three paths: `/admin`, `/admin.html`, and `/api/admin/*`**
-- A policy allowing your own email
+- A policy allowing your own email to start with. Once you are listed under
+  **People** in the panel, switch it to **Include: Everyone** with the
+  **One-time PIN** login method, so People is the only list of who may edit —
+  `docs/people-and-access.md` explains why that is safe and what to check first.
 
 **Cover the page, not just the API.** Access signs a user in by redirecting them
 to your identity provider, and a redirect only works on a page navigation — a

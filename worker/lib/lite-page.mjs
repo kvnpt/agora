@@ -495,6 +495,7 @@ export function renderLitePage(m) {
     <a href="${esc(appHref)}">Open this in the app</a>
     <span>Showing to ${esc(longDate(m.endBound, m.start.slice(0, 4)))}</span>
   </footer>
+  <p class="lc-claim"><a href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${m.rules.length ? 'Is this your parish? Help keep its times right' : 'Is this your parish? Add its service times'} →</a></p>
 </main>
 <script src="/lite.js" defer></script>
 </body>
@@ -554,4 +555,5 @@ h1{margin:0;font-size:22px;line-height:1.15;letter-spacing:-.01em}
 .lt-row{display:grid;grid-template-columns:66px minmax(0,1fr);gap:8px;padding:7px 0;text-decoration:none;border-bottom:1px solid var(--line)}
 .lt-row small{display:block;color:var(--muted);font-size:12px}
 .lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:24px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.lc-claim{margin:10px 0 0;font-size:13px}.lc-claim a{color:var(--muted)}
 `;

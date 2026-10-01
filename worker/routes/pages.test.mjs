@@ -202,3 +202,9 @@ test('the timetable drops an ended rule and marks one that starts later', async 
   assert.doesNotMatch(/<meta name="description" content="([^"]*)"/.exec(html)[1], /Presanctified/,
     'a rule that has not started is not what the times are');
 });
+
+test('the lite card offers "Is this your parish?" through the claim page', async () => {
+  const { get } = fresh();
+  const { html } = await get('/sgr');
+  assert.match(html, /<a href="\/admin\?claim=antiochian-stgeorge-redfern" rel="nofollow">Is this your parish\? Help keep its times right/);
+});
