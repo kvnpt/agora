@@ -304,6 +304,14 @@ export function planWrite(rules, existing, overrides = null, tier = 'jurisdictio
     if (!bySlot.has(k)) bySlot.set(k, []);
     bySlot.get(k).push(e);
   }
+  // A slot can hold an ENDED rule beside the one that continues it — "this and
+  // every following" in the app closes a rule and opens another (see
+  // worker/lib/series.mjs). Pair with the current one first: updating the
+  // ended row would leave the live rule stale, and nothing here touches an
+  // end date, so an ended rule is never brought back by being matched.
+  for (const pool of bySlot.values()) {
+    pool.sort((a, b) => (a.effective_to ? 1 : 0) - (b.effective_to ? 1 : 0));
+  }
   const updates = [];
   const inserts = [];
   const refused = [];

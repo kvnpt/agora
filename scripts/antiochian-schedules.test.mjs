@@ -200,3 +200,16 @@ test('the SQL updates by id and guards every insert', () => {
   // A rule with no languages writes a bare NULL, not the string "null".
   assert.match(sql, /'liturgy', NULL, 'first'/);
 });
+
+test('a re-import pairs with the rule that continues a slot, never revives the ended one', () => {
+  // "This and every following" in the app closes a rule and opens another in
+  // the same slot when only the title changed. The scrape must update the live
+  // one, and its SQL must not touch either row's dates.
+  const ended = { id: 1, parish_id: 'p', day_of_week: 0, start_time: '10:00', effective_to: '2026-09-30' };
+  const live = { id: 2, parish_id: 'p', day_of_week: 0, start_time: '10:00', effective_to: null };
+  const rule = { parish_id: 'p', day_of_week: 0, start_time: '10:00', title: 'Divine Liturgy', event_type: 'liturgy' };
+  const plan = planWrite([rule], [ended, live]);
+  assert.equal(plan.updates[0].id, 2);
+  assert.deepEqual(plan.untouched.map(r => r.id), [1]);
+  assert.doesNotMatch(String(buildScheduleSql(plan)), /effective_/);
+});

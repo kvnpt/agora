@@ -1215,3 +1215,196 @@ test('a parish contact cannot range a poster over another parish', async () => {
   assert.equal(r.status, 403);
   assert.equal(b.store.size, 0);
 });
+
+// ── this and every following ──
+//
+// The question a calendar asks of a repeating event, answered with the rule's
+// own dates: end it before a date, or change it from a date on by closing the
+// old rule and opening a new one. Past dates must keep what they were.
+
+/** A rule and four of its September dates, for the split tests. */
+async function septRule(f) {
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid] = splitInstance(inst.id);
+  const dates = (await septemberOf(f.db, sid)).map(e => e.id.split(':')[1]);
+  const rule = f.raw.prepare('SELECT * FROM schedules WHERE id = ?').get(sid);
+  return { parishId, sid, dates, rule };
+}
+
+/** The drawer's body for an occurrence, with its start moved to `hhmm` Sydney time. */
+function drawerBody(date, hhmm, extra = {}) {
+  // September in Sydney is +10:00 (DST starts 4 Oct 2026).
+  const [h, m] = hhmm.split(':').map(Number);
+  const start = new Date(Date.UTC(...date.split('-').map((x, i) => i === 1 ? x - 1 : +x), h - 10, m));
+  return { start_utc: start.toISOString(), ...extra };
+}
+
+test('ending a rule from a date keeps the dates before it and nothing after', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sid, dates } = await septRule(f);
+  const r = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`, { action: 'end' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const rule = f.raw.prepare('SELECT effective_to FROM schedules WHERE id = ?').get(sid);
+  assert.ok(rule.effective_to < dates[2] && rule.effective_to >= dates[1], rule.effective_to);
+  const left = (await septemberOf(f.db, sid)).map(e => e.id.split(':')[1]);
+  assert.deepEqual(left, dates.slice(0, 2));
+  // Not tombstones: a service that has stopped is not cancelled every week.
+  assert.equal(await expandOne(f.db, sid, dates[2]), null);
+});
+
+test('changing a rule from a date on leaves the earlier dates as they were', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sid, dates, rule } = await septRule(f);
+  const r = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`,
+    { action: 'edit', ...drawerBody(dates[2], '08:30'), title: 'Matins and Liturgy' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.mode, 'split');
+  const newId = r.body.schedule_id;
+
+  const old = f.raw.prepare('SELECT * FROM schedules WHERE id = ?').get(sid);
+  const neu = f.raw.prepare('SELECT * FROM schedules WHERE id = ?').get(newId);
+  assert.ok(old.effective_to < dates[2]);
+  assert.equal(neu.effective_from, dates[2]);
+  assert.equal(neu.start_time, '08:30');
+  assert.equal(neu.title, 'Matins and Liturgy');
+  assert.equal(neu.day_of_week, rule.day_of_week);
+  assert.equal(neu.languages, rule.languages, 'what was not changed carries over');
+
+  assert.equal((await expandOne(f.db, sid, dates[1])).title, rule.title, 'a past date was rewritten');
+  const after = await expandOne(f.db, newId, dates[3]);
+  assert.equal(after.title, 'Matins and Liturgy');
+  assert.equal(await expandOne(f.db, sid, dates[3]), null, 'the old rule still runs after the split');
+});
+
+test('later decisions are asked about, then carried or let go', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sid, dates } = await septRule(f);
+  await f.call('PATCH', `/api/admin/events/${sid}:${dates[3]}`, { status: 'cancelled' });
+  await f.call('PATCH', `/api/admin/events/${sid}:${dates[2]}`, { feast: 'Exaltation of the Cross' });
+  const body = { action: 'edit', ...drawerBody(dates[2], '09:00') };
+
+  const rulesBefore = f.raw.prepare('SELECT COUNT(*) AS n FROM schedules').get().n;
+  const ask = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`, body);
+  assert.equal(ask.status, 409);
+  assert.equal(ask.body.needs_choice, true);
+  assert.deepEqual(ask.body.movable.map(o => o.date), [dates[2], dates[3]]);
+  assert.equal(ask.body.movable[1].what, 'cancelled');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedules').get().n, rulesBefore,
+    'nothing written before the answer');
+  assert.equal(f.raw.prepare('SELECT effective_to FROM schedules WHERE id = ?').get(sid).effective_to, null);
+
+  const r = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`, { ...body, keep: 'carry' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.carried, 2);
+  const newId = r.body.schedule_id;
+  assert.equal((await expandOne(f.db, newId, dates[3])).status, 'cancelled', 'the cancellation was lost');
+  const anchor = await expandOne(f.db, newId, dates[2]);
+  assert.equal(anchor.feast, 'Exaltation of the Cross');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides WHERE schedule_id = ?').get(sid).n, 0);
+});
+
+test('letting later decisions go deletes them, and a new weekday strands what cannot move', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sid, dates } = await septRule(f);
+  await f.call('PATCH', `/api/admin/events/${sid}:${dates[3]}`, { status: 'cancelled' });
+
+  const discard = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`,
+    { action: 'edit', ...drawerBody(dates[2], '09:00'), keep: 'discard' });
+  assert.equal(discard.status, 201, JSON.stringify(discard.body));
+  assert.equal(discard.body.dropped, 1);
+  assert.notEqual((await expandOne(f.db, discard.body.schedule_id, dates[3])).status, 'cancelled');
+
+  // A second rule, moved to the next day: its later Sunday has no Monday twin.
+  const g = fresh({ role: 'editor' });
+  const s2 = await septRule(g);
+  await g.call('PATCH', `/api/admin/events/${s2.sid}:${s2.dates[3]}`, { status: 'cancelled' });
+  const nextDay = new Date(Date.parse(s2.dates[2] + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const moved = drawerBody(nextDay, '19:00');
+  const q = await g.call('POST', `/api/admin/events/${s2.sid}:${s2.dates[2]}/following`, { action: 'edit', ...moved });
+  assert.equal(q.status, 409);
+  assert.equal(q.body.movable.length, 0);
+  assert.deepEqual(q.body.stranded.map(o => o.date), [s2.dates[3]]);
+  const r = await g.call('POST', `/api/admin/events/${s2.sid}:${s2.dates[2]}/following`, { action: 'edit', ...moved, keep: 'carry' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.dropped, 1);
+  assert.equal(g.raw.prepare('SELECT day_of_week FROM schedules WHERE id = ?').get(r.body.schedule_id).day_of_week,
+    (s2.rule.day_of_week + 1) % 7);
+});
+
+test('the date the edit came from shows the edit, even over an override it already had', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sid, dates } = await septRule(f);
+  // This one Sunday was already moved to 7am by hand.
+  await f.call('PATCH', `/api/admin/events/${sid}:${dates[2]}`, drawerBody(dates[2], '07:00'));
+  assert.equal((await expandOne(f.db, sid, dates[2])).start_local.slice(11, 16), '07:00');
+
+  const r = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`,
+    { action: 'edit', ...drawerBody(dates[2], '09:00'), keep: 'carry' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const anchor = await expandOne(f.db, r.body.schedule_id, dates[2]);
+  assert.equal(anchor.start_local.slice(11, 16), '09:00', 'the old one-date time beat the series edit');
+});
+
+test('a break running past the split follows the new rule, or ends with the old one', async () => {
+  const f = fresh({ role: 'editor' });
+  const { parishId, sid, dates } = await septRule(f);
+  f.raw.prepare(`INSERT INTO schedule_breaks (parish_id, schedule_id, from_date, to_date, note)
+                 VALUES (?, ?, ?, ?, 'Priest away')`).run(parishId, sid, dates[1], dates[3]);
+  const r = await f.call('POST', `/api/admin/events/${sid}:${dates[2]}/following`,
+    { action: 'edit', ...drawerBody(dates[2], '09:00'), keep: 'carry' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const rows = f.raw.prepare('SELECT schedule_id, from_date, to_date FROM schedule_breaks ORDER BY id').all();
+  assert.deepEqual(rows.map(b => [b.schedule_id, b.from_date]), [[sid, dates[1]], [r.body.schedule_id, dates[2]]]);
+  assert.ok(rows[0].to_date < dates[2]);
+  assert.equal((await expandOne(f.db, r.body.schedule_id, dates[3])).status, 'break');
+});
+
+test('a rule that only starts on that date is simply edited, not split', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sid, dates } = await septRule(f);
+  f.raw.prepare('UPDATE schedules SET effective_from = ? WHERE id = ?').run(dates[1], sid);
+  const before = f.raw.prepare('SELECT COUNT(*) AS n FROM schedules').get().n;
+  const r = await f.call('POST', `/api/admin/events/${sid}:${dates[1]}/following`,
+    { action: 'edit', ...drawerBody(dates[1], '09:00') });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.mode, 'whole');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedules').get().n, before);
+  assert.equal(f.raw.prepare('SELECT start_time FROM schedules WHERE id = ?').get(sid).start_time, '09:00');
+});
+
+test('following-dates edits are refused where they cannot mean anything, and out of scope', async () => {
+  const f = fresh({ role: 'parish', parishIds: [] });
+  const [mine, theirs] = twoParishes(f.raw);
+  contact(f.raw, mine);
+  const theirInst = await firstInstance(f.db, theirs);
+  assert.equal((await f.call('POST', `/api/admin/events/${theirInst.id}/following`, { action: 'end' })).status, 403);
+
+  const mineInst = await firstInstance(f.db, mine);
+  const [sid, date] = splitInstance(mineInst.id);
+  const wrongDay = new Date(Date.parse(date + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  assert.equal((await f.call('POST', `/api/admin/events/${sid}:${wrongDay}/following`, { action: 'end' })).status, 400);
+  assert.equal((await f.call('POST', `/api/admin/events/${mineInst.id}/following`, { action: 'nuke' })).status, 400);
+  assert.equal((await f.call('POST', '/api/admin/events/123/following', { action: 'end' })).status, 400);
+  assert.equal((await f.call('POST', `/api/admin/events/${mineInst.id}/following`, { action: 'end' })).status, 200);
+});
+
+test('a rule can be given dates, and one that starts later is still in the window', async () => {
+  const f = fresh({ role: 'editor' });
+  const { parishId, sid } = await septRule(f);
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${sid}`,
+    { effective_from: '2026-10-01', effective_to: '2026-09-01' })).status, 400);
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${sid}`, { effective_to: 'soon' })).status, 400);
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${sid}`, { effective_to: '' })).status, 200);
+
+  const made = await f.call('POST', '/api/admin/schedules', {
+    parish_id: parishId, title: 'Presanctified Liturgy', day_of_week: 3, start_time: '18:00',
+    effective_from: '2027-03-01', effective_to: '2027-04-20',
+  });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  const { fetchWindowRows } = await import('../lib/expand.mjs');
+  const rows = await fetchWindowRows(f.db, FROM, TO, { withParish: false });
+  assert.ok(rows.schedules.some(s => s.id === made.body.id), 'a rule starting later is announced on the timetable');
+  const all = await expandWindow(f.db, FROM, TO);
+  assert.ok(!all.some(e => e.schedule_id === made.body.id), 'but projects nothing before it starts');
+});

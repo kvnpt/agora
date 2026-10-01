@@ -2065,6 +2065,40 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 10px;
   font-style: italic;
 }
+/* A rule's dates. Labelled, unlike the grid above: two bare date inputs side
+   by side do not say which is the start. */
+.sef-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 6px;
+}
+.sef-dates label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.sef-dates input {
+  padding: 5px 7px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+}
+.sef-dates-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: italic;
+  margin-top: 3px;
+}
+.si-meta .schedule-item-range { font-size: 11px; color: var(--text-muted); }
 .sef-toggles {
   display: flex;
   flex-wrap: wrap;
@@ -4250,6 +4284,32 @@ button.ps-avatar { cursor: pointer; }
 .poster-range[hidden] { display: none; }
 .poster-edit-status:empty { display: none; }
 .escalate-btn-row { display: flex; gap: 8px; justify-content: flex-end; }
+/* The head of an occurrence's form: which series this date belongs to. */
+.series-line {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; margin-bottom: 10px; border-radius: 8px;
+  background: var(--bg-secondary, rgba(0,0,0,0.05)); font-size: 12px; color: var(--text);
+}
+.series-edit {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--bg);
+  color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+/* askChoice: one question, a few answers, each with what it will do. */
+.choice-backdrop { z-index: 3100; }
+.choice-body { font-size: 13px; color: var(--text); margin: 6px 0 10px; }
+.choice-items { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+.choice-items em { color: var(--text-muted); font-style: normal; font-size: 12px; }
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.choice-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; cursor: pointer;
+}
+.choice-opt:hover, .choice-opt:focus-visible { border-color: var(--text); }
+.choice-opt.danger .choice-label { color: var(--danger); }
+.choice-label { font-size: 14px; font-weight: 600; }
+.choice-hint { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 
 /* ── Donate parish-card button ── */
 /* Warm accent so it reads as a distinct, positive call to action next to the

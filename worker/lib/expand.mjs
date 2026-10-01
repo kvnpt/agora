@@ -42,11 +42,15 @@ export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, p
     SELECT s.*${withParish ? `, ${PARISH_COLS}` : ''}
     FROM schedules s JOIN parishes p ON s.parish_id = p.id
     WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''} ${parishId ? 'AND s.parish_id = ?' : ''}
-      AND (s.effective_from IS NULL OR s.effective_from <= ?)
       AND (s.effective_to   IS NULL OR s.effective_to   >= ?)
   `;
+  // No lower bound on effective_from. A rule that STARTS after the window
+  // still belongs in it: the timetable says "from 1 Nov" so a new service is
+  // announced before it begins, and the projection already declines to emit a
+  // date before a rule's start. A rule that has ENDED is left out — it is not
+  // on the timetable any more and nothing in the window can come from it.
   const schedArgs = [
-    ...(scheduleId ? [scheduleId] : []), ...(parishId ? [parishId] : []), endStr, startStr,
+    ...(scheduleId ? [scheduleId] : []), ...(parishId ? [parishId] : []), startStr,
   ];
 
   // Window-filtered, unlike the Express version which loaded every override row.
