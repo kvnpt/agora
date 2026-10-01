@@ -10,9 +10,11 @@ import { json, readJson } from '../lib/router.mjs';
 import { requireAdmin, adminIdentity } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { readSecret } from '../lib/secrets.mjs';
-import { expandWindow, expandOne, parseInstanceId, fetchWindowRows } from '../lib/expand.mjs';
+import { expandWindow, expandOne, parseInstanceId, fetchWindowRows, isValidOccurrence } from '../lib/expand.mjs';
 import { exactLocalToEpoch, localDateOf } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
+import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
+  from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
   namesPoster }
   from '../lib/poster-range.mjs';
@@ -2068,17 +2070,25 @@ export function registerAdminRoutes(router) {
     if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(parish_id).first()) {
       return json({ error: 'Invalid parish_id' }, 400);
     }
+    for (const k of ['effective_from', 'effective_to']) {
+      if (b[k] && !/^\d{4}-\d{2}-\d{2}$/.test(b[k])) return json({ error: `${k} must be a date (YYYY-MM-DD)` }, 400);
+    }
+    if (b.effective_from && b.effective_to && b.effective_to < b.effective_from) {
+      return json({ error: 'The service ends before it starts' }, 400);
+    }
     const refused = await suppressedSlot(env.DB, parish_id, day_of_week, start_time);
     if (refused) return refused;
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
-        languages, week_of_month, hide_live, parish_scoped, location_override, week_parity)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
+        languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
+        effective_from, effective_to)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
       b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
       b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
       b.week_parity ? String(b.week_parity).toLowerCase() : null,
+      b.effective_from || null, b.effective_to || null,
     ).first();
     await stampTimetable(c, parish_id);
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(row.id).first(), 201);
@@ -2134,6 +2144,21 @@ export function registerAdminRoutes(router) {
       if (b.week_parity) b.week_parity = String(b.week_parity).toLowerCase();
     }
 
+    // A rule's dates: optional, inclusive, local to the parish. An end before
+    // the start is a rule that never runs, which is a typo far more often than
+    // an intention — say so rather than store it.
+    if (b.effective_from !== undefined || b.effective_to !== undefined) {
+      for (const k of ['effective_from', 'effective_to']) {
+        if (b[k] === '') b[k] = null;
+        if (b[k] != null && !/^\d{4}-\d{2}-\d{2}$/.test(b[k])) return json({ error: `${k} must be a date (YYYY-MM-DD)` }, 400);
+      }
+      const at = await env.DB.prepare('SELECT effective_from, effective_to FROM schedules WHERE id = ?')
+        .bind(params.id).first();
+      const from = b.effective_from !== undefined ? b.effective_from : at.effective_from;
+      const to = b.effective_to !== undefined ? b.effective_to : at.effective_to;
+      if (from && to && to < from) return json({ error: 'The service ends before it starts' }, 400);
+    }
+
     const sets = [], vals = [];
     for (const k of SCHEDULE_EDITABLE) {
       if (b[k] !== undefined) {
@@ -2150,6 +2175,148 @@ export function registerAdminRoutes(router) {
     await stampTimetable(c, row.parish_id, b);
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(params.id).first());
   }));
+
+  // POST /api/admin/events/:sid:date/following
+  //
+  // "This and every following" from an occurrence's drawer: the question a
+  // calendar asks, answered with the rule's own dates (lib/series.mjs).
+  //
+  //   { action: 'end' }                       the rule stops before this date
+  //   { action: 'edit', ...drawer fields,     the rule changes from this date:
+  //     keep: 'carry' | 'discard' }           old one closes, a new one opens
+  //
+  // An edit with later decisions to carry and no `keep` is refused with a 409
+  // that lists them, so the panel can ask before anything is written. It is a
+  // rule write, so it needs the rule capability, not the event one.
+  router.post('/api/admin/events/:id/following', guarded('schedule.edit', async (c) => {
+    const { env, params, request } = c;
+    const inst = parseInstanceId(params.id);
+    if (!inst) return json({ error: 'Only a recurring service has following dates' }, 400);
+    const rule = await env.DB.prepare(
+      `SELECT s.*, p.timezone AS p_timezone FROM schedules s JOIN parishes p ON p.id = s.parish_id
+       WHERE s.id = ?`
+    ).bind(inst.scheduleId).first();
+    if (!rule) return json({ error: 'Schedule not found' }, 404);
+    const scoped = outOfScope(c, rule.parish_id);
+    if (scoped) return scoped;
+    if (!isValidOccurrence(rule, inst.date)) {
+      return json({ error: `${inst.date} is not a date this service runs on` }, 400);
+    }
+    const b = await readJson(request);
+    const who = await editor(c);
+    const zone = rule.p_timezone || 'Australia/Sydney';
+
+    if (b.action === 'end') {
+      const last = dayBefore(inst.date);
+      await env.DB.prepare('UPDATE schedules SET effective_to = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+        .bind(last, NOW(), who, rule.id).run();
+      await stampTimetable(c, rule.parish_id);
+      return json({ ok: true, action: 'end', schedule_id: rule.id, effective_to: last });
+    }
+    if (b.action !== 'edit') return json({ error: "action must be 'end' or 'edit'" }, 400);
+
+    const changes = ruleChangesFrom(b, zone);
+    const target = { ...rule, ...changes };
+    const qErr = weekQualifierError({ week_of_month: target.week_of_month || null, week_parity: target.week_parity || null });
+    if (qErr) return json({ error: qErr }, 400);
+    if (changes.day_of_week !== undefined || changes.start_time !== undefined) {
+      const refused = await suppressedSlot(env.DB, rule.parish_id, target.day_of_week, target.start_time);
+      if (refused) return refused;
+    }
+
+    // Nothing before this date to protect: the rule only starts here. Change
+    // it whole, and its overrides stay where they are.
+    if (!hasPastBefore(rule, inst.date)) {
+      const cols = Object.keys(changes);
+      if (cols.length) {
+        await env.DB.prepare(
+          `UPDATE schedules SET ${cols.map(k => `${k} = ?`).join(', ')}, updated_at = ?, updated_by = ? WHERE id = ?`
+        ).bind(...cols.map(k => changes[k]), NOW(), who, rule.id).run();
+      }
+      await alignAnchor(env.DB, rule.id, inst.date, b);
+      await stampTimetable(c, rule.parish_id);
+      return json({ ok: true, action: 'edit', mode: 'whole', schedule_id: rule.id });
+    }
+
+    const next = continuation(rule, changes, inst.date);
+    const [laterOv, laterBr] = await Promise.all([
+      env.DB.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date >= ? ORDER BY occurrence_date')
+        .bind(rule.id, inst.date).all(),
+      env.DB.prepare('SELECT * FROM schedule_breaks WHERE schedule_id = ? AND to_date >= ? ORDER BY from_date')
+        .bind(rule.id, inst.date).all().catch(() => ({ results: [] })),
+    ]);
+    const plan = planCarry(laterOv.results || [], laterBr.results || [], next);
+    const anyLater = plan.movable.length || plan.stranded.length || plan.breaks.length;
+    if (anyLater && !['carry', 'discard'].includes(b.keep)) return json(carryQuestion(plan), 409);
+    const carry = b.keep === 'carry';
+
+    const created = await env.DB.prepare(
+      `INSERT INTO schedules (${RULE_COLS.join(', ')}, updated_at, updated_by)
+       VALUES (${RULE_COLS.map(() => '?').join(', ')}, ?, ?) RETURNING id`
+    ).bind(...RULE_COLS.map(k => next[k] ?? null), NOW(), who).first();
+    const newId = created.id;
+
+    const stmts = [
+      env.DB.prepare('UPDATE schedules SET effective_to = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+        .bind(dayBefore(inst.date), NOW(), who, rule.id),
+    ];
+    if (carry && plan.movable.length) {
+      stmts.push(env.DB.prepare(
+        `UPDATE schedule_overrides SET schedule_id = ? WHERE id IN (${plan.movable.map(() => '?').join(',')})`
+      ).bind(newId, ...plan.movable.map(o => o.id)));
+    }
+    // Whatever did not move is past the old rule's end now and could never
+    // show again — gone rather than left as rows nothing can reach.
+    const dropped = carry ? plan.stranded : [...plan.movable, ...plan.stranded];
+    if (dropped.length) {
+      stmts.push(env.DB.prepare(
+        `DELETE FROM schedule_overrides WHERE id IN (${dropped.map(() => '?').join(',')})`
+      ).bind(...dropped.map(o => o.id)));
+    }
+    for (const br of plan.breaks) {
+      if (carry) {
+        stmts.push(env.DB.prepare(
+          `INSERT INTO schedule_breaks (parish_id, schedule_id, from_date, to_date, note, updated_by)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(br.parish_id, newId, br.from_date > inst.date ? br.from_date : inst.date, br.to_date, br.note, who));
+      }
+      // The old rule's share of the break ends with the old rule.
+      stmts.push(br.from_date < inst.date
+        ? env.DB.prepare('UPDATE schedule_breaks SET to_date = ? WHERE id = ?').bind(dayBefore(inst.date), br.id)
+        : env.DB.prepare('DELETE FROM schedule_breaks WHERE id = ?').bind(br.id));
+    }
+    await env.DB.batch(stmts);
+
+    await alignAnchor(env.DB, newId, inst.date, b);
+    await stampTimetable(c, rule.parish_id);
+    return json({
+      ok: true, action: 'edit', mode: 'split', schedule_id: newId, ended_id: rule.id,
+      carried: carry ? plan.movable.length : 0,
+      dropped: dropped.length,
+    }, 201);
+  }));
+
+  /**
+   * The date the edit was made from says what the person typed, on the rule
+   * that now owns it. A carried override that pinned this date to the old
+   * time would otherwise win over the change they just made — so the drawer's
+   * fields are applied to that one date too, where applyAdminEdit drops any
+   * patch that now equals the rule, and the description, which a rule does
+   * not have, lands here.
+   */
+  async function alignAnchor(db, scheduleId, date, b) {
+    const s = await db.prepare('SELECT * FROM schedules WHERE id = ?').bind(scheduleId).first();
+    if (!s || !isValidOccurrence(s, date)) return;
+    const has = await db.prepare('SELECT 1 FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?')
+      .bind(scheduleId, date).first();
+    if (!has && !b.description) return;
+    const body = {};
+    for (const k of ['title', 'start_utc', 'end_utc', 'event_type', 'languages', 'location_override',
+      'hide_live', 'parish_scoped', 'description']) {
+      if (b[k] !== undefined) body[k] = b[k];
+    }
+    await applyAdminEdit(db, scheduleId, date, body);
+  }
 
   // DELETE /api/admin/schedules/:id
   //

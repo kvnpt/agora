@@ -5402,11 +5402,13 @@ function paintParishSheetContent(parishId, opts = {}) {
       const inPinned = focusedEvent && focusedEvent.id === state._openEventId;
       const inStream = (streamEvents || []).some(e => e.id === state._openEventId);
       if (inPinned || inStream) {
-        // Prefer the pinned copy when re-expanding; the stream copy (same id)
-        // stays collapsed in day-context, matching the deep-link render.
-        const preferred = scopeEl.querySelector(
-          '.ps-pinned-event .event-card[data-id="' + state._openEventId + '"]'
-        );
+        // The copy that was open before this paint, so a re-render — entering
+        // edit mode is one — brings the drawer back where it was tapped. The
+        // pinned copy otherwise, which is where a deep link opens it.
+        const preferred = cardInSlot(scopeEl, state._openEventId, state._openEventSlot)
+          || scopeEl.querySelector(
+            '.ps-pinned-event .event-card[data-id="' + state._openEventId + '"]'
+          );
         // Synchronous expand on first render — no rAF — so the user
         // doesn't see the collapsed-card frame before the expand.
         // Subsequent re-renders are routed through refreshParishContentPortion
@@ -5978,8 +5980,9 @@ function renderParishNow(contentEl, events) {
       }
     });
   }
-  // A re-paint while one of these was open keeps it open.
-  if (openId) {
+  // A re-paint while one of these was open keeps it open — this copy, only if
+  // this copy is the one that was open.
+  if (openId && (!state._openEventSlot || state._openEventSlot === 'now')) {
     const card = slot.querySelector(`.event-card[data-id="${CSS.escape(openId)}"]`);
     if (card && !card.classList.contains('expanded')) {
       expandEventCard(openId, { scope: document.getElementById('parish-sheet-scroll'), card, keepScroll: true });
@@ -6421,6 +6424,10 @@ function renderScheduleDaysHTML(items) {
   // Edit mode belongs to a parish, so a rule is editable wherever it appears
   // exactly when its own parish is the one open for editing.
   const canEdit = (s) => state.isAdmin && state.scheduleEditMode === s.parish_id;
+  // A rule whose last day has passed is history, not timetable. The bundle
+  // already leaves out a rule that ended before its window opened; this
+  // catches one that ended inside it.
+  items = items.filter(s => !s.effective_to || s.effective_to >= parishToday(s.timezone || s.p_timezone));
   const byDay = new Map();
   for (const item of items) {
     if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
@@ -6462,7 +6469,8 @@ function renderScheduleDaysHTML(items) {
       // chevron at its end rather than out at the panel's edge. Everything that
       // qualifies the row goes underneath, quieter.
       html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span><img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></span></div>`;
-      const meta = `${womLabel}${langLabel}${scopeLabel}${breakChip}`;
+      const rangeLabel = ruleRangeLabel(s);
+      const meta = `${womLabel}${rangeLabel}${langLabel}${scopeLabel}${breakChip}`;
       if (meta) html += `<div class="si-meta">${meta}</div>`;
       // While a rule is on a break the timetable still shows its time — the
       // rule has not changed — but the honest reading of the row is "not this
@@ -6493,6 +6501,7 @@ function renderScheduleDaysHTML(items) {
             <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
           </div>
           ${cadencePickerHTML('data-f="cadence"', s)}
+          ${ruleDatesHTML('data-f', s)}
           <div class="sef-toggles">
             <label class="wom-check"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> No live badge</label>
             <label class="wom-check"><input type="checkbox" data-f="parish_scoped" ${s.parish_scoped?'checked':''}> Parish only</label>
@@ -6509,6 +6518,39 @@ function renderScheduleDaysHTML(items) {
   // reader wants the times first and the provenance second.
   html += scheduleSourceHTML(items);
   return html;
+}
+
+/**
+ * "until 5 Oct", "from 1 Nov", "2 Mar – 20 Apr": a rule's dates, said only
+ * when they say something. A start already past is not news, and a rule with
+ * neither is the ordinary open-ended timetable row.
+ */
+function ruleRangeLabel(rule) {
+  const today = parishToday(rule.timezone || rule.p_timezone);
+  const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+    .format(new Date(d + 'T00:00:00Z'));
+  const from = rule.effective_from && rule.effective_from > today ? rule.effective_from : null;
+  const to = rule.effective_to || null;
+  let text = '';
+  if (from && to) text = `${fmt(from)} – ${fmt(to)}`;
+  else if (from) text = `from ${fmt(from)}`;
+  else if (to) text = `until ${fmt(to)}`;
+  return text ? `<span class="schedule-item-range">${esc(text)}</span>` : '';
+}
+
+/**
+ * Starts / Ends on a rule's form. Both optional and inclusive, in the
+ * parish's own dates. A service that has stopped ENDS; one that is off for a
+ * while and coming back is a Break, which keeps its dates on the feed with the
+ * reason — the hint says so because the two are easy to reach for wrongly.
+ */
+function ruleDatesHTML(attr, rule = {}) {
+  return `
+    <div class="sef-dates">
+      <label>Starts<input type="date" ${attr}="effective_from" value="${esc(rule.effective_from || '')}"></label>
+      <label>Ends<input type="date" ${attr}="effective_to" value="${esc(rule.effective_to || '')}"></label>
+    </div>
+    <div class="sef-dates-hint">Blank means no start or end. After its end a service leaves the timetable — for a pause, use Break on one of its dates.</div>`;
 }
 
 /** The break covering this rule TODAY, or null. */
@@ -6810,6 +6852,7 @@ function addServiceHTML(parishId) {
         <select data-af="event_type" class="sef-full">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
       </div>
       ${cadencePickerHTML('data-af="cadence"')}
+      ${ruleDatesHTML('data-af')}
       <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add service</button>
     </div>`;
 }
@@ -6844,7 +6887,10 @@ function wireScheduleAdminHandlers(container) {
         }
       });
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-        .then(r => { if (r.ok) { form.style.display = 'none'; fetchSchedules({ fresh: true }); } });
+        .then(async r => {
+          if (r.ok) { form.style.display = 'none'; fetchSchedules({ fresh: true }); fetchEvents({ fresh: true, keepCount: true }); }
+          else alert(await adminErrorText(r));
+        });
     });
   });
   // Deleting a rule, and saying whether the deletion is meant to last.
@@ -6912,11 +6958,15 @@ function wireScheduleAdminHandlers(container) {
           day_of_week: parseInt(read('day_of_week'), 10),
           start_time: read('start_time'),
           event_type: read('event_type'),
+          effective_from: read('effective_from') || null,
+          effective_to: read('effective_to') || null,
           ...cadence,
         }),
       });
       if (res.ok) {
         wrap.querySelector('[data-af="title"]').value = '';
+        wrap.querySelector('[data-af="effective_from"]').value = '';
+        wrap.querySelector('[data-af="effective_to"]').value = '';
         // Back to "every week", so the next service added does not silently
         // inherit the cadence of the one before it.
         const cad = wrap.querySelector('[data-af="cadence"]');
@@ -7082,6 +7132,21 @@ function showEventDetail(id) {
   expandEventCard(id);
 }
 
+/** Where on a parish sheet a card sits: the pinned slot, "Happening now", or the list. */
+function cardSlot(card) {
+  if (!card) return null;
+  if (card.closest('.ps-pinned-event, #ps-pinned-event')) return 'pinned';
+  if (card.closest('.happening-now-section')) return 'now';
+  return 'list';
+}
+
+/** The copy of event `id` in `slot`, if that slot has one. */
+function cardInSlot(scope, id, slot) {
+  if (!scope || !slot) return null;
+  return [...scope.querySelectorAll(`.event-card[data-id="${CSS.escape(String(id))}"]`)]
+    .find(c => cardSlot(c) === slot) || null;
+}
+
 function expandEventCard(id, opts = {}) {
   const root = opts.scope || document;
   const evt = state.events.find(e => e.id === id);
@@ -7130,6 +7195,11 @@ function expandEventCard(id, opts = {}) {
   }
 
   state._openEventId = id;
+  // Which copy was opened. One occurrence can be on a parish sheet twice —
+  // pinned at the top and in the list below, or under "Happening now" — and a
+  // re-render (entering edit mode is one) has to bring the drawer back on the
+  // copy the person tapped, not on whichever the markup puts first.
+  state._openEventSlot = cardSlot(card);
   syncURL();
 
   // A card being put back the way it already was — the sheet re-rendered
@@ -7328,6 +7398,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
     const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
     editForm = `
       <div class="detail-edit-form" id="edit-form-${evt.id}">
+        ${seriesLineHTML(evt)}
         <div class="edit-row"><label>Title</label><input id="edit-title-${evt.id}" value="${esc(evt.title)}"></div>
         <div class="edit-row"><label>Description</label><textarea id="edit-desc-${evt.id}">${esc(evt.description || '')}</textarea></div>
         <div class="edit-row"><label>Type</label>
@@ -7815,6 +7886,27 @@ window.saveEvent = async function(id) {
   if (parishScopedEl) data.parish_scoped = parishScopedEl.checked;
   const locationEl = document.getElementById(`edit-location-${id}`);
   if (locationEl) data.location_override = locationEl.value;
+  // A repeating service asks which dates the change is for. "This and every
+  // following" changes the rule from this date on — the earlier dates keep
+  // what they were — and the drawer reopens on the same date of the new rule.
+  const series = seriesOf(id);
+  if (series) {
+    const pick = await askChoice({
+      title: 'Save the change for…',
+      choices: [
+        { value: 'one', label: `Only ${series.dateLabel}` },
+        { value: 'following', label: `This and every following ${series.day}`,
+          hint: 'Earlier dates keep what they were.' },
+      ],
+    });
+    if (!pick) return;
+    if (pick === 'following') {
+      const { parish_id, ...fields } = data;   // eslint-disable-line no-unused-vars
+      const r = await postFollowing(id, { action: 'edit', ...fields });
+      if (r) await _afterSeriesChange(r.schedule_id ? `${r.schedule_id}:${series.date}` : null);
+      return;
+    }
+  }
   const res = await fetch(`/api/admin/events/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -7847,8 +7939,189 @@ const EVENT_STATUS_CONFIRM = {
   approved: null,
 };
 
+/**
+ * Ask one question with a few labelled answers; resolves to the chosen value,
+ * or null for Back / Escape / a tap outside.
+ *
+ * For the questions confirm() cannot ask: "this Sunday, or this and every
+ * following Sunday" has two right answers and a way out, and OK/Cancel would
+ * have to stand for one of the answers. Built on the same frame as the other
+ * dialogs (.escalate-backdrop) and torn down after, so nothing sits in the
+ * document between questions.
+ */
+function askChoice({ title, body = '', choices }) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'escalate-backdrop open choice-backdrop';
+    back.innerHTML = `
+      <div class="escalate-modal choice-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <h2>${esc(title)}</h2>
+        ${body ? `<div class="choice-body">${body}</div>` : ''}
+        <div class="choice-list">
+          ${choices.map((c, i) => `
+            <button type="button" class="choice-opt${c.danger ? ' danger' : ''}" data-i="${i}">
+              <span class="choice-label">${esc(c.label)}</span>
+              ${c.hint ? `<span class="choice-hint">${esc(c.hint)}</span>` : ''}
+            </button>`).join('')}
+        </div>
+        <div class="escalate-btn-row"><button type="button" class="ps-btn ps-btn-ghost" data-back>Back</button></div>
+      </div>`;
+    const done = (v) => {
+      document.removeEventListener('keydown', onKey, true);
+      back.remove();
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
+    back.addEventListener('click', (e) => {
+      if (e.target === back || e.target.closest('[data-back]')) return done(null);
+      const opt = e.target.closest('.choice-opt');
+      if (opt) done(choices[Number(opt.dataset.i)].value);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(back);
+    const first = back.querySelector('.choice-opt');
+    if (first) first.focus({ preventScroll: true });
+  });
+}
+
+/**
+ * At the head of an occurrence's form: which repeating service this date
+ * belongs to, and the way to the rule itself.
+ *
+ * The pilot's admins opened one Sunday and looked for the whole series there,
+ * the way a calendar works. The timetable row IS the series, but nothing said
+ * so — this line does, from the place people actually look.
+ */
+function seriesLineHTML(evt) {
+  const series = seriesOf(evt.id);
+  if (!series) return '';
+  const r = series.rule;
+  const wom = womDisplayLabel(r, series.day).replace(/<[^>]+>/g, '').trim();
+  const when = wom || (r.week_parity ? `every other ${series.day}` : `every ${series.day}`);
+  const range = ruleRangeLabel(r).replace(/<[^>]+>/g, '').trim();
+  const sid = esc(String(r.id));
+  const button = mayEditTimetable(r.parish_id)
+    ? `<button type="button" class="series-edit" onclick="agoraEditSeries(${sid})">${glyph('ph:repeat')}Edit the series</button>`
+    : '';
+  return `
+    <div class="series-line">
+      <span class="series-what">Repeats ${esc(when)} at ${formatTime12(r.start_time)}${range ? ` · ${esc(range)}` : ''}</span>
+      ${button}
+    </div>`;
+}
+
+/** From an occurrence to its rule: the parish's timetable, in edit mode, with the rule open. */
+window.agoraEditSeries = function (sid) {
+  const rule = ruleById(sid);
+  if (!rule) return;
+  const pid = rule.parish_id;
+  state.eventEditMode = null;
+  if (state.parishSheetFocus !== pid) openParishSheet(pid, { noServiceFocus: true });
+  window.setScheduleEditMode(pid, true);
+  // The sheet re-renders on the mode change; find the row once it has.
+  requestAnimationFrame(() => setTimeout(() => {
+    const scope = document.getElementById('parish-sheet-scroll') || document;
+    const row = scope.querySelector(`.parish-schedule .schedule-item[data-sched-focus="${CSS.escape(String(sid))}"]`);
+    if (!row) return;
+    const form = row.nextElementSibling;
+    if (form && form.style.display === 'none') toggleScheduleEditForm(row, sid);
+    row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 60));
+};
+
+/**
+ * A rule by id, wherever it is loaded. `state.schedules` is filled for the
+ * services view and the sheets; the main feed may not have asked for it yet,
+ * but the bundle every occurrence was projected from always holds the rule.
+ */
+function ruleById(sid) {
+  return (state.schedules || []).find(s => String(s.id) === String(sid))
+    || ((window.agoraBundle && window.agoraBundle.schedules && window.agoraBundle.schedules()) || [])
+      .find(s => String(s.id) === String(sid))
+    || null;
+}
+
+/** The rule behind a projected occurrence, and the date, or null for a one-off. */
+function seriesOf(id) {
+  const m = /^(\d+):(\d{4}-\d{2}-\d{2})$/.exec(String(id));
+  if (!m) return null;
+  const rule = ruleById(m[1]);
+  if (!rule) return null;
+  const day = DAYS[rule.day_of_week];
+  const dateLabel = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
+    .format(new Date(m[2] + 'T00:00:00Z'));
+  return { rule, date: m[2], day, dateLabel };
+}
+
+/** POST a following-dates change; asks about later decisions if the server says there are any. */
+async function postFollowing(id, body) {
+  const send = (extra = {}) => fetch(`/api/admin/events/${encodeURIComponent(id)}/following`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, ...extra }),
+  });
+  let res = await send();
+  if (res.status === 409) {
+    const q = await res.clone().json().catch(() => null);
+    if (q && q.needs_choice) {
+      const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+        .format(new Date(d + 'T00:00:00Z'));
+      const items = [
+        ...q.movable.map(o => `<li>${esc(fmt(o.date))} — ${esc(o.what)}</li>`),
+        ...q.stranded.map(o => `<li>${esc(fmt(o.date))} — ${esc(o.what)} <em>(cannot move: no service that day any more)</em></li>`),
+        ...q.breaks.map(b => `<li>Break ${esc(fmt(b.from))} – ${esc(fmt(b.to))}${b.note ? ` — ${esc(b.note)}` : ''}</li>`),
+      ];
+      const keep = await askChoice({
+        title: 'Later dates already have their own changes',
+        body: `<ul class="choice-items">${items.join('')}</ul>`,
+        choices: [
+          { value: 'carry', label: 'Keep them', hint: 'They apply to the changed service too.' },
+          { value: 'discard', label: 'Discard them', hint: 'The changed service starts clean.', danger: true },
+        ],
+      });
+      if (!keep) return null;
+      res = await send({ keep });
+    }
+  }
+  if (!res.ok) { alert(await adminErrorText(res)); return null; }
+  return res.json().catch(() => ({}));
+}
+
+/** After a series write: rules and occurrences both moved, so re-read both. */
+async function _afterSeriesChange(openId) {
+  state.eventEditMode = null;
+  await fetchSchedules({ fresh: true });
+  await fetchEvents({ fresh: true, keepCount: true });
+  if (openId && state.events.some(e => e.id === openId)) {
+    state._openEventId = openId;
+    repaintOpenEventDrawer();
+  } else {
+    closeDetail();
+  }
+}
+
 window.setEventStatus = async function(id, status) {
-  const ask = EVENT_STATUS_CONFIRM[status];
+  // Cancelling a service that repeats asks the calendar question first: this
+  // date, or this and every one after it. The second ends the rule, which is
+  // not a cancellation at all — so it says what it does instead.
+  const series = status === 'cancelled' ? seriesOf(id) : null;
+  if (series) {
+    const pick = await askChoice({
+      title: `Cancel ${series.rule.title}?`,
+      choices: [
+        { value: 'one', label: `Only ${series.dateLabel}`,
+          hint: 'It stays on the feed, struck through, so anyone who would have turned up sees it is off.' },
+        { value: 'following', label: `This and every following ${series.day}`, danger: true,
+          hint: 'The service ends. Later dates leave the site and the timetable — they are not shown as cancelled. If it is coming back, use Break instead.' },
+      ],
+    });
+    if (!pick) return;
+    if (pick === 'following') {
+      const r = await postFollowing(id, { action: 'end' });
+      if (r) await _afterSeriesChange(null);
+      return;
+    }
+  }
+  const ask = series ? null : EVENT_STATUS_CONFIRM[status];
   if (ask && !confirm(ask)) return;
   const res = await fetch(`/api/admin/events/${id}`, {
     method: 'PATCH',

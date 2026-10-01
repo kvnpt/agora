@@ -153,8 +153,12 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
       ...(route.dateFocus ? [dates.dateSlugFor(route.dateFocus, route.precision)] : [])];
   const canonical = `${origin}/${segs.map(s => encodeURI(String(s))).join('/')}`;
 
+  // A rule that has ended is not on the timetable; one that starts later is,
+  // marked "from" — the same reading the app's timetable makes.
+  const today = localDateOf(zone, now);
   const rules = [...rows.schedules]
-    .filter(r => r.parish_id === parish.id)
+    .filter(r => r.parish_id === parish.id && (!r.effective_to || r.effective_to >= today))
+    .map(r => ({ ...r, _today: today }))
     .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time)));
 
   return {
@@ -215,11 +219,27 @@ function sourceLine(name, ref, checked, now, cls) {
 
 const ORDINAL = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
 function weeksLabel(rule) {
-  if (rule.week_parity) return 'fortnightly';
-  if (!rule.week_of_month) return '';
-  return String(rule.week_of_month).split(',').map(w => ORDINAL[w.trim()] || w.trim()).join(', ')
-    + ' of the month';
+  const range = rangeLabel(rule);
+  let weeks = '';
+  if (rule.week_parity) weeks = 'fortnightly';
+  else if (rule.week_of_month) {
+    weeks = String(rule.week_of_month).split(',').map(w => ORDINAL[w.trim()] || w.trim()).join(', ')
+      + ' of the month';
+  }
+  return [weeks, range].filter(Boolean).join(' · ');
 }
+
+/** "until 5 Oct", "from 1 Nov", "2 Mar – 20 Apr" — a start already past is not news. */
+function rangeLabel(rule) {
+  const fmt = (d) => `${Number(d.slice(8, 10))} ${MONTHS_SHORT[Number(d.slice(5, 7)) - 1]}`;
+  const from = rule.effective_from && rule.effective_from > (rule._today || '') ? rule.effective_from : null;
+  const to = rule.effective_to || null;
+  if (from && to) return `${fmt(from)} – ${fmt(to)}`;
+  if (from) return `from ${fmt(from)}`;
+  if (to) return `until ${fmt(to)}`;
+  return '';
+}
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const langsOf = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
 
@@ -249,7 +269,9 @@ export function liteMeta(m) {
       description: `${what}${day} at ${p.full_name || p.name}, from ${longDate(m.start, year)}${where}`,
     };
   }
-  const summary = m.rules.filter(r => r.active !== 0).slice(0, 4)
+  // What runs now: a rule that has not started yet is on the timetable but
+  // is not what a preview should say the times ARE.
+  const summary = m.rules.filter(r => r.active !== 0 && !(r.effective_from && r.effective_from > r._today)).slice(0, 4)
     .map(r => `${services.DAY_NAMES[r.day_of_week].slice(0, 3)} ${time12(r.start_time)} ${r.title}`)
     .join(' · ');
   return {

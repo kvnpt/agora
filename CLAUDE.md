@@ -204,6 +204,29 @@ any edit naming a display field, so correcting the title of a cancelled service
 — or putting a poster on it — dropped the tombstone and put the service back on
 the feed. Reviving is `status: 'approved'` and nothing else should do it.
 
+**A repeating service is asked the calendar question.** Cancel and Save on a
+projected occurrence ask "only this date, or this and every following one",
+because the pilot's admins opened one Sunday and looked for the series there.
+"Following" never edits the rule in place — that would rewrite every past
+Sunday — it uses the rule's own `effective_from`/`effective_to`
+(`POST /api/admin/events/:id/following`, `worker/lib/series.mjs`):
+
+- **End** sets `effective_to` to the day before. Later dates are not
+  tombstones — a service that has stopped is not "cancelled" every week
+  forever — which is the one deliberate exception to *nothing disappears*, so
+  the timetable says "until 5 Oct" in advance and the confirm points at Break
+  for a pause. Clearing the end date brings the rule and its overrides back.
+- **Split** closes the old rule the day before and opens a new one on the
+  day. Overrides and breaks on later dates hang off the OLD rule and would
+  silently stop showing, so the route answers 409 with the list and the panel
+  asks: keep them on the new rule (those whose date it still produces) or
+  discard them.
+
+The bundle carries a rule that starts after its window ("from 1 Nov" is how a
+new or seasonal service is announced) and drops one that has ended. The
+importers pair a scraped rule with the current row of a slot before an ended
+one, and never write an end date, so an ended rule is not revived by a re-read.
+
 **A poster belongs to an occurrence, not to a rule.** `events.poster_path` is
 the last working piece of the WhatsApp ingestor and is still rendered on feasts,
 talks, socials and youth events. A rule has no poster — a weekly liturgy has no

@@ -185,3 +185,20 @@ test('HEAD gets the headers without the body', async () => {
   assert.equal(res.status, 200);
   assert.equal(await res.text(), '');
 });
+
+test('the timetable drops an ended rule and marks one that starts later', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, effective_to)
+               VALUES (?, 3, '07:00', 'Old Matins', 'prayer', '2026-09-01')`).run(PARISH);
+  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, effective_from)
+               VALUES (?, 3, '18:00', 'Presanctified Liturgy', 'liturgy', '2026-11-04')`).run(PARISH);
+  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, effective_to)
+               VALUES (?, 4, '18:00', 'Paraklesis', 'prayer', '2026-10-15')`).run(PARISH);
+  const { html } = await get('/sgr');
+  const times = html.slice(html.indexOf('class="lc-times"'));
+  assert.doesNotMatch(times, /Old Matins/);
+  assert.match(times, /Presanctified Liturgy<small>from 4 Nov<\/small>/);
+  assert.match(times, /Paraklesis<small>until 15 Oct<\/small>/);
+  assert.doesNotMatch(/<meta name="description" content="([^"]*)"/.exec(html)[1], /Presanctified/,
+    'a rule that has not started is not what the times are');
+});
