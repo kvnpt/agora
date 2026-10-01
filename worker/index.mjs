@@ -2,7 +2,8 @@
 //
 // Replaces server.js. The frontend ships with this Worker as static assets
 // (see [assets] in wrangler.toml) and is served without invoking it; what runs
-// here is the API, the payment redirects, and the R2 asset proxy.
+// here is the API, the payment redirects, the R2 asset proxy, and the lite
+// pages that answer a shared parish or event link (routes/pages.mjs).
 
 import { Router, json } from './lib/router.mjs';
 import { registerPublicRoutes } from './routes/public.mjs';
@@ -10,6 +11,7 @@ import { registerAdminRoutes } from './routes/admin.mjs';
 import { registerAssetRoutes } from './routes/assets.mjs';
 import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
+import { servePage } from './routes/pages.mjs';
 
 const router = new Router();
 registerPublicRoutes(router);
@@ -102,6 +104,10 @@ export default {
     if (path.startsWith('/api/') || path === '/health') {
       return json({ error: 'Not found' }, 404);
     }
+    // A shared parish or event link gets its lite card; anything else, and any
+    // failure building one, gets the app. routes/pages.mjs.
+    const page = await servePage(request, env, ctx).catch(() => null);
+    if (page) return page;
     return env.ASSETS.fetch(request);
   },
 

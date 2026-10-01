@@ -104,6 +104,23 @@ async function hashEtag(body) {
  * asking first.
  */
 export async function cachedJson({ request, env, ctx, name, build, cache = edgeCache() }) {
+  return cachedBody({
+    request, env, ctx, name, cache,
+    type: 'application/json; charset=utf-8',
+    build: async () => JSON.stringify(await build()),
+  });
+}
+
+/**
+ * The same, for a page: a lite card for a shared link (routes/pages.mjs), or
+ * the sitemap. `build` returns the markup, or null when the path turned out not
+ * to be a page at all — nothing is cached and the caller answers otherwise.
+ */
+export async function cachedHtml({ request, env, ctx, name, build, type = 'text/html; charset=utf-8', cache = edgeCache() }) {
+  return cachedBody({ request, env, ctx, name, cache, type, build });
+}
+
+async function cachedBody({ request, env, ctx, name, build, type, cache }) {
   const origin = new URL(request.url).origin;
   const version = await currentVersion(env, origin, cache);
   const key = bodyKey(origin, version, name);
@@ -114,12 +131,13 @@ export async function cachedJson({ request, env, ctx, name, build, cache = edgeC
     etag = hit.headers.get('etag');
     body = await hit.text();
   } else {
-    body = JSON.stringify(await build());
+    body = await build();
+    if (body == null) return null;
     etag = await hashEtag(body);
     if (cache) {
       const put = cache.put(key, new Response(body, {
         headers: {
-          'content-type': 'application/json; charset=utf-8',
+          'content-type': type,
           etag,
           'cache-control': `public, max-age=${BODY_TTL}`,
         },
@@ -138,9 +156,9 @@ export async function cachedJson({ request, env, ctx, name, build, cache = edgeC
   if (etagMatches(request.headers.get('if-none-match'), etag)) {
     return new Response(null, { status: 304, headers });
   }
-  return new Response(body, {
+  return new Response(request.method === 'HEAD' ? null : body, {
     status: 200,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
+    headers: { 'content-type': type, ...headers },
   });
 }
 

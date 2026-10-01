@@ -1,0 +1,10 @@
+# orthodoxy.au
+#
+# Parish pages (/<acronym>) are for indexing; the sitemap lists them. Event
+# pages and date/service views are reachable but carry `noindex` themselves.
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+
+Sitemap: https://orthodoxy.au/sitemap.xml

@@ -61,35 +61,30 @@ not_found_handling = "single-page-application"
 
 # Which paths reach the Worker before the asset router.
 #
-# Without this the asset router answers first, and in SPA mode any request it
-# cannot match a file for gets index.html. That is right for client routes like
-# /smg or /102:2026-09-06, and wrong for the Worker's own paths: a browser tab
-# opened on /health was served the app, whose detectUrlState() then read
-# "health" as a parish slug. `fetch()` calls were unaffected, which is why the
-# feed worked while the same URL typed into the address bar did not.
+# EVERY PAGE PATH, and no static file. The Worker answers a shared parish or
+# event link with a lite card of its own (worker/routes/pages.mjs) — /sgr,
+# /sgr/next-tue, /102, /42:2026-10-04 — and the parish and event share buttons
+# produce exactly the single-segment paths the asset router used to answer with
+# the app before the Worker ever saw them. Everything the Worker does not
+# answer, it hands back with env.ASSETS.fetch(), so the app still loads for
+# /greek, /services, / and every other client route.
+#
+# `*` matches across `/` and the NEGATIVE rules are tested first (miniflare's
+# asset router; production's is the same code). That makes the negations
+# load-bearing in one direction only: they must name directories and TEXT
+# extensions, and NEVER an image extension — `!/*.png` would send
+# /posters/x.png straight to the asset router, which has no posters, instead of
+# the Worker's R2 proxy. A static file missing from the list costs one Worker
+# invocation and nothing else, because the fallback serves it anyway.
+#
+# The payment links (/<acronym>/donate) and the API ride on "/*" too; listing
+# them separately is refused as redundant.
 run_worker_first = [
-  "/health", "/api/*",
-  "/tiles/*", "/logos/*", "/posters/*",
-  # Every /<acronym>/<something> link a parish hands out — the four payment
-  # kinds (/donate, /raffle, /payment, /gala) and its own parish_links rows.
-  # These are only ever reached by someone clicking a shared link, which is a
-  # NAVIGATION and so exactly the request the asset router would swallow and
-  # answer with the SPA. A slug with no link on file still falls through to
-  # the SPA, from inside the Worker.
-  #
-  # The four were listed one by one until parish_links arrived; a custom slug
-  # is whatever the parish called it, so there is nothing left to enumerate
-  # and the shape has to be matched instead. (wrangler refuses the four
-  # alongside it — "rule '/*/*' makes it redundant" — which is the same
-  # observation.)
-  #
-  # Which makes the exclusions load-bearing: without them every sprite, glyph
-  # and shared module the map fetches would invoke the Worker just to be told
-  # it is an asset. They are the static directories under public/, which is
-  # also why none of them can be a parish acronym (SITE_PATHS in slugs.js).
-  "/*/*",
+  "/*",
   "!/shared/*", "!/lib/*", "!/glyphs/*", "!/sprites/*", "!/eucalyptus/*",
-  "!/assets/*", "!/static/*", "!/cdn-cgi/*",
+  "!/og/*", "!/assets/*", "!/static/*", "!/cdn-cgi/*",
+  "!/*.js", "!/*.mjs", "!/*.css", "!/*.json", "!/*.html", "!/*.svg",
+  "!/*.txt", "!/*.map", "!/*.ico", "!/*.webmanifest",
 ]
 
 # Cloudflare Access, for /api/admin/*. Declared here rather than added in the

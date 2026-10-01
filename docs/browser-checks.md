@@ -136,6 +136,19 @@ Two things can still look stale, and neither is the browser:
 
 `x-data-version` on the response says which version answered.
 
+## Shared links get the lite card, not the app
+
+Since `docs/lite-pages.md`, `/sgr`, `/sgr/next-tue`, `/102` and `/42:2026-…` load
+a server-rendered card, not the app. Three things follow for a browser script:
+
+- **The first load of a fresh context is the card.** The app sets `agora_admin=1`
+  once `/api/admin/ping` answers with a role — which the dev bypass always does —
+  so load `/` first if the script wants the app at a parish URL, or add `?app`.
+- **Check the card with JavaScript off too** (`javaScriptEnabled: false`); it is
+  meant to read without it.
+- `curl -D - http://localhost:8787/sgr` shows `x-agora-page: lite` on a card.
+  Nothing on an app response says so.
+
 ## Useful handles the app exposes
 
 ```js

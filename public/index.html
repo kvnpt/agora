@@ -6,7 +6,17 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#15161a" media="(prefers-color-scheme: dark)">
-  <title>Orthodox Services & Events — Sydney</title>
+  <title>Orthodox Services & Events — orthodoxy.au</title>
+  <!-- What a link to the app itself previews as. A link to one parish or one
+       event never gets this page: the Worker answers it with a lite card that
+       carries its own (worker/lib/lite-page.mjs). -->
+  <meta name="description" content="Service times and events at Orthodox parishes across Australia and New Zealand — Greek, Antiochian, Serbian, Russian, Romanian and Macedonian — on one map.">
+  <meta property="og:site_name" content="orthodoxy.au">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Orthodox Services & Events">
+  <meta property="og:description" content="Service times and events at Orthodox parishes across Australia and New Zealand, on one map.">
+  <meta property="og:image" content="https://orthodoxy.au/og/default.jpg">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/lib/maplibre-gl.css" />
   <link rel="stylesheet" href="/app.css">
 </head>
@@ -450,6 +460,9 @@
        services.js, whose weekday aliases it builds "next-<day>" from. -->
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
+  <!-- The URL grammar, shared with the Worker, which answers shared links
+       with a lite card. After the three tables it reads. -->
+  <script src="/shared/url-state.js"></script>
   <script src="/shared/logo-image.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>

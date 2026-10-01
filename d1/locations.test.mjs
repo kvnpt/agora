@@ -142,7 +142,10 @@ test('a location slug can never also be a jurisdiction', () => {
 
 test('app.js parses and rebuilds a location segment', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
-  assert.ok(app.includes('resolveLocationSlug(seg)'), 'detectUrlState does not read location slugs');
+  // The grammar moved to public/shared/url-state.js, shared with the Worker.
+  const grammar = fs.readFileSync('public/shared/url-state.js', 'utf8');
+  assert.ok(grammar.includes('locations.resolveLocation(seg)'), 'the URL grammar does not read location slugs');
+  assert.ok(app.includes('AgoraUrlState.classifyPath('), 'detectUrlState does not use the shared grammar');
   assert.ok(app.includes("segs.push(state.filters.location)"), 'buildPathSegs does not write the location back');
   const html = fs.readFileSync('public/index.html', 'utf8');
   assert.ok(html.includes('/shared/locations.js'), 'index.html does not load the registry');

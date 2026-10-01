@@ -729,59 +729,40 @@ function detectUrlState() {
     state.filters.jurisdiction = subMatch[1];
   }
 
-  const parts = decodeURIComponent(window.location.pathname)
-    .toLowerCase().split('/').map(s => s.trim()).filter(Boolean);
-
-  for (const seg of parts) {
-    if (JURISDICTION_KEYS.includes(seg)) {
-      state.filters.jurisdiction = seg;
-    } else if (seg === 'social') {
-      state.filters.socialOnly = true;
-    } else if (seg === 'services') {
-      state._startMode = 'services';
-    } else if (seg === 'en') {
-      state.filters.englishOnly = true;
-      state.filters.englishStrict = true;
-    } else if (seg === 'bilingual') {
-      state.filters.englishOnly = true;
-      state.filters.englishStrict = false;
-    } else if (seg === 'donate') {
-      // /donate, /<juris>/donate, or /<acronym>/donate that fell through the
-      // server redirect (parish has no link on file) → open the picker dialog.
-      state._donateIntent = true;
-    } else if (/^\d+$/.test(seg) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(seg)) {
-      // integer (one-off) or synthetic schedule-instance id ("scheduleId:date")
-      state._openEventId = seg;
-    } else if (resolveDateSlug(seg)) {
-      // /2026-07, /next-thursday, /march — where the stream STARTS. Checked
-      // before the weekday below because /next-thursday is a date and
-      // /thursday is a filter, and the two would otherwise fight over the
-      // second half of the segment.
-      const d = resolveDateSlug(seg);
-      state._dateFocus = d.date;
-      state._dateFocusPrecision = d.precision;
-    } else if (resolveDaySlug(seg) !== null) {
-      // /wed, /wednesday — narrows a service to one day (/sgr/wed/liturgy) or
-      // stands on its own (/wed, /wed/liturgy across the whole feed).
-      state._daySlug = resolveDaySlug(seg);
-    } else if (resolveServiceSlug(seg)) {
-      // /liturgy on its own filters the feed. /smg/liturgy means the rule at
-      // that parish instead — applyServiceFocus sorts out which once the
-      // parish slug beside it has resolved.
-      state._serviceSlug = resolveServiceSlug(seg).slug;
-    } else if (resolveLocationSlug(seg)) {
-      // /qld, /queensland, /syd, /nz … — composes with the jurisdiction, so
-      // /qld/greek and /greek/queensland are the same view. Checked before the
-      // parish-slug fallback below, which is why an acronym may not collide
-      // with a location slug (the Worker refuses one that would).
-      state.filters.location = resolveLocationSlug(seg).slug;
-      state._fitLocation = true;
-    } else if (seg.includes('+')) {
-      state._parishSlugs = seg.split('+').map(s => s.trim()).filter(Boolean);
-    } else {
-      state._parishSlugs = [seg];
-    }
+  // The grammar is shared with the Worker (public/shared/url-state.js), which
+  // reads the same links to answer them with a lite card. This only maps what
+  // it found onto state.
+  // ?app is the lite card's "Open this in the app" — the Worker's cue to serve
+  // the app rather than the card. Its job is done once the app is loading.
+  if (/[?&]app(=|&|$)/.test(window.location.search) && window.history.replaceState) {
+    const q = new URLSearchParams(window.location.search);
+    q.delete('app');
+    window.history.replaceState(window.history.state, '',
+      window.location.pathname + (q.toString() ? `?${q}` : '') + window.location.hash);
   }
+  const U = window.AgoraUrlState.classifyPath(window.location.pathname, { today: todayIso() });
+  if (U.jurisdiction) state.filters.jurisdiction = U.jurisdiction;
+  if (U.socialOnly) state.filters.socialOnly = true;
+  if (U.services) state._startMode = 'services';
+  if (U.englishOnly) {
+    state.filters.englishOnly = true;
+    state.filters.englishStrict = U.englishStrict;
+  }
+  // /donate, /<juris>/donate, or /<acronym>/donate that fell through the server
+  // redirect (parish has no link on file) → open the picker dialog.
+  if (U.donate) state._donateIntent = true;
+  if (U.eventId) state._openEventId = U.eventId;
+  if (U.dateFocus) {
+    state._dateFocus = U.dateFocus;
+    state._dateFocusPrecision = U.precision;
+  }
+  if (U.day !== null) state._daySlug = U.day;
+  if (U.service) state._serviceSlug = U.service;
+  if (U.location) {
+    state.filters.location = U.location;
+    state._fitLocation = true;
+  }
+  if (U.parishSlugs) state._parishSlugs = U.parishSlugs;
 
   // social + services are mutex — services wins
   if (state._startMode === 'services' && state.filters.socialOnly) {
@@ -909,9 +890,9 @@ function dateFocusPinFor(events) {
     const same = (events || []).find(e => e.id === held.id);
     if (same) return same;
   }
-  const first = (events || [])
-    .filter(e => !e.is_tombstone && eventLocalDate(e) === date)
-    .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc))[0] || null;
+  // Shared with the Worker's lite card, so a link pins the same event in both.
+  const first = window.AgoraUrlState.firstEventOnDay(
+    events, date, state._dateFocusPrecision, eventLocalDate);
   if (!first) return null;
   const isNew = !(held && held.date === date && held.parish === state.parishSheetFocus && held.id === first.id);
   state._dateFocusPin = { date, parish: state.parishSheetFocus, id: first.id, dismissed: false };
@@ -1778,6 +1759,16 @@ async function checkAdmin() {
         parishNotices: who.parishNotices || 0,
       }
     : { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0 };
+
+  // Tell the Worker who is looking, for one purpose only: a shared parish or
+  // event link is answered with a lite card (worker/routes/pages.mjs), and
+  // somebody who administers wants the app there — the card has no edit mode.
+  // It grants nothing; the API checks the Access token on every request.
+  try {
+    document.cookie = state.adminWho.role
+      ? 'agora_admin=1; path=/; max-age=2592000; samesite=lax; secure'
+      : 'agora_admin=; path=/; max-age=0; samesite=lax; secure';
+  } catch { /* a browser refusing cookies only means admins see the card too */ }
 
   // The button itself is always there. What the answer decides is what is
   // BEHIND it: the panel and the way out, or the way in.
