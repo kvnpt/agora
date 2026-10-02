@@ -72,8 +72,10 @@ for them, are in the doc it links to — read that before changing the area.
 - A parish's address is where the service is.
 - A source line says when we last looked, never that it is right.
   `info_verified_at` is a person's check and nothing renders it.
-- `source-tiers.js` is the one ladder; `outranks` is the only comparison, and it
-  is strict. `info_overrides` holds rulings, never values.
+- `parishes.read_from` (directory / website / hand) is the ONE thing an import
+  asks before writing a parish; nothing writes a hand-kept one. The first hand
+  edit at a read parish asks whether to keep it by hand. The rulings
+  (`info_overrides`, tiers, pins) it replaced are retired.
 - An admin edit records its own provenance; a timetable shows ONE source line.
 - Adapters are a static registry; absence becomes a cancellation only under the
   guards in `tombstone.mjs`.
@@ -102,7 +104,7 @@ for them, are in the doc it links to — read that before changing the area.
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | The lens, the bundle, lite pages, dates, time zones, dedup, colours, the cron |
 | [docs/editing.md](docs/editing.md) | Occurrences, series, posters, combines, modes, the three "hides" |
-| [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md) | Addresses, provenance, the source ladder, rulings, adapters |
+| [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md) | Addresses, provenance, where a parish is read from, adapters |
 | [docs/people-and-access.md](docs/people-and-access.md) | Roles, asks, claims, notices, and setting up Cloudflare Access |
 | [docs/deploy-and-ci.md](docs/deploy-and-ci.md) | Workers Builds, the CI gate, secrets |
 | [docs/database.md](docs/database.md) | Schema, seed, migrations |

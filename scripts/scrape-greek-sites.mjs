@@ -151,7 +151,7 @@ for (const p of parishes) {
 // Liveness: every distinct site, checked once. Parishes share a site more often
 // than the directory suggests — two of the Sydney cathedrals sit on one domain.
 // The row's own website first: a parish with a site is read from the site it
-// has on file (public/shared/source-tiers.js, governingTier), and the
+// has on file (it is what the parish is read from, if anything is), and the
 // directory's link is only the fallback for a parish that has none.
 const targets = [...new Set(rows.map((r) => r.stored_website || r.directory_website).filter(Boolean))];
 console.log(`\nchecking ${targets.length} distinct sites…\n`);

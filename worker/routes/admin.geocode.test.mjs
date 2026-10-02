@@ -166,40 +166,21 @@ test('an address sent alone still geocodes, exactly as before', async () => {
   assert.equal(row.lng, 151.2);
 });
 
-test('a by-hand pin holds the address AND the coordinates', async () => {
+test('a pin placed by hand is saved where it was placed, not where the geocoder puts it', async () => {
+  // What stops a later import moving it is the parish's read_from — an edit
+  // like this one asks, in the panel, whether to stop reading the parish.
   const { raw, call } = fresh();
   const nom = stubNominatim({ lat: 0, lng: 0 });
   try {
     const res = await call('PATCH', `/api/admin/parishes/${PARISH}`, {
       address: '27 Saints Road Salisbury Plain, SA 5109',
       lat: -34.76121, lng: 138.67015,
-      pin: { field: 'address', tier: 'admin', note: 'Placed by hand — the geocoder returns the street.' },
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.pin_errors, []);
   } finally { nom.restore(); }
-  const held = raw.prepare(
-    "SELECT subject FROM info_overrides WHERE parish_id = ? AND target = 'field' AND decision = 'pin' ORDER BY subject"
-  ).all(PARISH).map(r => r.subject);
-  // FIELD_GROUPS: pinning the words and leaving the dot free is how a
-  // geocoder moves a pin somebody checked.
-  assert.deepEqual(held, ['address', 'lat', 'lng']);
-});
-
-test('a pin with no reason fails the ruling and keeps the save', async () => {
-  const { raw, call } = fresh();
-  const nom = stubNominatim({ lat: 0, lng: 0 });
-  try {
-    const res = await call('PATCH', `/api/admin/parishes/${PARISH}`, {
-      address: '27 Saints Road Salisbury Plain, SA 5109',
-      lat: -34.76121, lng: 138.67015,
-      pin: { field: 'address', tier: 'admin', note: '  ' },
-    });
-    assert.equal(res.status, 200, 'the edit lands either way');
-    assert.ok(res.body.pin_errors.length, 'and the panel is told the ruling did not');
-  } finally { nom.restore(); }
-  assert.equal(raw.prepare('SELECT lat FROM parishes WHERE id = ?').get(PARISH).lat, -34.76121);
-  assert.equal(raw.prepare('SELECT COUNT(*) n FROM info_overrides WHERE parish_id = ?').get(PARISH).n, 0);
+  const row = raw.prepare('SELECT lat, lng FROM parishes WHERE id = ?').get(PARISH);
+  assert.equal(row.lat, -34.76121);
+  assert.equal(row.lng, 138.67015);
 });
 
 // ── The panel's wiring ─────────────────────────────────────────────────

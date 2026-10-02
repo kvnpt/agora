@@ -583,3 +583,11 @@ test('every PDF source names an extract mode the extractor implements', () => {
       `${s.key} has extract='${s.extract}'`);
   }
 });
+
+test('an adapter does not write to a parish kept by hand, and says how to change that', async () => {
+  const { raw, env } = fresh();
+  raw.prepare("UPDATE parishes SET read_from = 'hand' WHERE id = 'antiochian-stgeorge-redfern'").run();
+  await assert.rejects(() => runAdapter(fakeAdapter([evt('h1', 'A', '2026-09-06T00:00:00.000Z')]), env),
+    /kept by hand/);
+  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE source_hash = 'h1'").get().n, 0);
+});

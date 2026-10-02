@@ -448,13 +448,21 @@ export async function runAdapter(adapter, env) {
     // adapter_runs.error_message and says nothing about which parish is missing
     // or that the seed is the thing to fix. adapter_runs is the only visibility
     // into scraping, so the message it stores has to be worth reading.
-    const parish = await db.prepare('SELECT lat, lng FROM parishes WHERE id = ?')
+    const parish = await db.prepare('SELECT lat, lng, read_from FROM parishes WHERE id = ?')
       .bind(adapter.parishId).first();
     if (!parish) {
       throw new Error(
         `${adapter.id} targets parish '${adapter.parishId}', which is not in the database. ` +
         'Add it (seeds/parishes.js, then `npm run gen:seed` and `npm run db:seed`) before this adapter can run.'
       );
+    }
+    // An adapter reads the parish's own website, PDF or calendar — a
+    // 'website' import (public/shared/read-from.js). A parish kept by hand is
+    // not read at all; one still on its directory is taken over, the same as
+    // the Greek site reader does.
+    if (parish.read_from === 'hand') {
+      throw new Error(`${adapter.parishId} is kept by hand, so ${adapter.id} does not write to it. `
+        + 'Switch the parish to "Read from its own website" on its sheet to let it run.');
     }
 
     const upsert = db.prepare(`

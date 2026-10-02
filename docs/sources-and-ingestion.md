@@ -23,53 +23,53 @@ renders it, and it is what stops a re-import moving a pin somebody checked. A
 scrape stamps the first and never the second — a guard on the checked date
 would freeze every row at its first import.
 
-**Sources compete, and the ladder decides.** A parish is described by several
-sources at once and they disagree, so `public/shared/source-tiers.js` writes the
-order down once — **admin > the parish's own site or social feed > its
-jurisdiction's directory > a search engine > a third-party aggregator > null**
-— and `outranks` is the only comparison anyone makes. It is *strict*: two
-sources at one tier disagreeing is not something a rank settles, so the later
-read does not win by being later.
+**One setting per parish says where it is read from.** `parishes.read_from`
+(`public/shared/read-from.js`) is one of three values, and it is the only thing
+an import asks before writing:
 
-Tiers are **derived, not stored**. `parishes.info_source_type` has three values
-against the ladder's five and 281 of 293 rows say `import`, which is true and
-says nothing; the URL already in `info_source_ref` says whether that import read
-the jurisdiction's own directory or an aggregator.
+| `read_from` | Who may write the parish's details and rules |
+|---|---|
+| `directory` | the jurisdiction directory imports — the stopgap for a parish nobody looks after yet |
+| `website` | a reader of the parish's own site, PDF or calendar; the directory leaves it alone |
+| `hand` | nobody automated — a parish contact or the owner keeps it |
 
-`info_overrides` holds the rulings made against that ladder — one row per
-parish per fact, and only where somebody has deliberately decided something, so
-absence means every import behaves exactly as before. It is to *information*
-what `schedule_overrides` is to an *occurrence*. A ruling stores no value: the
-parish row is the value, and a second copy is a way to drift. `note` is NOT
-NULL, because an import refusing half a page is indistinguishable from a broken
-one unless it says why — which is also why the refusal is rendered on the parish
-card, on the jurisdiction card and in the import's own plan.
+A website import may also take over a `directory` parish, and its SQL sets
+`read_from = 'website'` as it writes: finding a parish's own site is exactly
+what ends the stopgap. The directory never takes back a `website` parish, and
+nothing writes a `hand` one. Approving a claim sets `hand`, and an adapter
+refuses to run against a `hand` parish.
 
-The case that paid for it: St Mary Magdalene, Elimbah publishes two Vespers on
-its Antiochian directory page, neither runs, and both rules were deleted in
-`/admin`. Nothing recorded that. `planWrite` pairs a scraped rule with an
-*existing* row on parish + weekday + time, a deleted row is not one, and the
-insert guard only asks whether the rule is there now — so a re-run put both
-back. A deactivated rule fared worse: it matched, got updated, and `active=1`
-switched it on again. `info_verified_at` is the parish-side equivalent and is
-all-or-nothing; a pin is per field, so holding that parish's address does not
-also stop a re-run correcting the phone number nobody has looked at.
+The first hand edit at a parish that is still read from a source asks, once:
+**keep it by hand from now on, or keep reading it?** (`ensureKeptByHand` in
+`app.js`; in /admin the delete dialog offers the same, ticked). "Keep reading"
+is remembered per browser. A contact may switch the setting for their own
+parish in its details edit mode; /admin's parish card has it too.
 
-Two derivations sit on that ladder and should not be confused. `sourceTier` is
-where a row's details **came from**, and it stays honest because the sheet
-renders it. `governingTier` is who a scrape must **defer to**: a parish with a
-website of its own speaks at `parish` however the row was filled in, so a
-jurisdiction re-read holds every such row and only the parishes without one
-fall back to the directory. No script reads parish *details* off a parish site
-yet, so a held row's address and phone change by hand — `heldFields` lists
-them on every run.
+**What this replaced, and why.** Until October 2026 sources were refereed fact
+by fact: a five-rung ladder (`source-tiers.js`: admin > the parish's site >
+its directory > search > aggregator), `info_overrides` rulings that pinned a
+field or suppressed a weekday-and-time slot, `governingTier`, `heldFields`, and
+a "why is it gone?" prompt on every delete. The case that built it was real —
+St Mary Magdalene, Elimbah's directory page lists two Vespers that do not run,
+and deleting them did not survive the next import, because `planWrite` pairs a
+scraped rule with an *existing* row and a deleted row is not one.
+
+It was the wrong shape for a site maintained by parish contacts. Scraping is
+only ever a stopgap until somebody owns the parish, and a parish whose source
+turned out to be wrong is not one to keep scraping around the errors — it is one
+to keep by hand. A slot ruling also refuses a *time*, not a service, so it
+locked the survivor of a double-tapped Add at St George (October 2026). Now
+Elimbah would simply be kept by hand. `source-tiers.js` survives for display
+only (`sourceTier` labels where a row's details came from); `info_overrides`
+is unread and stays in the schema until a later cleanup.
 
 An edit in /admin is a claim by a person, and the PATCH route records it
 without being asked (`adminEditProvenance`): a save that changes a detail
 makes the source that person — "Admin" for an owner or editor, "Parish
 Contact" for a parish contact (`adminSourceName`; `info_source_type='person'`)
-— stamps `info_checked_at` now, and pins each changed field at `admin`, unless
-that same save set the source or picked a check date itself.
+— and stamps `info_checked_at` now, unless that same save set the source or
+picked a check date itself (`worker/lib/provenance.mjs`). It pins nothing:
+whether imports may still write the parish is `read_from`'s question.
 
 **A timetable has one source.** Rules still carry `source_*` columns, because
 importers write them, but a parish's timetable renders ONE provenance line: the
@@ -81,10 +81,11 @@ which is also true. Both forms post every
 field, so "changed" means different from the stored row, not present. A colour
 or a link says nothing about the details and leaves the provenance alone.
 
-Served **publicly** at `/api/info-overrides`, minus `updated_by`. The importers
+`read_from` is served **publicly** in `/api/parishes`, because the importers
 are scripts run from a terminal with no Cloudflare credential — the same
-argument that put `pdf_source_overrides` on a public route, and a stronger one:
-a ruling only the Worker could see is a ruling the import ignores.
+argument that put `pdf_source_overrides` on a public route. The directory
+import's SQL also checks it (`WHERE parishes.read_from = 'directory'`), so a
+parish taken over after the plan was read is not written.
 
 **Adapters** live in `worker/lib/adapters.mjs` as a static registry (Workers have no
 filesystem, so there is no directory scan). Add a parish by adding a line.

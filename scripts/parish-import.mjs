@@ -33,7 +33,7 @@
 //
 // Import-side only. Nothing in the Worker imports this.
 
-import { pinnedFields, governingTier, outranks } from '../worker/lib/info-overrides.mjs';
+import readFrom from '../public/shared/read-from.js';
 
 const STOP = new Set(['the', 'of', 'our', 'and', 'a', 'an', 'in', 'at', 'for']);
 
@@ -214,81 +214,22 @@ const REFRESHABLE = ['name', 'address', 'lat', 'lng', 'timezone', 'website',
  * anything. `info_verified_at` is set by a person and by nothing else, so it is
  * the only one that can mean "hands off".
  *
- * ── PER-FIELD RULINGS ──
+ * ── WHICH PARISHES ──
  *
- * `info_verified_at` is all-or-nothing: it freezes the whole row or none of
- * it, and a person who has checked one field has not checked thirteen. That is
- * too blunt for the commonest case there is — St Mary Magdalene, Elimbah,
- * whose Antiochian directory page gives "Coronation Street" with no street
- * number while the parish's own site has it. Freezing the row to protect the
- * address would also freeze the phone number, the website and the feast day,
- * none of which anybody has checked.
- *
- * So `opts.overrides` (the index from worker/lib/info-overrides.mjs) and
- * `opts.tier` (where THIS import reads) narrow REFRESHABLE per row: a field
- * pinned at a tier this import does not outrank is left out of that row's
- * DO UPDATE SET. A row with every refreshable field pinned gets DO NOTHING,
- * because `DO UPDATE SET` with an empty list is a syntax error and "update
- * nothing" is what it meant anyway.
- *
- * No overrides means the old list for every row, unchanged.
+ * A parish is written only if its `read_from` lets this import write it
+ * (public/shared/read-from.js): a directory run writes a parish still read
+ * from its directory, and nothing writes a parish kept by hand. That replaced
+ * per-field pins and a ladder of source tiers — the reasons are in
+ * docs/sources-and-ingestion.md. The check is made twice: here, against the
+ * row `reconcile` matched, so the plan can say what it is leaving alone; and in
+ * the SQL itself, so a stale read cannot write a parish somebody has since
+ * taken over.
  */
 const headFor = (r) => `INSERT INTO parishes (${COLUMNS.join(', ')}, info_verified_at) VALUES (\n`
   + `  ${COLUMNS.map((c) => (c === 'lat' || c === 'lng' ? r[c] : sql(r[c]))).join(', ')}, NULL)\n`;
 
-/**
- * Does the row already carry a BETTER source than the one importing?
- *
- * `reconcile` hands every matched row its existing database row as `matched`,
- * so the incumbent's provenance is already here — no second query. The tier is
- * derived by the shared ladder, never re-derived locally, which is the whole
- * reason `sourceTier` is exported rather than reimplemented on this side.
- *
- * STRICTLY higher, and that asymmetry is the point. `outranks` refuses ties on
- * purpose — two sources at one tier disagreeing is not something a rank settles
- * — but applying that strictness HERE would be a catastrophe rather than a
- * scruple: a Greek re-run reads at `jurisdiction`, 281 of the 293 rows in
- * production were written by exactly such a run, and refusing a tie would
- * freeze every one of them at its first import with nothing saying why. A
- * directory re-reading its own rows is not a competing source; it is the same
- * source, later. So a tie refreshes exactly as it always did, and only an
- * incumbent ABOVE the importer holds.
- *
- * What that protects, concretely: a parish whose details were taken from its
- * own website (`info_source_type='website'` → `parish`) or typed by a person
- * (`'person'` → `admin`) is left entirely alone by a jurisdiction directory
- * scrape. A row still saying `import` against that directory's own URL is not,
- * and nothing about this run changes for it.
- *
- * This is the ROW-level guard and it is deliberately all-or-nothing, which
- * `info_verified_at` also is and per-field pins deliberately are not. The
- * difference is what each one means: a pin says "somebody decided this field",
- * so freezing its neighbours would overreach, while a better source describes
- * the WHOLE row — there is no coherent reading where a parish's own site is
- * authoritative for its phone number and its jurisdiction's directory is
- * authoritative for its address.
- *
- * `jurisdictionDirectory` is that jurisdiction's own directory URL, so a ref
- * pointing at it derives as `jurisdiction` rather than as a third-party
- * aggregator. Omitting it is safe — the ref then derives as `directory`, which
- * no importer is outranked by — but it is worth passing, because a row wrongly
- * read as `directory` is a row this guard will not protect.
- */
-//
-// ── A PARISH WITH A WEBSITE ──
-//
-// The incumbent is read with `governingTier`, not `sourceTier`: a parish that
-// has a website of its own speaks at `parish` whatever filled the row in, so a
-// jurisdiction directory re-read holds every such row and only the parishes
-// with no site fall back to the directory. That is the owner's call, made
-// knowing its cost: no script yet reads parish DETAILS off a parish website
-// (the Greek site crawl reads service times), so a held row's address and
-// phone now change by hand or not at all — and `heldFields` lists every one,
-// so a run says what it declined rather than going quiet.
-function outrankedByIncumbent(row, tier, jurisdictionDirectory) {
-  const incumbent = row.matched ? governingTier(row.matched, jurisdictionDirectory) : null;
-  return !!incumbent && outranks(incumbent, tier);
-}
+/** Is this matched row one this import may write? A new parish always is. */
+const mayWrite = (row, kind) => !row.matched || readFrom.mayImport(row.matched, kind);
 
 export function buildUpsert(rows, opts = {}) {
   if (rows.some((r) => !r.id)) throw new Error('every row needs an explicit id — run reconcile first');
@@ -301,53 +242,27 @@ export function buildUpsert(rows, opts = {}) {
     seen.add(r.id);
   }
 
-  const { overrides = null, tier = 'jurisdiction', jurisdictionDirectory = null } = opts;
+  const { kind = 'directory' } = opts;
   return rows.map((r) => {
-    if (outrankedByIncumbent(r, tier, jurisdictionDirectory)) {
-      return `${headFor(r)}ON CONFLICT(id) DO NOTHING;`;
-    }
-    const held = overrides
-      ? new Set(pinnedFields(overrides, r.id, tier).map((f) => f.field))
-      : new Set();
-    const refresh = REFRESHABLE.filter((c) => !held.has(c));
     const head = headFor(r);
-    if (!refresh.length) {
-      return `${head}ON CONFLICT(id) DO NOTHING;`;
-    }
+    if (!mayWrite(r, kind)) return `${head}ON CONFLICT(id) DO NOTHING;`;
     return `${head}ON CONFLICT(id) DO UPDATE SET\n`
-      + `  ${refresh.map((c) => `${c}=excluded.${c}`).join(', ')}\n`
-      + 'WHERE parishes.info_verified_at IS NULL;';
+      + `  ${REFRESHABLE.map((c) => `${c}=excluded.${c}`).join(', ')}\n`
+      + `WHERE parishes.info_verified_at IS NULL AND parishes.read_from = '${kind}';`;
   }).join('\n');
 }
 
 /**
- * What a run is about to leave alone because somebody ruled on it.
- *
- * Reported rather than inferred from the SQL: an import that quietly wrote
- * eleven of thirteen columns and said nothing is the failure mode this whole
- * mechanism exists to replace.
+ * The parishes a run is about to leave alone, and why — their read_from.
+ * Reported rather than inferred from the SQL: a run that quietly skipped a
+ * parish and said nothing is the failure this list exists to prevent.
  */
-export function heldFields(rows, { overrides = null, tier = 'jurisdiction', jurisdictionDirectory = null } = {}) {
-  const out = [];
-  for (const r of rows) {
-    // The row-level hold reports first and reports EVERY refreshable column,
-    // because that is literally what the DO NOTHING leaves alone. A run that
-    // silently declined a whole parish would be worse than the per-field
-    // silence this function was written to end, not better.
-    if (outrankedByIncumbent(r, tier, jurisdictionDirectory)) {
-      const incumbent = governingTier(r.matched, jurisdictionDirectory);
-      out.push({
-        id: r.id,
-        name: r.name,
-        whole_row: true,
-        incumbent_tier: incumbent,
-        held: REFRESHABLE.map((field) => ({ field, tier: incumbent, decision: 'outranked' })),
-      });
-      continue;
-    }
-    if (!overrides) continue;
-    const held = pinnedFields(overrides, r.id, tier).filter((f) => REFRESHABLE.includes(f.field));
-    if (held.length) out.push({ id: r.id, name: r.name, held });
-  }
-  return out;
+export function heldFields(rows, { kind = 'directory' } = {}) {
+  return rows.filter((r) => !mayWrite(r, kind)).map((r) => ({
+    id: r.id,
+    name: r.name,
+    whole_row: true,
+    read_from: readFrom.readFrom(r.matched),
+    held: REFRESHABLE.map((field) => ({ field })),
+  }));
 }
