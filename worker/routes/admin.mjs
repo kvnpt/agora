@@ -2232,6 +2232,19 @@ export function registerAdminRoutes(router) {
     }
     const refused = await suppressedSlot(env.DB, parish_id, day_of_week, start_time);
     if (refused) return refused;
+    // The same rule twice is one rule. A double-tapped Add made two Thursday
+    // Choir Practices at St George; deleting the spare with a reason then
+    // refused the slot the survivor sits in. Matching on everything that makes
+    // a rule distinct — week_of_month and parity included, since "1st" and
+    // "3rd Saturday 9am Liturgy" are two real rules — and answering with the
+    // one already there makes the second press harmless.
+    const same = await env.DB.prepare(
+      `SELECT * FROM schedules WHERE parish_id = ? AND day_of_week = ? AND start_time = ? AND title = ?
+         AND active = 1 AND effective_to IS NULL
+         AND IFNULL(week_of_month, '') = ? AND IFNULL(week_parity, '') = ?`
+    ).bind(parish_id, day_of_week, start_time, title, b.week_of_month || '',
+      b.week_parity ? String(b.week_parity).toLowerCase() : '').first();
+    if (same) return json({ ...same, duplicate: true }, 200);
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
         languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
@@ -2272,15 +2285,22 @@ export function registerAdminRoutes(router) {
     // concerned: the slot it lands in is the slot somebody refused. Checked
     // against where it is GOING, using the existing values for whichever half
     // of the slot the edit does not mention.
+    //
+    // Only a MOVE. Both forms post every field, so a body naming the slot the
+    // rule already sits in is not a move — and refusing it meant a rule in a
+    // refused slot could never be saved again, not even to tick "Parish only".
+    // That is what happened at St George: a double-tapped Add made two Thursday
+    // rules, deleting one with a reason refused the slot, and the survivor was
+    // locked.
     if (b.day_of_week !== undefined || b.start_time !== undefined) {
       const at = await env.DB.prepare('SELECT day_of_week, start_time FROM schedules WHERE id = ?')
         .bind(params.id).first();
-      const refused = await suppressedSlot(
-        env.DB, row.parish_id,
-        b.day_of_week !== undefined ? b.day_of_week : at.day_of_week,
-        b.start_time !== undefined ? b.start_time : at.start_time,
-      );
-      if (refused) return refused;
+      const toDay = b.day_of_week !== undefined ? Number(b.day_of_week) : at.day_of_week;
+      const toTime = b.start_time !== undefined ? b.start_time : at.start_time;
+      if (toDay !== Number(at.day_of_week) || toTime !== at.start_time) {
+        const refused = await suppressedSlot(env.DB, row.parish_id, toDay, toTime);
+        if (refused) return refused;
+      }
     }
     // Checked against what the row will HOLD, not against what the body names,
     // so a body that clears week_of_month and sets week_parity in one go is a
@@ -2373,7 +2393,7 @@ export function registerAdminRoutes(router) {
     const target = { ...rule, ...changes };
     const qErr = weekQualifierError({ week_of_month: target.week_of_month || null, week_parity: target.week_parity || null });
     if (qErr) return json({ error: qErr }, 400);
-    if (changes.day_of_week !== undefined || changes.start_time !== undefined) {
+    if (target.day_of_week !== rule.day_of_week || target.start_time !== rule.start_time) {
       const refused = await suppressedSlot(env.DB, rule.parish_id, target.day_of_week, target.start_time);
       if (refused) return refused;
     }
@@ -2497,7 +2517,14 @@ export function registerAdminRoutes(router) {
     // exactly the behaviour it had before this route learned to record.
     const b = await readJson(request);
     let ruling = null;
-    if (b && b.suppress) {
+    // A ruling refuses a SLOT. When another current rule still runs in it — the
+    // spare of a duplicate, or one of a 1st/3rd pair — the reason is about this
+    // row, not the slot, and recording it would refuse the rule that stays.
+    const twin = b && b.suppress ? await env.DB.prepare(
+      `SELECT id FROM schedules WHERE parish_id = ? AND day_of_week = ? AND start_time = ? AND id != ?
+         AND active = 1 AND effective_to IS NULL`
+    ).bind(row.parish_id, row.day_of_week, row.start_time, row.id).first() : null;
+    if (b && b.suppress && !twin) {
       const v = validateOverride({
         ...b.suppress,
         parish_id: row.parish_id,
@@ -2516,7 +2543,10 @@ export function registerAdminRoutes(router) {
     // schedule_overrides cascade via FK.
     await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(params.id).run();
     await stampTimetable(c, row.parish_id);
-    return json({ ok: true, ruling, ruling_note: ruling ? describeOverride(ruling) : null });
+    return json({
+      ok: true, ruling, ruling_note: ruling ? describeOverride(ruling) : null,
+      ruling_skipped: twin ? 'Another service still runs at this time, so the slot was not refused.' : null,
+    });
   }));
 
   // ── breaks ──
