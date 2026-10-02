@@ -1408,3 +1408,60 @@ test('a rule can be given dates, and one that starts later is still in the windo
   const all = await expandWindow(f.db, FROM, TO);
   assert.ok(!all.some(e => e.schedule_id === made.body.id), 'but projects nothing before it starts');
 });
+
+// ── the St George double tap ──
+//
+// A parish contact tapped Add twice and got two Thursday rules, deleted one
+// with a reason, and the reason refused the slot the other still sat in — so
+// the survivor could not be saved, not even to tick "Parish only".
+
+const thursday = { day_of_week: 4, start_time: '19:00', title: 'Choir Practice', event_type: 'other' };
+
+test('adding the same rule twice makes one rule', async () => {
+  const f = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(f.raw);
+  const a = await f.call('POST', '/api/admin/schedules', { parish_id: parishId, ...thursday });
+  const b = await f.call('POST', '/api/admin/schedules', { parish_id: parishId, ...thursday });
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 200);
+  assert.equal(b.body.duplicate, true);
+  assert.equal(b.body.id, a.body.id);
+  assert.equal(f.raw.prepare("SELECT COUNT(*) AS n FROM schedules WHERE title = 'Choir Practice'").get().n, 1);
+  // A 1st-of-the-month rule at the same time is a different rule.
+  const c = await f.call('POST', '/api/admin/schedules', { parish_id: parishId, ...thursday, week_of_month: 'first' });
+  assert.equal(c.status, 201);
+});
+
+test('deleting one of two rules in a slot does not refuse the slot', async () => {
+  const f = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(f.raw);
+  const ins = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
+                             VALUES (?, 4, '19:00', 'Choir Practice', 'other') RETURNING id`);
+  const keep = ins.get(parishId).id;
+  const spare = ins.get(parishId).id;
+  const del = await f.call('DELETE', `/api/admin/schedules/${spare}`,
+    { suppress: { tier: 'admin', note: 'Accidental duplicate addition of choir practice' } });
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  assert.equal(del.body.ruling, null);
+  assert.match(del.body.ruling_skipped, /still runs/);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM info_overrides').get().n, 0);
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${keep}`, { ...thursday, parish_scoped: 1 })).status, 200);
+});
+
+test('a rule already in a refused slot can still be saved; moving INTO one is refused', async () => {
+  const f = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(f.raw);
+  const id = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
+                            VALUES (?, 4, '19:00', 'Choir Practice', 'other') RETURNING id`).get(parishId).id;
+  // The state production was left in: a ruling on the survivor's own slot.
+  f.raw.prepare(`INSERT INTO info_overrides (parish_id, target, subject, decision, tier, note)
+                 VALUES (?, 'schedule', '4|19:00', 'suppress', 'admin', 'Accidental duplicate')`).run(parishId);
+  const r = await f.call('PATCH', `/api/admin/schedules/${id}`, { ...thursday, parish_scoped: 1 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(f.raw.prepare('SELECT parish_scoped FROM schedules WHERE id = ?').get(id).parish_scoped, 1);
+
+  const other = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
+                               VALUES (?, 2, '19:00', 'Bible Study', 'talk') RETURNING id`).get(parishId).id;
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${other}`, { day_of_week: 4, start_time: '19:00' })).status, 409,
+    'moving a rule into the refused slot is still refused');
+});

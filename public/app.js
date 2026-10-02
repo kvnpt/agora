@@ -6803,14 +6803,16 @@ function refusedServicesHTML() {
   if (!rows.length) return '';
   const when = (subject) => {
     const m = /^([0-6])\|(\d{2}:\d{2})$/.exec(String(subject || ''));
-    return m ? `${DAYS[Number(m[1])]} ${formatTime12(m[2])}` : String(subject || '');
+    // formatTime12 returns markup (the am/pm span), so the time is not passed
+    // through esc() — the day is, and an unparseable subject is.
+    return m ? `${esc(DAYS[Number(m[1])])} ${formatTime12(m[2])}` : esc(String(subject || ''));
   };
   return `
     <div class="schedule-refused">
       <div class="schedule-refused-head">Not written, on purpose</div>
       ${rows.map(r => `
         <div class="schedule-refused-row">
-          <span class="schedule-refused-when">${esc(when(r.subject))}</span>
+          <span class="schedule-refused-when">${when(r.subject)}</span>
           ${r.source_label ? `<span class="schedule-refused-what">${esc(r.source_label)}</span>` : ''}
           ${r.source_name ? `<span class="schedule-refused-src">per ${esc(r.source_name)}</span>` : ''}
           <div class="schedule-refused-note">“${esc(r.note)}”</div>
@@ -6902,6 +6904,18 @@ function wireScheduleAdminHandlers(container) {
       const id = btn.dataset.sid;
       const rule = (state.schedules || []).find(x => String(x.id) === String(id));
       const src = rule && rule.source_name;
+      // Another current rule at the same day and time — a duplicate, or one of
+      // a 1st/3rd pair. A reason would refuse the SLOT, which the rule that
+      // stays still needs, so there is nothing to ask beyond "delete it?".
+      const twin = rule && (state.schedules || []).some(x => x.id !== rule.id
+        && x.parish_id === rule.parish_id && x.day_of_week === rule.day_of_week
+        && x.start_time === rule.start_time && !x.effective_to);
+      if (twin) {
+        if (!confirm('Delete this service? Another one still runs at the same day and time, so it stays.')) return;
+        const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE' });
+        if (res.ok) fetchSchedules({ fresh: true }); else alert(await adminErrorText(res));
+        return;
+      }
       if (!confirm('Delete this service?')) return;
       // A prompt rather than a dialog, because this sits inside a bottom sheet
       // on a phone and a modal over a modal is worse than a plain question.
@@ -6937,6 +6951,16 @@ function wireScheduleAdminHandlers(container) {
   container.querySelectorAll('.schedule-add-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
+      // One request at a time. A second tap while the first is in flight made
+      // two identical rules; the Worker now answers a duplicate with the rule
+      // already there, and this stops the second request being sent at all.
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try { await addServiceFrom(btn); } finally { btn.disabled = false; }
+    });
+  });
+  async function addServiceFrom(btn) {
+    {
       const wrap = btn.closest('.schedule-add');
       const read = (f) => wrap.querySelector(`[data-af="${f}"]`).value;
       const title = read('title').trim();
@@ -6977,8 +7001,8 @@ function wireScheduleAdminHandlers(container) {
       // on purpose and said why. The message carries their reason, which is the
       // whole point of having asked for one.
       alert(await adminErrorText(res));
-    });
-  });
+    }
+  }
 }
 
 /** The server's own words, when it has any. */
