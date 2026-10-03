@@ -23,18 +23,13 @@ import { SERVICE_TIMES, PUBLISHES_BUT_NOT_A_RULE } from './greek-service-times.m
 import { SITE_OVERRIDES } from './greek-site-overrides.mjs';
 import { normaliseUrl, sameSite } from './greek-directory.mjs';
 import { ADAPTERS } from '../worker/lib/adapters.mjs';
-import { indexOverrides, describeOverride, mayWriteField, sourceTier, governingTier, outranks }
-  from '../worker/lib/info-overrides.mjs';
-import { getJurisdiction } from '../worker/lib/jurisdictions.mjs';
+import readFrom from '../public/shared/read-from.js';
 
 const PARISHES = 'https://agora.orthodoxy.au/api/parishes';
 const SCHEDULES = 'https://agora.orthodoxy.au/api/schedules';
-const RULINGS = 'https://agora.orthodoxy.au/api/info-overrides';
 
-// Every rule in this run is read off the parish's own website, so this import
-// speaks at the `parish` tier — one rung above the Antiochian directory run
-// and one below an admin. public/shared/source-tiers.js has the ladder.
-const TIER = 'parish';
+// Every rule in this run is read off the parish's own website: a 'website'
+// import, in public/shared/read-from.js's terms.
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const sitesFile = process.argv[2] || './greek-sites.json';
@@ -55,10 +50,6 @@ const parishes = await get(PARISHES);
 const greek = parishes.filter((p) => p.jurisdiction === 'greek');
 const byId = new Map(greek.map((p) => [p.id, p]));
 const allSchedules = await get(SCHEDULES);
-// Public precisely so a script with no Cloudflare credential can read it. A
-// failure here is fatal rather than survivable: carrying on would mean
-// recreating services somebody deleted on purpose.
-const rulings = indexOverrides(await get(RULINGS));
 const existing = allSchedules.filter((s) => byId.has(s.parish_id));
 
 // A parish with a LIVE adapter is not this import's to describe. Nothing Greek
@@ -72,10 +63,14 @@ const adapted = new Set(ADAPTERS.map((a) => a.parishId));
 const rules = [];
 const refused = [];
 const deferred = [];
+const handKept = new Set();
 for (const entry of SERVICE_TIMES) {
   const parish = byId.get(entry.parish_id);
   if (!parish) { refused.push({ ...entry, why: 'no such Greek parish row' }); continue; }
   if (adapted.has(parish.id)) { deferred.push(`${parish.name} (${parish.id})`); continue; }
+  // These are read off the parish's own website. A hand-kept parish is not
+  // this run's to touch (public/shared/read-from.js).
+  if (!readFrom.mayImport(parish, 'website')) { handKept.add(parish.id); continue; }
 
   const res = ruleFromSentence(entry.quote, {
     title: entry.title,
@@ -98,26 +93,20 @@ for (const entry of SERVICE_TIMES) {
   }
 }
 markConcurrent(rules);
-// `ruled` rather than `refused`: this file already has a `refused` above, for
-// curated entries the PARSER rejected. Two different refusals, and conflating
-// them in the report would be worse than the name clash.
-const { updates, inserts, untouched, refused: ruled } = planWrite(rules, existing, rulings, TIER);
+// Only the parishes this run writes rules for are compared against.
+const ours = new Set(rules.map((r) => r.parish_id));
+const { updates, inserts, untouched } = planWrite(rules, existing.filter((e) => ours.has(e.parish_id)));
+// Reading a parish's own site ends its directory stopgap: from this run on it
+// is read from its website, and the directory import leaves it alone.
+const takenOver = [...ours].filter((id) => readFrom.readFrom(byId.get(id)) === 'directory');
 
 // ── websites ───────────────────────────────────────────────────────────────
 
-// Who may change a website, and whose check a directory re-read is.
-//
-// A curated SITE_OVERRIDES entry is a person's research written into this
-// repo, so it speaks at `admin`; the directory's link speaks at `jurisdiction`.
-// Neither may move a website pinned at a tier it does not outrank, and the
-// directory may not move one at all once the parish has a website of its own —
-// `governingTier` in public/shared/source-tiers.js: the parish's site is where
-// the parish is read from, and filling an EMPTY website is the directory's job.
-//
-// The check date follows PROVENANCE instead. A row whose details came from the
-// parish's own page or from a person was not re-read by reading the
-// Archdiocese, so it keeps the date somebody actually looked at its source.
-const DIRECTORY = getJurisdiction('greek').directory;
+// Who may change a website. A curated SITE_OVERRIDES entry is the owner's
+// research written into this repo; the directory's link is the directory.
+// Neither touches a hand-kept parish, the directory may only FILL an empty
+// website (a parish that has its own is read from it), and only a parish still
+// read from its directory gets its check date stamped by a directory re-read.
 const websiteChanges = [];
 const stampOnly = [];
 const websiteHeld = [];
@@ -133,16 +122,16 @@ for (const row of report.parishes) {
   else next = stored;
 
   const differs = !sameSite(next, stored) && !(next === null && stored === null);
+  const rf = readFrom.readFrom(parish);
   const heldBy = !differs ? null
-    : !mayWriteField(rulings, row.id, 'website', by) ? 'a ruling on the website'
-    : (stored && by === 'jurisdiction' && outranks(governingTier(parish, DIRECTORY), by))
-      ? 'the parish’s own website' : null;
+    : rf === 'hand' ? 'kept by hand'
+    : (by === 'jurisdiction' && (stored || rf !== 'directory')) ? 'read from its own website' : null;
   if (heldBy) websiteHeld.push({ id: row.id, stored, next, heldBy });
   else if (differs) {
     websiteChanges.push({ id: row.id, website: next, was: stored, why: override?.found || 'the directory' });
     continue;
   }
-  if (row.directory_ref && !outranks(sourceTier(parish, DIRECTORY), 'jurisdiction')) {
+  if (row.directory_ref && readFrom.mayImport(parish, 'directory')) {
     stampOnly.push(row.id);
   }
 }
@@ -184,14 +173,13 @@ if (updates.length) {
     console.log(`  #${u.id} ${u.parish_id} ${DAYS[u.day_of_week]} ${u.start_time}  ${JSON.stringify(was.title)} -> ${JSON.stringify(u.title)}`);
   }
 }
-if (ruled.length) {
-  console.log(`\nREFUSED BY A RULING (${ruled.length}) — published by the parish, and somebody has decided otherwise:`);
-  for (const { rule, ruling, existing: had } of ruled) {
-    console.log(`  ${rule.parish_id} ${DAYS[rule.day_of_week]} ${rule.start_time} ${JSON.stringify(rule.title)}`
-      + `${had ? ` (would have UPDATED #${had.id})` : ' (would have been INSERTED)'}`);
-    console.log(`      ${describeOverride(ruling)}`);
-    console.log(`      \u201c${ruling.note}\u201d`);
-  }
+if (takenOver.length) {
+  console.log(`\nNOW READ FROM THEIR OWN WEBSITE (${takenOver.length}) — were on the directory stopgap:`);
+  for (const id of takenOver) console.log(`  ${id}`);
+}
+if (handKept.size) {
+  console.log(`\nKEPT BY HAND, NOT TOUCHED (${handKept.size}):`);
+  for (const id of handKept) console.log(`  ${id}`);
 }
 
 if (untouched.length) {
@@ -216,14 +204,17 @@ for (const c of websiteChanges) {
   console.log(`  ${c.id.padEnd(38)} ${c.was || '(none)'}\n      -> ${c.website || '(cleared)'}   [${c.why}]`);
 }
 if (websiteHeld.length) {
-  console.log(`\nWEBSITES HELD (${websiteHeld.length}) — the source outranks this run:`);
+  console.log(`\nWEBSITES HELD (${websiteHeld.length}) — not this run's to change:`);
   for (const h of websiteHeld) {
     console.log(`  ${h.id.padEnd(38)} keeps ${h.stored || '(none)'}; offered ${h.next || '(cleared)'}   [${h.heldBy}]`);
   }
 }
 console.log(`\n${stampOnly.length} further rows keep the website they had and get info_checked_at = ${checkedAt}; rows sourced from a parish or a person keep their own date.`);
 
-await writeFile(scheduleOut, `${buildScheduleSql({ updates, inserts })}\n`);
+const takeOverSql = takenOver.length
+  ? `\nUPDATE parishes SET read_from = 'website' WHERE read_from = 'directory' AND id IN (${takenOver.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ')});`
+  : '';
+await writeFile(scheduleOut, `${buildScheduleSql({ updates, inserts })}${takeOverSql}\n`);
 // `website` omitted on the stamp-only rows, so their statement carries the
 // timestamp alone and cannot walk back a URL somebody has edited in /admin.
 const stamped = [...websiteChanges, ...stampOnly.map((id) => ({ id }))];

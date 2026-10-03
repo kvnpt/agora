@@ -11,8 +11,6 @@
 // expanded feed is stale the moment "now" moves.
 
 import { pdfSourceOverrides, publicOverridePayload } from '../lib/pdf-source-overrides.mjs';
-import { readInfoOverrides, publicOverridePayload as publicInfoOverrides }
-  from '../lib/info-overrides.mjs';
 import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
@@ -46,7 +44,7 @@ const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timez
   website, phone, email, logo_path, acronym, chant_style, languages, color, live_url,
   donation_url, raffle_url, payment_url, gala_url, feast_day,
   info_source_type, info_source_ref, info_source_name, info_checked_at,
-  info_verified_at, maps_url`;
+  info_verified_at, maps_url, read_from`;
 
 export function registerPublicRoutes(router) {
   // GET /api/bundle — everything the client needs to build the feed itself.
@@ -191,23 +189,6 @@ export function registerPublicRoutes(router) {
   // degrades to "no overrides" rather than to "no sources".
   router.get('/api/pdf-sources', async ({ env }) =>
     json(publicOverridePayload(await pdfSourceOverrides(env.DB))));
-
-  // GET /api/info-overrides — which source has been ruled to win, per parish.
-  //
-  // PUBLIC for the same reason /api/pdf-sources is, and it is a stronger case.
-  // The importers are scripts run from a terminal against production over
-  // these very endpoints: scripts/build-antiochian-schedules.mjs reads
-  // /api/parishes and /api/schedules and has no Cloudflare credential at all.
-  // A ruling only the Worker could see would be a ruling the import ignores,
-  // and the import is the thing the ruling exists to stop — the two Elimbah
-  // Vespers would come straight back on the next run, which is the whole
-  // problem.
-  //
-  // `updated_by` is withheld; nothing else is. A note saying a parish
-  // confirmed by telephone that a service no longer runs is a thing readers
-  // benefit from, and the admin's email address is not.
-  router.get('/api/info-overrides', async ({ env, query }) =>
-    json(publicInfoOverrides(await readInfoOverrides(env.DB, query.get('parish') || null))));
 
   // GET /api/adapters/status — is the scrape alive?
   router.get('/api/adapters/status', async ({ env }) => {

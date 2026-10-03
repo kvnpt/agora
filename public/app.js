@@ -82,11 +82,6 @@ const state = {
   // covers that drawer, so "which event" is never a question.
   eventEditMode: null,
 
-  // The rulings for the parish being edited: which source won, and which
-  // services a source publishes that do not run. Fetched when edit mode is
-  // entered rather than on load — a visitor has no use for it and the public
-  // app should not pay for a request it never renders.
-  parishRulings: null,
   userLat: null,
   userLng: null,
   mode: 'events',
@@ -4701,7 +4696,6 @@ function closeParishSheet() {
   if (state.parishEditMode || state.scheduleEditMode) {
     state.parishEditMode = null;
     state.scheduleEditMode = null;
-    state.parishRulings = null;
     // A staged pin is part of the unsaved form and goes with it. Left behind,
     // it would be offered again the next time this parish is edited, as if it
     // had been decided rather than abandoned.
@@ -6785,41 +6779,6 @@ function wireCadencePickers(container) {
   });
 }
 
-/**
- * Services a source publishes that somebody has ruled do not run.
- *
- * The gap this fills: a timetable that is shorter than the parish's own
- * directory page looks like a scrape that missed something, and there was no
- * way to tell that from a decision somebody made on purpose. St Mary
- * Magdalene, Elimbah is the case — two Vespers on its Antiochian page,
- * neither running, confirmed by telephone.
- *
- * Only while editing. A visitor is looking for what IS on, and a list of
- * services that are not would be the wrong answer to that question.
- */
-function refusedServicesHTML() {
-  const rows = (state.parishRulings || []).filter(
-    r => r.target === 'schedule' && r.decision === 'suppress');
-  if (!rows.length) return '';
-  const when = (subject) => {
-    const m = /^([0-6])\|(\d{2}:\d{2})$/.exec(String(subject || ''));
-    // formatTime12 returns markup (the am/pm span), so the time is not passed
-    // through esc() — the day is, and an unparseable subject is.
-    return m ? `${esc(DAYS[Number(m[1])])} ${formatTime12(m[2])}` : esc(String(subject || ''));
-  };
-  return `
-    <div class="schedule-refused">
-      <div class="schedule-refused-head">Not written, on purpose</div>
-      ${rows.map(r => `
-        <div class="schedule-refused-row">
-          <span class="schedule-refused-when">${when(r.subject)}</span>
-          ${r.source_label ? `<span class="schedule-refused-what">${esc(r.source_label)}</span>` : ''}
-          ${r.source_name ? `<span class="schedule-refused-src">per ${esc(r.source_name)}</span>` : ''}
-          <div class="schedule-refused-note">“${esc(r.note)}”</div>
-        </div>`).join('')}
-      <div class="schedule-refused-foot">An import that finds these will list them as refused instead of writing them. Lift one in /admin.</div>
-    </div>`;
-}
 
 /**
  * The "add a service" row, shown inside the timetable while editing.
@@ -6861,7 +6820,7 @@ function wireScheduleAdminHandlers(container) {
   // for the whole document in initScheduleRowTaps. See renderScheduleDaysHTML.
   wireCadencePickers(container);
   container.querySelectorAll('.schedule-save-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
+    btn.addEventListener('click', async e => {
       e.stopPropagation();
       const id = btn.dataset.sid;
       const form = btn.closest('.schedule-edit-form');
@@ -6883,6 +6842,8 @@ function wireScheduleAdminHandlers(container) {
           else data[field] = val || null;
         }
       });
+      const rule = (state.schedules || []).find(x => String(x.id) === String(id));
+      if (rule && !(await ensureKeptByHand(rule.parish_id))) return;
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
         .then(async r => {
           if (r.ok) { form.style.display = 'none'; fetchSchedules({ fresh: true }); fetchEvents({ fresh: true, keepCount: true }); }
@@ -6890,59 +6851,17 @@ function wireScheduleAdminHandlers(container) {
         });
     });
   });
-  // Deleting a rule, and saying whether the deletion is meant to last.
-  //
-  // A bare confirm() asked the wrong question. The one that decides the
-  // outcome is not "are you sure" but "will the next scrape bring this back",
-  // and for a rule read off a directory the answer was yes: the importer pairs
-  // a scraped rule to an EXISTING row, a deleted row is not one, and it came
-  // straight back. The reason typed here is what makes the deletion stick and
-  // what the next person reads when an import refuses part of a page.
+  // Deleting a rule. At a parish still read from a source, the first hand
+  // edit asks whether to stop reading it (ensureKeptByHand) — otherwise the
+  // next import would simply put the rule back.
   container.querySelectorAll('.schedule-del-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const id = btn.dataset.sid;
       const rule = (state.schedules || []).find(x => String(x.id) === String(id));
-      const src = rule && rule.source_name;
-      // Another current rule at the same day and time — a duplicate, or one of
-      // a 1st/3rd pair. A reason would refuse the SLOT, which the rule that
-      // stays still needs, so there is nothing to ask beyond "delete it?".
-      const twin = rule && (state.schedules || []).some(x => x.id !== rule.id
-        && x.parish_id === rule.parish_id && x.day_of_week === rule.day_of_week
-        && x.start_time === rule.start_time && !x.effective_to);
-      if (twin) {
-        if (!confirm('Delete this service? Another one still runs at the same day and time, so it stays.')) return;
-        const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE' });
-        if (res.ok) fetchSchedules({ fresh: true }); else alert(await adminErrorText(res));
-        return;
-      }
       if (!confirm('Delete this service?')) return;
-      // A prompt rather than a dialog, because this sits inside a bottom sheet
-      // on a phone and a modal over a modal is worse than a plain question.
-      // Empty or cancelled means "just remove it" — the old behaviour — so the
-      // reason is offered, never demanded.
-      const note = window.prompt(
-        src
-          ? `Why is it gone? A reason here stops the next re-read of “${src}” putting it back.\n\nLeave blank to just remove it.`
-          : 'Why is it gone? A reason here stops any future import recreating it.\n\nLeave blank to just remove it.',
-        '');
-      if (note === null) return;
-      const body = note.trim()
-        ? JSON.stringify({
-            suppress: {
-              tier: 'admin',
-              note: note.trim(),
-              source_name: src || null,
-              source_ref: (rule && rule.source_ref) || null,
-              checked_at: new Date().toISOString().slice(0, 10),
-            },
-          })
-        : null;
-      const res = await fetch(`/api/admin/schedules/${id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        ...(body ? { body } : {}),
-      });
+      if (rule && !(await ensureKeptByHand(rule.parish_id))) return;
+      const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE' });
       if (res.ok) fetchSchedules({ fresh: true });
       else alert(await adminErrorText(res));
     });
@@ -6965,6 +6884,7 @@ function wireScheduleAdminHandlers(container) {
       const read = (f) => wrap.querySelector(`[data-af="${f}"]`).value;
       const title = read('title').trim();
       if (!title) { alert('Give the service a name.'); return; }
+      if (!(await ensureKeptByHand(btn.dataset.parishId))) return;
       // Every week is NULL in both columns — not an empty string, which would
       // fail the route's check.
       const cadence = readCadencePicker(wrap.querySelector('[data-af="cadence"]'));
@@ -7003,6 +6923,50 @@ function wireScheduleAdminHandlers(container) {
       alert(await adminErrorText(res));
     }
   }
+}
+
+/**
+ * The first hand edit at a parish still read from a source asks, once: keep it
+ * by hand from now on, or keep reading it? (public/shared/read-from.js)
+ *
+ * The question is the point of the change. A parish nobody looks after is read
+ * from its directory or its website as a stopgap; the moment a person corrects
+ * it, the next import would quietly undo the correction. Rather than refereeing
+ * between them field by field — the rulings this replaced — the person decides
+ * once, for the whole parish. "Keep reading" is remembered per browser, so it
+ * is not asked on every save after.
+ *
+ * Resolves true to go ahead with the save, false if they backed out.
+ */
+async function ensureKeptByHand(parishId) {
+  const RF = window.AgoraReadFrom;
+  const parish = (state.parishes || []).find(p => p.id === parishId);
+  if (!RF || !parish) return true;
+  const rf = RF.readFrom(parish);
+  if (rf === 'hand') return true;
+  try { if (localStorage.getItem(`agora-keep-reading:${parishId}`)) return true; } catch { /* ask */ }
+  const pick = await askChoice({
+    title: `${parish.name} is ${RF.LABELS[rf].charAt(0).toLowerCase()}${RF.LABELS[rf].slice(1)}`,
+    body: `<p style="margin:0">${esc(RF.HINTS[rf])}</p>`,
+    choices: [
+      { value: 'hand', label: 'Keep it by hand from now on',
+        hint: 'Stop reading it. Your change, and every change after it, stays.' },
+      { value: 'read', label: 'Keep reading it',
+        hint: 'The next import may overwrite this change. You will not be asked again in this browser.' },
+    ],
+  });
+  if (!pick) return false;
+  if (pick === 'read') {
+    try { localStorage.setItem(`agora-keep-reading:${parishId}`, '1'); } catch { /* fine */ }
+    return true;
+  }
+  const res = await fetch(`/api/admin/parishes/${encodeURIComponent(parishId)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ read_from: 'hand' }),
+  });
+  if (!res.ok) { alert(await adminErrorText(res)); return false; }
+  parish.read_from = 'hand';
+  return true;
 }
 
 /** The server's own words, when it has any. */
@@ -7920,6 +7884,7 @@ window.saveEvent = async function(id) {
     });
     if (!pick) return;
     if (pick === 'following') {
+      if (!(await ensureKeptByHand(series.rule.parish_id))) return;
       const { parish_id, ...fields } = data;   // eslint-disable-line no-unused-vars
       const r = await postFollowing(id, { action: 'edit', ...fields });
       if (r) await _afterSeriesChange(r.schedule_id ? `${r.schedule_id}:${series.date}` : null);
@@ -8135,6 +8100,7 @@ window.setEventStatus = async function(id, status) {
     });
     if (!pick) return;
     if (pick === 'following') {
+      if (!(await ensureKeptByHand(series.rule.parish_id))) return;
       const r = await postFollowing(id, { action: 'end' });
       if (r) await _afterSeriesChange(null);
       return;
@@ -8211,7 +8177,7 @@ function parishTimetableHTML(parish, scheds) {
           ${pencil}
         </div>
         ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
-        ${editing ? `${endedServicesHTML(pid)}${refusedServicesHTML()}
+        ${editing ? `${endedServicesHTML(pid)}
           <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add a service</span></button>
           <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
       </div>
@@ -8282,6 +8248,7 @@ document.addEventListener('click', async (e) => {
   if (!confirm(`Bring back ${rule.title}, ${DAYS[rule.day_of_week]} ${rule.start_time}?\n\n`
     + 'It runs again from its next date, with any changes it still holds. If another service replaced it '
     + '(a time change), bring it back only if both really run.')) return;
+  if (!(await ensureKeptByHand(rule.parish_id))) return;
   const res = await fetch(`/api/admin/schedules/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ effective_to: null }),
@@ -8336,22 +8303,9 @@ window.setScheduleEditMode = function(id, on) {
   state.scheduleEditMode = next;
   state.endedRules = null;
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
-  if (next) loadParishRulings(next, () => state.scheduleEditMode === next);
   if (next) loadEndedRules(next);
   if (typeof renderServices === 'function') renderServices();
 };
-
-/** The rulings an edit mode shows (what imports are refused), fetched on entry. */
-function loadParishRulings(pid, stillWanted) {
-  fetch(`/api/info-overrides?parish=${encodeURIComponent(pid)}`)
-    .then(r => (r.ok ? r.json() : []))
-    .then(rows => {
-      if (!stillWanted()) return;
-      state.parishRulings = rows;
-      if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
-    })
-    .catch(() => { /* the forms still work without them */ });
-}
 
 // The timetable's own controls, bound once for the document: the panel is
 // rebuilt by both the full render and the partial refresh, and a listener on
@@ -8404,6 +8358,27 @@ function parishHeaderEditHTML(parish) {
  * gain a pencil; a pill with nothing behind it yet appears dashed, so the way
  * to add a phone number is where the Call button would be.
  */
+/**
+ * Where this parish's details and times come from — public/shared/read-from.js.
+ * In the details edit mode, because it is a fact about the parish, and a
+ * parish contact may change it: whether anything is scraped at their parish is
+ * theirs to decide.
+ */
+function readFromFieldHTML(parish) {
+  const RF = window.AgoraReadFrom;
+  if (!RF) return '';
+  const pid = esc(parish.id);
+  const cur = RF.readFrom(parish);
+  return `
+      <label class="ps-field ps-edit-in" style="--i:6">
+        <span>Details and service times</span>
+        <select id="pse-readfrom-${pid}" onchange="document.getElementById('pse-readfrom-hint-${pid}').textContent = window.AgoraReadFrom.HINTS[this.value]">
+          ${RF.READ_FROM.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(RF.LABELS[v])}</option>`).join('')}
+        </select>
+        <span class="edit-row-hint" id="pse-readfrom-hint-${pid}">${esc(RF.HINTS[cur])}</span>
+      </label>`;
+}
+
 function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
   const pid = esc(parish.id);
   let langsVal = '';
@@ -8441,6 +8416,7 @@ function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
         </label>
       </div>
       <div class="ps-edit-in" style="--i:6">${srcHtml}</div>
+      ${readFromFieldHTML(parish)}
       <div class="ps-actions ps-edit-in" style="--i:7;--parish-color:${esc(getJurisdictionColor(parish.jurisdiction))}">
         ${linkBtn('maps', 'Google Maps', true)}
         ${linkBtn('website', 'Website', !!parish.website)}
@@ -8669,7 +8645,7 @@ function pinStatusHTML(pid, error) {
   const draft = pinDraftFor(pid);
   if (draft) {
     const how = draft.manual
-      ? 'placed by hand — saving also holds it against re-imports'
+      ? 'placed by hand'
       : 'from the address above';
     return `<span class="pin-status-staged">Pin staged: ${fmtCoord(draft.lat)}, ${fmtCoord(draft.lng)}</span>`
       + ` — ${esc(how)}. Not saved yet.`;
@@ -8678,13 +8654,7 @@ function pinStatusHTML(pid, error) {
   if (!parish || parish.lat == null || parish.lng == null) {
     return 'No pin yet. Locate it from the address, or place it by hand.';
   }
-  // A held pin is worth saying out loud here rather than only in the rulings
-  // list: it is the reason an import "did nothing" to this row.
-  const held = (state.parishRulings || []).some(
-    r => r.target === 'field' && r.decision === 'pin' && (r.subject === 'lat' || r.subject === 'address')
-  );
-  return `Pin: ${fmtCoord(parish.lat)}, ${fmtCoord(parish.lng)}`
-    + (held ? ' — held by a ruling, so imports leave it alone.' : '');
+  return `Pin: ${fmtCoord(parish.lat)}, ${fmtCoord(parish.lng)}`;
 }
 window.pinStatusHTML = pinStatusHTML;
 
@@ -8853,6 +8823,11 @@ window.saveParish = async function(id) {
   put('live_url', val('live'));
   put('acronym', val('acro'));
   put('maps_url', val('maps'));
+  const readFromSel = document.getElementById(`pse-readfrom-${pid}`);
+  const parishNow = (state.parishes || []).find(p => p.id === pid);
+  if (readFromSel && parishNow && readFromSel.value !== window.AgoraReadFrom.readFrom(parishNow)) {
+    data.read_from = readFromSel.value;
+  }
   const langsRaw = val('langs');
   if (langsRaw !== undefined) {
     const langsArr = langsRaw ? langsRaw.split(',').map(x => x.trim()).filter(Boolean) : [];
@@ -8872,18 +8847,10 @@ window.saveParish = async function(id) {
   if (draft) {
     data.lat = draft.lat;
     data.lng = draft.lng;
-    // Only by hand. A geocoded pin is just this import's answer again, and
-    // pinning it would freeze a value nobody actually checked — which is the
-    // distinction info_verified_at gets wrong and a per-field ruling gets right.
-    if (draft.manual) {
-      data.pin = {
-        field: 'address',
-        tier: 'admin',
-        note: 'Pin placed by hand in /admin against the address on the parish sheet.',
-      };
-    }
   }
 
+  // Choosing the source in this same save IS the answer to the question.
+  if (data.read_from === undefined && !(await ensureKeptByHand(pid))) return;
   const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

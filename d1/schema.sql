@@ -127,7 +127,15 @@ CREATE TABLE parishes (
   -- a Places search (POST /api/admin/places) or pasted as a link.
   --
   -- Last, because it arrived by ALTER (d1/migrations/015) and ALTER appends.
-  maps_url    TEXT
+  maps_url    TEXT,
+
+  -- Where this parish's details and times come from — public/shared/read-from.js.
+  --   directory  the jurisdiction directory import may write it (the stopgap)
+  --   website    its own website / PDF / calendar may; the directory may not
+  --   hand       a person keeps it; nothing automated writes to it
+  -- Replaced the info_overrides rulings as the thing an import asks. Last,
+  -- because it arrived by ALTER (d1/migrations/017) and ALTER appends.
+  read_from   TEXT NOT NULL DEFAULT 'directory' CHECK(read_from IN ('directory','website','hand'))
 );
 
 -- Sentinel parish for events whose parish is unknown.

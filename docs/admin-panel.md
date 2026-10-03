@@ -55,7 +55,9 @@ second person uses. Written 16 September 2026, against production.
 > **Since, 17 September 2026.** Two things this assessment did not ask for and
 > the first sub-admin would have run into within a week.
 >
-> *Which source wins.* A parish is described by several sources at once and
+> *Which source wins.* (Retired in October 2026 for one setting per parish,
+> `read_from` — docs/sources-and-ingestion.md. Kept here as the record.)
+> A parish is described by several sources at once and
 > they disagree, and until now the winner was whichever import ran last. The
 > ladder is `public/shared/source-tiers.js`; the rulings made against it are
 > `info_overrides`; CLAUDE.md has the reasoning. The panel surfaces it three
