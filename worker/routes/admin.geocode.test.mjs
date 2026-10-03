@@ -199,16 +199,22 @@ test('the edit form offers one way to finish, and it saves', () => {
   // second finishing button whose only difference is silently discarding.
   const actions = app.slice(app.indexOf('<div class="ps-actions ps-admin-actions'));
   const row = actions.slice(0, actions.indexOf('</div>'));
-  assert.ok(row.includes("finishParishEdit('${pid}')"), 'the row lost its Save');
+  assert.ok(row.includes("finishParishEdit('${pid}', this)"), 'the row lost its Save');
   assert.ok(/'Save'/.test(row), 'the finishing button is not labelled Save');
   assert.doesNotMatch(row, /'Done'/, 'a Done beside Save is the pair that differed only by discarding');
   assert.ok(row.includes("setParishEditMode('${pid}', false)\">Cancel<"), 'leaving without saving must be labelled Cancel');
 
   // The header's Done is the same act, not a quieter one that drops the form.
-  assert.ok(app.includes("finishParishEdit('${pid}')"), 'the header Done no longer saves');
+  assert.ok(app.includes("finishParishEdit('${pid}', this)"), 'the header Done no longer saves');
   assert.ok(
-    /window\.finishParishEdit[\s\S]{0,600}window\.saveParish\(id\)/.test(app),
+    /window\.finishParishEdit[\s\S]{0,1600}window\.saveParish\(id\)/.test(app),
     'finishParishEdit does not route through the save',
+  );
+  // One save at a time: a second press while the first is in flight is ignored,
+  // and the button says it is working.
+  assert.ok(
+    /window\.finishParishEdit[\s\S]{0,1600}if \(_parishSaving\.has\(id\)\) return;[\s\S]{0,400}btn\.disabled = true/.test(app),
+    'Save no longer guards against a second press while saving',
   );
   // And saving finishes, which is the other half of "they are one and the same".
   assert.ok(

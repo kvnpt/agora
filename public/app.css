@@ -5217,3 +5217,13 @@ button.ps-avatar { cursor: pointer; }
   font: inherit; font-weight: 600; font-size: 13px; padding: 5px 14px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
 }
+
+/* A button waiting on the server: a small ring in the button's own colour. */
+.ps-btn.is-busy { opacity: .85; cursor: progress; }
+.btn-spinner {
+  display: inline-block; width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: btn-spin .7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 2s; } }

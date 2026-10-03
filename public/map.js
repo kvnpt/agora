@@ -1031,6 +1031,10 @@ function fitPadding() {
 }
 
 // ── Click handlers ─────────────────────────────────────────────────────
+// The two layers that draw a parish's name: beside its dot, and above it when
+// focused or selected.
+const LABEL_LAYERS = ['parish-label', 'parish-label-above'];
+
 function setupClickHandlers() {
   map.on('click', (e) => {
     // 20 px hit slop around the click — fingers aren't pixel-precise.
@@ -1038,6 +1042,19 @@ function setupClickHandlers() {
       [e.point.x - 20, e.point.y - 20],
       [e.point.x + 20, e.point.y + 20]
     ];
+    // A tap ON a parish's name selects that parish. Checked first and without
+    // the slop: the name sits beside its dot, often nearer to a neighbour's
+    // dot than to its own, so the nearest-dot rule below would hand the tap to
+    // the wrong parish. A label's hit box is its rendered text, which is
+    // exactly the target somebody aimed at.
+    const labelHit = map.queryRenderedFeatures([
+      [e.point.x - 3, e.point.y - 3],
+      [e.point.x + 3, e.point.y + 3]
+    ], { layers: LABEL_LAYERS });
+    if (labelHit.length && labelHit[0].properties.parish_id) {
+      onParishClick(labelHit[0].properties.parish_id);
+      return;
+    }
     const features = map.queryRenderedFeatures(bbox, {
       layers: ['parish-circle', 'parish-cluster-icon']
     });
@@ -1062,7 +1079,7 @@ function setupClickHandlers() {
   });
 
   // Cursor feedback (desktop hover).
-  for (const layerId of ['parish-circle', 'parish-cluster-icon']) {
+  for (const layerId of ['parish-circle', 'parish-cluster-icon', ...LABEL_LAYERS]) {
     map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
   }
