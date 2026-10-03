@@ -5036,7 +5036,8 @@ function paintParishSheetContent(parishId, opts = {}) {
       <div class="ps-actions ps-admin-actions${psEditing ? ' ps-edit-in' : ''}"${psEditing ? ' style="--i:8"' : ''}>
         <button class="ps-btn ${psEditing ? 'ps-btn-admin ps-editing' : 'ps-btn-ghost'}" type="button"
                 aria-pressed="${psEditing}"
-                onclick="${psEditing ? `finishParishEdit('${pid}')` : `setParishEditMode('${pid}', true)`}">
+                ${psEditing ? 'data-parish-save' : ''}
+                onclick="${psEditing ? `finishParishEdit('${pid}', this)` : `setParishEditMode('${pid}', true)`}">
           ${glyph(psEditing ? 'ph:check' : 'ph:pencil-simple')}${psEditing ? 'Save' : 'Edit details'}
         </button>
         ${psEditing ? `<button class="ps-btn ps-btn-ghost" type="button" onclick="setParishEditMode('${pid}', false)">Cancel</button>` : ''}
@@ -8578,16 +8579,40 @@ window.toggleParishEdit = function(id) {
  * On a failed save `saveParish` returns false and stays open, deliberately —
  * closing there would take the unsaved values with it.
  */
-window.finishParishEdit = async function(id) {
+window.finishParishEdit = async function(id, btn) {
   // The form exists only while the mode is on, and the mode can be on with the
   // sheet showing something else — a schedule pencil, mid-render. Nothing to
   // save then, so just leave.
   if (document.getElementById(`ps-edit-form-${id}`)) {
-    await window.saveParish(id);
+    // One save at a time. A second press while the first is in flight sent the
+    // same PATCH twice; the button now says it is working and ignores presses
+    // until the save answers. A successful save re-renders the sheet, which
+    // replaces the button; a failed or abandoned one gives it back.
+    if (_parishSaving.has(id)) return;
+    _parishSaving.add(id);
+    const label = btn ? btn.innerHTML : null;
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add('is-busy');
+      btn.setAttribute('aria-busy', 'true');
+      btn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span>Saving…';
+    }
+    try {
+      await window.saveParish(id);
+    } finally {
+      _parishSaving.delete(id);
+      if (btn && btn.isConnected) {
+        btn.disabled = false;
+        btn.classList.remove('is-busy');
+        btn.removeAttribute('aria-busy');
+        btn.innerHTML = label;
+      }
+    }
     return;
   }
   window.setParishEditMode(id, false);
 };
+const _parishSaving = new Set();
 
 // ── Where a parish's pin goes (admin) ──────────────────────────────────
 //
