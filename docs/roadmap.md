@@ -62,7 +62,8 @@ same thing that can drift.
 
 ## 5. Once there is data
 
-- **Event indexing.** When Search Console has a few weeks of queries, revisit
+- **Event indexing.** When Search Console has a few weeks of queries
+  (`docs/search-console.md` has the baseline), revisit
   indexing event pages: the rule, the private-rite stoplist and the admin
   in/out switch are in `docs/lite-pages.md`.
 - **Which jurisdiction next.** Look at which parish pages get visits before
@@ -74,5 +75,6 @@ same thing that can drift.
   list — docs/people-and-access.md, after checking People has your own row.
 - Google Places: if the Maps search still refuses, the message now quotes
   Google's reason and says where to fix it — usually the key's API restrictions.
-- Search Console: verify orthodoxy.au and submit `/sitemap.xml`.
+- Search Console: export Performance in late October and add it to
+  `docs/search-console.md`.
 - Workers Observability: check CPU per request for the lite pages.
