@@ -114,4 +114,5 @@ for them, are in the doc it links to — read that before changing the area.
 | `docs/browser-checks.md` | Driving the app with Playwright |
 | `docs/adapters.md` | Writing an adapter |
 | `docs/lite-pages.md` | Shared links, previews, search |
+| `docs/search-console.md` | Search Console exports, dated, from the baseline on |
 | `docs/parish-ingestion.md` | Importing a jurisdiction's directory (`/ingest-jurisdiction`) |
