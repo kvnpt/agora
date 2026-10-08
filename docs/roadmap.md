@@ -21,6 +21,11 @@ about keeping the code that renders them honest.
 Many parishes publish one image a month (Crows Nest's bulletin is the worked
 example in `docs/adapters.md`). Reading it by hand is the slowest step left.
 
+**The first door is built:** the add-event editor reads a dropped poster with
+Claude Haiku 4.5 into draft events (docs/editing.md). What remains is the
+bulletin's other half — a changed Sunday as an override of its rule rather
+than a one-off — and the WhatsApp door below.
+
 > *Build the bulletin ingest from docs/adapters.md ("Getting the next bulletin
 > in without a VPS"). First door: an admin drops an image on a parish sheet; the
 > Worker stores it in R2, asks Claude (vision) to read it against that parish's

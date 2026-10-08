@@ -180,25 +180,22 @@ export async function getDraft(db, id) {
 
 /**
  * Every draft at the given parishes (null = every parish), newest first, with
- * their cards. Two queries, not one per draft.
+ * their cards. Two queries, not one per draft — and filtered by parish, never
+ * by a list of draft ids, because D1 binds at most 100 values and abandoned
+ * drafts accumulate.
  */
 export async function listDrafts(db, { parishIds = null } = {}) {
-  let rows;
-  if (parishIds) {
-    if (!parishIds.length) return [];
-    rows = await db.prepare(`${DRAFT_SELECT} WHERE d.parish_id IN (${parishIds.map(() => '?').join(',')})
-      ORDER BY d.updated_at DESC, d.id DESC`).bind(...parishIds).all();
-  } else {
-    rows = await db.prepare(`${DRAFT_SELECT} ORDER BY d.updated_at DESC, d.id DESC`).all();
-  }
+  if (parishIds && !parishIds.length) return [];
+  const where = parishIds ? `WHERE d.parish_id IN (${parishIds.map(() => '?').join(',')})` : '';
+  const args = parishIds || [];
+  const [rows, cards] = await Promise.all([
+    db.prepare(`${DRAFT_SELECT} ${where} ORDER BY d.updated_at DESC, d.id DESC`).bind(...args).all(),
+    db.prepare(`SELECT c.* FROM draft_events c JOIN drafts d ON d.id = c.draft_id ${where}
+      ORDER BY c.position, c.id`).bind(...args).all(),
+  ]);
   const drafts = rows.results || [];
-  if (!drafts.length) return [];
-  const ids = drafts.map(d => d.id);
-  const cards = await db.prepare(
-    `SELECT * FROM draft_events WHERE draft_id IN (${ids.map(() => '?').join(',')}) ORDER BY position, id`
-  ).bind(...ids).all();
-  const byDraft = new Map(ids.map(id => [id, []]));
-  for (const c of cards.results || []) byDraft.get(c.draft_id).push(c);
+  const byDraft = new Map(drafts.map(d => [d.id, []]));
+  for (const c of cards.results || []) if (byDraft.has(c.draft_id)) byDraft.get(c.draft_id).push(c);
   return drafts.map(d => draftOut(d, byDraft.get(d.id)));
 }
 

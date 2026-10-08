@@ -611,7 +611,9 @@
     }
 
     async function save(card) {
-      if (card.saving) { await card.saving; if (!Object.keys(card.pending).length) return; }
+      // One save per card at a time, in order: two in flight could land the
+      // older value of a field last.
+      while (card.saving) await card.saving;
       if (!Object.keys(card.pending).length) return;
       // A card the read is still filling gets its id with the read's result;
       // what was typed into it waits for that and goes then.

@@ -109,6 +109,12 @@ Four tabs, one global jurisdiction filter, one privilege level.
 | Adapters | per-adapter enable/pace/run-now | `/api/admin/adapters*` |
 | Colours | the `jurisdiction_colors` override rows | `/api/admin/jurisdiction-colors` |
 
+**Events** (October 2026) holds the drafts of one-off events not yet
+published, across every parish the account may edit, and its + opens the
+add-event editor — the same component the app's parish sheet opens
+(`public/shared/event-editor.js`), so a poster is read and an event is
+published the same way from either place.
+
 And a fifth surface that is not here at all. Editing a single occurrence —
 cancel this Sunday, move it to 10am, combine it with the cathedral — lives in
 `public/app.js`, inline on the public site, gated on `state.isAdmin`. It is the

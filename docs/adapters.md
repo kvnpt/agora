@@ -471,6 +471,28 @@ needs no channel at all and covers every parish that sends a picture, however
 it arrives — the admin drops the image in and reviews the rows. Build this
 first: it is the smallest piece, and 1 and 2 are just other ways of calling it.
 
+**Built (October 2026) as the add-event editor's poster panel**, in the app and
+in /admin alike (docs/editing.md, "Adding an event is a draft until Publish").
+What changed from the sketch above, and why:
+
+- **The review is the editor, and the proposal is a draft.** The rows arrive as
+  cards in the form a person is already looking at, saved as `draft_events`
+  rather than as an `admin_proposals` row — that table is for asks an owner
+  decides, and these are the editor's own unfinished work.
+- **Haiku 4.5**, by the owner's choice: fastest to start filling the form, a
+  fraction of a cent a poster. The model is one constant in
+  `worker/lib/poster-read.mjs`.
+- **base64, not a URL.** The poster is stored first and is public under
+  /posters/, but Claude cannot reach `wrangler dev`, and the Worker holds the
+  bytes anyway; Buffer's base64 is native code.
+- **Overrides of existing rules are not proposed yet.** The reader is told the
+  parish's regular services and not to list them at their usual times; a
+  bulletin gets a line pointing at the timetable. Turning a bulletin's changed
+  Sundays into `schedule_overrides` is still to build.
+
+Doors 1 and 2 would make a draft the same way: store the image, call the same
+reader, and point the sender at the draft.
+
 **The review is not optional**, and it is not a moderation queue for ordinary
 edits either. It exists because what is being approved was *read by a model*
 from a photograph: a misread "7:30" as "1:30" sends somebody to a locked church,

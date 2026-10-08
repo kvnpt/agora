@@ -55,7 +55,7 @@ under a key of its own (`worker/lib/poster-range.mjs`). Still not the rule:
 next month's Liturgy must not carry this month's commemorations. A range skips
 a date a break silences (an override beats a break, so writing one there would
 bring the service back) and a hidden one, and keeps every other occurrence what
-it is. An object is deleted only once no event and no override names it, so
+it is. An object is deleted only once no event, no override and no draft names it, so
 taking a bulletin off one Sunday leaves the others; `DELETE …/poster?everywhere`
 takes it off the whole parish.
 
@@ -135,3 +135,59 @@ capability, per parish, which is why `state.adminWho` now keeps the whole
 asks the two questions the Worker asks, in the order it asks them, so a button
 that is absent and a route that refuses cannot disagree. An owner and an editor
 see it on every sheet; a parish contact sees it on their own parishes only.
+
+**Adding an event is a draft until Publish.** The add-event editor
+(`public/shared/event-editor.js`) is one component with two hosts — the parish
+sheet's + in the app, and **Events** in /admin — because the old dialog lived
+only in app.js and /admin had none, and two forms would drift. It saves every
+card a moment after the typing stops into `drafts` / `draft_events`
+(`worker/lib/drafts.mjs`), so closing it loses nothing and **Save draft** is
+just closing it. A draft is made by the first thing typed or by a dropped
+poster, never by opening the editor. It is the parish's, not the person's:
+anybody who may edit that parish can continue or discard it.
+
+Why tables of their own, and not a status on `events`: that CHECK would need a
+rebuild, and every reader of `events` — the bundle, the lite pages, the
+candidates list, reconcile — would have to learn to skip a row that is not real
+yet. A table nothing public reads cannot leak a half-typed event. Not an
+`admin_proposals` row either: that is an ask an owner decides. Draft writes do
+not move the public data version for the same reason (`isDataWrite`);
+publishing does.
+
+**A draft holds the parish's LOCAL wall clock**, like a rule — the form as the
+person sees it. Publishing converts it with the parish's zone
+(`localSpanToUtc` in `public/shared/tz.mjs`, which also holds the rule that an
+end before the start is the next morning), so a published one-off still stores
+UTC.
+
+**Publish is one card per request** (`POST /api/admin/draft-events/:id/publish`),
+through `createOneOff` — the same code as `POST /api/admin/events` — with the
+combine and the ask exactly as the old dialog sent them. Workers Free allows
+fifty subrequests a request, D1 queries among them, and a combine costs several
+per target, so a poster of eight events in one call could run out halfway. The
+editor publishes the cards in order; one refused for scope stays a draft with
+the ask open while the rest go ahead. **Every card carries "also appears at" and
+"replaces"**, because an event entered because it replaces the 9am liturgy
+should never exist for a round trip beside it.
+
+**A poster is read into the draft, never into the feed.** Dropped, pasted or
+chosen, the image is shrunk in the browser to 2048px, stored once in R2 under a
+key of its own (one object for every event published from it, like a bulletin
+range), and read by Claude Haiku 4.5 (`worker/lib/poster-read.mjs`). The read
+streams back as Server-Sent Events and the cards fill as it is written; a
+poster with several events becomes several cards, collapsed to one line each so
+they can be checked at a glance. **The read fills only empty fields** — in the
+editor and again when the Worker merges it — so nothing a person typed, before
+the drop or during the read, is overwritten. It runs under `waitUntil`, so
+closing the dialog mid-read still leaves the cards filled next time. Without
+`ANTHROPIC_API_KEY` the poster is still stored and attached and the fields are
+typed by hand.
+
+The review is the editor: a model read the date off a photograph, and a misread
+7:30 sends somebody to a locked church. Each field the read filled says **from
+poster** until a person edits it (kept in `read_fields`, so a draft continued
+tomorrow still shows what nobody has looked at), the model's own doubts sit
+under their field, and one shared checker (`public/shared/event-checks.js`)
+says what is worth a look — above all a printed weekday that disagrees with the
+date, which is how a misread date usually shows itself. Missing title, date or
+start time blocks Publish; the Worker runs the same checker before it writes.

@@ -179,18 +179,23 @@ A reload is needed after each — the role is read once, by `checkAdmin()`.
 
 ### Making the client and the server disagree
 
-Several controls predict what the Worker will say (the add-event dialog decides
-whether a press will be an ask before making it). To exercise the fallback path
-you need them to disagree, and the only reliable way is to **change the role
-underneath an open dialog**:
+Several controls predict what the Worker will say (the add-event editor decides
+whether a card's publish will be an ask before making it). To exercise the
+fallback path you need them to disagree, and the only reliable way is to
+**change the role underneath an open dialog**:
 
 ```js
 // Open as an owner: the client predicts no refusal and sends no `propose`.
 await page.locator('#parish-add-event-fab').click();
-// Narrow the role in D1, then press. The Worker refuses; the fallback runs.
+// …type a card and tick another parish under "Also at other parishes"…
+// Narrow the role in D1, then press. The Worker refuses; the card shows the ask.
 execSync(`npx wrangler d1 execute agora --local --command "INSERT INTO admin_roles ..."`);
-await page.locator('#new-event-save').click();
+await page.locator('#new-event-editor [data-ee="publish"]').click();
 ```
+
+That path found a real bug the first time it was driven: typing the reason
+cleared the refusal, so the second press went without the ask and was refused
+again.
 
 ### Resetting between runs
 
@@ -202,8 +207,43 @@ occurrence that was `approved` is `combined`. Reset first:
 npx wrangler d1 execute agora --local --command \
   "DELETE FROM schedule_overrides; DELETE FROM event_parishes; DELETE FROM event_replaces;
    DELETE FROM events; DELETE FROM admin_proposals; DELETE FROM parish_notices_seen;
-   DELETE FROM admin_roles;"
+   DELETE FROM draft_events; DELETE FROM drafts; DELETE FROM admin_roles;"
 ```
+
+## The add-event editor and the poster reader
+
+The editor (`public/shared/event-editor.js`) is the same component in the app
+(`#new-event-editor`, behind `#parish-add-event-fab`) and in /admin
+(`#add-event-editor`, behind **Events** → + Event). Its controls carry
+`data-ee` hooks — `poster-input`, `drop`, `status`, `publish`, `save-draft`,
+`discard`, `add-card` — and each field `data-ee-field="title"` and so on.
+
+**Reading a poster needs Claude, and a browser check should not.** Point the
+Worker at a local stand-in that answers `POST /v1/messages` with a canned
+stream, slowly enough to watch the fields fill:
+
+```bash
+# A stand-in for the Messages API: replays a canned Haiku stream per mode
+# (one event, three events, not_an_event, a 529) with a delay between deltas.
+node scripts/mock-anthropic.mjs 8788 &
+
+# The Worker reads the key through the Secrets Store binding; give the local
+# store one (any value — the stand-in does not check it).
+npx wrangler secrets-store secret create caf2bffa59d544e88e6649b71c3e6c09 \
+  --name ANTHROPIC_API_KEY --scopes workers --value local-test-key
+
+npx wrangler dev --local --var AGORA_DEV_ADMIN:true \
+  --var ANTHROPIC_BASE_URL:http://127.0.0.1:8788
+```
+
+`setInputFiles` on `[data-ee="poster-input"]` needs a file a canvas can decode
+— a `page.screenshot()` written to disk is one. The stream itself can be read
+without a browser: create a draft with `POST /api/admin/drafts`, then
+`curl -N -X POST localhost:8787/api/admin/drafts/<id>/poster -H 'content-type:
+image/jpeg' --data-binary @poster.jpg` prints the frames as they arrive.
+
+Drafts accumulate between runs and fill the "Saved drafts here" strip; clear
+them with `DELETE FROM draft_events; DELETE FROM drafts;`.
 
 ## Screenshots
 

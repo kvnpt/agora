@@ -270,6 +270,7 @@ login.
 | `ACCESS_TEAM_DOMAIN` | e.g. `yourteam.cloudflareaccess.com` — hostname only, no `https://` |
 | `ACCESS_AUD` | the Access application's audience tag |
 | `GOOGLE_API_KEY` | the Google Calendar adapter |
+| `ANTHROPIC_API_KEY` | reading a dropped poster in the add-event editor; optional, and worth a monthly spend limit in the Anthropic Console |
 
 **Saving a secret may not deploy anything.** On a Worker owned by Workers Builds,
 the build pipeline publishes versions, so a secret saved afterwards sits in
