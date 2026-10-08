@@ -566,7 +566,10 @@
         loadCandidates(card);
       }
       card.pending[f] = toPatchValue(f, value);
-      card.publish = { state: 'idle', message: '' };
+      // A refusal for scope is about the combine's targets, and stands until
+      // they change (setList) — typing the reason it asks for must not clear
+      // it, or the next press goes without the ask and is refused again.
+      if (card.publish.state !== 'refused') card.publish = { state: 'idle', message: '' };
       schedule(card, isText ? SAVE_DELAY : 0);
       refreshCard(card);
       sync();
