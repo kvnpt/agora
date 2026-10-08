@@ -11,7 +11,7 @@ import { requireAdmin, adminIdentity } from '../lib/auth.mjs';
 import { geocode } from '../lib/geocode.mjs';
 import { readSecret } from '../lib/secrets.mjs';
 import { expandWindow, expandOne, parseInstanceId, fetchWindowRows, isValidOccurrence } from '../lib/expand.mjs';
-import { exactLocalToEpoch, localDateOf } from '../../public/shared/tz.mjs';
+import { exactLocalToEpoch, localDateOf, localSpanToUtc } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
 import { validateClaim, alreadyCovers, planGrant, describeClaim, ensureClaimsTable } from '../lib/claims.mjs';
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
@@ -34,9 +34,16 @@ import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
+import eventChecks from '../../public/shared/event-checks.js';
+import sse from '../../public/shared/sse.js';
+import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
+  updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody } from '../lib/drafts.mjs';
+import { readPoster, posterContext } from '../lib/poster-read.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
 const { isResolvableTimezone, DEFAULT_TIMEZONE } = timezones;
+const { checkDraftEvent, blockers } = eventChecks;
+const { sseFrame } = sse;
 
 // A zone the runtime cannot resolve makes every one of that parish's service
 // times meaningless, and the row looks fine. Refused rather than stored,
@@ -386,6 +393,98 @@ async function combineNames(db, payload) {
     targets.push(row ? `${row.title} at ${row.parish_name || '?'}` : rid);
   }
   return { parishes, targets };
+}
+
+/**
+ * Write a one-off — the body of POST /api/admin/events, shared with publishing
+ * a draft so that one-offs are made one way.
+ *
+ * The combine travels in the same call. An event entered because it replaces
+ * the 9am liturgy should not exist for a round trip alongside the liturgy it
+ * replaces — see applyEscalation.
+ *
+ * `posterPath` is the draft's poster, and an argument rather than a body field
+ * on purpose: a client that could name any R2 key here could point an event at
+ * somebody else's poster without going through the upload route.
+ *
+ * @returns {Promise<{response: Response} | {id: number, proposalId: number|null}>}
+ *   `response` is the refusal or the 400, ready to return as it stands.
+ */
+async function createOneOff(c, b, { posterPath = null } = {}) {
+  const { env } = c;
+  const { parish_id, title } = b;
+  if (!parish_id || !title || !b.start_utc) {
+    return { response: json({ error: 'parish_id, title and start_utc are required' }, 400) };
+  }
+  // Scoped on the parish being written TO — for a create there is no existing
+  // row to read the scope off.
+  const scoped = outOfScope(c, parish_id);
+  if (scoped) return { response: scoped };
+
+  // A one-off stores a real instant, so the caller does the timezone work and
+  // this only checks that what arrived is a moment. `schedules.start_time` is
+  // the opposite and deliberately so; d1/schema.sql says why at length.
+  const instant = (v) => {
+    const t = Date.parse(v);
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  };
+  const startUtc = instant(b.start_utc);
+  if (!startUtc) return { response: json({ error: 'start_utc must be an instant, e.g. 2026-09-27T23:00:00.000Z' }, 400) };
+  const endUtc = b.end_utc ? instant(b.end_utc) : null;
+  if (b.end_utc && !endUtc) return { response: json({ error: 'end_utc must be an instant' }, 400) };
+  if (endUtc && Date.parse(endUtc) < Date.parse(startUtc)) {
+    return { response: json({ error: 'end_utc is before start_utc' }, 400) };
+  }
+
+  const parish = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?')
+    .bind(parish_id).first();
+  if (!parish) return { response: json({ error: 'Invalid parish_id' }, 400) };
+
+  // `source_adapter` is what the bundle query filters on ('schedule' is scar
+  // tissue from the nightly generator), and 'manual' is what says a person
+  // typed this. 'headless' is the mutation_type for a one-off with no rule
+  // behind it, matching what the adapters write.
+  const row = await env.DB.prepare(
+    `INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
+       location_override, lat, lng, event_type, status, mutation_type, languages,
+       hide_live, parish_scoped, poster_path)
+     VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?,?) RETURNING *`
+  ).bind(
+    parish_id, title, b.description || null, startUtc, endUtc,
+    b.location_override || null, parish.lat, parish.lng,
+    b.event_type || 'other', b.languages || null,
+    b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, posterPath,
+  ).first();
+
+  // A venue of its own gets its own dot. Best-effort: a geocoder that cannot
+  // find it leaves the parish's coordinates, which is where the service is
+  // unless somebody says otherwise.
+  if (b.location_override) {
+    const coords = await geocode(b.location_override);
+    if (coords) {
+      await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
+        .bind(coords.lat, coords.lng, row.id).run();
+    }
+  }
+
+  const { refused, ask } = await applyEscalation(c, row, b);
+  if (refused) {
+    // The event is written and the combine is not, which is the one outcome
+    // worth undoing: it would leave a card beside the service it was entered
+    // to replace, with nothing saying the combine had been asked for.
+    //
+    // Undone rather than kept, even though the refusal now offers to carry
+    // the ask: the panel re-sends the whole thing with `propose` set, and a
+    // half-made event waiting for that second press is a row nothing on
+    // screen accounts for.
+    await env.DB.prepare('DELETE FROM events WHERE id = ?').bind(row.id).run();
+    return { response: refused };
+  }
+
+  // The event exists at their own parish either way — only the half that
+  // reaches another parish waits on an owner.
+  const proposalId = ask ? await insertProposal(env, ask, await editor(c)) : null;
+  return { id: row.id, proposalId };
 }
 
 /** An event's row plus the two halves of its combine, as both routes answer. */
@@ -856,82 +955,9 @@ export function registerAdminRoutes(router) {
   // replaces the 9am liturgy should not exist for a round trip alongside the
   // liturgy it replaces — see applyEscalation.
   router.post('/api/admin/events', guarded('event.edit', async (c) => {
-    const { env, request } = c;
-    const b = await readJson(request);
-    const { parish_id, title } = b;
-    if (!parish_id || !title || !b.start_utc) {
-      return json({ error: 'parish_id, title and start_utc are required' }, 400);
-    }
-    // Scoped on the parish being written TO — for a create there is no existing
-    // row to read the scope off.
-    const scoped = outOfScope(c, parish_id);
-    if (scoped) return scoped;
-
-    // A one-off stores a real instant, so the caller does the timezone work and
-    // this only checks that what arrived is a moment. `schedules.start_time` is
-    // the opposite and deliberately so; d1/schema.sql says why at length.
-    const instant = (v) => {
-      const t = Date.parse(v);
-      return Number.isFinite(t) ? new Date(t).toISOString() : null;
-    };
-    const startUtc = instant(b.start_utc);
-    if (!startUtc) return json({ error: 'start_utc must be an instant, e.g. 2026-09-27T23:00:00.000Z' }, 400);
-    const endUtc = b.end_utc ? instant(b.end_utc) : null;
-    if (b.end_utc && !endUtc) return json({ error: 'end_utc must be an instant' }, 400);
-    if (endUtc && Date.parse(endUtc) < Date.parse(startUtc)) {
-      return json({ error: 'end_utc is before start_utc' }, 400);
-    }
-
-    const parish = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?')
-      .bind(parish_id).first();
-    if (!parish) return json({ error: 'Invalid parish_id' }, 400);
-
-    // `source_adapter` is what the bundle query filters on ('schedule' is scar
-    // tissue from the nightly generator), and 'manual' is what says a person
-    // typed this. 'headless' is the mutation_type for a one-off with no rule
-    // behind it, matching what the adapters write.
-    const row = await env.DB.prepare(
-      `INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
-         location_override, lat, lng, event_type, status, mutation_type, languages,
-         hide_live, parish_scoped)
-       VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?) RETURNING *`
-    ).bind(
-      parish_id, title, b.description || null, startUtc, endUtc,
-      b.location_override || null, parish.lat, parish.lng,
-      b.event_type || 'other', b.languages || null,
-      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0,
-    ).first();
-
-    // A venue of its own gets its own dot. Best-effort: a geocoder that cannot
-    // find it leaves the parish's coordinates, which is where the service is
-    // unless somebody says otherwise.
-    if (b.location_override) {
-      const coords = await geocode(b.location_override);
-      if (coords) {
-        await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
-          .bind(coords.lat, coords.lng, row.id).run();
-      }
-    }
-
-    const { refused, ask } = await applyEscalation(c, row, b);
-    if (refused) {
-      // The event is written and the combine is not, which is the one outcome
-      // worth undoing: it would leave a card beside the service it was entered
-      // to replace, with nothing saying the combine had been asked for.
-      //
-      // Undone rather than kept, even though the refusal now offers to carry
-      // the ask: the panel re-sends the whole thing with `propose` set, and a
-      // half-made event waiting for that second press is a row nothing on
-      // screen accounts for.
-      await env.DB.prepare('DELETE FROM events WHERE id = ?').bind(row.id).run();
-      return refused;
-    }
-
-    // The event exists at their own parish either way — only the half that
-    // reaches another parish waits on an owner.
-    const proposalId = ask ? await insertProposal(env, ask, await editor(c)) : null;
-
-    return json({ ...await eventWithEscalation(env.DB, row.id), proposal_id: proposalId }, 201);
+    const made = await createOneOff(c, await readJson(c.request));
+    if (made.response) return made.response;
+    return json({ ...await eventWithEscalation(c.env.DB, made.id), proposal_id: made.proposalId }, 201);
   }));
 
   // PATCH an event. A synthetic id writes an override instead of mutating a row.
@@ -1268,6 +1294,289 @@ export function registerAdminRoutes(router) {
       await releaseUnused(env, [anchor.previous]);
     }
     return json({ id: params.id, poster_path: null, count });
+  }));
+
+  // ── drafts: adding an event ──
+  //
+  // The add-event editor (public/shared/event-editor.js), in the app and in
+  // /admin, keeps every card as a draft while it is edited, and only Publish
+  // writes `events` — one card per request. worker/lib/drafts.mjs has the
+  // storage; docs/editing.md has the why.
+  //
+  // Every route here is scoped on the DRAFT's parish, read off the row, never
+  // off the body: a draft is the parish's, not the person's, so anybody who
+  // may edit that parish may continue it, and nobody else can see it.
+  //
+  // These writes do not move the public data version — nothing public reads a
+  // draft — except publishing, which writes `events` (lib/data-version.mjs).
+
+  /** The draft, if this person may touch it; otherwise the response saying why. */
+  async function draftInScope(c, id) {
+    await ensureDraftTables(c.env.DB);
+    const draft = await getDraft(c.env.DB, id);
+    if (!draft) return { response: json({ error: 'That draft is gone — published or discarded already.' }, 404) };
+    const scoped = outOfScope(c, draft.parish_id);
+    return scoped ? { response: scoped } : { draft };
+  }
+
+  /** The card and its draft's parish and poster, if this person may touch it. */
+  async function cardInScope(c, id) {
+    await ensureDraftTables(c.env.DB);
+    const card = await cardWithDraft(c.env.DB, id);
+    if (!card) return { response: json({ error: 'That event is gone from the draft.' }, 404) };
+    const scoped = outOfScope(c, card.parish_id);
+    return scoped ? { response: scoped } : { card };
+  }
+
+  router.get('/api/admin/drafts', guarded('event.edit', async (c) => {
+    await ensureDraftTables(c.env.DB);
+    const only = c.query.get('parish');
+    if (only) {
+      const scoped = outOfScope(c, only);
+      if (scoped) return scoped;
+    }
+    const parishIds = only ? [only] : (c.who.role === 'parish' ? c.who.parishIds : null);
+    return json(await listDrafts(c.env.DB, { parishIds }));
+  }));
+
+  // A draft is made by the first thing a person types, or by a dropped poster
+  // — never by opening the editor, so looking costs nothing.
+  router.post('/api/admin/drafts', guarded('event.edit', async (c) => {
+    const { env } = c;
+    await ensureDraftTables(env.DB);
+    const b = await readJson(c.request);
+    const parishId = typeof b.parish_id === 'string' ? b.parish_id : '';
+    if (!parishId) return json({ error: 'Which parish is the event at?' }, 400);
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+    if (!await env.DB.prepare('SELECT id FROM parishes WHERE id = ?').bind(parishId).first()) {
+      return json({ error: 'Invalid parish_id' }, 400);
+    }
+    const v = validateCard(b.card || {});
+    if (!v.ok) return json({ error: v.error, field: v.field }, 400);
+    return json(await createDraft(env.DB, {
+      parishId, createdBy: (await editor(c)) || 'unknown', card: v.patch,
+    }), 201);
+  }));
+
+  router.get('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
+    const r = await draftInScope(c, c.params.id);
+    return r.response || json(r.draft);
+  }));
+
+  // Discard. The poster goes too unless something still shows it — an event
+  // published from this draft already, say.
+  router.delete('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    await c.env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(r.draft.id).run();
+    await releaseUnused(c.env, [r.draft.poster_path]);
+    return json({ ok: true });
+  }));
+
+  router.post('/api/admin/drafts/:id/events', guarded('event.edit', async (c) => {
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const v = validateCard(await readJson(c.request));
+    if (!v.ok) return json({ error: v.error, field: v.field }, 400);
+    const last = r.draft.cards.reduce((m, x) => Math.max(m, x.position), -1);
+    return json(await insertCard(c.env.DB, r.draft.id, last + 1, v.patch), 201);
+  }));
+
+  // Take the poster off the draft. The cards stay — they are the person's now.
+  router.delete('/api/admin/drafts/:id/poster', guarded('event.edit', async (c) => {
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    await c.env.DB.prepare(
+      `UPDATE drafts SET poster_path = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+    ).bind(r.draft.id).run();
+    await releaseUnused(c.env, [r.draft.poster_path]);
+    return json(await getDraft(c.env.DB, r.draft.id));
+  }));
+
+  // Store a poster on a draft and read it, streaming what is read.
+  //
+  // The body is the image (raw, like the poster upload above), already shrunk
+  // to 2048px by the editor. `?reread=1` with no body reads the poster the
+  // draft already has — a read that failed, or one the Worker never finished.
+  //
+  // The answer is text/event-stream from the first byte: `poster`, then
+  // `kind`, `field` and `item` as Claude writes them, then `result` with the
+  // draft as merged — or `error` and then `result`. The read runs under
+  // waitUntil, so closing the dialog does not lose it: the cards are there
+  // when the draft is continued. lib/poster-read.mjs has the model side.
+  const POSTER_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+  router.post('/api/admin/drafts/:id/poster', guarded('event.edit', async (c) => {
+    const { env, request, ctx } = c;
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const draft = r.draft;
+
+    let bytes, mediaType;
+    if (c.query.get('reread') === '1') {
+      const key = posterKeyOf(draft.poster_path);
+      const obj = key && await env.ASSETS_BUCKET.get(key);
+      if (!obj) return json({ error: 'This draft has no poster to read.' }, 400);
+      bytes = await obj.arrayBuffer();
+      mediaType = (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
+    } else {
+      mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      const ext = POSTER_TYPES[mediaType];
+      if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image.' }, 415);
+      bytes = await request.arrayBuffer();
+      if (!bytes.byteLength) return json({ error: 'No image received' }, 400);
+      // The reader's own limit. The editor sends 2048px, which is far under it.
+      if (bytes.byteLength > 5 * 1024 * 1024) {
+        return json({ error: 'That image is over 5 MB, the most the reader takes.' }, 413);
+      }
+      const key = draftPosterKey(draft.parish_id, ext);
+      await env.ASSETS_BUCKET.put(key, bytes, {
+        httpMetadata: { contentType: mediaType, cacheControl: 'public, max-age=86400' },
+      });
+      const previous = draft.poster_path;
+      draft.poster_path = `/${key}`;
+      await env.DB.prepare(
+        `UPDATE drafts SET poster_path = ?, read_status = NULL, read_kind = NULL, read_notes = NULL,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+      ).bind(draft.poster_path, draft.id).run();
+      // A replaced poster goes once nothing shows it.
+      if (previous) await releaseUnused(env, [previous]);
+    }
+
+    const apiKey = await readSecret(env.ANTHROPIC_API_KEY);
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+    let open = true;
+    // Never awaited: the writes queue in order, and a reader that has gone
+    // away (the dialog closed) must not stop the read from being saved.
+    const send = (event, payload) => {
+      if (open) writer.write(encoder.encode(sseFrame(event, payload))).catch(() => { open = false; });
+    };
+    const finish = () => {
+      if (open) { open = false; writer.close().catch(() => {}); }
+    };
+
+    const pump = (async () => {
+      send('poster', { poster_path: draft.poster_path });
+      if (!apiKey) {
+        send('result', { configured: false, draft: await getDraft(env.DB, draft.id),
+          error: 'Reading posters is not set up on this site — fill in the details by hand.' });
+        return finish();
+      }
+      await setReadStatus(env.DB, draft.id, 'reading');
+      const parish = await env.DB.prepare('SELECT name, address, timezone FROM parishes WHERE id = ?')
+        .bind(draft.parish_id).first();
+      const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
+      const today = localDateOf(zone, Date.now());
+      const rules = (await env.DB.prepare(
+        `SELECT day_of_week, start_time, title FROM schedules
+         WHERE parish_id = ? AND active = 1 AND (effective_to IS NULL OR effective_to >= ?)
+         ORDER BY day_of_week, start_time`
+      ).bind(draft.parish_id, today).all()).results || [];
+
+      const read = await readPoster({
+        apiKey,
+        baseUrl: env.ANTHROPIC_BASE_URL,
+        image: bytes,
+        mediaType,
+        context: posterContext({ ...parish, timezone: zone }, today, rules),
+      }, send);
+      // One line per read, for Workers Observability: what it cost and how long.
+      console.log(JSON.stringify({ poster_read: {
+        draft: draft.id, parish: draft.parish_id, ok: read.ok, ms: read.ms,
+        ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
+      } }));
+      if (!read.ok) {
+        await setReadStatus(env.DB, draft.id, 'failed');
+        send('error', { error: read.error, retry: read.retry });
+        send('result', { draft: await getDraft(env.DB, draft.id) });
+        return finish();
+      }
+      // Null when the draft was discarded while it was being read.
+      const merged = await mergeRead(env.DB, draft.id, read.read);
+      send('result', { draft: merged });
+      finish();
+    })().catch(async (e) => {
+      console.error(`[poster-read] ${e && (e.stack || e.message)}`);
+      await setReadStatus(env.DB, draft.id, 'failed').catch(() => {});
+      send('error', { error: 'Something went wrong reading the poster — try again.', retry: true });
+      finish();
+    });
+    if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pump);
+
+    return new Response(readable, {
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' },
+    });
+  }));
+
+  // Autosave. What a person sets is theirs: its "from poster" mark goes, and a
+  // new date drops the weekday the poster printed beside the old one.
+  router.patch('/api/admin/draft-events/:id', guarded('event.edit', async (c) => {
+    const r = await cardInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const v = validateCard(await readJson(c.request));
+    if (!v.ok) return json({ error: v.error, field: v.field }, 400);
+    return json(await updateCard(c.env.DB, r.card, v.patch));
+  }));
+
+  router.delete('/api/admin/draft-events/:id', guarded('event.edit', async (c) => {
+    const r = await cardInScope(c, c.params.id);
+    if (r.response) return r.response;
+    await c.env.DB.prepare('DELETE FROM draft_events WHERE id = ?').bind(r.card.id).run();
+    await touchDraft(c.env.DB, r.card.draft_id);
+    return json({ ok: true });
+  }));
+
+  // Publish one card: the draft becomes an event.
+  //
+  // ONE CARD PER REQUEST. Workers Free allows fifty subrequests a request, D1
+  // queries among them, and a combine costs several per target — a poster of
+  // eight events published in one call could run out halfway through. So the
+  // editor publishes the cards in order, one call each, and a card the Worker
+  // refuses stays a draft with the refusal on it while the rest go ahead.
+  //
+  // The card's local date and times become instants here, with the parish's
+  // zone; then it is written exactly as POST /api/admin/events writes one,
+  // combine and ask included, with the draft's poster on it.
+  router.post('/api/admin/draft-events/:id/publish', guarded('event.edit', async (c) => {
+    const { env } = c;
+    const r = await cardInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const card = r.card;
+
+    const parish = await env.DB.prepare('SELECT timezone FROM parishes WHERE id = ?').bind(card.parish_id).first();
+    const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
+    const problems = blockers(checkDraftEvent(card, { today: localDateOf(zone, Date.now()) }));
+    if (problems.length) {
+      return json({ error: problems.map(p => p.text).join(' '), checks: problems }, 400);
+    }
+
+    const b = await readJson(c.request);
+    const body = { ...publishBody(card, card.parish_id),
+      ...localSpanToUtc(zone, card.date, card.start_time, card.end_time) };
+    // `propose` is the flag and the reason, as on POST /api/admin/events; the
+    // card keeps the reason it was given, so a bare `true` uses that.
+    if (b.propose) body.propose = typeof b.propose === 'string' ? b.propose : (card.ask_reason || true);
+
+    const made = await createOneOff(c, body, { posterPath: card.poster_path });
+    if (made.response) return made.response;
+
+    await env.DB.prepare('DELETE FROM draft_events WHERE id = ?').bind(card.id).run();
+    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM draft_events WHERE draft_id = ?')
+      .bind(card.draft_id).first();
+    // The last card takes its draft with it. The poster object stays: the
+    // events published from it name it now.
+    if (!left.n) await env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(card.draft_id).run();
+    else await touchDraft(env.DB, card.draft_id);
+
+    return json({
+      event: await eventWithEscalation(env.DB, made.id),
+      proposal_id: made.proposalId,
+      remaining: left.n,
+    }, 201);
   }));
 
   // ── combine ──

@@ -132,6 +132,21 @@ binding = "GITHUB_ACTIONS_TOKEN"
 store_id = "caf2bffa59d544e88e6649b71c3e6c09"
 secret_name = "GITHUB_ACTIONS_TOKEN"
 
+# Lets the add-event editor read a dropped poster with Claude (Haiku 4.5) —
+# worker/lib/poster-read.mjs. An Anthropic API key; set a monthly spend limit on
+# it in the Anthropic Console, since nothing here counts what it costs.
+#
+# OPTIONAL in the code, like the GitHub token. Without it a dropped poster is
+# still stored and attached, and the editor says reading is not set up and
+# leaves the fields to be typed — the same editor, minus the reading.
+#
+# ANTHROPIC_BASE_URL is deliberately not declared: it exists so `wrangler dev`
+# can be pointed at a local stand-in (docs/browser-checks.md) with --var.
+[[secrets_store_secrets]]
+binding = "ANTHROPIC_API_KEY"
+store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+secret_name = "ANTHROPIC_API_KEY"
+
 
 # Which repository holds the "Extract parish PDFs" workflow.
 #

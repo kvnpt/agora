@@ -901,3 +901,91 @@ CREATE TABLE info_overrides (
 );
 
 CREATE INDEX idx_info_overrides_parish ON info_overrides(parish_id, target);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- drafts, draft_events — an event somebody is still adding
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Adding an event is a draft until somebody presses Publish. The add-event
+-- editor (public/shared/event-editor.js, in the app and in /admin) saves every
+-- edit here as it is made, so closing the dialog loses nothing, and a poster
+-- read by a model is on file before anybody has checked it — without being on
+-- the site. Only POST /api/admin/draft-events/:id/publish writes `events`.
+--
+-- NOT A STATUS ON `events`. Its CHECK would need a rebuild, and every reader of
+-- that table — /api/bundle, the lite pages, the candidates list, reconcile —
+-- would have to learn to skip a row that is not real yet. A table nothing
+-- public reads cannot leak a half-typed event. Not an admin_proposals row
+-- either: that is an ask an owner decides, and a draft is the editor's own
+-- unfinished work.
+--
+-- One `drafts` row per sitting at the editor, holding what the batch shares:
+-- the parish and the poster. A poster with four events on it is one draft with
+-- four `draft_events`; a hand-typed event is a draft with one and no poster.
+--
+-- worker/lib/drafts.mjs also creates both tables IF NOT EXISTS on first use,
+-- with the same DDL, so a deploy that lands before migration 018 does not take
+-- the add-event dialog down with it.
+CREATE TABLE drafts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id   TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  -- '/posters/<key>': ONE object for every event the draft publishes, like a
+  -- bulletin over a range (worker/lib/poster-range.mjs). The key is not derived
+  -- from any event id, so no single event's poster delete can take it from the
+  -- others, and it is released only once no event, override or draft names it.
+  poster_path TEXT,
+  -- How far reading the poster got. NULL when nothing was read (no poster, or
+  -- no key on this deployment). A 'reading' row older than a couple of minutes
+  -- is a read the Worker never finished, and the editor offers to read again.
+  read_status TEXT CHECK(read_status IN ('reading','read','failed')),
+  -- What the model took the image to be — event, several_events, bulletin,
+  -- not_an_event — and its notes on the poster as a whole (JSON). Display only.
+  read_kind   TEXT,
+  read_notes  TEXT,
+  created_by  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX idx_drafts_parish ON drafts(parish_id);
+
+-- One card in the editor: one event to be.
+--
+-- LOCAL WALL CLOCK, like schedules.start_time and unlike events.start_utc. A
+-- draft holds the form as the person sees it — the parish's own date and time —
+-- and publishing converts it with the parish's zone (localSpanToUtc in
+-- public/shared/tz.mjs), which is the conversion the form always made at the
+-- moment of saving. An instant stored here would freeze a conversion made
+-- before anybody had checked the date it converted.
+CREATE TABLE draft_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  draft_id          INTEGER NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+  position          INTEGER NOT NULL DEFAULT 0,
+  title             TEXT,
+  date              TEXT,   -- 'YYYY-MM-DD' on the parish's calendar
+  start_time        TEXT,   -- 'HH:MM' on the parish's wall clock
+  end_time          TEXT,   -- 'HH:MM'; at or before the start is the next morning
+  event_type        TEXT,
+  description       TEXT,
+  languages         TEXT,   -- JSON array, as events.languages
+  location_override TEXT,
+  -- The combine, as the add-event dialog always took it (applyEscalation):
+  -- JSON arrays of parish ids, and of what it replaces — an integer for a
+  -- stored one-off, "sid:YYYY-MM-DD" for a rule's occurrence — plus the reason
+  -- that goes with an ask when part of it is another parish's.
+  also_at           TEXT,
+  replaces          TEXT,
+  ask_reason        TEXT,
+  -- What the poster printed, kept to check the date against: the weekday it
+  -- named, and whether it gave a year (0 = the year was assumed). Both are
+  -- cleared when a person edits the date, which is them taking the date on.
+  printed_weekday   TEXT,
+  year_printed      INTEGER,
+  -- JSON [{field, text}]: the model's own doubts, each dropped when a person
+  -- edits its field. And JSON [field…]: the fields still exactly as the poster
+  -- was read — the "from poster" marks, kept so a draft continued tomorrow
+  -- still shows what nobody has looked at.
+  read_notes        TEXT,
+  read_fields       TEXT,
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);

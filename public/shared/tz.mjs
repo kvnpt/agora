@@ -166,3 +166,25 @@ export function localPartsOf(zone, epochMs) {
     dow: new Date(date + 'T00:00:00Z').getUTCDay(),
   };
 }
+
+/**
+ * A one-off's local date and times as the two instants `events` stores.
+ *
+ * What a person types is the parish's wall clock; the row holds instants. An
+ * end at or before the start is the next morning, not a mistake — the Paschal
+ * liturgy starts before midnight and finishes after it — so it is read on the
+ * following calendar day. One place for that rule, because the add-event
+ * editor's drafts are converted by the Worker when they are published.
+ *
+ * @returns {{start_utc: string, end_utc: string|null}} ISO instants
+ */
+export function localSpanToUtc(zone, dateStr, startTime, endTime) {
+  const start = exactLocalToEpoch(zone, dateStr, startTime);
+  if (!endTime) return { start_utc: new Date(start).toISOString(), end_utc: null };
+  let end = exactLocalToEpoch(zone, dateStr, endTime);
+  if (end <= start) {
+    const next = new Date(naiveEpoch(dateStr, '00:00') + 86400000).toISOString().slice(0, 10);
+    end = exactLocalToEpoch(zone, next, endTime);
+  }
+  return { start_utc: new Date(start).toISOString(), end_utc: new Date(end).toISOString() };
+}
