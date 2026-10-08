@@ -60,7 +60,7 @@ export function createJsonScanner({ onValue = () => {}, partial = () => false } 
     const path = nextPath();
     if (ch === '{') { stack.push({ type: 'object', value: {}, key: null, path }); state = 'keyOrClose'; }
     else if (ch === '[') { stack.push({ type: 'array', value: [], path }); state = 'valueOrClose'; }
-    else if (ch === '"') { str = { role: 'value', text: '', esc: false, hex: null, path, emitted: null }; state = 'string'; }
+    else if (ch === '"') { str = { role: 'value', text: '', esc: false, hex: null, path, emitted: '' }; state = 'string'; }
     else if (ch === '-' || (ch >= '0' && ch <= '9') || ch === 't' || ch === 'f' || ch === 'n') {
       lit = { text: ch, path }; state = 'literal';
     } else fail(`Unexpected ${JSON.stringify(ch)}`);
