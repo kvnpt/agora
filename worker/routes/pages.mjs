@@ -49,8 +49,10 @@ export function liteKind(pathname, now = Date.now()) {
   const first = pathname.split('/').filter(Boolean)[0];
   if (!first || SITE_PATHS.has(first.toLowerCase())) return null;
   const r = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) });
+  // A part of the day too: the card does not narrow by one, and a card for
+  // /sgr/evening listing the morning services would answer the wrong question.
   const appOnly = r.jurisdiction || r.location || r.services || r.socialOnly
-    || r.englishOnly || r.donate;
+    || r.englishOnly || r.donate || r.part;
   if (appOnly) return null;
   if (r.parishSlugs && r.parishSlugs.length === 1) return { kind: 'parish', slug: r.parishSlugs[0], route: r };
   if (!r.parishSlugs && r.eventId && !r.dateFocus && r.day == null && !r.service) {

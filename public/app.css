@@ -3864,6 +3864,11 @@ button.ps-avatar { cursor: pointer; }
   background: var(--surface-2);
 }
 .ps-focus-banner + .ps-date-banner { margin-top: 6px; }
+/* The same banner at the top of the main feed, for /liturgy, /wed and
+   /evening (syncFeedFilterBanner). The class sets display: flex, which would
+   otherwise beat the hidden attribute. */
+.feed-filter-banner { margin: 12px 16px 4px; }
+.feed-filter-banner[hidden] { display: none; }
 .ps-focus-banner-text { flex: 1; min-width: 0; }
 .ps-focus-banner-x {
   flex: none;

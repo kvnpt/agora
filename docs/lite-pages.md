@@ -23,7 +23,8 @@ empty shell.
 3. `servePage` (`worker/routes/pages.mjs`) classifies the path with
    `public/shared/url-state.js` — **the same grammar the app parses with** — and answers
    exactly two shapes: one parish (with any day / service / date focus), or a bare event
-   id. Everything else returns null and the app loads as it always did.
+   id. Everything else returns null and the app loads as it always did — including a
+   part of the day (`/sgr/evening`), which the card does not narrow by.
 4. **It fails open.** A render that throws returns null and the app answers the link.
 
 Two ways past it: `?app` (the card's "Open this in the app") and the `agora_admin`

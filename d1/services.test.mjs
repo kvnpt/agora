@@ -1,4 +1,4 @@
-// Service kinds and weekdays, as URL slugs.
+// Service kinds, weekdays and parts of the day, as URL slugs.
 //
 // The classification is title-first because event_type cannot carry it:
 // production's 68 rules are 36 'liturgy', 31 'prayer' and one 'other', and
@@ -103,9 +103,35 @@ test('serviceMatches is the same classification, not a looser one', () => {
   assert.ok(S.serviceMatches(null, { title: 'Bookshop' }));
 });
 
-test('service and day slugs are reserved against parish acronyms', () => {
+test('service, day and part-of-day slugs are reserved against parish acronyms', () => {
   for (const slug of S.SERVICE_SLUGS) assert.ok(Slugs.reservedSlugReason(slug), slug);
   for (const slug of S.DAY_SLUGS) assert.ok(Slugs.reservedSlugReason(slug), slug);
+  for (const slug of S.PART_SLUGS) assert.ok(Slugs.reservedSlugReason(slug), slug);
+});
+
+test('morning and evening split at 2pm, the line the feed draws its cards on', () => {
+  assert.equal(S.resolvePartOfDay('Evenings'), 'evening');
+  assert.equal(S.resolvePartOfDay('morning'), 'morning');
+  assert.equal(S.resolvePartOfDay('afternoon'), null, 'the feed has two parts, not four');
+  assert.equal(S.partOfDayLabel('evening'), 'Evening');
+  // A rule is its own wall clock.
+  assert.equal(S.partOfDayOf({ start_time: '13:59' }), 'morning');
+  assert.equal(S.partOfDayOf({ start_time: '14:00' }), 'evening');
+  assert.equal(S.partOfDayOf({ start_time: '00:30' }), 'morning');
+  // A projected instance carries its parish's wall clock; UTC is not asked.
+  assert.equal(S.partOfDayOf({ start_local: '2026-10-11T18:00', start_utc: '2026-10-11T07:00:00Z' }), 'evening');
+  assert.equal(S.partOfDayOf({}), null, 'no time, no part');
+});
+
+test("a one-off's part of the day is its parish's, not Sydney's", () => {
+  // 1pm in Perth is 4pm in Sydney (AEDT): a morning service, wherever it is read.
+  const perth = { start_utc: '2026-10-14T05:00:00Z', timezone: 'Australia/Perth' };
+  assert.equal(S.localHourOf(perth), 13);
+  assert.equal(S.partOfDayOf(perth), 'morning');
+  assert.equal(S.partOfDayOf({ start_utc: '2026-10-14T05:00:00Z' }), 'evening', 'no zone falls back to Sydney');
+  assert.equal(S.partOfDayOf({ start_utc: '2026-10-14T05:00:00Z' }, 'Australia/Perth'), 'morning');
+  assert.equal(S.partOfDayOf({ start_utc: '2026-10-14T05:00:00Z', timezone: 'Not/AZone' }), 'evening',
+    'a zone Intl does not know reads as Sydney rather than throwing');
 });
 
 test('a service slug is never also a day or a jurisdiction', () => {
@@ -116,6 +142,10 @@ test('a service slug is never also a day or a jurisdiction', () => {
   for (const slug of S.DAY_SLUGS) {
     assert.equal(S.resolveService(slug), null, `${slug} reads as a service too`);
     assert.ok(!Slugs.JURISDICTIONS.includes(slug), `${slug} is a jurisdiction too`);
+  }
+  for (const slug of S.PART_SLUGS) {
+    assert.equal(S.resolveDay(slug), null, `${slug} reads as a weekday too`);
+    assert.equal(S.resolveService(slug), null, `${slug} reads as a service too`);
   }
 });
 
@@ -130,8 +160,12 @@ test('app.js reads the registry and writes the segments back', () => {
     'scheduleFocusBannerHtml',           // the "Showing …" row
     'data-schedule-focus-clear',         // its dismiss
     'data-sched-focus',                  // tappable schedule rows
+    'syncFeedFilterBanner',              // the main feed's "Showing …"
+    'data-feed-filter-clear',            // its dismiss
   ]) {
     assert.ok(app.includes(needle), `app.js is missing ${needle}`);
   }
-  assert.ok(fs.readFileSync('public/index.html', 'utf8').includes('/shared/services.js'));
+  const html = fs.readFileSync('public/index.html', 'utf8');
+  assert.ok(html.includes('/shared/services.js'));
+  assert.ok(html.includes('id="feed-filter-banner"'), 'the feed banner needs somewhere to render');
 });

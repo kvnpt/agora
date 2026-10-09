@@ -1,8 +1,8 @@
 // What a parish acronym is not allowed to be.
 //
 // An acronym is a URL segment: /sjfc opens that parish. So is a jurisdiction
-// (/greek), a region (/qld), a service (/liturgy), a mode (/services) and an
-// event id (/42). They
+// (/greek), a region (/qld), a service (/liturgy), a part of the day
+// (/evening), a mode (/services) and an event id (/42). They
 // share one namespace and detectUrlState resolves them in a fixed order, with
 // the parish slug last — so an acronym that spells an earlier one is not a
 // clash the router notices, it is a parish that has quietly become
@@ -68,6 +68,7 @@
       }
     }
     if (services && services.DAY_SLUGS) for (const slug of services.DAY_SLUGS) add(slug);
+    if (services && services.PART_SLUGS) for (const slug of services.PART_SLUGS) add(slug);
     if (dates && dates.DATE_SLUGS) {
       // Both spellings again: /nextthursday resolves in the router, so an
       // acronym spelling it would be shadowed just as surely as the hyphenated

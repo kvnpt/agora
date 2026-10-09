@@ -98,7 +98,7 @@ const state = {
   _parishEventsShowCount: SHOW_COUNT_STEP,
   // `location` is a region slug from /shared/locations.js ('qld', 'syd', 'nz'),
   // not the viewer's own position — that is locationActive/userLat below.
-  filters: { jurisdiction: null, location: null, service: null, day: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
+  filters: { jurisdiction: null, location: null, service: null, day: null, part: null, type: '', parishIds: null, socialOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
   parishFilters: { socialOnly: false, englishOnly: false, englishStrict: false },
   selectionMode: false,
   subdomainJurisdiction: null,
@@ -506,6 +506,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('parish-filter-row-wrap')
   );
   initResetFab();
+  initFeedFilterBanner();
   initLocationFab();
   initModeUrl();
   state._initialLoad = true;
@@ -701,6 +702,16 @@ function serviceLabelFor(slug) {
   const S = window.AgoraServices;
   return S ? S.serviceLabel(slug) : String(slug || '');
 }
+// Morning or evening, on the parish's own clock. The line is the one the
+// feed's Morning and Evening cards are drawn on — services.js says why.
+function partOfDayOfRow(row) {
+  const S = window.AgoraServices;
+  return S ? S.partOfDayOf(row, TZ) : null;
+}
+function partLabelFor(slug) {
+  const S = window.AgoraServices;
+  return S ? S.partOfDayLabel(slug) : String(slug || '');
+}
 
 // ── Date filter ──
 // Registry is /shared/dates.js. Same guarded-wrapper shape again, and the
@@ -752,6 +763,7 @@ function detectUrlState() {
     state._dateFocusPrecision = U.precision;
   }
   if (U.day !== null) state._daySlug = U.day;
+  if (U.part) state._partSlug = U.part;
   if (U.service) state._serviceSlug = U.service;
   if (U.location) {
     state.filters.location = U.location;
@@ -764,21 +776,25 @@ function detectUrlState() {
     state.filters.socialOnly = false;
   }
 
-  // A day or a service beside a parish is a schedule focus, not a feed
-  // filter. The parish is still a slug at this point (ids arrive with the
-  // parish list), so both are parked and applyServiceFocus finishes the job.
+  // A day, a part of the day or a service beside a parish is a schedule
+  // focus, not a feed filter. The parish is still a slug at this point (ids
+  // arrive with the parish list), so all three are parked and
+  // applyServiceFocus finishes the job.
   const atOneParish = state._parishSlugs && state._parishSlugs.length === 1;
-  if (state._serviceSlug || state._daySlug != null) {
+  if (state._serviceSlug || state._daySlug != null || state._partSlug) {
     if (atOneParish) {
       state._pendingServiceFocus = state._serviceSlug || null;
       state._pendingDayFocus = state._daySlug != null ? state._daySlug : null;
+      state._pendingPartFocus = state._partSlug || null;
     } else {
       if (state._serviceSlug) state.filters.service = state._serviceSlug;
       if (state._daySlug != null) state.filters.day = state._daySlug;
+      if (state._partSlug) state.filters.part = state._partSlug;
     }
   }
   delete state._serviceSlug;
   delete state._daySlug;
+  delete state._partSlug;
 }
 
 // The rules, loaded once. The events view never asks for them — only the
@@ -808,12 +824,14 @@ function ensureSchedulesLoaded() {
 function applyServiceFocus() {
   const slug = state._pendingServiceFocus || null;
   const dow = state._pendingDayFocus != null ? state._pendingDayFocus : null;
+  const part = state._pendingPartFocus || null;
   delete state._pendingServiceFocus;
   delete state._pendingDayFocus;
-  if (!slug && dow == null) return;
+  delete state._pendingPartFocus;
+  if (!slug && dow == null && !part) return;
 
   const parishId = state.parishFocus || state.parishSheetFocus;
-  const rules = parishId ? matchingRules(parishId, slug, dow) : [];
+  const rules = parishId ? matchingRules(parishId, slug, dow, part) : [];
   if (!rules.length) {
     // Nothing of that kind here, or no parish at all. Fall back to the
     // feed-wide reading rather than dropping the segments silently —
@@ -821,19 +839,26 @@ function applyServiceFocus() {
     // was asked for.
     if (slug) state.filters.service = slug;
     if (dow != null) state.filters.day = dow;
+    if (part) state.filters.part = part;
     return;
   }
   setParishScheduleFocus(parishId, {
-    ruleIds: rules.map(r => r.id), slug, dow, scope: 'kind',
+    ruleIds: rules.map(r => r.id), slug, dow, part, scope: 'kind',
   }, { silent: true });
 }
 
-/** This parish's rules of this kind, on this day. Either filter may be absent. */
-function matchingRules(parishId, slug, dow) {
+/** Did the URL park a focus for applyServiceFocus to finish? */
+function hasPendingServiceFocus() {
+  return !!(state._pendingServiceFocus || state._pendingDayFocus != null || state._pendingPartFocus);
+}
+
+/** This parish's rules of this kind, on this day, at this part of it. Any filter may be absent. */
+function matchingRules(parishId, slug, dow, part) {
   return (state.schedules || []).filter(s =>
     s.parish_id === parishId
     && (!slug || rowIsService(slug, s))
-    && (dow == null || s.day_of_week === dow));
+    && (dow == null || s.day_of_week === dow)
+    && (!part || partOfDayOfRow(s) === part));
 }
 
 /**
@@ -936,6 +961,10 @@ function setParishScheduleFocus(parishId, spec, opts = {}) {
     slug: spec.slug || (spec.scope === 'rule' && rule ? serviceOfRow(rule) : null),
     dow: spec.dow != null ? spec.dow
       : (spec.scope === 'rule' && rule ? rule.day_of_week : null),
+    // Only ever what was asked. A tapped row is already named by its day and
+    // kind, and writing its part as well would make the link narrower than
+    // the row.
+    part: spec.part || null,
     scope: spec.scope || 'rule',
     title: rule ? (rule.title || '') : '',
   };
@@ -1059,6 +1088,8 @@ function buildPathSegs(opts = {}) {
   if (state.filters.day != null && !state.parishScheduleFocus) {
     segs.push(daySlugFor(state.filters.day));
   }
+  // Day, then part, then service: /wed/evening/vespers reads as it is said.
+  if (state.filters.part && !state.parishScheduleFocus) segs.push(state.filters.part);
   if (state.filters.service && !state.parishScheduleFocus) segs.push(state.filters.service);
   if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
   else if (state.filters.socialOnly) segs.push('social');
@@ -1088,6 +1119,7 @@ function buildPathSegs(opts = {}) {
     // recognise writes only its day, and comes back as every rule that day.
     const daySeg = f.dow != null ? daySlugFor(f.dow) : null;
     if (daySeg) segs.push(daySeg);
+    if (f.part) segs.push(f.part);
     if (f.slug) segs.push(f.slug);
   }
   // Where the stream starts, after whatever narrowed it: /smg/2026-07 and
@@ -1150,6 +1182,7 @@ async function reconcileStateFromUrl() {
     state.filters.location = null;
     state.filters.service = null;
     state.filters.day = null;
+    state.filters.part = null;
     state.parishScheduleFocus = null;
     state.filters.parishIds = null;
     state.filters.multiParish = loadMultiParishPref();
@@ -1168,13 +1201,15 @@ async function reconcileStateFromUrl() {
     delete state._fitLocation;
     delete state._serviceSlug;
     delete state._daySlug;
+    delete state._partSlug;
     delete state._pendingServiceFocus;
     delete state._pendingDayFocus;
+    delete state._pendingPartFocus;
 
     // 2) Re-parse URL into state
     detectUrlState();
     applyParishSlugs();
-    if (state._pendingServiceFocus || state._pendingDayFocus != null) await ensureSchedulesLoaded();
+    if (hasPendingServiceFocus()) await ensureSchedulesLoaded();
     applyServiceFocus();
     const targetMode = state._startMode === 'services' ? 'services' : 'events';
     delete state._startMode;
@@ -1990,6 +2025,9 @@ function snapMainSheetToFull() {
 function showView(name) {
   document.querySelectorAll('.content-view').forEach(v => v.classList.remove('active'));
   document.getElementById(`${name}-view`).classList.add('active');
+  // The banner's noun is the view's: "evening services" over the schedules,
+  // "evening events" over the feed.
+  syncFeedFilterBanner();
 }
 
 // ── Apply URL-driven start state (mode, EN filter) ──
@@ -2045,7 +2083,7 @@ async function applyStartMode() {
   // view and the parish sheet do, the latter lazily), and a rule focus that
   // asked before they arrived would find no rule and quietly downgrade itself
   // to the feed-wide filter.
-  if (state._pendingServiceFocus || state._pendingDayFocus != null) {
+  if (hasPendingServiceFocus()) {
     await ensureSchedulesLoaded();
     applyServiceFocus();
     syncURL({ replace: true });
@@ -2873,7 +2911,7 @@ function syncFiltersButton() {
 // ── Reset FAB (top center) ──
 function hasActiveFilters() {
   return state.filters.jurisdiction || state.filters.location || state.filters.service ||
-    state.filters.day != null || state.filters.parishIds || state.filters.socialOnly ||
+    state.filters.day != null || state.filters.part || state.filters.parishIds || state.filters.socialOnly ||
     state.filters.englishOnly || state.parishFocus || state.filters.multiParish;
 }
 
@@ -2932,6 +2970,7 @@ function clearAllFilters() {
   state.filters.location = null;
   state.filters.service = null;
   state.filters.day = null;
+  state.filters.part = null;
   state.parishScheduleFocus = null;
   state.filters.parishIds = null;
   state.filters.showAllParishes = null;
@@ -3053,6 +3092,16 @@ function clearOneFilter(kind) {
     state.filters.service = null;
   } else if (kind === 'day') {
     state.filters.day = null;
+  } else if (kind === 'part') {
+    state.filters.part = null;
+  } else if (kind === 'kind') {
+    // The feed banner's ×. It takes away what the banner alone stands for —
+    // which service, which day, which part of it — and leaves the
+    // jurisdiction and the region, which have controls of their own and which
+    // the sentence only names so it reads whole.
+    state.filters.service = null;
+    state.filters.day = null;
+    state.filters.part = null;
   } else if (kind === 'social') {
     state.filters.socialOnly = false;
     document.getElementById('btn-social')?.classList.remove('active');
@@ -3084,7 +3133,62 @@ function clearOneFilter(kind) {
   syncURL();
 }
 
+// ── Feed banner ──
+//
+// "Showing Antiochian evening Liturgies in Queensland" — the main feed's
+// counterpart of the banner a parish card shows under /sgr/liturgy, for the
+// filters only a link can set: a service, a day, a part of the day. Each has
+// a chip in the stack over the map, but the chips sit beside the map and the
+// list does not, so a feed narrowed to one kind of service read as the whole
+// feed with most of it missing — the reason the parish card grew its banner.
+//
+// The jurisdiction and the region are named so the sentence reads whole, and
+// are not what its × takes away (clearOneFilter('kind')): they have controls
+// of their own, and the parish card's × likewise leaves you at the parish.
+function feedFilterSentence() {
+  const f = state.filters;
+  if (!f.service && f.day == null && !f.part) return '';
+  const juris = f.jurisdiction ? capitalize(f.jurisdiction) : '';
+  const day = f.day != null ? dayNameFor(f.day) : '';
+  // A service names the noun; without one the schedules view lists services
+  // and the events view lists everything, socials included.
+  const kind = f.service ? servicePluralFor(f.service)
+    : (state.mode === 'services' ? 'services' : 'events');
+  const where = f.location ? ` in ${locationLabel() || f.location}` : '';
+  return [juris, day, f.part || '', kind].filter(Boolean).join(' ') + where;
+}
+
+function syncFeedFilterBanner() {
+  const el = document.getElementById('feed-filter-banner');
+  if (!el) return;
+  const sentence = feedFilterSentence();
+  el.hidden = !sentence;
+  if (!sentence) {
+    el.replaceChildren();
+    return;
+  }
+  // Jurisdiction-coloured when there is one, as the parish card's is
+  // parish-coloured: it is what the feed is scoped to. The accent otherwise.
+  const j = state.filters.jurisdiction;
+  if (j) el.style.setProperty('--parish-color', getParishDisplayColor(rawJurisColor(j)));
+  else el.style.removeProperty('--parish-color');
+  el.innerHTML = `<span class="ps-focus-banner-text">Showing ${esc(sentence)}</span>
+    <button class="ps-focus-banner-x" type="button" data-feed-filter-clear aria-label="Show every service">&times;</button>`;
+}
+
+function initFeedFilterBanner() {
+  const el = document.getElementById('feed-filter-banner');
+  if (!el) return;
+  el.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-feed-filter-clear]')) return;
+    e.stopPropagation();
+    clearOneFilter('kind');
+  });
+  syncFeedFilterBanner();
+}
+
 function syncFilterActiveStack() {
+  syncFeedFilterBanner();
   const stack = document.getElementById('filter-active-stack');
   if (!stack) return;
   // Each filter is now { kind, label } so the rendered chip can carry the
@@ -3093,6 +3197,7 @@ function syncFilterActiveStack() {
   if (state.filters.jurisdiction) chips.push({ kind: 'jurisdiction', label: capitalize(state.filters.jurisdiction) });
   if (state.filters.location) chips.push({ kind: 'location', label: locationLabel() || state.filters.location });
   if (state.filters.day != null) chips.push({ kind: 'day', label: dayNameFor(state.filters.day) });
+  if (state.filters.part) chips.push({ kind: 'part', label: partLabelFor(state.filters.part) });
   if (state.filters.service) chips.push({ kind: 'service', label: serviceLabelFor(state.filters.service) });
   if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Socials' });
   if (state.filters.englishOnly) {
@@ -3294,6 +3399,9 @@ function applyNonViewportFilters(events) {
   if (state.filters.day != null) {
     filtered = filtered.filter(e => eventLocalDow(e) === state.filters.day);
   }
+  if (state.filters.part) {
+    filtered = filtered.filter(e => partOfDayOfRow(e) === state.filters.part);
+  }
   if (state.filters.socialOnly) {
     // Social = youth, social, talk, other, festival, fundraiser (everything NOT liturgical)
     filtered = filtered.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
@@ -3346,6 +3454,7 @@ function filterParishEventsBySession(events) {
       if (focus.scope !== 'kind') return false;
       if (focus.slug && !rowIsService(focus.slug, e)) return false;
       if (focus.dow != null && eventLocalDow(e) !== focus.dow) return false;
+      if (focus.part && partOfDayOfRow(e) !== focus.part) return false;
       return true;
     });
   }
@@ -4541,8 +4650,9 @@ function scheduleFocusLabel(focus) {
   if (!rule) {
     // Several rules: name the day if they share one, then the plural.
     const day = focus.dow != null ? dayNameFor(focus.dow) : '';
+    const part = focus.part || '';
     const kind = focus.slug ? servicePluralFor(focus.slug) : 'services';
-    return [day, kind].filter(Boolean).join(' ');
+    return [day, part, kind].filter(Boolean).join(' ');
   }
   const day = womDescribeDay(rule);
   const part = partOfDay(rule.start_time);
@@ -4655,19 +4765,20 @@ function openParishSheet(parishId, opts = {}) {
   // reads /sgr/liturgy either way, and re-opening it would give the rule
   // focus while the live view still showed every liturgy at the parish.
   // filters.service survives, so closing the sheet returns to /liturgy.
-  if ((state.filters.service || state.filters.day != null) && !state.parishScheduleFocus
+  if ((state.filters.service || state.filters.day != null || state.filters.part) && !state.parishScheduleFocus
       && !opts.noServiceFocus && state.parishSheetFocus === parishId) {
     // Schedules are only loaded by the services view and (lazily) by the
     // sheet itself, so the events view reaches here with none — hence the
     // wait, and the re-check afterwards in case the user moved on meanwhile.
     ensureSchedulesLoaded().then(() => {
       if (state.parishSheetFocus !== parishId || state.parishScheduleFocus) return;
-      const rules = matchingRules(parishId, state.filters.service, state.filters.day);
+      const rules = matchingRules(parishId, state.filters.service, state.filters.day, state.filters.part);
       if (!rules.length) return;
       setParishScheduleFocus(parishId, {
         ruleIds: rules.map(r => r.id),
         slug: state.filters.service,
         dow: state.filters.day,
+        part: state.filters.part,
         scope: 'kind',
       });
     });
@@ -5659,12 +5770,15 @@ function renderEvents() {
   }
 }
 
-// Split events into Morning (<14:00 local) and Evening (>=14:00 local) sub-groups
+// Split events into Morning (before 2pm) and Evening (2pm on) sub-groups.
+//
+// The same line, read off the same clock, as /morning and /evening
+// (partOfDayOfRow): the parish's. It was Sydney's, which put a 1pm liturgy in
+// Perth under Evening — and would have put it there under /morning too.
 function splitMorningEvening(events) {
   const morning = [], evening = [];
   for (const e of events) {
-    const h = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date(e.start_utc)));
-    (h < 14 ? morning : evening).push(e);
+    (partOfDayOfRow(e) === 'evening' ? evening : morning).push(e);
   }
   return { morning, evening };
 }
@@ -6990,6 +7104,9 @@ function renderServices() {
   }
   if (state.filters.day != null) {
     schedules = schedules.filter(s => s.day_of_week === state.filters.day);
+  }
+  if (state.filters.part) {
+    schedules = schedules.filter(s => partOfDayOfRow(s) === state.filters.part);
   }
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));

@@ -61,6 +61,8 @@ test('which paths are lite pages', () => {
     '/102': 'event', '/42:2026-10-04': 'event',
     '/': null, '/greek': null, '/qld': null, '/services': null, '/liturgy': null,
     '/smg+sgr': null, '/sgr/en': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
+    // The card does not narrow by part of the day, so the app answers.
+    '/evening': null, '/sgr/evening': null, '/sgr/sun/morning/liturgy': null,
   };
   for (const [p, want] of Object.entries(kinds)) {
     const k = liteKind(p, NOW);

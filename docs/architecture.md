@@ -73,6 +73,18 @@ disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` 
 a parish, the acronym resolves last, and reserving it would not raise a clash but
 silently take that parish's link away.
 
+**`/morning` and `/evening` split the day at 2pm**, on the parish's own clock — the
+line the feed already drew its Morning and Evening cards on, so a link and the
+cards it lands on agree. `partOfDayOf` in `public/shared/services.js` is the one
+reading; the cards use it too (they used to read Sydney's clock, which put a 1pm
+Perth liturgy under Evening). Like a day or a service, a part of the day is a feed
+filter on its own (`/antiochian/evening`, written day–part–service:
+`/wed/evening/vespers`) and a schedule focus beside one parish (`/sgr/evening`).
+Whenever the feed is narrowed by a service, a day or a part of the day, a banner at
+the top of the list says so in a sentence ("Showing Antiochian evening Liturgies in
+Queensland"), as the parish card's does; its × drops those three and keeps the
+jurisdiction and region, which have controls of their own.
+
 **Recurrence rules store LOCAL time; one-off events store UTC.** This is deliberate and
 is documented at length in `d1/schema.sql`. For a recurring service the wall clock is the
 invariant — a 9am liturgy stays 9am across a DST boundary — so normalising it to UTC would

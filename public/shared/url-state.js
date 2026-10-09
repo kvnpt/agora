@@ -1,12 +1,12 @@
 // What a path means, segment by segment.
 //
-// `/sgr/next-tue`, `/greek/qld`, `/smg/wed/liturgy`, `/42:2026-10-04` — the
-// app's whole URL grammar. It lived as a loop inside app.js's detectUrlState(),
-// which was fine while only the browser read a URL. The Worker now reads the
-// same links, to answer a shared parish or event link with a lite card of its
-// own (worker/routes/pages.mjs), and two readers of one grammar are two
-// grammars the moment either changes. So the loop lives here, and both call it:
-// the same reasoning that put the projection in project.mjs.
+// `/sgr/next-tue`, `/greek/qld`, `/smg/wed/liturgy`, `/antiochian/evening`,
+// `/42:2026-10-04` — the app's whole URL grammar. It lived as a loop inside
+// app.js's detectUrlState(), which was fine while only the browser read a URL.
+// The Worker now reads the same links, to answer a shared parish or event link
+// with a lite card of its own (worker/routes/pages.mjs), and two readers of one
+// grammar are two grammars the moment either changes. So the loop lives here,
+// and both call it: the same reasoning that put the projection in project.mjs.
 //
 // It CLASSIFIES and does not resolve. A parish slug stays a slug here, because
 // the browser holds the parish list and the Worker asks D1; each resolves it
@@ -54,6 +54,7 @@
       dateFocus: null,
       precision: null,
       day: null,
+      part: null,
       service: null,
       location: null,
       parishSlugs: null,
@@ -67,7 +68,7 @@
     }
 
     for (const seg of parts) {
-      let d, loc, svc;
+      let d, loc, svc, part;
       if (JURISDICTION_KEYS.includes(seg)) {
         out.jurisdiction = seg;
       } else if (seg === 'social') {
@@ -90,6 +91,8 @@
         out.precision = d.precision;
       } else if (services && services.resolveDay(seg) !== null && services.resolveDay(seg) !== undefined) {
         out.day = services.resolveDay(seg);
+      } else if (services && (part = services.resolvePartOfDay(seg))) {
+        out.part = part;
       } else if (services && (svc = services.resolveService(seg))) {
         out.service = svc.slug;
       } else if (locations && (loc = locations.resolveLocation(seg))) {
