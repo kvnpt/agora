@@ -51,8 +51,9 @@ for them, are in the doc it links to — read that before changing the area.
 - `/api/bundle` is `no-cache` + ETag, cached at the edge under the data version
   every admin write and cron run bumps. A rule on the wire carries its own
   columns only; the browser joins the parish back on.
-- A shared parish or event link gets a server-rendered lite card. In
-  `run_worker_first`, **a negation must never name an image extension**.
+- A shared parish or event link gets a server-rendered lite card; any other
+  filter link, a timetable page. In `run_worker_first`, **a negation must never
+  name an image extension**.
 - A synthetic id is `"<scheduleId>:YYYY-MM-DD"`. The feed widens, never shrinks.
   A date segment is a FROM, never a single day.
 

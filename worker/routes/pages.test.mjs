@@ -65,9 +65,13 @@ test('which paths are lite pages', () => {
     '/sgr/evening': 'parish', '/sgr/sun/morning/liturgy': 'parish',
     '/sgr/services': 'parish', '/services/sgr': 'parish', '/sgr/evening/services': 'parish',
     '/102': 'event', '/42:2026-10-04': 'event',
-    '/': null, '/greek': null, '/qld': null, '/services': null, '/liturgy': null, '/evening': null,
-    '/smg+sgr': null, '/sgr/en': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
-    '/102/services': null, '/102/evening': null,
+    '/greek': 'timetable', '/qld': 'timetable', '/greek/qld': 'timetable', '/services': 'timetable',
+    '/liturgy': 'timetable', '/evening': 'timetable', '/wed/evening/vespers': 'timetable',
+    '/en': 'timetable', '/smg+sgr': 'timetable', '/greek/services': 'timetable',
+    '/': null, '/greek/next-sun': null, '/liturgy/2026-10-04': null, '/social': null, '/greek/social': null,
+    '/donate': null, '/greek/donate': null, '/greek/sgr': null,
+    '/sgr/en': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
+    '/102/services': null, '/102/evening': null, '/%E0%A4%A': null,
   };
   for (const [p, want] of Object.entries(kinds)) {
     const k = liteKind(p, NOW);
@@ -209,7 +213,7 @@ test('a cancelled occurrence previews as cancelled', async () => {
 
 test('everything else is the app, and so is any failure', async () => {
   const { env, get } = fresh();
-  for (const p of ['/', '/greek', '/nosuch', '/sgr?app', '/999999']) {
+  for (const p of ['/', '/nosuch', '/nosuch+other', '/greek?app', '/sgr?app', '/999999', '/greek/next-sun']) {
     assert.equal(await get(p), null, p);
   }
   assert.equal(await get('/sgr', { headers: { cookie: 'x=1; agora_admin=1' } }), null, 'admins get the app');
@@ -271,3 +275,101 @@ test('the lite card offers "Is this your parish?" through the claim page', async
   const { html } = await get('/sgr');
   assert.match(html, /<a href="\/admin\?claim=antiochian-stgeorge-redfern" rel="nofollow">Is this your parish\? Help keep its times right/);
 });
+
+// ── the timetable page: a link that names no single parish ───────────────
+
+const GREEK_QLD = 'greek-gopssc-buderim';
+const rule = (raw, parish, dow, time, title, extra = {}) => {
+  const cols = ['parish_id', 'day_of_week', 'start_time', 'title', 'event_type', ...Object.keys(extra)];
+  raw.prepare(`INSERT INTO schedules (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+    .run(parish, dow, time, title, /liturg/i.test(title) ? 'liturgy' : 'prayer', ...Object.values(extra));
+};
+const regions = (html) => [...html.matchAll(/<section class="tt-region" aria-label="([^"]*)"/g)].map(m => m[1]);
+const names = (html) => [...html.matchAll(/<a class="tt-name" href="[^"]*">([^<]*)<\/a>/g)].map(m => m[1]);
+
+test('/services is every parish timetable, by state then jurisdiction, alphabetical', async () => {
+  const { raw, get } = fresh();
+  rule(raw, GREEK_QLD, 0, '09:00', 'Divine Liturgy');
+  const { res, html } = await get('/services');
+  assert.equal(res.headers.get('x-agora-page'), 'lite');
+  assert.equal(canonical(html), 'https://orthodoxy.au/services');
+  assert.equal(meta(html, 'name', 'robots'), 'noindex,follow', 'not indexed yet');
+  assert.match(html, /<h1>Orthodox service times<\/h1>/);
+  assert.deepEqual(regions(html), ['New South Wales', 'Queensland']);
+  const nsw = between(html, 'aria-label="New South Wales"', 'aria-label="Queensland"');
+  assert.match(nsw, /<h3 class="tt-juris"[^>]*>Antiochian Orthodox<\/h3>/, 'a mixed page names the jurisdiction');
+  const listed = names(nsw);
+  assert.deepEqual(listed, [...listed].sort((a, b) => a.localeCompare(b)), 'parishes alphabetical');
+  assert.ok(listed.includes('St George Cathedral, Redfern'));
+  assert.match(html, /<a class="tt-name" href="\/sgr">St George Cathedral, Redfern<\/a>/, 'a parish links to its card');
+  assert.match(between(html, 'aria-label="Queensland"'), /Sunshine Coast, Buderim[\s\S]*Sun 9am[\s\S]*Divine Liturgy/);
+  const n = raw.prepare(`SELECT COUNT(*) n FROM parishes p WHERE id != '_unassigned'
+    AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.parish_id = p.id)`).get().n;
+  assert.match(html, new RegExp(`<a class="tt-more" href="/services\\?app#no-times">${n} parish(es)? without service times on file →</a>`),
+    'the parishes with no times are a count, and it opens the app\'s Schedules view');
+  assert.match(html, /<a class="lc-app" href="\/\?app">View upcoming events →<\/a>/);
+  assert.ok(html.indexOf('class="tt-more"') < html.indexOf('class="lc-app"'), 'the count sits under the timetable');
+});
+
+test('a jurisdiction and a region narrow the parishes; the canonical is the app\'s order', async () => {
+  const { raw, get } = fresh();
+  rule(raw, GREEK_QLD, 0, '09:00', 'Divine Liturgy');
+  const { html } = await get('/QLD/services/greek');
+  assert.equal(canonical(html), 'https://orthodoxy.au/greek/qld', '/services is what the page is, not part of its name');
+  assert.match(html, /<h1>Greek Orthodox service times in Queensland<\/h1>/);
+  assert.deepEqual(names(html), ['Sunshine Coast, Buderim']);
+  assert.doesNotMatch(html, /class="tt-juris"/, 'one jurisdiction needs no heading');
+  assert.match(html, /href="\/greek\/qld\?app">View upcoming events/);
+  assert.doesNotMatch(html, /class="tt-more"/, 'every Greek parish in Queensland has times');
+  assert.match((await get('/greek')).html, /<a class="tt-more" href="\/greek\/services\?app#no-times">1 parish without/,
+    'the other Greek parish has none');
+
+  const antiochian = (await get('/antiochian/qld')).html;
+  assert.match(antiochian, /No parishes on file here yet\./, 'the seed has no Antiochian parish in Queensland');
+  assert.doesNotMatch(antiochian, /class="tt-parish"/);
+});
+
+test('a service, a day and a part of the day narrow the rules', async () => {
+  const { raw, get } = fresh();
+  rule(raw, PARISH, 6, '18:00', 'Vespers');
+  const eve = (await get('/evening')).html;
+  assert.match(eve, /<h1>Orthodox evening services<\/h1>/);
+  assert.match(eve, /Sat 6pm<\/time><span>Vespers/);
+  assert.doesNotMatch(between(eve, 'class="tt-region"'), /Sun 10am/, 'a morning liturgy is not an evening service');
+  const lit = (await get('/sun/liturgy')).html;
+  assert.match(lit, /<h1>Orthodox Liturgies on Sundays<\/h1>/);
+  assert.doesNotMatch(between(lit, 'class="tt-region"', 'class="lc-app"'), /Vespers/);
+  assert.match(lit, /href="\/sun\/liturgy\?app"/);
+});
+
+test('a language narrows to the rules served in it, falling back to the parish', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`UPDATE schedules SET languages = '["English"]' WHERE parish_id = ?`).run(PARISH);
+  raw.prepare(`UPDATE parishes SET languages = '["Arabic","English"]' WHERE id = 'antiochian-stelias-wollongong'`).run();
+  const strict = names((await get('/en')).html);
+  assert.ok(strict.includes('St George Cathedral, Redfern'));
+  assert.ok(!strict.includes('St Elias, Wollongong'), 'Arabic and English is not English only');
+  assert.ok(names((await get('/bilingual')).html).includes('St Elias, Wollongong'));
+});
+
+test('several parishes by name, and the rules only their own card shows', async () => {
+  const { raw, get } = fresh();
+  raw.prepare("UPDATE parishes SET acronym = 'SMG' WHERE id = 'antiochian-stmichaelgabriel-ryde'").run();
+  rule(raw, PARISH, 2, '19:00', 'Choir practice', { parish_scoped: 1 });
+  const { html } = await get('/smg+sgr');
+  assert.equal(canonical(html), 'https://orthodoxy.au/smg+sgr');
+  assert.match(html, /<h1>Orthodox service times at Sts Michael &amp; Gabriel, Ryde and St George Cathedral, Redfern<\/h1>/);
+  assert.deepEqual(names(html).sort(), ['St George Cathedral, Redfern', 'Sts Michael & Gabriel, Ryde'].map(x => x.replace('&', '&amp;')).sort());
+  assert.doesNotMatch(html, /Choir practice/, 'parish_scoped stays on its own card');
+  assert.match((await get('/sgr')).html, /Choir practice/);
+});
+
+test('an ended rule is off the timetable page too', async () => {
+  const { raw, get } = fresh();
+  rule(raw, PARISH, 3, '07:00', 'Old Matins', { effective_to: '2026-09-01' });
+  rule(raw, PARISH, 3, '18:00', 'Presanctified Liturgy', { effective_from: '2026-11-04' });
+  const { html } = await get('/antiochian');
+  assert.doesNotMatch(html, /Old Matins/);
+  assert.match(html, /Presanctified Liturgy<small>from 4 Nov<\/small>/);
+});
+

@@ -1823,6 +1823,17 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-weight: 600;
   color: var(--text);
 }
+/* "No times on file yet" — the parishes in view with no rules, under the
+   timetables (noTimesHTML). Neutral, because it spans jurisdictions. */
+.no-times-box { --juris-color: var(--border); }
+.no-times-box .section-header.jurisdiction-header { color: var(--text-secondary); }
+.no-times-addr {
+  display: block;
+  margin-top: 1px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
 .parish-schedule-dist {
   flex: none;
   font-size: 12px;

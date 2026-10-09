@@ -74,6 +74,20 @@ same thing that can drift.
 - **Which jurisdiction next.** Look at which parish pages get visits before
   choosing whose timetables to chase.
 
+## 6. Lite pages as the landing, with the map inside them
+
+After the phases above. The lite pages — a parish card, a timetable page — become
+what anyone arriving at orthodoxy.au lands on, the home page included, and the map
+becomes a live element inside them: a viewport at the top of the page rather than the
+page itself. Today the home page is the app and the lite pages answer only shared
+links (`docs/lite-pages.md`); this is where that ends up.
+
+> *Make the lite pages the default landing, home page included, with the map as a live
+> add-in element — a viewport at the top of the page, loaded after the page has
+> painted. Keep the app for everything past the first screen. Plan first: what the
+> home page's timetable shows with no filter, how the map loads without delaying first
+> paint, and what returning users and admins land on.*
+
 ## Owner to-dos (not code)
 
 - Switch Cloudflare Access to "Everyone + One-time PIN" so People is the only

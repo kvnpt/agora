@@ -7095,31 +7095,18 @@ async function adminErrorText(res) {
 
 function renderServices() {
   const container = document.getElementById('services-list');
-  let schedules = state.schedules;
-  if (state.filters.location) {
-    schedules = schedules.filter(s => parishIdPassesLocation(s.parish_id));
-  }
-  if (state.filters.service) {
-    schedules = schedules.filter(s => rowIsService(state.filters.service, s));
-  }
-  if (state.filters.day != null) {
-    schedules = schedules.filter(s => s.day_of_week === state.filters.day);
-  }
-  if (state.filters.part) {
-    schedules = schedules.filter(s => partOfDayOfRow(s) === state.filters.part);
-  }
+  // Which rules the filters mean is public/shared/timetable.js — the Worker's
+  // timetable page for /greek/qld asks the same question, so the lite page and
+  // this view cannot list different services for one link. Jurisdiction was
+  // applied when the rules were fetched; the viewport is this view's own.
+  const T = window.AgoraTimetable;
+  let schedules = state.schedules.filter(s =>
+    T.ruleMatches(s, state.filters)
+    && (!state.filters.location || parishIdPassesLocation(s.parish_id)));
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));
   } else if (state.viewportParishIds) {
     schedules = schedules.filter(s => state.viewportParishIds.has(s.parish_id));
-  }
-  if (state.filters.englishOnly) {
-    schedules = schedules.filter(s => {
-      const langs = parseLangs(s.languages) || parseLangs(s.parish_languages);
-      if (!langs) return false;
-      if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
-      return langs.some(l => /english/i.test(l));
-    });
   }
 
   let html = '';
@@ -7189,6 +7176,8 @@ function renderServices() {
     html += '</div>';
   }
 
+  html += noTimesHTML();
+
   const singleParishId = state.filters.parishIds && state.filters.parishIds.size === 1
     ? [...state.filters.parishIds][0] : null;
   const singleParish = singleParishId ? state.parishes.find(p => p.id === singleParishId) : null;
@@ -7219,6 +7208,52 @@ function renderServices() {
   });
 
   wireScheduleAdminHandlers(container);
+
+  // The timetable page's "N parishes without service times on file" lands
+  // here with #no-times. Once: the fragment is spent as soon as it is used, so
+  // the next render (a map move) does not pull the list back up.
+  if (location.hash === '#no-times') {
+    const box = document.getElementById('no-times');
+    if (box) {
+      try { history.replaceState(history.state, '', location.pathname + location.search); } catch {}
+      if (typeof snapMainSheetToFull === 'function') snapMainSheetToFull();
+      requestAnimationFrame(() => box.scrollIntoView({ block: 'start' }));
+    }
+  }
+}
+
+// The parishes in view that have no times on file at all — most of them, for
+// now (253 of 293 in October 2026). Listed by name under the timetables so the
+// view is the whole of the parishes it covers, not only the ones with times;
+// each opens its parish sheet, where "Is this your parish?" asks for them.
+//
+// No rules at all, not "none matching": under /liturgy a parish whose only
+// rule is Vespers has times, it just has no Liturgy. Same scope as the rules
+// above — the link's jurisdiction, region and parishes, then the viewport —
+// and the same count the timetable page links here with.
+function noTimesHTML() {
+  const T = window.AgoraTimetable;
+  const withTimes = new Set((state.schedules || []).map(s => s.parish_id));
+  const vp = state.viewportParishIds;
+  const none = (state.parishes || [])
+    .filter(p => T.parishInScope(p, state.filters)
+      && (state.filters.parishIds || !vp || vp.has(p.id))
+      && !withTimes.has(p.id))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  if (!none.length) return '';
+  let html = `<div class="jurisdiction-box no-times-box" id="no-times">`;
+  html += `<div class="section-header jurisdiction-header">No times on file yet · ${none.length}</div>`;
+  for (const p of none) {
+    const color = getParishDisplayColor(p.color || rawJurisColor(p.jurisdiction));
+    const inner = p.logo_path ? `<img src="${esc(p.logo_path)}" alt="">` : esc((p.name || '?')[0].toUpperCase());
+    html += `<div class="parish-schedule" data-parish-id="${esc(p.id)}">`;
+    html += `<div class="parish-schedule-head">`;
+    html += `<div class="parish-schedule-avatar"${p.logo_path ? '' : ` style="background:${esc(color)}"`}>${inner}</div>`;
+    html += `<div class="parish-schedule-name">${esc(p.name)}`;
+    if (p.address) html += `<span class="no-times-addr">${esc(p.address)}</span>`;
+    html += `</div></div></div>`;
+  }
+  return html + '</div>';
 }
 
 // ── Event detail ──

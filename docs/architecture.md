@@ -38,7 +38,11 @@ built from). Nothing public carries `updated_by`; it is an admin's email.
 parish or one event (`/sgr`, `/sgr/next-tue`, `/102`, `/42:2026-10-04`) gets
 a **lite card** — server-rendered by `worker/routes/pages.mjs` +
 `worker/lib/lite-page.mjs`, with its own title, preview image, canonical and
-JSON-LD — instead of the app booting behind a loading screen. It uses the
+JSON-LD — instead of the app booting behind a loading screen. Every other
+filter link (`/greek/qld`, `/liturgy`, `/services`) gets a **timetable page**
+(`worker/lib/lite-timetable.mjs`): the matching parishes' rules by state and
+jurisdiction, filtered by `public/shared/timetable.js` as the app's Schedules
+view is. The home page is still the app. It uses the
 app's lens and the app's grammar (`public/shared/url-state.js`, which
 `detectUrlState()` now calls too), fails open to the app, and is skipped for
 `?app` and for the `agora_admin` cookie the app sets while someone holds a
