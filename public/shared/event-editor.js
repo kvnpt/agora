@@ -135,6 +135,37 @@
   }
 
   /**
+   * The parishes a draft can belong to, for the picker: the ones this person
+   * may add events to, by name. Unlike orderParishRows this IS narrowed — a
+   * draft is somewhere the person can publish, and the Worker refuses a move
+   * anywhere else. The current parish is always in it, so the picker can show
+   * where the draft is even when the list somehow does not hold it.
+   */
+  function editableParishes(parishes, may, current) {
+    const list = (parishes || []).filter(p => p && p.id && p.id !== '_unassigned' && may('event.edit', p.id));
+    if (current && !list.some(p => p.id === current.id)) list.push(current);
+    return list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }
+
+  /**
+   * What to say about whose poster this is, from the read's `read_parish`
+   * ({name, place, parish_id}, worker/lib/drafts.mjs placeRead):
+   *   'move'     — a parish on file this person may add to: one tap moves it
+   *   'notYours' — a parish on file they may not: say so, and whose
+   *   'named'    — no clear match: the name as printed, and the picker
+   *   null       — nothing to say, or the draft is already there.
+   */
+  function parishSuggestion(readParish, currentId, parishes, may) {
+    if (!readParish || !readParish.name) return null;
+    const printed = [readParish.name, readParish.place].filter(Boolean).join(', ');
+    if (!readParish.parish_id) return { kind: 'named', name: printed };
+    if (readParish.parish_id === currentId) return null;
+    const p = (parishes || []).find(x => x.id === readParish.parish_id);
+    if (!p) return { kind: 'named', name: printed };
+    return { kind: may('event.edit', p.id) ? 'move' : 'notYours', parish: p };
+  }
+
+  /**
    * May the read put a value into this field? Not if a person has typed in it,
    * and not if it already holds something the read did not put there — the
    * same rule the server applies when it merges (drafts.mjs mergeRead).
@@ -229,26 +260,31 @@
     return v === '' ? null : v;
   }
 
+  let editors = 0;
+
   /**
    * @param {HTMLElement} mount
    * @param {object} opts
-   *   parish      {id, name, timezone, lat, lng, jurisdiction, address}
-   *   parishes    every parish, for "also appears at"
+   *   parish      {id, name, timezone, lat, lng, jurisdiction, address} — or null,
+   *               and the editor asks for one first (/admin, more than one parish)
+   *   parishes    every parish: the picker's choices and "also appears at"
    *   may         (capability, parishId) => boolean — the same two questions the Worker asks
-   *   draftId     continue this draft instead of starting blank
+   *   draftId     continue this draft instead of starting blank; its parish wins
    *   onPublished ({events, proposals}) once every card is on the site
    *   onClose     () — Save draft, Discard, or nothing left to do
+   *   onParishChange (parish) — the picker moved the draft, or a draft was opened
    *   openPoster  (url) — the host's full-screen viewer, if it has one
    */
   function open(mount, opts) {
-    const parish = opts.parish;
     const may = opts.may || (() => true);
-    const tz = parish.timezone || 'Australia/Sydney';
     const C = root.AgoraEventChecks;
-    const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+    const uid = `ee${++editors}`;
 
     const state = {
-      draft: null,            // {id, poster_path, read_status, read_kind, read_notes}
+      // Where the draft is. A poster dropped at the wrong parish says whose it
+      // is, and the picker moves the draft there — so this is state, not a given.
+      parish: opts.parish || null,
+      draft: null,            // {id, poster_path, read_status, read_kind, read_notes, read_parish}
       creating: null,         // the POST that makes the draft, while it is in flight
       cards: [],
       nextKey: 1,
@@ -257,14 +293,25 @@
       posterUrl: null,        // what the thumbnail shows
       objectUrl: null,        // to revoke
       publishing: false,
+      moving: false,          // the PATCH that moves the draft, while it is in flight
       closed: false,
     };
+    const zone = () => (state.parish && state.parish.timezone) || 'Australia/Sydney';
+    const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: zone() }).format(new Date());
+    const tzHint = () => `${zone().split('/').pop().replace(/_/g, ' ')} time, the way the parish publishes it.`;
+    const parishById = (id) => (opts.parishes || []).find(p => p.id === id)
+      || (state.parish && state.parish.id === id ? state.parish : null);
 
     // ── skeleton ──
     mount.innerHTML = '';
     const el = document.createElement('div');
     el.className = 'ee';
     el.innerHTML = `
+      <div class="ee-parish">
+        <label for="${uid}-parish">Parish</label>
+        <select id="${uid}-parish" data-ee="parish"></select>
+      </div>
+      <div class="ee-suggest" data-ee="suggest" aria-live="polite" hidden></div>
       <div class="ee-strip" data-ee="strip" hidden></div>
       <div class="ee-poster">
         <input type="file" accept="image/*" data-ee="poster-input" hidden>
@@ -397,7 +444,7 @@
       const first = state.cards[0];
       const card = first ? takePending(first) : {};
       state.creating = (async () => {
-        const r = await http('POST', '/api/admin/drafts', { parish_id: parish.id, card });
+        const r = await http('POST', '/api/admin/drafts', { parish_id: state.parish.id, card });
         state.creating = null;
         if (!r.ok) {
           if (first) Object.assign(first.pending, card, first.pending);
@@ -415,7 +462,8 @@
 
     function setDraft(d) {
       state.draft = { id: d.id, poster_path: d.poster_path, read_status: d.read_status,
-        read_kind: d.read_kind, read_notes: d.read_notes || [] };
+        read_kind: d.read_kind, read_notes: d.read_notes || [], read_parish: d.read_parish || null };
+      renderSuggestion();
     }
 
     function takePending(card) {
@@ -495,7 +543,7 @@
             ${row('start_time', 'Starts', `<input type="time" id="${fieldId(card, 'start_time')}" data-ee-field="start_time">`)}
             ${row('end_time', 'Ends', `<input type="time" id="${fieldId(card, 'end_time')}" data-ee-field="end_time">`)}
           </div>
-          <div class="ee-hint">${esc(tz.split('/').pop().replace(/_/g, ' '))} time, the way the parish publishes it.</div>
+          <div class="ee-hint" data-hint="zone">${esc(tzHint())}</div>
           ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type"><option value="">Choose a kind</option>${kinds}</select>`)}
           ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="3" placeholder="Optional"></textarea>`)}
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" placeholder="English, Greek" autocomplete="off">`)}
@@ -529,6 +577,7 @@
         ask: node.querySelector('.ee-ask'),
         askWhat: node.querySelector('.ee-ask-what'),
         err: node.querySelector('.ee-card-error'),
+        zone: node.querySelector('[data-hint="zone"]'),
         inputs: {},
       };
       node.querySelectorAll('[data-ee-field]').forEach(inp => {
@@ -758,8 +807,8 @@
 
     // ── the combine, per card ──
 
-    let parishRows = null;
-    const rowsFor = () => parishRows || (parishRows = orderParishRows(parish, opts.parishes, may));
+    let parishRows = null;    // ordered from the draft's parish; a move starts them again
+    const rowsFor = () => parishRows || (parishRows = orderParishRows(state.parish, opts.parishes, may));
 
     function renderCombine(card) {
       const rows = rowsFor();
@@ -791,7 +840,7 @@
       const seq = ++card.candSeq;
       if (!isDate(date)) { card.candidates = []; return renderReplaces(card); }
       card.els.repl.innerHTML = '<div class="ee-empty">Loading…</div>';
-      const r = await http('GET', `/api/admin/events/candidates?date=${encodeURIComponent(date)}&tz=${encodeURIComponent(tz)}`);
+      const r = await http('GET', `/api/admin/events/candidates?date=${encodeURIComponent(date)}&tz=${encodeURIComponent(zone())}`);
       if (seq !== card.candSeq) return;
       card.candidates = r.ok && Array.isArray(r.body) ? r.body : [];
       // A date change takes the old day's ticks with it: they named services
@@ -810,14 +859,20 @@
         return;
       }
       if (card.candidates == null) return;
-      const at = new Set([parish.id, ...card.fields.also_at]);
+      const at = new Set([state.parish.id, ...card.fields.also_at]);
       const visible = card.candidates.filter(e => at.has(e.parish_id));
+      // A tick on a service this list no longer shows — its parish unticked
+      // above, or the draft moved away from it — goes: a hidden tick would
+      // still combine that service into this event on Publish.
+      const shown = new Set(visible.map(e => String(e.id)));
+      const kept = card.fields.replaces.filter(id => shown.has(String(id)));
+      if (kept.length !== card.fields.replaces.length) setList(card, 'replaces', kept);
       if (!visible.length) {
         list.innerHTML = '<div class="ee-empty">Nothing on file at the ticked parishes that day</div>';
         return;
       }
       const ticked = new Set(card.fields.replaces.map(String));
-      const zoneOf = (pid) => ((opts.parishes || []).find(p => p.id === pid) || {}).timezone || tz;
+      const zoneOf = (pid) => ((opts.parishes || []).find(p => p.id === pid) || {}).timezone || zone();
       list.innerHTML = visible.map(e => {
         const when = new Intl.DateTimeFormat('en-AU', { timeZone: zoneOf(e.parish_id), hour: 'numeric', minute: '2-digit' })
           .format(new Date(e.start_utc));
@@ -858,7 +913,9 @@
     }
 
     async function dropFile(file) {
-      if (state.publishing) return;
+      // The draft a poster goes on belongs to a parish; until one is chosen
+      // there is nowhere to put it (the poster panel is not shown either).
+      if (state.publishing || !state.parish) return;
       if (!/^image\//.test(file.type || '')) return showError('That is not an image — a poster has to be a photo or a picture file.');
       showError('');
       if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
@@ -1010,7 +1067,8 @@
 
     async function refreshStrip() {
       const strip = $('strip');
-      const r = await http('GET', `/api/admin/drafts?parish=${encodeURIComponent(parish.id)}`);
+      if (!state.parish) { strip.hidden = true; return; }
+      const r = await http('GET', `/api/admin/drafts?parish=${encodeURIComponent(state.parish.id)}`);
       const others = (r.ok && Array.isArray(r.body) ? r.body : [])
         .filter(d => !state.draft || d.id !== state.draft.id);
       if (state.closed || !others.length) { strip.hidden = true; strip.innerHTML = ''; return; }
@@ -1060,6 +1118,9 @@
       for (const c of state.cards) c.els.root.remove();
       state.cards = [];
       state.multi = false;
+      // The draft says where it is — it may have been moved since it was listed.
+      const at = parishById(r.body.parish_id) || { id: r.body.parish_id, name: r.body.parish_name };
+      if (!state.parish || at.id !== state.parish.id) setParish(at);
       setDraft(r.body);
       for (const row of r.body.cards) cardFromServer(newCard(), row);
       if (!state.cards.length) newCard();
@@ -1081,6 +1142,104 @@
       refreshStrip();
     }
 
+    // ── the parish ──
+    //
+    // A poster dropped at the wrong parish is the usual reason to change it:
+    // the read says whose poster it is (worker/lib/drafts.mjs placeRead), and
+    // the editor offers that parish in one tap. The picker does the rest. The
+    // cards move with the draft, on the Worker, which also takes off a venue
+    // that was only the new parish's own address (moveDraft).
+
+    function renderPicker() {
+      const sel = $('parish');
+      const list = editableParishes(opts.parishes, may, state.parish);
+      sel.innerHTML = (state.parish ? '' : '<option value="">Choose the parish…</option>')
+        + list.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+      sel.value = state.parish ? state.parish.id : '';
+      el.classList.toggle('ee-no-parish', !state.parish);
+    }
+
+    function renderSuggestion() {
+      const box = $('suggest');
+      const s = state.parish && state.draft
+        && parishSuggestion(state.draft.read_parish, state.parish.id, opts.parishes, may);
+      box.hidden = !s;
+      if (!s) { box.innerHTML = ''; return; }
+      if (s.kind === 'move') {
+        box.innerHTML = `<span>This poster looks like it is from <b>${esc(s.parish.name)}</b>, not ${esc(state.parish.name)}.</span>`
+          + '<button type="button" class="ee-btn ee-btn-small" data-ee="move-suggested">Move it there</button>';
+        box.querySelector('[data-ee="move-suggested"]').addEventListener('click', () => moveTo(s.parish.id));
+      } else if (s.kind === 'notYours') {
+        box.innerHTML = `<span>This poster looks like it is from <b>${esc(s.parish.name)}</b>, which is not one of your parishes — somebody who edits it can add it there.</span>`;
+      } else {
+        box.innerHTML = `<span>The poster names <b>${esc(s.name)}</b>. If that is not ${esc(state.parish.name)}, choose its parish above.</span>`;
+      }
+      sync();
+    }
+
+    /** Point everything that hangs off the parish at a new one. */
+    function setParish(next) {
+      state.parish = next;
+      parishRows = null;
+      for (const c of state.cards) {
+        if (c.els && c.els.zone) c.els.zone.textContent = tzHint();
+        // The day's services are looked up in the parish's zone, and "replaces"
+        // shows the new parish's: both start again, and a tick on a service the
+        // list no longer shows goes with them (renderReplaces).
+        c.candidates = null;
+        if (c.els && c.els.combine.open) renderCombine(c);
+        else if (c.fields.replaces.length) loadCandidates(c);
+      }
+      renderPicker();
+      renderSuggestion();
+      refreshStrip();
+      state.cards.forEach(refreshCard);
+      if (opts.onParishChange) opts.onParishChange(next);
+    }
+
+    /** Move the draft — or, before there is one, just the editor — to another parish. */
+    async function moveTo(pid) {
+      const sel = $('parish');
+      const next = parishById(pid);
+      if (!next || (state.parish && next.id === state.parish.id)) {
+        sel.value = state.parish ? state.parish.id : '';
+        return;
+      }
+      if (!state.parish) { setParish(next); begin(); return; }
+      showError('');
+      // Nothing saved yet: the draft is made where the editor now is.
+      if (!state.draft && !state.creating) { setParish(next); sync(); return; }
+      state.moving = true;
+      sync();
+      // What is typed goes first, to the draft where it is; then the draft goes.
+      await flushAll();
+      if (state.creating) await state.creating;
+      if (state.closed) return;
+      if (state.draft) {
+        const r = await http('PATCH', `/api/admin/drafts/${state.draft.id}`, { parish_id: next.id });
+        state.moving = false;
+        if (!r.ok) {
+          sel.value = state.parish.id;
+          sync();
+          return showError((r.body && r.body.error) || 'The draft could not be moved — check the connection.');
+        }
+        setParish(next);
+        setDraft(r.body);
+        for (const row of r.body.cards || []) {
+          const card = state.cards.find(c => c.id === row.id);
+          if (card) cardFromServer(card, row, { keepLocal: true });
+        }
+        state.cards.forEach(refreshCard);
+      } else {
+        state.moving = false;
+        setParish(next);
+      }
+      showMessage(`Moved to ${next.name}. Nothing is published until you say so.`, 'note');
+      sync();
+    }
+
+    $('parish').addEventListener('change', (e) => moveTo(e.target.value));
+
     // ── publishing ──
 
     function sync() {
@@ -1095,6 +1254,12 @@
       $('save-draft').disabled = state.publishing;
       $('discard').disabled = state.publishing;
       $('add-card').disabled = state.publishing;
+      // Not while the poster is read (the Worker squares the read with the
+      // parish it started at), published, or already on its way somewhere.
+      const still = reading || state.publishing || state.moving;
+      $('parish').disabled = still;
+      const mv = el.querySelector('[data-ee="move-suggested"]');
+      if (mv) mv.disabled = still;
       const ready = $('readiness');
       if (reading) ready.textContent = 'Publish opens once the poster has been read.';
       else if (blocked.length && !quiet) {
@@ -1207,23 +1372,31 @@
     }
 
     // ── start ──
-    if (opts.draftId) loadDraft(opts.draftId);
-    else {
+
+    /** A blank card at the chosen parish. */
+    function begin() {
       newCard();
       refreshStrip();
       requestAnimationFrame(() => { const t = state.cards[0] && state.cards[0].els.inputs.title; if (t) t.focus(); });
+      sync();
     }
+
+    renderPicker();
+    if (opts.draftId) loadDraft(opts.draftId);
+    else if (state.parish) begin();
+    else requestAnimationFrame(() => $('parish').focus());
     sync();
 
     return {
       close,
       dropFile,
       get draftId() { return state.draft && state.draft.id; },
+      get parishId() { return state.parish && state.parish.id; },
     };
   }
 
   const api = { open, summaryLine, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
-    textToLangs, langsToText, takesRead };
+    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

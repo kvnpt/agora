@@ -9858,8 +9858,10 @@ window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
   if (!adminMay('event.edit', parishId)) return;
   if (_newEventEditor) _newEventEditor.close();
 
+  // The editor's own picker says which parish: it starts at this sheet's, and
+  // moves the draft when the poster turns out to be somebody else's.
   document.getElementById('new-event-sub').textContent =
-    `At ${parish.name}. One date each — a service that runs every week is a rule, not an event.`;
+    'One date each — a service that runs every week is a rule, not an event.';
   _newEventEditor = window.AgoraEventEditor.open(mount, {
     parish,
     parishes: state.parishes || [],
@@ -9868,6 +9870,10 @@ window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
     openPoster: (url) => openPosterFullscreen(url),
     onPublished: async ({ events, proposals }) => {
       window.closeNewEventDialog();
+      // Published at the parish it was moved to: show that parish's sheet,
+      // where the event is, rather than re-render the one it started from.
+      const at = events && events[0] && events[0].parish_id;
+      if (at && at !== state.parishSheetFocus) openParishSheet(at);
       await _afterNewEvents(events);
       // The dot, in case the person who asked can also decide.
       if (proposals && proposals.length) refreshOpenAsks();
