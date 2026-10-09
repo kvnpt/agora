@@ -67,6 +67,8 @@ for them, are in the doc it links to — read that before changing the area.
 - Adding an event is a draft until Publish: `drafts`/`draft_events` hold the
   parish's LOCAL wall clock, and only `…/draft-events/:id/publish` writes
   `events`, one card per request. A poster read only ever fills empty fields.
+  A draft can move parish until then — scoped on both parishes; the read only
+  suggests whose poster it is, and nothing moves a draft but a person.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.

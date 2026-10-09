@@ -215,8 +215,10 @@ npx wrangler d1 execute agora --local --command \
 The editor (`public/shared/event-editor.js`) is the same component in the app
 (`#new-event-editor`, behind `#parish-add-event-fab`) and in /admin
 (`#add-event-editor`, behind **Events** → + Event). Its controls carry
-`data-ee` hooks — `poster-input`, `drop`, `status`, `publish`, `save-draft`,
-`discard`, `add-card` — and each field `data-ee-field="title"` and so on.
+`data-ee` hooks — `parish` (the picker; /admin has no select of its own any
+more), `suggest` and `move-suggested` (whose poster it is, and the one-tap
+move), `poster-input`, `drop`, `status`, `publish`, `save-draft`, `discard`,
+`add-card` — and each field `data-ee-field="title"` and so on.
 
 **Reading a poster needs Claude, and a browser check should not.** Point the
 Worker at a local stand-in that answers `POST /v1/messages` with a canned
@@ -224,7 +226,9 @@ stream, slowly enough to watch the fields fill:
 
 ```bash
 # A stand-in for the Messages API: replays a canned Haiku stream per mode
-# (one event, three events, not_an_event, a 529) with a delay between deltas.
+# (one event, three events, not_an_event, a 529 — and `elsewhere`, St Elias,
+# Wollongong's poster as read at another parish, for the move) with a delay
+# between deltas. Switch with POST /__mode {"mode": "elsewhere"}.
 node scripts/mock-anthropic.mjs 8788 &
 
 # The Worker reads the key through the Secrets Store binding; give the local
@@ -244,6 +248,13 @@ image/jpeg' --data-binary @poster.jpg` prints the frames as they arrive.
 
 Drafts accumulate between runs and fill the "Saved drafts here" strip; clear
 them with `DELETE FROM draft_events; DELETE FROM drafts;`.
+
+**The move.** With `elsewhere`, drop a poster at St Nicholas, Punchbowl (a seed
+parish): the suggestion names St Elias, Wollongong and the venue holds its
+address. **Move it there** should leave the picker on St Elias, the suggestion
+gone, the venue empty, and `drafts.parish_id` changed; Publish should land the
+event on St Elias's sheet. As a contact of Punchbowl alone, the suggestion says
+whose it is and offers no button, and the picker holds one parish.
 
 ## Screenshots
 
