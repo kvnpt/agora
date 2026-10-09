@@ -96,7 +96,7 @@ run_worker_first = [
 # No secret is committed. A store id and a secret name are identifiers — the
 # same class of thing as database_id above — and the values live in the account
 # Secrets Store. These arrive in `env` as objects, not strings; readSecret() in
-# worker/lib/auth.mjs awaits .get() on them.
+# worker/lib/secrets.mjs awaits .get() on them.
 #
 # To rotate: change the value in the Secrets Store. Nothing here changes.
 
