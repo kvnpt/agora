@@ -2,17 +2,18 @@
 //
 // Every path now reaches the Worker (run_worker_first in wrangler.toml), and
 // this decides which of them it answers itself: a link to ONE parish, with or
-// without a focus (/sgr, /sgr/next-tue, /sgr/wed/liturgy), and a link to one
-// event (/102, /42:2026-10-04). Those get the lite card (lib/lite-page.mjs).
-// Everything else — the home page, /greek/qld, /services, a+b, unknown slugs —
-// returns null and the caller hands it to the app exactly as before.
+// without a focus (/sgr, /sgr/next-tue, /sgr/wed/evening/liturgy), its
+// timetable (/sgr/services), and a link to one event (/102, /42:2026-10-04).
+// Those get the lite card (lib/lite-page.mjs). Everything else — the home
+// page, /greek/qld, /services on its own, a+b, unknown slugs — returns null
+// and the caller hands it to the app exactly as before.
 //
 // It FAILS OPEN. Any error while building a page returns null, and the app
 // answers the link as it always did: a lite page that cannot be built must
 // never be the reason a link does not work.
 //
 // Two ways past it on purpose:
-//   ?app               "Open this in the app", from the card's own footer.
+//   ?app               "Open in the app", the card's own button.
 //   agora_admin cookie set by the app while somebody holds a role, so an admin
 //                      following a link lands where editing lives. It grants
 //                      nothing; it only chooses which page to serve.
@@ -49,13 +50,11 @@ export function liteKind(pathname, now = Date.now()) {
   const first = pathname.split('/').filter(Boolean)[0];
   if (!first || SITE_PATHS.has(first.toLowerCase())) return null;
   const r = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) });
-  // A part of the day too: the card does not narrow by one, and a card for
-  // /sgr/evening listing the morning services would answer the wrong question.
-  const appOnly = r.jurisdiction || r.location || r.services || r.socialOnly
-    || r.englishOnly || r.donate || r.part;
+  const appOnly = r.jurisdiction || r.location || r.socialOnly || r.englishOnly || r.donate;
   if (appOnly) return null;
   if (r.parishSlugs && r.parishSlugs.length === 1) return { kind: 'parish', slug: r.parishSlugs[0], route: r };
-  if (!r.parishSlugs && r.eventId && !r.dateFocus && r.day == null && !r.service) {
+  if (!r.parishSlugs && r.eventId && !r.dateFocus && r.day == null && !r.service
+      && !r.part && !r.services) {
     return { kind: 'event', route: r };
   }
   return null;

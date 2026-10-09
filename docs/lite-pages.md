@@ -1,7 +1,7 @@
 # Lite pages: shared links answered by the Worker
 
-A link somebody sends — `/sgr`, `/sgr/next-tue`, `/sgr/wed/liturgy`, `/102`,
-`/42:2026-10-04` — is answered with a **lite card**: that parish, and the event the
+A link somebody sends — `/sgr`, `/sgr/next-tue`, `/sgr/wed/liturgy`, `/sgr/evening`,
+`/sgr/services`, `/102`, `/42:2026-10-04` — is answered with a **lite card**: that parish, and the event the
 link names, server-rendered by the Worker. It paints at once with no map, reads with
 JavaScript off, and carries its own title, description, preview image, canonical URL
 and structured data. A chat app previewing the link and a search engine indexing it
@@ -22,12 +22,13 @@ empty shell.
    first, as before.
 3. `servePage` (`worker/routes/pages.mjs`) classifies the path with
    `public/shared/url-state.js` — **the same grammar the app parses with** — and answers
-   exactly two shapes: one parish (with any day / service / date focus), or a bare event
-   id. Everything else returns null and the app loads as it always did — including a
-   part of the day (`/sgr/evening`), which the card does not narrow by.
+   exactly two shapes: one parish (with any day / part of the day / service / date
+   focus, and `/services` for its timetable), or a bare event id. Everything else —
+   `/services` with no parish among them — returns null and the app loads as it always
+   did.
 4. **It fails open.** A render that throws returns null and the app answers the link.
 
-Two ways past it: `?app` (the card's "Open this in the app") and the `agora_admin`
+Two ways past it: `?app` (the card's "Open in the app" button) and the `agora_admin`
 cookie, which the app sets while somebody holds a role so an admin lands where editing
 lives. The cookie grants nothing — the API checks the Access token on every request.
 
@@ -38,8 +39,15 @@ lives. The cookie grants nothing — the API checks the Access token on every re
 - the occurrences come from `expandFrom` + `buildFeed`, the same functions `bundle.js`
   runs in the browser, over one parish's rows (`fetchWindowRows({ parishId })`);
 - the pin follows the app's rules (`firstEventOnDay` in `url-state.js`): an id pins its
-  event, a day pins only an event ON that day, a service or weekday pins the next of its
-  kind; a synthetic id lists the other dates of the same rule;
+  event, a day pins only an event ON that day, a service, weekday or part of the day
+  (`/sgr/evening`, split at 2pm on the parish's clock) pins the next of its kind; a
+  synthetic id lists the other dates of the same rule;
+- `/sgr/services` is the timetable instead — the rules the link's day, part and service
+  name, no dates and no pin — and under it **View upcoming events →**, which opens the
+  app on the same link minus `/services` (`/sgr/evening/services` → `/sgr/evening?app`);
+- the way into the app is a button in the parish's colour directly above the list
+  (**Open in the app →**, the same link with `?app`). It used to be a line of small
+  print in the footer;
 - times in the parish's zone; nothing "now"-relative is baked in — `public/lite.js`
   marks "Now" and fades past services on the viewer's clock, settles relative dates in
   the address bar (`/next-tue` → `/2026-10-06`), and prefetches the app on idle.
