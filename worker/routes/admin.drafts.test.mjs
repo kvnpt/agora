@@ -1,0 +1,417 @@
+// Drafts: adding an event through the editor, with or without a poster.
+//
+// Through the real Router, like the events tests, because the risks here are
+// the ones a unit test cannot see: a route scoped on the body instead of the
+// draft's own parish, a read that overwrites what a person typed while it was
+// running, a publish that loses the combine the old dialog carried.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { Router } from '../lib/router.mjs';
+import { registerAdminRoutes } from './admin.mjs';
+import { expandWindow } from '../lib/expand.mjs';
+import { DRAFTS_DDL } from '../lib/drafts.mjs';
+import { isDataWrite } from '../lib/data-version.mjs';
+import { haikuStream, fakeFetch } from '../lib/test-fakes.mjs';
+import sse from '../../public/shared/sse.js';
+
+const require = createRequire(import.meta.url);
+const Database = require('better-sqlite3');
+
+class D1 {
+  constructor(db) { this.db = db; }
+  prepare(sql) { return new S(this.db, sql, []); }
+  async batch(stmts) { return this.db.transaction(() => stmts.map(s => s._runSync()))(); }
+}
+class S {
+  constructor(db, sql, a) { this.db = db; this.sql = sql; this.args = a; }
+  bind(...a) { return new S(this.db, this.sql, a); }
+  _runSync() {
+    const st = this.db.prepare(this.sql);
+    if (st.reader) return { results: st.all(...this.args) };   // INSERT … RETURNING in a batch
+    const r = st.run(...this.args);
+    return { meta: { changes: r.changes } };
+  }
+  async all() { return { results: this.db.prepare(this.sql).all(...this.args) }; }
+  async first() { const r = this.db.prepare(this.sql).get(...this.args); return r === undefined ? null : r; }
+  async run() { return this._runSync(); }
+}
+
+/** R2, enough for a poster: put, get (with its type), delete. */
+function bucket() {
+  const store = new Map();
+  const deleted = [];
+  return {
+    store, deleted,
+    async put(key, body, opts) { store.set(key, { bytes: new Uint8Array(body), opts }); },
+    async get(key) {
+      const o = store.get(key);
+      return o ? { arrayBuffer: async () => o.bytes.buffer, httpMetadata: o.opts.httpMetadata } : null;
+    },
+    async delete(keys) {
+      for (const k of (Array.isArray(keys) ? keys : [keys])) { deleted.push(k); store.delete(k); }
+    },
+  };
+}
+
+function fresh(roleRow, { key = 'test-key' } = {}) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'agora-dr-')), 'x.db');
+  const raw = new Database(file);
+  raw.pragma('foreign_keys = ON');
+  raw.exec(fs.readFileSync('d1/schema.sql', 'utf8'));
+  raw.exec(fs.readFileSync('d1/seed-parishes.sql', 'utf8'));
+  if (roleRow) {
+    raw.prepare('INSERT INTO admin_roles (email, role, parish_ids) VALUES (?,?,?)')
+      .run('dev', roleRow.role, roleRow.parishIds ? JSON.stringify(roleRow.parishIds) : null);
+  }
+  const router = new Router();
+  registerAdminRoutes(router);
+  const b = bucket();
+  const env = { DB: new D1(raw), AGORA_DEV_ADMIN: 'true', ASSETS_BUCKET: b };
+  if (key) env.ANTHROPIC_API_KEY = key;
+
+  const send = async (method, url, init = {}) => {
+    const res = await router.handle(new Request(`https://orthodoxy.au${url}`, { method, ...init }), env, {});
+    assert.ok(res, `no route matched ${method} ${url}`);
+    return res;
+  };
+  const call = async (method, url, body) => {
+    const res = await send(method, url, body === undefined ? {} : {
+      body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' },
+    });
+    let parsed = null;
+    try { parsed = await res.json(); } catch { /* not json */ }
+    return { status: res.status, body: parsed };
+  };
+  /** POST a poster; the SSE answer, parsed into frames. */
+  const poster = async (draftId, bytes = jpeg(), type = 'image/jpeg', qs = '') => {
+    const res = await send('POST', `/api/admin/drafts/${draftId}/poster${qs}`, {
+      body: bytes, headers: { 'Content-Type': type },
+    });
+    if (!res.headers.get('content-type').startsWith('text/event-stream')) {
+      return { status: res.status, body: await res.json(), frames: [] };
+    }
+    const frames = [];
+    const p = sse.createSseParser(e => frames.push({ event: e.event, ...JSON.parse(e.data) }));
+    p.push(await res.text());
+    p.end();
+    return { status: res.status, frames };
+  };
+  return { raw, env, bucket: b, call, poster, send };
+}
+
+const jpeg = () => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9, 9]);
+
+/** Run `fn` with a fake global fetch; restore it after. */
+async function withFetch(impl, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = impl;
+  try { return await fn(); } finally { globalThis.fetch = real; }
+}
+
+/** A seeded parish in Sydney time that has rules, and another. */
+function parishes(raw) {
+  const rows = raw.prepare(
+    `SELECT DISTINCT p.id FROM parishes p JOIN schedules s ON s.parish_id = p.id
+     WHERE p.id != '_unassigned' AND p.timezone = 'Australia/Sydney' ORDER BY p.id`).all();
+  assert.ok(rows.length >= 2);
+  return [rows[0].id, rows[1].id];
+}
+
+const TWO = {
+  kind: 'several_events',
+  events: [
+    { title: 'Youth Night', date: '2026-11-14', weekday_printed: 'Saturday', year_printed: false,
+      start_time: '19:00', end_time: null, event_type: 'youth', languages: [], venue: null,
+      description: 'Bring a plate.', notes: [{ field: 'start_time', text: 'Doors 6:30.' }] },
+    { title: 'Talk on prayer', date: '2026-11-21', weekday_printed: 'Saturday', year_printed: false,
+      start_time: '18:30', end_time: '20:00', event_type: 'talk', languages: ['Greek'], venue: 'Church hall',
+      description: null, notes: [] },
+  ],
+  notes: [],
+};
+
+// ── who may ──
+
+test('no role is refused; a contact drafts at their own parish only', async () => {
+  // Somebody else on the list and not 'dev': signed in, with no role.
+  const none = fresh();
+  none.raw.prepare("INSERT INTO admin_roles (email, role) VALUES ('someone@else', 'owner')").run();
+  const [a, b] = parishes(none.raw);
+  assert.equal((await none.call('POST', '/api/admin/drafts', { parish_id: a })).status, 403);
+
+  const f = fresh({ role: 'parish', parishIds: [a] });
+  assert.equal((await f.call('POST', '/api/admin/drafts', { parish_id: a })).status, 201);
+  assert.equal((await f.call('POST', '/api/admin/drafts', { parish_id: b })).status, 403);
+});
+
+test('a draft at another parish is out of reach by its id — read, edit, read a poster, publish, discard', async () => {
+  const f = fresh({ role: 'owner' });
+  const [a, b] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: b, card: { title: 'Theirs' } })).body;
+  f.raw.prepare("UPDATE admin_roles SET role = 'parish', parish_ids = ? WHERE email = 'dev'").run(JSON.stringify([a]));
+
+  const cid = d.cards[0].id;
+  assert.equal((await f.call('GET', `/api/admin/drafts/${d.id}`)).status, 403);
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${cid}`, { title: 'Mine now' })).status, 403);
+  assert.equal((await f.poster(d.id)).status, 403);
+  assert.equal((await f.call('POST', `/api/admin/draft-events/${cid}/publish`, {})).status, 403);
+  assert.equal((await f.call('DELETE', `/api/admin/drafts/${d.id}`)).status, 403);
+  assert.deepEqual((await f.call('GET', '/api/admin/drafts')).body, [], 'and it is not listed');
+  assert.equal(f.raw.prepare('SELECT title FROM draft_events WHERE id = ?').get(cid).title, 'Theirs');
+});
+
+// ── autosave ──
+
+test('a card saves field by field, in the shapes the form holds', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: { title: 'Feast' } })).body;
+  assert.equal(d.cards.length, 1);
+  const cid = d.cards[0].id;
+
+  for (const [patch, field] of [[{ date: '2026-02-30' }, 'date'], [{ start_time: '7pm' }, 'start_time'],
+    [{ event_type: 'vespers' }, 'event_type'], [{ replaces: ['abc'] }, 'replaces'], [{ also_at: 'x' }, 'also_at']]) {
+    const r = await f.call('PATCH', `/api/admin/draft-events/${cid}`, patch);
+    assert.equal(r.status, 400, JSON.stringify(patch));
+    assert.equal(r.body.field, field);
+  }
+  const r = await f.call('PATCH', `/api/admin/draft-events/${cid}`, {
+    date: '2026-12-19', start_time: '17:00', end_time: '', event_type: 'feast',
+    languages: ['English', 'Greek'], also_at: ['x', 'x'], replaces: ['12', '3:2026-12-19'],
+  });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.body.date, r.body.start_time, r.body.end_time, r.body.languages, r.body.also_at, r.body.replaces],
+    ['2026-12-19', '17:00', null, ['English', 'Greek'], ['x'], ['12', '3:2026-12-19']]);
+  assert.deepEqual((await f.call('GET', '/api/admin/drafts')).body.map(x => x.id), [d.id]);
+});
+
+// ── the poster ──
+
+test('only an image, and not a huge one', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  assert.equal((await f.poster(d.id, new Uint8Array([1, 2]), 'text/plain')).status, 415);
+  assert.equal((await f.poster(d.id, new Uint8Array(5 * 1024 * 1024 + 1), 'image/png')).status, 413);
+  assert.equal(f.bucket.store.size, 0, 'nothing stored for a refused upload');
+});
+
+test('with no key the poster is still stored and attached, and the editor is told why nothing was read', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  const { frames } = await f.poster(d.id);
+  assert.deepEqual(frames.map(x => x.event), ['poster', 'result']);
+  const [key] = [...f.bucket.store.keys()];
+  assert.match(key, new RegExp(`^posters/${a}-[a-z0-9]+-[a-z0-9]+\\.jpg$`), 'one path segment under posters/');
+  assert.equal(frames[0].poster_path, `/${key}`);
+  assert.equal(frames[1].configured, false);
+  assert.match(frames[1].error, /not set up/);
+  assert.equal(frames[1].draft.poster_path, `/${key}`);
+  assert.equal(frames[1].draft.cards.length, 1, 'the blank card is still there to type into');
+});
+
+test('a read streams into the cards: empty fields filled, the rest appended, a typed title kept', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: { title: 'Our Youth Night' } })).body;
+  const fetchImpl = fakeFetch(haikuStream(JSON.stringify(TWO)));
+  const { frames } = await withFetch(fetchImpl, () => f.poster(d.id));
+
+  const sent = fetchImpl.calls[0];
+  assert.equal(sent.url, 'https://api.anthropic.com/v1/messages');
+  assert.equal(sent.body.model, 'claude-haiku-4-5');
+  assert.match(sent.body.messages[0].content[1].text, /Its regular services:\n- /);
+
+  const kinds = frames.map(x => x.event);
+  assert.equal(kinds[0], 'poster');
+  assert.equal(kinds[1], 'kind');
+  assert.ok(kinds.indexOf('item') > kinds.indexOf('field'));
+  assert.equal(kinds[kinds.length - 1], 'result');
+  assert.deepEqual(frames.filter(x => x.event === 'item').map(x => x.index), [0, 1]);
+
+  const cards = frames[frames.length - 1].draft.cards;
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].title, 'Our Youth Night', 'what the person typed stays');
+  assert.deepEqual([cards[0].date, cards[0].start_time, cards[0].event_type], ['2026-11-14', '19:00', 'youth']);
+  assert.ok(!cards[0].read_fields.includes('title') && cards[0].read_fields.includes('date'));
+  assert.deepEqual(cards[0].read_notes, [{ field: 'start_time', text: 'Doors 6:30.' }]);
+  assert.deepEqual([cards[0].printed_weekday, cards[0].year_printed], ['Saturday', 0]);
+  assert.deepEqual([cards[1].title, cards[1].location_override, cards[1].languages], ['Talk on prayer', 'Church hall', ['Greek']]);
+  assert.equal(frames[frames.length - 1].draft.read_status, 'read');
+  assert.equal(frames[frames.length - 1].draft.read_kind, 'several_events');
+});
+
+test('an edit that lands while the poster is being read wins over the read', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  const cid = d.cards[0].id;
+  const body = new TextEncoder().encode(haikuStream(JSON.stringify(TWO)));
+  // A stream that, halfway through, waits for the person's PATCH to land.
+  const slow = async () => new Response(new ReadableStream({
+    async start(c) {
+      c.enqueue(body.slice(0, body.length >> 1));
+      const r = await f.call('PATCH', `/api/admin/draft-events/${cid}`, { start_time: '18:45' });
+      assert.equal(r.status, 200);
+      c.enqueue(body.slice(body.length >> 1));
+      c.close();
+    },
+  }), { status: 200 });
+  const { frames } = await withFetch(slow, () => f.poster(d.id));
+  const card = frames[frames.length - 1].draft.cards[0];
+  assert.equal(card.start_time, '18:45');
+  assert.equal(card.title, 'Youth Night', 'the fields nobody touched are filled');
+  assert.ok(!card.read_fields.includes('start_time'));
+});
+
+test('a busy reader says to try again, marks the read failed and leaves the cards alone', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: { title: 'Kept' } })).body;
+  const { frames } = await withFetch(fakeFetch('{"type":"error"}', { status: 429 }), () => f.poster(d.id));
+  assert.deepEqual(frames.map(x => x.event), ['poster', 'error', 'result']);
+  assert.equal(frames[1].retry, true);
+  assert.equal(frames[2].draft.read_status, 'failed');
+  assert.deepEqual(frames[2].draft.cards.map(c => c.title), ['Kept']);
+
+  // …and reading again uses the poster already stored, with no upload.
+  const again = await withFetch(fakeFetch(haikuStream(JSON.stringify(TWO))), () => f.poster(d.id, undefined, '', '?reread=1'));
+  assert.equal(again.frames[again.frames.length - 1].draft.read_status, 'read');
+  assert.equal(f.bucket.store.size, 1);
+});
+
+// ── publishing ──
+
+test('publishing turns local wall-clock into instants, puts the poster on, and spends the card', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  await f.poster(d.id);
+  const [key] = [...f.bucket.store.keys()];
+  const second = (await f.call('POST', `/api/admin/drafts/${d.id}/events`, { title: 'Vigil' })).body;
+  // Sydney's clocks go forward at 02:00 on 4 Oct 2026: 01:30 is +10, 03:30 is +11.
+  await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`,
+    { title: 'Early', date: '2026-10-04', start_time: '01:30', end_time: '03:30', event_type: 'prayer' });
+  await f.call('PATCH', `/api/admin/draft-events/${second.id}`,
+    { date: '2026-11-14', start_time: '23:00', end_time: '02:00' });
+
+  const one = await f.call('POST', `/api/admin/draft-events/${d.cards[0].id}/publish`, {});
+  assert.equal(one.status, 201);
+  assert.equal(one.body.remaining, 1);
+  const e1 = one.body.event;
+  assert.deepEqual([e1.start_utc, e1.end_utc, e1.event_type, e1.source_adapter, e1.poster_path],
+    ['2026-10-03T15:30:00.000Z', '2026-10-03T16:30:00.000Z', 'prayer', 'manual', `/${key}`]);
+
+  const two = await f.call('POST', `/api/admin/draft-events/${second.id}/publish`, {});
+  assert.equal(two.status, 201);
+  assert.equal(two.body.event.end_utc, '2026-11-14T15:00:00.000Z', 'an end before the start is the next morning');
+  assert.equal(two.body.event.event_type, 'other', 'no kind chosen reads as Other, as the create always did');
+  assert.equal(two.body.remaining, 0);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM drafts').get().n, 0, 'the last card takes the draft');
+  assert.ok(f.bucket.store.has(key), 'the poster stays — the events show it');
+  assert.deepEqual(f.bucket.deleted, []);
+});
+
+test('a card that is not ready to publish says what is missing and stays a draft', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: { title: 'No time yet' } })).body;
+  await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`, { date: '2026-11-14' });
+  const r = await f.call('POST', `/api/admin/draft-events/${d.cards[0].id}/publish`, {});
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /Needs a start time/);
+  assert.deepEqual(r.body.checks.map(c => c.field), ['start_time']);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM draft_events').get().n, 1);
+});
+
+test('the combine travels with the card, and an out-of-reach part becomes an ask', async () => {
+  const f = fresh({ role: 'owner' });
+  const [a, b] = parishes(f.raw);
+  const occ = (await expandWindow(f.env.DB, '2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z'))
+    .find(e => e.parish_id === b);
+  assert.ok(occ, 'parish b has a service in November');
+  const date = occ.id.split(':')[1];
+
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: {
+    title: 'Deanery Liturgy', date, start_time: '09:30', also_at: [b], replaces: [occ.id],
+  } })).body;
+  const r = await f.call('POST', `/api/admin/draft-events/${d.cards[0].id}/publish`, {});
+  assert.equal(r.status, 201);
+  assert.deepEqual(r.body.event.additional_parishes, [b]);
+  const [sid] = occ.id.split(':');
+  const ov = f.raw.prepare('SELECT kind, combined_into_event_id FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?')
+    .get(Number(sid), date);
+  assert.deepEqual(ov, { kind: 'combined', combined_into_event_id: r.body.event.id });
+
+  // A parish contact asking for the same thing: refused without `propose`…
+  f.raw.prepare("UPDATE admin_roles SET role = 'parish', parish_ids = ? WHERE email = 'dev'").run(JSON.stringify([a]));
+  const d2 = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: {
+    title: 'Pan-Orthodox Vespers', date, start_time: '17:00', also_at: [b], ask_reason: 'Sunday of Orthodoxy',
+  } })).body;
+  const no = await f.call('POST', `/api/admin/draft-events/${d2.cards[0].id}/publish`, {});
+  assert.equal(no.status, 403);
+  assert.equal(no.body.proposable, true);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM draft_events WHERE id = ?').get(d2.cards[0].id).n, 1, 'still a draft');
+  // …and with it, their half is published and the rest is an ask carrying the card's reason.
+  const yes = await f.call('POST', `/api/admin/draft-events/${d2.cards[0].id}/publish`, { propose: true });
+  assert.equal(yes.status, 201);
+  assert.ok(yes.body.proposal_id);
+  const ask = f.raw.prepare('SELECT capability, reason FROM admin_proposals WHERE id = ?').get(yes.body.proposal_id);
+  assert.deepEqual(ask, { capability: 'event.combine', reason: 'Sunday of Orthodoxy' });
+});
+
+// ── discarding ──
+
+test('discarding deletes the draft and its poster — unless an event published from it shows it', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  await f.poster(d.id);
+  const [key] = [...f.bucket.store.keys()];
+  assert.equal((await f.call('DELETE', `/api/admin/drafts/${d.id}`)).status, 200);
+  assert.deepEqual(f.bucket.deleted, [key]);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM draft_events').get().n, 0, 'the cards go with it');
+
+  const g = fresh({ role: 'editor' }, { key: null });
+  const d2 = (await g.call('POST', '/api/admin/drafts', { parish_id: a, card: { title: 'One', date: '2026-11-14', start_time: '10:00' } })).body;
+  await g.poster(d2.id);
+  const [key2] = [...g.bucket.store.keys()];
+  await g.call('POST', `/api/admin/drafts/${d2.id}/events`, { title: 'Two' });
+  assert.equal((await g.call('POST', `/api/admin/draft-events/${d2.cards[0].id}/publish`, {})).status, 201);
+  assert.equal((await g.call('DELETE', `/api/admin/drafts/${d2.id}`)).status, 200);
+  assert.deepEqual(g.bucket.deleted, [], 'the published event still shows the poster');
+});
+
+// ── plumbing ──
+
+test('draft writes leave the public data version alone; publishing moves it', () => {
+  const ok = new Response('{}', { status: 200 });
+  const w = (method, p) => isDataWrite(new Request(`https://orthodoxy.au${p}`, { method }), ok);
+  assert.equal(w('POST', '/api/admin/drafts'), false);
+  assert.equal(w('PATCH', '/api/admin/draft-events/4'), false);
+  assert.equal(w('POST', '/api/admin/drafts/3/poster'), false);
+  assert.equal(w('DELETE', '/api/admin/drafts/3'), false);
+  assert.equal(w('POST', '/api/admin/draft-events/4/publish'), true);
+  assert.equal(w('POST', '/api/admin/events'), true);
+  assert.equal(w('POST', '/api/admin/draftsman'), true, 'only the draft routes themselves');
+});
+
+test('the first-use DDL builds the same tables as the baseline', () => {
+  const base = new Database(':memory:');
+  base.exec(fs.readFileSync('d1/schema.sql', 'utf8'));
+  const lazy = new Database(':memory:');
+  lazy.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
+  for (const sql of DRAFTS_DDL) lazy.exec(sql);
+  for (const t of ['drafts', 'draft_events']) {
+    const cols = (db) => db.prepare(`PRAGMA table_info(${t})`).all();
+    assert.deepEqual(cols(lazy), cols(base), t);
+  }
+  const idx = (db) => db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('drafts','draft_events') ORDER BY name").all();
+  assert.deepEqual(idx(lazy), idx(base));
+});

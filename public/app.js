@@ -5,7 +5,7 @@ const LITURGICAL_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
 // down once: this was the same literal in three places in this file, which is
 // how one list becomes three that disagree — see jurisdiction-colors.js for the
 // table that already had to be rescued from exactly that.
-const EVENT_TYPES = ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other'];
+const EVENT_TYPES = window.AgoraEventTypes.EVENT_TYPES;   // public/shared/event-types.js
 // Which weeks of the month a rule runs on, in the order every picker offers
 // them. Mirrors VALID_WEEKS in worker/routes/admin.mjs, which refuses anything
 // else — a picker offering a sixth value could only ever produce a 400.
@@ -9620,9 +9620,14 @@ window.closePublicEscalateModal = function() {
   _escalatePubEventId = null;
 };
 
-// ── Adding a one-off event at a parish ────────────────────────────────────
+// ── Adding an event at a parish ───────────────────────────────────────────
 //
-// The parish sheet's add button, and the dialog behind it.
+// The parish sheet's add button, and the dialog behind it. The dialog's body
+// is the add-event editor (public/shared/event-editor.js) — the same editor
+// /admin's Events section mounts, so the two ways of adding an event are one
+// piece of code. It starts from a poster or from nothing, keeps every card as
+// a draft while it is typed, and writes `events` only on Publish; closing the
+// dialog loses nothing. docs/editing.md has the why.
 //
 // WHY THE FAB IS NOT BEHIND EDIT MODE. Edit mode exists so a signed-in person
 // reads the sheet a visitor reads — no pencils down the timetable, no logo
@@ -9633,30 +9638,14 @@ window.closePublicEscalateModal = function() {
 // parish: an owner and an editor see it on every sheet, a parish contact sees it
 // on their own parishes only, and nobody else ever does.
 //
-// WHY THE COMBINE IS IN THE SAME DIALOG. The reason for the event is often the
+// WHY THE COMBINE IS IN THE SAME EDITOR. The reason for the event is often the
 // combine: a deanery liturgy at the cathedral exists BECAUSE four parishes are
 // not holding their own that morning. Asking about it afterwards would publish
 // the new card beside the service it stands in for and leave the pair up for as
-// long as the second step took — or forever, if nobody took it. So the dialog
-// asks all three questions and POST /api/admin/events takes all three answers,
-// rolling the event back if the combine is refused.
-//
-// The two lists are the same `.escalate-item` rows the drawer's combine dialog
-// uses, on purpose: it is one mechanism and should not read as two features.
+// long as the second step took. So every card carries "also appears at" and
+// "replaces", and publishing it sends all three answers at once.
 
-let _newEventParishId = null;
-// What the date in the form could replace, as /api/admin/events/candidates
-// answered. Re-fetched when the date changes, because the date is the only
-// thing that changes the answer.
-let _newEventCandidates = [];
-// Which reply is still wanted. Typing through a date field fires a change per
-// keystroke on some browsers, and an early request landing last would show the
-// wrong day's services as replaceable.
-let _newEventSeq = 0;
-// The body that was refused, kept so "Ask an owner" can re-send exactly what
-// was asked for rather than re-reading a form the person may have touched
-// since. Cleared whenever the dialog is opened or closed.
-let _newEventRefusedBody = null;
+let _newEventEditor = null;
 
 /**
  * Show the add button when this account may write an event at the parish on
@@ -9679,515 +9668,71 @@ function syncParishAddEventFab() {
 }
 window.agoraSyncParishAddEventFab = syncParishAddEventFab;
 
-/** Today, or the focused date, as the parish's own calendar reads it. */
-function _newEventDefaultDate(tz) {
-  if (state._dateFocus) return state._dateFocus;
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
-}
-
 /**
- * Every parish the event could be listed at, own parish first.
- *
- * Deliberately NOT narrowed to the ones this account may write. It was, and
- * that made the ask unreachable by the only people it is for: a parish
- * contact's list came back holding nothing but their own parish, so they could
- * never tick another one, never meet the refusal, and never be offered the way
- * forward. `_needsAsk` marks the rest instead — the answer to "may I" is not
- * "this parish does not exist", it is "an owner decides".
+ * Widen the window far enough to hold what was just published, re-read, and
+ * pin the earliest of it under the parish header — the answer to "did that
+ * work" is the event itself. Pinned through opts rather than
+ * state._openEventId: this is feedback on a press, not a surface worth
+ * rewriting the URL for.
  */
-function _newEventParishRows(parish) {
-  const own = { ...parish, _isOwn: true };
-  // Distance from the EVENT'S parish, not from the viewer.
-  //
-  // The viewer may be anywhere, may have refused geolocation, and is usually
-  // not at the church — whereas a deanery liturgy at Redfern is attended by the
-  // parishes near Redfern, so the cathedral is the anchor that makes "nearby"
-  // mean what it means here. It also needs no permission and gives the same
-  // order to everybody, which a list you tick a dozen boxes in should.
-  //
-  // A parish with no pin sorts last within its jurisdiction rather than first:
-  // Infinity beats any real distance to the bottom.
-  const km = (p) => (parish.lat != null && p.lat != null)
-    ? haversineKm(parish.lat, parish.lng, p.lat, p.lng)
-    : Infinity;
-  const others = (state.parishes || [])
-    .filter(p => p.id !== parish.id && p.id !== '_unassigned')
-    .map(p => ({ ...p, _needsAsk: !adminMay('event.edit', p.id), _km: km(p) }))
-    .sort((a, b) => {
-      // Jurisdiction first and the event's own jurisdiction ahead of the rest,
-      // because a combine is nearly always within one; distance second, so
-      // "every Antiochian parish in Sydney" is a run of adjacent rows to tick
-      // rather than a hunt through an alphabet.
-      const ah = a.jurisdiction === parish.jurisdiction ? 0 : 1;
-      const bh = b.jurisdiction === parish.jurisdiction ? 0 : 1;
-      return ah - bh
-        || String(a.jurisdiction || '').localeCompare(String(b.jurisdiction || ''))
-        || a._km - b._km
-        || String(a.name || '').localeCompare(String(b.name || ''));
-    });
-  return [own, ...others];
-}
-
-/** "12 km" — the distance that decides the order, said out loud. */
-const _kmLabel = (km) => (km == null || !Number.isFinite(km))
-  ? '' : (km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`);
-
-/**
- * The replaceable list, narrowed to the parishes that are ticked above it.
- *
- * A candidate id is either an integer (a stored one-off, replaced through
- * `event_replaces`) or "scheduleId:YYYY-MM-DD" (a projected occurrence,
- * replaced through a `combined` override). Nothing here has to know which —
- * the value travels as a string and the Worker routes it by shape.
- */
-function _renderNewEventReplaces() {
-  const listEl = document.getElementById('new-event-replaces');
-  if (!listEl) return;
-  const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
-  const checked = new Set([...document.querySelectorAll('#new-event-parishes input:checked')]
-    .map(cb => cb.value));
-  if (!document.getElementById('ne-date').value) {
-    listEl.innerHTML = '<div class="escalate-empty">Pick a date to see what it could replace</div>';
-    return;
-  }
-  const visible = _newEventCandidates.filter(e => checked.has(e.parish_id));
-  if (!visible.length) {
-    listEl.innerHTML = '<div class="escalate-empty">Nothing on file at the ticked parishes that day</div>';
-    return;
-  }
-  const tzOf = (row) => {
-    const p = (state.parishes || []).find(x => x.id === row.parish_id);
-    return (p && p.timezone) || (parish && parish.timezone) || TZ;
-  };
-  listEl.innerHTML = visible.map(e => {
-    // The candidate's OWN parish time, which is the time somebody would turn up
-    // at — the same rule the cards follow.
-    const when = new Intl.DateTimeFormat('en-AU', {
-      timeZone: tzOf(e), hour: 'numeric', minute: '2-digit',
-    }).format(new Date(e.start_utc));
-    // The parish rides on the input so the ask check does not have to look the
-    // candidate back up out of a list that is rebuilt on every tick.
-    const askTag = adminMay('event.edit', e.parish_id) ? '' : '<em class="ask-tag">needs an owner</em>';
-    const label = document.createElement('label');
-    label.className = 'escalate-item';
-    label.innerHTML = `<input type="checkbox" value="${esc(String(e.id))}"` +
-      ` data-parish-id="${esc(e.parish_id || '')}" onchange="agoraSyncNewEventAsk()">` +
-      `<span class="escalate-item-label">${esc(e.title)}${askTag}` +
-      `<small>${esc(when)} · ${esc(e.parish_name || '')}</small></span>`;
-    return label.outerHTML;
-  }).join('');
-  _syncNewEventAskState();
-}
-window._renderNewEventReplaces = _renderNewEventReplaces;
-
-/** Is anything ticked that this account may not write itself? */
-function _newEventAskNeeded() {
-  const parishes = [...document.querySelectorAll('#new-event-parishes input:checked:not([data-own])')];
-  const targets = [...document.querySelectorAll('#new-event-replaces input:checked')];
-  return parishes.some(cb => !adminMay('event.edit', cb.value))
-      || targets.some(cb => !adminMay('event.edit', cb.dataset.parishId || ''));
-}
-
-/**
- * Say, before the press, that this one is going to be an ask.
- *
- * The refusal path below still exists and is still the truth — the Worker
- * decides, not this — but finding out only afterwards makes a deliberate act
- * read as a failure. So the reason box appears the moment something out of
- * reach is ticked, and the button says what it is about to do.
- */
-function _syncNewEventAskState() {
-  const ask = document.getElementById('new-event-ask');
-  const save = document.getElementById('new-event-save');
-  if (!ask || !save) return;
-  // Sent is the one state not to paint over — the form is gone and the block
-  // is the receipt.
-  if (ask.classList.contains('ne-ask-sent')) return;
-  // A refusal is about a body that was sent. Touching the form makes it a body
-  // that no longer exists, so the held copy goes with it: otherwise unticking
-  // the parish that caused the refusal would leave a button that asks for it
-  // anyway.
-  if (_newEventRefusedBody) {
-    _newEventRefusedBody = null;
-    const err = document.getElementById('new-event-error');
-    if (err) { err.hidden = true; err.textContent = ''; }
-  }
-
-  const needed = _newEventAskNeeded();
-  const sendBtn = document.getElementById('new-event-ask-send');
-  if (sendBtn) sendBtn.hidden = true;      // the main button carries it in this mode
-  ask.hidden = !needed;
-  save.textContent = needed ? 'Add event & ask' : 'Add event';
-  if (needed) {
-    const what = document.getElementById('new-event-ask-what');
-    if (what) {
-      what.innerHTML = 'Some of what is ticked belongs to another parish, so an owner '
-        + 'decides that part. Your event is added at your own parish either way.';
-    }
+async function _afterNewEvents(events) {
+  if (!events || !events.length) return;
+  const byStart = events.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+  const last = String(byStart[byStart.length - 1].start_utc || '').slice(0, 10);
+  const needed = daysUntil(last) + HORIZON_STEP_DAYS;
+  if (needed > (state._horizonDays || 0)) state._horizonDays = needed;
+  await fetchEvents({ fresh: true, keepCount: true });
+  if (state.parishSheetFocus) {
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true, focusEventId: String(byStart[0].id) });
   }
 }
-window.agoraSyncNewEventAsk = _syncNewEventAskState;
 
-/** Re-ask what the chosen date holds. Bound to the date field's change. */
-window.agoraNewEventDateChanged = async function () {
-  const listEl = document.getElementById('new-event-replaces');
-  const dateEl = document.getElementById('ne-date');
-  if (!listEl || !dateEl) return;
-  const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
-  const date = dateEl.value;
-  const seq = ++_newEventSeq;
-  if (!date || !parish) {
-    _newEventCandidates = [];
-    _renderNewEventReplaces();
-    return;
-  }
-  listEl.innerHTML = '<div class="escalate-empty">Loading…</div>';
-  // `tz` is what makes this the PARISH's day rather than Sydney's — it is the
-  // difference between seeing and not seeing a midnight Paschal liturgy at an
-  // Auckland parish.
-  const tz = parish.timezone || '';
-  const qs = `date=${encodeURIComponent(date)}${tz ? `&tz=${encodeURIComponent(tz)}` : ''}`;
-  let rows = [];
-  try {
-    const res = await fetch(`/api/admin/events/candidates?${qs}`);
-    if (res.ok) rows = await res.json();
-  } catch { /* offline, or the session expired — an empty list says so */ }
-  if (seq !== _newEventSeq) return;
-  _newEventCandidates = Array.isArray(rows) ? rows : [];
-  _renderNewEventReplaces();
-};
+function _newEventEsc(e) {
+  if (e.key !== 'Escape') return;
+  // The poster opened full size from the editor sits on top; Escape is its.
+  const viewer = document.getElementById('poster-fullscreen');
+  if (viewer && viewer.classList.contains('open')) return;
+  window.closeNewEventDialog();
+}
 
-function _newEventEsc(e) { if (e.key === 'Escape') window.closeNewEventDialog(); }
-
-window.openNewEventDialog = function (parishId) {
+/** Open the editor for a parish — blank, or on a saved draft. */
+window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
   const parish = (state.parishes || []).find(p => p.id === parishId);
   const backdrop = document.getElementById('new-event-backdrop');
-  if (!parish || !backdrop) return;
+  const mount = document.getElementById('new-event-editor');
+  if (!parish || !backdrop || !mount || !window.AgoraEventEditor) return;
   // Re-checked on open as well as on render: the sheet may have been painted
   // before the ping answered, and a dialog is a worse place to find out.
   if (!adminMay('event.edit', parishId)) return;
+  if (_newEventEditor) _newEventEditor.close();
 
-  _newEventParishId = parishId;
-  _newEventCandidates = [];
-  _newEventSeq++;
-
-  const tz = parish.timezone || TZ;
   document.getElementById('new-event-sub').textContent =
-    `At ${parish.name}. One date — a service that runs every week is a rule, not an event.`;
-  document.getElementById('ne-tz-hint').textContent =
-    `${tz.split('/').pop().replace(/_/g, ' ')} time, the way the parish publishes it.`;
-
-  const typeEl = document.getElementById('ne-type');
-  typeEl.innerHTML = EVENT_TYPES
-    .map(t => `<option value="${t}"${t === 'feast' ? ' selected' : ''}>${capitalize(t)}</option>`)
-    .join('');
-
-  document.getElementById('ne-title').value = '';
-  document.getElementById('ne-date').value = _newEventDefaultDate(tz);
-  document.getElementById('ne-start').value = '09:00';
-  document.getElementById('ne-end').value = '';
-  document.getElementById('ne-desc').value = '';
-  document.getElementById('ne-langs').value = '';
-  document.getElementById('ne-location').value = '';
-  const posterEl = document.getElementById('ne-poster');
-  if (posterEl) posterEl.value = '';
-  const errEl = document.getElementById('new-event-error');
-  errEl.hidden = true;
-  errEl.textContent = '';
-  _resetNewEventAsk();
-
-  const rows = _newEventParishRows(parish);
-  // A heading whenever the jurisdiction changes. The rows are already grouped
-  // by the sort, so this is a label on a run rather than a regrouping.
-  let lastJuris = null;
-  document.getElementById('new-event-parishes').innerHTML = rows.map(p => {
-    let head = '';
-    if (!p._isOwn && p.jurisdiction !== lastJuris) {
-      lastJuris = p.jurisdiction;
-      head = `<div class="escalate-group">${esc(capitalize(p.jurisdiction || 'Other'))} Orthodox</div>`;
-    }
-    // The event's own parish is ticked and marked `data-own`, which is how the
-    // submit tells "it is here" from "it also appears here" — `event_parishes`
-    // holds the additions and never the home parish.
-    const ownAttr = p._isOwn ? ' checked data-own="1"' : '';
-    const ownTag = p._isOwn ? '<em class="own-tag">own</em>' : '';
-    // Marked, not greyed out: the row is tickable, and ticking it turns the
-    // press into an ask rather than into a refusal.
-    const askTag = p._needsAsk ? '<em class="ask-tag">needs an owner</em>' : '';
-    const label = document.createElement('label');
-    label.className = 'escalate-item';
-    const dist = p._isOwn ? '' : _kmLabel(p._km);
-    label.innerHTML = `<input type="checkbox" value="${esc(p.id)}"${ownAttr} onchange="_renderNewEventReplaces()">` +
-      `<span class="escalate-item-label">${esc(p.name)}${ownTag}${askTag}` +
-      `<small>${esc(dist || capitalize(p.jurisdiction || ''))}</small></span>`;
-    return head + label.outerHTML;
-  }).join('');
-
+    `At ${parish.name}. One date each — a service that runs every week is a rule, not an event.`;
+  _newEventEditor = window.AgoraEventEditor.open(mount, {
+    parish,
+    parishes: state.parishes || [],
+    may: adminMay,
+    draftId,
+    openPoster: (url) => openPosterFullscreen(url),
+    onPublished: async ({ events, proposals }) => {
+      window.closeNewEventDialog();
+      await _afterNewEvents(events);
+      // The dot, in case the person who asked can also decide.
+      if (proposals && proposals.length) refreshOpenAsks();
+    },
+    onClose: () => window.closeNewEventDialog(),
+  });
   backdrop.classList.add('open');
   document.addEventListener('keydown', _newEventEsc);
-  window.agoraNewEventDateChanged();
-  requestAnimationFrame(() => document.getElementById('ne-title').focus());
 };
 
 window.closeNewEventDialog = function () {
   const backdrop = document.getElementById('new-event-backdrop');
   if (backdrop) backdrop.classList.remove('open');
   document.removeEventListener('keydown', _newEventEsc);
-  _newEventParishId = null;
-  _newEventCandidates = [];
-  _newEventSeq++;
-  _resetNewEventAsk();
+  // Saves whatever was still waiting to save; the draft is there next time.
+  if (_newEventEditor) { _newEventEditor.close(); _newEventEditor = null; }
 };
-
-/** Put the ask block back to hidden and empty. */
-function _resetNewEventAsk() {
-  _newEventRefusedBody = null;
-  const ask = document.getElementById('new-event-ask');
-  const actions = document.getElementById('new-event-actions');
-  if (ask) { ask.hidden = true; ask.classList.remove('ne-ask-sent'); }
-  if (actions) actions.hidden = false;
-  const form = document.getElementById('new-event-form');
-  if (form) form.hidden = false;
-  const reason = document.getElementById('new-event-ask-reason');
-  if (reason) reason.value = '';
-  const save = document.getElementById('new-event-save');
-  if (save) save.textContent = 'Add event';
-}
-
-/**
- * Offer to carry an ask the Worker just refused.
- *
- * A parish contact may combine freely at their own parish and at nobody
- * else's, which is the one thing on this dialog they can want and not have.
- * The refusal names exactly what was out of reach — the Worker sends the
- * labels, because "some parish is not yours" is not something anybody can act
- * on — and the ask goes off with the event, the targets and the reason
- * attached, which is what it would lose travelling by any other channel.
- */
-function _offerNewEventAsk(body, refusal) {
-  _newEventRefusedBody = body;
-  const ask = document.getElementById('new-event-ask');
-  const what = document.getElementById('new-event-ask-what');
-  if (!ask || !what) return;
-  const outside = Array.isArray(refusal.outside) ? refusal.outside : [];
-  what.innerHTML = outside.length
-    ? `These belong to other parishes, so an owner decides:<br>` +
-      outside.map(o => `<b>${esc(o.label)}</b>`).join('<br>') +
-      `<br><br>Your event will be added at your own parish now either way.`
-    : `${esc(refusal.error || 'An owner has to approve part of this.')}`;
-  ask.hidden = false;
-  // In this mode the block carries its own button: the main one has already
-  // been pressed and was refused.
-  const sendBtn = document.getElementById('new-event-ask-send');
-  if (sendBtn) sendBtn.hidden = false;
-  const reason = document.getElementById('new-event-ask-reason');
-  if (reason) requestAnimationFrame(() => reason.focus());
-}
-
-/** Send it. The same body, with `propose` carrying the reason. */
-async function _sendNewEventAsk() {
-  const body = _newEventRefusedBody;
-  const btn = document.getElementById('new-event-ask-send');
-  const errEl = document.getElementById('new-event-error');
-  if (!body || !btn) return;
-  const reason = (document.getElementById('new-event-ask-reason') || {}).value || '';
-  btn.disabled = true;
-  try {
-    const res = await fetch('/api/admin/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // `propose` is the flag AND the reason. An ask with no reason still
-      // beats a refusal nobody can act on, so an empty box is allowed.
-      body: JSON.stringify({ ...body, propose: reason.trim() || true }),
-    });
-    const payload = await res.json().catch(() => null);
-    if (!res.ok) {
-      errEl.textContent = (payload && payload.error) || `That could not be sent (${res.status}).`;
-      errEl.hidden = false;
-      return;
-    }
-    _showNewEventAskSent();
-    // The event exists now, so the feed has to be re-read whether or not the
-    // ask is ever approved.
-    await _afterNewEvent(body, payload);
-    // And the dot, in case the person who asked is also somebody who can
-    // decide. An owner in another browser still learns about it on their next
-    // load — nothing here polls, and a dot is not worth a heartbeat.
-    refreshOpenAsks();
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-/**
- * The answer, where the question was asked.
- *
- * No toast in this app, and closing on success would leave nothing saying the
- * ask had gone anywhere — the half that waits on an owner has nothing to show
- * for itself on the sheet.
- */
-function _showNewEventAskSent() {
-  const ask = document.getElementById('new-event-ask');
-  const form = document.getElementById('new-event-form');
-  const actions = document.getElementById('new-event-actions');
-  const err = document.getElementById('new-event-error');
-  if (form) form.hidden = true;
-  if (actions) actions.hidden = true;
-  if (err) { err.hidden = true; err.textContent = ''; }
-  if (!ask) return;
-  ask.hidden = false;
-  ask.classList.add('ne-ask-sent');
-  ask.innerHTML =
-    `<div class="ne-ask-what">Asked. It is on file at your own parish already; ` +
-    `an owner sees the rest under <b>Asks</b> in the admin panel.</div>` +
-    `<button class="ps-btn ps-btn-admin" type="button" onclick="closeNewEventDialog()">Done</button>`;
-}
-
-/**
- * Put the chosen poster on the event that was just made.
- *
- * After the create and not with it: the R2 key is derived from the event id,
- * and there is no id until the row exists. A failure here leaves the event —
- * which is the right way round, the poster being the part you can add later.
- */
-async function _uploadNewEventPoster(payload) {
-  const input = document.getElementById('ne-poster');
-  const file = input && input.files && input.files[0];
-  if (!file || !payload || payload.id == null) return null;
-  const r = await uploadEventPoster(String(payload.id), file);
-  return r && r.error ? r.error : null;
-}
-
-/** Widen the window far enough to hold the new event, re-read, and pin it. */
-async function _afterNewEvent(body, payload) {
-  const date = String(body.start_utc || '').slice(0, 10);
-  const needed = daysUntil(date) + HORIZON_STEP_DAYS;
-  if (needed > (state._horizonDays || 0)) state._horizonDays = needed;
-  await fetchEvents({ fresh: true, keepCount: true });
-  const newId = payload && payload.id != null ? String(payload.id) : null;
-  if (state.parishSheetFocus) {
-    renderParishSheetContent(state.parishSheetFocus, { fullRender: true, focusEventId: newId });
-  }
-}
-
-window.saveNewEvent = async function () {
-  const parish = (state.parishes || []).find(p => p.id === _newEventParishId);
-  const errEl = document.getElementById('new-event-error');
-  if (!parish || !errEl) return;
-  const fail = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
-  // Cleared, not just hidden: a stale sentence left in the node is a sentence
-  // the next press can flash before its own answer arrives.
-  errEl.textContent = '';
-  errEl.hidden = true;
-
-  const title = document.getElementById('ne-title').value.trim();
-  const date = document.getElementById('ne-date').value;
-  const start = document.getElementById('ne-start').value;
-  const end = document.getElementById('ne-end').value;
-  if (!title) return fail('The event needs a title.');
-  if (!date) return fail('The event needs a date.');
-  if (!start) return fail('The event needs a start time.');
-
-  const tz = parish.timezone || TZ;
-  // What was typed is the parish's wall clock; the row stores an instant. The
-  // conversion is the shared one — see agoraBundle.localToUtc, which reaches
-  // into the same /shared/tz.mjs the projection uses rather than letting this
-  // file grow a second copy of the offset maths.
-  const start_utc = await window.agoraBundle.localToUtc(tz, date, start);
-  let end_utc = null;
-  if (end) {
-    end_utc = await window.agoraBundle.localToUtc(tz, date, end);
-    // An end time earlier than the start is the next morning, not a mistake:
-    // the Paschal liturgy starts before midnight and finishes after it.
-    if (Date.parse(end_utc) <= Date.parse(start_utc)) {
-      const next = new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
-      end_utc = await window.agoraBundle.localToUtc(tz, next, end);
-    }
-  }
-
-  const langs = document.getElementById('ne-langs').value
-    .split(',').map(s => s.trim()).filter(Boolean);
-  const body = {
-    parish_id: parish.id,
-    title,
-    start_utc,
-    end_utc,
-    event_type: document.getElementById('ne-type').value,
-    description: document.getElementById('ne-desc').value.trim() || null,
-    languages: langs.length ? JSON.stringify(langs) : null,
-    location_override: document.getElementById('ne-location').value.trim() || null,
-    additive_parish_ids: [...document.querySelectorAll('#new-event-parishes input:checked:not([data-own])')]
-      .map(cb => cb.value),
-    // Ids stay strings: an integer is a stored one-off and "sid:date" is a
-    // projected occurrence, and the Worker classifies each.
-    replaced_event_ids: [...document.querySelectorAll('#new-event-replaces input:checked')]
-      .map(cb => cb.value),
-  };
-
-  // Something ticked is out of reach, and the dialog already said so — send
-  // the reason with the press rather than making them meet a refusal first.
-  // The Worker decides regardless: if it disagrees, the 403 below still opens
-  // the ask block with what it named.
-  if (_newEventAskNeeded()) {
-    const reason = (document.getElementById('new-event-ask-reason') || {}).value || '';
-    body.propose = reason.trim() || true;
-  }
-
-  const btn = document.getElementById('new-event-save');
-  btn.disabled = true;
-  try {
-    const res = await fetch('/api/admin/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const payload = await res.json().catch(() => null);
-    if (!res.ok) {
-      // Part of this reaches a parish that is not theirs. Not a dead end: the
-      // refusal carries the way forward, and the ask goes off with the event,
-      // the exact targets and a reason attached.
-      if (res.status === 403 && payload && payload.proposable) {
-        fail(payload.error || 'An owner has to approve part of this.');
-        return _offerNewEventAsk(body, payload);
-      }
-      // Everything else is a sentence worth reading as it stands — a ruling, a
-      // field the Worker would not take — so it is shown rather than flattened
-      // into "failed".
-      return fail((payload && payload.error) || `The event was refused (${res.status}).`);
-    }
-    // Before the re-read, so the pinned card comes back with the poster on it.
-    const posterError = await _uploadNewEventPoster(payload);
-
-    // An ask stays open on its confirmation; a plain save closes, because the
-    // pinned card below IS the confirmation.
-    if (payload && payload.proposal_id) {
-      _showNewEventAskSent();
-      await _afterNewEvent(body, payload);
-      refreshOpenAsks();
-      return;
-    }
-    // The event is on file; a poster that would not go up is worth saying so
-    // rather than closing over, because nothing on the card would show it.
-    if (posterError) {
-      fail(`The event was added, but the poster was not: ${posterError}`);
-      await _afterNewEvent(body, payload);
-      return;
-    }
-    window.closeNewEventDialog();
-    // A date past the loaded horizon would save and then appear to have done
-    // nothing, so the window is widened before the re-read and the new card is
-    // pinned under the parish header — the answer to "did that work" is the
-    // event itself. Pinned through opts rather than state._openEventId: this
-    // is feedback on a press, not a surface worth rewriting the URL for.
-    await _afterNewEvent(body, payload);
-  } catch {
-    return fail('The event could not be saved — check the connection and try again.');
-  } finally {
-    btn.disabled = false;
-  }
-};
-
-window.agoraSendNewEventAsk = _sendNewEventAsk;
 
 // ── Donate parish-picker dialog ──
 // Opened by the /donate and /<juris>/donate deep links (and as a fallback when a

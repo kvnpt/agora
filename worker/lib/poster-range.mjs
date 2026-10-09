@@ -24,6 +24,7 @@
 // `releaseUnused` deletes a poster from R2 only when no event and no override
 // still names it, so taking a bulletin off one Sunday leaves the other three.
 
+import { ensureDraftTables } from './drafts.mjs';
 import { isValidOccurrence, breakCovering } from './expand.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
 
@@ -141,16 +142,25 @@ export function namesPoster(col, key) {
   };
 }
 
-/** Is anything still pointing at this R2 key? */
+/**
+ * Is anything still pointing at this R2 key?
+ *
+ * A draft counts (lib/drafts.mjs): its poster is on file before any event is,
+ * and taking one event off a poster must not delete it from under the cards
+ * still waiting to be published from it.
+ */
 async function referenced(db, key) {
   const ev = namesPoster('poster_path', key);
   const ov = namesPoster('patch_poster_path', key);
+  const dr = namesPoster('poster_path', key);
   const row = await db.prepare(`
     SELECT 1 FROM events WHERE ${ev.sql}
     UNION ALL
     SELECT 1 FROM schedule_overrides WHERE ${ov.sql}
+    UNION ALL
+    SELECT 1 FROM drafts WHERE ${dr.sql}
     LIMIT 1
-  `).bind(...ev.args, ...ov.args).first();
+  `).bind(...ev.args, ...ov.args, ...dr.args).first();
   return !!row;
 }
 
@@ -162,6 +172,10 @@ async function referenced(db, key) {
 export async function releaseUnused(env, paths, { keep = null } = {}) {
   if (!env.ASSETS_BUCKET) return [];
   const keys = [...new Set((paths || []).map(posterKeyOf).filter(Boolean))].filter(k => k !== keep);
+  if (!keys.length) return [];
+  // `referenced` reads `drafts`, which a deploy ahead of migration 018 has not
+  // got yet — and a missing table must not stop a poster being taken down.
+  await ensureDraftTables(env.DB);
   const gone = [];
   for (const k of keys) {
     if (!(await referenced(env.DB, k))) gone.push(k);

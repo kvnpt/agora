@@ -63,6 +63,9 @@ for them, are in the doc it links to — read that before changing the area.
   `effective_from`/`effective_to` — never edits it in place. Ending is the one
   deliberate exception to *nothing disappears*.
 - A poster belongs to an occurrence (or a range of them), never to a rule.
+- Adding an event is a draft until Publish: `drafts`/`draft_events` hold the
+  parish's LOCAL wall clock, and only `…/draft-events/:id/publish` writes
+  `events`, one card per request. A poster read only ever fills empty fields.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.
@@ -97,6 +100,7 @@ for them, are in the doc it links to — read that before changing the area.
 - The seed is a dev fixture, not production; never make it authoritative.
   `d1/seed-parishes.sql` is generated — `npm run gen:seed`.
 - A Secrets Store binding is an object; read it with `readSecret()`.
+  `ANTHROPIC_API_KEY` (the poster reader, Claude Haiku 4.5) is one, and optional.
 
 ## Where things are written down
 

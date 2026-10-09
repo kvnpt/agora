@@ -50,6 +50,12 @@ CI catches the two files disagreeing. It cannot catch production being behind,
 so check it: `npx wrangler d1 execute agora --remote --command "SELECT …"`
 before the merge.
 
+Two features also create their tables on first use, with the same DDL, so a
+deploy that beats its migration does not take them down: `parish_claims`
+(016, `worker/lib/claims.mjs`) and `drafts` / `draft_events` (018,
+`worker/lib/drafts.mjs` — the add-event editor depends on them). A test
+compares that DDL with the baseline.
+
 The seed is safe to re-run — every statement inserts only if the row is missing.
 Parishes get `ON CONFLICT(id) DO NOTHING`; schedules have an AUTOINCREMENT id and
 no natural key, so they use `WHERE NOT EXISTS` instead. A unique index would be

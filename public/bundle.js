@@ -206,26 +206,6 @@ window.agoraBundle = (function () {
     return inst ? { ...inst, id: String(inst.id) } : null;
   }
 
-  /**
-   * A parish's wall clock -> a UTC instant, through the same /shared/ module
-   * the projection uses.
-   *
-   * Recurrence rules store LOCAL time and one-off events store UTC — the
-   * asymmetry is deliberate and d1/schema.sql argues it at length — so the
-   * moment a person types a date and a time into a form, something has to
-   * cross between the two. That something is `exactLocalToEpoch`, which
-   * already handles the two days a year a zone has two offsets.
-   *
-   * Exposed here rather than reimplemented in app.js, which is a classic
-   * script and cannot import: a second copy of the offset maths in the app is
-   * precisely the drift /shared/ exists to prevent, and it would be a copy
-   * nothing in the suite runs.
-   */
-  async function localToUtc(zone, dateStr, timeStr) {
-    const m = await modules();
-    return new Date(m.exactLocalToEpoch(zone, dateStr, timeStr)).toISOString();
-  }
-
   const parishes = () => (raw && raw.parishes) || [];
 
   // The bundle carries parish columns under the aliases the projection wants
@@ -252,8 +232,8 @@ window.agoraBundle = (function () {
    * Which fortnight a date falls in — 'a', 'b', or null before the modules
    * have loaded.
    *
-   * Exposed for the same reason `localToUtc` is: app.js is a classic script
-   * and cannot import, and the fortnightly picker has to SHOW the dates a rule
+   * Exposed here because app.js is a classic script and cannot import, and
+   * the fortnightly picker has to SHOW the dates a rule
    * would run on or nobody can tell which of the two weeks they just picked.
    * A second copy of the week table in the app is precisely the drift
    * /shared/ exists to prevent, and it would be a copy no test runs.
@@ -273,7 +253,7 @@ window.agoraBundle = (function () {
     (mods ? mods.nextOccurrenceAfterBreak(rule, from, brs || breaks()) : null);
 
   return {
-    load, feed, resolveEvent, localToUtc, parishes, schedules, breaks, weekAbOf,
+    load, feed, resolveEvent, parishes, schedules, breaks, weekAbOf,
     nextOccurrenceAfterBreak, isLoaded,
     get raw() { return raw; },
   };

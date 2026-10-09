@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { Temporal } from '@js-temporal/polyfill';
-import { OffsetCache } from '../../public/shared/tz.mjs';
+import { OffsetCache, localSpanToUtc } from '../../public/shared/tz.mjs';
 
 const ref = (zone, d, t) =>
   Temporal.PlainDateTime.from(`${d}T${t}`).toZonedDateTime(zone).toInstant()
@@ -92,4 +92,36 @@ test('distinct zones do not share cache entries', () => {
     c.epoch('Australia/Sydney', '2026-09-06', '09:00'),
     c.epoch('Australia/Perth', '2026-09-06', '09:00'),
   );
+});
+
+// ── localSpanToUtc: a draft's local date and times -> the instants events store ──
+
+test('localSpanToUtc: no end time stores none', () => {
+  assert.deepStrictEqual(localSpanToUtc('Pacific/Auckland', '2026-11-14', '19:00', null), {
+    start_utc: ref('Pacific/Auckland', '2026-11-14', '19:00'),
+    end_utc: null,
+  });
+});
+
+test('localSpanToUtc: an end at or before the start is the next morning', () => {
+  // The Paschal vigil: 23:00 on Holy Saturday to 02:30 on Pascha (Sydney, +10).
+  const span = localSpanToUtc('Australia/Sydney', '2026-04-11', '23:00', '02:30');
+  assert.strictEqual(span.start_utc, ref('Australia/Sydney', '2026-04-11', '23:00'));
+  assert.strictEqual(span.end_utc, ref('Australia/Sydney', '2026-04-12', '02:30'));
+  assert.ok(Date.parse(span.end_utc) > Date.parse(span.start_utc));
+});
+
+test('localSpanToUtc: a span across the spring-forward hour is read on both sides of it', () => {
+  // Sydney, 4 Oct 2026: 02:00 becomes 03:00. 01:30 is still +10, 03:30 is +11,
+  // so two hours on the wall clock are one hour of real time.
+  const span = localSpanToUtc('Australia/Sydney', '2026-10-04', '01:30', '03:30');
+  assert.strictEqual(span.start_utc, '2026-10-03T15:30:00.000Z');
+  assert.strictEqual(span.end_utc, '2026-10-03T16:30:00.000Z');
+  assert.strictEqual(span.end_utc, ref('Australia/Sydney', '2026-10-04', '03:30'));
+});
+
+test('localSpanToUtc: an ordinary evening in Perth', () => {
+  const span = localSpanToUtc('Australia/Perth', '2026-11-14', '19:00', '21:30');
+  assert.strictEqual(span.start_utc, '2026-11-14T11:00:00.000Z');
+  assert.strictEqual(span.end_utc, '2026-11-14T13:30:00.000Z');
 });

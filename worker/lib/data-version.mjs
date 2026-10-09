@@ -173,5 +173,14 @@ async function cachedBody({ request, env, ctx, name, build, type, cache }) {
 export function isDataWrite(request, response) {
   if (!response || response.status < 200 || response.status >= 300) return false;
   if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return false;
-  return new URL(request.url).pathname.startsWith('/api/admin/');
+  const path = new URL(request.url).pathname;
+  if (!path.startsWith('/api/admin/')) return false;
+  // A draft is the one admin write nothing public can see (lib/drafts.mjs),
+  // and the editor autosaves one on every pause in typing — a bump each time
+  // would rebuild the bundle for everybody for nothing. The exception is the
+  // other way round from a list of routes that touch the bundle, so a draft
+  // route that forgets to join it costs a rebuild, never a stale page.
+  // Publishing writes `events`, and bumps like any other write.
+  if (/^\/api\/admin\/(drafts|draft-events)(\/|$)/.test(path) && !path.endsWith('/publish')) return false;
+  return true;
 }

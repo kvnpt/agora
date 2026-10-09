@@ -7,6 +7,8 @@
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#15161a" media="(prefers-color-scheme: dark)">
   <title>Admin — Orthodox Services &amp; Events</title>
+  <!-- The add-event editor, shared with the app. -->
+  <link rel="stylesheet" href="/shared/event-editor.css">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -535,6 +537,17 @@
     .infer-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--border-light); font-size: 13.5px; cursor: pointer; }
     .infer-row input { margin-top: 3px; accent-color: var(--accent); }
     .infer-dim { color: var(--muted); font-size: 12.5px; }
+    /* ── Events: drafts, and the editor's modal ── */
+    .modal-event { max-width: 600px; }
+    @media (min-width: 900px) { .modal-event:has(.ee.has-poster) { max-width: 960px; } }
+    .event-parish-field { margin-bottom: 14px; }
+    .draft-row { display: flex; gap: 12px; align-items: center; }
+    .draft-thumb { width: 44px; height: 58px; flex: none; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-light); background: var(--soft-bg); }
+    .draft-what { flex: 1; min-width: 0; }
+    .draft-title { font-weight: 600; }
+    .draft-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .draft-flag { color: var(--warn); }
+    .draft-actions { display: flex; gap: 6px; flex: none; }
   </style>
 </head>
 <body>
@@ -552,6 +565,7 @@
     <symbol id="i-church" viewBox="0 0 24 24"><path d="M12 2v4M10 4h4M6 22V11l6-5 6 5v11M3 22h18M10 22v-4a2 2 0 0 1 4 0v4"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
     <symbol id="i-calendar-x" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M10 14l4 4M14 14l-4 4"/></symbol>
+    <symbol id="i-calendar-plus" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M12 13v6M9 16h6"/></symbol>
     <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
@@ -613,6 +627,7 @@
         <button type="button" class="nav-item active" data-tab="parishes"><svg class="ic"><use href="#i-church"/></svg><span class="nav-label">Parishes</span><span class="tab-count" id="count-parishes">0</span></button>
         <button type="button" class="nav-item" data-tab="schedules"><svg class="ic"><use href="#i-clock"/></svg><span class="nav-label">Service times</span><span class="tab-count" id="count-schedules">0</span></button>
         <button type="button" class="nav-item" data-tab="overrides"><svg class="ic"><use href="#i-calendar-x"/></svg><span class="nav-label">Changes</span><span class="tab-count" id="count-overrides">0</span></button>
+        <button type="button" class="nav-item" data-tab="events" data-needs="event.edit"><svg class="ic"><use href="#i-calendar-plus"/></svg><span class="nav-label">Events</span><span class="tab-count" id="count-events">0</span></button>
       </div>
       <div class="nav-group">
         <div class="nav-group-label">Inbox</div>
@@ -725,6 +740,23 @@
         </div>
       </div>
       <div id="override-list"></div>
+    </section>
+
+    <!-- Adding one-off events: the same editor the app's parish sheet opens
+         (public/shared/event-editor.js), so the two ways in are one piece of
+         code. What waits here is drafts — events started from a poster or by
+         hand and not yet published. -->
+    <section id="section-events" class="section" data-title="Events">
+      <div class="section-head">
+        <h2>Events</h2>
+        <p class="section-lead">
+          One-off events — a feast, a talk, a youth night. Start from the parish’s poster and
+          it is read into the form for you to check, or type it in. Nothing is published until
+          you press <b>Publish</b>; until then it waits here as a draft.
+        </p>
+      </div>
+      <div class="subhead">Drafts</div>
+      <div id="draft-list"></div>
     </section>
 
     <!-- The asks an editor cannot carry out themselves. -->
@@ -970,6 +1002,21 @@
     </div>
   </div>
 
+  <!-- ── Adding an event ──
+       The parish first, because a draft belongs to one; then the editor.
+       Once a draft exists the parish is fixed — start another for another. -->
+  <div class="modal-backdrop" id="add-event-backdrop" onclick="if(event.target===this)closeEventEditor()">
+    <div class="modal modal-event" role="dialog" aria-modal="true" aria-labelledby="add-event-title">
+      <div class="modal-head">
+        <h2 id="add-event-title">Add an event</h2>
+        <button type="button" class="icon-btn" aria-label="Close" onclick="closeEventEditor()"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-subtitle">One date each — a service that runs every week is a rule, not an event.</div>
+      <div class="field event-parish-field"><label for="add-event-parish">Parish</label><select id="add-event-parish"></select></div>
+      <div id="add-event-editor"></div>
+    </div>
+  </div>
+
   <!-- ── Inferring rules from what was scraped ── -->
   <div class="modal-backdrop" id="infer-backdrop" onclick="if(event.target===this)closeModal('infer-backdrop')">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="infer-title">
@@ -1133,6 +1180,12 @@
   <!-- Logos are shrunk before they are uploaded, by the same code the app's
        cropper uses. -->
   <script src="/shared/logo-image.js"></script>
+  <!-- The add-event editor — the same one the app's parish sheet opens — and
+       what it stands on. -->
+  <script src="/shared/event-types.js"></script>
+  <script src="/shared/event-checks.js"></script>
+  <script src="/shared/sse.js"></script>
+  <script src="/shared/event-editor.js"></script>
   <!-- The parish timezone table. Shared for the same reason the colours are:
        parishes.timezone is what makes a rule's local start_time an instant,
        and a second list of zones would be a second chance to get one wrong. -->
@@ -1327,6 +1380,7 @@
       parishes: { label: 'Parish', needs: 'parish.create', open: () => openModal('add-parish-backdrop') },
       schedules: { label: 'Service time', needs: null, open: () => { renderParishSelects(); openModal('add-schedule-backdrop'); } },
       people: { label: 'Person', needs: 'people.manage', open: () => openPersonForm() },
+      events: { label: 'Event', needs: 'event.edit', open: () => openEventEditor() },
     };
     function updateFab() {
       const f = FAB[currentTab];
@@ -1334,7 +1388,8 @@
       // A parish contact can add service times only to their own parishes;
       // with none there is nothing the form could save.
       const usable = f && (!f.needs || may(f.needs))
-        && (currentTab !== 'schedules' || filteredParishes().some(p => p.id !== '_unassigned'));
+        && (currentTab !== 'schedules' || filteredParishes().some(p => p.id !== '_unassigned'))
+        && (currentTab !== 'events' || parishes.some(p => p.id !== '_unassigned' && inMyScope(p.id)));
       fab.hidden = !usable;
       if (!usable) return;
       document.getElementById('fab-label').textContent = f.label;
@@ -1344,6 +1399,132 @@
       const f = FAB[currentTab];
       if (f) f.open();
     });
+
+    // ── Events: the add-event editor, and the drafts waiting in it ──
+    //
+    // The editor is public/shared/event-editor.js, the same one the app's
+    // parish sheet opens, so this page adds an event exactly as the app does —
+    // from a poster read by Claude, or by hand, as a draft until Publish.
+    // What this page adds is the list of drafts across every parish this
+    // account may edit, which the app has no place to show.
+    let drafts = [];
+    let eventEditor = null;
+
+    async function loadDrafts() {
+      if (!may('event.edit')) { drafts = []; return; }
+      try {
+        const res = await fetch('/api/admin/drafts', { headers });
+        drafts = res.ok ? await res.json() : [];
+      } catch { drafts = []; }
+    }
+
+    const attr = (v) => esc(v).replace(/"/g, '&quot;');
+    const draftDate = (d) => {
+      const [y, m, day] = d.split('-').map(Number);
+      return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-AU',
+        { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    };
+
+    function renderDrafts() {
+      const el = document.getElementById('draft-list');
+      if (!el) return;
+      document.getElementById('count-events').textContent = drafts.length;
+      if (!drafts.length) {
+        el.innerHTML = '<div class="empty">No drafts. Press <b>+ Event</b> to add one — from a poster, or by hand.</div>';
+        return;
+      }
+      el.innerHTML = drafts.map(d => {
+        const n = d.cards.length;
+        const dates = d.cards.map(c => c.date).filter(Boolean).sort();
+        const span = dates.length ? draftDate(dates[0]) + (dates.length > 1 ? ' – ' + draftDate(dates[dates.length - 1]) : '') : 'no date yet';
+        const title = n === 1 ? ((d.cards[0].title || '').trim() || 'Untitled event') : `${n} events`;
+        const flag = d.read_status === 'reading' ? ' · <span class="draft-flag">still being read</span>'
+          : d.read_status === 'failed' ? ' · <span class="draft-flag">reading did not finish</span>' : '';
+        const who = String(d.created_by || '').split('@')[0];
+        return `
+          <div class="card draft-row">
+            ${d.poster_path ? `<img class="draft-thumb" src="${attr(d.poster_path)}" alt="">` : '<span class="draft-thumb"></span>'}
+            <span class="draft-what">
+              <div class="draft-title">${esc(title)}</div>
+              <div class="draft-meta">${esc(d.parish_name || d.parish_id)} · ${esc(span)}${flag}</div>
+              <div class="draft-meta">${who ? 'started by ' + esc(who) + ' · ' : ''}saved ${esc(relativeTime(d.updated_at))}</div>
+            </span>
+            <span class="draft-actions">
+              <button class="btn btn-outline" data-draft-continue="${d.id}">Continue</button>
+              <button class="btn btn-ghost-danger" data-draft-discard="${d.id}">Discard</button>
+            </span>
+          </div>`;
+      }).join('');
+      el.querySelectorAll('[data-draft-continue]').forEach(b => b.addEventListener('click', () => {
+        const d = drafts.find(x => x.id === Number(b.dataset.draftContinue));
+        if (d) openEventEditor(d.parish_id, d.id);
+      }));
+      el.querySelectorAll('[data-draft-discard]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Discard this draft? Nothing in it is published, and it cannot be brought back.')) return;
+        const res = await fetch(`/api/admin/drafts/${b.dataset.draftDiscard}`, { method: 'DELETE', headers });
+        if (!res.ok && res.status !== 404) { toast(await adminError(res), 'error'); return; }
+        await loadDrafts();
+        renderDrafts();
+      }));
+    }
+
+    /** Open the editor: blank at a parish, on a saved draft, or waiting for the parish to be chosen. */
+    window.openEventEditor = function (parishId = null, draftId = null) {
+      const sel = document.getElementById('add-event-parish');
+      const mine = parishes.filter(p => p.id !== '_unassigned' && inMyScope(p.id));
+      sel.innerHTML = '<option value="">Choose the parish…</option>'
+        + mine.map(p => `<option value="${attr(p.id)}">${esc(p.name)}</option>`).join('');
+      const pick = parishId || (mine.length === 1 ? mine[0].id : '');
+      sel.value = pick;
+      sel.disabled = !!draftId;
+      mountEventEditor(pick, draftId);
+      openModal('add-event-backdrop');
+    };
+
+    function mountEventEditor(parishId, draftId) {
+      if (eventEditor) { eventEditor.close(); eventEditor = null; }
+      const mount = document.getElementById('add-event-editor');
+      mount.innerHTML = '';
+      const parish = parishes.find(p => p.id === parishId);
+      if (!parish) {
+        mount.innerHTML = '<div class="empty">Choose the parish the event is at.</div>';
+        return;
+      }
+      eventEditor = AgoraEventEditor.open(mount, {
+        parish,
+        // Every parish, not only this account's: one that is not theirs is
+        // marked and turns the publish into an ask, never hidden.
+        parishes: parishes.filter(p => p.id !== '_unassigned'),
+        may: (capability, pid) => may(capability) && inMyScope(pid),
+        draftId,
+        onPublished: ({ events, proposals }) => {
+          closeEventEditor();
+          toast(events.length === 1 ? `Published: ${events[0].title}` : `${events.length} events published`);
+          if (proposals && proposals.length) loadProposals().then(renderProposals);
+        },
+        onClose: () => closeEventEditor(),
+      });
+    }
+
+    document.getElementById('add-event-parish').addEventListener('change', (e) => {
+      // A draft belongs to its parish; changing the parish under one would
+      // move half-typed events somewhere else.
+      if (eventEditor && eventEditor.draftId) {
+        const d = drafts.find(x => x.id === eventEditor.draftId);
+        toast('This draft belongs to its parish — save it, then add another for a different one.', 'error');
+        if (d) e.target.value = d.parish_id;
+        return;
+      }
+      mountEventEditor(e.target.value, null);
+    });
+
+    window.closeEventEditor = function () {
+      closeModal('add-event-backdrop');
+      if (eventEditor) { eventEditor.close(); eventEditor = null; }
+      // Whatever was typed is a draft now; the list says so. After a beat, so
+      // the last autosave has landed first.
+      setTimeout(() => loadDrafts().then(renderDrafts), 400);
+    };
 
     // Why every admin failure goes through here.
     //
@@ -1450,7 +1631,7 @@
 
     async function loadAll() {
       await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
-        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(),
+        loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(), loadDrafts(),
         loadJurisdictions(),
         // Awaited with the rest so the fortnight radios render with their
         // dates on the first paint rather than saying "week A" until something
@@ -1474,6 +1655,7 @@
       renderInferSelect();
       renderColors();
       renderOverrides();
+      renderDrafts();
       renderProposals();
       renderJurisdictions();
       renderPeople();

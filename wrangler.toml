@@ -96,7 +96,7 @@ run_worker_first = [
 # No secret is committed. A store id and a secret name are identifiers — the
 # same class of thing as database_id above — and the values live in the account
 # Secrets Store. These arrive in `env` as objects, not strings; readSecret() in
-# worker/lib/auth.mjs awaits .get() on them.
+# worker/lib/secrets.mjs awaits .get() on them.
 #
 # To rotate: change the value in the Secrets Store. Nothing here changes.
 
@@ -131,6 +131,21 @@ secret_name = "GOOGLE_API_KEY"
 binding = "GITHUB_ACTIONS_TOKEN"
 store_id = "caf2bffa59d544e88e6649b71c3e6c09"
 secret_name = "GITHUB_ACTIONS_TOKEN"
+
+# Lets the add-event editor read a dropped poster with Claude (Haiku 4.5) —
+# worker/lib/poster-read.mjs. An Anthropic API key; set a monthly spend limit on
+# it in the Anthropic Console, since nothing here counts what it costs.
+#
+# OPTIONAL in the code, like the GitHub token. Without it a dropped poster is
+# still stored and attached, and the editor says reading is not set up and
+# leaves the fields to be typed — the same editor, minus the reading.
+#
+# ANTHROPIC_BASE_URL is deliberately not declared: it exists so `wrangler dev`
+# can be pointed at a local stand-in (docs/browser-checks.md) with --var.
+[[secrets_store_secrets]]
+binding = "ANTHROPIC_API_KEY"
+store_id = "caf2bffa59d544e88e6649b71c3e6c09"
+secret_name = "ANTHROPIC_API_KEY"
 
 
 # Which repository holds the "Extract parish PDFs" workflow.

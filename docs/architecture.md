@@ -18,7 +18,8 @@ is `Cache-Control: no-cache` with an ETag that is a hash of the body, so a
 browser never answers from its own copy and an unchanged bundle is a bodiless
 304. The body is kept in the edge cache under a *data version* — one small R2
 object, `meta/data-version` — that every successful write under `/api/admin/`
-and every cron run bumps (`worker/lib/data-version.mjs`), so asking rarely
+(except a draft's, which nothing public reads; publishing one does bump) and
+every cron run bumps (`worker/lib/data-version.mjs`), so asking rarely
 reaches D1 and an edit is what the admin's next load of the app gets. It was
 `max-age=60, stale-while-revalidate=600` until an edit in /admin kept not
 showing on the way back to the app. The version is in R2 rather than D1 so that

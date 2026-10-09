@@ -1,0 +1,84 @@
+// A stand-in for the Claude Messages API, for driving the poster reader under
+// `wrangler dev` without a key or a bill: it answers POST /v1/messages with a
+// canned Haiku stream, slowly, so the editor's fields can be watched filling
+// in. docs/browser-checks.md has the recipe.
+//
+//   node scripts/mock-anthropic.mjs [port]          # default 8788
+//   wrangler dev ... --var ANTHROPIC_BASE_URL:http://127.0.0.1:8788
+//
+//   POST /__mode   {"mode":"one"|"three"|"not_an_event"|"busy","delay":60}
+//   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
+//
+// Dev tooling only — nothing deployed imports it.
+import http from 'node:http';
+
+const port = Number(process.argv[2] || 8788);
+let mode = 'one', delay = 60;
+const calls = [];
+
+const DOCS = {
+  one: {
+    kind: 'event',
+    events: [{
+      title: 'Youth Night: Faith and Film', date: '2026-11-14', weekday_printed: 'Saturday', year_printed: false,
+      start_time: '19:00', end_time: '21:30', event_type: 'youth', languages: ['English'], venue: 'Church hall',
+      description: 'A film and a short talk for young adults, followed by supper. Bring a plate to share.',
+      notes: [{ field: 'start_time', text: 'Doors 6:30, film 7:00; used 7:00.' }],
+    }],
+    notes: [],
+  },
+  three: {
+    kind: 'several_events',
+    events: [
+      { title: 'Lenten Talk: The Ladder of Divine Ascent', date: '2026-11-18', weekday_printed: 'Wednesday', year_printed: false,
+        start_time: '19:30', end_time: '20:30', event_type: 'talk', languages: [], venue: null,
+        description: 'Fr Nicholas on the first steps of the Ladder.', notes: [] },
+      { title: 'Lenten Talk: Watchfulness', date: '2026-11-25', weekday_printed: 'Thursday', year_printed: false,
+        start_time: '19:30', end_time: '20:30', event_type: 'talk', languages: [], venue: null,
+        description: null, notes: [] },
+      { title: 'Feast of St Nicholas', date: '2026-12-06', weekday_printed: 'Sunday', year_printed: false,
+        start_time: '09:00', end_time: null, event_type: 'feast', languages: ['Greek', 'English'], venue: null,
+        description: 'Divine Liturgy followed by a parish lunch.', notes: [] },
+    ],
+    notes: [],
+  },
+  not_an_event: { kind: 'not_an_event', events: [], notes: ['The image is a photo of the church with no event on it.'] },
+};
+
+const frame = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+http.createServer(async (req, res) => {
+  let body = '';
+  for await (const c of req) body += c;
+  if (req.url === '/__mode') {
+    const m = JSON.parse(body || '{}');
+    if (m.mode) mode = m.mode;
+    if (m.delay != null) delay = m.delay;
+    res.end(JSON.stringify({ mode, delay, calls: calls.length }));
+    return;
+  }
+  if (req.url === '/__calls') { res.end(JSON.stringify(calls)); return; }
+  if (req.method !== 'POST' || req.url !== '/v1/messages') { res.statusCode = 404; res.end(); return; }
+  const parsed = JSON.parse(body);
+  calls.push({ model: parsed.model, keys: Object.keys(parsed), headers: { key: req.headers['x-api-key'], version: req.headers['anthropic-version'] },
+    image: parsed.messages[0].content[0].source.media_type, bytes: parsed.messages[0].content[0].source.data.length,
+    context: parsed.messages[0].content[1].text });
+  if (mode === 'busy') {
+    res.writeHead(529, { 'content-type': 'application/json' });
+    res.end('{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}');
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'text/event-stream' });
+  const text = JSON.stringify(DOCS[mode]);
+  res.write(frame('message_start', { message: { model: parsed.model, usage: { input_tokens: 1700 } } }));
+  res.write(frame('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }));
+  for (let i = 0; i < text.length; i += 9) {
+    await sleep(delay);
+    res.write(frame('content_block_delta', { index: 0, delta: { type: 'text_delta', text: text.slice(i, i + 9) } }));
+  }
+  res.write(frame('content_block_stop', { index: 0 }));
+  res.write(frame('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 380 } }));
+  res.write(frame('message_stop', {}));
+  res.end();
+}).listen(port, '127.0.0.1', () => console.log(`mock anthropic on ${port}`));

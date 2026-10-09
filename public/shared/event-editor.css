@@ -1,0 +1,322 @@
+/* The add-event editor (event-editor.js), for both of its hosts.
+ *
+ * Written against the custom properties the app (app.css) and /admin
+ * (admin.html) both define — --text, --border, --accent and friends — with a
+ * fallback wherever the two name a thing differently, so it reads as part of
+ * whichever page it is in, light or dark.
+ *
+ * Inputs are 16px: iOS Safari zooms the page on focus for anything smaller,
+ * and a parish priest adds a feast from a phone. */
+
+.ee {
+  --ee-muted: var(--text-secondary, var(--muted, #6b7280));
+  --ee-field: var(--surface-2, var(--soft-bg, #f3f4f6));
+  --ee-warn: var(--warn, #b45309);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text);
+  font-size: 14px;
+}
+.ee [hidden] { display: none !important; }
+
+/* ── The poster ── */
+.ee-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 16px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: 12px;
+  cursor: pointer;
+}
+.ee-drop:hover, .ee.is-dragging .ee-drop { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ee.is-dragging { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 12px; }
+.ee-drop-title { font-size: 15px; font-weight: 600; }
+.ee-drop-sub { font-size: 12.5px; line-height: 1.45; color: var(--ee-muted); }
+
+.ee-poster-card { display: flex; gap: 12px; align-items: flex-start; }
+.ee-thumb-btn { flex: 0 0 auto; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.ee-thumb {
+  display: block;
+  width: 84px;
+  max-height: 120px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--ee-field);
+}
+.ee-poster-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ee-status { font-size: 13px; line-height: 1.45; }
+.ee-status-busy { color: var(--accent-text, var(--accent)); }
+.ee-status-busy::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+  animation: ee-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes ee-pulse { from { opacity: .25; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ee-status-busy::before { animation: none; } }
+.ee-status-done { color: var(--success); }
+.ee-status-error { color: var(--danger); }
+.ee-status-note { color: var(--ee-muted); }
+.ee-poster-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* On a wide screen the poster sits beside the cards, so the two can be
+   compared without scrolling — checking them against it is the whole job. */
+@media (min-width: 900px) {
+  .ee.has-poster {
+    display: grid;
+    grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+    align-items: start;
+    gap: 14px 22px;
+  }
+  .ee.has-poster .ee-strip { grid-column: 1 / -1; }
+  .ee.has-poster .ee-poster { position: sticky; top: 0; }
+  .ee.has-poster .ee-poster-card { flex-direction: column; }
+  .ee.has-poster .ee-thumb { width: 100%; max-height: 62vh; object-fit: contain; }
+}
+.ee-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* ── Saved drafts at this parish ── */
+.ee-strip { display: flex; flex-direction: column; gap: 6px; }
+.ee-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ee-strip-thumb { width: 34px; height: 44px; object-fit: cover; border-radius: 4px; flex: 0 0 auto; background: var(--ee-field); }
+.ee-strip-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; }
+.ee-strip-text small { display: block; color: var(--ee-muted); font-size: 11.5px; }
+
+/* ── Cards ── */
+.ee-head { font-size: 13px; font-weight: 600; }
+.ee-cards { display: flex; flex-direction: column; gap: 8px; }
+.ee-card { border: 1px solid var(--border); border-radius: 12px; }
+.ee-card.is-open { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.ee-card.is-published { opacity: .5; }
+.ee-cards > .ee-card:only-child { border: 0; }
+.ee-cards > .ee-card:only-child .ee-body { padding: 0; }
+.ee-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 11px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.ee-sum-line { flex: 1 1 220px; min-width: 0; font-size: 13.5px; line-height: 1.4; }
+.ee-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ee-chip { font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: 999px; white-space: nowrap; }
+.ee-chip-block { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.ee-chip-warn { color: var(--ee-warn); background: color-mix(in srgb, var(--ee-warn) 14%, transparent); }
+.ee-chip-info { color: var(--ee-muted); background: var(--ee-field); }
+.ee-saved { margin-left: auto; font-size: 11px; color: var(--ee-muted); white-space: nowrap; }
+.ee-saved-bad { color: var(--danger); }
+.ee-body { padding: 4px 12px 12px; }
+
+.ee-row { margin-bottom: 12px; }
+.ee-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ee-muted);
+}
+/* Until a person has looked at it: this value is what the model read. */
+.ee-mark {
+  padding: 2px 6px;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 600;
+  color: var(--accent-text, var(--accent));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 999px;
+}
+.ee input, .ee select, .ee textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text);
+  background: var(--ee-field);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.ee input[type="checkbox"] { width: auto; min-height: 0; padding: 0; -webkit-appearance: checkbox; appearance: auto; }
+.ee input[type="file"] { display: none; }
+.ee textarea { min-height: 72px; resize: vertical; }
+.ee select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  padding-right: 38px;
+}
+.ee input:focus, .ee select:focus, .ee textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22));
+}
+.ee-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ee-grid .ee-row { margin-bottom: 0; }
+.ee-hint { margin: -4px 0 12px; font-size: 12px; line-height: 1.4; color: var(--ee-muted); }
+.ee-grid + .ee-hint { margin-top: 6px; }
+.ee-row .ee-hint { margin: 6px 0 0; }
+.ee-note { margin-top: 5px; font-size: 12.5px; line-height: 1.4; }
+.ee-note-block { color: var(--danger); }
+.ee-note-warn { color: var(--ee-warn); font-weight: 600; }
+.ee-note-info { color: var(--ee-muted); }
+.ee-note-read { color: var(--ee-muted); font-style: italic; }
+.ee-note-read::before { content: 'Reader: '; font-style: normal; font-weight: 600; }
+
+/* ── The combine ── */
+.ee-combine { margin: 4px 0 12px; }
+.ee-combine summary { cursor: pointer; font-size: 13px; color: var(--accent-text, var(--accent)); padding: 4px 0 8px; }
+.ee-section-title {
+  margin: 8px 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ee-muted);
+}
+.ee-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.ee-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1.4; }
+.ee-item:hover { background: var(--ee-field); }
+.ee-item input { margin-top: 3px; flex-shrink: 0; }
+.ee-item small { display: block; font-size: 11px; color: var(--ee-muted); }
+.ee-group {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  padding: 5px 8px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ee-muted);
+  background: var(--bg, var(--surface));
+}
+.ee-tag { margin-left: 6px; font-size: 10.5px; font-style: normal; color: var(--ee-muted); }
+.ee-tag-ask { color: var(--ee-warn); }
+.ee-empty { padding: 8px; font-size: 12px; text-align: center; color: var(--ee-muted); }
+
+/* The ask, where the combine reaches somebody else's parish. Accent, not
+   danger: nothing is wrong, there is somebody else to ask. */
+.ee-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid var(--accent-ring, var(--border));
+  border-radius: 12px;
+}
+.ee-ask-what { font-size: 12.5px; line-height: 1.45; }
+.ee-card-error { margin-bottom: 10px; font-size: 12.5px; line-height: 1.45; color: var(--danger); }
+
+/* ── Buttons ── */
+.ee-link {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent-text, var(--accent));
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ee-link:hover { text-decoration: underline; }
+.ee-link-danger { color: var(--danger); }
+.ee-add {
+  align-self: flex-start;
+  padding: 6px 2px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent-text, var(--accent));
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ee-add:disabled { opacity: .5; cursor: default; }
+.ee-readiness { font-size: 12.5px; color: var(--ee-muted); min-height: 0; }
+.ee-readiness:empty { display: none; }
+.ee-message { padding: 9px 12px; font-size: 12.5px; line-height: 1.45; border-radius: 10px; }
+.ee-message-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.ee-message-note { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ee-message-busy { color: var(--ee-muted); background: var(--ee-field); }
+/* Stuck to the bottom of the scrolling dialog: on a phone a poster's worth of
+   cards runs well past the fold, and Publish should not be a scroll away. */
+.ee-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  padding: 10px 0 2px;
+  background: var(--bg, var(--surface, #fff));
+  border-top: 1px solid var(--border-light, var(--border));
+}
+.ee-actions-gap { flex: 1; }
+.ee-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ee-btn:disabled { opacity: .45; cursor: default; }
+.ee-btn-primary { color: #fff; background: var(--accent); border: 1px solid var(--accent); }
+.ee-btn-ghost { color: var(--text); background: none; border: 1px solid var(--border); }
+.ee-btn-danger { color: var(--danger); border-color: transparent; padding-left: 2px; padding-right: 2px; }
