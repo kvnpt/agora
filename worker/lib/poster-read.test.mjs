@@ -49,6 +49,11 @@ test('the schema is closed at every level and offers only the seven kinds', () =
   walk(POSTER_SCHEMA);
   assert.deepStrictEqual(POSTER_SCHEMA.properties.events.items.properties.event_type.enum,
     ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other']);
+  // Whose poster it is comes before the events, and is always answered.
+  assert.deepStrictEqual(POSTER_SCHEMA.required, ['kind', 'other_parish', 'events', 'notes']);
+  assert.deepStrictEqual(Object.keys(POSTER_SCHEMA.properties), POSTER_SCHEMA.required);
+  assert.match(SYSTEM_PROMPT, /other_parish: only when the poster is plainly from a different parish/);
+  assert.match(SYSTEM_PROMPT, /say it here and not in notes/);
 });
 
 test('the context names the parish, its day, and the services already on the site', () => {
@@ -141,4 +146,16 @@ test('normalising: shapes checked, odd values dropped with a note, the list capp
     ['Talk on prayer', null, '07:30', null, 'other', ['Greek', 'English'], 'Hall', 1]);
   assert.match(e.read_notes[0].text, /2026-02-30.*not a date/);
   assert.strictEqual(normalizeRead({ kind: 'nonsense' }).kind, 'event');
+});
+
+test('another parish’s poster: the name and place as printed, or nothing', () => {
+  assert.deepStrictEqual(
+    normalizeRead({ kind: 'event', other_parish: { name: '  St Elias  Antiochian Church ', place: 'Wollongong' } }).other_parish,
+    { name: 'St Elias Antiochian Church', place: 'Wollongong' });
+  assert.deepStrictEqual(normalizeRead({ other_parish: { name: 'St Elias', place: '  ' } }).other_parish,
+    { name: 'St Elias', place: null });
+  assert.strictEqual(normalizeRead({ other_parish: { name: ' ', place: 'Wollongong' } }).other_parish, null,
+    'a place with no name says nothing about whose poster it is');
+  assert.strictEqual(normalizeRead({ other_parish: null }).other_parish, null);
+  assert.strictEqual(normalizeRead(ONE).other_parish, null, 'an answer without it, too');
 });

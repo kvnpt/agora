@@ -925,7 +925,7 @@ CREATE INDEX idx_info_overrides_parish ON info_overrides(parish_id, target);
 --
 -- worker/lib/drafts.mjs also creates both tables IF NOT EXISTS on first use,
 -- with the same DDL, so a deploy that lands before migration 018 does not take
--- the add-event dialog down with it.
+-- the add-event dialog down with it — and adds read_parish (019) the same way.
 CREATE TABLE drafts (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   parish_id   TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
@@ -944,7 +944,13 @@ CREATE TABLE drafts (
   read_notes  TEXT,
   created_by  TEXT NOT NULL,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  -- Whose poster the read says this is, when it is not this parish's: JSON
+  -- {name, place, parish_id} — the name and suburb as printed, and the parish
+  -- on file they clearly match (worker/lib/parish-match.mjs), or a null id.
+  -- The editor offers to move the draft there; nothing moves it but a person.
+  -- Last because migration 019 appended it.
+  read_parish TEXT
 );
 CREATE INDEX idx_drafts_parish ON drafts(parish_id);
 
