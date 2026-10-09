@@ -1,4 +1,4 @@
-// Service kinds, as URL slugs.
+// Service kinds, weekdays and parts of the day, as URL slugs.
 //
 // /liturgy filters the feed to liturgies. /smg/liturgy goes further: it opens
 // St Michael & Gabriel focused on the next occurrence of that parish's liturgy
@@ -84,6 +84,84 @@
     return DAY_NAMES[dow] || '';
   }
 
+  // ── Morning and evening ──────────────────────────────────────────────
+  //
+  // /evening is everything from two in the afternoon on, /morning everything
+  // before. Two in the afternoon because that is where the feed already
+  // splits a day into its Morning and Evening cards: a link and the cards it
+  // lands on have to draw the same line, or /morning would show services
+  // under an Evening heading. Two parts, not four, for the same reason — the
+  // feed has two, and a third word in the URL would be a cut nobody can see.
+  //
+  // The hour is the PARISH's wall clock, as with the weekday above: a 1pm
+  // liturgy in Perth is a morning one there, whatever the clock says in
+  // Sydney.
+  const EVENING_FROM_HOUR = 14;
+  const PARTS_OF_DAY = [
+    { slug: 'morning', label: 'Morning', aliases: ['mornings'] },
+    { slug: 'evening', label: 'Evening', aliases: ['evenings'] },
+  ];
+  const BY_PART_SLUG = new Map();
+  for (const part of PARTS_OF_DAY) {
+    BY_PART_SLUG.set(part.slug, part);
+    for (const a of part.aliases) BY_PART_SLUG.set(a, part);
+  }
+
+  /** Every spelling of a part of the day. Reserved against parish acronyms. */
+  const PART_SLUGS = new Set(BY_PART_SLUG.keys());
+
+  /** 'evenings' → 'evening'. Anything else → null. */
+  function resolvePartOfDay(slug) {
+    const key = String(slug == null ? '' : slug).trim().toLowerCase().replace(/\s+/g, '');
+    const part = BY_PART_SLUG.get(key);
+    return part ? part.slug : null;
+  }
+
+  /** 'evening' → 'Evening'. */
+  function partOfDayLabel(slug) {
+    const part = BY_PART_SLUG.get(String(slug || ''));
+    return part ? part.label : '';
+  }
+
+  // One formatter per zone: this runs once per row on every filter pass.
+  const HOUR_FORMATS = new Map();
+  function hourIn(zone, date) {
+    let fmt = HOUR_FORMATS.get(zone);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' });
+      HOUR_FORMATS.set(zone, fmt);
+    }
+    return Number(fmt.format(date));
+  }
+
+  /**
+   * The hour a row starts at, on its parish's wall clock, or null.
+   *
+   * A rule's start_time and a projected instance's start_local are that wall
+   * clock already. A stored one-off has only UTC, so it goes through its own
+   * zone, and through `fallbackZone` when it does not carry one.
+   */
+  function localHourOf(row, fallbackZone = 'Australia/Sydney') {
+    if (!row) return null;
+    const wall = row.start_local ? String(row.start_local).slice(11, 13)
+      : (row.start_time ? String(row.start_time).slice(0, 2) : '');
+    if (/^\d{2}$/.test(wall)) return Number(wall);
+    const at = row.start_utc ? new Date(row.start_utc) : null;
+    if (!at || Number.isNaN(at.getTime())) return null;
+    try {
+      return hourIn(row.timezone || fallbackZone, at);
+    } catch {
+      return hourIn('Australia/Sydney', at);   // a zone Intl does not know
+    }
+  }
+
+  /** 'morning' or 'evening' for a rule, an instance or a one-off; null if it has no time. */
+  function partOfDayOf(row, fallbackZone) {
+    const h = localHourOf(row, fallbackZone);
+    if (h == null) return null;
+    return h < EVENING_FROM_HOUR ? 'morning' : 'evening';
+  }
+
   const BY_SLUG = new Map();
   for (const svc of SERVICES) {
     BY_SLUG.set(svc.slug, svc);
@@ -144,7 +222,8 @@
   }
 
   const api = { SERVICES, SERVICE_SLUGS, resolveService, serviceOf, serviceMatches, serviceLabel, servicePlural,
-    DAY_SLUGS, DAY_NAMES, resolveDay, daySlug, dayName };
+    DAY_SLUGS, DAY_NAMES, resolveDay, daySlug, dayName,
+    EVENING_FROM_HOUR, PARTS_OF_DAY, PART_SLUGS, resolvePartOfDay, partOfDayLabel, localHourOf, partOfDayOf };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraServices = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

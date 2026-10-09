@@ -41,6 +41,16 @@ test('app views are not parishes', () => {
   assert.equal(U.classifyPath('/donate').donate, true);
 });
 
+test('a part of the day combines with everything a feed filter does', () => {
+  const e = U.classifyPath('/antiochian/evening');
+  assert.deepEqual([e.jurisdiction, e.part, e.parishSlugs], ['antiochian', 'evening', null]);
+  const w = U.classifyPath('/greek/qld/wed/mornings/liturgy');
+  assert.deepEqual([w.jurisdiction, w.location, w.day, w.part, w.service], ['greek', 'qld', 3, 'morning', 'liturgy']);
+  const p = U.classifyPath('/sgr/evening');
+  assert.deepEqual([p.parishSlugs, p.part], [['sgr'], 'evening']);
+  assert.equal(U.classifyPath('/liturgy').part, null);
+});
+
 test('a path that will not decode means nothing, and does not throw', () => {
   assert.equal(U.classifyPath('/%E0%A4%A').parishSlugs, null);
 });
