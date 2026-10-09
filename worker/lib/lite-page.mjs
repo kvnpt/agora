@@ -1,14 +1,14 @@
 // The lite card: a shared parish or event link, answered by the Worker.
 //
-// A link somebody sends — /sgr, /sgr/next-tue, /sgr/liturgy, /102,
-// /42:2026-10-04 — used to boot the whole app before showing anything: the map
-// library, the full bundle for every parish, the tiles, behind a loading
-// screen. And a chat app or a search engine fetching the same link got an app
-// shell with a fixed title and nothing in it. This page is the answer for both:
-// the card that link is about, in the HTML itself — its title, description,
-// preview image and structured data in <head>, the parish and its services in
-// <body> — painting at once, readable with no JavaScript, and the same markup
-// for a person and a crawler.
+// A link somebody sends — /sgr, /sgr/next-tue, /sgr/liturgy, /sgr/evening,
+// /sgr/services, /102, /42:2026-10-04 — used to boot the whole app before
+// showing anything: the map library, the full bundle for every parish, the
+// tiles, behind a loading screen. And a chat app or a search engine fetching
+// the same link got an app shell with a fixed title and nothing in it. This
+// page is the answer for both: the card that link is about, in the HTML itself
+// — its title, description, preview image and structured data in <head>, the
+// parish and its services in <body> — painting at once, readable with no
+// JavaScript, and the same markup for a person and a crawler.
 //
 // PURE. Rows in, a model out, markup out of the model — no D1, no fetch, no
 // clock except the one passed in — so `node --test` covers every line of it.
@@ -97,6 +97,10 @@ const endTimeOf = (e, zone) => {
 export function liteModel({ parish, rows, events = [], cross = [], links = [], route, pinnedEvent = null, now, origin }) {
   const zone = parish.timezone || DEFAULT_ZONE;
   const slug = parishSlug(parish);
+  // /sgr/services is the parish's timetable — the rules, not the dates they
+  // produce — as /services is in the app. It lists no occurrences and pins
+  // none; its way on is the upcoming events, in the app.
+  const servicesMode = !!route.services && !route.eventId;
   const start = liteStartDate(route, zone, now);
   const { fromUtc, toUtc } = liteWindow(start);
 
@@ -120,6 +124,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
     if (route.service && !services.serviceMatches(route.service, e)) return false;
     if (route.day != null && e._local.dow !== route.day) return false;
+    if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
     return true;
   };
   const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + LITE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -129,13 +134,17 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // The pin, by the rules the app's sheet follows (#63/#64): an id pins its
   // event; a day pins only an event ON that day; a service or weekday pins the
   // first of its kind from the date (only that day, when the date is a day).
+  // A part of the day is a kind like the others: /sgr/evening pins the next
+  // evening service.
   let pinned = null;
-  if (route.eventId) {
+  if (servicesMode) {
+    pinned = null;
+  } else if (route.eventId) {
     pinned = pinnedEvent
       ? { ...pinnedEvent, id: String(pinnedEvent.id), _local: localOf(pinnedEvent, zone),
         is_tombstone: pinnedEvent.is_tombstone || TOMB_STATUSES.has(pinnedEvent.status) ? 1 : 0 }
       : null;
-  } else if (route.service || route.day != null) {
+  } else if (route.service || route.day != null || route.part) {
     const pool = list.filter(e => !e.is_tombstone);
     pinned = route.dateFocus && route.precision === 'day'
       ? urlState.firstEventOnDay(pool, route.dateFocus, 'day', e => e._local.date)
@@ -144,14 +153,25 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     pinned = urlState.firstEventOnDay(list, route.dateFocus, route.precision, e => e._local.date);
   }
 
-  const indexable = !route.eventId && !route.dateFocus && route.day == null && !route.service;
-  const segs = route.eventId
-    ? [route.eventId]
-    : [slug,
-      ...(route.day != null ? [services.daySlug(route.day)] : []),
-      ...(route.service ? [route.service] : []),
-      ...(route.dateFocus ? [dates.dateSlugFor(route.dateFocus, route.precision)] : [])];
-  const canonical = `${origin}/${segs.map(s => encodeURI(String(s))).join('/')}`;
+  const indexable = !route.eventId && !route.dateFocus && route.day == null && !route.service
+    && !route.part && !servicesMode;
+  // Day, part, service — the order the app writes them in, and the order they
+  // are said: /sgr/wed/evening/vespers.
+  const kindSegs = [
+    ...(route.day != null ? [services.daySlug(route.day)] : []),
+    ...(route.part ? [route.part] : []),
+    ...(route.service ? [route.service] : []),
+  ];
+  const dateSegs = route.dateFocus ? [dates.dateSlugFor(route.dateFocus, route.precision)] : [];
+  const pathOf = (segs) => `/${segs.map(s => encodeURI(String(s))).join('/')}`;
+  const canonicalPath = route.eventId ? pathOf([route.eventId])
+    : pathOf([slug, ...kindSegs, ...(servicesMode ? ['services'] : []), ...dateSegs]);
+  const canonical = `${origin}${canonicalPath}`;
+  // The way into the app. ?app is the Worker's cue to serve the app rather
+  // than this card again (routes/pages.mjs). From a card it is the same link;
+  // from the timetable it is the upcoming events — every filter the page
+  // carries except /services, which is the one thing that page is.
+  const appHref = `${servicesMode ? pathOf([slug, ...kindSegs, ...dateSegs]) : canonicalPath}?app`;
 
   // A rule that has ended is not on the timetable; one that starts later is,
   // marked "from" — the same reading the app's timetable makes.
@@ -160,10 +180,17 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     .filter(r => r.parish_id === parish.id && (!r.effective_to || r.effective_to >= today))
     .map(r => ({ ...r, _today: today }))
     .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time)));
+  // The timetable /services shows: the rules the link's filters name. A card
+  // keeps the whole timetable under its list, as it always has — there it is
+  // the parish's times, not the answer to the link.
+  const timetable = !servicesMode ? rules : rules.filter(r =>
+    (!route.service || services.serviceMatches(route.service, r))
+    && (route.day == null || r.day_of_week === route.day)
+    && (!route.part || services.partOfDayOf(r, zone) === route.part));
 
   return {
-    parish, zone, slug, start, endBound, list, pinned, rules, links,
-    route, indexable, canonical, origin, now,
+    parish, zone, slug, start, endBound, list, pinned, rules, timetable, links,
+    route, servicesMode, indexable, canonical, appHref, origin, now,
     missingEvent: !!route.eventId && !pinned,
     color: jurisColors.jurisdictionColor(parish.jurisdiction),
   };
@@ -243,11 +270,40 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 const langsOf = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
 
+const isNarrowed = (r) => !!(r.service || r.day != null || r.part);
+
+/**
+ * What a link narrows to, as a heading: "Vespers on Wednesdays", "Evening
+ * services", "Morning Liturgies on Sundays".
+ */
+export function kindLabel(r) {
+  const plural = r.service ? services.servicePlural(r.service) : null;
+  const what = r.part ? `${services.partOfDayLabel(r.part)} ${plural || 'services'}` : (plural || 'Services');
+  return what + (r.day != null ? ` on ${services.dayName(r.day)}s` : '');
+}
+
+/** "Sun 10am Divine Liturgy · Sat 6pm Vespers" — what runs now, for a preview. */
+function rulesSummary(rules) {
+  // A rule that has not started yet is on the timetable but is not what a
+  // preview should say the times ARE.
+  return rules.filter(r => r.active !== 0 && !(r.effective_from && r.effective_from > r._today)).slice(0, 4)
+    .map(r => `${services.DAY_NAMES[r.day_of_week].slice(0, 3)} ${time12(r.start_time)} ${r.title}`)
+    .join(' · ');
+}
+
 /** What a chat preview and a search result say about this page. */
 export function liteMeta(m) {
   const p = m.parish;
   const where = p.address ? ` · ${p.address}` : '';
   const year = m.start.slice(0, 4);
+  if (m.servicesMode) {
+    return {
+      title: isNarrowed(m.route)
+        ? `${kindLabel(m.route)} at ${p.name} — service times`
+        : `${p.name} — ${jurisLabel(p.jurisdiction)} service times`,
+      description: (rulesSummary(m.timetable) || `${jurisLabel(p.jurisdiction)} parish`) + where,
+    };
+  }
   if (m.pinned) {
     const e = m.pinned;
     const when = `${longDate(e._local.date, year)}, ${time12(e._local.time)}`;
@@ -261,19 +317,14 @@ export function liteMeta(m) {
       ].filter(Boolean).join(' '),
     };
   }
-  if (m.route.service || m.route.day != null) {
-    const what = m.route.service ? services.servicePlural(m.route.service) : 'Services';
-    const day = m.route.day != null ? ` on ${services.dayName(m.route.day)}s` : '';
+  if (isNarrowed(m.route)) {
+    const what = kindLabel(m.route);
     return {
-      title: `${what}${day} at ${p.name}`,
-      description: `${what}${day} at ${p.full_name || p.name}, from ${longDate(m.start, year)}${where}`,
+      title: `${what} at ${p.name}`,
+      description: `${what} at ${p.full_name || p.name}, from ${longDate(m.start, year)}${where}`,
     };
   }
-  // What runs now: a rule that has not started yet is on the timetable but
-  // is not what a preview should say the times ARE.
-  const summary = m.rules.filter(r => r.active !== 0 && !(r.effective_from && r.effective_from > r._today)).slice(0, 4)
-    .map(r => `${services.DAY_NAMES[r.day_of_week].slice(0, 3)} ${time12(r.start_time)} ${r.title}`)
-    .join(' · ');
+  const summary = rulesSummary(m.rules);
   return {
     title: m.route.dateFocus
       ? `${p.name} — ${m.route.precision === 'month' ? dates.dateFocusLabel(m.route.dateFocus, 'month') : longDate(m.route.dateFocus, year)}`
@@ -364,11 +415,17 @@ function listHTML(m) {
   return html + '</div>';
 }
 
-function timetableHTML(m) {
-  if (!m.rules.length) return '';
+function timetableHTML(m, rules, heading, empty = '') {
+  if (!rules.length) {
+    return empty ? `
+    <section class="lc-times" aria-labelledby="lt-h">
+      <h2 id="lt-h">${esc(heading)}</h2>
+      <p class="lc-empty">${esc(empty)}</p>
+    </section>` : '';
+  }
   let html = '';
   let dow = null;
-  for (const r of m.rules) {
+  for (const r of rules) {
     if (r.day_of_week !== dow) {
       dow = r.day_of_week;
       html += `<h3 class="lt-day">${esc(services.DAY_NAMES[dow])}</h3>`;
@@ -379,11 +436,11 @@ function timetableHTML(m) {
     html += `<a class="lt-row" href="${esc(href)}"><time>${esc(time12(r.start_time))}</time><span>${esc(r.title)}${weeks ? `<small>${esc(weeks)}</small>` : ''}</span></a>`;
   }
   // One source for the whole timetable: the most recent stamp among its rules.
-  const latest = m.rules.filter(r => r.source_name)
+  const latest = rules.filter(r => r.source_name)
     .sort((a, b) => String(b.source_checked_at || '').localeCompare(String(a.source_checked_at || '')))[0];
   return `
     <section class="lc-times" aria-labelledby="lt-h">
-      <h2 id="lt-h">Service times</h2>
+      <h2 id="lt-h">${esc(heading)}</h2>
       ${html}
       ${latest ? sourceLine(latest.source_name, latest.source_ref, latest.source_checked_at, m.now, 'lc-src') : ''}
     </section>`;
@@ -427,13 +484,40 @@ function pinnedHTML(m) {
 
 function listHeading(m) {
   const r = m.route;
-  if (r.service || r.day != null || (m.pinned && m.pinned.schedule_id != null && r.eventId)) {
-    const what = r.service ? services.servicePlural(r.service)
-      : (m.pinned && r.eventId ? `More dates for ${m.pinned.title}` : 'Services');
-    const day = r.day != null ? ` on ${services.dayName(r.day)}s` : '';
-    return `${what}${day}`;
-  }
+  if (isNarrowed(r)) return kindLabel(r);
+  if (m.pinned && m.pinned.schedule_id != null && r.eventId) return `More dates for ${m.pinned.title}`;
   return r.dateFocus ? `From ${longDate(m.start, m.start.slice(0, 4))}` : 'Coming up';
+}
+
+/**
+ * The way into the app: a button in the parish's colour, directly above the
+ * list it continues. It was a line of small print under everything, and the
+ * app is where the rest of the year, the map and the other parishes are.
+ */
+function appButtonHTML(m, label) {
+  return `<a class="lc-app" href="${esc(m.appHref)}">${esc(label)}</a>`;
+}
+
+/** The middle of the page: a card's pin and list, or /services' timetable. */
+function bodyHTML(m) {
+  if (m.servicesMode) {
+    const heading = isNarrowed(m.route) ? kindLabel(m.route) : 'Service times';
+    const empty = isNarrowed(m.route) ? 'No service on the timetable matches.' : 'No service times on file yet.';
+    return `
+  ${timetableHTML(m, m.timetable, heading, empty)}
+  ${appButtonHTML(m, 'View upcoming events →')}`;
+  }
+  return `
+  ${pinnedHTML(m)}
+  ${appButtonHTML(m, 'Open in the app →')}
+  <section class="lc-list" aria-labelledby="ll-h">
+    <h2 id="ll-h">${esc(listHeading(m))}</h2>
+    ${listHTML(m)}
+  </section>
+  ${timetableHTML(m, m.rules, 'Service times')}
+  <footer class="lc-foot">
+    <span>Showing to ${esc(longDate(m.endBound, m.start.slice(0, 4)))}</span>
+  </footer>`;
 }
 
 /** The whole page. */
@@ -445,7 +529,6 @@ export function renderLitePage(m) {
   const avatar = p.logo_path
     ? `<img class="lc-avatar" src="${esc(p.logo_path)}" alt="" width="56" height="56">`
     : `<span class="lc-avatar" aria-hidden="true">${esc(initial)}</span>`;
-  const appHref = `${new URL(m.canonical).pathname}?app`;
 
   return `<!doctype html>
 <html lang="en">
@@ -485,16 +568,7 @@ export function renderLitePage(m) {
     ${sourceLine(p.info_source_name, p.info_source_ref, p.info_checked_at, m.now, 'lc-src')}
     ${actionsHTML(m)}
   </section>
-  ${pinnedHTML(m)}
-  <section class="lc-list" aria-labelledby="ll-h">
-    <h2 id="ll-h">${esc(listHeading(m))}</h2>
-    ${listHTML(m)}
-  </section>
-  ${timetableHTML(m)}
-  <footer class="lc-foot">
-    <a href="${esc(appHref)}">Open this in the app</a>
-    <span>Showing to ${esc(longDate(m.endBound, m.start.slice(0, 4)))}</span>
-  </footer>
+  ${bodyHTML(m)}
   <p class="lc-claim"><a href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${m.rules.length ? 'Is this your parish? Help keep its times right' : 'Is this your parish? Add its service times'} →</a></p>
 </main>
 <script src="/lite.js" defer></script>
@@ -554,6 +628,8 @@ h1{margin:0;font-size:22px;line-height:1.15;letter-spacing:-.01em}
 .lc-empty{color:var(--muted)}
 .lt-row{display:grid;grid-template-columns:66px minmax(0,1fr);gap:8px;padding:7px 0;text-decoration:none;border-bottom:1px solid var(--line)}
 .lt-row small{display:block;color:var(--muted);font-size:12px}
+.lc-app{display:flex;align-items:center;justify-content:center;margin:16px 0 0;padding:12px 16px;border-radius:12px;background:var(--juris);color:#fff;font-weight:700;font-size:15px;text-decoration:none;box-shadow:0 1px 3px color-mix(in srgb,var(--juris) 40%,transparent)}
+.lc-app:hover{filter:brightness(1.08)}
 .lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:24px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 .lc-claim{margin:10px 0 0;font-size:13px}.lc-claim a{color:var(--muted)}
 `;

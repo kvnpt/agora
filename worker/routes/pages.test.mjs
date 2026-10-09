@@ -54,15 +54,20 @@ const meta = (html, attr, name) => {
   return m ? m[1] : null;
 };
 const canonical = (html) => (/<link rel="canonical" href="([^"]*)"/.exec(html) || [])[1];
+// A Saturday 6pm Vespers beside the seed's Sunday 10am Liturgy: one evening rule, one morning.
+const VESPERS = `INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
+                 VALUES (?, 6, '18:00', 'Vespers', 'prayer')`;
+const between = (html, from, to) => html.slice(html.indexOf(from), to ? html.indexOf(to) : undefined);
 
 test('which paths are lite pages', () => {
   const kinds = {
     '/sgr': 'parish', '/SGR/next-tue': 'parish', '/sgr/wed/liturgy': 'parish',
+    '/sgr/evening': 'parish', '/sgr/sun/morning/liturgy': 'parish',
+    '/sgr/services': 'parish', '/services/sgr': 'parish', '/sgr/evening/services': 'parish',
     '/102': 'event', '/42:2026-10-04': 'event',
-    '/': null, '/greek': null, '/qld': null, '/services': null, '/liturgy': null,
+    '/': null, '/greek': null, '/qld': null, '/services': null, '/liturgy': null, '/evening': null,
     '/smg+sgr': null, '/sgr/en': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
-    // The card does not narrow by part of the day, so the app answers.
-    '/evening': null, '/sgr/evening': null, '/sgr/sun/morning/liturgy': null,
+    '/102/services': null, '/102/evening': null,
   };
   for (const [p, want] of Object.entries(kinds)) {
     const k = liteKind(p, NOW);
@@ -86,7 +91,7 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   assert.equal(ld['@type'], 'Church');
   assert.equal(ld.url, 'https://orthodoxy.au/sgr');
   assert.match(html, /← Back to App/);
-  assert.match(html, /href="\/sgr\?app"/, 'the way into the app with this card open');
+  assert.match(html, /<a class="lc-app" href="\/sgr\?app">/, 'the way into the app with this card open');
   assert.match(html, /<details class="lc-ev/, 'the occurrences open without JavaScript');
 });
 
@@ -108,8 +113,7 @@ test('a quiet day pins nothing and says so; a month pins nothing', async () => {
 
 test('a service link pins its next occurrence and lists only that service', async () => {
   const { raw, get } = fresh();
-  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
-               VALUES (?, 6, '18:00', 'Vespers', 'prayer')`).run(PARISH);
+  raw.prepare(VESPERS).run(PARISH);
   const { html } = await get('/sgr/vespers');
   // The next one is pinned, so a chat preview says WHEN, not just what.
   assert.match(html, /<title>Vespers — Saturday 3 October, 6pm · St George Cathedral, Redfern/);
@@ -117,6 +121,63 @@ test('a service link pins its next occurrence and lists only that service', asyn
   const list = html.slice(html.indexOf('class="lc-list"'), html.indexOf('class="lc-times"'));
   assert.doesNotMatch(list, /Divine Liturgy/, 'the list is narrowed to the service');
   assert.match(list, /Vespers/);
+});
+
+test('a part of the day narrows the card to its services and pins the next one', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(VESPERS).run(PARISH);
+  const { html } = await get('/sgr/evening');
+  assert.equal(canonical(html), 'https://orthodoxy.au/sgr/evening');
+  assert.equal(meta(html, 'name', 'robots'), 'noindex,follow');
+  assert.match(html, /<title>Vespers — Saturday 3 October, 6pm · St George Cathedral, Redfern/);
+  assert.match(html, /<h2 id="ll-h">Evening services<\/h2>/);
+  const list = between(html, 'class="lc-list"', 'class="lc-times"');
+  assert.match(list, /Vespers/);
+  assert.doesNotMatch(list, /Divine Liturgy/, 'a 10am liturgy is a morning one');
+
+  const morning = between((await get('/sgr/sun/morning/liturgy')).html, 'class="lc-list"', 'class="lc-times"');
+  assert.match(morning, /Sunday Divine Liturgy/);
+  assert.doesNotMatch(morning, /Vespers/);
+});
+
+test('/services is the timetable, narrowed by the link, then the way to the upcoming events', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(VESPERS).run(PARISH);
+  const all = (await get('/sgr/services')).html;
+  assert.equal(canonical(all), 'https://orthodoxy.au/sgr/services');
+  assert.equal(meta(all, 'name', 'robots'), 'noindex,follow');
+  assert.doesNotMatch(all, /class="lc-list"/, 'no list of dates');
+  assert.doesNotMatch(all, /<article class="lc-pin/, 'and nothing pinned');
+  const times = between(all, 'class="lc-times"');
+  assert.match(times, /Sunday Divine Liturgy/);
+  assert.match(times, /Vespers/);
+  assert.ok(all.indexOf('class="lc-times"') < all.indexOf('class="lc-app"'), 'the button is under the timetable');
+  assert.match(all, /<a class="lc-app" href="\/sgr\?app">View upcoming events →<\/a>/,
+    'the app, with every filter but /services');
+
+  const eve = (await get('/services/sgr/evening')).html;
+  assert.equal(canonical(eve), 'https://orthodoxy.au/sgr/evening/services');
+  assert.match(eve, /<title>Evening services at St George Cathedral, Redfern — service times/);
+  assert.match(eve, /<h2 id="lt-h">Evening services<\/h2>/);
+  assert.doesNotMatch(between(eve, 'class="lc-times"'), /Divine Liturgy/);
+  assert.match(eve, /<a class="lc-app" href="\/sgr\/evening\?app">View upcoming events →<\/a>/);
+
+  const none = (await get('/sgr/wed/services')).html;
+  assert.match(none, /No service on the timetable matches\./, 'an empty timetable says so');
+  assert.match(none, /href="\/sgr\/wed\?app"/);
+});
+
+test('the way into the app is a button directly above the list', async () => {
+  const { get } = fresh();
+  for (const p of ['/sgr', '/sgr/next-sun', '/sgr/liturgy']) {
+    const { html } = await get(p);
+    const btn = html.indexOf('<a class="lc-app"');
+    assert.ok(btn > 0, `${p} has the button`);
+    assert.ok(btn < html.indexOf('class="lc-list"'), `${p}: above the list`);
+    assert.ok(btn > html.indexOf('class="lc-info"'), `${p}: under the parish's links`);
+    assert.doesNotMatch(between(html, 'class="lc-foot"'), /\?app/, `${p}: not in the small print`);
+  }
+  assert.match((await get('/sgr/next-sun')).html, /<a class="lc-app" href="\/sgr\/2026-10-04\?app">Open in the app →<\/a>/);
 });
 
 test('an event link — projected or stored — pins that event on its parish card', async () => {
