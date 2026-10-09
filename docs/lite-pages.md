@@ -22,10 +22,10 @@ empty shell.
    first, as before.
 3. `servePage` (`worker/routes/pages.mjs`) classifies the path with
    `public/shared/url-state.js` — **the same grammar the app parses with** — and answers
-   exactly two shapes: one parish (with any day / part of the day / service / date
-   focus, and `/services` for its timetable), or a bare event id. Everything else —
-   `/services` with no parish among them — returns null and the app loads as it always
-   did.
+   three shapes: one parish (with any day / part of the day / service / date focus, and
+   `/services` for its timetable), a bare event id, and **every other filter link** —
+   the timetable page below. Everything else — the home page, a link with a date and no
+   parish, `/social`, `/donate` — returns null and the app loads as it always did.
 4. **It fails open.** A render that throws returns null and the app answers the link.
 
 Two ways past it: `?app` (the card's "Open in the app" button) and the `agora_admin`
@@ -55,6 +55,34 @@ lives. The cookie grants nothing — the API checks the Access token on every re
 The markup is NOT the app's sheet (app.js is a classic script the Worker cannot import),
 so the two can drift in look. They share the lens, the grammar and the wording.
 
+## Timetable pages: a link that names no single parish
+
+`/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/services` — the
+aggregated schedules, which are the way into everything else Agora does. Before these
+pages every such link booted the app, map first, to show what is really a list.
+
+`worker/lib/lite-timetable.mjs`, pure like the card:
+
+- **Rules, not occurrences.** What each parish does week by week, so there is no
+  projection and 293 parishes cost two D1 reads (parishes, active rules). A link with a
+  date ("what is on next Sunday") is a list of dates, and goes to the app for now.
+- **Which parishes and rules a link means is `public/shared/timetable.js`** — the same
+  module the app's Schedules view (`renderServices`) filters with, so the page and the
+  app cannot list different services for one link. A `parish_scoped` rule stays on its
+  own card (docs/editing.md); an ended rule is off, one that starts later is marked
+  "from".
+- **Grouped by state, then jurisdiction, alphabetical all the way down.** Australian
+  states first (by address — `locations.js` says why), then other countries by pin. A
+  page already narrowed to one jurisdiction drops the jurisdiction headings.
+- **Parishes with no times are a count under the timetable** (253 of 293 in October
+  2026). It opens the app's Schedules view with the same filters and `#no-times`, where
+  `noTimesHTML` lists them by name and the app scrolls to them once. "No times" means
+  no rules at all, not none matching: under `/liturgy` a parish with only Vespers has
+  times.
+- **View upcoming events →** opens the app's dated feed with the same filters.
+- The canonical is the link's filters in the app's order, without `/services` — the
+  page *is* the timetable — except bare `/services`, which keeps it.
+
 ## Caching
 
 `cachedHtml` (beside `cachedJson` in `worker/lib/data-version.mjs`): the edge copy is
@@ -76,7 +104,12 @@ Not done yet, pending a real WhatsApp send: a small JPEG preview variant for pos
 
 Only the parish pages are for indexing: `index,follow` + self-canonical on
 `/<acronym>`, and `/sitemap.xml` lists them. Everything else — event pages, date, day
-and service variants — is `noindex,follow`; the variants are an infinite URL space.
+and service variants, and every timetable page — is `noindex,follow`; the variants are
+an infinite URL space. The timetable pages are the likeliest to rank ("Greek Orthodox
+service times Queensland"), and the next step is to index jurisdiction and
+jurisdiction × state pages that have enough parishes with times, and list them in the
+sitemap — once Search Console shows more than the home page, and not while
+`/macedonian` would be an empty page.
 `public/robots.txt` points at the sitemap. The owner verifies orthodoxy.au in Google
 Search Console and submits the sitemap.
 

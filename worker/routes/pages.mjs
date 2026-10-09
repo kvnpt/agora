@@ -1,12 +1,16 @@
 // Shared links, answered with a page.
 //
 // Every path now reaches the Worker (run_worker_first in wrangler.toml), and
-// this decides which of them it answers itself: a link to ONE parish, with or
-// without a focus (/sgr, /sgr/next-tue, /sgr/wed/evening/liturgy), its
-// timetable (/sgr/services), and a link to one event (/102, /42:2026-10-04).
-// Those get the lite card (lib/lite-page.mjs). Everything else — the home
-// page, /greek/qld, /services on its own, a+b, unknown slugs — returns null
-// and the caller hands it to the app exactly as before.
+// this decides which of them it answers itself:
+//   - a link to ONE parish, with or without a focus (/sgr, /sgr/next-tue,
+//     /sgr/wed/evening/liturgy), and its timetable (/sgr/services) — the lite
+//     card (lib/lite-page.mjs);
+//   - a link to one event (/102, /42:2026-10-04) — the same card, pinned;
+//   - every other filter link (/greek/qld, /liturgy, /wed/evening, /en,
+//     /smg+sgr, /services) — the timetable page (lib/lite-timetable.mjs).
+// Everything else — the home page, a link with a date and no parish, /social,
+// /donate, unknown slugs — returns null and the caller hands it to the app
+// exactly as before.
 //
 // It FAILS OPEN. Any error while building a page returns null, and the app
 // answers the link as it always did: a lite page that cannot be built must
@@ -24,6 +28,7 @@ import { localDateOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml } from '../lib/data-version.mjs';
 import { liteModel, liteWindow, liteStartDate, renderLitePage } from '../lib/lite-page.mjs';
+import { timetableModel, renderTimetablePage } from '../lib/lite-timetable.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
@@ -50,14 +55,45 @@ export function liteKind(pathname, now = Date.now()) {
   const first = pathname.split('/').filter(Boolean)[0];
   if (!first || SITE_PATHS.has(first.toLowerCase())) return null;
   const r = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) });
-  const appOnly = r.jurisdiction || r.location || r.socialOnly || r.englishOnly || r.donate;
-  if (appOnly) return null;
-  if (r.parishSlugs && r.parishSlugs.length === 1) return { kind: 'parish', slug: r.parishSlugs[0], route: r };
-  if (!r.parishSlugs && r.eventId && !r.dateFocus && r.day == null && !r.service
-      && !r.part && !r.services) {
-    return { kind: 'event', route: r };
+  if (r.socialOnly || r.donate) return null;
+  // A card is one parish's, so a jurisdiction, a region or a language beside
+  // one is a question the card does not answer; the app does.
+  const scoped = r.jurisdiction || r.location || r.englishOnly;
+  if (r.parishSlugs && r.parishSlugs.length === 1) {
+    return scoped ? null : { kind: 'parish', slug: r.parishSlugs[0], route: r };
   }
-  return null;
+  if (r.eventId) {
+    const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
+      && !r.part && !r.services;
+    return bare ? { kind: 'event', route: r } : null;
+  }
+  // Every other filter link is a timetable. Not one with a date: "what is on
+  // next Sunday" is a list of dates across parishes, which the app answers.
+  // And not a path that names nothing — that is the home page, or a segment
+  // nobody recognises.
+  if (r.dateFocus) return null;
+  const names = scoped || r.services || r.service || r.day != null || r.part
+    || (r.parishSlugs && r.parishSlugs.length > 1);
+  return names ? { kind: 'timetable', route: r } : null;
+}
+
+// The parish columns the timetable page reads — address and pin for the
+// region, languages for /en, and nothing an admin wrote about themselves.
+const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezone, acronym, languages`;
+const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
+  languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
+  source_name, source_ref, source_checked_at`;
+
+async function buildTimetable(env, url, kind, now) {
+  const [parishes, rules] = await Promise.all([
+    env.DB.prepare(`SELECT ${TIMETABLE_PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
+    env.DB.prepare(`SELECT ${TIMETABLE_RULE_COLS} FROM schedules WHERE active = 1`).all(),
+  ]);
+  const model = timetableModel({
+    parishes: parishes.results || [], rules: rules.results || [],
+    route: kind.route, now, origin: url.origin,
+  });
+  return model ? renderTimetablePage(model) : null;
 }
 
 async function findParish(db, slug) {
@@ -163,7 +199,7 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
     const res = await cachedHtml({
       request, env, ctx,
       name: `lite${encodeURI(url.pathname.toLowerCase())}@${hour}`,
-      build: () => buildLite(env, url, kind, now),
+      build: () => (kind.kind === 'timetable' ? buildTimetable : buildLite)(env, url, kind, now),
     });
     if (res) res.headers.set('x-agora-page', 'lite');
     return res;

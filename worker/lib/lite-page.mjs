@@ -41,7 +41,7 @@ export const LITE_LIST_CAP = 40;
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
-const esc = (s) => String(s == null ? '' : s)
+export const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
@@ -236,7 +236,7 @@ export function relativeAge(iso, now) {
   return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-value, unit);
 }
 
-function sourceLine(name, ref, checked, now, cls) {
+export function sourceLine(name, ref, checked, now, cls) {
   if (!name) return '';
   const age = relativeAge(checked, now);
   const label = /^https?:/.test(ref || '')
@@ -245,7 +245,7 @@ function sourceLine(name, ref, checked, now, cls) {
 }
 
 const ORDINAL = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
-function weeksLabel(rule) {
+export function weeksLabel(rule) {
   const range = rangeLabel(rule);
   let weeks = '';
   if (rule.week_parity) weeks = 'fortnightly';
@@ -270,7 +270,7 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 const langsOf = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
 
-const isNarrowed = (r) => !!(r.service || r.day != null || r.part);
+export const isNarrowed = (r) => !!(r.service || r.day != null || r.part);
 
 /**
  * What a link narrows to, as a heading: "Vespers on Wednesdays", "Evening
@@ -524,38 +524,22 @@ function bodyHTML(m) {
 export function renderLitePage(m) {
   const p = m.parish;
   const meta = liteMeta(m);
-  const image = liteImage(m);
   const initial = (p.name || p.full_name || '?').trim()[0].toUpperCase();
   const avatar = p.logo_path
     ? `<img class="lc-avatar" src="${esc(p.logo_path)}" alt="" width="56" height="56">`
     : `<span class="lc-avatar" aria-hidden="true">${esc(initial)}</span>`;
 
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>${esc(meta.title)} | orthodoxy.au</title>
-<meta name="description" content="${esc(meta.description)}">
-<link rel="canonical" href="${esc(m.canonical)}">
-<meta name="robots" content="${m.indexable ? 'index,follow' : 'noindex,follow'}">
-<meta property="og:site_name" content="orthodoxy.au">
-<meta property="og:type" content="${m.pinned ? 'article' : 'place'}">
-<meta property="og:title" content="${esc(meta.title)}">
-<meta property="og:description" content="${esc(meta.description)}">
-<meta property="og:url" content="${esc(m.canonical)}">
-<meta property="og:image" content="${esc(image)}">
-<meta name="twitter:card" content="${m.pinned && m.pinned.poster_path ? 'summary_large_image' : 'summary'}">
-<meta name="theme-color" content="${esc(m.color)}">
-<script type="application/ld+json">${churchJsonLd(m)}</script>
-<style>${LITE_CSS}</style>
-</head>
-<body style="--juris:${esc(m.color)}">
-<header class="lite-bar">
-  <a class="lite-back" href="/">← Back to App</a>
-  <span class="lite-brand">orthodoxy.au</span>
-</header>
-<main class="lite-card">
+  return liteDocument({
+    title: meta.title,
+    description: meta.description,
+    canonical: m.canonical,
+    indexable: m.indexable,
+    ogType: m.pinned ? 'article' : 'place',
+    image: liteImage(m),
+    twitterCard: m.pinned && m.pinned.poster_path ? 'summary_large_image' : 'summary',
+    color: m.color,
+    jsonLd: churchJsonLd(m),
+    main: `
   <section class="lc-head">
     ${avatar}
     <div>
@@ -569,7 +553,42 @@ export function renderLitePage(m) {
     ${actionsHTML(m)}
   </section>
   ${bodyHTML(m)}
-  <p class="lc-claim"><a href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${m.rules.length ? 'Is this your parish? Help keep its times right' : 'Is this your parish? Add its service times'} →</a></p>
+  <p class="lc-claim"><a href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${m.rules.length ? 'Is this your parish? Help keep its times right' : 'Is this your parish? Add its service times'} →</a></p>`,
+  });
+}
+
+/**
+ * The page around a card: the <head> a preview and a search engine read, the
+ * bar, the stylesheet and the script. One shell for the parish card and the
+ * timetable page (lite-timetable.mjs), so the two cannot differ in what they
+ * tell a crawler or in how they look.
+ */
+export function liteDocument({ title, description, canonical, indexable, ogType, image, twitterCard = 'summary', color, jsonLd = '', main }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>${esc(title)} | orthodoxy.au</title>
+<meta name="description" content="${esc(description)}">
+<link rel="canonical" href="${esc(canonical)}">
+<meta name="robots" content="${indexable ? 'index,follow' : 'noindex,follow'}">
+<meta property="og:site_name" content="orthodoxy.au">
+<meta property="og:type" content="${esc(ogType)}">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:url" content="${esc(canonical)}">
+<meta property="og:image" content="${esc(image)}">
+<meta name="twitter:card" content="${esc(twitterCard)}">
+<meta name="theme-color" content="${esc(color)}">
+${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>\n` : ''}<style>${LITE_CSS}</style>
+</head>
+<body style="--juris:${esc(color)}">
+<header class="lite-bar">
+  <a class="lite-back" href="/">← Back to App</a>
+  <span class="lite-brand">orthodoxy.au</span>
+</header>
+<main class="lite-card">${main}
 </main>
 <script src="/lite.js" defer></script>
 </body>
@@ -632,4 +651,15 @@ h1{margin:0;font-size:22px;line-height:1.15;letter-spacing:-.01em}
 .lc-app:hover{filter:brightness(1.08)}
 .lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:24px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 .lc-claim{margin:10px 0 0;font-size:13px}.lc-claim a{color:var(--muted)}
+.tt-head{padding-bottom:4px}
+.tt-region{padding:14px 0 0}
+.tt-region>h2{margin:8px 0 4px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.tt-juris{margin:14px 0 2px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--pc)}
+.tt-parish{margin:10px 0 0;padding:2px 0 2px 12px;border-left:3px solid var(--pc)}
+.tt-name{display:block;font-weight:700;font-size:15.5px;text-decoration:none}
+.tt-addr{margin:1px 0 4px;color:var(--muted);font-size:12.5px}
+.tt-row{grid-template-columns:104px minmax(0,1fr)}
+.tt-row time{white-space:nowrap}
+.tt-parish .lc-src{margin:6px 0 4px}
+.tt-more{display:block;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;text-decoration:none}
 `;
