@@ -1,4 +1,4 @@
-// "Is this your parish?" — somebody asking to keep one parish's page right.
+// "Become a contributor" — somebody asking to keep one parish's page right.
 //
 // The bottleneck is not code, it is coverage: hundreds of parishes and a few
 // dozen timetables, because one person cannot keep three hundred parishes

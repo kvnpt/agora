@@ -90,7 +90,7 @@ for them, are in the doc it links to — read that before changing the area.
 - Access says who you are; `admin_roles` says what you may do. Routes name a
   capability, never a role. An EMPTY table makes everyone an owner.
 - Admin fails closed. `AGORA_DEV_ADMIN` is for `wrangler dev` only.
-- A refusal with somewhere to go becomes an ask; "Is this your parish?" becomes
+- A refusal with somewhere to go becomes an ask; "Become a contributor" becomes
   a claim. Neither is a moderation queue.
 
 **Shipping** — [docs/deploy-and-ci.md](docs/deploy-and-ci.md), [docs/database.md](docs/database.md)

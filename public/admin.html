@@ -764,7 +764,7 @@
         <h2>Asks</h2>
         <p class="section-lead" id="proposals-intro"></p>
       </div>
-      <!-- "Is this your parish?" — people asking to keep one parish right.
+      <!-- "Become a contributor" — people asking to keep one parish right.
            Above the asks because each one is a person waiting to be let in,
            and approving it is the whole of what they need. -->
       <div id="claims-block" hidden>
@@ -4164,7 +4164,7 @@
         return;
       }
       page(`
-        <p>Help keep this parish's page right: its service times, its events and its details. The site owner checks each request before giving access.</p>
+        <p>Become a contributor and help keep this parish's page right: its service times, its events and its details. The site owner checks each request before giving access.</p>
         <form id="claim-form" class="claim-form">
           <label>Your name<input name="name" required maxlength="120" autocomplete="name"></label>
           <label>Your role at the parish<input name="relation" maxlength="120" placeholder="Parish priest, secretary, council member…"></label>
@@ -4283,8 +4283,8 @@
       // asking. The old code also called /auth/whoami because magic-link phone
       // auth could authenticate someone the Caddy gate had not seen yet; that
       // endpoint and that whole subsystem went with the VM.
-      // "Is this your parish?" — /admin?claim=<parish id>. Reached from the
-      // parish sheet and the lite card. Answered before the panel, because the
+      // "Become a contributor" — /admin?claim=<parish id>. Reached from under
+      // the source line on the parish sheet and on the lite card. Answered before the panel, because the
       // person arriving usually has no role at all and the panel would only
       // tell them so.
       const claimFor = new URLSearchParams(location.search).get('claim');
@@ -4303,7 +4303,7 @@
         blockPage('Signed in, but not on the admin list.',
           waiting && waiting.length
             ? `Your request to keep ${waiting.map(k => k.parish_name || k.parish_id).join(', ')} up to date is waiting on an owner. Once it is approved, sign in again and the parish will have a pencil on it.`
-            : (detail.error || 'Ask an owner of this site to give your account a role — or open your parish in the app and choose \u201cIs this your parish?\u201d.'));
+            : (detail.error || 'Ask an owner of this site to give your account a role — or open your parish in the app and choose \u201cBecome a contributor\u201d.'));
         return;
       }
 

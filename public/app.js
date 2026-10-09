@@ -4892,7 +4892,7 @@ function refreshParishContentPortion(parishId, opts = {}) {
 
   // Schedule card refresh — recompute scheds + EN filter, replace inner.
   // Mount the section if it didn't exist. Always present, even with no rules:
-  // a parish with no times on file is the one "Is this your parish?" is for.
+  // a parish with no times on file is the one somebody opens to fix.
   const scheds = filterParishSchedulesBySession(
     (state.schedules || [])
       .filter(s => s.parish_id === parishId)
@@ -5168,7 +5168,7 @@ function paintParishSheetContent(parishId, opts = {}) {
   );
   // Shown even with no rules: a parish whose times have never been entered is
   // exactly the one somebody opens this to fix — with the pencil, or with
-  // "Is this your parish?" for somebody who cannot edit it yet.
+  // "Become a contributor" under the source line for somebody who cannot yet.
   const schedSectionHtml = `
       <div class="ps-section ps-sched-section">${parishTimetableHTML(parish, scheds)}</div>`;
 
@@ -5222,6 +5222,7 @@ function paintParishSheetContent(parishId, opts = {}) {
       ${addrHtml}
       ${webCopyHtml}
       ${srcHtml}
+      ${contributeButtonHTML(parish)}
       <div class="ps-actions" style="--parish-color:${esc(color)}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
       ${parishAdminHtml}
     </div>`}
@@ -7225,7 +7226,7 @@ function renderServices() {
 // The parishes in view that have no times on file at all — most of them, for
 // now (253 of 293 in October 2026). Listed by name under the timetables so the
 // view is the whole of the parishes it covers, not only the ones with times;
-// each opens its parish sheet, where "Is this your parish?" asks for them.
+// each opens its parish sheet, where "Become a contributor" asks for them.
 //
 // No rules at all, not "none matching": under /liturgy a parish whose only
 // rule is Vespers has times, it just has no Liturgy. Same scope as the rules
@@ -8334,24 +8335,26 @@ function parishTimetableHTML(parish, scheds) {
           <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add a service</span></button>
           <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
       </div>
-      ${claimLinkHTML(parish, scheds)}
     </div>`;
 }
 
 /**
- * "Is this your parish?" — the way in for somebody who could keep it right.
+ * "Become a contributor" — the way in for somebody who could keep it right.
  *
- * Shown to anyone who cannot already edit this parish's times, visitors
- * included: most parishes have nobody looking after their page, and the
- * person who could is most likely to be reading it. The claim itself happens
- * on /admin?claim=, behind Cloudflare Access, so the address on it is one
- * Access verified (worker/lib/claims.mjs).
+ * Shown to anyone who cannot already edit this parish, visitors included: most
+ * parishes have nobody looking after their page, and the person who could is
+ * most likely to be reading it. It sits under the parish's source line, which
+ * says where the page came from and how old it is — the natural place to offer
+ * to keep it right — rather than under the timetable, where it read as a note
+ * about the service times alone. The lite card puts it in the same place
+ * (worker/lib/lite-page.mjs).
+ *
+ * It is the claim: /admin?claim=, behind Cloudflare Access, so the address on
+ * the request is one Access verified (worker/lib/claims.mjs).
  */
-function claimLinkHTML(parish, scheds) {
+function contributeButtonHTML(parish) {
   if (mayEditTimetable(parish.id)) return '';
-  const ask = scheds.length ? 'Is this your parish? Help keep its times right'
-    : 'Is this your parish? Add its service times';
-  return `<a class="ps-claim" href="/admin?claim=${encodeURIComponent(parish.id)}">${esc(ask)} \u2192</a>`;
+  return `<a class="ps-btn ps-btn-ghost ps-contribute" href="/admin?claim=${encodeURIComponent(parish.id)}">${glyph('ph:user-plus')}Become a contributor</a>`;
 }
 
 /**

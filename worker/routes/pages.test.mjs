@@ -270,10 +270,20 @@ test('the timetable drops an ended rule and marks one that starts later', async 
     'a rule that has not started is not what the times are');
 });
 
-test('the lite card offers "Is this your parish?" through the claim page', async () => {
+test('the lite card offers "Become a contributor" under its source line, not under the timetable', async () => {
   const { get } = fresh();
-  const { html } = await get('/sgr');
-  assert.match(html, /<a href="\/admin\?claim=antiochian-stgeorge-redfern" rel="nofollow">Is this your parish\? Help keep its times right/);
+  for (const path of ['/sgr', '/sgr/services']) {
+    const { html } = await get(path);
+    const button = '<a class="lc-contrib" href="/admin?claim=antiochian-stgeorge-redfern" rel="nofollow">Become a contributor</a>';
+    assert.equal(html.split(button).length - 1, 1, `${path}: once`);
+    const info = html.slice(html.indexOf('<section class="lc-info">'), html.indexOf('</section>', html.indexOf('<section class="lc-info">')));
+    assert.ok(info.includes(button), `${path}: in the parish's details`);
+    assert.ok(info.indexOf(button) < info.indexOf('class="lc-actions"'), `${path}: above the parish's own buttons`);
+    // The seed gives St George's a source ("Parish website"), so the line is there.
+    const src = info.indexOf('class="lc-src"');
+    assert.ok(src >= 0 && src < info.indexOf(button), `${path}: below the source line`);
+    assert.doesNotMatch(html, /Is this your parish\?/, `${path}: the old link is gone`);
+  }
 });
 
 // ── the timetable page: a link that names no single parish ───────────────

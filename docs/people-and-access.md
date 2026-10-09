@@ -40,14 +40,19 @@ team's published keys — a forged `Cf-Access-Jwt-Assertion` header gets nothing
 `AGORA_DEV_ADMIN=true` bypasses that, and exists only for `wrangler dev`. It is
 deliberately absent from `wrangler.toml` so it cannot ship by accident.
 
-**"Is this your parish?" is how a contact arrives.** Coverage is the
+**"Become a contributor" is how a contact arrives.** Coverage is the
 bottleneck — far more parishes than timetables — and every tool a parish
 contact needs exists; what was missing was a way to become one that did not
-start with emailing the owner. The parish sheet (under its timetable) and the
-lite card both link to `/admin?claim=<parish id>`, which is behind Access, so
-the claimant signs in first and the claim carries the address Access verified —
-never one typed into the form. The claim page is answered before the panel,
-because the person arriving usually has no role at all.
+start with emailing the owner. The parish sheet and the lite card both carry a
+**Become a contributor** button under the parish's source line — where the page
+says where its details came from and how old they are, so the natural place to
+offer to keep them right. It began as "Is this your parish?" under the
+timetable, where it read as a note about the service times alone. It is shown
+to anybody who cannot already edit the parish, and links to
+`/admin?claim=<parish id>`, which is behind Access, so the claimant signs in
+first and the claim carries the address Access verified — never one typed into
+the form. The claim page is answered before the panel, because the person
+arriving usually has no role at all.
 
 Claims live in `parish_claims` (migration 016; `worker/lib/claims.mjs`), not
 `admin_proposals`: that table's capability CHECK would need a rebuild to widen,
