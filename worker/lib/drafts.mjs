@@ -12,6 +12,7 @@
 
 import eventTypes from '../../public/shared/event-types.js';
 import checks from '../../public/shared/event-checks.js';
+import { isOwnVenue, matchParish } from './parish-match.mjs';
 
 const { isEventType } = eventTypes;
 const { isLocalDate, isLocalTime } = checks;
@@ -32,7 +33,8 @@ export const DRAFTS_DDL = [
   read_notes  TEXT,
   created_by  TEXT NOT NULL,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  read_parish TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_drafts_parish ON drafts(parish_id)',
   `CREATE TABLE IF NOT EXISTS draft_events (
@@ -61,10 +63,20 @@ export const DRAFTS_DDL = [
 
 // Once per database per isolate: the DDL is a no-op after the first time, but
 // it is still a round trip, and Workers Free counts those.
+//
+// read_parish came later (migration 019), and CREATE TABLE IF NOT EXISTS does
+// not add a column to a table that exists — so it is looked for, and added
+// when a database made before 019 lacks it. A read rather than a bare ALTER,
+// so the usual answer is a query that works rather than one that errors.
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
   if (ensured.has(db)) return;
   await db.batch(DRAFTS_DDL.map(sql => db.prepare(sql)));
+  try {
+    await db.prepare('SELECT read_parish FROM drafts LIMIT 0').all();
+  } catch {
+    await db.prepare('ALTER TABLE drafts ADD COLUMN read_parish TEXT').run();
+  }
   ensured.add(db);
 }
 
@@ -87,6 +99,10 @@ const isReplaceId = (v) => typeof v === 'string' && (/^\d+$/.test(v) || /^\d+:\d
 const parseList = (v) => {
   if (!v) return [];
   try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch { return []; }
+};
+const parseObject = (v) => {
+  if (!v) return null;
+  try { const o = JSON.parse(v); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch { return null; }
 };
 
 /**
@@ -161,6 +177,7 @@ export function draftOut(d, cards = []) {
     read_status: stale ? 'failed' : d.read_status,
     read_kind: d.read_kind,
     read_notes: parseList(d.read_notes),
+    read_parish: parseObject(d.read_parish),
     created_by: d.created_by,
     created_at: d.created_at,
     updated_at: d.updated_at,
@@ -319,10 +336,88 @@ export async function mergeRead(db, draftId, read) {
     }
   });
   stmts.push(db.prepare(
-    `UPDATE drafts SET read_status = 'read', read_kind = ?, read_notes = ?, updated_at = ${NOW} WHERE id = ?`
-  ).bind(read.kind, read.notes.length ? JSON.stringify(read.notes) : null, draftId));
+    `UPDATE drafts SET read_status = 'read', read_kind = ?, read_notes = ?, read_parish = ?,
+       updated_at = ${NOW} WHERE id = ?`
+  ).bind(read.kind, read.notes.length ? JSON.stringify(read.notes) : null,
+    read.parish ? JSON.stringify(read.parish) : null, draftId));
   await db.batch(stmts);
   return getDraft(db, draftId);
+}
+
+/**
+ * A finished read, squared with the parish it was read at — before it is
+ * merged, so neither of these reaches a card:
+ *
+ *   * a venue that is only the parish's own address goes. The reader is told
+ *     not to give one and does anyway ("86 Kenny St" at St Elias, whose
+ *     address is 86 Kenny Street), and the card then reads as if the event
+ *     were somewhere else;
+ *   * "this poster is another parish's" is matched to a parish on file, and
+ *     set on the read as `parish` {name, place, parish_id}. A match that is
+ *     this parish after all means the reader was wrong, and is dropped.
+ *
+ * @param {object} read  normalizeRead()'s answer, changed in place
+ * @param {{id, name, address}} parish  the draft's parish
+ */
+export async function placeRead(db, read, parish) {
+  for (const ev of read.events) {
+    if (isOwnVenue(ev.location_override, parish)) ev.location_override = null;
+  }
+  read.parish = null;
+  if (!read.other_parish) return read;
+  const list = (await db.prepare(
+    "SELECT id, name, address FROM parishes WHERE id != '_unassigned'").all()).results || [];
+  const venues = read.events.map(e => e.location_override).filter(Boolean);
+  const id = matchParish(read.other_parish, venues, list);
+  if (id !== parish.id) read.parish = { ...read.other_parish, parish_id: id };
+  return read;
+}
+
+/**
+ * Move a draft to another parish — the poster was dropped at the wrong one.
+ *
+ * The cards go as they are, less two things that only made sense where they
+ * were:
+ *   * a venue the read gave that is the NEW parish's own address. St Elias's
+ *     address was "somewhere else" from the parish the poster was dropped at;
+ *     once the draft is St Elias's, it is just the church. Only while it is
+ *     still as read — a venue somebody typed is theirs;
+ *   * the new parish in "also appears at": an event is not also at its own.
+ * The read's "whose poster" stays when it named a parish on file — the editor
+ * hides it once the draft is there, and shows it again after a wrong pick —
+ * and goes when it named none: choosing a parish is the answer to it.
+ *
+ * @param {object} draft  getDraft()'s answer
+ * @param {{id, name, address}} parish  where it goes
+ */
+export async function moveDraft(db, draft, parish) {
+  const stmts = [];
+  for (const card of draft.cards) {
+    const set = {};
+    if (card.also_at.includes(parish.id)) {
+      const rest = card.also_at.filter(id => id !== parish.id);
+      set.also_at = rest.length ? JSON.stringify(rest) : null;
+    }
+    if (card.read_fields.includes('location_override') && isOwnVenue(card.location_override, parish)) {
+      const marks = card.read_fields.filter(f => f !== 'location_override');
+      const notes = card.read_notes.filter(n => n.field !== 'location_override');
+      set.location_override = null;
+      set.read_fields = marks.length ? JSON.stringify(marks) : null;
+      set.read_notes = notes.length ? JSON.stringify(notes) : null;
+    }
+    const cols = Object.keys(set);
+    if (cols.length) {
+      stmts.push(db.prepare(
+        `UPDATE draft_events SET ${cols.map(c => `${c} = ?`).join(', ')}, updated_at = ${NOW} WHERE id = ?`
+      ).bind(...Object.values(set), card.id));
+    }
+  }
+  const hint = draft.read_parish && draft.read_parish.parish_id ? JSON.stringify(draft.read_parish) : null;
+  stmts.push(db.prepare(
+    `UPDATE drafts SET parish_id = ?, read_parish = ?, updated_at = ${NOW} WHERE id = ?`
+  ).bind(parish.id, hint, draft.id));
+  await db.batch(stmts);
+  return getDraft(db, draft.id);
 }
 
 /** Where reading got to, when it did not finish with a read to merge. */

@@ -540,7 +540,6 @@
     /* ── Events: drafts, and the editor's modal ── */
     .modal-event { max-width: 600px; }
     @media (min-width: 900px) { .modal-event:has(.ee.has-poster) { max-width: 960px; } }
-    .event-parish-field { margin-bottom: 14px; }
     .draft-row { display: flex; gap: 12px; align-items: center; }
     .draft-thumb { width: 44px; height: 58px; flex: none; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-light); background: var(--soft-bg); }
     .draft-what { flex: 1; min-width: 0; }
@@ -1003,8 +1002,9 @@
   </div>
 
   <!-- ── Adding an event ──
-       The parish first, because a draft belongs to one; then the editor.
-       Once a draft exists the parish is fixed — start another for another. -->
+       The editor carries its own parish picker, the same one the app's has: it
+       asks for the parish first when there is more than one to choose from, and
+       moves the draft when a poster turns out to be another parish's. -->
   <div class="modal-backdrop" id="add-event-backdrop" onclick="if(event.target===this)closeEventEditor()">
     <div class="modal modal-event" role="dialog" aria-modal="true" aria-labelledby="add-event-title">
       <div class="modal-head">
@@ -1012,7 +1012,6 @@
         <button type="button" class="icon-btn" aria-label="Close" onclick="closeEventEditor()"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
       <div class="modal-subtitle">One date each — a service that runs every week is a rule, not an event.</div>
-      <div class="field event-parish-field"><label for="add-event-parish">Parish</label><select id="add-event-parish"></select></div>
       <div id="add-event-editor"></div>
     </div>
   </div>
@@ -1468,16 +1467,14 @@
       }));
     }
 
-    /** Open the editor: blank at a parish, on a saved draft, or waiting for the parish to be chosen. */
+    /**
+     * Open the editor: blank at a parish, on a saved draft, or — with more than
+     * one parish to choose from — asking for the parish first. The editor's own
+     * picker does the asking, and moves a draft later if it has to.
+     */
     window.openEventEditor = function (parishId = null, draftId = null) {
-      const sel = document.getElementById('add-event-parish');
       const mine = parishes.filter(p => p.id !== '_unassigned' && inMyScope(p.id));
-      sel.innerHTML = '<option value="">Choose the parish…</option>'
-        + mine.map(p => `<option value="${attr(p.id)}">${esc(p.name)}</option>`).join('');
-      const pick = parishId || (mine.length === 1 ? mine[0].id : '');
-      sel.value = pick;
-      sel.disabled = !!draftId;
-      mountEventEditor(pick, draftId);
+      mountEventEditor(parishId || (mine.length === 1 ? mine[0].id : null), draftId);
       openModal('add-event-backdrop');
     };
 
@@ -1485,13 +1482,8 @@
       if (eventEditor) { eventEditor.close(); eventEditor = null; }
       const mount = document.getElementById('add-event-editor');
       mount.innerHTML = '';
-      const parish = parishes.find(p => p.id === parishId);
-      if (!parish) {
-        mount.innerHTML = '<div class="empty">Choose the parish the event is at.</div>';
-        return;
-      }
       eventEditor = AgoraEventEditor.open(mount, {
-        parish,
+        parish: parishes.find(p => p.id === parishId) || null,
         // Every parish, not only this account's: one that is not theirs is
         // marked and turns the publish into an ask, never hidden.
         parishes: parishes.filter(p => p.id !== '_unassigned'),
@@ -1505,18 +1497,6 @@
         onClose: () => closeEventEditor(),
       });
     }
-
-    document.getElementById('add-event-parish').addEventListener('change', (e) => {
-      // A draft belongs to its parish; changing the parish under one would
-      // move half-typed events somewhere else.
-      if (eventEditor && eventEditor.draftId) {
-        const d = drafts.find(x => x.id === eventEditor.draftId);
-        toast('This draft belongs to its parish — save it, then add another for a different one.', 'error');
-        if (d) e.target.value = d.parish_id;
-        return;
-      }
-      mountEventEditor(e.target.value, null);
-    });
 
     window.closeEventEditor = function () {
       closeModal('add-event-backdrop');

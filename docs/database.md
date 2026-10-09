@@ -54,7 +54,10 @@ Two features also create their tables on first use, with the same DDL, so a
 deploy that beats its migration does not take them down: `parish_claims`
 (016, `worker/lib/claims.mjs`) and `drafts` / `draft_events` (018,
 `worker/lib/drafts.mjs` — the add-event editor depends on them). A test
-compares that DDL with the baseline.
+compares that DDL with the baseline. `CREATE TABLE IF NOT EXISTS` cannot add a
+column to a table that exists, so `drafts.read_parish` (019) is looked for and
+added the same way when it is missing — one cheap read per isolate, which a
+test runs against a database made before 019.
 
 The seed is safe to re-run — every statement inserts only if the row is missing.
 Parishes get `ON CONFLICT(id) DO NOTHING`; schedules have an AUTOINCREMENT id and

@@ -37,7 +37,8 @@ import timezones from '../../public/shared/timezones.js';
 import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
-  updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody } from '../lib/drafts.mjs';
+  updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
+  placeRead, moveDraft } from '../lib/drafts.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
@@ -1364,6 +1365,30 @@ export function registerAdminRoutes(router) {
     return r.response || json(r.draft);
   }));
 
+  // Move a draft to another parish: the poster was dropped at the wrong one.
+  // Scoped on BOTH parishes — the one it is at (draftInScope) and the one it
+  // goes to — so a parish contact moves drafts between their own parishes and
+  // nowhere else. lib/drafts.mjs moveDraft says what the cards lose on the way.
+  router.patch('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const b = await readJson(c.request);
+    const parishId = typeof b.parish_id === 'string' ? b.parish_id : '';
+    if (!parishId) return json({ error: 'Which parish should it move to?' }, 400);
+    const scoped = outOfScope(c, parishId);
+    if (scoped) return scoped;
+    if (parishId === r.draft.parish_id) return json(r.draft);
+    // The read squares its venues with the parish it started at; moving under
+    // it would merge the answer for the wrong one.
+    if (r.draft.read_status === 'reading') {
+      return json({ error: 'The poster is still being read — move it once that has finished.' }, 409);
+    }
+    const parish = await c.env.DB.prepare('SELECT id, name, address FROM parishes WHERE id = ?')
+      .bind(parishId).first();
+    if (!parish || parish.id === '_unassigned') return json({ error: 'Invalid parish_id' }, 400);
+    return json(await moveDraft(c.env.DB, r.draft, parish));
+  }));
+
   // Discard. The poster goes too unless something still shows it — an event
   // published from this draft already, say.
   router.delete('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
@@ -1389,7 +1414,7 @@ export function registerAdminRoutes(router) {
     if (r.response) return r.response;
     await c.env.DB.prepare(
       `UPDATE drafts SET poster_path = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
-         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+         read_parish = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
     ).bind(r.draft.id).run();
     await releaseUnused(c.env, [r.draft.poster_path]);
     return json(await getDraft(c.env.DB, r.draft.id));
@@ -1439,7 +1464,7 @@ export function registerAdminRoutes(router) {
       draft.poster_path = `/${key}`;
       await env.DB.prepare(
         `UPDATE drafts SET poster_path = ?, read_status = NULL, read_kind = NULL, read_notes = NULL,
-           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+           read_parish = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
       ).bind(draft.poster_path, draft.id).run();
       // A replaced poster goes once nothing shows it.
       if (previous) await releaseUnused(env, [previous]);
@@ -1467,7 +1492,7 @@ export function registerAdminRoutes(router) {
         return finish();
       }
       await setReadStatus(env.DB, draft.id, 'reading');
-      const parish = await env.DB.prepare('SELECT name, address, timezone FROM parishes WHERE id = ?')
+      const parish = await env.DB.prepare('SELECT id, name, address, timezone FROM parishes WHERE id = ?')
         .bind(draft.parish_id).first();
       const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
       const today = localDateOf(zone, Date.now());
@@ -1495,6 +1520,9 @@ export function registerAdminRoutes(router) {
         send('result', { draft: await getDraft(env.DB, draft.id) });
         return finish();
       }
+      // The parish's own address is not a venue, and "another parish's poster"
+      // becomes a parish on file when one clearly matches.
+      await placeRead(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) });
       // Null when the draft was discarded while it was being read.
       const merged = await mergeRead(env.DB, draft.id, read.read);
       send('result', { draft: merged });

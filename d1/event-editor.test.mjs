@@ -62,3 +62,30 @@ test('the read fills only what nobody has typed — or what it is filling itself
   assert.strictEqual(E.takesRead(card, 'description'), true, 'its own partial');
   assert.strictEqual(E.takesRead(card, 'location_override'), false, 'already holds something');
 });
+
+test('the parish picker lists where this person can publish, by name, and always where the draft is', () => {
+  const ps = [
+    { id: 'b', name: 'St Elias, Wollongong' }, { id: 'a', name: 'St Nicholas, Punchbowl' },
+    { id: 'c', name: 'Holy Cross, Wollongong' }, { id: '_unassigned', name: 'Unassigned' },
+  ];
+  const contact = (cap, pid) => pid === 'a' || pid === 'b';
+  assert.deepStrictEqual(E.editableParishes(ps, contact, ps[1]).map(p => p.id), ['b', 'a']);
+  assert.deepStrictEqual(E.editableParishes(ps, () => true, null).map(p => p.id), ['c', 'b', 'a'], 'never the unassigned bucket');
+  const elsewhere = { id: 'z', name: 'A parish not in the list' };
+  assert.deepStrictEqual(E.editableParishes(ps, contact, elsewhere).map(p => p.id), ['z', 'b', 'a']);
+});
+
+test('whose poster: move it, say whose it is, or name it as printed — and nothing once it is there', () => {
+  const ps = [{ id: 'elias', name: 'St Elias, Wollongong' }, { id: 'nick', name: 'St Nicholas, Punchbowl' }];
+  const read = { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong', parish_id: 'elias' };
+  const all = () => true;
+  assert.deepStrictEqual(E.parishSuggestion(read, 'nick', ps, all), { kind: 'move', parish: ps[0] });
+  assert.strictEqual(E.parishSuggestion(read, 'elias', ps, all), null, 'already there');
+  assert.deepStrictEqual(E.parishSuggestion(read, 'nick', ps, (c, pid) => pid === 'nick'),
+    { kind: 'notYours', parish: ps[0] });
+  assert.deepStrictEqual(E.parishSuggestion({ ...read, parish_id: null }, 'nick', ps, all),
+    { kind: 'named', name: 'St Elias Antiochian Orthodox Church, Wollongong' });
+  assert.deepStrictEqual(E.parishSuggestion({ ...read, parish_id: 'gone' }, 'nick', ps, all),
+    { kind: 'named', name: 'St Elias Antiochian Orthodox Church, Wollongong' }, 'a parish since removed');
+  assert.strictEqual(E.parishSuggestion(null, 'nick', ps, all), null);
+});

@@ -20,6 +20,37 @@
 }
 .ee [hidden] { display: none !important; }
 
+/* ── The parish ──
+   A draft can move until it is published: a poster dropped at the wrong
+   parish says whose it is, and the suggestion moves it in one tap. */
+.ee-parish { display: flex; align-items: center; gap: 10px; }
+.ee-parish label { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--ee-muted); }
+.ee-parish select { flex: 1; min-width: 0; }
+.ee-suggest {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: color-mix(in srgb, var(--ee-warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ee-warn) 35%, var(--border));
+  border-radius: 10px;
+}
+.ee-suggest span { flex: 1 1 220px; }
+.ee-btn-small {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg, var(--surface, #fff));
+  border: 1px solid var(--border);
+}
+/* Until a parish is chosen there is nowhere to put a poster or a card. */
+.ee.ee-no-parish > :not(.ee-parish) { display: none; }
+
 /* ── The poster ── */
 .ee-drop {
   display: flex;
@@ -82,7 +113,7 @@
     align-items: start;
     gap: 14px 22px;
   }
-  .ee.has-poster .ee-strip { grid-column: 1 / -1; }
+  .ee.has-poster .ee-strip, .ee.has-poster .ee-parish, .ee.has-poster .ee-suggest { grid-column: 1 / -1; }
   .ee.has-poster .ee-poster { position: sticky; top: 0; }
   .ee.has-poster .ee-poster-card { flex-direction: column; }
   .ee.has-poster .ee-thumb { width: 100%; max-height: 62vh; object-fit: contain; }

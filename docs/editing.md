@@ -191,3 +191,33 @@ under their field, and one shared checker (`public/shared/event-checks.js`)
 says what is worth a look — above all a printed weekday that disagrees with the
 date, which is how a misread date usually shows itself. Missing title, date or
 start time blocks Publish; the Worker runs the same checker before it writes.
+
+**A draft can change parish until it is published.** The editor's first row is
+a **Parish** picker — the parishes this person may publish at, by name — in both
+hosts; /admin's own select, which fixed the parish once a draft existed, is
+gone. It exists because of the usual mistake: St Elias, Wollongong's youth night
+dropped while another parish's sheet was open, read perfectly, and then
+uncorrectable except by discarding it. So the reader answers **whose poster it
+is** in a field of its own (`other_parish`, the name and suburb as printed, only
+when it is not the parish the draft is at), the Worker matches that to a parish
+on file (`matchParish` in `worker/lib/parish-match.mjs` — the dedication and the
+suburb, with a venue's street address as a third witness, and nothing at all on
+a tie, because "St Nicholas" alone is twenty parishes) and keeps it on the draft
+(`drafts.read_parish`). The editor then says *This poster looks like it is from
+St Elias, Wollongong* with **Move it there** — or, when it is not one of this
+person's parishes, says whose it is and offers nothing; or names it as printed
+when no parish clearly matches. Nothing moves a draft but a person.
+
+Moving is `PATCH /api/admin/drafts/:id {parish_id}`, scoped on **both** parishes
+— a contact moves drafts between their own and nowhere else — and refused while
+the poster is still being read (409). The cards go as they are, less two things
+that only made sense where they were (`moveDraft`): the new parish in "also
+appears at", and a venue the read gave that is **only the new parish's own
+address** — St Elias's address was rightly "elsewhere" from the parish the poster
+was dropped at, and is just the church once the draft is St Elias's. A venue
+somebody typed, or one naming a room at that address ("Parish hall, 86 Kenny
+St"), stays. The same test (`isOwnVenue`) runs on every read, because the reader
+gives a parish its own address as a venue even when told not to, and the card
+then reads as if the event were somewhere else. In the editor, "replaces" starts
+again for the new parish, and a tick on a service the list no longer shows is
+dropped rather than left to combine invisibly on Publish.

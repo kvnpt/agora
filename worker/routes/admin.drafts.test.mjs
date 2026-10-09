@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 import { Router } from '../lib/router.mjs';
 import { registerAdminRoutes } from './admin.mjs';
 import { expandWindow } from '../lib/expand.mjs';
-import { DRAFTS_DDL } from '../lib/drafts.mjs';
+import { DRAFTS_DDL, ensureDraftTables } from '../lib/drafts.mjs';
 import { isDataWrite } from '../lib/data-version.mjs';
 import { haikuStream, fakeFetch } from '../lib/test-fakes.mjs';
 import sse from '../../public/shared/sse.js';
@@ -396,6 +396,7 @@ test('draft writes leave the public data version alone; publishing moves it', ()
   assert.equal(w('POST', '/api/admin/drafts'), false);
   assert.equal(w('PATCH', '/api/admin/draft-events/4'), false);
   assert.equal(w('POST', '/api/admin/drafts/3/poster'), false);
+  assert.equal(w('PATCH', '/api/admin/drafts/3'), false, 'moving a draft is still a draft');
   assert.equal(w('DELETE', '/api/admin/drafts/3'), false);
   assert.equal(w('POST', '/api/admin/draft-events/4/publish'), true);
   assert.equal(w('POST', '/api/admin/events'), true);
@@ -414,4 +415,125 @@ test('the first-use DDL builds the same tables as the baseline', () => {
   }
   const idx = (db) => db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('drafts','draft_events') ORDER BY name").all();
   assert.deepEqual(idx(lazy), idx(base));
+});
+
+test('a database made before 019 gets read_parish on first use', async () => {
+  const raw = new Database(':memory:');
+  raw.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
+  raw.exec(fs.readFileSync('d1/migrations/018-drafts.sql', 'utf8'));
+  const has = () => raw.prepare('PRAGMA table_info(drafts)').all().some(c => c.name === 'read_parish');
+  assert.equal(has(), false);
+  await ensureDraftTables(new D1(raw));
+  assert.equal(has(), true);
+  await ensureDraftTables(new D1(raw));   // and again, as the next isolate would: no duplicate column
+  assert.equal(has(), true);
+});
+
+// ── moving a draft: the poster was another parish's ──
+
+const ELIAS = 'antiochian-stelias-wollongong';      // 86 Kenny Street, Wollongong NSW 2500
+const PUNCHBOWL = 'antiochian-stnicholas-punchbowl';
+const RYDE = 'antiochian-stmichaelgabriel-ryde';
+
+/** St Elias's youth night, dropped while another parish's editor was open. */
+const ELSEWHERE = {
+  kind: 'event',
+  other_parish: { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong' },
+  events: [{ title: 'Youth Movie Night', date: '2026-11-13', weekday_printed: 'Friday', year_printed: false,
+    start_time: '19:00', end_time: null, event_type: 'youth', languages: [], venue: '86 Kenny St, Wollongong NSW',
+    description: 'A movie and pizza.', notes: [{ field: 'venue', text: 'Address from the foot of the poster.' }] }],
+  notes: [],
+};
+
+const readAt = async (f, parishId, doc) => {
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: parishId })).body;
+  const { frames } = await withFetch(fakeFetch(haikuStream(JSON.stringify(doc))), () => f.poster(d.id));
+  return frames[frames.length - 1].draft;
+};
+
+test('another parish’s poster names that parish, and moving there drops the venue that was only its address', async () => {
+  const f = fresh({ role: 'editor' });
+  const read = await readAt(f, PUNCHBOWL, ELSEWHERE);
+  assert.deepEqual(read.read_parish,
+    { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong', parish_id: ELIAS });
+  const cid = read.cards[0].id;
+  assert.equal(read.cards[0].location_override, '86 Kenny St, Wollongong NSW', 'somewhere else, seen from Punchbowl');
+  assert.ok(read.cards[0].read_fields.includes('location_override'));
+  // Ticked before anybody noticed whose poster it was.
+  await f.call('PATCH', `/api/admin/draft-events/${cid}`, { also_at: [ELIAS, RYDE] });
+
+  const moved = await f.call('PATCH', `/api/admin/drafts/${read.id}`, { parish_id: ELIAS });
+  assert.equal(moved.status, 200);
+  assert.deepEqual([moved.body.parish_id, moved.body.parish_name], [ELIAS, 'St Elias, Wollongong']);
+  const card = moved.body.cards[0];
+  assert.equal(card.id, cid, 'the same card, moved — not a copy');
+  assert.equal(card.location_override, null, 'just the church, now the draft is the church’s');
+  assert.ok(!card.read_fields.includes('location_override'));
+  assert.deepEqual(card.read_notes.filter(n => n.field === 'location_override'), []);
+  assert.deepEqual(card.also_at, [RYDE], 'not also at its own parish');
+  assert.deepEqual([card.title, card.date, card.start_time], ['Youth Movie Night', '2026-11-13', '19:00']);
+  assert.ok(card.read_fields.includes('title'), 'the rest is still as read, marks and all');
+  assert.equal(moved.body.read_parish.parish_id, ELIAS, 'kept: the editor hides it once the draft is there');
+  assert.equal((await f.call('GET', `/api/admin/drafts?parish=${ELIAS}`)).body.length, 1);
+  assert.equal((await f.call('GET', `/api/admin/drafts?parish=${PUNCHBOWL}`)).body.length, 0);
+});
+
+test('a venue somebody typed, or a room at the address, survives a move', async () => {
+  const f = fresh({ role: 'editor' });
+  const typed = (await f.call('POST', '/api/admin/drafts',
+    { parish_id: PUNCHBOWL, card: { title: 'Picnic', location_override: '86 Kenny St, Wollongong' } })).body;
+  const moved = (await f.call('PATCH', `/api/admin/drafts/${typed.id}`, { parish_id: ELIAS })).body;
+  assert.equal(moved.cards[0].location_override, '86 Kenny St, Wollongong', 'a person’s words are theirs');
+
+  const hall = await readAt(f, PUNCHBOWL, { ...ELSEWHERE,
+    events: [{ ...ELSEWHERE.events[0], venue: 'Parish hall, 86 Kenny St, Wollongong' }] });
+  const movedHall = (await f.call('PATCH', `/api/admin/drafts/${hall.id}`, { parish_id: ELIAS })).body;
+  assert.equal(movedHall.cards[0].location_override, 'Parish hall, 86 Kenny St, Wollongong', 'a room to find');
+});
+
+test('read at the parish itself: its own address is no venue, and "another parish" that is this one is dropped', async () => {
+  const f = fresh({ role: 'editor' });
+  const read = await readAt(f, ELIAS, ELSEWHERE);
+  assert.equal(read.read_parish, null, 'the reader was wrong that it was somebody else’s');
+  assert.equal(read.cards[0].location_override, null, 'the card that started this: 86 Kenny St at 86 Kenny Street');
+  assert.ok(!read.cards[0].read_fields.includes('location_override'));
+  assert.deepEqual(read.cards[0].read_notes.filter(n => n.field === 'location_override'), []);
+  assert.equal(read.cards[0].title, 'Youth Movie Night');
+});
+
+test('a parish the read cannot place is kept as printed, and choosing one answers it', async () => {
+  const f = fresh({ role: 'editor' });
+  const read = await readAt(f, PUNCHBOWL, { ...ELSEWHERE,
+    other_parish: { name: 'Holy Archangels Mission', place: 'Toowoomba' },
+    events: [{ ...ELSEWHERE.events[0], venue: 'Showground pavilion' }] });
+  assert.deepEqual(read.read_parish, { name: 'Holy Archangels Mission', place: 'Toowoomba', parish_id: null });
+  const moved = (await f.call('PATCH', `/api/admin/drafts/${read.id}`, { parish_id: RYDE })).body;
+  assert.equal(moved.read_parish, null);
+  assert.equal(moved.cards[0].location_override, 'Showground pavilion');
+});
+
+test('moving is scoped on both parishes, and refused mid-read or to nowhere', async () => {
+  const f = fresh({ role: 'parish', parishIds: [PUNCHBOWL] });
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: PUNCHBOWL, card: { title: 'Ours' } })).body;
+  assert.equal((await f.call('PATCH', `/api/admin/drafts/${d.id}`, { parish_id: ELIAS })).status, 403,
+    'not one of theirs to move it to');
+  assert.equal(f.raw.prepare('SELECT parish_id FROM drafts WHERE id = ?').get(d.id).parish_id, PUNCHBOWL);
+
+  f.raw.prepare("UPDATE admin_roles SET parish_ids = ? WHERE email = 'dev'").run(JSON.stringify([PUNCHBOWL, ELIAS]));
+  assert.equal((await f.call('PATCH', `/api/admin/drafts/${d.id}`, {})).status, 400);
+  assert.equal((await f.call('PATCH', `/api/admin/drafts/${d.id}`, { parish_id: PUNCHBOWL })).body.parish_id, PUNCHBOWL,
+    'where it already is: nothing to do');
+  f.raw.prepare("UPDATE drafts SET read_status = 'reading' WHERE id = ?").run(d.id);
+  assert.equal((await f.call('PATCH', `/api/admin/drafts/${d.id}`, { parish_id: ELIAS })).status, 409);
+  f.raw.prepare('UPDATE drafts SET read_status = NULL WHERE id = ?').run(d.id);
+  assert.equal((await f.call('PATCH', `/api/admin/drafts/${d.id}`, { parish_id: ELIAS })).status, 200);
+
+  f.raw.prepare("UPDATE admin_roles SET parish_ids = ? WHERE email = 'dev'").run(JSON.stringify([PUNCHBOWL]));
+  assert.equal((await f.call('PATCH', `/api/admin/drafts/${d.id}`, { parish_id: PUNCHBOWL })).status, 403,
+    'and not back out of a parish that is not theirs');
+
+  const o = fresh({ role: 'owner' });
+  const od = (await o.call('POST', '/api/admin/drafts', { parish_id: PUNCHBOWL })).body;
+  assert.equal((await o.call('PATCH', `/api/admin/drafts/${od.id}`, { parish_id: 'nowhere' })).status, 400);
+  assert.equal((await o.call('PATCH', `/api/admin/drafts/${od.id}`, { parish_id: '_unassigned' })).status, 400);
 });

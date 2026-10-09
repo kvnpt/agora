@@ -113,7 +113,9 @@ Four tabs, one global jurisdiction filter, one privilege level.
 published, across every parish the account may edit, and its + opens the
 add-event editor — the same component the app's parish sheet opens
 (`public/shared/event-editor.js`), so a poster is read and an event is
-published the same way from either place.
+published the same way from either place. Its parish is the editor's own
+picker: with more than one parish to choose from it asks first, and it moves a
+draft whose poster turned out to be another parish's (docs/editing.md).
 
 And a fifth surface that is not here at all. Editing a single occurrence —
 cancel this Sunday, move it to 10am, combine it with the cathedral — lives in

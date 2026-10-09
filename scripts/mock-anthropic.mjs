@@ -6,7 +6,8 @@
 //   node scripts/mock-anthropic.mjs [port]          # default 8788
 //   wrangler dev ... --var ANTHROPIC_BASE_URL:http://127.0.0.1:8788
 //
-//   POST /__mode   {"mode":"one"|"three"|"not_an_event"|"busy","delay":60}
+//   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy","delay":60}
+//                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
 // Dev tooling only — nothing deployed imports it.
@@ -19,6 +20,7 @@ const calls = [];
 const DOCS = {
   one: {
     kind: 'event',
+    other_parish: null,
     events: [{
       title: 'Youth Night: Faith and Film', date: '2026-11-14', weekday_printed: 'Saturday', year_printed: false,
       start_time: '19:00', end_time: '21:30', event_type: 'youth', languages: ['English'], venue: 'Church hall',
@@ -29,6 +31,7 @@ const DOCS = {
   },
   three: {
     kind: 'several_events',
+    other_parish: null,
     events: [
       { title: 'Lenten Talk: The Ladder of Divine Ascent', date: '2026-11-18', weekday_printed: 'Wednesday', year_printed: false,
         start_time: '19:30', end_time: '20:30', event_type: 'talk', languages: [], venue: null,
@@ -42,7 +45,19 @@ const DOCS = {
     ],
     notes: [],
   },
-  not_an_event: { kind: 'not_an_event', events: [], notes: ['The image is a photo of the church with no event on it.'] },
+  // Dropped at a parish other than St Elias: the reader says whose it is, and
+  // gives St Elias's address as the venue — somewhere else, from there.
+  elsewhere: {
+    kind: 'event',
+    other_parish: { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong' },
+    events: [{
+      title: 'Youth Movie Night', date: '2026-11-13', weekday_printed: 'Friday', year_printed: false,
+      start_time: '19:00', end_time: '21:30', event_type: 'youth', languages: [], venue: '86 Kenny St, Wollongong NSW',
+      description: 'A movie and pizza for the youth of the parish. Bring a friend.', notes: [],
+    }],
+    notes: [],
+  },
+  not_an_event: { kind: 'not_an_event', other_parish: null, events: [], notes: ['The image is a photo of the church with no event on it.'] },
 };
 
 const frame = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
