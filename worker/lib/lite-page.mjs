@@ -446,6 +446,19 @@ function timetableHTML(m, rules, heading, empty = '') {
     </section>`;
 }
 
+/**
+ * "Become a contributor": the claim (/admin?claim=, behind Cloudflare Access),
+ * under the parish's source line — where the card says where its details came
+ * from and how old they are, and so the place to offer to keep them right. It
+ * sat at the foot of the card, under the timetable, where it read as a note
+ * about the service times alone. The app's parish sheet puts it in the same
+ * place (contributeButtonHTML in public/app.js). nofollow: it leads to a
+ * sign-in, which is nothing for a crawler.
+ */
+function contributeHTML(m) {
+  return `<a class="lc-contrib" href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">Become a contributor</a>`;
+}
+
 function actionsHTML(m) {
   const p = m.parish;
   const btn = (href, label, cls = '') => `<a class="lc-btn${cls}" href="${esc(href)}" rel="noopener">${esc(label)}</a>`;
@@ -550,10 +563,10 @@ export function renderLitePage(m) {
   <section class="lc-info">
     ${p.address ? `<button class="lc-addr" type="button" data-copy="${esc(p.address)}">${esc(p.address)}</button>` : ''}
     ${sourceLine(p.info_source_name, p.info_source_ref, p.info_checked_at, m.now, 'lc-src')}
+    ${contributeHTML(m)}
     ${actionsHTML(m)}
   </section>
-  ${bodyHTML(m)}
-  <p class="lc-claim"><a href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${m.rules.length ? 'Is this your parish? Help keep its times right' : 'Is this your parish? Add its service times'} →</a></p>`,
+  ${bodyHTML(m)}`,
   });
 }
 
@@ -650,7 +663,7 @@ h1{margin:0;font-size:22px;line-height:1.15;letter-spacing:-.01em}
 .lc-app{display:flex;align-items:center;justify-content:center;margin:16px 0 0;padding:12px 16px;border-radius:12px;background:var(--juris);color:#fff;font-weight:700;font-size:15px;text-decoration:none;box-shadow:0 1px 3px color-mix(in srgb,var(--juris) 40%,transparent)}
 .lc-app:hover{filter:brightness(1.08)}
 .lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:24px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
-.lc-claim{margin:10px 0 0;font-size:13px}.lc-claim a{color:var(--muted)}
+.lc-contrib{display:flex;width:fit-content;align-items:center;margin:0 0 12px;padding:5px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12.5px;font-weight:600;text-decoration:none}.lc-contrib:hover{color:var(--text);background:var(--surface)}
 .tt-head{padding-bottom:4px}
 .tt-region{padding:14px 0 0}
 .tt-region>h2{margin:8px 0 4px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}

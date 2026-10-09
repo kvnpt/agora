@@ -616,7 +616,7 @@ export function registerAdminRoutes(router) {
       .filter(n => !n.seen).length,
   })));
 
-  // ── claims: "Is this your parish?" ──
+  // ── claims: "Become a contributor" ──
   //
   // worker/lib/claims.mjs has the why. The claimant is signed in but usually
   // has no role yet, so these two use `signedIn`, not `guarded`.

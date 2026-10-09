@@ -5097,13 +5097,15 @@ button.ps-avatar { cursor: pointer; }
 .ps-link-field > .ps-btn-ghost { margin-bottom: 10px; }
 .ps-delete-parish { margin-left: auto; }
 
-/* "Is this your parish?" — under the timetable, quiet: it is an offer, not
-   part of the times. */
-.ps-claim {
-  display: block; margin: 8px 2px 0; font-size: 12px; color: var(--text-muted);
-  text-decoration: underline; text-underline-offset: 2px;
+/* "Become a contributor", under the parish's source line: a small ghost pill,
+   so it reads as an offer about the page and not as one of the parish's own
+   actions in the row below it. */
+.ps-btn.ps-contribute {
+  margin: 0 0 12px;
+  padding: 5px 12px;
+  font-size: 12px;
 }
-.ps-claim:hover { color: var(--text); }
+.ps-btn.ps-contribute .ps-btn-glyph { width: 13px; height: 13px; }
 
 /* Ended rules, in the timetable's edit mode only. */
 .ps-ended { margin-top: 10px; font-size: 12px; color: var(--text-muted); }

@@ -726,7 +726,7 @@ CREATE TABLE admin_proposals (
 CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────
--- parish_claims — "Is this your parish?"
+-- parish_claims — "Become a contributor"
 --
 -- Somebody asking to keep one parish's page right. Made by a VERIFIED address:
 -- the claimant signs in through Cloudflare Access first, and `email` is the
