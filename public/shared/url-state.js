@@ -128,7 +128,43 @@
       .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc))[0] || null;
   }
 
-  const api = { JURISDICTION_KEYS, isEventId, classifyPath, firstEventOnDay };
+  /**
+   * Which kind of page a classified path is, or null for the app's own views.
+   *
+   *   'parish'    — one parish, with or without a focus (/sgr, /sgr/evening,
+   *                 /sgr/next-tue, /sgr/services)
+   *   'event'     — one event by id (/102, /42:2026-10-04)
+   *   'timetable' — any other filter link (/greek/qld, /liturgy, /smg+sgr,
+   *                 /services)
+   *   null        — the home page, a link with a date and no parish, /social,
+   *                 /donate, and a path that names nothing
+   *
+   * Shared because two readers act on it: the Worker answers these with a
+   * page (worker/routes/pages.mjs), and the app, when it is the one answering
+   * — for an admin — lays a parish or an event out as that page rather than
+   * as a sheet over the map. The two must agree on which links are pages.
+   */
+  function pageKind(r) {
+    if (!r || r.socialOnly || r.donate) return null;
+    // A card is one parish's, so a jurisdiction, a region or a language beside
+    // one is a question the card does not answer; the app does.
+    const scoped = r.jurisdiction || r.location || r.englishOnly;
+    if (r.parishSlugs && r.parishSlugs.length === 1) return scoped ? null : 'parish';
+    if (r.eventId) {
+      const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
+        && !r.part && !r.services;
+      return bare ? 'event' : null;
+    }
+    // "What is on next Sunday" is a list of dates across parishes, which the
+    // app answers. A path that names nothing is the home page, or a segment
+    // nobody recognises.
+    if (r.dateFocus) return null;
+    const names = scoped || r.services || r.service || r.day != null || r.part
+      || (r.parishSlugs && r.parishSlugs.length > 1);
+    return names ? 'timetable' : null;
+  }
+
+  const api = { JURISDICTION_KEYS, isEventId, classifyPath, firstEventOnDay, pageKind };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraUrlState = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

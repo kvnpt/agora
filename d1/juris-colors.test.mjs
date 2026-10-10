@@ -189,3 +189,15 @@ test('a row holding something that is not a colour never reaches the browser', (
     assert.deepEqual(r, { greek: '#00508f' });
   });
 });
+
+test('the dark-mode lift is shared, and lifts only what is too dark to read', () => {
+  const J = createRequire(import.meta.url)('../public/shared/jurisdiction-colors.js');
+  // The values map.js produced before the lift moved here.
+  assert.equal(J.liftForDark('#1e3a5f'), '#80a1cc');
+  assert.equal(J.liftForDark('#ffffff'), '#ffffff', 'already bright: unchanged');
+  assert.equal(J.liftForDark('not a colour'), 'not a colour');
+  // Overrides passed in, not set on the module — an isolate serves many requests.
+  assert.equal(J.jurisdictionColorFrom({ greek: '#123456' }, 'greek'), '#123456');
+  assert.equal(J.jurisdictionColorFrom({ greek: 'red; }' }, 'greek'), J.JURISDICTION_COLORS.greek);
+  assert.equal(J.jurisdictionColorFrom({}, 'other'), J.JURISDICTION_COLOR_FALLBACK);
+});

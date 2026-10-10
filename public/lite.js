@@ -33,17 +33,23 @@
       var badge = document.createElement('span');
       badge.className = 'lc-badge now';
       badge.textContent = 'Now';
-      var host = el.querySelector('summary') || el.querySelector('h2');
+      // Beside the title, as the app's badges sit; the pinned card's own copy
+      // of the event carries it, not the article around it.
+      var host = el.querySelector('.event-title') || el.querySelector('summary');
       if (host) host.appendChild(badge);
     } else if (end < now && el.classList.contains('lc-ev')) {
       el.classList.add('past');
     }
   });
 
+  // The app's buttons carry an icon beside their words, so only the words
+  // change: the label span when there is one, the whole button when not.
   function flash(el, text) {
-    var saved = el.textContent;
-    el.textContent = text;
-    setTimeout(function () { el.textContent = saved; }, 1400);
+    var label = el.querySelector('.ps-info-copy-text, span:not(.ps-btn-glyph)') || el;
+    var saved = label.textContent;
+    label.textContent = text;
+    el.classList.add('copied');
+    setTimeout(function () { label.textContent = saved; el.classList.remove('copied'); }, 1400);
   }
   function copy(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);

@@ -45,8 +45,9 @@ jurisdiction, filtered by `public/shared/timetable.js` as the app's Schedules
 view is. The home page is still the app. It uses the
 app's lens and the app's grammar (`public/shared/url-state.js`, which
 `detectUrlState()` now calls too), fails open to the app, and is skipped for
-`?app` and for the `agora_admin` cookie the app sets while someone holds a
-role. `run_worker_first` is `/*` with negations to make this possible, and
+`?app`, and for the `agora_admin` cookie at a parish or event link — where
+the app answers instead and lays that card out as the same page, with its
+editors (page mode). The pages wear `/app.css` and the app's own markup. `run_worker_first` is `/*` with negations to make this possible, and
 **a negation must never name an image extension** — negatives are tested
 first, and `!/*.png` would send `/posters/*.png` past the Worker's R2 proxy.
 Only parish pages are indexable for now; `docs/lite-pages.md` records why
