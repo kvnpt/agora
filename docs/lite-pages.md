@@ -58,6 +58,10 @@ for the map app. A timetable page has nothing to edit, so admins get it like any
 - the way into the app is a button in the parish's colour directly above the list
   (**Open in the app →**, the same link with `?app`). It used to be a line of small
   print in the footer;
+- the box above is headed **"Antiochian timetable"** — what it is, not whose church —
+  and the list under it **"Coming up"**, in the same shape: the rule, then what it
+  projects. A focus banner ("Showing Vespers") heads the list instead when the link
+  narrows it, in the app's sheet as here;
 - times in the parish's zone; nothing "now"-relative is baked in — `public/lite.js`
   marks "Now" and fades past services on the viewer's clock, settles relative dates in
   the address bar (`/next-tue` → `/2026-10-06`), and prefetches the app on idle.

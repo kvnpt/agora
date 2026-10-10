@@ -5286,6 +5286,7 @@ function paintParishSheetContent(parishId, opts = {}) {
       ${calendarButtonHTML('ps-filter-cal')}
     </div>
     ${schedSectionHtml}
+    ${feedHeaderHTML(parish)}
     ${scheduleFocusBannerHtml(parish)}
     ${dateFocusBannerHtml(parish)}
     <div class="ps-events-list"></div>
@@ -6621,9 +6622,12 @@ function renderScheduleDaysHTML(items) {
       // timetable does; the title follows at once, two lines at most, with the
       // chevron at its end rather than out at the panel's edge. Everything that
       // qualifies the row goes underneath, quieter.
-      html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span><img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></span></div>`;
+      // The languages sit on the title's own line, before the chevron: they
+      // are part of what the service IS ("Liturgy · Arabic, English"), and on
+      // the line underneath they cost every bilingual parish a row per service.
+      html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span>${langLabel}<img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></span></div>`;
       const rangeLabel = ruleRangeLabel(s);
-      const meta = `${womLabel}${rangeLabel}${langLabel}${scopeLabel}${breakChip}`;
+      const meta = `${womLabel}${rangeLabel}${scopeLabel}${breakChip}`;
       if (meta) html += `<div class="si-meta">${meta}</div>`;
       // While a rule is on a break the timetable still shows its time — the
       // rule has not changed — but the honest reading of the row is "not this
@@ -7196,7 +7200,7 @@ function renderServices() {
   }
   for (const [juris, pgs] of byJuris) {
     const jColor = getJurisdictionColor(juris);
-    const jLabel = capitalize(juris) + ' Orthodox';
+    const jLabel = timetableLabel(juris);
     html += `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">`;
     html += `<div class="section-header jurisdiction-header">${esc(jLabel)}</div>`;
     for (const { pid, grp: { info, items } } of pgs) {
@@ -8360,7 +8364,7 @@ function parishTimetableHTML(parish, scheds) {
   const pid = parish.id;
   const editing = state.isAdmin && state.scheduleEditMode === pid;
   const jColor = getJurisdictionColor(parish.jurisdiction);
-  const jLabel = capitalize(parish.jurisdiction || '') + ' Orthodox';
+  const jLabel = timetableLabel(parish.jurisdiction);
   const initial = (parish.name || parish.full_name || '?')[0].toUpperCase();
   const avatar = parish.logo_path
     ? `<div class="parish-schedule-avatar"><img src="${esc(parish.logo_path)}" alt=""></div>`
@@ -8384,6 +8388,30 @@ function parishTimetableHTML(parish, scheds) {
           <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
       </div>
     </div>`;
+}
+
+/**
+ * "Antiochian timetable" over a jurisdiction's box of rules. It said
+ * "Antiochian Orthodox", which named the church and not what the box is — and
+ * under it the sheet goes on to the dated services, which are not the
+ * timetable but what it projects ("Coming up", feedHeaderHTML). A parish of no
+ * listed jurisdiction gets the plain word.
+ */
+function timetableLabel(juris) {
+  const j = String(juris || '').toLowerCase();
+  return j && j !== 'other' ? `${capitalize(j)} timetable` : 'Timetable';
+}
+
+/**
+ * "Coming up": where the timetable — what happens every week — gives way to
+ * the dated services and events it projects, the date lens made visible. Drawn
+ * like the timetable's own header so the sheet's two halves read as a pair.
+ * A focus banner heads the list instead when there is one, saying what it is
+ * narrowed to (CSS hides this beside it); the lite card does the same.
+ */
+function feedHeaderHTML(parish) {
+  const jColor = getJurisdictionColor(parish && parish.jurisdiction);
+  return `<div class="section-header feed-header" style="--juris-color:${esc(jColor)}">Coming up</div>`;
 }
 
 /**

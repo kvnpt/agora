@@ -103,6 +103,17 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   assert.match(html, /<link rel="stylesheet" href="\/app\.css">/, "the app's own stylesheet");
   assert.match(html, /<a class="lc-app" href="\/sgr\?app">/, 'the way into the app with this card open');
   assert.match(html, /<details class="lc-ev/, 'the occurrences open without JavaScript');
+  // The timetable's box is the timetable; the list under it is what it projects.
+  assert.match(html, /<h2 class="section-header jurisdiction-header" id="lt-h">Antiochian timetable<\/h2>/);
+  assert.match(html, /<h2 class="section-header feed-header" id="ll-h"[^>]*>Coming up<\/h2>/);
+});
+
+test('a rule’s languages sit on its title’s line, before the chevron', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`UPDATE schedules SET languages = '["Arabic","English"]' WHERE parish_id = ?`).run(PARISH);
+  const times = timesOf((await get('/sgr')).html);
+  assert.match(times, /<span class="si-title"><span class="schedule-item-title"[^>]*>[^<]*<\/span><span class="schedule-item-lang">Arabic, English<\/span><img class="si-chev"/);
+  assert.doesNotMatch(times, /<div class="si-meta">[^]*?schedule-item-lang/, 'not on a line of its own underneath');
 });
 
 test('a relative date settles on its day, pins what is on then, and stays out of the index', async () => {
@@ -319,8 +330,8 @@ test('/services is every parish timetable, by state then jurisdiction, alphabeti
   assert.match(html, /<h1>Orthodox service times<\/h1>/);
   assert.deepEqual(regions(html), ['New South Wales', 'Queensland']);
   const nsw = between(html, 'aria-label="New South Wales"', 'aria-label="Queensland"');
-  assert.match(nsw, /<div class="jurisdiction-box tt-juris-box"[^>]*>\s*<div class="section-header jurisdiction-header">Antiochian Orthodox<\/div>/,
-    "each jurisdiction in the app's framed box");
+  assert.match(nsw, /<div class="jurisdiction-box tt-juris-box"[^>]*>\s*<div class="section-header jurisdiction-header">Antiochian timetable<\/div>/,
+    "each jurisdiction in the app's framed box, named for what it is");
   const listed = names(nsw);
   assert.deepEqual(listed, [...listed].sort((a, b) => a.localeCompare(b)), 'parishes alphabetical');
   assert.ok(listed.includes('St George Cathedral, Redfern'));
