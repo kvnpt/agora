@@ -5140,3 +5140,63 @@ button.ps-avatar { cursor: pointer; }
 }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 2s; } }
+
+/* ── Page mode ──
+   An admin arriving at a parish or event link: the parish sheet laid out as
+   the page a visitor gets from the Worker, with the app's controls on it.
+   decidePageMode in app.js; the visitor's page is worker/lib/lite-page.mjs,
+   and the bar below matches its .lite-bar. The map and its controls are put
+   away (still loaded, so the X brings them back at once). */
+body.page-mode .map-container,
+body.page-mode #jurisdiction-banner-wrap,
+body.page-mode #parish-filter-row-wrap,
+body.page-mode #reset-fab,
+body.page-mode #location-fab,
+body.page-mode #filter-active-stack,
+body.page-mode #mode-url,
+body.page-mode #btn-filters,
+body.page-mode #bottom-sheet { visibility: hidden !important; }
+body.page-mode .parish-sheet,
+body.page-mode[data-layout="desktop"] .parish-sheet {
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: auto; max-width: none;
+  height: auto !important;
+  transform: none !important;
+  border-radius: 0;
+  box-shadow: none;
+}
+body.page-mode .parish-sheet-grab-handle { display: none; }
+body.page-mode #parish-sheet-scroll {
+  overflow-y: auto !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  margin-top: 48px;
+}
+body.page-mode #parish-sheet-content { max-width: 680px; margin: 0 auto; }
+body.page-mode .parish-sheet::before {
+  content: 'orthodoxy.au';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-light);
+  z-index: 11;
+}
+body.page-mode .parish-sheet-close,
+body.page-mode[data-layout="desktop"] .parish-sheet-close {
+  top: 6px;
+  right: 8px;
+  z-index: 12;
+  width: 36px;
+  height: 36px;
+  font-size: 26px;
+  border-radius: 50%;
+}
+

@@ -457,6 +457,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.agoraMap?.resize?.();
   });
   state.filters.multiParish = loadMultiParishPref();
+  // Before anything paints: a page-mode load must never flash the map.
+  decidePageMode();
   detectUrlState();
   disablePageZoom();
   disablePullToRefresh();
@@ -725,6 +727,35 @@ function dateSlugFor(date, precision) {
   const D = window.AgoraDates;
   return D ? D.dateSlugFor(date, precision) : null;
 }
+
+// ── Page mode ──
+//
+// A parish or event link answers a visitor with its server-rendered page
+// (worker/routes/pages.mjs) and an admin with this app, because the editors
+// are here. So that an admin sees the page a visitor sees, with the controls
+// on it, the app lays that card out as the page: the parish sheet full-screen
+// and still, the map put away behind it, the same bar and X across the top.
+// The X puts the card away and the map comes forward — the app as everyone
+// knows it. Only on ARRIVING at such a link: a parish opened from the map is
+// still the sheet over the map, which is what that sheet is good at.
+//
+// Which links are pages is url-state.js's pageKind, the Worker's own answer.
+function decidePageMode() {
+  // "Open in the app" (?app) asked for the app, not the page.
+  if (/[?&]app(=|&|$)/.test(window.location.search)) return;
+  const U = window.AgoraUrlState.classifyPath(window.location.pathname, { today: todayIso() });
+  const kind = window.AgoraUrlState.pageKind(U);
+  if (kind === 'parish' || kind === 'event') document.body.classList.add('page-mode');
+}
+
+function exitPageMode() {
+  if (!document.body.classList.contains('page-mode')) return;
+  document.body.classList.remove('page-mode');
+  // The sheet's snaps and the map's canvas were measured for a page.
+  window.dispatchEvent(new Event('resize'));
+  if (window.agoraMap) window.agoraMap.resize();
+}
+window.agoraExitPageMode = exitPageMode;
 
 function detectUrlState() {
   // Subdomain fallback — honoured while <juris>.orthodoxy.au redirects roll out
@@ -2089,6 +2120,12 @@ async function applyStartMode() {
     syncURL({ replace: true });
   }
   state._initialLoad = false;
+  // A page-mode link whose parish or event is not on file opens no card, and
+  // a page with nothing on it is worse than the map. The card opens 150ms
+  // after load (see above), so look a little after that.
+  setTimeout(() => {
+    if (document.body.classList.contains('page-mode') && !window.agoraParishSheetVisible) exitPageMode();
+  }, 600);
   if (window.lsLog) window.lsLog('✓ ready');
   if (window.lsHide) window.lsHide();
 }
@@ -4066,7 +4103,10 @@ function initParishSheet() {
   const scroll = document.getElementById('parish-sheet-scroll');
   const fab = document.getElementById('location-fab');
   const filterFab = document.getElementById('btn-filters');
-  const isDesktop = () => window.agoraIsDesktop?.() ?? false;
+  // Page mode is a still panel too: no snaps, no drag, no transform — the
+  // same path the desktop layout already takes.
+  const isDesktop = () => (window.agoraIsDesktop?.() ?? false)
+    || document.body.classList.contains('page-mode');
   // Share FAB (bottom-left) needs to track parish-sheet height too —
   // earlier rounds added it to the main sheet's trackedFabs but the
   // parish sheet had its own [fab, filterFab] iteration.
@@ -4795,6 +4835,9 @@ function openParishSheet(parishId, opts = {}) {
   }
 }
 function closeParishSheet() {
+  // Out of page mode first, so the sheet is measured as a sheet again and
+  // slides away over the map like any other.
+  exitPageMode();
   // Editing belongs to the sheet. Leaving it with the mode still set would
   // mean the next parish opened — or the same one re-opened — came up with a
   // form already spread open, which is the surprise this mode exists to end.

@@ -58,6 +58,10 @@ const canonical = (html) => (/<link rel="canonical" href="([^"]*)"/.exec(html) |
 const VESPERS = `INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
                  VALUES (?, 6, '18:00', 'Vespers', 'prayer')`;
 const between = (html, from, to) => html.slice(html.indexOf(from), to ? html.indexOf(to) : undefined);
+// The card's two halves, as the app lays them out: the timetable box first,
+// then the list of dates under the way into the app.
+const timesOf = (html) => between(html, '<section class="lc-times', 'class="lc-app"');
+const listOf = (html) => between(html, '<section class="lc-list"', '<footer class="lc-foot"');
 
 test('which paths are lite pages', () => {
   const kinds = {
@@ -94,7 +98,9 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   const ld = JSON.parse(/<script type="application\/ld\+json">([^<]*)<\/script>/.exec(html)[1]);
   assert.equal(ld['@type'], 'Church');
   assert.equal(ld.url, 'https://orthodoxy.au/sgr');
-  assert.match(html, /← Back to App/);
+  assert.match(html, /<a class="lite-close" href="\/" aria-label="[^"]*">&times;<\/a>/, 'an X back to the map');
+  assert.doesNotMatch(html, /Back to App/);
+  assert.match(html, /<link rel="stylesheet" href="\/app\.css">/, "the app's own stylesheet");
   assert.match(html, /<a class="lc-app" href="\/sgr\?app">/, 'the way into the app with this card open');
   assert.match(html, /<details class="lc-ev/, 'the occurrences open without JavaScript');
 });
@@ -121,8 +127,8 @@ test('a service link pins its next occurrence and lists only that service', asyn
   const { html } = await get('/sgr/vespers');
   // The next one is pinned, so a chat preview says WHEN, not just what.
   assert.match(html, /<title>Vespers — Saturday 3 October, 6pm · St George Cathedral, Redfern/);
-  assert.match(html, /<h2 id="ll-h">Vespers<\/h2>/, 'the list is headed by the service');
-  const list = html.slice(html.indexOf('class="lc-list"'), html.indexOf('class="lc-times"'));
+  assert.match(html, /<h2 class="ps-focus-banner-text" id="ll-h">Showing Vespers<\/h2>/, 'the list is headed by the service');
+  const list = listOf(html);
   assert.doesNotMatch(list, /Divine Liturgy/, 'the list is narrowed to the service');
   assert.match(list, /Vespers/);
 });
@@ -134,12 +140,12 @@ test('a part of the day narrows the card to its services and pins the next one',
   assert.equal(canonical(html), 'https://orthodoxy.au/sgr/evening');
   assert.equal(meta(html, 'name', 'robots'), 'noindex,follow');
   assert.match(html, /<title>Vespers — Saturday 3 October, 6pm · St George Cathedral, Redfern/);
-  assert.match(html, /<h2 id="ll-h">Evening services<\/h2>/);
-  const list = between(html, 'class="lc-list"', 'class="lc-times"');
+  assert.match(html, /<h2 class="ps-focus-banner-text" id="ll-h">Showing Evening services<\/h2>/);
+  const list = listOf(html);
   assert.match(list, /Vespers/);
   assert.doesNotMatch(list, /Divine Liturgy/, 'a 10am liturgy is a morning one');
 
-  const morning = between((await get('/sgr/sun/morning/liturgy')).html, 'class="lc-list"', 'class="lc-times"');
+  const morning = listOf((await get('/sgr/sun/morning/liturgy')).html);
   assert.match(morning, /Sunday Divine Liturgy/);
   assert.doesNotMatch(morning, /Vespers/);
 });
@@ -152,18 +158,18 @@ test('/services is the timetable, narrowed by the link, then the way to the upco
   assert.equal(meta(all, 'name', 'robots'), 'noindex,follow');
   assert.doesNotMatch(all, /class="lc-list"/, 'no list of dates');
   assert.doesNotMatch(all, /<article class="lc-pin/, 'and nothing pinned');
-  const times = between(all, 'class="lc-times"');
+  const times = timesOf(all);
   assert.match(times, /Sunday Divine Liturgy/);
   assert.match(times, /Vespers/);
-  assert.ok(all.indexOf('class="lc-times"') < all.indexOf('class="lc-app"'), 'the button is under the timetable');
+  assert.ok(all.indexOf('<section class="lc-times') < all.indexOf('class="lc-app"'), 'the button is under the timetable');
   assert.match(all, /<a class="lc-app" href="\/sgr\?app">View upcoming events →<\/a>/,
     'the app, with every filter but /services');
 
   const eve = (await get('/services/sgr/evening')).html;
   assert.equal(canonical(eve), 'https://orthodoxy.au/sgr/evening/services');
   assert.match(eve, /<title>Evening services at St George Cathedral, Redfern — service times/);
-  assert.match(eve, /<h2 id="lt-h">Evening services<\/h2>/);
-  assert.doesNotMatch(between(eve, 'class="lc-times"'), /Divine Liturgy/);
+  assert.match(eve, /<h2 class="ps-focus-banner-text" id="ll-h">Showing Evening services<\/h2>/);
+  assert.doesNotMatch(timesOf(eve), /Divine Liturgy/);
   assert.match(eve, /<a class="lc-app" href="\/sgr\/evening\?app">View upcoming events →<\/a>/);
 
   const none = (await get('/sgr/wed/services')).html;
@@ -197,7 +203,7 @@ test('an event link — projected or stored — pins that event on its parish ca
     VALUES (?, 'manual', 'Feast of St George', '2026-10-10T23:00:00Z', '2026-10-11T01:00:00Z',
       'feast', 'approved', 'headless', '/posters/x.jpg') RETURNING id`).get(PARISH).id;
   const stored = (await get(`/${id}`)).html;
-  assert.match(stored, /<h2>Feast of St George<\/h2>/);
+  assert.match(stored, /<h2 class="lc-pin-title">Feast of St George<\/h2>/);
   assert.equal(meta(stored, 'property', 'og:image'), 'https://orthodoxy.au/posters/x.jpg', 'the poster previews');
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
 });
@@ -208,7 +214,7 @@ test('a cancelled occurrence previews as cancelled', async () => {
   raw.prepare(`INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind) VALUES (?, '2026-10-04', 'cancelled')`).run(sid);
   const { html } = await get(`/${sid}:2026-10-04`);
   assert.match(meta(html, 'name', 'description'), /^CANCELLED\./);
-  assert.match(html, /class="lc-pin tomb"/);
+  assert.match(html, /class="lc-pin ps-pinned-event tomb"/);
 });
 
 test('everything else is the app, and so is any failure', async () => {
@@ -216,7 +222,11 @@ test('everything else is the app, and so is any failure', async () => {
   for (const p of ['/', '/nosuch', '/nosuch+other', '/greek?app', '/sgr?app', '/999999', '/greek/next-sun']) {
     assert.equal(await get(p), null, p);
   }
-  assert.equal(await get('/sgr', { headers: { cookie: 'x=1; agora_admin=1' } }), null, 'admins get the app');
+  const admin = { headers: { cookie: 'x=1; agora_admin=1' } };
+  assert.equal(await get('/sgr', admin), null, 'an admin at a parish gets the app, where its editors are');
+  assert.equal(await get('/102', admin), null, 'and at an event');
+  const tt = await get('/greek', admin);
+  assert.equal(tt && tt.res.headers.get('x-agora-page'), 'lite', 'a timetable page is an admin\'s page too');
   assert.equal(hasAdminCookie(new Request('https://x/', { headers: { cookie: 'agora_admin=0' } })), false);
   assert.equal(await get('/sgr', { method: 'POST' }), null);
 
@@ -232,7 +242,7 @@ test('a name cannot break out of the page or its structured data', async () => {
   const { html } = await get('/sgr');
   assert.doesNotMatch(html, /<\/script><b>/);
   assert.match(html, /St George \\u003c\/script>\\u003cb>/, 'JSON-LD escapes <');
-  assert.match(html, /<h1>St George &lt;\/script&gt;&lt;b&gt;x&lt;\/b&gt; &quot;q&quot;<\/h1>/);
+  assert.match(html, /<h1 class="ps-name">St George &lt;\/script&gt;&lt;b&gt;x&lt;\/b&gt; &quot;q&quot;<\/h1>/);
 });
 
 test('the sitemap lists every parish and nothing else', async () => {
@@ -262,10 +272,10 @@ test('the timetable drops an ended rule and marks one that starts later', async 
   raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, effective_to)
                VALUES (?, 4, '18:00', 'Paraklesis', 'prayer', '2026-10-15')`).run(PARISH);
   const { html } = await get('/sgr');
-  const times = html.slice(html.indexOf('class="lc-times"'));
+  const times = timesOf(html);
   assert.doesNotMatch(times, /Old Matins/);
-  assert.match(times, /Presanctified Liturgy<small>from 4 Nov<\/small>/);
-  assert.match(times, /Paraklesis<small>until 15 Oct<\/small>/);
+  assert.match(times, /Presanctified Liturgy<\/span>[\s\S]*?<span class="schedule-item-range">from 4 Nov<\/span>/);
+  assert.match(times, /Paraklesis<\/span>[\s\S]*?<span class="schedule-item-range">until 15 Oct<\/span>/);
   assert.doesNotMatch(/<meta name="description" content="([^"]*)"/.exec(html)[1], /Presanctified/,
     'a rule that has not started is not what the times are');
 });
@@ -274,13 +284,15 @@ test('the lite card offers "Become a contributor" under its source line, not und
   const { get } = fresh();
   for (const path of ['/sgr', '/sgr/services']) {
     const { html } = await get(path);
-    const button = '<a class="lc-contrib" href="/admin?claim=antiochian-stgeorge-redfern" rel="nofollow">Become a contributor</a>';
+    const button = 'href="/admin?claim=antiochian-stgeorge-redfern" rel="nofollow">';
     assert.equal(html.split(button).length - 1, 1, `${path}: once`);
-    const info = html.slice(html.indexOf('<section class="lc-info">'), html.indexOf('</section>', html.indexOf('<section class="lc-info">')));
+    assert.match(html, /<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="\/admin\?claim=antiochian-stgeorge-redfern" rel="nofollow"><span class="ps-btn-glyph"[^>]*><\/span>Become a contributor<\/a>/,
+      `${path}: the app's button`);
+    const info = html.slice(html.indexOf('<section class="ps-section lc-info">'), html.indexOf('</section>', html.indexOf('<section class="ps-section lc-info">')));
     assert.ok(info.includes(button), `${path}: in the parish's details`);
-    assert.ok(info.indexOf(button) < info.indexOf('class="lc-actions"'), `${path}: above the parish's own buttons`);
+    assert.ok(info.indexOf(button) < info.indexOf('lc-actions'), `${path}: above the parish's own buttons`);
     // The seed gives St George's a source ("Parish website"), so the line is there.
-    const src = info.indexOf('class="lc-src"');
+    const src = info.indexOf('lc-src');
     assert.ok(src >= 0 && src < info.indexOf(button), `${path}: below the source line`);
     assert.doesNotMatch(html, /Is this your parish\?/, `${path}: the old link is gone`);
   }
@@ -295,7 +307,7 @@ const rule = (raw, parish, dow, time, title, extra = {}) => {
     .run(parish, dow, time, title, /liturg/i.test(title) ? 'liturgy' : 'prayer', ...Object.values(extra));
 };
 const regions = (html) => [...html.matchAll(/<section class="tt-region" aria-label="([^"]*)"/g)].map(m => m[1]);
-const names = (html) => [...html.matchAll(/<a class="tt-name" href="[^"]*">([^<]*)<\/a>/g)].map(m => m[1]);
+const names = (html) => [...html.matchAll(/<span class="tt-name">([^<]*)<\/span>/g)].map(m => m[1]);
 
 test('/services is every parish timetable, by state then jurisdiction, alphabetical', async () => {
   const { raw, get } = fresh();
@@ -307,12 +319,13 @@ test('/services is every parish timetable, by state then jurisdiction, alphabeti
   assert.match(html, /<h1>Orthodox service times<\/h1>/);
   assert.deepEqual(regions(html), ['New South Wales', 'Queensland']);
   const nsw = between(html, 'aria-label="New South Wales"', 'aria-label="Queensland"');
-  assert.match(nsw, /<h3 class="tt-juris"[^>]*>Antiochian Orthodox<\/h3>/, 'a mixed page names the jurisdiction');
+  assert.match(nsw, /<div class="jurisdiction-box tt-juris-box"[^>]*>\s*<div class="section-header jurisdiction-header">Antiochian Orthodox<\/div>/,
+    "each jurisdiction in the app's framed box");
   const listed = names(nsw);
   assert.deepEqual(listed, [...listed].sort((a, b) => a.localeCompare(b)), 'parishes alphabetical');
   assert.ok(listed.includes('St George Cathedral, Redfern'));
-  assert.match(html, /<a class="tt-name" href="\/sgr">St George Cathedral, Redfern<\/a>/, 'a parish links to its card');
-  assert.match(between(html, 'aria-label="Queensland"'), /Sunshine Coast, Buderim[\s\S]*Sun 9am[\s\S]*Divine Liturgy/);
+  assert.match(html, /<a class="parish-schedule-head" href="\/sgr">[\s\S]*?<span class="tt-name">St George Cathedral, Redfern<\/span>/, 'a parish links to its card');
+  assert.match(between(html, 'aria-label="Queensland"'), /Sunshine Coast, Buderim[\s\S]*<div class="schedule-day">Sunday<\/div>[\s\S]*9:00<span class="ampm">AM<\/span>[\s\S]*Divine Liturgy/);
   const n = raw.prepare(`SELECT COUNT(*) n FROM parishes p WHERE id != '_unassigned'
     AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.parish_id = p.id)`).get().n;
   assert.match(html, new RegExp(`<a class="tt-more" href="/services\\?app#no-times">${n} parish(es)? without service times on file →</a>`),
@@ -328,7 +341,7 @@ test('a jurisdiction and a region narrow the parishes; the canonical is the app\
   assert.equal(canonical(html), 'https://orthodoxy.au/greek/qld', '/services is what the page is, not part of its name');
   assert.match(html, /<h1>Greek Orthodox service times in Queensland<\/h1>/);
   assert.deepEqual(names(html), ['Sunshine Coast, Buderim']);
-  assert.doesNotMatch(html, /class="tt-juris"/, 'one jurisdiction needs no heading');
+  assert.equal(html.split('class="jurisdiction-box tt-juris-box"').length - 1, 1, 'one jurisdiction, one box');
   assert.match(html, /href="\/greek\/qld\?app">View upcoming events/);
   assert.doesNotMatch(html, /class="tt-more"/, 'every Greek parish in Queensland has times');
   assert.match((await get('/greek')).html, /<a class="tt-more" href="\/greek\/services\?app#no-times">1 parish without/,
@@ -344,8 +357,8 @@ test('a service, a day and a part of the day narrow the rules', async () => {
   rule(raw, PARISH, 6, '18:00', 'Vespers');
   const eve = (await get('/evening')).html;
   assert.match(eve, /<h1>Orthodox evening services<\/h1>/);
-  assert.match(eve, /Sat 6pm<\/time><span>Vespers/);
-  assert.doesNotMatch(between(eve, 'class="tt-region"'), /Sun 10am/, 'a morning liturgy is not an evening service');
+  assert.match(eve, /6:00<span class="ampm">PM<\/span><\/span><span class="si-title"><span class="schedule-item-title" title="Vespers">Vespers/);
+  assert.doesNotMatch(between(eve, 'class="tt-region"'), /Sunday Divine Liturgy/, 'a morning liturgy is not an evening service');
   const lit = (await get('/sun/liturgy')).html;
   assert.match(lit, /<h1>Orthodox Liturgies on Sundays<\/h1>/);
   assert.doesNotMatch(between(lit, 'class="tt-region"', 'class="lc-app"'), /Vespers/);
@@ -380,6 +393,27 @@ test('an ended rule is off the timetable page too', async () => {
   rule(raw, PARISH, 3, '18:00', 'Presanctified Liturgy', { effective_from: '2026-11-04' });
   const { html } = await get('/antiochian');
   assert.doesNotMatch(html, /Old Matins/);
-  assert.match(html, /Presanctified Liturgy<small>from 4 Nov<\/small>/);
+  assert.match(html, /Presanctified Liturgy<\/span>[\s\S]*?<span class="schedule-item-range">from 4 Nov<\/span>/);
 });
 
+
+test("a page wears the app's colours: /admin's overrides, the parish's own, and the dark lift", async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES ('antiochian', '#123456')`).run();
+  raw.prepare(`UPDATE parishes SET color = '#7c3bc1' WHERE id = ?`).run(PARISH);
+  const { html } = await get('/sgr');
+  const style = /<style>([\s\S]*?)<\/style>/.exec(html)[1];
+  assert.match(style, /:root\{[^}]*--parish:#7c3bc1/, "the parish's own colour leads");
+  assert.match(style, /:root\{[^}]*--juris:#123456/, "the timetable box takes the jurisdiction's, as /admin set it");
+  assert.match(style, /@media \(prefers-color-scheme:dark\)\{:root\{[^}]*--juris:#[0-9a-f]{6}/, 'with a dark variant');
+  assert.doesNotMatch(/@media \(prefers-color-scheme:dark\)\{:root\{([^}]*)\}/.exec(style)[1], /--juris:#123456/,
+    'lifted, as the app lifts it, not repeated');
+
+  // A parish with no colour of its own wears its jurisdiction's.
+  raw.prepare(`UPDATE parishes SET color = NULL WHERE id = ?`).run(PARISH);
+  const bare = /<style>([\s\S]*?)<\/style>/.exec((await get('/sgr')).html)[1];
+  assert.match(bare, /:root\{[^}]*--parish:#123456/);
+  // And the timetable page reads the same overrides.
+  const tt = (await get('/antiochian')).html;
+  assert.match(tt, /--j-antiochian:#123456/);
+});

@@ -94,7 +94,7 @@ const endTimeOf = (e, zone) => {
  * `pinnedEvent` is the event a bare id named, resolved by the caller because it
  * may lie outside the window (a link to last month's feast still answers).
  */
-export function liteModel({ parish, rows, events = [], cross = [], links = [], route, pinnedEvent = null, now, origin }) {
+export function liteModel({ parish, rows, events = [], cross = [], links = [], route, pinnedEvent = null, now, origin, overrides = {} }) {
   const zone = parish.timezone || DEFAULT_ZONE;
   const slug = parishSlug(parish);
   // /sgr/services is the parish's timetable — the rules, not the dates they
@@ -192,7 +192,28 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     parish, zone, slug, start, endBound, list, pinned, rules, timetable, links,
     route, servicesMode, indexable, canonical, appHref, origin, now,
     missingEvent: !!route.eventId && !pinned,
-    color: jurisColors.jurisdictionColor(parish.jurisdiction),
+    ...pageColors(parish, overrides),
+  };
+}
+
+/**
+ * The page's two colours and their dark variants, as the app paints them: the
+ * PARISH's own colour where the parish is the subject (its avatar, its
+ * buttons, its event groups), the JURISDICTION's on the timetable box, with
+ * /admin's overrides over the shared table and the app's OKLab lift for dark.
+ * The table alone was what lite pages used to read, and production's
+ * overrides had replaced every one of its colours.
+ */
+export function pageColors(parish, overrides = {}) {
+  const juris = jurisColors.jurisdictionColorFrom(overrides, parish.jurisdiction);
+  const own = typeof parish.color === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(parish.color.trim())
+    ? parish.color.trim() : juris;
+  return {
+    color: own,
+    colors: {
+      parish: own, parishDark: jurisColors.liftForDark(own),
+      juris, jurisDark: jurisColors.liftForDark(juris),
+    },
   };
 }
 
@@ -236,25 +257,8 @@ export function relativeAge(iso, now) {
   return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-value, unit);
 }
 
-export function sourceLine(name, ref, checked, now, cls) {
-  if (!name) return '';
-  const age = relativeAge(checked, now);
-  const label = /^https?:/.test(ref || '')
-    ? `<a href="${esc(ref)}" rel="noopener nofollow">${esc(name)}</a>` : esc(name);
-  return `<p class="${cls}">${age ? `Updated ${esc(age)} · ` : ''}${label}</p>`;
-}
 
 const ORDINAL = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
-export function weeksLabel(rule) {
-  const range = rangeLabel(rule);
-  let weeks = '';
-  if (rule.week_parity) weeks = 'fortnightly';
-  else if (rule.week_of_month) {
-    weeks = String(rule.week_of_month).split(',').map(w => ORDINAL[w.trim()] || w.trim()).join(', ')
-      + ' of the month';
-  }
-  return [weeks, range].filter(Boolean).join(' · ');
-}
 
 /** "until 5 Oct", "from 1 Nov", "2 Mar – 20 Apr" — a start already past is not news. */
 function rangeLabel(rule) {
@@ -367,6 +371,75 @@ export function mapsHref(p) {
 }
 
 // ── markup ───────────────────────────────────────────────────────────────
+//
+// THE APP'S MARKUP, AND THE APP'S STYLESHEET. The page links /app.css and
+// writes the class names the app's parish sheet writes — ps-header, the
+// jurisdiction-box timetable, day-section / time-card / event-card — so it
+// looks like the card a visitor would see in the app, and what an editor sees
+// in the app is what a visitor sees here. What remains below in LITE_CSS is
+// only what a page needs and a sheet does not: the bar, the column, the
+// no-JavaScript <details> that open an event, and the colours.
+//
+// The markup is copied, not shared: app.js is a classic script the Worker
+// cannot import (roadmap phase 3 is moving it into public/shared/). Each
+// function below names the app function it mirrors; change them together.
+
+// The type dot's letter and colours, from app.js's TYPE_DISPLAY and
+// eventTypeDotColor/eventTypeDotTextColor. Classes rather than inline styles
+// so the dark variant is a media query and not a render-time choice.
+const TYPE_DISPLAY = { vespers: 'prayer', matins: 'prayer', festival: 'social', fundraiser: 'social' };
+const DOTS = {
+  liturgy: ['#e8d5e8', '#6b2d6b', '#3a2840', '#d4a3d4'],
+  feast: ['#f5ecd0', '#7a6520', '#3a3220', '#d4c082'],
+  prayer: ['#d5e0f0', '#2d4a7a', '#1f2a3a', '#9bb8e0'],
+  talk: ['#f0e8d5', '#7a5a20', '#3a2f1c', '#d4b682'],
+  youth: ['#d0e8f5', '#2d5a8a', '#1c303d', '#a8c8de'],
+  social: ['#d5ead5', '#2d6a2d', '#1f2e1f', '#a3c8a3'],
+  other: ['#e8e8e8', '#555555', '#26272c', '#aaaaaa'],
+};
+const DOT_CSS = Object.entries(DOTS).map(([k, [bg, fg]]) => `.lc-dot-${k}{--dot-color:${bg};--dot-text:${fg}}`).join('')
+  + `@media (prefers-color-scheme:dark){${Object.entries(DOTS).map(([k, [, , bg, fg]]) => `.lc-dot-${k}{--dot-color:${bg};--dot-text:${fg}}`).join('')}}`;
+
+const icon = (name) => `https://api.iconify.design/${name}.svg`;
+const glyph = (name) => `<span class="ps-btn-glyph" style="--glyph:url(${icon(name)})" aria-hidden="true"></span>`;
+
+/** '18:30' → '6<span class="t-min">:30</span><span class="t-mer">pm</span>' — formatEventTime. */
+function eventTimeHTML(hhmm) {
+  const [h, m] = String(hhmm || '').split(':').map(Number);
+  if (!Number.isFinite(h)) return '';
+  const min = m ? `<span class="t-min">:${String(m).padStart(2, '0')}</span>` : '';
+  return `${h % 12 || 12}${min}<span class="t-mer">${h >= 12 ? 'pm' : 'am'}</span>`;
+}
+
+/** '18:30' → '6:30<span class="ampm">PM</span>' — formatTime12. */
+function ruleTimeHTML(hhmm) {
+  const [h, m] = String(hhmm || '').split(':').map(Number);
+  if (!Number.isFinite(h)) return '';
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')}<span class="ampm">${h >= 12 ? 'PM' : 'AM'}</span>`;
+}
+
+/** sourceLineHTML: "Updated 3 months ago · Antiochian Archdiocese ↗". */
+function sourceLineHTMLApp(name, ref, checked, now, cls) {
+  if (!name) return '';
+  const age = relativeAge(checked, now);
+  const linkIcon = '<span class="source-link-icon" aria-hidden="true"></span>';
+  const label = /^https?:/.test(ref || '')
+    ? `<a href="${esc(ref)}" target="_blank" rel="noopener nofollow">${esc(name)}${linkIcon}</a>` : esc(name);
+  return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
+}
+
+/**
+ * The page's colours as custom properties, with their dark variants: the
+ * app lifts a colour per render in JavaScript; a cached page has to say both
+ * and let the media query choose.
+ */
+export function colorVarsCSS(vars) {
+  const light = Object.entries(vars).filter(([k]) => !k.endsWith('Dark'))
+    .map(([k, v]) => `--${k}:${v}`).join(';');
+  const dark = Object.entries(vars).filter(([k]) => k.endsWith('Dark'))
+    .map(([k, v]) => `--${k.slice(0, -4)}:${v}`).join(';');
+  return `:root{${light}}@media (prefers-color-scheme:dark){:root{${dark}}}`;
+}
 
 function eventStatus(e) {
   if (e.status === 'cancelled') return 'Cancelled';
@@ -375,104 +448,200 @@ function eventStatus(e) {
   return '';
 }
 
+/** The badges renderEventCard puts after a title — the ones that do not depend on the clock. */
+function badgesHTML(e) {
+  const out = [];
+  if (langsOf(e.languages).length >= 2) out.push('<span class="event-badge badge-bilingual">BILINGUAL</span>');
+  if (e.extra_parishes && e.extra_parishes.length) out.push('<span class="event-badge badge-combined">COMBINED</span>');
+  if (e.status === 'combined') out.push('<span class="event-badge badge-combined">COMBINED</span>');
+  if (e.status === 'cancelled') out.push('<span class="event-badge badge-cancelled">CANCELLED</span>');
+  if (e.status === 'break') out.push('<span class="event-badge badge-break">BREAK</span>');
+  return out.length ? `<span class="event-inline-badges">${out.join('')}</span>` : '';
+}
+
+/**
+ * renderEventCard, as a <details> so it opens with no JavaScript: the
+ * summary is the card a visitor scans, the body what the app's drawer says.
+ */
+function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
+  const type = TYPE_DISPLAY[e.event_type] || e.event_type || 'other';
+  const dot = `<span class="event-type-dot lc-dot-${esc(DOTS[type] ? type : 'other')}">${esc(type[0].toUpperCase())}</span>`;
+  const tomb = e.is_tombstone;
+  const ownParish = e.parish_id === m.parish.id;
+  const acronym = ownParish ? m.parish.acronym : e.parish_acronym;
+  const color = ownParish ? 'var(--parish)' : esc(e.parish_color || 'var(--text-secondary)');
+  const parishRow = `<div class="event-parish-row">${acronym ? `<span class="event-parish-acronym" style="color:${color}">${esc(acronym)}</span>` : ''}${esc(e.parish_name || m.parish.name)}</div>`;
+  return `
+      <details class="lc-ev event-card${tomb ? ' event-cancelled tomb' : ''}${cls}" data-id="${esc(e.id)}" data-event-type="${esc(e.event_type || '')}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}"${open ? ' open' : ''}>
+        <summary class="event-content">
+          <div class="event-title-row">
+            <span class="event-time">${eventTimeHTML(e._local.time)}</span>
+            ${dot}
+            <div class="event-title-block"><span class="event-title">${esc(e.title)}${badgesHTML(e)}<span class="event-card-chev"></span></span></div>
+          </div>
+          ${parishRow}
+          ${e.feast ? `<div class="event-feast-row">✛ ${esc(e.feast)}</div>` : ''}
+          ${e.break_note ? `<div class="event-break-row">${esc(e.break_note)}</div>` : ''}
+        </summary>
+        <div class="lc-ev-body">${eventDetailsHTML(e, m)}
+          <a class="lc-ev-link" href="/${esc(e.id)}">Link to this service</a>
+        </div>
+      </details>`;
+}
+
 function eventDetailsHTML(e, m) {
   const p = m.parish;
   const end = endTimeOf(e, m.zone);
   const langs = langsOf(e.languages);
   const where = e.location_override || p.address || '';
   return `
-      ${e.feast ? `<p class="lf-feast">${esc(e.feast)}</p>` : ''}
-      <p class="lf-when">${esc(longDate(e._local.date, m.start.slice(0, 4)))} · ${esc(time12(e._local.time))}${end ? `–${esc(time12(end))}` : ''}</p>
-      ${where ? `<p class="lf-where">${esc(where)}</p>` : ''}
-      ${langs.length ? `<p class="lf-langs">${esc(langs.join(', '))}</p>` : ''}
-      ${e.break_note ? `<p class="lf-note">${esc(e.break_note)}</p>` : ''}
-      ${e.description ? `<p class="lf-desc">${esc(e.description).replace(/\n/g, '<br>')}</p>` : ''}
-      ${e.poster_path ? `<img class="lf-poster" src="${esc(e.poster_path)}" alt="Poster for ${esc(e.title)}" loading="lazy">` : ''}`;
+          <p class="lf-when">${esc(longDate(e._local.date, m.start.slice(0, 4)))} · ${esc(time12(e._local.time))}${end ? `–${esc(time12(end))}` : ''}</p>
+          ${where ? `<p class="lf-where">${esc(where)}</p>` : ''}
+          ${langs.length ? `<p class="lf-langs">${esc(langs.join(', '))}</p>` : ''}
+          ${e.description ? `<p class="lf-desc">${esc(e.description).replace(/\n/g, '<br>')}</p>` : ''}
+          ${e.poster_path ? `<img class="lf-poster" src="${esc(e.poster_path)}" alt="Poster for ${esc(e.title)}" loading="lazy">` : ''}`;
 }
 
+// The time-card heads, verbatim from renderSubDaySections.
+const MORNING_HEAD = '<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="1.8" fill="currentColor" stroke="none"/><line x1="5" y1="0.5" x2="5" y2="1.9"/><line x1="5" y1="8.1" x2="5" y2="9.5"/><line x1="0.5" y1="5" x2="1.9" y2="5"/><line x1="8.1" y1="5" x2="9.5" y2="5"/><line x1="1.5" y1="1.5" x2="2.4" y2="2.4"/><line x1="7.6" y1="7.6" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="7.6" y2="2.4"/><line x1="2.4" y1="7.6" x2="1.5" y2="8.5"/></svg><span class="tc-label">Morning</span></div>';
+const EVENING_HEAD = '<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg><span class="tc-label">Evening</span></div>';
+
+/** renderParishGroupsHTML: a run of one parish's cards with its name underneath. */
+function parishGroupsHTML(events, m) {
+  const byParish = new Map();
+  for (const e of events) {
+    if (!byParish.has(e.parish_id)) byParish.set(e.parish_id, []);
+    byParish.get(e.parish_id).push(e);
+  }
+  return [...byParish.values()].map((evts, i) => {
+    const first = evts[0];
+    const own = first.parish_id === m.parish.id;
+    const color = own ? 'var(--parish)' : esc(first.parish_color || 'var(--text-secondary)');
+    const acr = own ? m.parish.acronym : first.parish_acronym;
+    return `${i ? '<div class="parish-group-sep" aria-hidden="true"></div>' : ''}
+      <div class="parish-group" style="--parish-color:${color}">
+        ${evts.map(e => eventCardHTML(e, m)).join('')}
+        <div class="parish-group-footer">${acr ? `<span class="parish-group-acro" style="color:${color}">${esc(acr)}</span>` : ''}<span class="parish-group-name">${esc(first.parish_name || m.parish.name)}</span></div>
+      </div>`;
+  }).join('');
+}
+
+/** renderFutureDays + renderSubDaySections, by the parish's own calendar. */
 function listHTML(m) {
   if (!m.list.length) {
     return `<p class="lc-empty">Nothing on file ${m.route.dateFocus ? `from ${esc(longDate(m.start, m.start.slice(0, 4)))}` : 'in the next few weeks'}.</p>`;
   }
-  let html = '';
-  let day = null;
+  const today = localDateOf(m.zone, m.now);
+  const weekOut = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * DAY_MS).toISOString().slice(0, 10);
+  const byDay = new Map();
   for (const e of m.list) {
-    if (e._local.date !== day) {
-      if (day) html += '</div>';
-      day = e._local.date;
-      html += `<div class="lc-day" data-date="${esc(day)}"><h3>${esc(longDate(day, m.start.slice(0, 4)))}</h3>`;
-    }
-    const status = eventStatus(e);
-    const isPin = m.pinned && String(m.pinned.id) === String(e.id);
-    html += `
-      <details class="lc-ev${e.is_tombstone ? ' tomb' : ''}${isPin ? ' pinned-twin' : ''}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}">
-        <summary><time>${esc(time12(e._local.time))}</time><span class="lc-ev-title">${esc(e.title)}</span>${status ? `<span class="lc-badge">${esc(status)}</span>` : ''}</summary>
-        <div class="lc-ev-body">${eventDetailsHTML(e, m)}
-          <a class="lc-ev-link" href="/${esc(e.id)}">Link to this service</a>
-        </div>
-      </details>`;
+    if (!byDay.has(e._local.date)) byDay.set(e._local.date, []);
+    byDay.get(e._local.date).push(e);
   }
-  return html + '</div>';
+  let html = '';
+  let month = today.slice(0, 7);
+  for (const [date, evts] of byDay) {
+    const d = new Date(`${date}T00:00:00Z`);
+    if (date.slice(0, 7) !== month) {
+      month = date.slice(0, 7);
+      html += `<div class="month-header">${esc(new Intl.DateTimeFormat('en-AU', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(d))}</div>`;
+    }
+    const label = date === today ? 'Today'
+      : new Intl.DateTimeFormat('en-AU', { timeZone: 'UTC', weekday: date < weekOut ? 'long' : 'short', day: 'numeric', month: 'short' }).format(d);
+    const morning = evts.filter(e => services.partOfDayOf(e, m.zone) !== 'evening');
+    const evening = evts.filter(e => services.partOfDayOf(e, m.zone) === 'evening');
+    html += `<div class="day-section lc-day${d.getUTCDay() === 0 ? ' day-section-sunday' : ''}" data-date="${esc(date)}">
+      <div class="day-hdr">${esc(label)}</div>
+      ${morning.length ? `<div class="time-card time-card-morning">${MORNING_HEAD}${parishGroupsHTML(morning, m)}</div>` : ''}
+      ${evening.length ? `<div class="time-card time-card-evening">${EVENING_HEAD}${parishGroupsHTML(evening, m)}</div>` : ''}
+    </div>`;
+  }
+  return html;
 }
 
-function timetableHTML(m, rules, heading, empty = '') {
-  if (!rules.length) {
-    return empty ? `
-    <section class="lc-times" aria-labelledby="lt-h">
-      <h2 id="lt-h">${esc(heading)}</h2>
-      <p class="lc-empty">${esc(empty)}</p>
-    </section>` : '';
-  }
+/** renderScheduleDaysHTML's rows, read-only: a row opens that rule's own card. */
+export function scheduleRowsHTML(rules, slug, now) {
   let html = '';
   let dow = null;
   for (const r of rules) {
     if (r.day_of_week !== dow) {
       dow = r.day_of_week;
-      html += `<h3 class="lt-day">${esc(services.DAY_NAMES[dow])}</h3>`;
+      html += `<div class="schedule-day">${esc(services.DAY_NAMES[dow])}</div>`;
     }
     const svc = services.serviceOf(r);
-    const href = `/${m.slug}/${services.daySlug(dow)}${svc ? `/${svc}` : ''}`;
-    const weeks = weeksLabel(r);
-    html += `<a class="lt-row" href="${esc(href)}"><time>${esc(time12(r.start_time))}</time><span>${esc(r.title)}${weeks ? `<small>${esc(weeks)}</small>` : ''}</span></a>`;
+    const href = `/${slug}/${services.daySlug(dow)}${svc ? `/${svc}` : ''}`;
+    const langs = langsOf(r.languages);
+    const meta = [
+      r.week_parity ? '<span class="schedule-item-wom">fortnightly</span>'
+        : r.week_of_month ? `<span class="schedule-item-wom">${esc(String(r.week_of_month).split(',').map(w => ORDINAL[w.trim()] || w.trim()).join(', '))} ${esc(services.DAY_NAMES[dow])}</span>` : '',
+      rangeLabel(r) ? `<span class="schedule-item-range">${esc(rangeLabel(r))}</span>` : '',
+      langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '',
+      r.parish_scoped ? '<span class="schedule-item-scope">parish only</span>' : '',
+    ].join('');
+    html += `<a class="schedule-item lt-row" href="${esc(href)}">
+          <div class="si-main"><span class="schedule-item-time">${ruleTimeHTML(r.start_time)}</span><span class="si-title"><span class="schedule-item-title" title="${esc(r.title)}">${esc(r.title)}</span><img class="si-chev" src="${icon('ph:caret-right-bold')}" alt=""></span></div>
+          ${meta ? `<div class="si-meta">${meta}</div>` : ''}
+          ${r.location_override ? `<div class="si-where">${esc(r.location_override)}</div>` : ''}
+        </a>`;
   }
-  // One source for the whole timetable: the most recent stamp among its rules.
+  // scheduleSourceHTML: one line, whoever changed the timetable last.
   const latest = rules.filter(r => r.source_name)
     .sort((a, b) => String(b.source_checked_at || '').localeCompare(String(a.source_checked_at || '')))[0];
+  return html + (latest ? sourceLineHTMLApp(latest.source_name, latest.source_ref, latest.source_checked_at, now, 'sched-source') : '');
+}
+
+/** parishTimetableHTML, read-only: the framed box the parish card shows, above its events. */
+function timetableHTML(m, rules, empty) {
+  const p = m.parish;
+  const initial = (p.name || p.full_name || '?').trim()[0].toUpperCase();
+  const avatar = p.logo_path
+    ? `<div class="parish-schedule-avatar"><img src="${esc(p.logo_path)}" alt=""></div>`
+    : `<div class="parish-schedule-avatar" style="background:var(--juris)">${esc(initial)}</div>`;
   return `
-    <section class="lc-times" aria-labelledby="lt-h">
-      <h2 id="lt-h">${esc(heading)}</h2>
-      ${html}
-      ${latest ? sourceLine(latest.source_name, latest.source_ref, latest.source_checked_at, m.now, 'lc-src') : ''}
-    </section>`;
+  <section class="lc-times ps-section ps-sched-section" aria-labelledby="lt-h">
+    <div class="jurisdiction-box" style="--juris-color:var(--juris)">
+      <h2 class="section-header jurisdiction-header" id="lt-h">${esc(jurisLabel(p.jurisdiction))}</h2>
+      <div class="parish-schedule ps-timetable">
+        <div class="parish-schedule-head">${avatar}<div class="parish-schedule-name">${esc(p.name || p.full_name)}</div></div>
+        ${rules.length ? scheduleRowsHTML(rules, m.slug, m.now) : `<div class="ps-sched-empty">${esc(empty)}</div>`}
+      </div>
+    </div>
+  </section>`;
+}
+
+/** The "Showing …" banner the parish card puts over a narrowed list. */
+function bannerHTML(text, id = 'll-h') {
+  return `<div class="ps-focus-banner lc-banner"><h2 class="ps-focus-banner-text" id="${id}">${esc(text)}</h2></div>`;
 }
 
 /**
  * "Become a contributor": the claim (/admin?claim=, behind Cloudflare Access),
- * under the parish's source line — where the card says where its details came
- * from and how old they are, and so the place to offer to keep them right. It
- * sat at the foot of the card, under the timetable, where it read as a note
- * about the service times alone. The app's parish sheet puts it in the same
- * place (contributeButtonHTML in public/app.js). nofollow: it leads to a
- * sign-in, which is nothing for a crawler.
+ * under the parish's source line, where the app's card puts it
+ * (contributeButtonHTML). nofollow: it leads to a sign-in.
  */
 function contributeHTML(m) {
-  return `<a class="lc-contrib" href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">Become a contributor</a>`;
+  return `<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${glyph('ph:user-plus')}Become a contributor</a>`;
+}
+
+/** The info section's copy chips — the app's ps-info-copy. lite.js does the copying. */
+function copyChipHTML(value, shown, label) {
+  return `<button class="ps-info-copy" type="button" data-copy="${esc(value)}" aria-label="${esc(label)}"><span class="ps-info-copy-text">${esc(shown)}</span><img class="ps-info-copy-icon" src="${icon('ph:copy')}" alt=""></button>`;
 }
 
 function actionsHTML(m) {
   const p = m.parish;
-  const btn = (href, label, cls = '') => `<a class="lc-btn${cls}" href="${esc(href)}" rel="noopener">${esc(label)}</a>`;
+  const btn = (href, label, cls = '', ic = '') => `<a class="ps-btn${cls}" href="${esc(href)}" target="_blank" rel="noopener">${ic ? `<img class="ps-btn-icon" src="${icon(ic)}" alt="">` : ''}<span>${esc(label)}</span></a>`;
   const out = [];
   const maps = mapsHref(p);
-  if (maps) out.push(btn(maps, 'Google Maps', ' primary'));
+  if (maps) out.push(btn(maps, 'Google Maps', ' ps-btn-primary'));
   if (p.website) out.push(btn(p.website, 'Website'));
-  if (p.phone) out.push(btn(`tel:${p.phone.replace(/\s+/g, '')}`, 'Call'));
+  if (p.phone) out.push(`<a class="ps-btn" href="tel:${esc(p.phone.replace(/\s+/g, ''))}"><span>Call</span></a>`);
   if (p.live_url) out.push(btn(p.live_url, 'Watch Live'));
-  if (p.donation_url) out.push(btn(`/${m.slug}/donate`, 'Donate'));
+  if (p.donation_url) out.push(btn(`/${m.slug}/donate`, 'Donate', ' ps-donate-btn', 'ph:hand-heart'));
   for (const l of m.links || []) if (l.url) out.push(btn(`/${m.slug}/${l.slug}`, l.label || l.slug));
   // Share needs JavaScript; lite.js reveals it.
-  out.push(`<button class="lc-btn" type="button" data-share hidden>Share</button>`);
-  return `<nav class="lc-actions" aria-label="Parish links">${out.join('')}</nav>`;
+  out.push(`<button class="ps-btn ps-share-btn" type="button" data-share hidden><img class="ps-btn-icon" src="${icon('ph:paper-plane-tilt')}" alt=""><span>Share</span></button>`);
+  return `<nav class="ps-actions lc-actions" aria-label="Parish links" style="--parish-color:var(--parish)">${out.join('')}</nav>`;
 }
 
 function pinnedHTML(m) {
@@ -487,60 +656,61 @@ function pinnedHTML(m) {
   }
   const e = m.pinned;
   const status = eventStatus(e);
+  // The app's pinned slot: the card, open, above everything else on the sheet.
   return `
-    <article class="lc-pin${e.is_tombstone ? ' tomb' : ''}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}">
-      ${status ? `<p class="lc-pin-status">${esc(status.toUpperCase())}</p>` : ''}
-      <h2>${esc(e.title)}</h2>
-      ${eventDetailsHTML(e, m)}
-    </article>`;
+  <article class="lc-pin ps-pinned-event${e.is_tombstone ? ' tomb' : ''}">
+    ${status ? `<p class="lc-pin-status">${esc(status.toUpperCase())}</p>` : ''}
+    <h2 class="lc-pin-title">${esc(e.title)}</h2>
+    ${eventCardHTML(e, m, { open: true, cls: ' lc-pin-card' })}
+  </article>`;
 }
 
 function listHeading(m) {
   const r = m.route;
-  if (isNarrowed(r)) return kindLabel(r);
+  if (isNarrowed(r)) return `Showing ${kindLabel(r)}`;
   if (m.pinned && m.pinned.schedule_id != null && r.eventId) return `More dates for ${m.pinned.title}`;
-  return r.dateFocus ? `From ${longDate(m.start, m.start.slice(0, 4))}` : 'Coming up';
+  return r.dateFocus ? `Showing from ${longDate(m.start, m.start.slice(0, 4))}` : '';
 }
 
 /**
  * The way into the app: a button in the parish's colour, directly above the
- * list it continues. It was a line of small print under everything, and the
- * app is where the rest of the year, the map and the other parishes are.
+ * list it continues.
  */
 function appButtonHTML(m, label) {
   return `<a class="lc-app" href="${esc(m.appHref)}">${esc(label)}</a>`;
 }
 
-/** The middle of the page: a card's pin and list, or /services' timetable. */
+/** The middle of the page: the timetable, then a card's list — or /services' timetable alone. */
 function bodyHTML(m) {
   if (m.servicesMode) {
-    const heading = isNarrowed(m.route) ? kindLabel(m.route) : 'Service times';
-    const empty = isNarrowed(m.route) ? 'No service on the timetable matches.' : 'No service times on file yet.';
+    const narrowed = isNarrowed(m.route);
     return `
-  ${timetableHTML(m, m.timetable, heading, empty)}
+  ${narrowed ? bannerHTML(`Showing ${kindLabel(m.route)}`) : ''}
+  ${timetableHTML(m, m.timetable, narrowed ? 'No service on the timetable matches.' : 'No service times on file yet.')}
   ${appButtonHTML(m, 'View upcoming events →')}`;
   }
+  const heading = listHeading(m);
   return `
-  ${pinnedHTML(m)}
+  ${timetableHTML(m, m.rules, 'No service times on file.')}
   ${appButtonHTML(m, 'Open in the app →')}
   <section class="lc-list" aria-labelledby="ll-h">
-    <h2 id="ll-h">${esc(listHeading(m))}</h2>
-    ${listHTML(m)}
+    ${heading ? bannerHTML(heading) : '<h2 class="lc-sr" id="ll-h">Coming up</h2>'}
+    <div class="ps-events-list">${listHTML(m)}</div>
   </section>
-  ${timetableHTML(m, m.rules, 'Service times')}
   <footer class="lc-foot">
     <span>Showing to ${esc(longDate(m.endBound, m.start.slice(0, 4)))}</span>
   </footer>`;
 }
 
-/** The whole page. */
+/** The whole page — the parish sheet's content, as a page. */
 export function renderLitePage(m) {
   const p = m.parish;
   const meta = liteMeta(m);
   const initial = (p.name || p.full_name || '?').trim()[0].toUpperCase();
   const avatar = p.logo_path
-    ? `<img class="lc-avatar" src="${esc(p.logo_path)}" alt="" width="56" height="56">`
-    : `<span class="lc-avatar" aria-hidden="true">${esc(initial)}</span>`;
+    ? `<div class="ps-avatar" style="--parish-glow:color-mix(in srgb,var(--parish) 45%,transparent)"><img src="${esc(p.logo_path)}" alt=""></div>`
+    : `<div class="ps-avatar" style="background:var(--parish);--parish-glow:color-mix(in srgb,var(--parish) 45%,transparent)">${esc(initial)}</div>`;
+  const website = p.website ? p.website.replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
 
   return liteDocument({
     title: meta.title,
@@ -551,18 +721,21 @@ export function renderLitePage(m) {
     image: liteImage(m),
     twitterCard: m.pinned && m.pinned.poster_path ? 'summary_large_image' : 'summary',
     color: m.color,
+    vars: m.colors,
     jsonLd: churchJsonLd(m),
     main: `
-  <section class="lc-head">
+  <div class="ps-header lc-head">
     ${avatar}
-    <div>
-      <h1>${esc(p.full_name || p.name)}</h1>
-      <p class="lc-juris">${esc(jurisLabel(p.jurisdiction))}${p.full_name && p.name !== p.full_name ? ` · ${esc(p.name)}` : ''}</p>
+    <div class="ps-header-info">
+      <h1 class="ps-name">${esc(p.full_name || p.name)}</h1>
+      <div class="ps-meta">${esc(jurisLabel(p.jurisdiction))}${p.full_name && p.name !== p.full_name ? ` · ${esc(p.name)}` : ''}</div>
     </div>
-  </section>
-  <section class="lc-info">
-    ${p.address ? `<button class="lc-addr" type="button" data-copy="${esc(p.address)}">${esc(p.address)}</button>` : ''}
-    ${sourceLine(p.info_source_name, p.info_source_ref, p.info_checked_at, m.now, 'lc-src')}
+  </div>
+  ${pinnedHTML(m)}
+  <section class="ps-section lc-info">
+    ${p.address ? copyChipHTML(p.address, p.address, 'Copy address') : ''}
+    ${website ? copyChipHTML(p.website, website, 'Copy website URL') : ''}
+    ${sourceLineHTMLApp(p.info_source_name, p.info_source_ref, p.info_checked_at, m.now, 'ps-source lc-src')}
     ${contributeHTML(m)}
     ${actionsHTML(m)}
   </section>
@@ -572,11 +745,15 @@ export function renderLitePage(m) {
 
 /**
  * The page around a card: the <head> a preview and a search engine read, the
- * bar, the stylesheet and the script. One shell for the parish card and the
+ * bar, the stylesheets and the script. One shell for the parish card and the
  * timetable page (lite-timetable.mjs), so the two cannot differ in what they
  * tell a crawler or in how they look.
+ *
+ * /app.css first, so the page wears the app's own styles, then LITE_CSS for
+ * what only a page needs, then the page's colours. `vars` is
+ * { name: light, nameDark: dark } — see colorVarsCSS.
  */
-export function liteDocument({ title, description, canonical, indexable, ogType, image, twitterCard = 'summary', color, jsonLd = '', main }) {
+export function liteDocument({ title, description, canonical, indexable, ogType, image, twitterCard = 'summary', color, vars = {}, jsonLd = '', main }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -594,12 +771,13 @@ export function liteDocument({ title, description, canonical, indexable, ogType,
 <meta property="og:image" content="${esc(image)}">
 <meta name="twitter:card" content="${esc(twitterCard)}">
 <meta name="theme-color" content="${esc(color)}">
-${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>\n` : ''}<style>${LITE_CSS}</style>
+${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>\n` : ''}<link rel="stylesheet" href="/app.css">
+<style>${LITE_CSS}${DOT_CSS}${colorVarsCSS({ page: color, pageDark: jurisColors.liftForDark(color), ...vars })}</style>
 </head>
-<body style="--juris:${esc(color)}">
+<body class="lite">
 <header class="lite-bar">
-  <a class="lite-back" href="/">← Back to App</a>
   <span class="lite-brand">orthodoxy.au</span>
+  <a class="lite-close" href="/" aria-label="Close — to the map">&times;</a>
 </header>
 <main class="lite-card">${main}
 </main>
@@ -608,71 +786,59 @@ ${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>\n` : ''}<style
 </html>`;
 }
 
-// Inline, because a separate stylesheet is a second round trip before first
-// paint and this page exists to paint first. Small on purpose: it styles one
-// card, not the app.
+// What a page needs that a sheet does not, on top of /app.css. The app's
+// tokens (--bg, --text, --text-secondary, --border, --surface-2) are app.css's
+// own, so a page follows the app's light and dark exactly.
 const LITE_CSS = `
-:root{--bg:#fff;--surface:#f6f5f2;--text:#1d1d1f;--muted:#6b6b70;--line:#e6e4df;color-scheme:light dark}
-@media (prefers-color-scheme:dark){:root{--bg:#15161a;--surface:#1f2026;--text:#ececef;--muted:#9a9aa3;--line:#2c2d34}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
-a{color:inherit}
-.lite-bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
-.lite-back{display:inline-flex;align-items:center;padding:7px 14px;border-radius:999px;background:var(--juris);color:#fff;font-weight:700;font-size:14px;text-decoration:none}
-.lite-brand{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.lite-card{max-width:640px;margin:0 auto;padding:0 16px 40px}
-.lc-head{display:flex;align-items:center;gap:14px;padding:20px 0 12px}
-.lc-avatar{flex:none;width:56px;height:56px;border-radius:50%;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--juris);color:#fff;font-weight:700;font-size:22px;box-shadow:0 0 0 3px var(--bg),0 0 14px 2px color-mix(in srgb,var(--juris) 45%,transparent)}
-h1{margin:0;font-size:22px;line-height:1.15;letter-spacing:-.01em}
-.lc-juris{margin:3px 0 0;color:var(--muted);font-size:13px}
-.lc-info{padding:4px 0 16px;border-bottom:1px solid var(--line)}
-.lc-addr{display:block;margin:0 0 6px;padding:0;border:0;background:none;color:var(--text);font:inherit;font-size:14px;text-align:left;cursor:pointer}
-.lc-src{margin:0 0 12px;font-size:11.5px;color:var(--muted)}
-.lc-src a{text-decoration:underline dotted}
-.lc-actions{display:flex;flex-wrap:wrap;gap:8px}
-.lc-btn{display:inline-flex;align-items:center;padding:7px 15px;border:1px solid var(--juris);border-radius:999px;background:var(--bg);color:var(--juris);font:inherit;font-size:13.5px;font-weight:600;text-decoration:none;cursor:pointer}
-.lc-btn.primary{background:var(--juris);color:#fff}
-@media (prefers-color-scheme:dark){.lc-btn{color:var(--text)}}
-.lc-notice{margin:16px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface);color:var(--muted);font-size:14px}
-.lc-pin{margin:16px 0 0;padding:16px;border-radius:14px;border:1.5px solid var(--juris);background:color-mix(in srgb,var(--juris) 6%,var(--bg))}
-.lc-pin h2{margin:0 0 6px;font-size:19px;line-height:1.25}
-.lc-pin-status{margin:0 0 4px;font-size:12px;font-weight:800;letter-spacing:.08em;color:#b3261e}
-.lc-pin.tomb h2{text-decoration:line-through}
-.lf-feast{margin:0 0 4px;font-style:italic}
-.lf-when{margin:0 0 2px;font-weight:600}
-.lf-where,.lf-langs,.lf-note{margin:0 0 2px;color:var(--muted);font-size:14px}
-.lf-desc{margin:8px 0 0;font-size:14px}
-.lf-poster{display:block;width:100%;height:auto;margin:12px 0 0;border-radius:10px}
-.lc-list,.lc-times{padding:20px 0 4px}
-.lc-list>h2,.lc-times>h2{margin:0 0 8px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.lc-day h3,.lt-day{margin:14px 0 4px;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
-.lc-ev{border-bottom:1px solid var(--line)}
-.lc-ev summary{display:grid;grid-template-columns:66px minmax(0,1fr) auto;gap:8px;align-items:baseline;padding:9px 0;cursor:pointer;list-style:none}
-.lc-ev summary::-webkit-details-marker{display:none}
-.lc-ev time,.lt-row time{font-weight:600;font-variant-numeric:tabular-nums}
-.lc-ev-title{font-weight:500}
-.lc-ev.tomb .lc-ev-title{text-decoration:line-through;color:var(--muted)}
-.lc-ev.past{opacity:.55}
-.lc-badge{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--surface);color:var(--muted)}
-.lc-badge.now{background:#1f8a3b;color:#fff}
-.lc-ev-body{padding:0 0 12px 74px}
-.lc-ev-link{display:inline-block;margin-top:8px;font-size:13px;color:var(--muted)}
-.lc-empty{color:var(--muted)}
-.lt-row{display:grid;grid-template-columns:66px minmax(0,1fr);gap:8px;padding:7px 0;text-decoration:none;border-bottom:1px solid var(--line)}
-.lt-row small{display:block;color:var(--muted);font-size:12px}
-.lc-app{display:flex;align-items:center;justify-content:center;margin:16px 0 0;padding:12px 16px;border-radius:12px;background:var(--juris);color:#fff;font-weight:700;font-size:15px;text-decoration:none;box-shadow:0 1px 3px color-mix(in srgb,var(--juris) 40%,transparent)}
+html{overscroll-behavior-y:auto}
+body.lite{margin:0;background:var(--bg);color:var(--text);font-size:15px;-webkit-text-size-adjust:100%}
+.lite a{color:inherit}
+.lite-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;padding:0 8px 0 16px;background:var(--bg);border-bottom:1px solid var(--border-light)}
+.lite-brand{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}
+.lite-close{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-size:26px;line-height:1;color:var(--text-secondary);text-decoration:none}
+.lite-close:hover{color:var(--text);background:var(--surface-2)}
+.lite-card{--ps-stack-h:48px;max-width:680px;margin:0 auto;padding:0 0 48px}
+.lite .ps-header{position:static;padding-top:18px}
+.lite h1.ps-name,.lite h2.section-header,.lite h2.ps-focus-banner-text{margin:0;font:inherit}
+.lite h1.ps-name{font-size:21px;font-weight:700;line-height:1.2}
+.lite h2.section-header{font-size:11px;font-weight:600}
+.lc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.lite .ps-section{padding-left:16px;padding-right:16px}
+.lite .ps-actions{margin-top:10px}
+.lite a.ps-btn{text-decoration:none}
+.lite a.schedule-item{display:block;color:inherit;text-decoration:none}
+.lite .ps-sched-section{padding:8px 0 0}
+.lite .lc-contrib{margin-top:4px}
+.lc-notice{margin:14px 16px 0;padding:12px 14px;border-radius:12px;background:var(--surface-2);color:var(--text-secondary);font-size:14px}
+.lc-pin{margin:12px 12px 0}
+.lc-pin-status{margin:0 4px 4px;font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--danger)}
+.lc-pin-title{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.lc-banner{--parish-color:var(--parish);margin:14px 16px 4px}
+.lc-app{display:flex;align-items:center;justify-content:center;margin:16px;padding:12px 16px;border-radius:12px;background:var(--parish);color:#fff !important;font-weight:700;font-size:15px;text-decoration:none;box-shadow:0 1px 3px color-mix(in srgb,var(--parish) 40%,transparent)}
 .lc-app:hover{filter:brightness(1.08)}
-.lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:24px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
-.lc-contrib{display:flex;width:fit-content;align-items:center;margin:0 0 12px;padding:5px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12.5px;font-weight:600;text-decoration:none}.lc-contrib:hover{color:var(--text);background:var(--surface)}
-.tt-head{padding-bottom:4px}
-.tt-region{padding:14px 0 0}
-.tt-region>h2{margin:8px 0 4px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.tt-juris{margin:14px 0 2px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--pc)}
-.tt-parish{margin:10px 0 0;padding:2px 0 2px 12px;border-left:3px solid var(--pc)}
-.tt-name{display:block;font-weight:700;font-size:15.5px;text-decoration:none}
-.tt-addr{margin:1px 0 4px;color:var(--muted);font-size:12.5px}
-.tt-row{grid-template-columns:104px minmax(0,1fr)}
-.tt-row time{white-space:nowrap}
-.tt-parish .lc-src{margin:6px 0 4px}
-.tt-more{display:block;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;text-decoration:none}
+/* The app's .event-card is a flex row (card + drawer side by side when its JS
+   expands it); a <details> holds summary over body, so it stacks. */
+details.lc-ev.event-card{display:block}
+details.lc-ev>summary{display:block;list-style:none;cursor:pointer}
+.lc-ev-body{margin-top:10px}
+details.lc-ev>summary::-webkit-details-marker{display:none}
+details.lc-ev.past{opacity:.55}
+.lc-ev-body{font-size:14px}
+.lc-ev-body p{margin:0 0 2px}
+.lf-when{font-weight:600}
+.lf-where,.lf-langs{color:var(--text-secondary)}
+.lf-desc{margin-top:8px !important}
+.lf-poster{display:block;width:100%;height:auto;margin:10px 0 0;border-radius:10px}
+.lc-ev-link{display:inline-block;margin-top:8px;font-size:13px;color:var(--text-secondary) !important}
+.lc-badge.now{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--now-dot);color:#fff;font-size:10px;font-weight:800;letter-spacing:.04em;vertical-align:middle}
+.lc-empty{margin:12px 16px;color:var(--text-secondary)}
+.lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin:24px 16px 0;padding-top:14px;border-top:1px solid var(--border-light);font-size:13px;color:var(--text-secondary)}
+.tt-head{padding:20px 16px 4px}
+.tt-head h1{margin:0;font-size:21px;font-weight:700;line-height:1.2}
+.tt-head p{margin:4px 0 0;color:var(--text-secondary);font-size:13px}
+.tt-region>.month-header{margin-top:6px}
+.tt-parish .parish-schedule-avatar{background:var(--pc)}
+.tt-parish a.parish-schedule-head{color:inherit;text-decoration:none}
+.tt-addr{display:block;margin-top:1px;font-size:12px;font-weight:400;color:var(--text-secondary)}
+.tt-more{display:block;margin:16px;padding:12px 14px;border-radius:12px;background:var(--surface-2);color:var(--text) !important;font-size:14px;font-weight:600;text-decoration:none}
 `;

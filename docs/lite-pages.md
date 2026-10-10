@@ -29,8 +29,18 @@ empty shell.
 4. **It fails open.** A render that throws returns null and the app answers the link.
 
 Two ways past it: `?app` (the card's "Open in the app" button) and the `agora_admin`
-cookie, which the app sets while somebody holds a role so an admin lands where editing
-lives. The cookie grants nothing — the API checks the Access token on every request.
+cookie, which the app sets while somebody holds a role. The cookie grants nothing — the
+API checks the Access token on every request — and it only matters at a parish or an
+event link: an admin there gets the app, because the editors live in the app.
+
+**Page mode.** So that an admin sees the page a visitor sees, with the controls on it,
+the app lays that card out AS the page when it is the one answering a parish or event
+link (`decidePageMode` in `app.js`, deciding by url-state's `pageKind`, the Worker's own
+rule): the parish sheet full-screen and still, the map put away behind it, the same
+`orthodoxy.au` bar and ✕ across the top. Every in-place editor works there as it does on
+the sheet. The ✕ puts the card away and the map comes forward. Only on arriving at such
+a link — a parish opened from the map is still the sheet over the map, and `?app` asks
+for the map app. A timetable page has nothing to edit, so admins get it like anyone.
 
 ## What it shows
 
@@ -52,8 +62,21 @@ lives. The cookie grants nothing — the API checks the Access token on every re
   marks "Now" and fades past services on the viewer's clock, settles relative dates in
   the address bar (`/next-tue` → `/2026-10-06`), and prefetches the app on idle.
 
-The markup is NOT the app's sheet (app.js is a classic script the Worker cannot import),
-so the two can drift in look. They share the lens, the grammar and the wording.
+**It wears the app's design.** The page links `/app.css` and writes the app's own class
+names — `ps-header`, the `jurisdiction-box` timetable above the events, `day-section` /
+`time-card` / `event-card`, the Schedules view's boxes on a timetable page — so a
+visitor's page and an admin's page-mode card look the same. Each markup function in
+`lite-page.mjs` names the app function it mirrors; it is copied, not shared, until roadmap
+phase 3 moves the renderers into `public/shared/`. `LITE_CSS` holds only what a page
+needs that a sheet does not: the bar and its ✕ (to the map, where "← Back to App" was),
+the column, `<details>` so an event opens with no JavaScript, and the colours.
+
+**Its colours are the app's.** `/admin`'s overrides (`jurisdiction_colors`) over the
+shared table, the parish's own colour where the parish is the subject and its
+jurisdiction's on the timetable box, and the app's OKLab dark-mode lift — now in
+`public/shared/jurisdiction-colors.js` (`liftForDark`) so the Worker can compute it. A
+cached page cannot choose at render time, so it carries both as custom properties and a
+`prefers-color-scheme` query picks.
 
 ## Timetable pages: a link that names no single parish
 

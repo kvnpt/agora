@@ -26,7 +26,7 @@ import timetable from '../../public/shared/timetable.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import {
-  esc, time12, weeksLabel, sourceLine, jurisLabel, parishSlug, isNarrowed, liteDocument,
+  esc, jurisLabel, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
 } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
@@ -67,7 +67,7 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
  * question for locations.js); `rules` every active rule. Null when the link
  * names parishes and none of them exists — the app answers that one.
  */
-export function timetableModel({ parishes, rules, route, now, origin }) {
+export function timetableModel({ parishes, rules, route, now, origin, overrides = {} }) {
   // Several parishes by name: /smg+sgr. Acronym first, the id as the fallback,
   // in the order the link gives them — the same reading the app makes.
   let named = null;
@@ -148,7 +148,8 @@ export function timetableModel({ parishes, rules, route, now, origin }) {
     // serve the app rather than this page again.
     eventsHref: `${segs.length ? pathOf(segs) : '/'}?app`,
     servicesHref: `${pathOf([...segs, 'services'])}?app#no-times`,
-    color: route.jurisdiction ? jurisColors.jurisdictionColor(route.jurisdiction) : NEUTRAL,
+    overrides,
+    color: route.jurisdiction ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
   };
 }
 
@@ -188,45 +189,58 @@ export function timetableMeta(m) {
 }
 
 // ── markup ───────────────────────────────────────────────────────────────
+//
+// The app's Schedules view (renderServices in app.js), in its own class names
+// so /app.css styles it: a framed jurisdiction-box per jurisdiction, a
+// parish-schedule block per parish, renderScheduleDaysHTML's rows. The state
+// headings over them are the page's own — the app's view has no states.
 
-function parishHTML({ parish: p, rules }, m) {
-  const slug = parishSlug(p);
-  const color = jurisColors.jurisdictionColor(p.jurisdiction);
-  const rows = rules.map(r => {
-    const svc = services.serviceOf(r);
-    const href = `/${slug}/${services.daySlug(r.day_of_week)}${svc ? `/${svc}` : ''}`;
-    const langs = timetable.langsOf(r.languages);
-    const notes = [weeksLabel(r), langs ? langs.join(', ') : ''].filter(Boolean).join(' · ');
-    return `<a class="lt-row tt-row" href="${esc(href)}"><time>${esc(services.DAY_NAMES[r.day_of_week].slice(0, 3))} ${esc(time12(r.start_time))}</time><span>${esc(r.title)}${notes ? `<small>${esc(notes)}</small>` : ''}</span></a>`;
-  }).join('');
-  // One source line per parish's timetable: the most recent stamp among its rules.
-  const latest = rules.filter(r => r.source_name)
-    .sort((a, b) => String(b.source_checked_at || '').localeCompare(String(a.source_checked_at || '')))[0];
-  return `
-      <article class="tt-parish" style="--pc:${esc(color)}">
-        <a class="tt-name" href="/${esc(slug)}">${esc(p.name)}</a>
-        ${p.address ? `<p class="tt-addr">${esc(p.address)}</p>` : ''}
-        ${rows}
-        ${latest ? sourceLine(latest.source_name, latest.source_ref, latest.source_checked_at, m.now, 'lc-src') : ''}
-      </article>`;
+/** A parish's colour, as the app picks it: its own, else its jurisdiction's. */
+function parishColor(p, m) {
+  const own = typeof p.color === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(p.color.trim()) ? p.color.trim() : null;
+  return own || jurisColors.jurisdictionColorFrom(m.overrides, p.jurisdiction);
 }
 
-function groupsHTML(m) {
+function parishHTML({ parish: p, rules }, m, n) {
+  const slug = parishSlug(p);
+  const initial = (p.name || '?').trim()[0].toUpperCase();
+  const avatar = p.logo_path
+    ? `<div class="parish-schedule-avatar"><img src="${esc(p.logo_path)}" alt=""></div>`
+    : `<div class="parish-schedule-avatar">${esc(initial)}</div>`;
+  return `
+        <div class="parish-schedule tt-parish pc-${n}">
+          <a class="parish-schedule-head" href="/${esc(slug)}">${avatar}<div class="parish-schedule-name"><span class="tt-name">${esc(p.name)}</span>${p.address ? `<span class="tt-addr">${esc(p.address)}</span>` : ''}</div></a>
+          ${scheduleRowsHTML(rules, slug, m.now)}
+        </div>`;
+}
+
+function groupsHTML(m, vars) {
   if (!m.groups.length) {
     const msg = !m.scopeCount ? 'No parishes on file here yet.'
       : m.withoutTimes === m.scopeCount ? 'None of these parishes has its service times on file yet.'
         : 'No service on the timetable matches.';
     return `<p class="lc-empty">${esc(msg)}</p>`;
   }
-  // A jurisdiction heading only where the page mixes them; /greek needs none.
-  const showJuris = !m.route.jurisdiction;
+  let n = 0;
   return m.groups.map(g => `
-    <section class="tt-region" aria-label="${esc(g.label)}">
-      <h2>${esc(g.label)}</h2>
-      ${g.juris.map(j => `
-      ${showJuris ? `<h3 class="tt-juris" style="--pc:${esc(jurisColors.jurisdictionColor(j.key))}">${esc(j.label)}</h3>` : ''}
-      ${j.parishes.map(x => parishHTML(x, m)).join('')}`).join('')}
-    </section>`).join('');
+  <section class="tt-region" aria-label="${esc(g.label)}">
+    <div class="month-header">${esc(g.label)}</div>
+    ${g.juris.map(j => {
+      vars[`j-${j.key}`] = jurisColors.jurisdictionColorFrom(m.overrides, j.key);
+      vars[`j-${j.key}Dark`] = jurisColors.liftForDark(vars[`j-${j.key}`]);
+      return `
+    <div class="jurisdiction-box tt-juris-box" style="--juris-color:var(--j-${esc(j.key)})">
+      <div class="section-header jurisdiction-header">${esc(j.label)}</div>
+      ${j.parishes.map(x => {
+        n++;
+        const c = parishColor(x.parish, m);
+        vars[`pc${n}`] = c;
+        vars[`pc${n}Dark`] = jurisColors.liftForDark(c);
+        return parishHTML(x, m, n);
+      }).join('')}
+    </div>`;
+    }).join('')}
+  </section>`).join('');
 }
 
 export function renderTimetablePage(m) {
@@ -234,6 +248,12 @@ export function renderTimetablePage(m) {
   const sub = m.parishCount ? `${plural(m.parishCount, 'parish', 'parishes')} with times` : '';
   // The jurisdiction's card, as a parish without a logo previews.
   const image = `${m.origin}/og/${OG_CARDS.has(m.route.jurisdiction) ? m.route.jurisdiction : 'default'}.jpg`;
+  // The page's colours, collected while the groups render: one custom property
+  // per jurisdiction and per parish, each with the app's dark lift.
+  const vars = { parish: m.color, parishDark: jurisColors.liftForDark(m.color) };
+  const groups = groupsHTML(m, vars);
+  const parishVars = Object.keys(vars).filter(k => /^pc\d+$/.test(k))
+    .map(k => `.${k.replace('pc', 'pc-')}{--pc:var(--${k})}`).join('');
   return liteDocument({
     title: meta.title,
     description: meta.description,
@@ -244,14 +264,14 @@ export function renderTimetablePage(m) {
     ogType: 'website',
     image,
     color: m.color,
+    vars,
     main: `
+  <style>${parishVars}</style>
   <section class="lc-head tt-head">
-    <div>
-      <h1>${esc(timetableHeading(m))}</h1>
-      ${sub ? `<p class="lc-juris">${esc(sub)}</p>` : ''}
-    </div>
+    <h1>${esc(timetableHeading(m))}</h1>
+    ${sub ? `<p>${esc(sub)}</p>` : ''}
   </section>
-  ${groupsHTML(m)}
+  ${groups}
   ${m.withoutTimes ? `<a class="tt-more" href="${esc(m.servicesHref)}">${esc(plural(m.withoutTimes, 'parish', 'parishes'))} without service times on file →</a>` : ''}
   <a class="lc-app" href="${esc(m.eventsHref)}">View upcoming events →</a>`,
   });

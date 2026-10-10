@@ -143,7 +143,14 @@ a server-rendered card, not the app. Three things follow for a browser script:
 
 - **The first load of a fresh context is the card.** The app sets `agora_admin=1`
   once `/api/admin/ping` answers with a role — which the dev bypass always does —
-  so load `/` first if the script wants the app at a parish URL, or add `?app`.
+  so load `/` first if the script wants the app at a parish URL. It then gets the
+  app in **page mode** (`body.page-mode`: the card as a page, map hidden); add
+  `?app` for the map with the sheet over it. Timetable pages (`/greek`) are the
+  page for admins too.
+- **A changed page renders stale.** Pages are cached under the data version, which
+  only an admin write moves — so after editing `lite-page.mjs` or
+  `lite-timetable.mjs`, stop `wrangler dev`, `rm -rf .wrangler/state/v3/cache`, and
+  start it again, or the old markup keeps coming back.
 - **Check the card with JavaScript off too** (`javaScriptEnabled: false`); it is
   meant to read without it.
 - `curl -D - http://localhost:8787/sgr` shows `x-agora-page: lite` on a card.

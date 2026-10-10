@@ -19,8 +19,10 @@
 // Two ways past it on purpose:
 //   ?app               "Open in the app", the card's own button.
 //   agora_admin cookie set by the app while somebody holds a role, so an admin
-//                      following a link lands where editing lives. It grants
-//                      nothing; it only chooses which page to serve.
+//                      following a parish or event link lands where editing
+//                      lives: the app, laying that card out as a page (page
+//                      mode). Timetable pages are served to admins as well.
+//                      It grants nothing; it only chooses which page to serve.
 
 import urlState from '../../public/shared/url-state.js';
 import slugs from '../../public/shared/slugs.js';
@@ -30,12 +32,13 @@ import { cachedHtml } from '../lib/data-version.mjs';
 import { liteModel, liteWindow, liteStartDate, renderLitePage } from '../lib/lite-page.mjs';
 import { timetableModel, renderTimetablePage } from '../lib/lite-timetable.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
+import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
 // The parish columns a page shows. Not SELECT *: `updated_by` is an admin's
 // email and nothing public carries it.
-const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
+const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone, color,
   website, phone, email, logo_path, acronym, languages, live_url, donation_url,
   info_source_name, info_source_ref, info_checked_at, maps_url, updated_at`;
 
@@ -55,43 +58,29 @@ export function liteKind(pathname, now = Date.now()) {
   const first = pathname.split('/').filter(Boolean)[0];
   if (!first || SITE_PATHS.has(first.toLowerCase())) return null;
   const r = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) });
-  if (r.socialOnly || r.donate) return null;
-  // A card is one parish's, so a jurisdiction, a region or a language beside
-  // one is a question the card does not answer; the app does.
-  const scoped = r.jurisdiction || r.location || r.englishOnly;
-  if (r.parishSlugs && r.parishSlugs.length === 1) {
-    return scoped ? null : { kind: 'parish', slug: r.parishSlugs[0], route: r };
-  }
-  if (r.eventId) {
-    const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
-      && !r.part && !r.services;
-    return bare ? { kind: 'event', route: r } : null;
-  }
-  // Every other filter link is a timetable. Not one with a date: "what is on
-  // next Sunday" is a list of dates across parishes, which the app answers.
-  // And not a path that names nothing — that is the home page, or a segment
-  // nobody recognises.
-  if (r.dateFocus) return null;
-  const names = scoped || r.services || r.service || r.day != null || r.part
-    || (r.parishSlugs && r.parishSlugs.length > 1);
-  return names ? { kind: 'timetable', route: r } : null;
+  const kind = urlState.pageKind(r);
+  if (kind === 'parish') return { kind, slug: r.parishSlugs[0], route: r };
+  return kind ? { kind, route: r } : null;
 }
 
 // The parish columns the timetable page reads — address and pin for the
 // region, languages for /en, and nothing an admin wrote about themselves.
-const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezone, acronym, languages`;
+const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezone, acronym, languages,
+  color, logo_path`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
   languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
   source_name, source_ref, source_checked_at`;
 
 async function buildTimetable(env, url, kind, now) {
-  const [parishes, rules] = await Promise.all([
+  const [parishes, rules, overrides] = await Promise.all([
     env.DB.prepare(`SELECT ${TIMETABLE_PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
     env.DB.prepare(`SELECT ${TIMETABLE_RULE_COLS} FROM schedules WHERE active = 1`).all(),
+    // The colours /admin set, which the app paints and the page has to match.
+    jurisdictionColorOverrides(env.DB),
   ]);
   const model = timetableModel({
     parishes: parishes.results || [], rules: rules.results || [],
-    route: kind.route, now, origin: url.origin,
+    route: kind.route, now, origin: url.origin, overrides,
   });
   return model ? renderTimetablePage(model) : null;
 }
@@ -143,10 +132,11 @@ async function buildLite(env, url, kind, now) {
   const route = urlState.classifyPath(url.pathname, { today: localDateOf(zone, now) });
   const { fromUtc, toUtc } = liteWindow(liteStartDate(route, zone, now));
 
-  const [rows, events, cross, links] = await Promise.all([
+  const [rows, events, cross, links, overrides] = await Promise.all([
     fetchWindowRows(db, fromUtc, toUtc, { parishId: parish.id }),
     db.prepare(
-      `SELECT e.*, p.name AS parish_name, p.jurisdiction, p.timezone
+      `SELECT e.*, p.name AS parish_name, p.acronym AS parish_acronym, p.color AS parish_color,
+              p.jurisdiction, p.timezone
        FROM events e JOIN parishes p ON e.parish_id = p.id
        WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?
          AND (e.parish_id = ? OR e.id IN (SELECT event_id FROM event_parishes WHERE parish_id = ?))`
@@ -154,6 +144,7 @@ async function buildLite(env, url, kind, now) {
     db.prepare('SELECT event_id, parish_id FROM event_parishes WHERE parish_id = ?').bind(parish.id).all(),
     db.prepare('SELECT slug, label, url FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug')
       .bind(parish.id).all().catch(() => ({ results: [] })),
+    jurisdictionColorOverrides(db),
   ]);
 
   const model = liteModel({
@@ -161,7 +152,7 @@ async function buildLite(env, url, kind, now) {
     events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
     cross: cross.results || [],
     links: links.results || [],
-    route, pinnedEvent, now, origin: url.origin,
+    route, pinnedEvent, now, origin: url.origin, overrides,
   });
   return renderLitePage(model);
 }
@@ -190,9 +181,14 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
     });
   }
 
-  if (url.searchParams.has('app') || hasAdminCookie(request)) return null;
+  if (url.searchParams.has('app')) return null;
   const kind = liteKind(url.pathname, now);
   if (!kind) return null;
+  // An admin at a parish or an event gets the app — which lays the card out as
+  // this same page, with its editing in place (page mode in app.js), because
+  // the editors live in the app. A timetable page has nothing to edit, so it
+  // is everyone's page, admins included.
+  if (kind.kind !== 'timetable' && hasAdminCookie(request)) return null;
 
   try {
     const hour = new Date(now).toISOString().slice(0, 13);
