@@ -423,7 +423,8 @@ function sourceLineHTMLApp(name, ref, checked, now, cls) {
   if (!name) return '';
   const age = relativeAge(checked, now);
   const linkIcon = '<span class="source-link-icon" aria-hidden="true"></span>';
-  const label = /^https?:/.test(ref || '')
+  // A church sign's photo is ours, under /posters/ (public/shared/signs.js).
+  const label = /^(https?:|\/posters\/)/.test(ref || '')
     ? `<a href="${esc(ref)}" target="_blank" rel="noopener nofollow">${esc(name)}${linkIcon}</a>` : esc(name);
   return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
 }

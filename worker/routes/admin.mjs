@@ -38,7 +38,8 @@ import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
-  placeRead, moveDraft } from '../lib/drafts.mjs';
+  placeRead, moveDraft, matchOccurrences, occurrenceBody } from '../lib/drafts.mjs';
+import signs from '../../public/shared/signs.js';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
@@ -1408,13 +1409,31 @@ export function registerAdminRoutes(router) {
     return json(await insertCard(c.env.DB, r.draft.id, last + 1, v.patch), 201);
   }));
 
+  // What a sign said, as the person has corrected it: the weekly services the
+  // editor offers to add to the timetable (public/shared/signs.js). The whole
+  // list, because it is a handful of rows and the editor holds all of them.
+  // Nothing here touches the timetable — adding one is POST /api/admin/schedules,
+  // the route a person adding it by hand uses.
+  router.put('/api/admin/drafts/:id/services', guarded('event.edit', async (c) => {
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const b = await readJson(c.request);
+    const v = signs.validateServices(b.services);
+    if (!v.ok) return json({ error: v.error, index: v.index }, 400);
+    await c.env.DB.prepare(
+      `UPDATE drafts SET read_services = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+    ).bind(v.services.length ? JSON.stringify(v.services) : null, r.draft.id).run();
+    return json(await getDraft(c.env.DB, r.draft.id));
+  }));
+
   // Take the poster off the draft. The cards stay — they are the person's now.
   router.delete('/api/admin/drafts/:id/poster', guarded('event.edit', async (c) => {
     const r = await draftInScope(c, c.params.id);
     if (r.response) return r.response;
     await c.env.DB.prepare(
       `UPDATE drafts SET poster_path = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
-         read_parish = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+         read_parish = NULL, read_language = NULL, read_services = NULL, read_details = NULL,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
     ).bind(r.draft.id).run();
     await releaseUnused(c.env, [r.draft.poster_path]);
     return json(await getDraft(c.env.DB, r.draft.id));
@@ -1464,7 +1483,8 @@ export function registerAdminRoutes(router) {
       draft.poster_path = `/${key}`;
       await env.DB.prepare(
         `UPDATE drafts SET poster_path = ?, read_status = NULL, read_kind = NULL, read_notes = NULL,
-           read_parish = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+           read_parish = NULL, read_language = NULL, read_services = NULL, read_details = NULL,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
       ).bind(draft.poster_path, draft.id).run();
       // A replaced poster goes once nothing shows it.
       if (previous) await releaseUnused(env, [previous]);
@@ -1496,8 +1516,12 @@ export function registerAdminRoutes(router) {
         .bind(draft.parish_id).first();
       const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
       const today = localDateOf(zone, Date.now());
+      // Whole rows: the context names them, and a programme's dated services
+      // are matched to their occurrences (matchOccurrences) — which needs the
+      // weeks and the dates a rule runs between, not just its day and time.
       const rules = (await env.DB.prepare(
-        `SELECT day_of_week, start_time, title FROM schedules
+        `SELECT id, day_of_week, start_time, end_time, title, event_type, active, week_of_month,
+                week_parity, effective_from, effective_to FROM schedules
          WHERE parish_id = ? AND active = 1 AND (effective_to IS NULL OR effective_to >= ?)
          ORDER BY day_of_week, start_time`
       ).bind(draft.parish_id, today).all()).results || [];
@@ -1523,6 +1547,9 @@ export function registerAdminRoutes(router) {
       // The parish's own address is not a venue, and "another parish's poster"
       // becomes a parish on file when one clearly matches.
       await placeRead(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) });
+      // A dated regular service — a programme's Sunday and its saint — is a
+      // change to that Sunday, not an event beside it.
+      matchOccurrences(read.read, rules);
       // Null when the draft was discarded while it was being read.
       const merged = await mergeRead(env.DB, draft.id, read.read);
       send('result', { draft: merged });
@@ -1582,6 +1609,8 @@ export function registerAdminRoutes(router) {
       return json({ error: problems.map(p => p.text).join(' '), checks: problems }, 400);
     }
 
+    if (card.occurrence) return publishOccurrence(c, card, zone);
+
     const b = await readJson(c.request);
     const body = { ...publishBody(card, card.parish_id),
       ...localSpanToUtc(zone, card.date, card.start_time, card.end_time) };
@@ -1606,6 +1635,48 @@ export function registerAdminRoutes(router) {
       remaining: left.n,
     }, 201);
   }));
+
+  /**
+   * Publish a card that is a regular service on its own date: write it onto
+   * that occurrence, as an admin's edit of one Sunday is written
+   * (applyAdminEdit), with the draft's poster on it.
+   *
+   * A programme's Sunday was matched to its occurrence when it was read
+   * (matchOccurrences); the card can have changed since, so it is checked
+   * again: the rule is still this parish's, and the date is still the
+   * occurrence's. An occurrence keeps what it already is — a cancelled
+   * Sunday that a programme gives a saint stays cancelled — and a field the
+   * card leaves empty leaves the occurrence's own alone (occurrenceBody).
+   */
+  async function publishOccurrence(c, card, zone) {
+    const { env } = c;
+    const inst = parseInstanceId(card.occurrence);
+    if (!inst || inst.date !== card.date) {
+      return json({ error: 'The date has changed from the service this was matched to — check it, or make it an event of its own.' }, 400);
+    }
+    const rule = await env.DB.prepare('SELECT parish_id FROM schedules WHERE id = ?').bind(inst.scheduleId).first();
+    if (!rule || rule.parish_id !== card.parish_id) {
+      return json({ error: 'That service is not on this parish’s timetable any more — make it an event of its own.' }, 400);
+    }
+    const before = await env.DB.prepare(
+      'SELECT patch_poster_path FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
+    ).bind(inst.scheduleId, inst.date).first();
+    const span = localSpanToUtc(zone, card.date, card.start_time, card.end_time);
+    const body = { ...occurrenceBody(card, card.poster_path), start_utc: span.start_utc };
+    if (card.end_time) body.end_utc = span.end_utc;
+    const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, body);
+    if (r.error) return json({ error: r.error }, r.code || 400);
+    // The poster it had, if this one replaced it, goes once nothing shows it.
+    const previous = before && before.patch_poster_path;
+    if (previous && previous !== card.poster_path) await releaseUnused(env, [previous]);
+
+    await env.DB.prepare('DELETE FROM draft_events WHERE id = ?').bind(card.id).run();
+    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM draft_events WHERE draft_id = ?')
+      .bind(card.draft_id).first();
+    if (!left.n) await env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(card.draft_id).run();
+    else await touchDraft(env.DB, card.draft_id);
+    return json({ event: r.instance, occurrence: true, remaining: left.n }, 201);
+  }
 
   // ── combine ──
 
@@ -2477,7 +2548,9 @@ export function registerAdminRoutes(router) {
       b.week_parity ? String(b.week_parity).toLowerCase() : null,
       b.effective_from || null, b.effective_to || null,
     ).first();
-    await stampTimetable(c, parish_id);
+    // A rule added from a church sign names the sign as its source ("Church
+    // signage", linking to the photo), and that becomes the timetable's line.
+    await stampTimetable(c, parish_id, b);
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(row.id).first(), 201);
   }));
 

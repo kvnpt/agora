@@ -9919,6 +9919,15 @@ window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
     may: adminMay,
     draftId,
     openPoster: (url) => openPosterFullscreen(url),
+    // A church sign writes to the parish itself — its timetable, its details —
+    // and asks first, like any hand edit, whether to keep it by hand.
+    keepByHand: (pid) => ensureKeptByHand(pid),
+    onChanged: async ({ parishId, what }) => {
+      // A new rule is in the bundle, which fetchSchedules reloads (and repaints
+      // the sheet from); a detail is on the parish the editor shares with state.
+      if (what === 'timetable') await fetchSchedules({ fresh: true });
+      else if (state.parishSheetFocus === parishId) renderParishSheetContent(parishId, { fullRender: true });
+    },
     onPublished: async ({ events, proposals }) => {
       window.closeNewEventDialog();
       // Published at the parish it was moved to: show that parish's sheet,
@@ -10434,7 +10443,9 @@ function sourceLineHTML(name, ref, checked, cls) {
   // The name is the readable half and the ref the checkable half, so the name
   // is what links — and only when the ref is actually a URL, since a source
   // can be a person or a file path and those must not render as dead links.
-  const label = /^https?:/.test(ref || '')
+  // A photo of a church sign is the one path that does link: it is ours, in
+  // R2 under /posters/ ("Church signage", public/shared/signs.js).
+  const label = /^(https?:|\/posters\/)/.test(ref || '')
     ? `<a href="${esc(ref)}" target="_blank" rel="noopener">${esc(name)}${icon}</a>`
     : esc(name);
   return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;

@@ -22,9 +22,15 @@ Many parishes publish one image a month (Crows Nest's bulletin is the worked
 example in `docs/adapters.md`). Reading it by hand is the slowest step left.
 
 **The first door is built:** the add-event editor reads a dropped poster with
-Claude Haiku 4.5 into draft events (docs/editing.md). What remains is the
-bulletin's other half — a changed Sunday as an override of its rule rather
-than a one-off — and the WhatsApp door below.
+Claude Haiku 4.5 into draft events (docs/editing.md). So is most of the
+bulletin's other half: a programme's dated services are matched to their
+occurrences and publish as overrides (the day's saint, a moved time, the
+poster), and a photo of a church sign proposes the weekly services and the
+parish's details, sourced "Church signage". What remains is a programme's
+**cancellation** ("no Liturgy on the 25th") as a tombstone on that occurrence —
+the reader has no field for it yet, and a false one keeps somebody from a
+service that is running, so it wants its own confirm — and the WhatsApp door
+below.
 
 > *Build the bulletin ingest from docs/adapters.md ("Getting the next bulletin
 > in without a VPS"). First door: an admin drops an image on a parish sheet; the

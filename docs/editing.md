@@ -221,3 +221,63 @@ gives a parish its own address as a venue even when told not to, and the card
 then reads as if the event were somewhere else. In the editor, "replaces" starts
 again for the new parish, and a tick on a service the list no longer shows is
 dropped rather than left to combine invisibly on Publish.
+
+**A programme's Sundays are the Sundays on file.** A month's programme — St
+Athanasios, Rookwood prints one in Greek, every Saturday and Sunday of October
+with that day's saint — is not nine events: each line is a service the
+timetable already projects, on its own date. Published as one-offs they would
+be nine cards beside nine cards, the duplicate the combine exists to stop. So
+when the Worker reads an image it matches each dated event to an occurrence of
+the parish's rules (`matchOccurrences` in `worker/lib/drafts.mjs`): the rule
+that runs that day at that time, or else the one occurrence that day with the
+same service name (a programme that moves it) — never a guess between two. A
+matched card keeps `occurrence` ("sid:date") and the day's `feast`, takes the
+rule's own title and kind (so "and" for "&" is not an override), and publishes
+**onto** that occurrence through `applyAdminEdit`, with the poster as its
+`patch_poster_path`: the saint becomes the "✛" line under the service, which is
+what `patch_feast` is for — not a new title, because the service is still the
+Liturgy. The usual rules hold: the occurrence keeps what it already is (a
+cancelled Sunday that the programme gives a saint stays cancelled), and a field
+the card leaves empty is not "clear it" — a note somebody put on that Sunday
+survives (`occurrenceBody`). The card says which service it changes where the
+combine would be, and **Make it a separate event instead** unlinks it; so does
+changing its date, and so does moving the draft, since the rule was the old
+parish's. A one-off with a feast says it in its title (`oneOffTitle`), because
+`events` has no feast column. Publish checks the link again — the date is still
+the occurrence's and the rule still the parish's — and refuses otherwise.
+
+**A sign is read into the timetable, not into events.** The board out the front
+gives a parish's weekly services and its details. The reader calls that image a
+`timetable` and returns `services` (day, times, weeks of the month, languages)
+and `details` (address, phone, email, website), which the draft keeps as
+`read_services` / `read_details` — proposals, which nothing public reads. The
+editor sets each beside what is on file (`public/shared/signs.js`): a service
+already there says so (and offers what the sign adds that the rule leaves
+empty — an end time, its languages); one on file for other weeks of the month
+offers to correct the weeks rather than add a second rule on top; a new one is
+**Add to timetable**, after the person has opened it and checked it against the
+photo. The services on file that the sign does not mention are listed and
+nothing is offered for them: a sign lists Sundays and leaves out the weekday
+Vespers more often than the Vespers have stopped. A sign that agrees with the
+timetable can still mark it checked. Details fill an empty field or, where they
+differ, offer **Use the sign's**; an address is changed in the parish's details,
+where the pin moves with it.
+
+Each of these is a write a person makes, through the route they would use by
+hand (`POST /api/admin/schedules`, `PATCH …/schedules/:id`,
+`PATCH …/parishes/:id`), so the first one at a parish still read from a source
+asks whether to keep it by hand, as every hand edit does. They name their
+source: **"Church signage"**, with the photo's `/posters/` path as the ref, and
+since a timetable has one source line, that is the line — "Updated today ·
+Church signage ↗", linking to the photo in the app and on the lite page. The
+sign's draft is then closed with **Done**; the photo stays, because
+`releaseUnused` counts a rule's or a parish's source ref as using it.
+
+**Reads are written in English.** Agora is read in English, so the reader
+translates a Greek or Arabic poster's titles, saints and descriptions, and
+gives saints the names English-speaking Orthodox use. The owner's call, made for
+St Athanasios's Greek programme: the language of the land on the card, the
+original one tap away, because every card published from a poster carries it.
+The read records what it translated from (`drafts.read_language`) and the
+editor says so beside the poster.
+

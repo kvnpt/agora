@@ -89,3 +89,26 @@ test('whose poster: move it, say whose it is, or name it as printed — and noth
     { kind: 'named', name: 'St Elias Antiochian Orthodox Church, Wollongong' }, 'a parish since removed');
   assert.strictEqual(E.parishSuggestion(null, 'nick', ps, all), null);
 });
+
+test('a saved draft says what it is: an event, several, a programme’s dates, or a sign', () => {
+  assert.strictEqual(E.draftTitle({ cards: [{ title: ' Youth Night ' }] }), 'Youth Night');
+  assert.strictEqual(E.draftTitle({ cards: [{ title: '' }] }), 'Untitled event');
+  assert.strictEqual(E.draftTitle({ cards: [{ title: 'a' }, { title: 'b' }] }), '2 events');
+  assert.strictEqual(E.draftTitle({ cards: [{ title: 'L', occurrence: '7:2026-10-03' }, { title: 'L', occurrence: '8:2026-10-04' }] }),
+    '2 dates of regular services');
+  assert.strictEqual(E.draftTitle({ read_services: [{}, {}], cards: [{ title: null, date: null }] }), 'A church sign · 2 weekly services');
+  assert.strictEqual(E.draftTitle({ read_services: [{}], cards: [{ title: 'Typed too' }] }), 'Typed too');
+});
+
+test('a programme’s card puts the day’s saint where the kind would be; a weekly service reads as people say it', () => {
+  assert.strictEqual(E.summaryLine({ date: '2026-10-18', start_time: '08:00', end_time: '11:00',
+    title: 'Orthros and Divine Liturgy', event_type: 'liturgy', feast: 'Luke the Evangelist' }, { thisYear: 2026 }),
+  'Sun 18 Oct · 8:00–11:00 am · Orthros and Divine Liturgy · ✛ Luke the Evangelist');
+  globalThis.AgoraSigns = require('../public/shared/signs.js');
+  try {
+    assert.strictEqual(E.serviceLine({ day_of_week: 0, start_time: '18:00', end_time: null, title: 'Divine Liturgy',
+      week_of_month: 'second,fourth', languages: '["English"]' }), '2nd & 4th Sundays · 6:00 pm · Divine Liturgy · English');
+    assert.strictEqual(E.serviceLine({ day_of_week: 6, start_time: '08:00', end_time: '10:00', title: 'Orthros' }),
+      'Saturdays · 8:00–10:00 am · Orthros');
+  } finally { delete globalThis.AgoraSigns; }
+});

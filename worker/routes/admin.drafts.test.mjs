@@ -537,3 +537,197 @@ test('moving is scoped on both parishes, and refused mid-read or to nowhere', as
   assert.equal((await o.call('PATCH', `/api/admin/drafts/${od.id}`, { parish_id: 'nowhere' })).status, 400);
   assert.equal((await o.call('PATCH', `/api/admin/drafts/${od.id}`, { parish_id: '_unassigned' })).status, 400);
 });
+
+// ── a month's programme: its Saturdays and Sundays are the regular services ──
+
+const ROOKWOOD = 'greek-stathanasios-rookwood';
+const DOONSIDE = 'antiochian-stspeterpaul-doonside';
+
+/** St Athanasios, Rookwood, with the two rules its sign gives. Not in the seed. */
+function addRookwood(raw) {
+  raw.prepare(`INSERT INTO parishes (id, name, jurisdiction, address, lat, lng, timezone)
+    VALUES (?, 'St Athanasios, Rookwood', 'greek', 'Cnr Weekes & Carpenter Ave, Rookwood NSW 2141', -33.874, 151.054, 'Australia/Sydney')`)
+    .run(ROOKWOOD);
+  const rule = (day, end) => raw.prepare(
+    `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+     VALUES (?, ?, '08:00', ?, 'Orthros & Divine Liturgy', 'liturgy') RETURNING id`).get(ROOKWOOD, day, end).id;
+  return { sat: rule(6, '10:00'), sun: rule(0, '11:00') };
+}
+
+/**
+ * A programme in Greek, read in English: three of the parish's own services
+ * with their saints, and one service that is not on the timetable.
+ * (2030, so no date has passed whenever this runs.)
+ */
+const PROGRAMME = {
+  kind: 'bulletin', written_in: 'Greek', other_parish: null, notes: [], services: [],
+  details: { address: '', phone: '', email: '', website: '' },
+  events: [
+    { title: 'Orthros and Divine Liturgy', feast: 'Dionysios the Areopagite', date: '2030-11-02', weekday_printed: 'Saturday',
+      year_printed: true, start_time: '08:00', end_time: '10:00', event_type: 'feast', languages: [], venue: null, description: null, notes: [] },
+    { title: 'Orthros and Divine Liturgy', feast: 'Hierotheos, Bishop of Athens', date: '2030-11-03', weekday_printed: 'Sunday',
+      year_printed: true, start_time: '08:00', end_time: '11:00', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+    { title: 'Orthros and Divine Liturgy', feast: 'Luke the Evangelist', date: '2030-11-10', weekday_printed: 'Sunday',
+      year_printed: true, start_time: '08:00', end_time: '11:00', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+    { title: 'Great Vespers', feast: 'Luke the Evangelist', date: '2030-11-09', weekday_printed: 'Saturday',
+      year_printed: true, start_time: '18:00', end_time: null, event_type: 'prayer', languages: [], venue: null, description: null, notes: [] },
+  ],
+};
+
+test('a programme’s dated services are matched to their occurrences, in English, with each day’s saint', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sat, sun } = addRookwood(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: ROOKWOOD })).body;
+  const fetchImpl = fakeFetch(haikuStream(JSON.stringify(PROGRAMME)));
+  const { frames } = await withFetch(fetchImpl, () => f.poster(d.id));
+  assert.match(fetchImpl.calls[0].body.messages[0].content[1].text,
+    /- Sundays 08:00–11:00 Orthros & Divine Liturgy\n- Saturdays 08:00–10:00 Orthros & Divine Liturgy/);
+
+  const draft = frames[frames.length - 1].draft;
+  assert.equal(draft.read_language, 'Greek');
+  assert.deepEqual(draft.cards.map(c => c.occurrence),
+    [`${sat}:2030-11-02`, `${sun}:2030-11-03`, `${sun}:2030-11-10`, null]);
+  assert.deepEqual(draft.cards.map(c => c.feast),
+    ['Dionysios the Areopagite', 'Hierotheos, Bishop of Athens', 'Luke the Evangelist', 'Luke the Evangelist']);
+  // The rule's own title and kind, so the override says only what changed.
+  assert.deepEqual([draft.cards[0].title, draft.cards[0].event_type], ['Orthros & Divine Liturgy', 'liturgy']);
+  assert.equal(draft.cards[3].title, 'Great Vespers');
+});
+
+test('publishing a matched card writes onto that occurrence: its saint and the poster, nothing beside it', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sat, sun } = addRookwood(f.raw);
+  // The first Sunday is already cancelled, with a note somebody wrote.
+  f.raw.prepare(`INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind, patch_description)
+    VALUES (?, '2030-11-03', 'cancelled', 'The priest is away.')`).run(sun);
+  const draft = await readAt(f, ROOKWOOD, PROGRAMME);
+  const poster = draft.poster_path;
+  const events = () => f.raw.prepare('SELECT COUNT(*) n FROM events').get().n;
+  const before = events();
+
+  const one = await f.call('POST', `/api/admin/draft-events/${draft.cards[0].id}/publish`, {});
+  assert.equal(one.status, 201);
+  assert.equal(one.body.occurrence, true);
+  assert.equal(one.body.event.id, `${sat}:2030-11-02`);
+  assert.deepEqual([one.body.event.title, one.body.event.feast, one.body.event.poster_path, one.body.event.status],
+    ['Orthros & Divine Liturgy', 'Dionysios the Areopagite', poster, 'approved']);
+  const o = f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sat, '2030-11-02');
+  assert.deepEqual([o.kind, o.patch_title, o.patch_start_time, o.patch_end_time, o.patch_event_type, o.patch_feast, o.patch_poster_path],
+    ['modified', null, null, null, null, 'Dionysios the Areopagite', poster], 'only what the programme changes');
+
+  // Nothing disappears, and a field the card leaves empty is not "clear it".
+  const two = await f.call('POST', `/api/admin/draft-events/${draft.cards[1].id}/publish`, {});
+  assert.equal(two.status, 201);
+  const c = f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sun, '2030-11-03');
+  assert.deepEqual([c.kind, c.patch_description, c.patch_feast], ['cancelled', 'The priest is away.', 'Hierotheos, Bishop of Athens']);
+  assert.equal(events(), before, 'no event written beside the services');
+
+  // A service not on the timetable is an event, and says its saint in its title.
+  const vespers = await f.call('POST', `/api/admin/draft-events/${draft.cards[3].id}/publish`, {});
+  assert.equal(vespers.status, 201);
+  assert.equal(vespers.body.event.title, 'Great Vespers — Luke the Evangelist');
+  assert.equal(vespers.body.event.poster_path, poster);
+  assert.equal(events(), before + 1);
+});
+
+test('a matched card whose date moved, or whose service is gone, is not written onto it', async () => {
+  const f = fresh({ role: 'editor' });
+  const { sun } = addRookwood(f.raw);
+  const draft = await readAt(f, ROOKWOOD, PROGRAMME);
+  const card = draft.cards[2];
+  await f.call('PATCH', `/api/admin/draft-events/${card.id}`, { date: '2030-11-17' });
+  const moved = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(moved.status, 400);
+  assert.match(moved.body.error, /date has changed/);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM schedule_overrides WHERE schedule_id = ?').get(sun).n, 0);
+
+  // Unlinked, it is an event of its own.
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${card.id}`, { occurrence: '' })).status, 200);
+  assert.equal((await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {})).status, 201);
+
+  // Only a rule's occurrence can be linked, and only this parish's.
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${draft.cards[1].id}`, { occurrence: 'next sunday' })).body.field,
+    'occurrence');
+  const other = f.raw.prepare("SELECT id FROM schedules WHERE parish_id = ? LIMIT 1").get(DOONSIDE).id;
+  await f.call('PATCH', `/api/admin/draft-events/${draft.cards[1].id}`, { occurrence: `${other}:2030-11-03` });
+  const theirs = await f.call('POST', `/api/admin/draft-events/${draft.cards[1].id}/publish`, {});
+  assert.equal(theirs.status, 400);
+  assert.match(theirs.body.error, /not on this parish/);
+});
+
+test('moving a programme’s draft unlinks its cards from the old parish’s services', async () => {
+  const f = fresh({ role: 'editor' });
+  addRookwood(f.raw);
+  const draft = await readAt(f, ROOKWOOD, PROGRAMME);
+  const moved = (await f.call('PATCH', `/api/admin/drafts/${draft.id}`, { parish_id: DOONSIDE })).body;
+  assert.deepEqual(moved.cards.map(c => c.occurrence), [null, null, null, null]);
+  assert.deepEqual(moved.cards.map(c => c.feast).slice(0, 1), ['Dionysios the Areopagite'], 'what it says stays');
+});
+
+// ── a church sign: the timetable and the parish's details ──
+
+/** Sts Peter & Paul, Doonside's sign, as a person photographed it. */
+const SIGN = {
+  kind: 'timetable', written_in: 'English', other_parish: null, events: [], notes: [],
+  services: [
+    { title: 'Divine Liturgy', day: 'Sunday', start_time: '10:00', end_time: '', weeks: [],
+      languages: ['Arabic', 'English'], event_type: 'liturgy', notes: [] },
+    { title: 'Divine Liturgy', day: 'Sunday', start_time: '18:00', end_time: '', weeks: ['second', 'fourth'],
+      languages: ['English'], event_type: 'liturgy', notes: [] },
+  ],
+  details: { address: '182 Hill End Road, Doonside 2767', phone: '', email: '', website: '' },
+};
+
+test('a sign is read into proposed services and details, and nothing is written to the timetable', async () => {
+  const f = fresh({ role: 'editor' });
+  const rules = () => f.raw.prepare('SELECT COUNT(*) n FROM schedules WHERE parish_id = ?').get(DOONSIDE).n;
+  const before = rules();
+  const draft = await readAt(f, DOONSIDE, SIGN);
+  assert.equal(draft.read_kind, 'timetable');
+  assert.deepEqual(draft.read_services.map(s => [s.day_of_week, s.start_time, s.week_of_month, s.languages]),
+    [[0, '10:00', null, ['Arabic', 'English']], [0, '18:00', 'second,fourth', ['English']]]);
+  assert.deepEqual(draft.read_details, { address: '182 Hill End Road, Doonside 2767', phone: null, email: null, website: null });
+  assert.equal(draft.cards.length, 1, 'the blank card, untouched');
+  assert.equal(rules(), before);
+
+  // A person corrects what was read; the list is checked as a whole.
+  const fixed = draft.read_services.map((s, i) => (i === 1 ? { ...s, end_time: '19:30' } : s));
+  const put = await f.call('PUT', `/api/admin/drafts/${draft.id}/services`, { services: fixed });
+  assert.equal(put.status, 200);
+  assert.equal(put.body.read_services[1].end_time, '19:30');
+  const bad = await f.call('PUT', `/api/admin/drafts/${draft.id}/services`,
+    { services: [{ ...fixed[0], start_time: '10am' }] });
+  assert.deepEqual([bad.status, bad.body.index], [400, 0]);
+  assert.equal(rules(), before, 'still nothing on the timetable');
+});
+
+test('a service added from a sign names the sign as the timetable’s source, and keeps the photo', async () => {
+  const f = fresh({ role: 'editor' });
+  const draft = await readAt(f, DOONSIDE, SIGN);
+  const [key] = [...f.bucket.store.keys()];
+  const add = await f.call('POST', '/api/admin/schedules', {
+    parish_id: DOONSIDE, day_of_week: 0, start_time: '18:00', title: 'Divine Liturgy', event_type: 'liturgy',
+    week_of_month: 'second,fourth', languages: '["English"]',
+    source_name: 'Church signage', source_ref: draft.poster_path,
+  });
+  assert.equal(add.status, 201);
+  const stamps = f.raw.prepare('SELECT DISTINCT source_name, source_ref FROM schedules WHERE parish_id = ?').all(DOONSIDE);
+  assert.deepEqual(stamps, [{ source_name: 'Church signage', source_ref: `/${key}` }], 'one timetable, one source');
+
+  // Done with the sign: the draft goes, the photo the source line links to stays.
+  assert.equal((await f.call('DELETE', `/api/admin/drafts/${draft.id}`)).status, 200);
+  assert.ok(f.bucket.store.has(key));
+  assert.deepEqual(f.bucket.deleted, []);
+});
+
+test('a database made before 020 gets the sign and programme columns on first use', async () => {
+  const raw = new Database(':memory:');
+  raw.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
+  raw.exec(fs.readFileSync('d1/migrations/018-drafts.sql', 'utf8'));
+  raw.exec(fs.readFileSync('d1/migrations/019-draft-read-parish.sql', 'utf8'));
+  const cols = (t) => raw.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
+  assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
+  await ensureDraftTables(new D1(raw));
+  assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
+  assert.deepEqual(cols('draft_events').slice(-2), ['occurrence', 'feast']);
+});

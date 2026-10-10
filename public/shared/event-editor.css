@@ -351,3 +351,106 @@
 .ee-btn-primary { color: #fff; background: var(--accent); border: 1px solid var(--accent); }
 .ee-btn-ghost { color: var(--text); background: none; border: 1px solid var(--border); }
 .ee-btn-danger { color: var(--danger); border-color: transparent; padding-left: 2px; padding-right: 2px; }
+
+/* ── A programme's Sunday: a change to the service already on file ──
+   Where the combine would be. Accent, like the ask: nothing is wrong, it is
+   saying where this goes. */
+.ee-occ {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid var(--accent-ring, var(--border));
+  border-radius: 12px;
+}
+.ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+/* ── A church sign: weekly services and the parish's details ──
+   Set beside what is on file; each is added on its own. */
+.ee-sign { display: flex; flex-direction: column; gap: 8px; }
+.ee-sign .ee-section-title { margin: 4px 0 0; }
+.ee-sign > .ee-btn-small { align-self: flex-start; }
+.ee-sign > .ee-hint { margin: 0; }
+.ee-svcs, .ee-details { display: flex; flex-direction: column; gap: 6px; }
+.ee-svc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.ee-svc.is-on { background: var(--ee-field); border-color: transparent; }
+.ee-svc.is-open { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.ee-svc-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.ee-svc-sum {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ee-svc-sum::after { content: ' ▾'; color: var(--ee-muted); font-size: 11px; }
+.ee-svc.is-open .ee-svc-sum::after { content: ' ▴'; }
+.ee-svc-line { font-size: 13.5px; line-height: 1.4; }
+.ee-svc.is-new .ee-svc-line { font-weight: 600; }
+.ee-svc-state { font-size: 12.5px; line-height: 1.4; color: var(--ee-muted); }
+.ee-svc.is-on .ee-svc-state { color: var(--success, var(--ee-muted)); }
+.ee-svc > .ee-btn-small { align-self: flex-start; }
+.ee-btn-add { flex: 0 0 auto; color: #fff; background: var(--accent); border-color: var(--accent); }
+.ee-svc-form { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.ee-svc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ee-svc-field > span, .ee-svc-weeks > span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ee-muted);
+}
+.ee-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 420px) { .ee-grid-3 { grid-template-columns: 1fr 1fr; } .ee-grid-3 > :first-child { grid-column: 1 / -1; } }
+.ee-svc-weeks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13.5px; }
+.ee-svc-weeks > span { flex: 1 0 100%; }
+.ee-svc-weeks label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.ee-svc-weeks small { flex: 1 0 100%; font-size: 12px; color: var(--ee-muted); }
+.ee-missing { font-size: 13px; }
+.ee-missing summary { cursor: pointer; color: var(--accent-text, var(--accent)); padding: 2px 0 6px; }
+.ee-missing .ee-svc-line { display: block; padding: 3px 0; color: var(--ee-muted); }
+.ee-missing .ee-hint { margin: 6px 0 0; }
+.ee-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.ee-detail-label {
+  flex: 0 0 70px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ee-muted);
+}
+.ee-detail-value { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.ee-detail .ee-svc-state { flex: 1 0 100%; }
+
+/* A sign's draft: the one card it was made with is empty and not what this is
+   for, so it and Publish stay out of the way until somebody asks to add an
+   event as well. */
+.ee.ee-sign-only .ee-cards,
+.ee.ee-sign-only .ee-head,
+.ee.ee-sign-only .ee-readiness,
+.ee.ee-sign-only [data-ee="publish"] { display: none; }

@@ -21,8 +21,9 @@
 // single-occurrence upload does — see applyAdminEdit.
 //
 // The object is released, not just un-pointed, once nothing refers to it:
-// `releaseUnused` deletes a poster from R2 only when no event and no override
-// still names it, so taking a bulletin off one Sunday leaves the other three.
+// `releaseUnused` deletes a poster from R2 only when no event, override, draft
+// or source line still names it, so taking a bulletin off one Sunday leaves
+// the other three.
 
 import { ensureDraftTables } from './drafts.mjs';
 import { isValidOccurrence, breakCovering } from './expand.mjs';
@@ -148,19 +149,30 @@ export function namesPoster(col, key) {
  * A draft counts (lib/drafts.mjs): its poster is on file before any event is,
  * and taking one event off a poster must not delete it from under the cards
  * still waiting to be published from it.
+ *
+ * So does a SOURCE. A rule or a parish read off a church sign names the photo
+ * as where it came from (`source_ref`, `info_source_ref`: "Church signage",
+ * linking to it — public/shared/signs.js), and the sign's draft is discarded
+ * once its services are added; the photo is what the source line links to.
  */
 async function referenced(db, key) {
   const ev = namesPoster('poster_path', key);
   const ov = namesPoster('patch_poster_path', key);
   const dr = namesPoster('poster_path', key);
+  const sr = namesPoster('source_ref', key);
+  const ir = namesPoster('info_source_ref', key);
   const row = await db.prepare(`
     SELECT 1 FROM events WHERE ${ev.sql}
     UNION ALL
     SELECT 1 FROM schedule_overrides WHERE ${ov.sql}
     UNION ALL
     SELECT 1 FROM drafts WHERE ${dr.sql}
+    UNION ALL
+    SELECT 1 FROM schedules WHERE ${sr.sql}
+    UNION ALL
+    SELECT 1 FROM parishes WHERE ${ir.sql}
     LIMIT 1
-  `).bind(...ev.args, ...ov.args, ...dr.args).first();
+  `).bind(...ev.args, ...ov.args, ...dr.args, ...sr.args, ...ir.args).first();
   return !!row;
 }
 

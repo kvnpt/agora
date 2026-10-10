@@ -70,6 +70,10 @@ for them, are in the doc it links to — read that before changing the area.
   `events`, one card per request. A poster read only ever fills empty fields.
   A draft can move parish until then — scoped on both parishes; the read only
   suggests whose poster it is, and nothing moves a draft but a person.
+- A programme's dated services publish ONTO their occurrences (an override,
+  the saint as `patch_feast`), never as one-offs beside them. A sign's services
+  and details are proposals a person adds one by one, sourced "Church signage"
+  → the photo. Reads are written in English; the poster keeps the original.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.

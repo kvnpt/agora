@@ -6,8 +6,14 @@
 //   node scripts/mock-anthropic.mjs [port]          # default 8788
 //   wrangler dev ... --var ANTHROPIC_BASE_URL:http://127.0.0.1:8788
 //
-//   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy","delay":60}
+//   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
+//                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
+//                  sign_*: the board out the front of St Athanasios, Rookwood and of
+//                    Sts Peter & Paul, Doonside — weekly services and details
+//                  programme_rookwood: St Athanasios's October 2026 programme, in
+//                    Greek, read in English — its Saturdays and Sundays with their saints
+//                  (each written from the photo by hand: what a good read of it says)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
 // Dev tooling only — nothing deployed imports it.
@@ -58,7 +64,63 @@ const DOCS = {
     notes: [],
   },
   not_an_event: { kind: 'not_an_event', other_parish: null, events: [], notes: ['The image is a photo of the church with no event on it.'] },
+
+  // The sign out the front of St Athanasios, Rookwood: Greek, with the
+  // church's name in English. Two weekly services and the phone; no street.
+  sign_rookwood: {
+    kind: 'timetable', written_in: 'Greek', other_parish: null, events: [], notes: [],
+    services: [
+      { title: 'Orthros and Divine Liturgy', day: 'Saturday', start_time: '08:00', end_time: '10:00', weeks: [],
+        languages: [], event_type: 'liturgy', notes: [] },
+      { title: 'Orthros and Divine Liturgy', day: 'Sunday', start_time: '08:00', end_time: '11:00', weeks: [],
+        languages: [], event_type: 'liturgy', notes: [] },
+    ],
+    details: { address: '', phone: '(02) 9643 2850', email: '', website: '' },
+  },
+  // Sts Peter & Paul, Doonside's sign, from a photo somebody sent on WhatsApp.
+  // The priests' mobiles are theirs, not the parish's phone.
+  sign_doonside: {
+    kind: 'timetable', written_in: 'English', other_parish: null, events: [], notes: [],
+    services: [
+      { title: 'Divine Liturgy', day: 'Sunday', start_time: '10:00', end_time: '', weeks: [],
+        languages: ['Arabic', 'English'], event_type: 'liturgy', notes: [] },
+      { title: 'Divine Liturgy', day: 'Sunday', start_time: '18:00', end_time: '', weeks: ['second', 'fourth'],
+        languages: ['English'], event_type: 'liturgy', notes: [] },
+    ],
+    details: { address: '182 Hill End Road, Doonside 2767', phone: '', email: '', website: '' },
+  },
+  // ΠΡΟΓΡΑΜΜΑ ΜΗΝΟΣ ΟΚΤΩΒΡΙΟΥ: every Saturday and Sunday of October 2026,
+  // Orthros and Divine Liturgy, with the day's saint.
+  programme_rookwood: {
+    kind: 'bulletin', written_in: 'Greek', other_parish: null, notes: [], services: [],
+    details: { address: 'Cnr Weekes & Carpenter Ave, Rookwood NSW 2141', phone: '(02) 9643 2850',
+      email: 'stathanasiosrookwood@gmail.com', website: '' },
+    events: [
+      ['2026-10-03', 'Saturday', 'Dionysios the Areopagite'],
+      ['2026-10-04', 'Sunday', 'Hierotheos, Bishop of Athens'],
+      ['2026-10-10', 'Saturday', 'Eulampios the Martyr'],
+      ['2026-10-11', 'Sunday', 'Sunday of the Holy Fathers'],
+      ['2026-10-17', 'Saturday', 'Translation of the Relics of St Lazarus'],
+      ['2026-10-18', 'Sunday', 'Luke the Evangelist'],
+      ['2026-10-24', 'Saturday', 'Arethas the Great Martyr'],
+      ['2026-10-25', 'Sunday', 'Sixth Sunday of Luke'],
+      ['2026-10-31', 'Saturday', 'Stachys the Apostle'],
+    ].map(([date, day, feast]) => ({
+      title: 'Orthros and Divine Liturgy', feast, date, weekday_printed: day, year_printed: true,
+      start_time: '08:00', end_time: day === 'Saturday' ? '10:00' : '11:00', event_type: 'liturgy',
+      languages: [], venue: null, description: null, notes: [],
+    })),
+  },
 };
+
+// Every answer in the schema's full shape (worker/lib/poster-read.mjs), as
+// structured output always gives it.
+for (const d of Object.values(DOCS)) {
+  d.written_in ??= 'English';
+  d.services ??= [];
+  d.details ??= { address: '', phone: '', email: '', website: '' };
+  for (const e of d.events) e.feast ??= '';
+}
 
 const frame = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

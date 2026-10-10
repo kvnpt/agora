@@ -1184,6 +1184,7 @@
   <script src="/shared/event-types.js"></script>
   <script src="/shared/event-checks.js"></script>
   <script src="/shared/sse.js"></script>
+  <script src="/shared/signs.js"></script>
   <script src="/shared/event-editor.js"></script>
   <!-- The parish timezone table. Shared for the same reason the colours are:
        parishes.timezone is what makes a rule's local start_time an instant,
@@ -1436,7 +1437,8 @@
         const n = d.cards.length;
         const dates = d.cards.map(c => c.date).filter(Boolean).sort();
         const span = dates.length ? draftDate(dates[0]) + (dates.length > 1 ? ' – ' + draftDate(dates[dates.length - 1]) : '') : 'no date yet';
-        const title = n === 1 ? ((d.cards[0].title || '').trim() || 'Untitled event') : `${n} events`;
+        // A sign's draft, or a programme's: the editor's own words for what it is.
+        const title = AgoraEventEditor.draftTitle(d);
         const flag = d.read_status === 'reading' ? ' · <span class="draft-flag">still being read</span>'
           : d.read_status === 'failed' ? ' · <span class="draft-flag">reading did not finish</span>' : '';
         const who = String(d.created_by || '').split('@')[0];
@@ -1489,6 +1491,21 @@
         parishes: parishes.filter(p => p.id !== '_unassigned'),
         may: (capability, pid) => may(capability) && inMyScope(pid),
         draftId,
+        // A church sign writes to the parish itself. The app asks its "keep it
+        // by hand?" question in a dialog; here, as the delete dialog does, the
+        // answer that stops imports overwriting the sign is the default.
+        keepByHand: async (pid) => {
+          const p = parishes.find(x => x.id === pid);
+          const RF = window.AgoraReadFrom;
+          if (!p || !RF || RF.readFrom(p) === 'hand') return true;
+          if (!confirm(`${p.name} is ${RF.LABELS[RF.readFrom(p)].toLowerCase()}. Keep it by hand from now on, so the next import does not overwrite what the sign says?\n\nOK keeps it by hand. Cancel keeps reading it.`)) return true;
+          const r = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`,
+            { method: 'PATCH', headers, body: JSON.stringify({ read_from: 'hand' }) });
+          if (!r.ok) { toast(await adminError(r), 'error'); return false; }
+          p.read_from = 'hand';
+          return true;
+        },
+        onChanged: () => loadAll(),
         onPublished: ({ events, proposals }) => {
           closeEventEditor();
           toast(events.length === 1 ? `Published: ${events[0].title}` : `${events.length} events published`);
