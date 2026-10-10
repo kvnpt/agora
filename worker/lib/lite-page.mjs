@@ -225,6 +225,10 @@ const JURIS_LABEL = {
 };
 export const jurisLabel = (j) => JURIS_LABEL[j] || 'Orthodox';
 
+/** timetableLabel in app.js: "Antiochian timetable" over a jurisdiction's box of rules. */
+export const timetableLabel = (j) => (j && j !== 'other' && JURIS_LABEL[j]
+  ? `${j.charAt(0).toUpperCase()}${j.slice(1)} timetable` : 'Timetable');
+
 /** '10:00' → '10am', '18:30' → '6:30pm'. */
 export function time12(hhmm) {
   const [h, m] = String(hhmm || '').split(':').map(Number);
@@ -423,7 +427,8 @@ function sourceLineHTMLApp(name, ref, checked, now, cls) {
   if (!name) return '';
   const age = relativeAge(checked, now);
   const linkIcon = '<span class="source-link-icon" aria-hidden="true"></span>';
-  const label = /^https?:/.test(ref || '')
+  // A church sign's photo is ours, under /posters/ (public/shared/signs.js).
+  const label = /^(https?:|\/posters\/)/.test(ref || '')
     ? `<a href="${esc(ref)}" target="_blank" rel="noopener nofollow">${esc(name)}${linkIcon}</a>` : esc(name);
   return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
 }
@@ -575,11 +580,12 @@ export function scheduleRowsHTML(rules, slug, now) {
       r.week_parity ? '<span class="schedule-item-wom">fortnightly</span>'
         : r.week_of_month ? `<span class="schedule-item-wom">${esc(String(r.week_of_month).split(',').map(w => ORDINAL[w.trim()] || w.trim()).join(', '))} ${esc(services.DAY_NAMES[dow])}</span>` : '',
       rangeLabel(r) ? `<span class="schedule-item-range">${esc(rangeLabel(r))}</span>` : '',
-      langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '',
       r.parish_scoped ? '<span class="schedule-item-scope">parish only</span>' : '',
     ].join('');
+    // The languages on the title's line, as the app has them.
+    const lang = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
     html += `<a class="schedule-item lt-row" href="${esc(href)}">
-          <div class="si-main"><span class="schedule-item-time">${ruleTimeHTML(r.start_time)}</span><span class="si-title"><span class="schedule-item-title" title="${esc(r.title)}">${esc(r.title)}</span><img class="si-chev" src="${icon('ph:caret-right-bold')}" alt=""></span></div>
+          <div class="si-main"><span class="schedule-item-time">${ruleTimeHTML(r.start_time)}</span><span class="si-title"><span class="schedule-item-title" title="${esc(r.title)}">${esc(r.title)}</span>${lang}<img class="si-chev" src="${icon('ph:caret-right-bold')}" alt=""></span></div>
           ${meta ? `<div class="si-meta">${meta}</div>` : ''}
           ${r.location_override ? `<div class="si-where">${esc(r.location_override)}</div>` : ''}
         </a>`;
@@ -600,7 +606,7 @@ function timetableHTML(m, rules, empty) {
   return `
   <section class="lc-times ps-section ps-sched-section" aria-labelledby="lt-h">
     <div class="jurisdiction-box" style="--juris-color:var(--juris)">
-      <h2 class="section-header jurisdiction-header" id="lt-h">${esc(jurisLabel(p.jurisdiction))}</h2>
+      <h2 class="section-header jurisdiction-header" id="lt-h">${esc(timetableLabel(p.jurisdiction))}</h2>
       <div class="parish-schedule ps-timetable">
         <div class="parish-schedule-head">${avatar}<div class="parish-schedule-name">${esc(p.name || p.full_name)}</div></div>
         ${rules.length ? scheduleRowsHTML(rules, m.slug, m.now) : `<div class="ps-sched-empty">${esc(empty)}</div>`}
@@ -694,7 +700,7 @@ function bodyHTML(m) {
   ${timetableHTML(m, m.rules, 'No service times on file.')}
   ${appButtonHTML(m, 'Open in the app →')}
   <section class="lc-list" aria-labelledby="ll-h">
-    ${heading ? bannerHTML(heading) : '<h2 class="lc-sr" id="ll-h">Coming up</h2>'}
+    ${heading ? bannerHTML(heading) : '<h2 class="section-header feed-header" id="ll-h" style="--juris-color:var(--juris)">Coming up</h2>'}
     <div class="ps-events-list">${listHTML(m)}</div>
   </section>
   <footer class="lc-foot">
@@ -802,7 +808,6 @@ body.lite{margin:0;background:var(--bg);color:var(--text);font-size:15px;-webkit
 .lite h1.ps-name,.lite h2.section-header,.lite h2.ps-focus-banner-text{margin:0;font:inherit}
 .lite h1.ps-name{font-size:21px;font-weight:700;line-height:1.2}
 .lite h2.section-header{font-size:11px;font-weight:600}
-.lc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .lite .ps-section{padding-left:16px;padding-right:16px}
 .lite .ps-actions{margin-top:10px}
 .lite a.ps-btn{text-decoration:none}

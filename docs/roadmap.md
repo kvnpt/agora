@@ -22,9 +22,15 @@ Many parishes publish one image a month (Crows Nest's bulletin is the worked
 example in `docs/adapters.md`). Reading it by hand is the slowest step left.
 
 **The first door is built:** the add-event editor reads a dropped poster with
-Claude Haiku 4.5 into draft events (docs/editing.md). What remains is the
-bulletin's other half — a changed Sunday as an override of its rule rather
-than a one-off — and the WhatsApp door below.
+Claude Haiku 4.5 into draft events (docs/editing.md). So is most of the
+bulletin's other half: a programme's dated services are matched to their
+occurrences and publish as overrides (the day's saint, a moved time, the
+poster), and a photo of a church sign proposes the weekly services and the
+parish's details, sourced "Church signage". What remains is a programme's
+**cancellation** ("no Liturgy on the 25th") as a tombstone on that occurrence —
+the reader has no field for it yet, and a false one keeps somebody from a
+service that is running, so it wants its own confirm — and the WhatsApp door
+below.
 
 > *Build the bulletin ingest from docs/adapters.md ("Getting the next bulletin
 > in without a VPS"). First door: an admin drops an image on a parish sheet; the
@@ -87,6 +93,35 @@ links (`docs/lite-pages.md`); this is where that ends up.
 > painted. Keep the app for everything past the first screen. Plan first: what the
 > home page's timetable shows with no filter, how the map loads without delaying first
 > paint, and what returning users and admins land on.*
+
+## If D1 reads spike again
+
+On 10 October 2026 the account hit the Workers Free cap of 5 million D1 rows
+read in a day (6.94M) and D1 refused reads until midnight UTC. The owner moved
+to Workers Paid ($5/month, 25 billion rows a month), so this is no longer an
+outage, only a cost — and these fixes are parked until it happens again.
+
+What the numbers said: about 42,000 requests from France in 24 hours against a
+few dozen real page views (Web Analytics, bots excluded), so a crawler, at about
+165 rows a request. What it was walking: the link graph the lite and timetable
+pages had just grown (PRs #75, #76) — every timetable row links a
+`/<acronym>/<day>/<service>` card, every card links its events'
+`/<id>:<date>` pages, and dates roll forward, so the URL space never ends. Pages
+cache per URL and per hour, which a crawler visiting each URL once defeats, and
+`noindex` stops indexing, not crawling.
+
+> *D1 rows read are climbing again (docs/roadmap.md, "If D1 reads spike
+> again"). First confirm the source in Security → Analytics (country, ASN, user
+> agent, top paths). Then, in one PR:*
+> - *`rel="nofollow"` on the variant links the lite pages write — event links,
+>   timetable rows, `?app` — and a `robots.txt` Disallow for `/*:*` (event ids)
+>   and `/*?app`;*
+> - *the `/:slug/:link` and `/:slug/donate` routes in worker/index.mjs query D1
+>   on EVERY two-segment path, before the page cache is checked: skip them for
+>   paths url-state classifies as filters, and look parishes up by a stored,
+>   indexed normalised acronym instead of scanning `lower(replace(acronym…))`;*
+> - *build timetable pages from the cached `/api/bundle` body instead of D1;*
+> - *if a single bot is the cause, a WAF rule or Bot Fight Mode first — no code.*
 
 ## Owner to-dos (not code)
 

@@ -26,7 +26,7 @@ import timetable from '../../public/shared/timetable.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import {
-  esc, jurisLabel, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
+  esc, jurisLabel, timetableLabel, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
 } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
@@ -230,7 +230,7 @@ function groupsHTML(m, vars) {
       vars[`j-${j.key}Dark`] = jurisColors.liftForDark(vars[`j-${j.key}`]);
       return `
     <div class="jurisdiction-box tt-juris-box" style="--juris-color:var(--j-${esc(j.key)})">
-      <div class="section-header jurisdiction-header">${esc(j.label)}</div>
+      <div class="section-header jurisdiction-header">${esc(timetableLabel(j.key))}</div>
       ${j.parishes.map(x => {
         n++;
         const c = parishColor(x.parish, m);

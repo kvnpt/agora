@@ -1785,6 +1785,29 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   background: linear-gradient(to right, transparent, var(--juris-color, var(--border)) 50%, transparent);
 }
 
+/* "Coming up" — where the parish sheet (and the lite card) goes from the
+   timetable to the dated services it projects. The timetable header's shape,
+   outside its box, so the two halves of the page read as a pair. */
+.section-header.feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 18px 14px 2px;
+  text-align: center;
+  color: var(--juris-color, var(--text-secondary));
+}
+.section-header.feed-header::before,
+.section-header.feed-header::after {
+  content: '';
+  flex: 0 1 48px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--juris-color, var(--border)) 50%, transparent);
+}
+/* A focus banner says what the list is narrowed to, and heads it instead. */
+.section-header.feed-header:has(~ .ps-focus-banner) { display: none; }
+
 /* Parish schedule card inside a jurisdiction box — avatar + name header,
    then day rows. No glow: the parish avatar carries the identity. */
 .parish-schedule {

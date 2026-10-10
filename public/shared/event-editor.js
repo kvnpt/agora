@@ -17,6 +17,17 @@
 // be checked at a glance. Nothing a person has typed is ever overwritten: the
 // read only fills empty fields, here and on the server.
 //
+// A PROGRAMME'S SUNDAYS ARE THE SUNDAYS ALREADY ON FILE. A month's programme
+// gives each regular service with that day's saint; the Worker matches those
+// to their occurrences when it reads them (`occurrence`), and such a card
+// publishes onto that service — its commemoration and the poster — instead of
+// beside it. The card says so where the combine would be, and can be unlinked.
+//
+// A SIGN IS READ INTO THE TIMETABLE. A photo of the board out the front gives
+// weekly services and the parish's details, not events: they are shown beside
+// what is on file (public/shared/signs.js) and added one by one through the
+// routes a person adding them by hand uses, with the sign as their source.
+//
 // EVERY CARD CARRIES THE COMBINE the old dialog did — "also appears at" and
 // "replaces" — because an event entered because it replaces the 9am liturgy
 // should never exist for a round trip beside it (docs/editing.md). A target at
@@ -26,8 +37,8 @@
 // textContent or esc(), never as markup.
 //
 // Classic script: window.AgoraEventEditor, and module.exports for the pure
-// helpers' tests. Needs AgoraEventTypes, AgoraEventChecks, AgoraSSE and (for
-// the shrink) AgoraLogo loaded first.
+// helpers' tests. Needs AgoraEventTypes, AgoraEventChecks, AgoraSSE, AgoraSigns
+// and (for the shrink) AgoraLogo loaded first.
 (function (root) {
   // ── pure helpers (d1/event-editor.test.mjs) ───────────────────────────────
 
@@ -68,14 +79,51 @@
 
   /**
    * A card as one line, for scanning a poster's worth at a glance:
-   * "Sat 14 Nov · 7:00–9:30 pm · Youth Night · Youth".
+   * "Sat 14 Nov · 7:00–9:30 pm · Youth Night · Youth". A programme's cards
+   * share one title — every Sunday is the Liturgy — so the day's saint is what
+   * tells them apart, and stands where the kind would.
    */
   function summaryLine(f, { thisYear } = {}) {
+    const feast = String(f.feast || '').trim();
     return [
       dateLabel(f.date, thisYear) || 'No date',
       timeRange(f.start_time, f.end_time) || 'No time',
       (f.title || '').trim() || 'Untitled',
-      kindLabel(f.event_type),
+      feast ? `✛ ${feast}` : kindLabel(f.event_type),
+    ].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * What a saved draft is, in a few words, for the lists that offer to
+   * continue one: "Youth Night", "3 events", "9 dates of regular services" (a
+   * programme), "A church sign · 2 weekly services" (whose one card is empty).
+   */
+  function draftTitle(d) {
+    const cards = (d && d.cards) || [];
+    const typed = cards.filter(c => String(c.title || '').trim() || c.date);
+    const svcs = ((d && d.read_services) || []).length;
+    if (svcs && !typed.length) return `A church sign · ${svcs} weekly service${svcs === 1 ? '' : 's'}`;
+    if (cards.length > 1 && cards.every(c => c.occurrence)) return `${cards.length} dates of regular services`;
+    if (cards.length > 1) return `${cards.length} events`;
+    return (cards[0] && String(cards[0].title || '').trim()) || 'Untitled event';
+  }
+
+  const DAY_PLURALS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+
+  /**
+   * A weekly service — a rule on file, or one read off a sign — as one line:
+   * "2nd & 4th Sundays · 6:00 pm · Divine Liturgy · English".
+   */
+  function serviceLine(s) {
+    const weeks = root.AgoraSigns ? root.AgoraSigns.weeksLabel(s.week_of_month) : '';
+    const day = DAY_PLURALS[s.day_of_week] || 'No day';
+    let langs = s.languages;
+    if (typeof langs === 'string') { try { langs = JSON.parse(langs); } catch { langs = null; } }
+    return [
+      weeks ? `${weeks} ${day}` : day,
+      timeRange(s.start_time, s.end_time) || 'No time',
+      (s.title || '').trim() || 'Untitled',
+      Array.isArray(langs) && langs.length ? langs.join(', ') : '',
     ].filter(Boolean).join(' · ');
   }
 
@@ -181,7 +229,7 @@
 
   const MAX_EDGE = 2048;           // what is stored and shown; Claude reads it smaller
   const SAVE_DELAY = 700;
-  const TEXT_FIELDS = ['title', 'description', 'languages', 'location_override', 'ask_reason'];
+  const TEXT_FIELDS = ['title', 'feast', 'description', 'languages', 'location_override', 'ask_reason'];
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -249,8 +297,8 @@
   }
 
   const blankFields = () => ({
-    title: '', date: '', start_time: '', end_time: '', event_type: '', description: '',
-    languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '',
+    title: '', feast: '', date: '', start_time: '', end_time: '', event_type: '', description: '',
+    languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
   });
 
   /** A field's value as the Worker stores it. */
@@ -274,6 +322,11 @@
    *   onClose     () — Save draft, Discard, or nothing left to do
    *   onParishChange (parish) — the picker moved the draft, or a draft was opened
    *   openPoster  (url) — the host's full-screen viewer, if it has one
+   *   keepByHand  (parishId) => Promise<boolean> — the host's "keep it by hand
+   *               from now on?" before the first write a sign makes to a parish
+   *               still read from a source; false stops the write
+   *   onChanged   ({parishId, what: 'timetable'|'details'}) — a sign changed the
+   *               parish itself, which the host shows and the cards do not
    */
   function open(mount, opts) {
     const may = opts.may || (() => true);
@@ -295,6 +348,18 @@
       publishing: false,
       moving: false,          // the PATCH that moves the draft, while it is in flight
       closed: false,
+      // The parish's timetable, every rule (GET /api/admin/schedules): what a
+      // sign is set beside, and what a programme's cards were matched to.
+      rules: null,
+      // A sign's weekly services, as the person has corrected them, and which
+      // rows are open for that.
+      services: [],
+      svcOpen: new Set(),
+      svcTimer: null,
+      signBusy: false,
+      keptByHand: false,
+      // A sign's draft shows its (empty) card only once somebody asks to add an event too.
+      wantCards: false,
     };
     const zone = () => (state.parish && state.parish.timezone) || 'Australia/Sydney';
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: zone() }).format(new Date());
@@ -333,6 +398,7 @@
         </div>
       </div>
       <div class="ee-main">
+        <div class="ee-sign" data-ee="sign" aria-live="polite" hidden></div>
         <div class="ee-head" data-ee="head" hidden></div>
         <div class="ee-cards" data-ee="cards"></div>
         <button type="button" class="ee-add" data-ee="add-card">+ Add another event</button>
@@ -343,6 +409,7 @@
           <span class="ee-actions-gap"></span>
           <button type="button" class="ee-btn ee-btn-ghost" data-ee="save-draft">Save draft</button>
           <button type="button" class="ee-btn ee-btn-primary" data-ee="publish">Publish</button>
+          <button type="button" class="ee-btn ee-btn-primary" data-ee="done" hidden>Done</button>
         </div>
       </div>`;
     mount.appendChild(el);
@@ -428,7 +495,14 @@
         const r = await http('DELETE', `/api/admin/drafts/${state.draft.id}/poster`);
         if (!r.ok) return showError((r.body && r.body.error) || 'The poster could not be removed.');
         state.draft.poster_path = null;
+        state.draft.read_details = null;
+        state.draft.read_kind = null;
       }
+      // A sign's proposals were the poster's; without it there is nothing to add from.
+      clearTimeout(state.svcTimer);
+      state.svcTimer = null;
+      state.services = [];
+      renderSign();
       if (state.objectUrl) { URL.revokeObjectURL(state.objectUrl); state.objectUrl = null; }
       showPoster(null);
       setStatus('');
@@ -462,8 +536,12 @@
 
     function setDraft(d) {
       state.draft = { id: d.id, poster_path: d.poster_path, read_status: d.read_status,
-        read_kind: d.read_kind, read_notes: d.read_notes || [], read_parish: d.read_parish || null };
+        read_kind: d.read_kind, read_notes: d.read_notes || [], read_parish: d.read_parish || null,
+        read_language: d.read_language || null, read_details: d.read_details || null };
+      // What the person is still correcting stays theirs until it has saved.
+      if (!state.svcTimer) state.services = (d.read_services || []).map(x => ({ ...x }));
       renderSuggestion();
+      renderSign();
     }
 
     function takePending(card) {
@@ -503,7 +581,8 @@
     function cardFromServer(card, row, { keepLocal = false } = {}) {
       card.id = row.id;
       const server = {
-        title: row.title || '', date: row.date || '', start_time: row.start_time || '',
+        title: row.title || '', feast: row.feast || '', occurrence: row.occurrence || '',
+        date: row.date || '', start_time: row.start_time || '',
         end_time: row.end_time || '', event_type: row.event_type || '', description: row.description || '',
         languages: langsToText(row.languages), location_override: row.location_override || '',
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
@@ -538,6 +617,8 @@
         </button>
         <div class="ee-body">
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
+          ${row('feast', 'Commemoration', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day" autocomplete="off">`,
+            '<div class="ee-hint" data-hint="feast"></div>')}
           ${row('date', 'Date', `<input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">`)}
           <div class="ee-grid">
             ${row('start_time', 'Starts', `<input type="time" id="${fieldId(card, 'start_time')}" data-ee-field="start_time">`)}
@@ -549,6 +630,10 @@
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" placeholder="English, Greek" autocomplete="off">`)}
           ${row('location_override', 'Held elsewhere', `<input id="${fieldId(card, 'location_override')}" data-ee-field="location_override" placeholder="Leave empty if it is at the parish" autocomplete="off">`,
             '<div class="ee-hint">A venue for this one event. The parish’s own address and pin are untouched.</div>')}
+          <div class="ee-occ" hidden>
+            <div class="ee-occ-what"></div>
+            <button type="button" class="ee-link" data-act="unlink">Make it a separate event instead</button>
+          </div>
           <details class="ee-combine">
             <summary>Also at other parishes, or replaces a service</summary>
             <div class="ee-section-title">Also appears at</div>
@@ -578,6 +663,9 @@
         askWhat: node.querySelector('.ee-ask-what'),
         err: node.querySelector('.ee-card-error'),
         zone: node.querySelector('[data-hint="zone"]'),
+        feastHint: node.querySelector('[data-hint="feast"]'),
+        occ: node.querySelector('.ee-occ'),
+        occWhat: node.querySelector('.ee-occ-what'),
         inputs: {},
       };
       node.querySelectorAll('[data-ee-field]').forEach(inp => {
@@ -588,6 +676,7 @@
         if (isText) inp.addEventListener('blur', () => flush(card));
       });
       card.els.sum.addEventListener('click', () => toggleCard(card));
+      node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       node.querySelector('.ee-remove').addEventListener('click', () => removeCard(card));
       $('cards').appendChild(node);
@@ -613,6 +702,11 @@
       if (f === 'date') {
         card.hints = { printed_weekday: null, year_printed: null };
         loadCandidates(card);
+        // A programme's Sunday on another date is not that Sunday any more.
+        if (card.fields.occurrence && card.fields.occurrence.split(':')[1] !== value) {
+          unlinkCard(card, { quiet: true });
+          card.notes.push({ field: 'date', text: 'A new date, so this is an event of its own now — not a change to the regular service.' });
+        }
       }
       card.pending[f] = toPatchValue(f, value);
       // A refusal for scope is about the combine's targets, and stands until
@@ -622,6 +716,20 @@
       schedule(card, isText ? SAVE_DELAY : 0);
       refreshCard(card);
       sync();
+    }
+
+    /** A card matched to a regular service, made an event of its own. */
+    function unlinkCard(card, { quiet = false } = {}) {
+      if (!card.fields.occurrence) return;
+      card.fields.occurrence = '';
+      card.touched.add('occurrence');
+      card.pending.occurrence = null;
+      if (!quiet) {
+        card.publish = { state: 'idle', message: '' };
+        schedule(card, 0);
+        refreshCard(card);
+        sync();
+      }
     }
 
     function setList(card, f, list) {
@@ -710,7 +818,8 @@
       const checks = isPristine(card) ? [] : checksFor(card);
       const thisYear = +today().slice(0, 4);
       card.els.line.textContent = summaryLine(card.fields, { thisYear });
-      card.els.chips.innerHTML = checks
+      card.els.chips.innerHTML = (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
+        + checks
         .filter(c => c.level !== 'info' || c.field === 'date')
         .map(c => `<span class="ee-chip ee-chip-${c.level}">${esc(chipText(c))}</span>`).join('')
         + (card.publish.state === 'refused' ? '<span class="ee-chip ee-chip-warn">needs an owner</span>' : '')
@@ -729,6 +838,7 @@
         card.els.err.textContent = card.publish.message;
         card.els.err.hidden = false;
       }
+      refreshOccurrence(card);
       const single = !state.multi;
       card.els.sum.hidden = single;
       card.els.body.hidden = !single && !card.open;
@@ -736,6 +846,24 @@
       card.els.root.classList.toggle('is-open', single || card.open);
       card.els.root.classList.toggle('is-published', card.publish.state === 'done');
       refreshAsk(card);
+    }
+
+    /**
+     * A card matched to a regular service says which, where the combine would
+     * be — publishing writes onto that service, so there is nothing to combine.
+     */
+    function refreshOccurrence(card) {
+      const occ = card.fields.occurrence;
+      card.els.occ.hidden = !occ;
+      card.els.combine.hidden = !!occ;
+      card.els.feastHint.textContent = occ
+        ? 'Shown under the service’s name on that day.'
+        : 'A one-off event has no line for it, so it is added to the title when published.';
+      card.els.feastHint.hidden = !String(card.fields.feast || '').trim();
+      if (!occ) return;
+      const rule = (state.rules || []).find(r => String(r.id) === occ.split(':')[0]);
+      const which = rule ? `<b>${esc(timeRange(rule.start_time, rule.end_time))} ${esc(rule.title)}</b>` : 'service';
+      card.els.occWhat.innerHTML = `On the timetable: this is the parish’s regular ${which} on ${esc(dateLabel(occ.split(':')[1]))}. Publishing adds what is here, and the poster, to that service — no second card beside it.`;
     }
 
     function chipText(c) {
@@ -773,8 +901,10 @@
       const h = $('head');
       const n = state.cards.length;
       h.hidden = !state.multi;
-      h.textContent = state.read && state.read.active ? `${n} events found so far…`
-        : `${n} events${state.draft && state.draft.poster_path ? ' detected' : ''} — saved as a draft, not yet published. Tap one to check or change it.`;
+      // A programme's cards are dates of services already on file, not events.
+      const what = n && state.cards.every(c => c.fields.occurrence) ? 'dates' : 'events';
+      h.textContent = state.read && state.read.active ? `${n} ${what} found so far…`
+        : `${n} ${what}${state.draft && state.draft.poster_path ? ' read' : ''} — saved as a draft, not yet published. Tap one to check or change it.`;
     }
 
     async function removeCard(card) {
@@ -792,6 +922,16 @@
     }
 
     $('add-card').addEventListener('click', async () => {
+      // A sign's draft keeps its one empty card out of sight; asking to add
+      // an event is asking for that card, not a second one.
+      if (signOnly()) {
+        state.wantCards = true;
+        renderSign();
+        sync();
+        const t = state.cards[0] && state.cards[0].els.inputs.title;
+        if (t) requestAnimationFrame(() => t.focus());
+        return;
+      }
       enterMulti();
       const card = newCard({ open: true });
       for (const c of state.cards) c.open = c === card;
@@ -991,6 +1131,9 @@
         if (state.draft) state.draft.poster_path = d.poster_path;
       } else if (event === 'kind') {
         state.read.kind = d.kind;
+        if (d.kind === 'timetable') setStatus('Reading the sign…', 'busy', { stop: true });
+      } else if (event === 'service') {
+        setStatus(`Reading the sign… ${d.index + 1} service${d.index ? 's' : ''} found so far.`, 'busy', { stop: true });
       } else if (event === 'field') {
         readField(d);
       } else if (event === 'item') {
@@ -1047,6 +1190,7 @@
       } else if (d.draft.read_status === 'read') {
         setStatus(readSummary(d.draft), 'done');
       }
+      renderSign();
       updateHead();
       sync();
     }
@@ -1055,12 +1199,327 @@
       const n = state.cards.length;
       const kind = draft.read_kind;
       const general = (draft.read_notes || []).join(' ');
+      const regular = state.cards.filter(c => c.fields.occurrence).length;
+      const svcs = (draft.read_services || state.services || []).length;
       let text;
-      if (kind === 'not_an_event') text = 'This does not look like an event poster — fill in the details by hand.';
-      else if (kind === 'bulletin') text = `Regular services change on the timetable — ${n === 1 && !state.cards[0].fields.title ? 'no' : n} one-off event${n === 1 ? '' : 's'} found.`;
+      if (svcs && (kind === 'timetable' || state.cards.every(isPristine))) {
+        text = `Read as the parish’s timetable: ${svcs} weekly service${svcs === 1 ? '' : 's'}${draft.read_details ? ' and its details' : ''}. Check each against the photo, then add it.`;
+      } else if (kind === 'timetable') text = 'This looks like a sign, but no weekly services could be read from it — add them on the timetable by hand.';
+      else if (kind === 'not_an_event') text = 'This does not look like an event poster — fill in the details by hand.';
+      else if (regular) {
+        text = `${n} date${n === 1 ? '' : 's'} read. ${regular === n ? (n === 1 ? 'It is' : 'All are') : `${regular} ${regular === 1 ? 'is' : 'are'}`} the parish’s regular services: publishing adds each day’s details and the poster to that service rather than a second card.`;
+      } else if (kind === 'bulletin') text = `Regular services change on the timetable — ${n === 1 && !state.cards[0].fields.title ? 'no' : n} one-off event${n === 1 ? '' : 's'} found.`;
       else if (n > 1) text = `${n} events read from the poster. Check each one against it, then publish.`;
       else text = 'Read from the poster. Check the details against it, then publish.';
+      // The read is in English; the poster stays attached in the original.
+      if (draft.read_language) text += ` Translated from ${draft.read_language} — the poster keeps the original.`;
       return general ? `${text} ${general}` : text;
+    }
+
+    // ── the timetable: what a programme was matched to, and what a sign is set beside ──
+
+    async function loadRules() {
+      if (!state.parish) return;
+      const pid = state.parish.id;
+      const r = await http('GET', `/api/admin/schedules?parish=${encodeURIComponent(pid)}`);
+      if (state.closed || !state.parish || state.parish.id !== pid) return;
+      state.rules = r.ok && Array.isArray(r.body) ? r.body.filter(x => x.parish_id === pid) : [];
+      state.cards.forEach(refreshCard);
+      renderSign();
+    }
+
+    const signShown = () => !!(state.draft && (state.services.length
+      || (state.draft.read_kind === 'timetable' && state.draft.read_details)));
+
+    /** Nothing in the cards and a sign above them: the cards are not what this is for. */
+    const signOnly = () => signShown() && !state.wantCards && state.cards.every(isPristine);
+
+    const LANG_SPLIT = (t) => String(t || '').split(',').map(x => x.trim()).filter(Boolean);
+    const DETAIL_LABELS = { address: 'Address', phone: 'Phone', email: 'Email', website: 'Website' };
+
+    function signError(text) {
+      const e = $('sign').querySelector('.ee-sign-error');
+      if (!e) return showError(text);
+      e.textContent = text || '';
+      e.hidden = !text;
+    }
+
+    function renderSign() {
+      const box = $('sign');
+      const show = signShown();
+      box.hidden = !show;
+      el.classList.toggle('ee-sign-only', signOnly());
+      if (!show) { box.innerHTML = ''; return; }
+      const S = root.AgoraSigns;
+      if (!S || !state.rules) { box.innerHTML = '<div class="ee-empty">Checking the parish’s timetable…</div>'; return; }
+      const pid = state.parish.id;
+      const busy = state.signBusy || state.publishing;
+      const { rows, missing } = S.compareSign(state.services, state.rules, today());
+      const canAdd = may('schedule.create', pid);
+      const canFill = may('schedule.edit', pid);
+      const fresh = rows.map((r, i) => ({ ...r, i })).filter(r => r.status === 'new');
+      const dis = busy ? ' disabled' : '';
+      const types = (root.AgoraEventTypes ? root.AgoraEventTypes.KINDS : []);
+
+      const svcRow = (r, i) => {
+        const sv = r.service;
+        const notes = (sv.read_notes || []).map(n => `<div class="ee-note ee-note-read">${esc(n.text)}</div>`).join('');
+        if (r.status === 'weeks') {
+          const was = S.weeksLabel(r.rule.week_of_month) || 'every';
+          const now = S.weeksLabel(sv.week_of_month) || 'every';
+          return `<div class="ee-svc is-new" data-i="${i}">
+            <div class="ee-svc-top"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></div>
+            <div class="ee-svc-state">On the timetable as “${esc(r.rule.title)}” on ${esc(was)} ${esc(DAY_PLURALS[r.rule.day_of_week])}; the sign says ${esc(now)}.</div>
+            ${canFill ? `<button type="button" class="ee-btn ee-btn-small" data-act="fill" data-i="${i}"${dis}>Change it to ${esc(now)} ${esc(DAY_PLURALS[sv.day_of_week])}</button>` : ''}
+            ${notes}</div>`;
+        }
+        if (r.status === 'on_file') {
+          const fills = Object.keys(r.fills);
+          const what = fills.map(f => (f === 'end_time' ? 'end time' : 'languages')).join(' and ');
+          const named = r.rule.title && r.rule.title !== sv.title ? ` as “${esc(r.rule.title)}”` : '';
+          return `<div class="ee-svc is-on" data-i="${i}">
+            <div class="ee-svc-top"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></div>
+            <div class="ee-svc-state">✓ On the timetable${named}${fills.length ? ` — the sign adds its ${what}.` : '.'}</div>
+            ${fills.length && canFill ? `<button type="button" class="ee-btn ee-btn-small" data-act="fill" data-i="${i}"${dis}>Add its ${what}</button>` : ''}
+            ${notes}</div>`;
+        }
+        const open = state.svcOpen.has(i);
+        const weeks = String(sv.week_of_month || '').split(',');
+        const field = (label, input) => `<label class="ee-svc-field"><span>${label}</span>${input}</label>`;
+        return `<div class="ee-svc is-new${open ? ' is-open' : ''}" data-i="${i}">
+          <div class="ee-svc-top">
+            <button type="button" class="ee-svc-sum" data-act="toggle" data-i="${i}" aria-expanded="${open}"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></button>
+            ${canAdd ? `<button type="button" class="ee-btn ee-btn-small ee-btn-add" data-act="add" data-i="${i}"${dis}>Add to timetable</button>` : ''}
+          </div>
+          ${notes}
+          <div class="ee-svc-form"${open ? '' : ' hidden'}>
+            ${field('Service', `<input data-sf="title" data-i="${i}" value="${esc(sv.title || '')}" placeholder="Divine Liturgy" autocomplete="off">`)}
+            <div class="ee-grid ee-grid-3">
+              ${field('Day', `<select data-sf="day_of_week" data-i="${i}">${DAY_PLURALS.map((d, k) => `<option value="${k}"${k === sv.day_of_week ? ' selected' : ''}>${d}</option>`).join('')}</select>`)}
+              ${field('Starts', `<input type="time" data-sf="start_time" data-i="${i}" value="${esc(sv.start_time || '')}">`)}
+              ${field('Ends', `<input type="time" data-sf="end_time" data-i="${i}" value="${esc(sv.end_time || '')}">`)}
+            </div>
+            <div class="ee-svc-weeks"><span>Weeks of the month</span>${S.WEEKS.map(w => `<label><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${weeks.includes(w) ? ' checked' : ''}> ${w === 'last' ? 'Last' : ({ first: '1st', second: '2nd', third: '3rd', fourth: '4th' })[w]}</label>`).join('')}<small>None ticked is every week.</small></div>
+            <div class="ee-grid">
+              ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" placeholder="English, Greek" autocomplete="off">`)}
+              ${field('Kind', `<select data-sf="event_type" data-i="${i}">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
+            </div>
+          </div>
+        </div>`;
+      };
+
+      // Nothing to add, and the timetable does not yet say this sign is where
+      // it was last checked: a sign that agrees is still somebody having looked.
+      const pidRules = state.rules.filter(r => r.active !== 0);
+      const confirmable = canFill && rows.length && rows.every(r => r.status === 'on_file' && !Object.keys(r.fills).length)
+        && pidRules.some(r => r.source_ref !== state.draft.poster_path);
+      const details = S.compareDetails(state.draft.read_details, state.parish);
+      const canDetail = may('parish.edit', pid);
+      const detailRow = (d) => {
+        const label = DETAIL_LABELS[d.field];
+        let act = '';
+        if (d.status === 'same') act = '<span class="ee-svc-state">✓ Same as on file</span>';
+        else if (d.field === 'address') {
+          act = `<span class="ee-svc-state">${d.onFile ? `On file: ${esc(d.onFile)}. ` : ''}Change the address in the parish’s details, where its pin moves with it.</span>`;
+        } else if (canDetail) {
+          act = (d.onFile ? `<span class="ee-svc-state">On file: ${esc(d.onFile)}</span>` : '')
+            + `<button type="button" class="ee-btn ee-btn-small" data-act="detail" data-field="${d.field}"${dis}>${d.onFile ? 'Use the sign’s' : 'Add it'}</button>`;
+        }
+        return `<div class="ee-detail"><span class="ee-detail-label">${label}</span><span class="ee-detail-value">${esc(d.sign)}</span>${act}</div>`;
+      };
+
+      box.innerHTML = `
+        ${rows.length ? `<div class="ee-section-title">Weekly services on the sign</div>
+        <div class="ee-svcs">${rows.map((r, i) => svcRow(r, i)).join('')}</div>` : ''}
+        ${fresh.length > 1 && canAdd ? `<button type="button" class="ee-btn ee-btn-small" data-act="add-all"${dis}>Add all ${fresh.length} to the timetable</button>` : ''}
+        ${rows.length && !canAdd && fresh.length ? '<div class="ee-hint">Somebody who edits this parish’s timetable can add these.</div>' : ''}
+        ${confirmable ? `<div class="ee-svc-state">Everything on the sign is on the timetable.</div>
+          <button type="button" class="ee-btn ee-btn-small" data-act="confirm"${dis}>Mark the timetable as checked against this sign</button>` : ''}
+        ${missing.length && rows.length ? `<details class="ee-missing"><summary>${missing.length} on the timetable ${missing.length === 1 ? 'is' : 'are'} not on the sign</summary>
+          ${missing.map(r => `<div class="ee-svc-line">${esc(serviceLine(r))}</div>`).join('')}
+          <div class="ee-hint">Nothing changes for these: a sign often leaves out the weekday services. If one has stopped, end it from the parish’s timetable.</div></details>` : ''}
+        ${details.length ? `<div class="ee-section-title">The parish’s details on the sign</div><div class="ee-details">${details.map(detailRow).join('')}</div>` : ''}
+        <div class="ee-hint">What you add shows “${esc(S.SIGN_SOURCE)}” as its source, linking to this photo.</div>
+        <div class="ee-message ee-message-error ee-sign-error" hidden></div>`;
+    }
+
+    // One listener for the panel, which is redrawn whole.
+    $('sign').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b || b.disabled) return;
+      const i = Number(b.dataset.i);
+      const act = b.dataset.act;
+      if (act === 'toggle') {
+        if (state.svcOpen.has(i)) state.svcOpen.delete(i); else state.svcOpen.add(i);
+        renderSign();
+        return;
+      }
+      signError('');
+      state.signBusy = true;
+      renderSign();
+      try {
+        if (act === 'add') await addServices([i]);
+        else if (act === 'add-all') {
+          const { rows } = root.AgoraSigns.compareSign(state.services, state.rules, today());
+          await addServices(rows.map((r, k) => (r.status === 'new' ? k : -1)).filter(k => k >= 0));
+        } else if (act === 'fill') await fillRule(i);
+        else if (act === 'confirm') await confirmTimetable();
+        else if (act === 'detail') await useDetail(b.dataset.field);
+      } finally {
+        state.signBusy = false;
+        renderSign();
+        sync();
+      }
+    });
+
+    function onServiceEdit(e) {
+      const inp = e.target.closest('[data-sf]');
+      if (!inp) return;
+      const i = Number(inp.dataset.i);
+      const sv = state.services[i];
+      if (!sv) return;
+      const f = inp.dataset.sf;
+      if (f === 'week') {
+        const box = inp.closest('.ee-svc-weeks');
+        const ticked = [...box.querySelectorAll('input:checked')].map(x => x.dataset.week);
+        sv.week_of_month = ticked.length ? ticked.join(',') : null;
+      } else if (f === 'day_of_week') sv.day_of_week = Number(inp.value);
+      else if (f === 'languages') sv.languages = LANG_SPLIT(inp.value);
+      else sv[f] = inp.value || null;
+      // A person has checked this field: the model's doubt about it goes.
+      sv.read_notes = (sv.read_notes || []).filter(n => n.field !== f && !(f === 'week' && n.field === 'weeks')
+        && !(f === 'day_of_week' && n.field === 'day'));
+      const line = inp.closest('.ee-svc').querySelector('.ee-svc-line');
+      if (line) line.textContent = serviceLine(sv);
+      clearTimeout(state.svcTimer);
+      state.svcTimer = setTimeout(saveServices, e.type === 'input' ? SAVE_DELAY : 0);
+      // Whether it is on file may have changed; redraw once the field is left.
+      if (e.type === 'change') { state.svcOpen.add(i); renderSign(); }
+    }
+    $('done').addEventListener('click', () => doneWithSign());
+    $('sign').addEventListener('input', onServiceEdit);
+    $('sign').addEventListener('change', onServiceEdit);
+
+    async function saveServices() {
+      state.svcTimer = null;
+      if (!state.draft) return;
+      const r = await http('PUT', `/api/admin/drafts/${state.draft.id}/services`, { services: state.services });
+      if (!r.ok) signError((r.body && r.body.error) || 'The changes to the services were not saved — check the connection.');
+    }
+
+    /** The first hand edit at a parish still read from a source asks, once (the host's question). */
+    async function keepByHand() {
+      if (state.keptByHand || !opts.keepByHand) return true;
+      const ok = await opts.keepByHand(state.parish.id);
+      if (ok) state.keptByHand = true;
+      return ok;
+    }
+
+    const changed = (what) => { if (opts.onChanged) opts.onChanged({ parishId: state.parish.id, what }); };
+
+    /** Add these services, as read and corrected, to the timetable — the sign as their source. */
+    async function addServices(indices) {
+      if (state.svcTimer) { clearTimeout(state.svcTimer); await saveServices(); }
+      for (const i of indices) {
+        const sv = state.services[i];
+        if (!sv || !String(sv.title || '').trim()) {
+          state.svcOpen.add(i);
+          return signError('Give each service a name before adding it.');
+        }
+      }
+      if (!indices.length || !(await keepByHand())) return;
+      let added = 0;
+      for (const i of indices) {
+        const sv = state.services[i];
+        const r = await http('POST', '/api/admin/schedules', {
+          parish_id: state.parish.id,
+          title: sv.title.trim(),
+          day_of_week: sv.day_of_week,
+          start_time: sv.start_time,
+          end_time: sv.end_time || null,
+          event_type: sv.event_type || 'liturgy',
+          languages: sv.languages && sv.languages.length ? JSON.stringify(sv.languages) : null,
+          week_of_month: sv.week_of_month || null,
+          source_name: root.AgoraSigns.SIGN_SOURCE,
+          source_ref: state.draft.poster_path,
+        });
+        if (!r.ok) { signError((r.body && r.body.error) || 'That service could not be added — check the connection.'); break; }
+        state.svcOpen.delete(i);
+        added++;
+      }
+      if (added) { await loadRules(); changed('timetable'); }
+    }
+
+    /** What the sign says that a rule on file leaves empty. */
+    async function fillRule(i) {
+      const { rows } = root.AgoraSigns.compareSign(state.services, state.rules, today());
+      const row = rows[i];
+      if (!row || row.status === 'new' || !Object.keys(row.fills).length) return;
+      if (!(await keepByHand())) return;
+      const body = { source_name: root.AgoraSigns.SIGN_SOURCE, source_ref: state.draft.poster_path };
+      if (row.fills.end_time) body.end_time = row.fills.end_time;
+      if (row.fills.languages) body.languages = JSON.stringify(row.fills.languages);
+      // The sign's weeks replace the rule's, and a fortnightly parity with them:
+      // a rule holds one or the other.
+      if (row.status === 'weeks') { body.week_of_month = row.fills.week_of_month; body.week_parity = null; }
+      const r = await http('PATCH', `/api/admin/schedules/${row.rule.id}`, body);
+      if (!r.ok) return signError((r.body && r.body.error) || 'It could not be added — check the connection.');
+      await loadRules();
+      changed('timetable');
+    }
+
+    /**
+     * The sign agrees with the timetable: say so on its source line. Any rule
+     * edit that names a source restamps the whole timetable with it
+     * (stampTimetable — one timetable, one source), so naming it on one rule
+     * is the whole write.
+     */
+    async function confirmTimetable() {
+      const rule = (state.rules || []).find(r => r.active !== 0);
+      if (!rule || !(await keepByHand())) return;
+      const r = await http('PATCH', `/api/admin/schedules/${rule.id}`,
+        { source_name: root.AgoraSigns.SIGN_SOURCE, source_ref: state.draft.poster_path });
+      if (!r.ok) return signError((r.body && r.body.error) || 'It could not be saved — check the connection.');
+      await loadRules();
+      changed('timetable');
+    }
+
+    /** One of the parish's details, as the sign prints it — a person's choice, the sign its source. */
+    async function useDetail(field) {
+      const value = state.draft.read_details && state.draft.read_details[field];
+      if (!value || field === 'address') return;
+      if (!(await keepByHand())) return;
+      const r = await http('PATCH', `/api/admin/parishes/${encodeURIComponent(state.parish.id)}`, {
+        [field]: value,
+        info_source_type: 'person',
+        info_source_name: root.AgoraSigns.SIGN_SOURCE,
+        info_source_ref: state.draft.poster_path,
+      });
+      if (!r.ok) return signError((r.body && r.body.error) || 'It could not be saved — check the connection.');
+      // The host's copy of the parish, so its card shows the detail and the
+      // source line it now has without a reload.
+      const stamp = { [field]: value, info_source_type: 'person', info_source_name: root.AgoraSigns.SIGN_SOURCE,
+        info_source_ref: state.draft.poster_path, info_checked_at: new Date().toISOString() };
+      Object.assign(state.parish, stamp);
+      const listed = (opts.parishes || []).find(p => p.id === state.parish.id);
+      if (listed && listed !== state.parish) Object.assign(listed, stamp);
+      changed('details');
+    }
+
+    /** Close a sign's draft. The photo stays wherever a service or a detail names it. */
+    async function doneWithSign() {
+      const { rows } = root.AgoraSigns.compareSign(state.services, state.rules || [], today());
+      const left = rows.filter(r => r.status === 'new').length;
+      if (left && !confirm(`${left} service${left === 1 ? '' : 's'} on the sign ${left === 1 ? 'is' : 'are'} not on the timetable. Close it anyway?`)) return;
+      clearTimeout(state.svcTimer);
+      state.svcTimer = null;
+      if (state.draft) {
+        const r = await http('DELETE', `/api/admin/drafts/${state.draft.id}`);
+        if (!r.ok && r.status !== 404) return signError((r.body && r.body.error) || 'It could not be closed — check the connection.');
+        state.draft = null;
+      }
+      close();
+      if (opts.onClose) opts.onClose();
     }
 
     // ── saved drafts at this parish ──
@@ -1078,10 +1537,9 @@
         const n = d.cards.length;
         const dates = d.cards.map(c => c.date).filter(Boolean).sort();
         const when = dates.length ? ` · ${dateLabel(dates[0])}${dates.length > 1 ? ` – ${dateLabel(dates[dates.length - 1])}` : ''}` : '';
-        const title = (d.cards[0] && d.cards[0].title) || 'Untitled';
         return `<div class="ee-strip-row" data-draft="${d.id}"${i >= SHOWN ? ' hidden' : ''}>`
           + (d.poster_path ? `<img class="ee-strip-thumb" src="${esc(d.poster_path)}" alt="">` : '<span class="ee-strip-thumb ee-strip-nothumb"></span>')
-          + `<span class="ee-strip-text"><b>${esc(n > 1 ? `${n} events` : title)}</b>${esc(when)}<small>${esc(savedAgo(d))}</small></span>`
+          + `<span class="ee-strip-text"><b>${esc(draftTitle(d))}</b>${esc(when)}<small>${esc(savedAgo(d))}</small></span>`
           + '<button type="button" class="ee-link" data-act="continue">Continue</button>'
           + '<button type="button" class="ee-link ee-link-danger" data-act="discard">Discard</button></div>';
       }).join('') + (others.length > SHOWN
@@ -1118,9 +1576,14 @@
       for (const c of state.cards) c.els.root.remove();
       state.cards = [];
       state.multi = false;
+      clearTimeout(state.svcTimer);
+      state.svcTimer = null;
+      state.svcOpen = new Set();
+      state.wantCards = false;
       // The draft says where it is — it may have been moved since it was listed.
       const at = parishById(r.body.parish_id) || { id: r.body.parish_id, name: r.body.parish_name };
       if (!state.parish || at.id !== state.parish.id) setParish(at);
+      else if (!state.rules) loadRules();
       setDraft(r.body);
       for (const row of r.body.cards) cardFromServer(newCard(), row);
       if (!state.cards.length) newCard();
@@ -1137,6 +1600,7 @@
         setStatus(readSummary(r.body), 'done');
       } else setStatus('');
       state.cards.forEach(refreshCard);
+      renderSign();
       updateHead();
       sync();
       refreshStrip();
@@ -1181,6 +1645,11 @@
     function setParish(next) {
       state.parish = next;
       parishRows = null;
+      // Another parish, another timetable: what a sign is set beside, and what
+      // a card can be a change to (the move unlinks them on the Worker).
+      state.rules = null;
+      state.keptByHand = false;
+      loadRules();
       for (const c of state.cards) {
         if (c.els && c.els.zone) c.els.zone.textContent = tzHint();
         // The day's services are looked up in the parish's zone, and "replaces"
@@ -1260,6 +1729,13 @@
       $('parish').disabled = still;
       const mv = el.querySelector('[data-ee="move-suggested"]');
       if (mv) mv.disabled = still;
+      // A sign's draft ends with Done where Publish would be: what it adds is
+      // added as it goes, and its one card is empty.
+      const only = signOnly();
+      el.classList.toggle('ee-sign-only', only);
+      $('add-card').textContent = only ? '+ Add an event from it as well' : '+ Add another event';
+      $('done').hidden = !only;
+      $('done').disabled = reading || state.signBusy;
       const ready = $('readiness');
       if (reading) ready.textContent = 'Publish opens once the poster has been read.';
       else if (blocked.length && !quiet) {
@@ -1298,7 +1774,9 @@
           asking ? { propose: (card.fields.ask_reason || '').trim() || true } : {});
         if (r.ok) {
           card.publish = { state: 'done', message: '' };
-          events.push(r.body.event);
+          // A service written onto an occurrence the timetable no longer runs
+          // answers with no event to show.
+          if (r.body.event) events.push(r.body.event);
           if (r.body.proposal_id) proposals.push(r.body.proposal_id);
         } else if (r.status === 403 && r.body && r.body.proposable) {
           card.publish = { state: 'refused', message: r.body.error || '', outside: r.body.outside || [] };
@@ -1365,6 +1843,7 @@
       // Whatever is still waiting to save goes now — the page outlives the
       // dialog, so these finish after it has closed.
       for (const c of state.cards) flush(c);
+      if (state.svcTimer) { clearTimeout(state.svcTimer); saveServices(); }
       abortRead();
       state.closed = true;
       document.removeEventListener('paste', onPaste);
@@ -1376,6 +1855,7 @@
     /** A blank card at the chosen parish. */
     function begin() {
       newCard();
+      loadRules();
       refreshStrip();
       requestAnimationFrame(() => { const t = state.cards[0] && state.cards[0].els.inputs.title; if (t) t.focus(); });
       sync();
@@ -1395,7 +1875,7 @@
     };
   }
 
-  const api = { open, summaryLine, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
+  const api = { open, summaryLine, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
     textToLangs, langsToText, takesRead, editableParishes, parishSuggestion };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;

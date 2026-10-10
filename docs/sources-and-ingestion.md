@@ -71,6 +71,17 @@ Contact" for a parish contact (`adminSourceName`; `info_source_type='person'`)
 picked a check date itself (`worker/lib/provenance.mjs`). It pins nothing:
 whether imports may still write the parish is `read_from`'s question.
 
+**A church sign is a source, and the photo is its ref.** A person standing in
+front of the board out the front — or somebody who sent a photo of it — is as
+good a look as a parish's website, and often a better one. Services and details
+added from a sign (docs/editing.md, "A sign is read into the timetable") are
+stamped `source_name` / `info_source_name` **"Church signage"**, with the
+photo's `/posters/…` path as the ref, and the source line links to it — the
+one ref that is a path rather than a URL and still links, because it is ours.
+The photo is kept for as long as a rule or a parish names it
+(`releaseUnused` in `worker/lib/poster-range.mjs`). It stamps when we looked,
+like every source; `info_verified_at` stays a separate, unrendered fact.
+
 **A timetable has one source.** Rules still carry `source_*` columns, because
 importers write them, but a parish's timetable renders ONE provenance line: the
 most recent stamp among its rules. Any create, edit or delete of a rule in

@@ -925,7 +925,8 @@ CREATE INDEX idx_info_overrides_parish ON info_overrides(parish_id, target);
 --
 -- worker/lib/drafts.mjs also creates both tables IF NOT EXISTS on first use,
 -- with the same DDL, so a deploy that lands before migration 018 does not take
--- the add-event dialog down with it — and adds read_parish (019) the same way.
+-- the add-event dialog down with it — and adds the later columns (019, 020)
+-- the same way.
 CREATE TABLE drafts (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   parish_id   TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
@@ -950,7 +951,20 @@ CREATE TABLE drafts (
   -- on file they clearly match (worker/lib/parish-match.mjs), or a null id.
   -- The editor offers to move the draft there; nothing moves it but a person.
   -- Last because migration 019 appended it.
-  read_parish TEXT
+  read_parish TEXT,
+  -- Migration 020: what a sign or a programme is read into.
+  -- The language the image was written in, when it was not English. The read
+  -- is written in English (Agora is read in English) and says it translated;
+  -- the poster stays attached in the original.
+  read_language TEXT,
+  -- A church sign's weekly services, JSON [{title, day_of_week, start_time,
+  -- end_time, week_of_month, languages, event_type, read_notes}], and the
+  -- parish's details it printed, JSON {address, phone, email, website}.
+  -- PROPOSALS: the editor sets each beside what is on file
+  -- (public/shared/signs.js) and a person adds them one by one, through the
+  -- routes they would use by hand. Nothing here is read by anything public.
+  read_services TEXT,
+  read_details TEXT
 );
 CREATE INDEX idx_drafts_parish ON drafts(parish_id);
 
@@ -992,6 +1006,16 @@ CREATE TABLE draft_events (
   -- still shows what nobody has looked at.
   read_notes        TEXT,
   read_fields       TEXT,
-  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  -- Migration 020. "sid:YYYY-MM-DD" when this card is a regular service on its
+  -- own date — a month's programme gives each Sunday's Liturgy with its saint —
+  -- so publishing writes it onto that occurrence (an override, with the
+  -- poster) instead of an event beside it. Matched when the poster is read
+  -- (matchOccurrences in worker/lib/drafts.mjs); a person can unlink it.
+  occurrence        TEXT,
+  -- The saint or feast the date commemorates: an occurrence's patch_feast,
+  -- the "✛" line under the service. A one-off has no feast column, so it says
+  -- it in its title when published.
+  feast             TEXT
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);

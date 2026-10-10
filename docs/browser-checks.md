@@ -256,6 +256,22 @@ image/jpeg' --data-binary @poster.jpg` prints the frames as they arrive.
 Drafts accumulate between runs and fill the "Saved drafts here" strip; clear
 them with `DELETE FROM draft_events; DELETE FROM drafts;`.
 
+**Signs and programmes.** Three more modes are written from real photos —
+`sign_rookwood` (St Athanasios, Rookwood's board: Saturdays 8–10, Sundays 8–11,
+in Greek), `sign_doonside` (Sts Peter & Paul, Doonside's: Sunday 10am in Arabic
+and English, 6pm on the 2nd and 4th Sundays in English) and
+`programme_rookwood` (St Athanasios's October 2026 programme, nine dates with
+their saints). Each is what a good read of that photo says; drop any image with
+the mode set. A sign shows its review above an empty, hidden card: **Add to
+timetable** should ask "keep it by hand?" at a parish read from a directory,
+add the rule with `source_name = 'Church signage'` and the photo as its ref, and
+**Done** should leave the photo served. Rookwood is not in the seed, and a
+programme only matches once the sign's two rules are on file — so run the sign
+first. The programme's cards should all carry **regular service**, and Publish
+should write nine overrides with `patch_feast` and the poster and no row in
+`events`. Doonside's sign agrees with the seed's timetable, and offers only to
+mark it checked.
+
 **The move.** With `elsewhere`, drop a poster at St Nicholas, Punchbowl (a seed
 parish): the suggestion names St Elias, Wollongong and the venue holds its
 address. **Move it there** should leave the picker on St Elias, the suggestion

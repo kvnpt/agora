@@ -13,6 +13,7 @@
 import eventTypes from '../../public/shared/event-types.js';
 import checks from '../../public/shared/event-checks.js';
 import { isOwnVenue, matchParish } from './parish-match.mjs';
+import { isValidOccurrence } from '../../public/shared/project.mjs';
 
 const { isEventType } = eventTypes;
 const { isLocalDate, isLocalTime } = checks;
@@ -34,7 +35,10 @@ export const DRAFTS_DDL = [
   created_by  TEXT NOT NULL,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-  read_parish TEXT
+  read_parish TEXT,
+  read_language TEXT,
+  read_services TEXT,
+  read_details TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_drafts_parish ON drafts(parish_id)',
   `CREATE TABLE IF NOT EXISTS draft_events (
@@ -56,7 +60,9 @@ export const DRAFTS_DDL = [
   year_printed      INTEGER,
   read_notes        TEXT,
   read_fields       TEXT,
-  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  occurrence        TEXT,
+  feast             TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -64,34 +70,54 @@ export const DRAFTS_DDL = [
 // Once per database per isolate: the DDL is a no-op after the first time, but
 // it is still a round trip, and Workers Free counts those.
 //
-// read_parish came later (migration 019), and CREATE TABLE IF NOT EXISTS does
-// not add a column to a table that exists — so it is looked for, and added
-// when a database made before 019 lacks it. A read rather than a bare ALTER,
-// so the usual answer is a query that works rather than one that errors.
+// Columns came later (019: read_parish; 020: what a sign or a programme is
+// read into), and CREATE TABLE IF NOT EXISTS does not add a column to a table
+// that exists — so they are looked for, and added when a database made before
+// the migration lacks them. A read rather than a bare ALTER, so the usual
+// answer is a query that works rather than one that errors.
+const LATER_COLUMNS = {
+  drafts: ['read_parish', 'read_language', 'read_services', 'read_details'],
+  draft_events: ['occurrence', 'feast'],
+};
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
   if (ensured.has(db)) return;
   await db.batch(DRAFTS_DDL.map(sql => db.prepare(sql)));
-  try {
-    await db.prepare('SELECT read_parish FROM drafts LIMIT 0').all();
-  } catch {
-    await db.prepare('ALTER TABLE drafts ADD COLUMN read_parish TEXT').run();
+  for (const [table, cols] of Object.entries(LATER_COLUMNS)) {
+    try {
+      await db.prepare(`SELECT ${cols.join(', ')} FROM ${table} LIMIT 0`).all();
+    } catch {
+      const have = new Set(((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).map(c => c.name));
+      for (const c of cols) {
+        if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} TEXT`).run();
+      }
+    }
   }
   ensured.add(db);
 }
 
 const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
 
-/** What a person can type into a card, and the shape each one is stored in. */
-export const CARD_FIELDS = ['title', 'date', 'start_time', 'end_time', 'event_type', 'description',
-  'languages', 'location_override', 'also_at', 'replaces', 'ask_reason'];
+/**
+ * What a person can type into a card, and the shape each one is stored in.
+ *
+ * `occurrence` is "sid:YYYY-MM-DD" when the card is a regular service on its
+ * own date — a programme's Sunday with its saint — rather than an event of its
+ * own: publishing writes it onto that occurrence (an override), not beside it.
+ * `feast` is the commemoration such a card carries.
+ */
+export const CARD_FIELDS = ['title', 'feast', 'date', 'start_time', 'end_time', 'event_type', 'description',
+  'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence'];
 const JSON_FIELDS = new Set(['languages', 'also_at', 'replaces']);
 
 /** The fields a poster read may fill — everything but the combine and the ask. */
-const READ_FIELDS = ['title', 'date', 'start_time', 'end_time', 'event_type', 'description',
-  'languages', 'location_override'];
+const READ_FIELDS = ['title', 'feast', 'date', 'start_time', 'end_time', 'event_type', 'description',
+  'languages', 'location_override', 'occurrence'];
 
-const MAX_LEN = { title: 200, description: 2000, location_override: 300, ask_reason: 1000 };
+const MAX_LEN = { title: 200, feast: 200, description: 2000, location_override: 300, ask_reason: 1000 };
+
+/** A rule's occurrence: "sid:YYYY-MM-DD". */
+const OCCURRENCE = /^\d+:\d{4}-\d{2}-\d{2}$/;
 
 /** "sid:YYYY-MM-DD" (a rule's occurrence) or an integer (a stored one-off). */
 const isReplaceId = (v) => typeof v === 'string' && (/^\d+$/.test(v) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(v));
@@ -136,6 +162,7 @@ export function validateCard(body) {
       if (f === 'date' && !isLocalDate(v)) return bad(f, 'That is not a date.');
       if ((f === 'start_time' || f === 'end_time') && !isLocalTime(v)) return bad(f, 'Write the time like 19:30.');
       if (f === 'event_type' && !isEventType(v)) return bad(f, 'That is not one of the kinds of event.');
+      if (f === 'occurrence' && !OCCURRENCE.test(v)) return bad(f, 'That is not a service on the timetable.');
       if (MAX_LEN[f]) v = v.slice(0, MAX_LEN[f]);
     }
     patch[f] = v;
@@ -149,13 +176,14 @@ export function cardOut(r) {
     id: r.id,
     draft_id: r.draft_id,
     position: r.position,
-    title: r.title, date: r.date, start_time: r.start_time, end_time: r.end_time,
+    title: r.title, feast: r.feast || null, date: r.date, start_time: r.start_time, end_time: r.end_time,
     event_type: r.event_type, description: r.description,
     languages: parseList(r.languages),
     location_override: r.location_override,
     also_at: parseList(r.also_at).map(String),
     replaces: parseList(r.replaces).map(String),
     ask_reason: r.ask_reason,
+    occurrence: r.occurrence || null,
     printed_weekday: r.printed_weekday,
     year_printed: r.year_printed,
     read_notes: parseList(r.read_notes),
@@ -178,6 +206,12 @@ export function draftOut(d, cards = []) {
     read_kind: d.read_kind,
     read_notes: parseList(d.read_notes),
     read_parish: parseObject(d.read_parish),
+    // What the image was written in, when it was not English — and what a
+    // sign said: weekly services to add to the timetable and the parish's
+    // details, both proposals until a person adds them (public/shared/signs.js).
+    read_language: d.read_language || null,
+    read_services: parseList(d.read_services),
+    read_details: parseObject(d.read_details),
     created_by: d.created_by,
     created_at: d.created_at,
     updated_at: d.updated_at,
@@ -337,9 +371,12 @@ export async function mergeRead(db, draftId, read) {
   });
   stmts.push(db.prepare(
     `UPDATE drafts SET read_status = 'read', read_kind = ?, read_notes = ?, read_parish = ?,
-       updated_at = ${NOW} WHERE id = ?`
+       read_language = ?, read_services = ?, read_details = ?, updated_at = ${NOW} WHERE id = ?`
   ).bind(read.kind, read.notes.length ? JSON.stringify(read.notes) : null,
-    read.parish ? JSON.stringify(read.parish) : null, draftId));
+    read.parish ? JSON.stringify(read.parish) : null,
+    read.language || null,
+    read.services && read.services.length ? JSON.stringify(read.services) : null,
+    read.details ? JSON.stringify(read.details) : null, draftId));
   await db.batch(stmts);
   return getDraft(db, draftId);
 }
@@ -373,16 +410,63 @@ export async function placeRead(db, read, parish) {
   return read;
 }
 
+/** "Orthros & Divine Liturgy" and "ORTHROS AND DIVINE LITURGY" are one service. */
+const titleKey = (t) => String(t || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z]+/g, ' ').trim();
+
+/**
+ * Which of a read's events are a regular service on its own date.
+ *
+ * A month's programme lists every Sunday's Liturgy with that Sunday's saint.
+ * Published as events, each would be a second card beside the service it
+ * describes — the duplicate the combine exists to prevent. So an event that is
+ * an occurrence of one of the parish's rules gets `occurrence` ("sid:date"),
+ * and publishing writes it onto that occurrence instead (an override, the way
+ * an admin's edit of one Sunday is written).
+ *
+ * An occurrence of a rule ON that date that starts at the same time, or else
+ * the one occurrence that day with the same service name (a programme that
+ * moves it). Never a guess between two, and never one occurrence twice. A
+ * matched event takes the rule's own title when it names the same service,
+ * and the rule's kind, so the override carries only what the programme
+ * actually changes — the saint, a time — and not "and" for "&".
+ *
+ * @param {object} read   normalizeRead()'s answer, changed in place
+ * @param {Array} rules   the parish's active rules (schedules rows)
+ */
+export function matchOccurrences(read, rules) {
+  const used = new Set();
+  for (const ev of read.events) {
+    ev.occurrence = null;
+    if (!ev.date || !ev.start_time) continue;
+    const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
+    const same = (r) => titleKey(r.title) === titleKey(ev.title);
+    const at = that.filter(r => r.start_time === ev.start_time);
+    const named = that.filter(same);
+    const hit = at.length === 1 ? at[0]
+      : at.length > 1 ? (at.filter(same).length === 1 ? at.find(same) : null)
+        : named.length === 1 ? named[0] : null;
+    if (!hit || used.has(`${hit.id}:${ev.date}`)) continue;
+    used.add(`${hit.id}:${ev.date}`);
+    ev.occurrence = `${hit.id}:${ev.date}`;
+    if (same(hit)) ev.title = hit.title;
+    if (hit.event_type) ev.event_type = hit.event_type;
+  }
+  return read;
+}
+
 /**
  * Move a draft to another parish — the poster was dropped at the wrong one.
  *
- * The cards go as they are, less two things that only made sense where they
+ * The cards go as they are, less three things that only made sense where they
  * were:
  *   * a venue the read gave that is the NEW parish's own address. St Elias's
  *     address was "somewhere else" from the parish the poster was dropped at;
  *     once the draft is St Elias's, it is just the church. Only while it is
  *     still as read — a venue somebody typed is theirs;
- *   * the new parish in "also appears at": an event is not also at its own.
+ *   * the new parish in "also appears at": an event is not also at its own;
+ *   * the service a card was matched to (`occurrence`): that rule is the old
+ *     parish's, so the card is an event of its own again until it is matched
+ *     at the new one (a read again does that).
  * The read's "whose poster" stays when it named a parish on file — the editor
  * hides it once the draft is there, and shows it again after a wrong pick —
  * and goes when it named none: choosing a parish is the answer to it.
@@ -398,6 +482,7 @@ export async function moveDraft(db, draft, parish) {
       const rest = card.also_at.filter(id => id !== parish.id);
       set.also_at = rest.length ? JSON.stringify(rest) : null;
     }
+    if (card.occurrence) set.occurrence = null;
     if (card.read_fields.includes('location_override') && isOwnVenue(card.location_override, parish)) {
       const marks = card.read_fields.filter(f => f !== 'location_override');
       const notes = card.read_notes.filter(n => n.field !== 'location_override');
@@ -435,11 +520,23 @@ export function draftPosterKey(parishId, ext) {
   return `posters/${parishId}-${Date.now().toString(36)}-${rand}.${ext}`;
 }
 
+/**
+ * A card's title as an event's. An event has no feast of its own — only an
+ * occurrence of a rule does (`patch_feast`) — so a one-off that carries one
+ * says it in its title, as the editor's hint tells the person.
+ */
+export function oneOffTitle(card) {
+  const title = String(card.title || '').trim();
+  const feast = String(card.feast || '').trim();
+  if (!feast || titleKey(title).includes(titleKey(feast))) return title;
+  return `${title} — ${feast}`.slice(0, 200);
+}
+
 /** What a card becomes as a POST /api/admin/events body, less the instants. */
 export function publishBody(card, parishId) {
   return {
     parish_id: parishId,
-    title: card.title,
+    title: oneOffTitle(card),
     event_type: card.event_type || 'other',
     description: card.description || null,
     languages: card.languages && card.languages !== '[]' ? card.languages : null,
@@ -447,4 +544,27 @@ export function publishBody(card, parishId) {
     additive_parish_ids: parseList(card.also_at).map(String),
     replaced_event_ids: parseList(card.replaces).map(String),
   };
+}
+
+/**
+ * What an occurrence card writes onto its service, as an applyAdminEdit body
+ * (lib/overrides.mjs), less the instants.
+ *
+ * Only what the card SAYS. An empty field on the card is not "clear it": the
+ * occurrence may already carry a note or a poster somebody put there, and a
+ * programme that does not mention it has not removed it — the same rule as
+ * "a poster read only ever fills empty fields". A field equal to the rule's is
+ * written as no patch at all (mergePatch compares).
+ */
+export function occurrenceBody(card, posterPath) {
+  const body = {};
+  const has = (v) => v != null && String(v).trim() !== '' && v !== '[]';
+  if (has(card.title)) body.title = card.title;
+  if (has(card.feast)) body.feast = card.feast;
+  if (has(card.description)) body.description = card.description;
+  if (has(card.event_type)) body.event_type = card.event_type;
+  if (has(card.languages)) body.languages = card.languages;
+  if (has(card.location_override)) body.location_override = card.location_override;
+  if (posterPath) body.poster_path = posterPath;
+  return body;
 }
