@@ -88,6 +88,35 @@ links (`docs/lite-pages.md`); this is where that ends up.
 > home page's timetable shows with no filter, how the map loads without delaying first
 > paint, and what returning users and admins land on.*
 
+## If D1 reads spike again
+
+On 10 October 2026 the account hit the Workers Free cap of 5 million D1 rows
+read in a day (6.94M) and D1 refused reads until midnight UTC. The owner moved
+to Workers Paid ($5/month, 25 billion rows a month), so this is no longer an
+outage, only a cost — and these fixes are parked until it happens again.
+
+What the numbers said: about 42,000 requests from France in 24 hours against a
+few dozen real page views (Web Analytics, bots excluded), so a crawler, at about
+165 rows a request. What it was walking: the link graph the lite and timetable
+pages had just grown (PRs #75, #76) — every timetable row links a
+`/<acronym>/<day>/<service>` card, every card links its events'
+`/<id>:<date>` pages, and dates roll forward, so the URL space never ends. Pages
+cache per URL and per hour, which a crawler visiting each URL once defeats, and
+`noindex` stops indexing, not crawling.
+
+> *D1 rows read are climbing again (docs/roadmap.md, "If D1 reads spike
+> again"). First confirm the source in Security → Analytics (country, ASN, user
+> agent, top paths). Then, in one PR:*
+> - *`rel="nofollow"` on the variant links the lite pages write — event links,
+>   timetable rows, `?app` — and a `robots.txt` Disallow for `/*:*` (event ids)
+>   and `/*?app`;*
+> - *the `/:slug/:link` and `/:slug/donate` routes in worker/index.mjs query D1
+>   on EVERY two-segment path, before the page cache is checked: skip them for
+>   paths url-state classifies as filters, and look parishes up by a stored,
+>   indexed normalised acronym instead of scanning `lower(replace(acronym…))`;*
+> - *build timetable pages from the cached `/api/bundle` body instead of D1;*
+> - *if a single bot is the cause, a WAF rule or Bot Fight Mode first — no code.*
+
 ## Owner to-dos (not code)
 
 - Switch Cloudflare Access to "Everyone + One-time PIN" so People is the only

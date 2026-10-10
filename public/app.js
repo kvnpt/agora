@@ -6576,6 +6576,11 @@ function renderScheduleDaysHTML(items) {
   // already leaves out a rule that ended before its window opened; this
   // catches one that ended inside it.
   items = items.filter(s => !s.effective_to || s.effective_to >= parishToday(s.timezone || s.p_timezone));
+  // Day, then time: a day's services read down in the order they happen.
+  // Grouping by day alone kept whatever order the rules were stored in, so a
+  // Sunday read 9:00, 8:00, 10:30. Sunday first, as the lite pages have it.
+  items = [...items].sort((a, b) => a.day_of_week - b.day_of_week
+    || String(a.start_time || '').localeCompare(String(b.start_time || '')));
   const byDay = new Map();
   for (const item of items) {
     if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
