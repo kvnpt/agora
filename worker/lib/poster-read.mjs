@@ -172,7 +172,7 @@ What to return:
 - events: one entry per dated event, in the order they happen, at most ${MAX_EVENTS}. A series printed with several dates is one entry per date. A regular service (they are listed below) on its usual day is listed only when the image says something about that date: the saint or feast it commemorates, a different time, a guest, that it is cancelled or moved. A programme that gives each Sunday's saint is one entry per date. Do list everything that is not a regular service. Empty for a timetable that gives no dates.
 - services: for a timetable, the regular weekly services it gives, one entry per day and time: "Saturdays and Sundays 8.00am Orthros and Divine Liturgy" is two entries. Empty for anything that is not a timetable.
 - details: for a timetable, the parish's own details as printed on it; empty strings for what is not printed, and all empty for anything else.
-- notes: anything about the image as a whole that the person should know, such as part of it being cut off or unreadable. Usually empty.
+- notes: anything about the image as a whole that the person should know, such as part of it being cut off or unreadable. One short sentence each, at most two. Usually empty.
 
 For each event:
 - title: the event's name, in normal capitalisation even when the image prints it in capitals ("Feast of St Nicholas", not "FEAST OF ST NICHOLAS"). For a regular service, the service ("Orthros and Divine Liturgy"), with its commemoration in feast and not in the title. Do not add the parish's name unless it is part of the event's name.
@@ -393,6 +393,17 @@ export async function readPoster(o, emit = () => {}) {
 const clean = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().replace(/\s+/g, ' ').slice(0, n) : null);
 
 /**
+ * A note too long to show, cut at a word with an ellipsis — not mid-word, as
+ * a slice did: "All dated entries have been transcribed a".
+ */
+export function clip(text, n) {
+  if (!text || text.length <= n) return text;
+  const cut = text.slice(0, n - 1);
+  const at = cut.lastIndexOf(' ');
+  return `${(at > n * 0.6 ? cut.slice(0, at) : cut).replace(/[\s,;:.-]+$/, '')}…`;
+}
+
+/**
  * "FEAST OF ST NICHOLAS" -> "Feast Of St Nicholas". The prompt asks for normal
  * capitalisation; this is the floor under it, for a title with no lower case at
  * all, because a shouted card in the feed is worse than an imperfect "Of".
@@ -469,7 +480,7 @@ export function normalizeRead(doc) {
   const d = doc && typeof doc === 'object' ? doc : {};
   const raw = Array.isArray(d.events) ? d.events : [];
   const rawServices = Array.isArray(d.services) ? d.services : [];
-  const notes = (Array.isArray(d.notes) ? d.notes : []).map(n => clean(n, 300)).filter(Boolean).slice(0, 5);
+  const notes = (Array.isArray(d.notes) ? d.notes : []).map(n => clip(clean(n, 2000), 500)).filter(Boolean).slice(0, 5);
   if (raw.length > MAX_EVENTS) {
     notes.push(`The poster lists more than ${MAX_EVENTS} events; only the first ${MAX_EVENTS} were read.`);
   }

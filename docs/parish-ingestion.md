@@ -1144,6 +1144,16 @@ site, so they are not imported: the rule is that a jurisdiction's own site is th
 source, and an aggregator is a signpost. They are the first thing to ask a
 Macedonian priest about.
 
+**The menu has fourteen churches; the page tree has thirteen.** St Prophet
+Ilija (МПЦ Свети пророк Илија – Силванија), 56–57 Princes Highway, Sylvania NSW
+2224, belongs to the Australia and New Zealand diocese and was missed. The run
+read the child pages of `/цркви/`, and Sylvania is not one: it is a post
+(`/мпц-свети-пророк-илија-силванија/`, id 43068) linked only from the site's
+CHURCHES menu, where it is the fourteenth entry. Found in October 2026 by
+somebody looking for it on the map. Nothing re-reads this jurisdiction —
+`automation: 'none'` in `worker/lib/jurisdictions.mjs` — so the next read takes
+the menu, not the page tree, and Sylvania is added by hand until then.
+
 **Final confidence: 14 pins on a building, 12 street-level, 1 locality
 centroid.** `info_verified_at` is NULL on all 27. The weakest of the twelve
 street pins is Gaven, which is Banyula Drive itself rather than number 219 —

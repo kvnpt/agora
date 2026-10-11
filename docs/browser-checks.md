@@ -163,7 +163,9 @@ window.agoraState              // the whole state object, incl. adminWho
 window.openParishSheet(id)     // open a parish card without clicking the map
 window.closeParishSheet()
 window.expandEventCard(id)     // open an event drawer by id, synthetic ids too
-window.setEventEditMode(id)    // enter/leave the drawer's edit mode
+window.setEventEditMode(id)    // open the event's edit dialog; null closes it
+window.openFormDialog({...})   // the edit dialog: parish details, a rule, a new rule, an event
+window.closeFormDialog()
 window.agoraAdminMay(cap, pid) // the same two questions the Worker asks
 ```
 

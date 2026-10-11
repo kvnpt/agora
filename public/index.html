@@ -487,6 +487,19 @@
   <script src="/bundle.js"></script>
   <script src="/app.js"></script>
 
+  <!-- The edit dialog: a parish's details, a rule of its timetable, a new rule,
+       an event (openFormDialog in app.js). FIRST of the dialogs on purpose —
+       what these open (Combine, Break, the logo, the pin, the links, "keep it
+       by hand?") comes later in the document and so sits above it. -->
+  <div class="escalate-backdrop" id="form-backdrop" onclick="if(event.target===this)closeFormDialog()">
+    <div class="escalate-modal form-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
+      <button class="donate-close" type="button" aria-label="Close" onclick="closeFormDialog()">&times;</button>
+      <h2 id="form-title"></h2>
+      <div class="escalate-modal-sub" id="form-sub"></div>
+      <div id="form-body"></div>
+    </div>
+  </div>
+
   <!-- Escalate modal (admin-only, injected at runtime) -->
   <div class="escalate-backdrop" id="escalate-backdrop" onclick="if(event.target===this)closePublicEscalateModal()">
     <div class="escalate-modal">

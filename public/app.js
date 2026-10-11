@@ -601,12 +601,35 @@ function disablePageZoom() {
 }
 
 // ── Disable pull-to-refresh (iOS Safari ignores overscroll-behavior) ──
+//
+// A pull down — the finger moving down, which scrolls UP — is cancelled only
+// when whatever is scrolling under the finger is already at its top: then the
+// pull has nothing left to scroll and would reload the page.
+//
+// "Whatever is scrolling" is found by walking up from the touch, once per
+// gesture. It used to be three named containers (the two sheets and the
+// drawer), with anything else falling back to the main sheet — so inside a
+// dialog (Add an event, Combine) the guard asked the sheet BEHIND it, found
+// it at its top, and cancelled every scroll upward. The dialog scrolled down
+// and could never come back up.
+function scrollerUnder(el) {
+  for (let n = el && el.nodeType === 1 ? el : el && el.parentElement; n && n !== document.body; n = n.parentElement) {
+    if (n.scrollHeight > n.clientHeight + 1) {
+      const oy = getComputedStyle(n).overflowY;
+      if (oy === 'auto' || oy === 'scroll') return n;
+    }
+  }
+  return null;
+}
+
 function disablePullToRefresh() {
   let touchStartY = 0;
   let touchStartX = 0;
+  let scroller = null;
   document.addEventListener('touchstart', e => {
     touchStartY = e.touches[0].clientY;
     touchStartX = e.touches[0].clientX;
+    scroller = scrollerUnder(e.target);
   }, { passive: true });
 
   document.addEventListener('touchmove', e => {
@@ -615,20 +638,14 @@ function disablePullToRefresh() {
     const dy = y - touchStartY;
     const dx = x - touchStartX;
 
-    // Only block vertical pull-down gestures
+    // Only vertical pull-down gestures.
     if (Math.abs(dx) > Math.abs(dy)) return;
-
-    const pullingDown = dy > 0;
-    // With the bottom-sheet layout, document itself doesn't scroll.
-    // Block pull-to-refresh only when the scroll ancestor under the finger is
-    // at its top. Reading a hardcoded sheet element would falsely block
-    // downward scroll inside other scrollable regions (parish sheet, drawer).
-    if (!pullingDown) return;
-    const scrollable = e.target.closest(
-      '#parish-sheet-scroll, .detail-panel, #sheet-scroll'
-    );
-    if (scrollable && scrollable.scrollTop > 0) return;
-    if (!scrollable) {
+    if (dy <= 0) return;
+    // Something under the finger still has room to scroll up: let it.
+    if (scroller && scroller.scrollTop > 0) return;
+    // Nothing scrollable under the finger (the map, a bar): the page itself
+    // does not scroll in this layout, so the main sheet is what would move.
+    if (!scroller) {
       const sheetScroll = document.getElementById('sheet-scroll');
       if (sheetScroll && sheetScroll.scrollTop > 0) return;
     }
@@ -5204,7 +5221,11 @@ function paintParishSheetContent(parishId, opts = {}) {
   //
   // The avatar was a logo button whenever somebody was signed in, which put a
   // pencil on a parish's face on every sheet an admin ever opened.
-  const psEditing = state.isAdmin && state.parishEditMode === parishId;
+  // The sheet itself is never edited in place any more: "Edit details" opens
+  // the edit dialog (openParishDetailsDialog), and the sheet stays the sheet
+  // a visitor reads, behind it. The branches below that build the in-place
+  // controls are what the dialog is built from.
+  const psEditing = false;
 
   // Admin controls. Both follow the MODE, not a local toggle.
   //
@@ -7054,7 +7075,7 @@ function wireScheduleAdminHandlers(container) {
       if (rule && !(await ensureKeptByHand(rule.parish_id))) return;
       fetch(`/api/admin/schedules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
         .then(async r => {
-          if (r.ok) { form.style.display = 'none'; fetchSchedules({ fresh: true }); fetchEvents({ fresh: true, keepCount: true }); }
+          if (r.ok) { closeFormDialog(); fetchSchedules({ fresh: true }); fetchEvents({ fresh: true, keepCount: true }); }
           else alert(await adminErrorText(r));
         });
     });
@@ -7070,7 +7091,7 @@ function wireScheduleAdminHandlers(container) {
       if (!confirm('Delete this service?')) return;
       if (rule && !(await ensureKeptByHand(rule.parish_id))) return;
       const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchSchedules({ fresh: true });
+      if (res.ok) { closeFormDialog(); fetchSchedules({ fresh: true }); }
       else alert(await adminErrorText(res));
     });
   });
@@ -7111,17 +7132,10 @@ function wireScheduleAdminHandlers(container) {
         }),
       });
       if (res.ok) {
-        wrap.querySelector('[data-af="title"]').value = '';
-        wrap.querySelector('[data-af="effective_from"]').value = '';
-        wrap.querySelector('[data-af="effective_to"]').value = '';
-        // Back to "every week", so the next service added does not silently
-        // inherit the cadence of the one before it.
-        const cad = wrap.querySelector('[data-af="cadence"]');
-        if (cad) {
-          cad.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
-          const weekly = cad.querySelector('input[data-cad-mode][value="weekly"]');
-          if (weekly) { weekly.checked = true; weekly.dispatchEvent(new Event('change', { bubbles: true })); }
-        }
+        // Added: the dialog goes, and the timetable shows the new row. The
+        // next one starts from a fresh form, so nothing — the cadence above
+        // all — carries over from this one.
+        closeFormDialog();
         fetchSchedules({ fresh: true });
         return;
       }
@@ -7573,90 +7587,16 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ? `<a class="btn-service-book" href="https://www.antiochian.org.au/holy-week-service-books" target="_blank" rel="noopener"><img src="https://api.iconify.design/ph:book-open.svg" alt="" class="btn-service-book-icon">Service Book</a>`
     : '';
 
-  // Admin controls on the drawer follow the MODE, not a remembered preference.
-  //
-  // One pencil until somebody says they are editing; then the whole toolkit,
-  // the same bargain the parish sheet strikes. Nothing is painted and hidden —
-  // entering the mode re-renders, so there is no form behind display:none for a
-  // visitor's drawer to be carrying around.
-  const evtEditing = state.isAdmin && state.eventEditMode === String(evt.id);
+  // The drawer carries one pencil for an admin, and nothing else: the form and
+  // the toolkit (Cancel, Break, Suppress, Delete, Combine…) open in the edit
+  // dialog, over the card, the way Add event does — see openEventEditDialog.
+  // Nothing is painted and hidden, so a visitor's drawer carries no form.
   let adminActions = '';
   if (state.isAdmin) {
-    const isCancelled = evt.status === 'cancelled';
-    const isHidden = evt.status === 'hidden';
-    const isHeadless = evt.mutation_type === 'headless';
-    const isScheduleOrigin = evt.source_adapter === 'schedule' || evt.mutation_type === 'scheduled' || evt.mutation_type === 'adapted';
-    // ids are JSON-quoted so synthetic schedule instance ids ("13:2026-07-04")
-    // round-trip as JS string literals. &quot; lets the embedded double quotes
-    // survive the outer onclick="..." attribute (HTML parser would otherwise
-    // terminate the attribute at the first inner ").
     const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
-    // Break sits with Cancel and Suppress because it is the third answer to the
-    // same question, and the one people actually reach for most: this service
-    // is off for a while. Only on a projected occurrence — a break is a
-    // statement about a RULE over a stretch of dates, and a stored one-off has
-    // no rule to make it about.
-    const onBreak = evt.status === 'break';
-    const breakBtn = isScheduleOrigin
-      ? (onBreak
-        ? `<button class="btn-outline btn-break-event" onclick="openBreakEditor(${eid})">On break — edit</button>`
-        : `<button class="btn-outline btn-break-event" onclick="openBreakEditor(${eid})">Break…</button>`)
-      : '';
-    adminActions = evtEditing ? `
+    adminActions = `
       <div class="admin-actions-group">
-        <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${eid},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
-        ${breakBtn}
-        ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
-        ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
-        ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
-        <button class="btn-outline btn-event-edit-done" onclick="setEventEditMode(null)">${glyph('ph:check')}Done</button>
-      </div>` : `
-      <div class="admin-actions-group">
-        <button class="btn-outline btn-event-edit" onclick="setEventEditMode(${eid})">${glyph('ph:pencil-simple')}Edit</button>
-      </div>`;
-  }
-
-  // Built only while editing. Painting the whole form and hiding it is how the
-  // reading drawer ended up carrying the toolkit, and entering the mode
-  // re-renders anyway, so there is nothing to keep warm.
-  let editForm = '';
-  if (evtEditing) {
-    const parishOpts = state.parishes.filter(p => p.id !== '_unassigned').map(p =>
-      `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`
-    ).join('');
-    const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
-    editForm = `
-      <div class="detail-edit-form" id="edit-form-${evt.id}">
-        ${seriesLineHTML(evt)}
-        <div class="edit-row"><label>Title</label><input id="edit-title-${evt.id}" value="${esc(evt.title)}"></div>
-        <div class="edit-row"><label>Description</label><textarea id="edit-desc-${evt.id}">${esc(evt.description || '')}</textarea></div>
-        <div class="edit-row"><label>Type</label>
-          <select id="edit-type-${evt.id}">
-            ${EVENT_TYPES.map(t =>
-              `<option value="${t}" ${evt.event_type === t ? 'selected' : ''}>${t}</option>`
-            ).join('')}
-          </select>
-        </div>
-        <div class="edit-row"><label>Parish</label>
-          <select id="edit-parish-${evt.id}">${parishOpts}</select>
-        </div>
-        <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
-        <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
-        <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
-        <div class="edit-row"><label>Address (override)</label><input id="edit-location-${evt.id}" placeholder="Leave blank to use parish address" value="${esc(evt.location_override || '')}"></div>
-        ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
-        <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
-        <!-- The poster. Outside Save deliberately: it is a file going to R2
-             rather than a field going to the row, it has its own endpoint, and
-             a picture that uploads when you pick it is what everybody expects
-             a picture to do. The same reasoning the logo editor already uses. -->
-        <div class="edit-row">
-          <label>Poster</label>
-          ${posterEditorHTML(evt)}
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="btn-save" onclick="saveEvent(${eid})">Save</button>
-        </div>
+        <button class="btn-outline btn-event-edit" onclick="setEventEditMode(${eid})" aria-haspopup="dialog">${glyph('ph:pencil-simple')}Edit</button>
       </div>`;
   }
 
@@ -7725,8 +7665,83 @@ function renderEventDrawerHTML(evt, opts = {}) {
       ${serviceBookCta}
       ${adminActions}
     </div>
-    ${posterHtml}
-    ${editForm}`;
+    ${posterHtml}`;
+}
+
+/**
+ * What the edit dialog holds for one event: the toolkit, then the form.
+ *
+ * ids are JSON-quoted so synthetic schedule instance ids ("13:2026-07-04")
+ * round-trip as JS string literals. &quot; lets the embedded double quotes
+ * survive the outer onclick="..." attribute (HTML parser would otherwise
+ * terminate the attribute at the first inner ").
+ */
+function eventEditFormHTML(evt) {
+  const isCancelled = evt.status === 'cancelled';
+  const isHidden = evt.status === 'hidden';
+  const isHeadless = evt.mutation_type === 'headless';
+  const isScheduleOrigin = evt.source_adapter === 'schedule' || evt.mutation_type === 'scheduled' || evt.mutation_type === 'adapted';
+  const eid = JSON.stringify(String(evt.id)).replace(/"/g, '&quot;');
+  // Break sits with Cancel and Suppress because it is the third answer to the
+  // same question, and the one people actually reach for most: this service
+  // is off for a while. Only on a projected occurrence — a break is a
+  // statement about a RULE over a stretch of dates, and a stored one-off has
+  // no rule to make it about.
+  const onBreak = evt.status === 'break';
+  const breakBtn = isScheduleOrigin
+    ? `<button class="btn-outline btn-break-event" onclick="openBreakEditor(${eid})">${onBreak ? 'On break — edit' : 'Break…'}</button>`
+    : '';
+  const parishOpts = state.parishes.filter(p => p.id !== '_unassigned').map(p =>
+    `<option value="${esc(p.id)}" ${p.id === evt.parish_id ? 'selected' : ''}>${esc(p.name)}</option>`
+  ).join('');
+  return `
+    <div class="admin-actions-group event-edit-actions">
+      <button class="btn-outline btn-cancel-event" onclick="setEventStatus(${eid},'${isCancelled ? 'approved' : 'cancelled'}')">${isCancelled ? 'Uncancel' : 'Cancel'}</button>
+      ${breakBtn}
+      ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
+      ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
+      ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
+    </div>
+    <div class="detail-edit-form" id="edit-form-${evt.id}">
+      ${seriesLineHTML(evt)}
+      <div class="edit-row"><label>Title</label><input id="edit-title-${evt.id}" value="${esc(evt.title)}"></div>
+      <div class="edit-row"><label>Description</label><textarea id="edit-desc-${evt.id}">${esc(evt.description || '')}</textarea></div>
+      <div class="edit-row"><label>Type</label>
+        <select id="edit-type-${evt.id}">
+          ${EVENT_TYPES.map(t =>
+            `<option value="${t}" ${evt.event_type === t ? 'selected' : ''}>${t}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="edit-row"><label>Parish</label>
+        <select id="edit-parish-${evt.id}">${parishOpts}</select>
+      </div>
+      <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
+      <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
+      <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
+      <div class="edit-row"><label>Address (override)</label><input id="edit-location-${evt.id}" placeholder="Leave blank to use parish address" value="${esc(evt.location_override || '')}"></div>
+      ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
+      <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
+      <!-- The poster. Outside Save deliberately: it is a file going to R2
+           rather than a field going to the row, it has its own endpoint, and
+           a picture that uploads when you pick it is what everybody expects
+           a picture to do. The same reasoning the logo editor already uses. -->
+      <div class="edit-row">
+        <label>Poster</label>
+        ${posterEditorHTML(evt)}
+      </div>
+      <div class="form-actions">
+        <button class="btn-save" onclick="saveEvent(${eid})">Save</button>
+        <button class="btn-outline" type="button" onclick="closeFormDialog()">Close</button>
+      </div>
+    </div>`;
+}
+
+/** The line under the dialog's title: what, when, where. */
+function eventEditSub(evt) {
+  const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+    .format(new Date(evt.start_utc));
+  return [evt.title, when, evt.parish_name].filter(Boolean).join(' · ');
 }
 
 function wireEventDrawer(drawer, evt) {
@@ -8056,9 +8071,10 @@ async function _afterPosterChange() {
  * that the controls are not in the document at all until somebody asks for
  * them — see `state.eventEditMode`.
  */
-/** Editing belongs to the open drawer; closing it leaves the mode behind. */
+/** Editing belongs to the open drawer; closing it closes the dialog too. */
 function clearEventEditMode() {
   if (state.eventEditMode) state.eventEditMode = null;
+  if (formDialogKind() === 'event') closeFormDialog();
 }
 
 /**
@@ -8078,6 +8094,7 @@ function clearEventEditMode() {
  * not showing does nothing.
  */
 function repaintOpenEventDrawer() {
+  refreshEventEditDialog();
   if (!state._openEventId) return;
   collapseEventCardDOM({ instant: true });
   scheduleRenderEvents(0);
@@ -8089,11 +8106,44 @@ function repaintOpenEventDrawer() {
 }
 
 window.setEventEditMode = function (id) {
-  const next = id == null ? null : String(id);
-  if (state.eventEditMode === next) return;
-  state.eventEditMode = next;
-  repaintOpenEventDrawer();
+  if (id == null) { clearEventEditMode(); return; }
+  openEventEditDialog(String(id));
 };
+
+/**
+ * Editing an event: the form and the toolkit in the edit dialog, over the card.
+ *
+ * The drawer stays as a visitor reads it underneath, and the dialog is the
+ * mode — `state.eventEditMode` is set while it is open and cleared by closing
+ * it, so nothing else has to remember to leave the mode. Combine, Break and the
+ * "which dates" question open above it (later in the document, same z-index).
+ */
+function openEventEditDialog(id) {
+  const evt = state.events.find(e => String(e.id) === id);
+  if (!evt) return;
+  state.eventEditMode = id;
+  const body = openFormDialog({
+    kind: 'event',
+    title: String(id).includes(':') ? 'Edit service' : 'Edit event',
+    sub: eventEditSub(evt),
+    html: eventEditFormHTML(evt),
+    onClose: () => { state.eventEditMode = null; },
+  });
+  const first = body.querySelector(`#edit-title-${CSS.escape(id)}`);
+  if (first) first.focus({ preventScroll: true });
+}
+
+/** After a poster or a break: the dialog redrawn with what changed, where it was scrolled. */
+function refreshEventEditDialog() {
+  if (formDialogKind() !== 'event' || !state.eventEditMode) return;
+  const evt = state.events.find(e => String(e.id) === state.eventEditMode);
+  if (!evt) { closeFormDialog(); return; }
+  const modal = document.querySelector('#form-backdrop .form-modal');
+  const top = modal ? modal.scrollTop : 0;
+  document.getElementById('form-body').innerHTML = eventEditFormHTML(evt);
+  document.getElementById('form-sub').textContent = eventEditSub(evt);
+  if (modal) modal.scrollTop = top;
+}
 
 window.saveEvent = async function(id) {
   const startVal = document.getElementById(`edit-start-${id}`).value;
@@ -8143,6 +8193,7 @@ window.saveEvent = async function(id) {
     body: JSON.stringify(data)
   });
   if (res.ok) {
+    closeFormDialog();
     // Refresh state.events, then rebuild the open drawer in place so the
     // user sees the new values immediately without closing the detail.
     // collapseEventCardDOM only tears down the DOM; state._openEventId is
@@ -8245,7 +8296,7 @@ window.agoraEditSeries = function (sid) {
   const rule = ruleById(sid);
   if (!rule) return;
   const pid = rule.parish_id;
-  state.eventEditMode = null;
+  clearEventEditMode();
   if (state.parishSheetFocus !== pid) openParishSheet(pid, { noServiceFocus: true });
   window.setScheduleEditMode(pid, true);
   // The sheet re-renders on the mode change; find the row once it has.
@@ -8318,7 +8369,7 @@ async function postFollowing(id, body) {
 
 /** After a series write: rules and occurrences both moved, so re-read both. */
 async function _afterSeriesChange(openId) {
-  state.eventEditMode = null;
+  clearEventEditMode();
   await fetchSchedules({ fresh: true });
   await fetchEvents({ fresh: true, keepCount: true });
   if (openId && state.events.some(e => e.id === openId)) {
@@ -8424,8 +8475,7 @@ function parishTimetableHTML(parish, scheds) {
         </div>
         ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
         ${editing ? `${endedServicesHTML(pid)}
-          <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add schedule</span></button>
-          <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
+          <button class="ps-sched-add-toggle" type="button" data-sched-add="${esc(pid)}" aria-haspopup="dialog">${glyph('ph:plus-bold')}<span>Add schedule</span></button>` : ''}
       </div>
     </div>`;
 }
@@ -8591,22 +8641,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   const add = e.target.closest('[data-sched-add]');
-  if (add) {
-    const wrap = add.nextElementSibling;
-    if (!wrap) return;
-    wrap.hidden = !wrap.hidden;
-    add.setAttribute('aria-expanded', String(!wrap.hidden));
-    add.classList.toggle('open', !wrap.hidden);
-    // The label, not the first span: that is the + glyph, which said "Close"
-    // to nobody while the label went on reading "Add" beside an open form.
-    const label = add.querySelector('span:not(.ps-btn-glyph)');
-    if (label) label.textContent = wrap.hidden ? 'Add schedule' : 'Close';
-    if (!wrap.hidden) {
-      const first = wrap.querySelector('[data-af="title"]');
-      if (first) first.focus({ preventScroll: true });
-      wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }
+  if (add) openAddScheduleDialog(add.dataset.schedAdd);
 });
 
 // "From a photo of the sign", in the timetable's add form. The photo is read by
@@ -8616,6 +8651,8 @@ document.addEventListener('click', (e) => {
 // never put on the timetable (public/shared/event-editor.js, `intent`).
 function openSchedulePhoto(pid, file) {
   if (!file || !/^image\//.test(file.type || '')) return;
+  // The photo is read in the add-event editor; the add dialog it came from goes.
+  closeFormDialog();
   window.openNewEventDialog(pid, { file, intent: 'timetable' });
 }
 document.addEventListener('click', (e) => {
@@ -8869,11 +8906,59 @@ window.setParishEditMode = function(id, on) {
   // Same reasoning as closing the sheet: a pin staged against one parish must
   // not still be staged when the mode moves to another, or to nothing.
   if (_pinDraft.parishId && _pinDraft.parishId !== next) clearPinDraft();
+  // The mode is the edit dialog now: open it, or close it.
+  if (next) openParishDetailsDialog(next);
+  else if (formDialogKind() === 'parish') closeFormDialog();
   // fullRender, because the partial refresh deliberately leaves the header
-  // and the actions row alone — which is exactly the half that changes here.
+  // and the actions row alone — a save changed what they show.
   const open = state.parishSheetFocus;
-  if (open) renderParishSheetContent(open, { fullRender: true });
+  if (open && !next) renderParishSheetContent(open, { fullRender: true });
 };
+
+/**
+ * A parish's details in the edit dialog: the name fields, the logo, the
+ * address and its pin, the links behind each button, where it is read from —
+ * the controls the sheet used to turn into, in the order the sheet reads.
+ * saveParish reads them by id wherever they are; the pin mover, the logo
+ * editor and the links editor are dialogs of their own, above this one.
+ */
+function openParishDetailsDialog(pid) {
+  const parish = (state.parishes || []).find(p => p.id === pid);
+  if (!parish) return;
+  const color = getParishDisplayColor(parish.color || getJurisdictionColor(parish.jurisdiction));
+  const initial = (parish.name || '?')[0].toUpperCase();
+  const epid = esc(pid);
+  const srcHtml = sourceLineHTML(parish.info_source_name, parish.info_source_ref, parish.info_checked_at, 'ps-source');
+  const actions = `
+      <div class="ps-actions ps-admin-actions form-actions">
+        <button class="ps-btn ps-btn-admin ps-editing" type="button" data-parish-save
+                onclick="finishParishEdit('${epid}', this)">${glyph('ph:check')}Save</button>
+        <button class="ps-btn ps-btn-ghost" type="button" onclick="setParishEditMode('${epid}', false)">Cancel</button>
+        ${adminMay('parish.delete', pid) ? `<button class="ps-btn ps-btn-danger ps-delete-parish" type="button" onclick="deleteParish('${epid}')">${glyph('ph:trash')}Delete parish</button>` : ''}
+      </div>`;
+  const body = openFormDialog({
+    kind: 'parish',
+    title: 'Edit details',
+    sub: parish.full_name || parish.name,
+    html: `
+      <div class="ps-header ps-header-editing">
+        <button type="button" data-logo-edit class="ps-avatar editing" aria-label="Change the logo"
+                style="${parish.logo_path ? '' : `background:${esc(color)};`}--parish-glow:${esc(hexToRgba(color, 0.45))}">${parish.logo_path ? `<img src="${esc(parish.logo_path)}" alt="">` : esc(initial)}<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span></button>
+        ${parishHeaderEditHTML(parish)}
+      </div>
+      ${parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml: actions })}`,
+    // Closing it any way at all — the X, outside, Escape, Cancel — leaves the
+    // mode, and a pin staged in it with it.
+    onClose: () => {
+      if (state.parishEditMode !== pid) return;
+      state.parishEditMode = null;
+      if (_pinDraft.parishId === pid) clearPinDraft();
+    },
+  });
+  body.querySelector('[data-logo-edit]').addEventListener('click', () => openParishLogoEditor(pid));
+  wireParishDetailsEdit(body, pid);
+  wireAcronymHint(body, pid);
+}
 
 // Kept so an old inline handler, a bookmarklet or a half-updated cached copy
 // of this file does not throw. It is the mode now, not a form toggle.
@@ -9251,6 +9336,7 @@ window.deleteParish = async function(id) {
     } else { return; }
   }
   if (res.ok) {
+    closeFormDialog();
     state.parishes = state.parishes.filter(p => p.id !== id);
     if (typeof closeParishSheet === 'function') closeParishSheet();
     if (typeof updateMap === 'function') updateMap(state);
@@ -9838,6 +9924,15 @@ function _applyParishLogo(id, logoPath) {
   if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], logo_path: logoPath };
   if (typeof window.agoraRefreshParishLogo === 'function') window.agoraRefreshParishLogo(id);
   closeParishLogoEditor();
+  // The edit dialog it was opened from shows the new logo too.
+  const dlgAvatar = formDialogKind() === 'parish' && document.querySelector('#form-body .ps-avatar[data-logo-edit]');
+  const saved = (state.parishes || []).find(p => p.id === id);
+  if (dlgAvatar && saved) {
+    dlgAvatar.innerHTML = (saved.logo_path ? `<img src="${esc(saved.logo_path)}" alt="">` : esc((saved.name || '?')[0].toUpperCase()))
+      + `<span class="ps-avatar-edit">${glyph('ph:pencil-simple-fill')}</span>`;
+    dlgAvatar.style.background = saved.logo_path ? ''
+      : getParishDisplayColor(saved.color || getJurisdictionColor(saved.jurisdiction));
+  }
   if (state.parishSheetFocus === id) {
     renderParishSheetContent(id, { fullRender: true });
     // The header rebuild dropped the pencil; put it back if the form the
@@ -10000,6 +10095,68 @@ async function _afterNewEvents(events) {
   if (state.parishSheetFocus) {
     renderParishSheetContent(state.parishSheetFocus, { fullRender: true, focusEventId: String(byStart[0].id) });
   }
+}
+
+// ── The edit dialog ──
+//
+// Editing a parish's details, a rule of its timetable, a new rule or an event
+// happens in a dialog over the sheet — the same frame as Add an event — rather
+// than inside the sheet. In the sheet, a form was a dozen controls opening
+// under a row of a scrolling panel that was itself a sheet over a map: on a
+// phone it pushed the thing being edited off the screen, and the sheet's own
+// drag handling fought the form for every scroll. Each kind fills the one
+// dialog (#form-backdrop) with the controls it always had; their handlers are
+// the ones they always had, because they find their fields by id.
+let _formDialog = null;   // { onClose, kind }
+
+/**
+ * Open the edit dialog. `html` is markup or a node (a node is moved in, so
+ * the handlers bound to it come with it). Whatever was open is closed first,
+ * with its own onClose. Returns the body to wire.
+ */
+function openFormDialog({ title, sub = '', html = '', onClose = null, kind = '' }) {
+  closeFormDialog();
+  const back = document.getElementById('form-backdrop');
+  document.getElementById('form-title').textContent = title;
+  const subEl = document.getElementById('form-sub');
+  subEl.textContent = sub;
+  subEl.hidden = !sub;
+  const body = document.getElementById('form-body');
+  body.innerHTML = '';
+  if (typeof html === 'string') body.innerHTML = html;
+  else if (html) body.appendChild(html);
+  back.dataset.kind = kind;
+  back.classList.add('open');
+  back.querySelector('.form-modal').scrollTop = 0;
+  _formDialog = { onClose, kind };
+  document.addEventListener('keydown', _formEsc);
+  return body;
+}
+window.openFormDialog = openFormDialog;
+
+/** Close it. `onClose` runs first, so a node moved in can be moved back out. */
+function closeFormDialog() {
+  const back = document.getElementById('form-backdrop');
+  if (!back || !back.classList.contains('open')) return;
+  const d = _formDialog;
+  _formDialog = null;
+  back.classList.remove('open');
+  document.removeEventListener('keydown', _formEsc);
+  if (d && d.onClose) d.onClose();
+  document.getElementById('form-body').innerHTML = '';
+}
+window.closeFormDialog = closeFormDialog;
+
+/** Which kind of edit is open, if any: 'rule', 'add-rule', 'parish', 'event'. */
+const formDialogKind = () => (_formDialog ? _formDialog.kind : null);
+
+// Escape closes it only when it is the dialog on top: the ones it opens sit
+// later in the document, and Escape there belongs to them.
+function _formEsc(e) {
+  if (e.key !== 'Escape') return;
+  const open = [...document.querySelectorAll('.escalate-backdrop.open')];
+  if (open[open.length - 1] !== document.getElementById('form-backdrop')) return;
+  closeFormDialog();
 }
 
 function _newEventEsc(e) {
@@ -10666,12 +10823,14 @@ function initScheduleRowTaps() {
 }
 
 /**
- * Open this rule's form, closing whichever one was open.
+ * Open this rule's form in the edit dialog.
  *
- * One at a time because these panels are tall — the form is eleven controls
- * and a delete — and two of them open in a bottom sheet pushes the second
- * rule's fields off the bottom of the phone, under a row that looks like it
- * did nothing.
+ * The form is built with the row, as it always was (renderScheduleDaysHTML),
+ * and its handlers are bound where it was built. So the dialog takes the node
+ * itself, and gives it back — hidden, where it came from — when it closes:
+ * nothing is rebuilt, and nothing is bound twice. It was a panel opening
+ * under the row, one at a time because two of them pushed everything off a
+ * phone; in a dialog there is only ever one.
  */
 function toggleScheduleEditForm(row, sid) {
   // The form is the row's own next sibling. Not `sef-${sid}` — see the note
@@ -10679,25 +10838,39 @@ function toggleScheduleEditForm(row, sid) {
   const form = row.nextElementSibling;
   if (!form || !form.classList.contains('schedule-edit-form')
       || String(form.dataset.sid) !== String(sid)) return;
-  const opening = form.style.display === 'none';
-  // .parish-schedule is the block a parish's rules render into on BOTH
-  // surfaces — the sheet's timetable and the main services panel, which
-  // stacks one per parish.
-  const panel = row.closest('.parish-schedule') || document;
-  panel.querySelectorAll('.schedule-edit-form').forEach(f => {
-    if (f === form) return;
-    f.style.display = 'none';
-    const owner = f.previousElementSibling;
-    if (owner && owner.dataset.schedEditable) {
-      owner.classList.remove('editing-open');
-      owner.setAttribute('aria-expanded', 'false');
-    }
+  const rule = ruleById(sid);
+  const home = document.createComment('schedule-edit-form');
+  form.parentNode.insertBefore(home, form);
+  form.style.display = 'block';
+  const parish = rule && (state.parishes || []).find(p => p.id === rule.parish_id);
+  openFormDialog({
+    kind: 'rule',
+    title: 'Edit service',
+    sub: rule ? [rule.title, `${DAYS[rule.day_of_week]}s ${String(rule.start_time || '').slice(0, 5)}`, parish && parish.name]
+      .filter(Boolean).join(' · ') : '',
+    html: form,
+    onClose: () => {
+      form.style.display = 'none';
+      if (home.parentNode) home.replaceWith(form);
+      else form.remove();
+    },
   });
-  form.style.display = opening ? 'block' : 'none';
-  row.classList.toggle('editing-open', opening);
-  row.setAttribute('aria-expanded', String(opening));
-  if (opening) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
+/** "Add schedule": a new rule's form in the edit dialog — the photo of the sign first. */
+function openAddScheduleDialog(pid) {
+  const parish = (state.parishes || []).find(p => p.id === pid);
+  const body = openFormDialog({
+    kind: 'add-rule',
+    title: 'Add schedule',
+    sub: parish ? parish.name : '',
+    html: addServiceHTML(pid),
+  });
+  wireScheduleAdminHandlers(body);
+  const first = body.querySelector('[data-af="title"]');
+  if (first) first.focus({ preventScroll: true });
+}
+window.openAddScheduleDialog = openAddScheduleDialog;
 
 function wireAcronymHint(root, parishId) {
   const input = root.querySelector('[data-acronym-field]');

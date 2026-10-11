@@ -421,6 +421,10 @@
       .modal-backdrop { align-items: flex-end; padding: 0; }
       .modal { border-radius: 16px 16px 0 0; max-height: 92vh; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
     }
+    /* The add-event editor's action bar sticks to the dialog's bottom edge and
+       carries its own padding; the dialog's own would leave a gap under it
+       that the cards scroll through (event-editor.css .ee-actions). */
+    #add-event-backdrop .modal { padding-bottom: 0; }
     .delete-choice { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding: 6px 0; cursor: pointer; }
     .delete-select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); margin: 2px 0 6px 24px; max-width: calc(100% - 24px); }
 

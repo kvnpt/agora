@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import {
   POSTER_MODEL, POSTER_SCHEMA, SYSTEM_PROMPT, MAX_EVENTS, READ_KINDS,
-  buildPosterRequest, posterContext, readPoster, normalizeRead, readFailure,
+  buildPosterRequest, posterContext, readPoster, normalizeRead, readFailure, clip,
 } from './poster-read.mjs';
 import { haikuStream, fakeFetch } from './test-fakes.mjs';
 
@@ -235,4 +235,15 @@ test('a programme in Greek: English titles, each date’s saint as its feast, an
   assert.strictEqual(r.language, 'Greek');
   assert.deepStrictEqual([r.events[0].title, r.events[0].feast], ['Orthros and Divine Liturgy', 'Luke the Evangelist']);
   assert.strictEqual(normalizeRead({ events: [{ title: 'x', feast: '' }] }).events[0].feast, null);
+});
+
+test('a long note about the poster is cut at a word, with an ellipsis, never mid-word', () => {
+  const long = 'The title at the top of the table indicates a regular Tuesday service; the table then shows entries for specific Tuesdays and other days with their commemorations and events. '.repeat(4)
+    + 'All dated entries have been transcribed as printed.';
+  const r = normalizeRead({ notes: [long] });
+  assert.ok(r.notes[0].length <= 500);
+  assert.match(r.notes[0], /[a-z]…$/);
+  assert.doesNotMatch(r.notes[0], / a…$/);
+  assert.strictEqual(clip('Short and whole.', 500), 'Short and whole.');
+  assert.strictEqual(clip('one two three four five six', 15), 'one two three…');
 });

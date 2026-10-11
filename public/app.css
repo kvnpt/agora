@@ -2413,7 +2413,8 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 /* Event drawer: .detail-actions gives its buttons a 4px radius, so the
    admin ones need the pill geometry restated at higher specificity to sit
    level with the .btn-action pills in the same row. */
-.detail-actions .admin-actions-group > button {
+.detail-actions .admin-actions-group > button,
+#form-body .event-edit-actions > button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2426,25 +2427,20 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   background: var(--surface);
   color: var(--text);
 }
-/* Entering and leaving the drawer's edit mode. The pencil is the only admin
-   control on a drawer nobody is editing, and Done is the same button wearing a
-   tick — so they share a shape rather than reading as two features. */
-.detail-actions .btn-event-edit,
-.detail-actions .btn-event-edit-done {
+/* The pencil is the only admin control on a drawer; it opens the edit dialog. */
+.detail-actions .btn-event-edit {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.detail-actions .btn-event-edit-done {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 45%, transparent);
-}
-.detail-actions .btn-danger {
+.detail-actions .btn-danger,
+#form-body .event-edit-actions .btn-danger {
   background: none;
   color: var(--danger);
   border-color: var(--danger-soft);
 }
-.detail-actions .btn-danger:hover {
+.detail-actions .btn-danger:hover,
+#form-body .event-edit-actions .btn-danger:hover {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
@@ -4561,7 +4557,23 @@ button.ps-avatar { cursor: pointer; }
    add-event editor, styled by /shared/event-editor.css for this page and for
    /admin alike. With a poster on a wide screen the poster sits beside the
    cards, so the dialog widens to make room for both. */
-.new-event-modal { position: relative; max-width: 560px; max-height: 88dvh; }
+/* The edit dialog (openFormDialog): a parish's details, a rule, a new rule,
+   an event. As wide as the add-event dialog, and its forms take the width. */
+.form-modal { position: relative; max-width: 560px; max-height: 88dvh; }
+.form-modal h2 { padding-right: 36px; }
+#form-body .schedule-edit-form,
+#form-body .schedule-add { margin: 0; padding: 0; border: 0; background: none; }
+#form-body .detail-edit-form { margin: 0; padding: 0; border-top: 0; background: none; }
+/* An event's toolkit — Cancel, Break, Suppress, Delete, Combine — above its form. */
+#form-body .event-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 16px; }
+#form-body .ps-details-editing { padding-left: 0; padding-right: 0; }
+#form-body .ps-header.ps-header-editing { position: static; padding: 0 0 12px; border-bottom: 0; background: none; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+/* No bottom padding: the editor's sticky action bar carries its own. With the
+   dialog's 20px under it, the bar stuck 20px above the edge and the cards
+   scrolled past in the gap below it. */
+.new-event-modal { position: relative; max-width: 560px; max-height: 88dvh; padding-bottom: 0; }
 @media (min-width: 900px) {
   .new-event-modal:has(.ee.has-poster) { max-width: 940px; }
 }
@@ -5021,7 +5033,6 @@ button.ps-avatar { cursor: pointer; }
 }
 .ps-sched-add-toggle .ps-btn-glyph { width: 14px; height: 14px; transition: transform 160ms ease-out; }
 .ps-sched-add-toggle.open .ps-btn-glyph { transform: rotate(45deg); }
-.ps-sched-add-wrap { margin-top: 8px; }
 
 /* ── Editing a parish in place ───────────────────────────────────────────
    Each thing the sheet shows turns into the field that edits it, where it

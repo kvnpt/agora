@@ -103,6 +103,10 @@
 .ee-status-error { color: var(--danger); }
 .ee-status-note { color: var(--ee-muted); }
 .ee-poster-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+/* The reader's notes on the poster as a whole, each its own line under the
+   status — quieter than the status, and never run on into it. */
+.ee-read-notes { display: flex; flex-direction: column; gap: 4px; }
+.ee-read-notes .ee-note { margin: 0; font-size: 12px; }
 
 /* On a wide screen the poster sits beside the cards, so the two can be
    compared without scrolling — checking them against it is the whole job. */
@@ -328,7 +332,10 @@
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
-  padding: 10px 0 2px;
+  /* Its own bottom padding, as the dialog around it has none (app.css
+     .new-event-modal, /admin's #add-event-backdrop): a sticky bar stops short
+     of a scroller's padding, and the cards showed in the gap below it. */
+  padding: 10px 0 max(16px, env(safe-area-inset-bottom));
   background: var(--bg, var(--surface, #fff));
   border-top: 1px solid var(--border-light, var(--border));
 }
