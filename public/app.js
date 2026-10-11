@@ -745,12 +745,44 @@ function decidePageMode() {
   if (/[?&]app(=|&|$)/.test(window.location.search)) return;
   const U = window.AgoraUrlState.classifyPath(window.location.pathname, { today: todayIso() });
   const kind = window.AgoraUrlState.pageKind(U);
-  if (kind === 'parish' || kind === 'event') document.body.classList.add('page-mode');
+  if (kind === 'parish' || kind === 'event') {
+    document.body.classList.add('page-mode');
+    placePageChrome(true);
+  }
+}
+
+// The hero over the page — worker/lib/lite-page.mjs HERO_HTML, copied as the
+// lite markup is until the renderers move into public/shared/ (roadmap).
+const PAGE_HERO_HTML = `<a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map"><svg class="lite-hero-cross" viewBox="0 0 60 100" aria-hidden="true"><g fill="currentColor"><rect x="26" y="0" width="8" height="100"/><rect x="16" y="14" width="28" height="7"/><rect x="4" y="32" width="52" height="8"/><rect x="14" y="70" width="32" height="7" transform="rotate(18 30 73.5)"/></g></svg><span>orthodoxy.au</span></a>`;
+
+/**
+ * Page mode wears the visitor's page: the hero at the top of the sheet's
+ * scroll, and the X on the card under it, scrolling with the card — so the X
+ * moves into the scroll, and back out to the sheet when the page is put away.
+ * The hero stays in the scroll, hidden outside page mode (app.css).
+ */
+function placePageChrome(onPage) {
+  const sheet = document.getElementById('parish-sheet');
+  const scroll = document.getElementById('parish-sheet-scroll');
+  const close = document.getElementById('parish-sheet-close');
+  if (!sheet || !scroll || !close) return;
+  if (onPage) {
+    if (!scroll.querySelector('.pm-hero')) {
+      const hero = document.createElement('header');
+      hero.className = 'lite-hero pm-hero';
+      hero.innerHTML = PAGE_HERO_HTML;
+      scroll.insertBefore(hero, scroll.firstChild);
+    }
+    scroll.insertBefore(close, scroll.querySelector('#parish-sheet-content'));
+  } else if (close.parentNode !== sheet) {
+    sheet.insertBefore(close, scroll);
+  }
 }
 
 function exitPageMode() {
   if (!document.body.classList.contains('page-mode')) return;
   document.body.classList.remove('page-mode');
+  placePageChrome(false);
   // The sheet's snaps and the map's canvas were measured for a page.
   window.dispatchEvent(new Event('resize'));
   if (window.agoraMap) window.agoraMap.resize();

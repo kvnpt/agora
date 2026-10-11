@@ -781,16 +781,27 @@ ${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>\n` : ''}<link 
 <style>${LITE_CSS}${DOT_CSS}${colorVarsCSS({ page: color, pageDark: jurisColors.liftForDark(color), ...vars })}</style>
 </head>
 <body class="lite">
-<header class="lite-bar">
-  <span class="lite-brand">orthodoxy.au</span>
-  <a class="lite-close" href="/" aria-label="Close — to the map">&times;</a>
-</header>
-<main class="lite-card">${main}
+${HERO_HTML}
+<main class="lite-card">
+<a class="lite-close" href="/" aria-label="Close — to the map">&times;</a>${main}
 </main>
 <script src="/lite.js" defer></script>
 </body>
 </html>`;
 }
+
+/**
+ * The hero over every page: orthodoxy.au's parishes as points of light
+ * (public/og/hero.jpg, drawn by scripts/build-hero.mjs), with the cross and
+ * the name over it as text, linking to the map. It stands where the app has
+ * its map, and the page below is a card over it — the parish sheet over the
+ * map, which is the "parish card" a shared link opens. The app's page mode
+ * puts the same markup at the top of its sheet (pageHeroHTML in app.js); the
+ * styles are app.css's `.lite-hero`, which both load.
+ */
+export const HERO_HTML = `<header class="lite-hero">
+  <a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map"><svg class="lite-hero-cross" viewBox="0 0 60 100" aria-hidden="true"><g fill="currentColor"><rect x="26" y="0" width="8" height="100"/><rect x="16" y="14" width="28" height="7"/><rect x="4" y="32" width="52" height="8"/><rect x="14" y="70" width="32" height="7" transform="rotate(18 30 73.5)"/></g></svg><span>orthodoxy.au</span></a>
+</header>`;
 
 // What a page needs that a sheet does not, on top of /app.css. The app's
 // tokens (--bg, --text, --text-secondary, --border, --surface-2) are app.css's
@@ -799,12 +810,13 @@ const LITE_CSS = `
 html{overscroll-behavior-y:auto}
 body.lite{margin:0;background:var(--bg);color:var(--text);font-size:15px;-webkit-text-size-adjust:100%}
 .lite a{color:inherit}
-.lite-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;padding:0 8px 0 16px;background:var(--bg);border-bottom:1px solid var(--border-light)}
-.lite-brand{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}
-.lite-close{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-size:26px;line-height:1;color:var(--text-secondary);text-decoration:none}
+/* The card over the hero: rounded at the top where it overlaps it, the X on
+   its corner. Nothing is sticky above the content any more, so the app's
+   sticky day headers stick to the very top. */
+.lite-card{--ps-stack-h:0px;position:relative;max-width:680px;margin:calc(-1 * var(--hero-overlap)) auto 0;padding:0 0 48px;background:var(--bg);border-radius:18px 18px 0 0}
+.lite-close{position:absolute;top:8px;right:8px;z-index:7;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-size:26px;line-height:1;color:var(--text-secondary);text-decoration:none}
 .lite-close:hover{color:var(--text);background:var(--surface-2)}
-.lite-card{--ps-stack-h:48px;max-width:680px;margin:0 auto;padding:0 0 48px}
-.lite .ps-header{position:static;padding-top:18px}
+.lite .ps-header{position:static;padding-top:18px;padding-right:52px;border-radius:18px 18px 0 0}
 .lite h1.ps-name,.lite h2.section-header,.lite h2.ps-focus-banner-text{margin:0;font:inherit}
 .lite h1.ps-name{font-size:21px;font-weight:700;line-height:1.2}
 .lite h2.section-header{font-size:11px;font-weight:600}
@@ -838,7 +850,7 @@ details.lc-ev.past{opacity:.55}
 .lc-badge.now{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--now-dot);color:#fff;font-size:10px;font-weight:800;letter-spacing:.04em;vertical-align:middle}
 .lc-empty{margin:12px 16px;color:var(--text-secondary)}
 .lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin:24px 16px 0;padding-top:14px;border-top:1px solid var(--border-light);font-size:13px;color:var(--text-secondary)}
-.tt-head{padding:20px 16px 4px}
+.tt-head{padding:20px 52px 4px 16px}
 .tt-head h1{margin:0;font-size:21px;font-weight:700;line-height:1.2}
 .tt-head p{margin:4px 0 0;color:var(--text-secondary);font-size:13px}
 .tt-region>.month-header{margin-top:6px}

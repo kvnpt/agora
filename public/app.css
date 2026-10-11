@@ -5194,12 +5194,47 @@ button.ps-avatar { cursor: pointer; }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 2s; } }
 
+/* ── The hero ──
+   Over every lite page (worker/lib/lite-page.mjs HERO_HTML) and over the
+   app's page mode below: orthodoxy.au's parishes as points of light
+   (public/og/hero.jpg, scripts/build-hero.mjs) where the app has its map.
+   Shown at its full height and centred, never cropped to a band: the image's
+   edges are this navy, so a wide screen gets navy either side and no seam.
+   The page below overlaps its foot by --hero-overlap, as the parish sheet
+   overlaps the map. */
+:root { --hero-h: 148px; --hero-overlap: 18px; }
+@media (min-width: 720px) { :root { --hero-h: 184px; } }
+.lite-hero {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: var(--hero-h);
+  padding: 0 20px var(--hero-overlap);
+  background: #1b3453 url(/og/hero.jpg) 58% center / auto 100% no-repeat;
+}
+@media (min-width: 720px) {
+  .lite-hero { padding-left: max(20px, calc(50% - 340px + 20px)); background-position: center; }
+}
+.lite-hero-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff !important;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .35);
+}
+.lite-hero-cross { width: 13px; height: 22px; flex: none; }
+
 /* ── Page mode ──
    An admin arriving at a parish or event link: the parish sheet laid out as
    the page a visitor gets from the Worker, with the app's controls on it.
    decidePageMode in app.js; the visitor's page is worker/lib/lite-page.mjs,
-   and the bar below matches its .lite-bar. The map and its controls are put
-   away (still loaded, so the X brings them back at once). */
+   and the hero and the card below match its own. The map and its controls
+   are put away (still loaded, so the X brings them back at once). */
 body.page-mode .map-container,
 body.page-mode #jurisdiction-banner-wrap,
 body.page-mode #parish-filter-row-wrap,
@@ -5219,37 +5254,35 @@ body.page-mode[data-layout="desktop"] .parish-sheet {
   box-shadow: none;
 }
 body.page-mode .parish-sheet-grab-handle { display: none; }
+/* The hero scrolls away with the page, as it does on the visitor's; the
+   content is the card over it, and the X — moved into the scroll by
+   placePageChrome in app.js — sits on the card's corner and scrolls with it. */
 body.page-mode #parish-sheet-scroll {
   overflow-y: auto !important;
   opacity: 1 !important;
   pointer-events: auto !important;
-  margin-top: 48px;
+  position: relative;
+  background: #1b3453;
 }
-body.page-mode #parish-sheet-content { max-width: 680px; margin: 0 auto; }
-body.page-mode .parish-sheet::before {
-  content: 'orthodoxy.au';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  padding-left: 16px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+body.page-mode #parish-sheet-content {
+  position: relative;
+  max-width: 680px;
+  margin: calc(-1 * var(--hero-overlap)) auto 0;
+  min-height: calc(100% - var(--hero-h) + var(--hero-overlap));
   background: var(--bg);
-  border-bottom: 1px solid var(--border-light);
-  z-index: 11;
+  border-radius: 18px 18px 0 0;
 }
+body.page-mode .parish-sheet { background: var(--bg); }
 body.page-mode .parish-sheet-close,
 body.page-mode[data-layout="desktop"] .parish-sheet-close {
-  top: 6px;
-  right: 8px;
+  top: calc(var(--hero-h) - var(--hero-overlap) + 8px);
+  right: calc(max(0px, (100% - 680px) / 2) + 8px);
   z-index: 12;
   width: 36px;
   height: 36px;
   font-size: 26px;
   border-radius: 50%;
 }
+body.page-mode .ps-header { border-radius: 18px 18px 0 0; }
+body:not(.page-mode) .pm-hero { display: none; }
 
