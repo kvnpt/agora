@@ -324,8 +324,17 @@ function addParishSourceAndLayers() {
     data: { type: 'FeatureCollection', features: [] },
     cluster: markerMode() === 'grapes',
     clusterRadius: CLUSTER_RADIUS_PX,
-    clusterMinPoints: CLUSTER_MIN_POINTS
+    clusterMinPoints: CLUSTER_MIN_POINTS,
+    // A grape stands for its parishes, so it carries their halos: it breathes
+    // green if any of them has something on now, and tolls if any has
+    // something still to come today. See addHaloLayers.
+    clusterProperties: {
+      now_count: ['+', ['case', ['==', ['get', 'now'], true], 1, 0]],
+      today_count: ['+', ['case', ['==', ['get', 'today'], true], 1, 0]]
+    }
   });
+
+  addHaloLayers();
 
   // Drive focus/selected/active off feature properties (rebuilt on every
   // updateMap) rather than feature-state. ~50 features, source rebuild is
@@ -586,6 +595,181 @@ window.agoraUpdateUserLocation = function (lat, lng) {
     : { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} }] };
   map.getSource(USER_SOURCE).setData(fc);
 };
+
+// ── Halos: on now, and later today ─────────────────────────────────────
+//
+// A parish with a service on right now breathes green: a soft halo under its
+// dot that fades in and out. One with something still to come today tolls: a
+// neutral ring grows out of the dot and fades, then a pause, like a bell
+// announcing it. Both sit UNDER the dot, so its jurisdiction colour reads
+// exactly as it did; neither colour means anything else on the map.
+//
+// The flags are properties on the parish features (`now`, `today`), worked out
+// in updateMap from the events the feed shows — its content filters, not the
+// viewport — and again every minute, because a service starting or ending
+// changes them with nothing else happening.
+//
+// The motion is constant paint values stepped on animation frames. Constant,
+// never an expression reading the feature: a data-driven paint property that
+// changes makes MapLibre re-tile the source, which every frame would mean a
+// worker round trip per frame. So the different sizes of marker are different
+// layers — a dot, and the big ones (a grape, a focused parish's logo) — each
+// with its own constant radius. The loop only runs while some parish is
+// flagged and the page is visible; under reduced motion the halos stand still.
+const HALO_NOW = '#22c55e';
+const HALO_NOW_MS = 2600;        // one breath, in and out
+const HALO_TOLL_MS = 3400;       // one toll, ring and silence
+const HALO_RING_MS = 2200;       // how long the ring takes to spread and fade
+const HALO_FRAME_MS = 33;        // ~30fps is plenty for a glow
+// Where a marker's edge is: the dot with its ring; a grape's spread or a logo.
+const HALO_EDGE = { dot: 5.25, big: 16 };
+
+const HALO_BIG = ['any', ['has', 'point_count'],
+  ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']]];
+const HALO_IS_NOW = ['any', ['==', ['get', 'now'], true],
+  ['>', ['coalesce', ['get', 'now_count'], 0], 0]];
+const HALO_IS_TODAY = ['any', ['==', ['get', 'today'], true],
+  ['>', ['coalesce', ['get', 'today_count'], 0], 0]];
+
+let haloState = null;            // the state updateMap last drew, for the minute tick
+let haloAny = false;             // is anything flagged — no flags, no loop
+let haloRaf = 0, haloLastFrame = 0, haloTimer = 0;
+
+function haloTollColor() {
+  return isDark() ? '#cbd5e1' : '#64748b';
+}
+
+function addHaloLayers() {
+  for (const size of ['dot', 'big']) {
+    const isBig = size === 'big' ? HALO_BIG : ['!', HALO_BIG];
+    map.addLayer({
+      id: `parish-halo-now-${size}`,
+      type: 'circle',
+      source: PARISH_SOURCE,
+      filter: ['all', HALO_IS_NOW, isBig],
+      paint: {
+        'circle-radius': HALO_EDGE[size] + 6,
+        'circle-color': HALO_NOW,
+        'circle-opacity': 0.4,
+        'circle-blur': 0.55
+      }
+    });
+    map.addLayer({
+      id: `parish-halo-toll-${size}`,
+      type: 'circle',
+      source: PARISH_SOURCE,
+      filter: ['all', ['!', HALO_IS_NOW], HALO_IS_TODAY, isBig],
+      paint: {
+        'circle-radius': HALO_EDGE[size] + 6,
+        'circle-color': haloTollColor(),
+        'circle-opacity': 0,
+        'circle-stroke-color': haloTollColor(),
+        'circle-stroke-width': 1.5,
+        'circle-stroke-opacity': 0
+      }
+    });
+  }
+  // The loop is started by updateMap, which follows every (re)build of these.
+  haloLastFrame = 0;
+}
+
+/**
+ * Each parish with an event on now ('now') or still to come today ('today').
+ *
+ * "Today" is the parish's own day, in its own zone — the service is where the
+ * parish is. A tombstone is not on, and a combined service lights its host,
+ * which is where everybody is going.
+ */
+function parishTimeFlags(state) {
+  const flags = new Map();
+  const all = (state && state.events) || [];
+  const events = typeof applyNonViewportFilters === 'function' ? applyNonViewportFilters(all) : all;
+  const now = Date.now();
+  const dayIn = (ms, zone) => {
+    try { return new Intl.DateTimeFormat('en-CA', { timeZone: zone || 'Australia/Sydney' }).format(new Date(ms)); }
+    catch { return new Date(ms).toISOString().slice(0, 10); }
+  };
+  for (const e of events) {
+    if (e.is_tombstone || (e.status && e.status !== 'approved')) continue;
+    const start = Date.parse(e.start_utc);
+    if (!Number.isFinite(start)) continue;
+    const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
+    if (start <= now && end >= now) { flags.set(e.parish_id, 'now'); continue; }
+    const zone = e.timezone || (parishesById.get(e.parish_id) || {}).timezone;
+    if (start > now && !flags.has(e.parish_id) && start - now < 86400000
+        && dayIn(start, zone) === dayIn(now, zone)) {
+      flags.set(e.parish_id, 'today');
+    }
+  }
+  return flags;
+}
+
+/** Start or stop the loop to match the flags, and keep the minute tick going. */
+function syncHalos() {
+  haloAny = trueFeatures.some(f => f.properties.now || f.properties.today);
+  if (!haloTimer) {
+    haloTimer = setInterval(() => {
+      if (haloState && styleLoaded && !document.hidden) refreshHaloFlags();
+    }, 60000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      if (haloState && styleLoaded) refreshHaloFlags();
+      startHaloLoop();
+    });
+  }
+  if (!map || !map.getLayer('parish-halo-now-dot')) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { paintHalos(null); return; }
+  startHaloLoop();
+}
+
+/** The minute tick: the same features with `now`/`today` worked out again. */
+function refreshHaloFlags() {
+  const flags = parishTimeFlags(haloState);
+  let changed = false;
+  for (const f of trueFeatures) {
+    const now = flags.get(f.properties.parish_id) === 'now';
+    const today = flags.get(f.properties.parish_id) === 'today';
+    if (f.properties.now !== now || f.properties.today !== today) {
+      f.properties = { ...f.properties, now, today };
+      changed = true;
+    }
+  }
+  // Same positions: the declutter cache is keyed on the token, untouched here.
+  if (changed) { paintParishSource(); syncHalos(); }
+}
+
+function startHaloLoop() {
+  if (!haloRaf && haloAny && !document.hidden) haloRaf = requestAnimationFrame(haloFrame);
+}
+
+function haloFrame(t) {
+  haloRaf = 0;
+  if (!map || !haloAny || document.hidden || !map.getLayer('parish-halo-now-dot')) return;
+  if (t - haloLastFrame >= HALO_FRAME_MS) {
+    haloLastFrame = t;
+    paintHalos(t);
+  }
+  haloRaf = requestAnimationFrame(haloFrame);
+}
+
+/** One frame of both halos at time `t`; null paints them still. */
+function paintHalos(t) {
+  // The breath: 0 → 1 → 0, eased at both ends the way breathing is.
+  const breath = t == null ? 0.6 : (1 - Math.cos((2 * Math.PI * (t % HALO_NOW_MS)) / HALO_NOW_MS)) / 2;
+  // The toll: the ring's life from 0 to 1, then still until the next.
+  const life = t == null ? 0.35 : Math.min(1, (t % HALO_TOLL_MS) / HALO_RING_MS);
+  const spread = 1 - Math.pow(1 - life, 3);          // fast out of the dot, slowing as it goes
+  const fade = life >= 1 ? 0 : Math.pow(1 - life, 1.6);
+  for (const size of ['dot', 'big']) {
+    const edge = HALO_EDGE[size];
+    const now = `parish-halo-now-${size}`, toll = `parish-halo-toll-${size}`;
+    map.setPaintProperty(now, 'circle-radius', edge + 4 + 8 * breath);
+    map.setPaintProperty(now, 'circle-opacity', 0.16 + 0.5 * breath);
+    map.setPaintProperty(toll, 'circle-radius', edge + 1 + (size === 'big' ? 22 : 18) * spread);
+    map.setPaintProperty(toll, 'circle-opacity', 0.16 * fade);
+    map.setPaintProperty(toll, 'circle-stroke-opacity', 0.8 * fade);
+  }
+}
 
 // ── Sprite registration ────────────────────────────────────────────────
 // Rasterise the existing grape SVG (buildGrapeClusterHtml is the truth source)
@@ -856,6 +1040,7 @@ function updateMap(state, opts = {}) {
     : null;
 
   const focusId = state.parishSheetFocus || null;
+  const timeFlags = parishTimeFlags(state);
   const selectedSet = (state.selectionMode && state.filters.parishIds)
     ? state.filters.parishIds
     : null;
@@ -900,7 +1085,9 @@ function updateMap(state, opts = {}) {
       jurisdiction: p.jurisdiction || '',
       focused: p.id === focusId,
       selected: selectedSet ? selectedSet.has(p.id) : false,
-      active: activeSet.has(p.id)
+      active: activeSet.has(p.id),
+      now: timeFlags.get(p.id) === 'now',
+      today: timeFlags.get(p.id) === 'today'
     };
     if (logoRegistered.has(p.id)) props.focus_icon_id = `focus_${p.id}`;
     features.push({
@@ -917,6 +1104,8 @@ function updateMap(state, opts = {}) {
   declutterToken++;
   declutterCache = new Map();
   paintParishSource();
+  haloState = state;
+  syncHalos();
 
   if (opts.fit) {
     // Prefer the parishes actually in scope — a region with three parishes in

@@ -121,6 +121,15 @@ onto rules and events as `parish_color` — so every reader draws the
 jurisdiction's without being taught to. The panel no longer offers a parish
 colour or a repaint.
 
+**The map marks time with halos, not colour.** A parish with a service on now
+breathes green under its dot; one with something still to come today, in its own
+zone, tolls — a neutral ring that spreads out of the dot and fades. The dot keeps
+its jurisdiction colour either way, and a grape carries the halos of the parishes
+in it. The flags come from the events the feed shows (its content filters) and are
+worked out again every minute. The motion is CONSTANT paint values stepped each
+frame, one layer per marker size, because a data-driven paint property that
+changes re-tiles the source — `map.js`, "Halos".
+
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and
 `adapter_settings` decides what an hour is allowed to do — enable, disable and

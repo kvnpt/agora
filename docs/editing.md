@@ -85,21 +85,35 @@ told; a payload holding only the refused half would strip the applied half on
 approval.
 
 **Signed in is not the same as editing.** A parish sheet has two modes, each
-behind its own pencil. `state.parishEditMode` is the parish's DETAILS: each
-thing the sheet shows turns into the field that edits it, in place, and each
-action pill gains a pencil for the link behind it — there is no form under the
-sheet. `state.scheduleEditMode` is its TIMETABLE, entered from the pencil in
-the timetable's own head; only then are rules editable (on the sheet or the
-main services panel) and adding a service sits behind a +. Until either is on
-the sheet is the sheet a visitor sees: no schedule pencils, no logo button, no
-form in the DOM behind `display:none`.
+behind its own pencil. `state.parishEditMode` is the parish's DETAILS: the
+pencil opens them in the **edit dialog** (`openFormDialog` in `app.js`, the
+same frame as Add event) — the logo, the name and every field the sheet shows,
+with Save, Cancel and Delete parish — and the sheet underneath stays as a
+visitor reads it. `state.scheduleEditMode` is its TIMETABLE, entered from the
+pencil in the timetable's own head; only then do rules carry their pencils (on
+the sheet or the main services panel) and **Add schedule** appear, and each of
+those opens the edit dialog too: one rule's form, or a new one. Until either
+mode is on the sheet is the sheet a visitor sees: no schedule pencils, no logo
+button, no form in the DOM behind `display:none`.
+
+**Forms open over the page, never inside it.** Every edit — a parish's details,
+a rule, a new rule, an event — is a dialog, because a form spread through the
+timetable or under a card pushed what it was editing off the screen on a phone,
+and the save landed somewhere the person could no longer see. The dialog is
+one element (`#form-backdrop`) and holds one form at a time; the dialogs it
+opens in turn (Combine, Break, "which dates", the logo editor) come later in
+the document and stack above it. Saving closes it and the page repaints under
+it. A drag inside any dialog scrolls the dialog: the pull-to-refresh guard asks
+which element is under the finger and blocks the drag only when nothing there
+can scroll up (`scrollerUnder`), where it used to fall back to the feed and
+pin every dialog to its top whenever the feed was at its own.
 
 The sheet's first button is **Google Maps**, and it opens the place, not a
 route: `parishes.maps_url` when somebody picked the parish's Maps entry (a
 Places search through `POST /api/admin/places`, or a pasted link), the pin
 otherwise. `state.eventEditMode` is the same thing for the event drawer: one
-pencil until somebody says they are editing, then Cancel, Suppress, Delete,
-Combine and the form. `hideAdminControls` is **gone** — it was a remembered
+pencil, which opens the edit dialog with Cancel, Break, Suppress, Delete,
+Combine and the form; closing it leaves the mode. `hideAdminControls` is **gone** — it was a remembered
 preference for making tools go away, which is what a mode does by default, and
 two modes now cover everything it did.
 
@@ -264,7 +278,8 @@ differ, offer **Use the sign's**; an address is changed in the parish's details,
 where the pin moves with it.
 
 The timetable has its own way in: **Add schedule** (in the timetable's edit mode)
-opens with **From a photo of the sign** above the fields for typing a service. It
+opens a dialog with **From a photo of the sign** above the fields for typing a
+service. It
 is the same editor and the same read, opened expecting a timetable (`intent:
 'timetable'`): its empty event card stays out of the way and the dialog says
 "Add to the timetable". A photo that turns out not to be a sign is **caught**

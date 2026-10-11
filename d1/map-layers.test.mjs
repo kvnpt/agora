@@ -20,9 +20,12 @@ function buildStack() {
   const added = [];
   const images = {};
   const sources = {};
+  const painted = [];
   const fakeMap = {
     addSource(id, spec) { sources[id] = spec; },
     addLayer(spec) { added.push(spec); },
+    getLayer: (id) => added.find((l) => l.id === id),
+    setPaintProperty(id, prop, value) { painted.push({ id, prop, value }); },
     hasImage: (id) => Object.prototype.hasOwnProperty.call(images, id),
     addImage(id, data, options) { images[id] = { data, options }; },
     removeImage(id) { delete images[id]; },
@@ -49,10 +52,10 @@ function buildStack() {
   // `map` is a top-level `let`, so it lives in the context's lexical scope
   // rather than on the context object — assign to it from inside.
   vm.runInContext('map = __fakeMap; addParishSourceAndLayers();', ctx);
-  return { layers: added, images, sources };
+  return { layers: added, images, sources, painted, ctx };
 }
 
-const { layers: LAYERS, images: IMAGES, sources: SOURCES } = buildStack();
+const { layers: LAYERS, images: IMAGES, sources: SOURCES, painted: PAINTED, ctx: CTX } = buildStack();
 const byId = Object.fromEntries(LAYERS.map((l) => [l.id, l]));
 const order = LAYERS.map((l) => l.id);
 
@@ -204,4 +207,62 @@ test('the stack a visitor gets is the clustered one', () => {
   assert.equal(SOURCES.parishes.cluster, true,
     'the parish source no longer clusters by default, so every visitor gets 293 loose dots');
   assert.ok(SOURCES.parishes.clusterRadius > 0, 'clustering is on with no radius to cluster by');
+});
+
+// ── Halos ────────────────────────────────────────────────────────────────
+
+const HALOS = LAYERS.filter((l) => l.id.startsWith('parish-halo-'));
+
+test('the halos paint under the dots, their shadow included', () => {
+  assert.equal(HALOS.length, 4, 'one breath and one toll for each size of marker');
+  for (const l of HALOS) {
+    assert.ok(order.indexOf(l.id) < order.indexOf('parish-circle-shadow'),
+      `${l.id} paints over the dot's shadow, so over the jurisdiction colour`);
+  }
+});
+
+test('what the halos animate is a constant, never an expression', () => {
+  // A data-driven paint value that changes makes MapLibre re-tile the
+  // source. Stepped every frame, that is a worker round trip a frame. The
+  // marker sizes are separate layers for exactly this reason.
+  PAINTED.length = 0;
+  vm.runInContext('paintHalos(1234); paintHalos(null);', CTX);
+  assert.ok(PAINTED.length > 0, 'paintHalos painted nothing');
+  for (const { id, prop, value } of PAINTED) {
+    assert.equal(typeof value, 'number', `${id} ${prop} is stepped as ${JSON.stringify(value)}`);
+  }
+  for (const l of HALOS) {
+    for (const prop of ['circle-radius', 'circle-opacity', 'circle-stroke-opacity']) {
+      if (prop in l.paint) assert.equal(typeof l.paint[prop], 'number', `${l.id} starts with ${prop} as an expression`);
+    }
+  }
+});
+
+test('a grape carries the halos of the parishes in it', () => {
+  const props = SOURCES.parishes.clusterProperties || {};
+  assert.ok(props.now_count && props.today_count,
+    'the clustered source drops now/today, so a grape over a service that is on shows nothing');
+});
+
+test('on now, later today in the parish\'s own zone, and nothing else', () => {
+  const NOW = Date.parse('2026-10-11T00:30:00Z');          // 11:30 in Sydney, 13:30 in Auckland
+  const at = (iso) => iso;
+  const events = [
+    { parish_id: 'on', start_utc: at('2026-10-11T00:00:00Z'), end_utc: at('2026-10-11T01:30:00Z') },
+    { parish_id: 'later', start_utc: at('2026-10-11T07:00:00Z') },                  // 18:00 Sydney
+    { parish_id: 'tomorrow', start_utc: at('2026-10-11T14:00:00Z') },               // 01:00 Monday in Sydney
+    { parish_id: 'nz', start_utc: at('2026-10-11T10:30:00Z'), timezone: 'Pacific/Auckland' }, // 23:30 there
+    { parish_id: 'nz-late', start_utc: at('2026-10-11T11:30:00Z'), timezone: 'Pacific/Auckland' }, // 00:30 Monday there
+    { parish_id: 'off', start_utc: at('2026-10-11T00:00:00Z'), end_utc: at('2026-10-11T01:30:00Z'), status: 'cancelled' },
+    { parish_id: 'gone', start_utc: at('2026-10-11T07:00:00Z'), is_tombstone: true },
+    { parish_id: 'done', start_utc: at('2026-10-10T22:00:00Z'), end_utc: at('2026-10-10T23:00:00Z') },
+  ];
+  CTX.__events = events;
+  const flags = vm.runInContext(`(() => {
+    const real = Date.now;
+    Date.now = () => ${NOW};
+    try { return Object.fromEntries(parishTimeFlags({ events: __events })); }
+    finally { Date.now = real; }
+  })()`, CTX);
+  assert.deepEqual({ ...flags }, { on: 'now', later: 'today', nz: 'today' });
 });

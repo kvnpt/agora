@@ -396,6 +396,7 @@
           <button type="button" class="ee-thumb-btn" data-ee="thumb" aria-label="Look at the poster full size"><img class="ee-thumb" alt="The poster"></button>
           <div class="ee-poster-side">
             <div class="ee-status" data-ee="status" aria-live="polite"></div>
+            <div class="ee-read-notes" data-ee="read-notes" hidden></div>
             <div class="ee-poster-actions">
               <button type="button" class="ee-link" data-ee="retry" hidden>Try again</button>
               <button type="button" class="ee-link" data-ee="stop" hidden>Stop watching</button>
@@ -518,6 +519,7 @@
       if (state.objectUrl) { URL.revokeObjectURL(state.objectUrl); state.objectUrl = null; }
       showPoster(null);
       setStatus('');
+      renderReadNotes(null);
       sync();
     });
 
@@ -1091,6 +1093,7 @@
       state.read = { ctrl, active: true, kind: null, items: 0, blob };
       state.readFinished = false;
       renderIntent();
+      renderReadNotes(null);
       for (const c of state.cards) c.readFilling = new Set();
       setStatus('Reading the poster…', 'busy', { stop: true });
       sync();
@@ -1215,7 +1218,6 @@
     function readSummary(draft) {
       const n = state.cards.length;
       const kind = draft.read_kind;
-      const general = (draft.read_notes || []).join(' ');
       const regular = state.cards.filter(c => c.fields.occurrence).length;
       const svcs = (draft.read_services || state.services || []).length;
       let text;
@@ -1230,7 +1232,20 @@
       else text = 'Read from the poster. Check the details against it, then publish.';
       // The read is in English; the poster stays attached in the original.
       if (draft.read_language) text += ` Translated from ${draft.read_language} — the poster keeps the original.`;
-      return general ? `${text} ${general}` : text;
+      renderReadNotes(draft);
+      return text;
+    }
+
+    /**
+     * What the reader said about the poster as a whole, under the status in
+     * lines of its own — not run on after the summary, where a long note made
+     * one wall of green text that the reader's own cut-off ended mid-word.
+     */
+    function renderReadNotes(draft) {
+      const box = $('read-notes');
+      const notes = (draft && draft.read_notes) || [];
+      box.innerHTML = notes.map(n => `<p class="ee-note ee-note-read">${esc(n)}</p>`).join('');
+      box.hidden = !notes.length;
     }
 
     // ── the timetable: what a programme was matched to, and what a sign is set beside ──
