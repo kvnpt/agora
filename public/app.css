@@ -4221,6 +4221,36 @@ button.ps-avatar { cursor: pointer; }
   color: var(--text);
 }
 .schedule-add-btn { margin-top: 8px; }
+/* "From a photo of the sign": the add-event editor's poster drop, in the
+   timetable's own words, above the fields for typing a service in. */
+.sap-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 11px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: color-mix(in srgb, var(--juris-color, var(--accent)) 6%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--juris-color, var(--accent)) 55%, var(--border));
+  border-radius: 10px;
+  cursor: pointer;
+}
+.sap-drop:hover, .sap-drop.is-dragging { background: color-mix(in srgb, var(--juris-color, var(--accent)) 12%, transparent); }
+.sap-title { font-size: 13.5px; font-weight: 600; }
+.sap-sub { font-size: 12px; line-height: 1.4; color: var(--text-secondary); }
+.schedule-add-or {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.schedule-add-or::before, .schedule-add-or::after { content: ''; flex: 1; height: 1px; background: var(--border-light); }
 
 /* What a source publishes and somebody has ruled does not run. Quiet, and
    below the real timetable, because it answers a question about what is

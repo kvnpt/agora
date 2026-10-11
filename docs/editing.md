@@ -263,6 +263,17 @@ timetable can still mark it checked. Details fill an empty field or, where they
 differ, offer **Use the sign's**; an address is changed in the parish's details,
 where the pin moves with it.
 
+The timetable has its own way in: **Add schedule** (in the timetable's edit mode)
+opens with **From a photo of the sign** above the fields for typing a service. It
+is the same editor and the same read, opened expecting a timetable (`intent:
+'timetable'`): its empty event card stays out of the way and the dialog says
+"Add to the timetable". A photo that turns out not to be a sign is **caught**
+rather than trusted — a poster for a one-off, or a month's programme, says so in
+words ("This looks like a poster for an event, not the parish's timetable, so
+nothing has been added to the timetable") and its events wait below as the
+draft they are, to publish or discard. Nothing from a photo reaches the
+timetable but a service a person adds from the review.
+
 Each of these is a write a person makes, through the route they would use by
 hand (`POST /api/admin/schedules`, `PATCH …/schedules/:id`,
 `PATCH …/parishes/:id`), so the first one at a parish still read from a source

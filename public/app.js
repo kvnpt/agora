@@ -6969,6 +6969,14 @@ function addServiceHTML(parishId) {
   const pid = esc(parishId);
   return `
     <div class="schedule-add" data-parish-id="${pid}">
+      <div class="schedule-add-photo">
+        <button type="button" class="sap-drop" data-sched-photo="${pid}">
+          <span class="sap-title">From a photo of the sign</span>
+          <span class="sap-sub">The board out the front, or a printed timetable: its services are read for you to check against it, and nothing is added until you say so.</span>
+        </button>
+        <input type="file" accept="image/*" hidden data-sched-photo-input="${pid}">
+      </div>
+      <div class="schedule-add-or">or type it in</div>
       <div class="schedule-add-grid">
         <input data-af="title" class="sef-full" placeholder="Divine Liturgy">
         <select data-af="day_of_week">${DAYS.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('')}</select>
@@ -6977,7 +6985,7 @@ function addServiceHTML(parishId) {
       </div>
       ${cadencePickerHTML('data-af="cadence"')}
       ${ruleDatesHTML('data-af')}
-      <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add service</button>
+      <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add schedule</button>
     </div>`;
 }
 
@@ -8384,7 +8392,7 @@ function parishTimetableHTML(parish, scheds) {
         </div>
         ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
         ${editing ? `${endedServicesHTML(pid)}
-          <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add a service</span></button>
+          <button class="ps-sched-add-toggle" type="button" data-sched-add aria-expanded="false">${glyph('ph:plus-bold')}<span>Add schedule</span></button>
           <div class="ps-sched-add-wrap" hidden>${addServiceHTML(pid)}</div>` : ''}
       </div>
     </div>`;
@@ -8557,14 +8565,58 @@ document.addEventListener('click', (e) => {
     wrap.hidden = !wrap.hidden;
     add.setAttribute('aria-expanded', String(!wrap.hidden));
     add.classList.toggle('open', !wrap.hidden);
-    const label = add.querySelector('span');
-    if (label) label.textContent = wrap.hidden ? 'Add a service' : 'Close';
+    // The label, not the first span: that is the + glyph, which said "Close"
+    // to nobody while the label went on reading "Add" beside an open form.
+    const label = add.querySelector('span:not(.ps-btn-glyph)');
+    if (label) label.textContent = wrap.hidden ? 'Add schedule' : 'Close';
     if (!wrap.hidden) {
       const first = wrap.querySelector('[data-af="title"]');
       if (first) first.focus({ preventScroll: true });
       wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }
+});
+
+// "From a photo of the sign", in the timetable's add form. The photo is read by
+// the add-event editor — the one reader, the one review — opened expecting a
+// timetable: a sign's services are offered there one by one, and a poster for
+// a one-off that lands here by mistake is caught there and kept as events,
+// never put on the timetable (public/shared/event-editor.js, `intent`).
+function openSchedulePhoto(pid, file) {
+  if (!file || !/^image\//.test(file.type || '')) return;
+  window.openNewEventDialog(pid, { file, intent: 'timetable' });
+}
+document.addEventListener('click', (e) => {
+  const drop = e.target.closest('[data-sched-photo]');
+  if (!drop) return;
+  e.stopPropagation();
+  const input = drop.parentElement.querySelector('[data-sched-photo-input]');
+  if (input) input.click();
+});
+document.addEventListener('change', (e) => {
+  const input = e.target.closest('[data-sched-photo-input]');
+  if (!input) return;
+  const file = input.files && input.files[0];
+  input.value = '';
+  openSchedulePhoto(input.dataset.schedPhotoInput, file);
+});
+document.addEventListener('dragover', (e) => {
+  const drop = e.target.closest && e.target.closest('[data-sched-photo]');
+  if (!drop || !e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+  e.preventDefault();
+  drop.classList.add('is-dragging');
+});
+document.addEventListener('dragleave', (e) => {
+  const drop = e.target.closest && e.target.closest('[data-sched-photo]');
+  if (drop && !drop.contains(e.relatedTarget)) drop.classList.remove('is-dragging');
+});
+document.addEventListener('drop', (e) => {
+  const drop = e.target.closest && e.target.closest('[data-sched-photo]');
+  if (!drop) return;
+  e.preventDefault();
+  drop.classList.remove('is-dragging');
+  const file = e.dataTransfer && [...(e.dataTransfer.files || [])].find(f => /^image\//.test(f.type));
+  openSchedulePhoto(drop.dataset.schedPhoto, file);
 });
 
 /** The header's fields in edit mode: the name, the short name, the jurisdiction. */
@@ -9926,8 +9978,21 @@ function _newEventEsc(e) {
   window.closeNewEventDialog();
 }
 
-/** Open the editor for a parish — blank, or on a saved draft. */
-window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
+/** The dialog's heading: what the read says the image is, or what it was opened for. */
+function _newEventHeading(timetable) {
+  document.getElementById('new-event-title').textContent = timetable ? 'Add to the timetable' : 'Add an event';
+  document.getElementById('new-event-sub').textContent = timetable
+    ? 'Each service on the sign is set beside what is on file, and added only when you say so.'
+    : 'One date each — a service that runs every week is a rule, not an event.';
+}
+
+/**
+ * Open the editor for a parish — blank, or on a saved draft. `file` drops a
+ * photo straight in; `intent: 'timetable'` is the timetable's own "From a
+ * photo of the sign", which expects a sign and says so when the photo is not
+ * one.
+ */
+window.openNewEventDialog = function (parishId, { draftId = null, file = null, intent = 'event' } = {}) {
   const parish = (state.parishes || []).find(p => p.id === parishId);
   const backdrop = document.getElementById('new-event-backdrop');
   const mount = document.getElementById('new-event-editor');
@@ -9939,13 +10004,17 @@ window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
 
   // The editor's own picker says which parish: it starts at this sheet's, and
   // moves the draft when the poster turns out to be somebody else's.
-  document.getElementById('new-event-sub').textContent =
-    'One date each — a service that runs every week is a rule, not an event.';
+  _newEventHeading(intent === 'timetable');
   _newEventEditor = window.AgoraEventEditor.open(mount, {
     parish,
     parishes: state.parishes || [],
     may: adminMay,
     draftId,
+    intent,
+    // A sign is the timetable's, whichever door it came in by, and events are
+    // events; a photo given to the timetable that read as nothing stays there.
+    onRead: (draft) => _newEventHeading((draft.read_services || []).length > 0 || draft.read_kind === 'timetable'
+      || (intent === 'timetable' && !(draft.cards || []).some(c => c.title || c.date))),
     openPoster: (url) => openPosterFullscreen(url),
     // A church sign writes to the parish itself — its timetable, its details —
     // and asks first, like any hand edit, whether to keep it by hand.
@@ -9970,6 +10039,7 @@ window.openNewEventDialog = function (parishId, { draftId = null } = {}) {
   });
   backdrop.classList.add('open');
   document.addEventListener('keydown', _newEventEsc);
+  if (file) _newEventEditor.dropFile(file);
 };
 
 window.closeNewEventDialog = function () {
