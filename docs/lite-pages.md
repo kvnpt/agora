@@ -36,9 +36,9 @@ event link: an admin there gets the app, because the editors live in the app.
 **Page mode.** So that an admin sees the page a visitor sees, with the controls on it,
 the app lays that card out AS the page when it is the one answering a parish or event
 link (`decidePageMode` in `app.js`, deciding by url-state's `pageKind`, the Worker's own
-rule): the parish sheet full-screen and still, the map put away behind it, the same
-`orthodoxy.au` bar and ✕ across the top. Every in-place editor works there as it does on
-the sheet. The ✕ puts the card away and the map comes forward. Only on arriving at such
+rule): the parish sheet full-screen and still, the map put away behind it, the same hero
+on top and the same card under it with its ✕ (`placePageChrome` moves the sheet's ✕ into
+the scroll, onto the card). Every in-place editor works there as it does on the sheet. The ✕ puts the card away and the map comes forward. Only on arriving at such
 a link — a parish opened from the map is still the sheet over the map, and `?app` asks
 for the map app. A timetable page has nothing to edit, so admins get it like anyone.
 
@@ -72,8 +72,21 @@ names — `ps-header`, the `jurisdiction-box` timetable above the events, `day-s
 visitor's page and an admin's page-mode card look the same. Each markup function in
 `lite-page.mjs` names the app function it mirrors; it is copied, not shared, until roadmap
 phase 3 moves the renderers into `public/shared/`. `LITE_CSS` holds only what a page
-needs that a sheet does not: the bar and its ✕ (to the map, where "← Back to App" was),
+needs that a sheet does not: the card and its ✕ (to the map, where "← Back to App" was),
 the column, `<details>` so an event opens with no JavaScript, and the colours.
+
+**A hero over every page, and the page is a card over it.** The app opens on its map and
+the parish sheet slides up over it; a shared link opens on a page, so something has to
+stand where the map would. That is `public/og/hero.jpg`: the site's navy and every parish
+on file as a point of light at its own latitude and longitude, on a faint outline of
+Australia and New Zealand — Sydney and Melbourne glow where they are dense, Perth and
+Auckland sit out on their own. `scripts/build-hero.mjs` draws it from the live
+`/api/parishes` (re-run it after an import) and Natural Earth's land; the cross and
+"orthodoxy.au" over it are the page's own text (`HERO_HTML`), linking to the map. It is
+shown at its full height and centred, never cropped to a band — its edges are the
+background's navy, so a wide screen gets plain navy either side. The content is a card
+that overlaps its foot (`--hero-overlap`), rounded at the top, with the ✕ on its corner;
+the styles are app.css's `.lite-hero`, which page mode wears too.
 
 **Its colours are the app's.** `/admin`'s overrides (`jurisdiction_colors`) over the
 shared table, the parish's own colour where the parish is the subject and its
