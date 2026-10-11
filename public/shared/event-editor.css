@@ -375,6 +375,9 @@
 .ee-sign { display: flex; flex-direction: column; gap: 8px; }
 .ee-sign .ee-section-title { margin: 4px 0 0; }
 .ee-sign > .ee-btn-small { align-self: flex-start; }
+/* Its buttons say what they do in full ("Mark the timetable as checked
+   against this sign"), so on a phone they wrap rather than run off the edge. */
+.ee-sign .ee-btn-small { max-width: 100%; white-space: normal; text-align: left; line-height: 1.3; }
 .ee-sign > .ee-hint { margin: 0; }
 .ee-svcs, .ee-details { display: flex; flex-direction: column; gap: 6px; }
 .ee-svc {

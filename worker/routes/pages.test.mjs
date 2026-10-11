@@ -99,6 +99,10 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   assert.equal(ld['@type'], 'Church');
   assert.equal(ld.url, 'https://orthodoxy.au/sgr');
   assert.match(html, /<a class="lite-close" href="\/" aria-label="[^"]*">&times;<\/a>/, 'an X back to the map');
+  // The hero first, then the card over it with the X on its corner — the
+  // parish sheet over the map.
+  assert.match(html, /<body class="lite">\s*<header class="lite-hero">[\s\S]*?<span>orthodoxy\.au<\/span><\/a>\s*<\/header>\s*<main class="lite-card">\s*<a class="lite-close"/);
+  assert.doesNotMatch(html, /lite-bar/, 'the old bar is gone');
   assert.doesNotMatch(html, /Back to App/);
   assert.match(html, /<link rel="stylesheet" href="\/app\.css">/, "the app's own stylesheet");
   assert.match(html, /<a class="lc-app" href="\/sgr\?app">/, 'the way into the app with this card open');

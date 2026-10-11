@@ -327,6 +327,10 @@
    *               still read from a source; false stops the write
    *   onChanged   ({parishId, what: 'timetable'|'details'}) — a sign changed the
    *               parish itself, which the host shows and the cards do not
+   *   intent      'event' (the default) or 'timetable': opened from the
+   *               timetable's "From a photo of the sign", so a photo that
+   *               turns out not to be a sign is said to be so (renderIntent)
+   *   onRead      (draft) — a read has finished; the host can retitle itself
    */
   function open(mount, opts) {
     const may = opts.may || (() => true);
@@ -360,6 +364,9 @@
       keptByHand: false,
       // A sign's draft shows its (empty) card only once somebody asks to add an event too.
       wantCards: false,
+      // Opened from the timetable, expecting a sign; and whether a read has answered yet.
+      intent: opts.intent === 'timetable' ? 'timetable' : 'event',
+      readFinished: false,
     };
     const zone = () => (state.parish && state.parish.timezone) || 'Australia/Sydney';
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: zone() }).format(new Date());
@@ -377,6 +384,7 @@
         <select id="${uid}-parish" data-ee="parish"></select>
       </div>
       <div class="ee-suggest" data-ee="suggest" aria-live="polite" hidden></div>
+      <div class="ee-suggest ee-intent" data-ee="intent" aria-live="polite" hidden></div>
       <div class="ee-strip" data-ee="strip" hidden></div>
       <div class="ee-poster">
         <input type="file" accept="image/*" data-ee="poster-input" hidden>
@@ -414,6 +422,10 @@
       </div>`;
     mount.appendChild(el);
     const $ = (name) => el.querySelector(`[data-ee="${name}"]`);
+    if (state.intent === 'timetable') {
+      el.querySelector('.ee-drop-title').textContent = 'Start from a photo of the sign';
+      el.querySelector('.ee-drop-sub').textContent = 'The board out the front, or a printed timetable. Its services are read for you to check — nothing is added until you say so.';
+    }
     const fileInput = $('poster-input');
 
     // ── status lines ──
@@ -1077,6 +1089,8 @@
       abortRead();
       const ctrl = new AbortController();
       state.read = { ctrl, active: true, kind: null, items: 0, blob };
+      state.readFinished = false;
+      renderIntent();
       for (const c of state.cards) c.readFilling = new Set();
       setStatus('Reading the poster…', 'busy', { stop: true });
       sync();
@@ -1169,6 +1183,7 @@
     }
 
     function readResult(d) {
+      state.readFinished = true;
       if (!d.draft) {
         setStatus('This draft was discarded while the poster was being read.', 'note');
         return;
@@ -1191,8 +1206,10 @@
         setStatus(readSummary(d.draft), 'done');
       }
       renderSign();
+      renderIntent();
       updateHead();
       sync();
+      if (opts.onRead) opts.onRead(d.draft);
     }
 
     function readSummary(draft) {
@@ -1231,8 +1248,39 @@
     const signShown = () => !!(state.draft && (state.services.length
       || (state.draft.read_kind === 'timetable' && state.draft.read_details)));
 
-    /** Nothing in the cards and a sign above them: the cards are not what this is for. */
-    const signOnly = () => signShown() && !state.wantCards && state.cards.every(isPristine);
+    /**
+     * Nothing in the cards, and a sign above them — or a photo opened from the
+     * timetable, whose empty card is not what it is for either, before the
+     * read and after one that found nothing: the cards stay out of the way.
+     */
+    const signOnly = () => !state.wantCards && state.cards.every(isPristine)
+      && (signShown() || state.intent === 'timetable');
+
+    /**
+     * The catch, for a photo given to the timetable that is not a sign: a
+     * poster for a one-off, or a month's programme. Nothing of it reaches the
+     * timetable — it was never going to, since a sign's services are only
+     * ever added one by one — but the person dropped it expecting that, so the
+     * editor says what it is instead and where it went: the cards below, as
+     * the events (or the dates) they are.
+     */
+    function renderIntent() {
+      const box = $('intent');
+      let text = '';
+      if (state.intent === 'timetable' && state.readFinished && state.draft && !signShown()) {
+        const read = state.cards.filter(c => !isPristine(c));
+        const n = read.length;
+        if (!n) {
+          text = 'No weekly services could be read from this photo, so nothing has been added to the timetable. Add the service by hand instead, or try a sharper photo of the sign.';
+        } else if (read.every(c => c.fields.occurrence)) {
+          text = `This is a programme of dated services, not the weekly timetable, so nothing has been added to the timetable. ${n === 1 ? 'Its date is' : `Its ${n} dates are`} below: publishing writes what it says onto that day’s service.`;
+        } else {
+          text = `This looks like a poster for ${n === 1 ? 'an event' : `${n} events`}, not the parish’s timetable, so nothing has been added to the timetable. ${n === 1 ? 'It is' : 'They are'} below as a draft: check ${n === 1 ? 'it' : 'them'} and publish, or discard.`;
+        }
+      }
+      box.textContent = text;
+      box.hidden = !text;
+    }
 
     const LANG_SPLIT = (t) => String(t || '').split(',').map(x => x.trim()).filter(Boolean);
     const DETAIL_LABELS = { address: 'Address', phone: 'Phone', email: 'Email', website: 'Website' };
@@ -1599,8 +1647,10 @@
       } else if (r.body.poster_path) {
         setStatus(readSummary(r.body), 'done');
       } else setStatus('');
+      state.readFinished = r.body.read_status === 'read';
       state.cards.forEach(refreshCard);
       renderSign();
+      renderIntent();
       updateHead();
       sync();
       refreshStrip();
@@ -1733,7 +1783,8 @@
       // added as it goes, and its one card is empty.
       const only = signOnly();
       el.classList.toggle('ee-sign-only', only);
-      $('add-card').textContent = only ? '+ Add an event from it as well' : '+ Add another event';
+      $('add-card').textContent = !only ? '+ Add another event'
+        : signShown() ? '+ Add an event from it as well' : '+ Add an event instead';
       $('done').hidden = !only;
       $('done').disabled = reading || state.signBusy;
       const ready = $('readiness');
