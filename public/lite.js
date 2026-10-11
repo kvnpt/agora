@@ -22,6 +22,21 @@
     } catch (e) { /* a canonical that will not parse changes nothing */ }
   }
 
+  // The card's header sticks to the top as it does in the app, so the day
+  // headers below stick under it: the app measures the same height into the
+  // same variable (--ps-stack-h) for its parish card. Without this they stick
+  // at the top, behind the header — the page still reads, just less well.
+  var card = document.querySelector('.lite-card');
+  var head = card && card.querySelector('.ps-header, .tt-head');
+  function stackHeight() {
+    card.style.setProperty('--ps-stack-h', Math.round(head.getBoundingClientRect().height) + 'px');
+  }
+  if (head) {
+    stackHeight();
+    window.addEventListener('resize', stackHeight);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(stackHeight);
+  }
+
   // Now, and already over.
   var now = Date.now();
   document.querySelectorAll('[data-start]').forEach(function (el) {

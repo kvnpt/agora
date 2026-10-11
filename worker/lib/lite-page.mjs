@@ -810,13 +810,19 @@ const LITE_CSS = `
 html{overscroll-behavior-y:auto}
 body.lite{margin:0;background:var(--bg);color:var(--text);font-size:15px;-webkit-text-size-adjust:100%}
 .lite a{color:inherit}
-/* The card over the hero: rounded at the top where it overlaps it, the X on
-   its corner. Nothing is sticky above the content any more, so the app's
-   sticky day headers stick to the very top. */
-.lite-card{--ps-stack-h:0px;position:relative;max-width:680px;margin:calc(-1 * var(--hero-overlap)) auto 0;padding:0 0 48px;background:var(--bg);border-radius:18px 18px 0 0}
-.lite-close{position:absolute;top:8px;right:8px;z-index:7;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-size:26px;line-height:1;color:var(--text-secondary);text-decoration:none}
+/* The card over the hero, rounded at the top where it overlaps it. As in the
+   app's parish card, its header sticks to the top as the page scrolls and the
+   X sticks on the header's corner: the X is sticky itself, first in the card,
+   taking no room (its bottom margin gives back its height and top margin).
+   flow-root so that margin stays inside the card; clip so the square header
+   is cut to the card's rounded corners and stays square once stuck (clip,
+   unlike hidden, leaves the page the scroller the stickies stick to).
+   --ps-stack-h is the header's height, measured by lite.js, so the app's
+   sticky day headers stop under it rather than behind it. */
+.lite-card{--ps-stack-h:0px;position:relative;display:flow-root;overflow:clip;max-width:680px;margin:calc(-1 * var(--hero-overlap)) auto 0;padding:0 0 48px;background:var(--bg);border-radius:18px 18px 0 0}
+.lite-close{position:sticky;top:8px;z-index:7;display:flex;align-items:center;justify-content:center;width:36px;height:36px;margin:8px 8px -44px auto;border-radius:50%;font-size:26px;line-height:1;color:var(--text-secondary);text-decoration:none}
 .lite-close:hover{color:var(--text);background:var(--surface-2)}
-.lite .ps-header{position:static;padding-top:18px;padding-right:52px;border-radius:18px 18px 0 0}
+.lite .ps-header{top:0;padding-top:18px;padding-bottom:14px;padding-right:52px}
 .lite h1.ps-name,.lite h2.section-header,.lite h2.ps-focus-banner-text{margin:0;font:inherit}
 .lite h1.ps-name{font-size:21px;font-weight:700;line-height:1.2}
 .lite h2.section-header{font-size:11px;font-weight:600}
@@ -850,7 +856,7 @@ details.lc-ev.past{opacity:.55}
 .lc-badge.now{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--now-dot);color:#fff;font-size:10px;font-weight:800;letter-spacing:.04em;vertical-align:middle}
 .lc-empty{margin:12px 16px;color:var(--text-secondary)}
 .lc-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin:24px 16px 0;padding-top:14px;border-top:1px solid var(--border-light);font-size:13px;color:var(--text-secondary)}
-.tt-head{padding:20px 52px 4px 16px}
+.tt-head{position:sticky;top:0;z-index:6;padding:20px 52px 12px 16px;background:var(--bg);border-bottom:1px solid var(--border-light)}
 .tt-head h1{margin:0;font-size:21px;font-weight:700;line-height:1.2}
 .tt-head p{margin:4px 0 0;color:var(--text-secondary);font-size:13px}
 .tt-region>.month-header{margin-top:6px}

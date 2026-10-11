@@ -5255,19 +5255,24 @@ body.page-mode[data-layout="desktop"] .parish-sheet {
 }
 body.page-mode .parish-sheet-grab-handle { display: none; }
 /* The hero scrolls away with the page, as it does on the visitor's; the
-   content is the card over it, and the X — moved into the scroll by
-   placePageChrome in app.js — sits on the card's corner and scrolls with it. */
+   content is the card over it, its header sticking to the top as the sheet's
+   does. The X — moved into the scroll by placePageChrome in app.js, just
+   before the card — is sticky too, so it starts on the card's corner and then
+   stays on the stuck header's. Its margins put it 8px inside the card and give
+   its room back (the card then sits --hero-overlap up into the hero). */
 body.page-mode #parish-sheet-scroll {
   overflow-y: auto !important;
   opacity: 1 !important;
   pointer-events: auto !important;
   position: relative;
-  background: #1b3453;
 }
 body.page-mode #parish-sheet-content {
   position: relative;
+  /* Cut to the rounded top, so the header can stay square once it sticks
+     (clip, not hidden: the scroll stays the scroller the stickies stick to). */
+  overflow: clip;
   max-width: 680px;
-  margin: calc(-1 * var(--hero-overlap)) auto 0;
+  margin: 0 auto;
   min-height: calc(100% - var(--hero-h) + var(--hero-overlap));
   background: var(--bg);
   border-radius: 18px 18px 0 0;
@@ -5275,14 +5280,22 @@ body.page-mode #parish-sheet-content {
 body.page-mode .parish-sheet { background: var(--bg); }
 body.page-mode .parish-sheet-close,
 body.page-mode[data-layout="desktop"] .parish-sheet-close {
-  top: calc(var(--hero-h) - var(--hero-overlap) + 8px);
-  right: calc(max(0px, (100% - 680px) / 2) + 8px);
+  position: sticky;
+  top: 8px;
+  right: auto;
   z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 36px;
   height: 36px;
+  padding: 0;
+  /* Up by the overlap and 8px into the card; then back by its own height and
+     that, plus the overlap — the card's place, now this X's margin to give. */
+  margin: calc(8px - var(--hero-overlap)) calc(max(0px, (100% - 680px) / 2) + 8px)
+    calc(-36px - 8px) auto;
   font-size: 26px;
   border-radius: 50%;
 }
-body.page-mode .ps-header { border-radius: 18px 18px 0 0; }
 body:not(.page-mode) .pm-hero { display: none; }
 

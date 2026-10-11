@@ -85,8 +85,12 @@ Auckland sit out on their own. `scripts/build-hero.mjs` draws it from the live
 "orthodoxy.au" over it are the page's own text (`HERO_HTML`), linking to the map. It is
 shown at its full height and centred, never cropped to a band — its edges are the
 background's navy, so a wide screen gets plain navy either side. The content is a card
-that overlaps its foot (`--hero-overlap`), rounded at the top, with the ✕ on its corner;
-the styles are app.css's `.lite-hero`, which page mode wears too.
+that overlaps its foot (`--hero-overlap`), rounded at the top, and behaves as the app's
+parish card does: its header (the parish's, or a timetable page's title) sticks to the top
+as the page scrolls, and the ✕ — sticky itself — stays on its corner. `lite.js` measures
+the header into `--ps-stack-h`, as the app does, so the day headers stop under it. The
+styles are app.css's `.lite-hero`, which page mode wears too, with the sheet's ✕ moved
+onto the card (`placePageChrome`).
 
 **Its colours are the app's.** `/admin`'s overrides (`jurisdiction_colors`) over the
 shared table, the parish's own colour where the parish is the subject and its
