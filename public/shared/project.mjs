@@ -44,6 +44,25 @@ function dateIndexFor(zone, fromMs, toMs) {
   return byDow;
 }
 
+/**
+ * The place an occurrence is held: its override's, if it names one, else the
+ * rule's. An override naming the rule's own parish is that one date back at
+ * its own church, under a rule held elsewhere (worker/lib/overrides.mjs).
+ */
+function placeOf(o, s) {
+  const own = o && (o.patch_location_override || o.patch_location_parish_id || o.patch_location_lat != null);
+  const home = own && o.patch_location_parish_id && o.patch_location_parish_id === s.parish_id;
+  const src = home ? {}
+    : own ? { t: o.patch_location_override, p: o.patch_location_parish_id, lat: o.patch_location_lat, lng: o.patch_location_lng }
+      : { t: s.location_override, p: s.location_parish_id, lat: s.location_lat, lng: s.location_lng };
+  return {
+    location_override: src.t || null,
+    location_parish_id: src.p || null,
+    location_lat: src.lat != null ? src.lat : null,
+    location_lng: src.lng != null ? src.lng : null,
+  };
+}
+
 // Project one occurrence of a schedule (with optional override) into the shape
 // the API and frontend already expect.
 export function project(s, date, o, cache) {
@@ -73,10 +92,11 @@ export function project(s, date, o, cache) {
     start_local: `${date}T${startTime}`,
     end_local: endTime ? `${date}T${endTime}` : null,
     timezone: zone,
-    // Three places a service can say where it is, most specific first: this
-    // occurrence's override, the rule's own address, the parish's address
-    // (which the client falls back to when this is null).
-    location_override: (o && o.patch_location_override) || s.location_override || null,
+    // Where, most specific first: this date's override, the rule's own place,
+    // the parish (which the client falls back to when all of this is null). A
+    // place is a unit (migration 023) — another parish, or words and a pin —
+    // so an override that names any part of one is the whole of it.
+    ...placeOf(o, s),
     lat: s.p_lat,
     lng: s.p_lng,
     event_type: (o && o.patch_event_type) || s.event_type,

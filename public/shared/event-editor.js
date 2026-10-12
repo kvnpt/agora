@@ -300,6 +300,7 @@
   const blankFields = () => ({
     title: '', feast: '', date: '', end_date: '', start_time: '', end_time: '', event_type: '', description: '',
     languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
+    location_parish_id: '', location_lat: '', location_lng: '',
   });
 
   /** A field's value as the Worker stores it. */
@@ -323,6 +324,8 @@
    *   onClose     () — Save draft, Discard, or nothing left to do
    *   onParishChange (parish) — the picker moved the draft, or a draft was opened
    *   openPoster  (url) — the host's full-screen viewer, if it has one
+   *   pickPin     ({lat, lng, title}, done) — a map to place a venue's pin by
+   *               hand (the venue picker); without one, a pin is looked up only
    *   keepByHand  (parishId) => Promise<boolean> — the host's "keep it by hand
    *               from now on?" before the first write a sign makes to a parish
    *               still read from a source; false stops the write
@@ -600,6 +603,8 @@
         date: row.date || '', end_date: row.end_date || '', start_time: row.start_time || '',
         end_time: row.end_time || '', event_type: row.event_type || '', description: row.description || '',
         languages: langsToText(row.languages), location_override: row.location_override || '',
+        location_parish_id: row.location_parish_id || '',
+        location_lat: row.location_lat != null ? row.location_lat : '', location_lng: row.location_lng != null ? row.location_lng : '',
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
       };
       for (const f of Object.keys(server)) {
@@ -607,6 +612,10 @@
         if (keepLocal && (f in card.pending)) continue;
         card.fields[f] = server[f];
         setInput(card, f, server[f]);
+      }
+      // The picker shows what the server holds, unless a place is being chosen.
+      if (card.venue && !('location_override' in card.pending) && !('location_parish_id' in card.pending)) {
+        card.venue.set(placeOf(card.fields));
       }
       card.fromPoster = new Set((row.read_fields || []).filter(f => !(f in card.pending)));
       card.notes = (row.read_notes || []).filter(n => !(n.field in card.pending));
@@ -649,8 +658,8 @@
           ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type"><option value="">Choose a kind</option>${kinds}</select>`)}
           ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="3" placeholder="Optional"></textarea>`)}
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" placeholder="English, Greek" autocomplete="off">`)}
-          ${row('location_override', 'Held elsewhere', `<input id="${fieldId(card, 'location_override')}" data-ee-field="location_override" placeholder="Leave empty if it is at the parish" autocomplete="off">`,
-            '<div class="ee-hint">A venue for this one event. The parish’s own address and pin are untouched.</div>')}
+          ${row('location_override', 'Where', `<input type="hidden" id="${fieldId(card, 'location_override')}" data-ee-field="location_override"><div data-ee-venue></div>`,
+            '<div class="ee-hint">Another parish, or a place of its own with a pin — it shows on the map where it is held. The parish’s own address and pin are untouched.</div>')}
           <div class="ee-occ" hidden>
             <div class="ee-occ-what"></div>
             <button type="button" class="ee-link" data-act="unlink">Make it a separate event instead</button>
@@ -696,6 +705,20 @@
         inp.addEventListener(isText ? 'input' : 'change', () => onInput(card, f, inp.value, isText));
         if (isText) inp.addEventListener('blur', () => flush(card));
       });
+      // Where: the venue picker (public/shared/venue-picker.js), writing the
+      // card's four place fields as one.
+      const vp = node.querySelector('[data-ee-venue]');
+      card.venue = root.AgoraVenuePicker ? root.AgoraVenuePicker.mount(vp, {
+        value: placeOf(card.fields),
+        host: state.parish || {},
+        parishes: opts.parishes || [],
+        geocode: async (address) => {
+          const r = await http('POST', '/api/admin/geocode', { address });
+          return r.ok && r.body && Number.isFinite(r.body.lat) ? { lat: r.body.lat, lng: r.body.lng } : null;
+        },
+        pickPin: opts.pickPin,
+        onChange: (v) => onPlace(card, v),
+      }) : null;
       card.els.multi = node.querySelector('[data-ee-multiday]');
       card.els.multiRow = node.querySelector('.ee-multiday-row');
       card.els.endsLabel = node.querySelector('[data-ends-label]');
@@ -716,6 +739,28 @@
       $('cards').appendChild(node);
       for (const f of Object.keys(card.els.inputs)) setInput(card, f, card.fields[f]);
       refreshCard(card);
+    }
+
+    /** The card's four place fields, as the picker takes them. */
+    function placeOf(f) {
+      const n = (x) => (x === '' || x == null ? null : Number(x));
+      return { location_parish_id: f.location_parish_id || null, location_override: f.location_override || null,
+        location_lat: n(f.location_lat), location_lng: n(f.location_lng) };
+    }
+
+    /** A place chosen: all four fields, saved as one. */
+    function onPlace(card, v) {
+      for (const f of ['location_parish_id', 'location_override', 'location_lat', 'location_lng']) {
+        card.fields[f] = v[f] == null ? '' : v[f];
+        card.touched.add(f);
+        card.fromPoster.delete(f);
+        card.pending[f] = v[f] == null ? null : v[f];
+      }
+      card.notes = card.notes.filter(n => n.field !== 'location_override');
+      if (card.publish.state !== 'refused') card.publish = { state: 'idle', message: '' };
+      schedule(card, SAVE_DELAY);
+      refreshCard(card);
+      sync();
     }
 
     function setInput(card, f, v) {

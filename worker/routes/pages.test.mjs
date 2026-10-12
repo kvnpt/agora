@@ -448,3 +448,30 @@ test('a multi-day event says its span; a vigil past midnight does not', async ()
   assert.equal(multiDaySpan({ start_utc: '2026-11-14T12:00:00.000Z', end_utc: '2026-11-14T16:00:00.000Z' }, zone), null);
   assert.equal(multiDaySpan({ start_utc: '2026-11-14T12:00:00.000Z', end_utc: null }, zone), null);
 });
+
+test('an event and a rule held at another parish, or a place, say where on the card', async () => {
+  const { raw, get } = fresh();
+  const venue = raw.prepare(`SELECT id, name, address FROM parishes
+    WHERE id NOT IN (?, '_unassigned') AND address IS NOT NULL ORDER BY id LIMIT 1`).get(PARISH);
+  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, location_parish_id)
+               VALUES (?, 5, '19:00', 'Youth group', 'youth', ?)`).run(PARISH, venue.id);
+  const at = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status,
+      mutation_type, location_parish_id)
+    VALUES (?, 'manual', 'Deanery Vespers', '2026-10-03T07:00:00Z', 'vespers', 'approved', 'headless', ?)
+    RETURNING id`).get(PARISH, venue.id).id;
+  const away = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status,
+      mutation_type, location_override, location_lat, location_lng)
+    VALUES (?, 'manual', 'Youth retreat', '2026-10-04T00:00:00Z', 'youth', 'approved', 'headless',
+      'Antiochian Village, Kangaroo Valley', -34.75, 150.53) RETURNING id`).get(PARISH).id;
+
+  const card = (await get(`/${at}`)).html;
+  const pin = between(card, '<section class="lc-pin', '<section class="lc-times');
+  assert.ok(pin.includes(`@ ${venue.name}`) || card.includes(`<span class="event-venue"> @ ${venue.name}`),
+    'the card does not say which parish it is at');
+  assert.ok(card.includes(`${venue.name} — ${venue.address}`), 'the details give the parish\'s own address, not the host\'s');
+  assert.ok(timesOf(card).includes(`At ${venue.name}`), 'the rule held at another parish does not say so');
+
+  const place = (await get(`/${away}`)).html;
+  assert.ok(place.includes('<span class="event-venue"> @ Antiochian Village</span>'), 'a place is not named by its first words');
+  assert.ok(place.includes('<p class="lf-where">Antiochian Village, Kangaroo Valley</p>'));
+});

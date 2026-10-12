@@ -6211,7 +6211,11 @@ function setCombinedContext() {
   }
   const at = (scope, pid) => `${scope} .event-card:not([data-host="${String(pid).replace(/["\\]/g, '')}"]) .event-at{display:inline}`;
   const rules = [];
-  if (state.parishSheetFocus) rules.push(at('#parish-sheet-content', state.parishSheetFocus));
+  if (state.parishSheetFocus) {
+    rules.push(at('#parish-sheet-content', state.parishSheetFocus));
+    // An event held here, run from elsewhere, is home on this sheet.
+    rules.push(`#parish-sheet-content .event-card[data-venue="${String(state.parishSheetFocus).replace(/["\\]/g, '')}"] .event-venue{display:none}`);
+  }
   const only = state.filters && state.filters.parishIds && state.filters.parishIds.size === 1
     ? [...state.filters.parishIds][0] : null;
   if (only) rules.push(at('#events-list', only));
@@ -6570,7 +6574,7 @@ function renderEventCard(evt) {
 
   const langs = evt.languages ? JSON.parse(evt.languages) : [];
   const bilingualBadge = langs.length >= 2 ? `<span class="event-badge badge-bilingual">BILINGUAL</span>` : '';
-  const combinedBadge = (evt.extra_parishes && evt.extra_parishes.length) ? `<span class="event-badge badge-combined">COMBINED</span>` : '';
+  const combinedBadge = (evt.combined_parishes && evt.combined_parishes.length) ? `<span class="event-badge badge-combined">COMBINED</span>` : '';
 
   // LIVE badge — in-progress / imminent today gets live/countdown, future days
   // get the generic LIVE AVAIL tag (no per-minute countdown).
@@ -6631,8 +6635,13 @@ function renderEventCard(evt) {
   // A combined event at a parish other than its host says where it is. The
   // card is pooled across the feed and the parish sheet, so the label is
   // always in the markup and shown by the surface (setCombinedContext).
-  const atHost = (evt.extra_parishes && evt.extra_parishes.length)
+  const atHost = (evt.combined_parishes && evt.combined_parishes.length)
     ? `<span class="event-at"> @ ${esc(evt.parish_name || '')}</span>` : '';
+  // Held somewhere else: "@ St Nicholas, Bankstown", "@ Antiochian Village".
+  // Always shown but at the venue parish's own sheet, where it is home.
+  const venue = venueOf(evt);
+  const atVenue = venue && venue.short
+    ? `<span class="event-venue"> @ ${esc(venue.short)}</span>` : '';
   const spanHtml = isMultiDay(evt) ? `<div class="event-span-row">${esc(multiDaySpan(evt))}</div>` : '';
 
   const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, combinedTombBadge, cancelledBadge, breakBadge].filter(Boolean).join('');
@@ -6642,13 +6651,13 @@ function renderEventCard(evt) {
   const altAddrHtml = altAddr ? `<div class="event-address-row">${esc(altAddr)}</div>` : '';
 
   return `
-    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-host="${esc(evt.parish_id || '')}" data-event-type="${esc(evt.event_type || '')}">
+    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-host="${esc(evt.parish_id || '')}"${venue && venue.parishId ? ` data-venue="${esc(venue.parishId)}"` : ''} data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-time">${time}</span>
           ${typeDot}
           <div class="event-title-block">
-            <span class="event-title">${esc(evt.title)}${atHost}${inlineBadges ? `<span class="event-inline-badges">${inlineBadges}</span>` : ''}<span class="event-card-chev"></span></span>
+            <span class="event-title">${esc(evt.title)}${atHost}${atVenue}${inlineBadges ? `<span class="event-inline-badges">${inlineBadges}</span>` : ''}<span class="event-card-chev"></span></span>
           </div>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
@@ -6746,7 +6755,8 @@ function renderScheduleDaysHTML(items) {
       // Only when the rule meets somewhere other than the parish's own address.
       // Silence means the parish address, which the sheet has already shown —
       // repeating it under every row would bury the one line that differs.
-      if (s.location_override) html += `<div class="si-where">${esc(s.location_override)}</div>`;
+      const where = venueOf(s);
+      if (where) html += `<div class="si-where">${esc(where.parishId ? `At ${where.name}` : where.words)}</div>`;
       html += `</div>`;
     }
   }
@@ -6754,6 +6764,69 @@ function renderScheduleDaysHTML(items) {
   // reader wants the times first and the provenance second.
   html += scheduleSourceHTML(items);
   return html;
+}
+
+// ── Where it is held: the venue picker (public/shared/venue-picker.js) ──
+
+const VENUE_FIELDS = ['location_override', 'location_parish_id', 'location_lat', 'location_lng'];
+
+/**
+ * The picker's place in a form, and the four hidden fields it keeps — named by
+ * `attr` (data-f for a rule's form, data-af for Add schedule, data-ev-loc for
+ * an event), so each form's own save reads them like its other fields.
+ */
+function venueFieldsHTML(attr, row = null) {
+  const v = row || {};
+  return `
+      <div class="sef-venue">
+        <div class="vp-mount" data-venue-mount data-venue-attr="${attr}"></div>
+        ${VENUE_FIELDS.map(f => `<input type="hidden" ${attr}="${f}" value="${esc(v[f] == null ? '' : v[f])}">`).join('')}
+      </div>`;
+}
+
+/** The four fields as a request sends them; empty is null. */
+function venueFrom(scope, attr) {
+  const out = {};
+  for (const f of VENUE_FIELDS) {
+    const el = scope.querySelector(`[${attr}="${f}"]`);
+    const v = el ? el.value.trim() : '';
+    out[f] = v === '' ? null : (f === 'location_lat' || f === 'location_lng' ? Number(v) : v);
+  }
+  return out;
+}
+
+/** Mount the picker in `scope`, writing what is chosen into its hidden fields. */
+function mountVenuePicker(scope, hostId, row) {
+  const el = scope.querySelector('[data-venue-mount]');
+  if (!el || !window.AgoraVenuePicker) return null;
+  const attr = el.dataset.venueAttr;
+  const host = (state.parishes || []).find(p => p.id === hostId) || { id: hostId };
+  const write = (v) => {
+    for (const f of VENUE_FIELDS) {
+      const input = scope.querySelector(`[${attr}="${f}"]`);
+      if (input) input.value = v[f] == null ? '' : v[f];
+    }
+  };
+  const value = {};
+  for (const f of VENUE_FIELDS) value[f] = row && row[f] != null && row[f] !== '' ? row[f] : null;
+  return window.AgoraVenuePicker.mount(el, {
+    value,
+    host,
+    parishes: state.parishes || [],
+    geocode: geocodeAddress,
+    pickPin: (start, done) => openPinPicker({ ...start, sub: start.title }, done),
+    onChange: write,
+  });
+}
+
+/** POST /api/admin/geocode — the parish form's own lookup. {lat, lng} or null. */
+async function geocodeAddress(address) {
+  const res = await fetch('/api/admin/geocode', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  const c = await res.json().catch(() => null);
+  return c && Number.isFinite(c.lat) ? { lat: c.lat, lng: c.lng } : null;
 }
 
 /**
@@ -6770,9 +6843,9 @@ function ruleEditFormHTML(s) {
         <input data-f="start_time" type="time" value="${esc(s.start_time)}">
         <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
         <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
-        <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
         <textarea data-f="description" class="sef-full" rows="2" placeholder="Description — shown on every date (optional)">${esc(s.description || '')}</textarea>
       </div>
+      ${venueFieldsHTML('data-f', s)}
       ${cadencePickerHTML('data-f="cadence"', s)}
       ${ruleDatesHTML('data-f', s)}
       ${rulePosterHTML(s)}
@@ -6821,6 +6894,7 @@ function openRuleEditDialog(sid) {
     html: ruleEditFormHTML(rule),
   });
   body.dataset.sid = String(rule.id);
+  mountVenuePicker(body, rule.parish_id, rule);
   wireScheduleAdminHandlers(body);
 }
 window.openRuleEditDialog = openRuleEditDialog;
@@ -7199,6 +7273,7 @@ function addServiceHTML(parishId) {
         <input data-af="start_time" type="time" value="09:00">
         <select data-af="event_type" class="sef-full">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
       </div>
+      ${venueFieldsHTML('data-af')}
       ${cadencePickerHTML('data-af="cadence"')}
       ${ruleDatesHTML('data-af')}
       <button class="btn-save schedule-add-btn" type="button" data-parish-id="${pid}">Add schedule</button>
@@ -7291,6 +7366,7 @@ function wireScheduleAdminHandlers(container) {
           event_type: read('event_type'),
           effective_from: read('effective_from') || null,
           effective_to: read('effective_to') || null,
+          ...venueFrom(wrap, 'data-af'),
           ...cadence,
         }),
       });
@@ -7693,6 +7769,36 @@ function collapseEventCardDOM(opts = {}) {
   });
 }
 
+/** A description's links as links (public/shared/linkify.js), escaped either way. */
+/**
+ * Where an event or a rule is held when it is not its parish's church, or
+ * null at home — worker/lib/venues.mjs's three answers, for display:
+ *   short   for a title: the venue parish's name, or the place's first words
+ *   line    for the drawer: a name and its address
+ *   words   the place as written (custom places)
+ *   lat/lng where Directions goes; parishId when it is a parish
+ */
+function venueOf(row) {
+  if (!row) return null;
+  if (row.location_parish_id && row.location_parish_id !== row.parish_id) {
+    const p = (state.parishes || []).find(x => x.id === row.location_parish_id);
+    if (p) {
+      return { parishId: p.id, name: p.name, short: p.name, words: '',
+        line: p.address ? `${p.name} — ${p.address}` : p.name, lat: p.lat, lng: p.lng };
+    }
+  }
+  const words = (row.location_override || '').trim();
+  const hasPin = row.location_lat != null && row.location_lng != null;
+  if (!words && !hasPin) return null;
+  return { parishId: null, name: words, words, line: words || 'A place of its own (see the map)',
+    short: words ? words.split(',')[0].trim() : '',
+    lat: hasPin ? Number(row.location_lat) : null, lng: hasPin ? Number(row.location_lng) : null };
+}
+
+function linkifyText(text) {
+  return window.AgoraLinkify ? window.AgoraLinkify.linkify(text) : esc(text);
+}
+
 function renderEventDrawerHTML(evt, opts = {}) {
   const start = new Date(evt.start_utc);
 
@@ -7711,7 +7817,8 @@ function renderEventDrawerHTML(evt, opts = {}) {
     timeLine = `Until ${at(new Date(evt.end_utc))}`;
   }
 
-  const addr = evt.location_override || evt.parish_address || '';
+  const venue = venueOf(evt);
+  const addr = venue ? venue.line : (evt.parish_address || '');
   const parish = state.parishes.find(p => p.id === evt.parish_id);
 
   // Where Directions actually goes, which has to be the address this drawer is
@@ -7732,9 +7839,14 @@ function renderEventDrawerHTML(evt, opts = {}) {
   // a reader holding the printed address would type in themselves.
   const hasOwnPin = evt.lat != null && evt.lng != null
     && !(parish && evt.lat === parish.lat && evt.lng === parish.lng);
+  //
+  // A venue (worker/lib/venues.mjs) is exact: the other parish's pin, or the
+  // place's own. Words with no pin are the case above.
   let destination = '';
-  if (evt.location_override) {
-    destination = hasOwnPin ? `${evt.lat},${evt.lng}` : encodeURIComponent(evt.location_override);
+  if (venue && venue.lat != null && venue.lng != null) {
+    destination = `${venue.lat},${venue.lng}`;
+  } else if (venue) {
+    destination = hasOwnPin ? `${evt.lat},${evt.lng}` : encodeURIComponent(venue.words || venue.line);
   } else if (parish && parish.lat != null && parish.lng != null) {
     // No override: the parish's pin, which is always current where a copy sitting
     // on the event row may be stale.
@@ -7821,7 +7933,7 @@ function renderEventDrawerHTML(evt, opts = {}) {
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
       ${evt.languages ? `<div>${(() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })()}</div>` : ''}
     </div>
-    ${evt.description ? `<div class="detail-description">${esc(evt.description)}</div>` : ''}
+    ${evt.description ? `<div class="detail-description">${linkifyText(evt.description)}</div>` : ''}
     <div class="detail-actions">
       ${destination ? `<a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${destination}" target="_blank" rel="noopener">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
@@ -7886,7 +7998,7 @@ function eventEditFormHTML(evt) {
       </div>
       <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
       ${eventWhenHTML(evt)}
-      <div class="edit-row"><label>Address (override)</label><input id="edit-location-${evt.id}" placeholder="Leave blank to use parish address" value="${esc(evt.location_override || '')}"></div>
+      <div class="edit-row edit-venue"><label>Where</label>${venueFieldsHTML('data-ev-loc', evt)}</div>
       ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
       <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
       <!-- The poster. Outside Save deliberately: it is a file going to R2
@@ -8362,6 +8474,7 @@ function openEventEditDialog(id) {
     html: eventEditFormHTML(evt),
     onClose: () => { state.eventEditMode = null; },
   });
+  mountVenuePicker(body, evt.parish_id, evt);
   const first = body.querySelector(`#edit-title-${CSS.escape(id)}`);
   if (first) first.focus({ preventScroll: true });
 }
@@ -8373,7 +8486,11 @@ function refreshEventEditDialog() {
   if (!evt) { closeFormDialog(); return; }
   const modal = document.querySelector('#form-backdrop .form-modal');
   const top = modal ? modal.scrollTop : 0;
-  document.getElementById('form-body').innerHTML = eventEditFormHTML(evt);
+  const form = document.getElementById('form-body');
+  // What the picker holds was not saved yet; keep it across the redraw.
+  const held = form.querySelector('[data-ev-loc]') ? venueFrom(form, 'data-ev-loc') : null;
+  form.innerHTML = eventEditFormHTML(evt);
+  mountVenuePicker(form, evt.parish_id, held || evt);
   document.getElementById('form-sub').textContent = eventEditSub(evt);
   if (modal) modal.scrollTop = top;
 }
@@ -8396,8 +8513,9 @@ window.saveEvent = async function(id) {
   if (hideLiveEl) data.hide_live = hideLiveEl.checked;
   const parishScopedEl = document.getElementById(`edit-parish-scoped-${id}`);
   if (parishScopedEl) data.parish_scoped = parishScopedEl.checked;
-  const locationEl = document.getElementById(`edit-location-${id}`);
-  if (locationEl) data.location_override = locationEl.value;
+  // Where: the four fields the picker keeps (venueFieldsHTML), sent whole.
+  const form = document.getElementById(`edit-form-${id}`);
+  if (form && form.querySelector('[data-ev-loc]')) Object.assign(data, venueFrom(form, 'data-ev-loc'));
   // A repeating service asks which dates the change is for. "This and every
   // following" changes the rule from this date on — the earlier dates keep
   // what they were — and the drawer reopens on the same date of the new rule.
@@ -9350,7 +9468,7 @@ window.geolocateParishPin = async function(pid) {
 // is the live map's, stripped to the basemap: cloning it whole would drag in
 // the parish layers, whose sprites and logo images are registered against the
 // OTHER map and would render as missing-image warnings on this one.
-const _pinMap = { map: null, parishId: null };
+const _pinMap = { map: null, parishId: null, onPick: null };
 
 function basemapStyleOnly() {
   if (!window.agoraMap || typeof window.agoraMap.getStyle !== 'function') return null;
@@ -9367,6 +9485,7 @@ function basemapStyleOnly() {
 window.openParishPinMover = function(parishId) {
   const parish = (state.parishes || []).find(p => p.id === parishId);
   if (!parish) return;
+  _pinMap.onPick = null;
   const draft = pinDraftFor(parishId);
   // Start from whatever the pin would be if you saved right now, so opening
   // this and pressing Cancel is genuinely a no-op.
@@ -9420,9 +9539,47 @@ function syncPinReadout() {
 window.closeParishPinMover = function() {
   document.getElementById('pin-backdrop').classList.remove('open');
   _pinMap.parishId = null;
+  _pinMap.onPick = null;
 };
 
+/**
+ * The same map, for any pin that is not a parish's: the place an event or a
+ * service is held (the venue picker's "Move the pin"). Opens on `lat`/`lng`
+ * and hands the crosshair's spot to `done` on "Use this spot".
+ */
+function openPinPicker({ lat, lng, sub = '' }, done) {
+  const at = lat != null ? { lat, lng } : { lat: -33.87, lng: 151.21 };
+  _pinMap.parishId = null;
+  _pinMap.onPick = done;
+  document.getElementById('pin-modal-sub').textContent = sub;
+  document.getElementById('pin-backdrop').classList.add('open');
+  const style = basemapStyleOnly();
+  if (!style) {
+    document.getElementById('pin-readout').textContent = 'The map is still loading — close this and try again.';
+    return;
+  }
+  if (!_pinMap.map) {
+    _pinMap.map = new maplibregl.Map({
+      container: 'pin-map', style, center: [at.lng, at.lat], zoom: lat != null ? 18 : 12,
+      attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, boxZoom: false,
+    });
+    _pinMap.map.touchZoomRotate.disableRotation();
+    _pinMap.map.on('move', syncPinReadout);
+  } else {
+    _pinMap.map.jumpTo({ center: [at.lng, at.lat], zoom: lat != null ? 18 : 12 });
+  }
+  requestAnimationFrame(() => { if (_pinMap.map) _pinMap.map.resize(); syncPinReadout(); });
+}
+window.openPinPicker = openPinPicker;
+
 window.confirmParishPin = function() {
+  if (_pinMap.onPick && _pinMap.map) {
+    const c = _pinMap.map.getCenter();
+    const done = _pinMap.onPick;
+    window.closeParishPinMover();
+    done({ lat: c.lat, lng: c.lng });
+    return;
+  }
   const pid = _pinMap.parishId;
   if (!pid || !_pinMap.map) { window.closeParishPinMover(); return; }
   const c = _pinMap.map.getCenter();
@@ -10428,6 +10585,8 @@ window.openNewEventDialog = function (parishId, { draftId = null, file = null, i
             : intent === 'timetable' && !events ? 'sign' : 'event');
     },
     openPoster: (url) => openPosterFullscreen(url),
+    // "Move the pin" for a place an event is held: the parish pin's own map.
+    pickPin: (start, done) => openPinPicker({ ...start, sub: start.title }, done),
     // A church sign writes to the parish itself — its timetable, its details —
     // and asks first, like any hand edit, whether to keep it by hand.
     keepByHand: (pid) => ensureKeptByHand(pid),
@@ -11048,6 +11207,7 @@ function openAddScheduleDialog(pid) {
     sub: parish ? parish.name : '',
     html: `${addServiceHTML(pid)}<div data-ended-slot="${esc(pid)}"></div>`,
   });
+  mountVenuePicker(body, pid, null);
   wireScheduleAdminHandlers(body);
   loadEndedRules(pid);
   const first = body.querySelector('[data-af="title"]');

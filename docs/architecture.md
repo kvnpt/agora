@@ -28,8 +28,9 @@ from a terminal) does not bump it and shows within ten minutes, when the edge
 copy expires.
 
 On the wire a schedule rule carries **its own columns only**: `languages` and
-`location_override` are its to set, and where either is null the parish's is
-what shows. Everything else — name, pin, zone, website — is the parish's, and
+its place (`location_override`, `location_parish_id`, `location_lat`/`lng` —
+[editing.md](editing.md)) are its to set, and where they are null the parish's
+is what shows. Everything else — name, pin, zone, website — is the parish's, and
 the browser joins it back from the parish list in the same response
 (`public/shared/parish-join.mjs`, the one list the Worker's SQL join is also
 built from). Nothing public carries `updated_by`; it is an admin's email.
@@ -121,14 +122,30 @@ onto rules and events as `parish_color` — so every reader draws the
 jurisdiction's without being taught to. The panel no longer offers a parish
 colour or a repaint.
 
-**The map marks time with halos, not colour.** A parish with a service on now
-breathes green under its dot; one with something still to come today, in its own
-zone, tolls — a neutral ring that spreads out of the dot and fades. The dot keeps
-its jurisdiction colour either way, and a grape carries the halos of the parishes
-in it. The flags come from the events the feed shows (its content filters) and are
-worked out again every minute. The motion is CONSTANT paint values stepped each
-frame, one layer per marker size, because a data-driven paint property that
-changes re-tiles the source — `map.js`, "Halos".
+**The map marks time with halos, not colour.** Three of them, under the dot. A
+parish with a service on now breathes green; one with something still to come
+today, in its own zone, tolls — a neutral ring that spreads out of the dot and
+fades; one whose own event is on now **somewhere else** breathes in the toll's
+neutral colour, because the parish is running something and the green belongs
+where the people are. An event held at another parish (`location_parish_id`)
+lights both: both toll on the day, and once it starts the venue breathes green
+and the host neutral. Where a parish has more than one thing on, green beats the
+neutral breath beats the toll. The dot keeps its jurisdiction colour either way,
+and a grape carries the halos of the parishes in it (`now_count`, `away_count`,
+`today_count`). The flags come from the events the feed shows (its content
+filters) and are worked out again every minute. The motion is CONSTANT paint
+values stepped each frame, one layer per marker size, because a data-driven paint
+property that changes re-tiles the source — `map.js`, "Halos".
+
+**A place of its own is a square.** An event held "Somewhere else" with a pin is
+the first marker on the map that is not a parish: a square in its host's
+jurisdiction colour, labelled with the event, with the venue's halo under it.
+One square per place per host (a weekly class at one hall is one square), ended
+events draw none, and a tap opens the soonest of them — the one on, if one is —
+focused in the sheet of the parish running it. The square is one SDF image built
+from raw pixels, so `icon-color` paints it any colour and the vm test can build
+it — `map.js`, "Places". It is also where a group with events and no church of
+its own will sit on the map.
 
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and

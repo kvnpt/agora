@@ -231,6 +231,7 @@ async function initMap(state) {
 
   map.on('load', async () => {
     addParishSourceAndLayers();
+    addVenueSourceAndLayers();
     addUserLocSourceAndLayer(state);
     setupClickHandlers();
     setupViewportPhases();
@@ -298,6 +299,7 @@ async function initMap(state) {
       map.once('style.load', async () => {
         const st = window.agoraStateRef || { parishes: [], locationActive: false };
         addParishSourceAndLayers();
+        addVenueSourceAndLayers();
         addUserLocSourceAndLayer(st);
         setupClickHandlers();
         setupDeclutterOnZoom();
@@ -326,10 +328,12 @@ function addParishSourceAndLayers() {
     clusterRadius: CLUSTER_RADIUS_PX,
     clusterMinPoints: CLUSTER_MIN_POINTS,
     // A grape stands for its parishes, so it carries their halos: it breathes
-    // green if any of them has something on now, and tolls if any has
-    // something still to come today. See addHaloLayers.
+    // green if any of them has something on now, neutral if any is running
+    // something on now elsewhere, and tolls if any has something still to
+    // come today. See addHaloLayers.
     clusterProperties: {
       now_count: ['+', ['case', ['==', ['get', 'now'], true], 1, 0]],
+      away_count: ['+', ['case', ['==', ['get', 'away'], true], 1, 0]],
       today_count: ['+', ['case', ['==', ['get', 'today'], true], 1, 0]]
     }
   });
@@ -596,38 +600,50 @@ window.agoraUpdateUserLocation = function (lat, lng) {
   map.getSource(USER_SOURCE).setData(fc);
 };
 
-// ── Halos: on now, and later today ─────────────────────────────────────
+// ── Halos: on now, later today, and run from here but on elsewhere ──────
 //
 // A parish with a service on right now breathes green: a soft halo under its
 // dot that fades in and out. One with something still to come today tolls: a
 // neutral ring grows out of the dot and fades, then a pause, like a bell
-// announcing it. Both sit UNDER the dot, so its jurisdiction colour reads
-// exactly as it did; neither colour means anything else on the map.
+// announcing it. One whose own event is on right now SOMEWHERE ELSE breathes
+// too, in the toll's neutral colour: the parish is running something, and the
+// green is where the people are. All three sit UNDER the dot, so its
+// jurisdiction colour reads exactly as it did; no colour means anything else.
 //
-// The flags are properties on the parish features (`now`, `today`), worked out
-// in updateMap from the events the feed shows — its content filters, not the
-// viewport — and again every minute, because a service starting or ending
-// changes them with nothing else happening.
+// An event held at another parish lights that parish as well (worker/lib/
+// venues.mjs is what "held at" means): both toll on the day, and once it starts
+// the venue goes green while the host breathes neutral. One held at a place of
+// its own, with a pin, is a square on the map (the venue layers below), and the
+// square takes the venue's halo. Where a parish has more than one thing on,
+// green beats the neutral breath beats the toll.
+//
+// The flags are properties on the parish features (`now`, `away`, `today`),
+// worked out in updateMap from the events the feed shows — its content
+// filters, not the viewport — and again every minute, because a service
+// starting or ending changes them with nothing else happening.
 //
 // The motion is constant paint values stepped on animation frames. Constant,
 // never an expression reading the feature: a data-driven paint property that
 // changes makes MapLibre re-tile the source, which every frame would mean a
 // worker round trip per frame. So the different sizes of marker are different
 // layers — a dot, and the big ones (a grape, a focused parish's logo) — each
-// with its own constant radius. The loop only runs while some parish is
+// with its own constant radius. The loop only runs while something is
 // flagged and the page is visible; under reduced motion the halos stand still.
 const HALO_NOW = '#22c55e';
 const HALO_NOW_MS = 2600;        // one breath, in and out
 const HALO_TOLL_MS = 3400;       // one toll, ring and silence
 const HALO_RING_MS = 2200;       // how long the ring takes to spread and fade
 const HALO_FRAME_MS = 33;        // ~30fps is plenty for a glow
-// Where a marker's edge is: the dot with its ring; a grape's spread or a logo.
-const HALO_EDGE = { dot: 5.25, big: 16 };
+// Where a marker's edge is: the dot with its ring; a grape's spread or a logo;
+// a place's square with its ring.
+const HALO_EDGE = { dot: 5.25, big: 16, venue: 6.5 };
 
 const HALO_BIG = ['any', ['has', 'point_count'],
   ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']]];
 const HALO_IS_NOW = ['any', ['==', ['get', 'now'], true],
   ['>', ['coalesce', ['get', 'now_count'], 0], 0]];
+const HALO_IS_AWAY = ['any', ['==', ['get', 'away'], true],
+  ['>', ['coalesce', ['get', 'away_count'], 0], 0]];
 const HALO_IS_TODAY = ['any', ['==', ['get', 'today'], true],
   ['>', ['coalesce', ['get', 'today_count'], 0], 0]];
 
@@ -647,58 +663,115 @@ function addHaloLayers() {
       type: 'circle',
       source: PARISH_SOURCE,
       filter: ['all', HALO_IS_NOW, isBig],
-      paint: {
-        'circle-radius': HALO_EDGE[size] + 6,
-        'circle-color': HALO_NOW,
-        'circle-opacity': 0.4,
-        'circle-blur': 0.55
-      }
+      paint: breathPaint(size, HALO_NOW)
+    });
+    // On elsewhere: the breath, in the toll's colour.
+    map.addLayer({
+      id: `parish-halo-away-${size}`,
+      type: 'circle',
+      source: PARISH_SOURCE,
+      filter: ['all', ['!', HALO_IS_NOW], HALO_IS_AWAY, isBig],
+      paint: breathPaint(size, haloTollColor())
     });
     map.addLayer({
       id: `parish-halo-toll-${size}`,
       type: 'circle',
       source: PARISH_SOURCE,
-      filter: ['all', ['!', HALO_IS_NOW], HALO_IS_TODAY, isBig],
-      paint: {
-        'circle-radius': HALO_EDGE[size] + 6,
-        'circle-color': haloTollColor(),
-        'circle-opacity': 0,
-        'circle-stroke-color': haloTollColor(),
-        'circle-stroke-width': 1.5,
-        'circle-stroke-opacity': 0
-      }
+      filter: ['all', ['!', HALO_IS_NOW], ['!', HALO_IS_AWAY], HALO_IS_TODAY, isBig],
+      paint: tollPaint(size)
     });
   }
   // The loop is started by updateMap, which follows every (re)build of these.
   haloLastFrame = 0;
 }
 
+function breathPaint(size, color) {
+  return {
+    'circle-radius': HALO_EDGE[size] + 6,
+    'circle-color': color,
+    'circle-opacity': 0.4,
+    'circle-blur': 0.55
+  };
+}
+
+function tollPaint(size) {
+  return {
+    'circle-radius': HALO_EDGE[size] + 6,
+    'circle-color': haloTollColor(),
+    'circle-opacity': 0,
+    'circle-stroke-color': haloTollColor(),
+    'circle-stroke-width': 1.5,
+    'circle-stroke-opacity': 0
+  };
+}
+
+/** The events the map lights: the feed's, by its content filters. */
+function haloEvents(state) {
+  const all = (state && state.events) || [];
+  return typeof applyNonViewportFilters === 'function' ? applyNonViewportFilters(all) : all;
+}
+
 /**
- * Each parish with an event on now ('now') or still to come today ('today').
+ * Is this event on now ('now'), still to come today ('today'), or neither?
  *
  * "Today" is the parish's own day, in its own zone — the service is where the
- * parish is. A tombstone is not on, and a combined service lights its host,
- * which is where everybody is going.
+ * parish is. A tombstone is not on.
  */
-function parishTimeFlags(state) {
-  const flags = new Map();
-  const all = (state && state.events) || [];
-  const events = typeof applyNonViewportFilters === 'function' ? applyNonViewportFilters(all) : all;
-  const now = Date.now();
-  const dayIn = (ms, zone) => {
+function eventTiming(e, now) {
+  if (e.is_tombstone || (e.status && e.status !== 'approved')) return null;
+  const start = Date.parse(e.start_utc);
+  if (!Number.isFinite(start)) return null;
+  const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
+  if (start <= now && end >= now) return 'now';
+  if (start <= now || start - now >= 86400000) return null;
+  const zone = e.timezone || (parishesById.get(e.parish_id) || {}).timezone;
+  const dayIn = (ms) => {
     try { return new Intl.DateTimeFormat('en-CA', { timeZone: zone || 'Australia/Sydney' }).format(new Date(ms)); }
     catch { return new Date(ms).toISOString().slice(0, 10); }
   };
-  for (const e of events) {
-    if (e.is_tombstone || (e.status && e.status !== 'approved')) continue;
-    const start = Date.parse(e.start_utc);
-    if (!Number.isFinite(start)) continue;
-    const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
-    if (start <= now && end >= now) { flags.set(e.parish_id, 'now'); continue; }
-    const zone = e.timezone || (parishesById.get(e.parish_id) || {}).timezone;
-    if (start > now && !flags.has(e.parish_id) && start - now < 86400000
-        && dayIn(start, zone) === dayIn(now, zone)) {
-      flags.set(e.parish_id, 'today');
+  return dayIn(start) === dayIn(now) ? 'today' : null;
+}
+
+/**
+ * Where an event is held, as the map needs it: at home (null), at another
+ * parish ({ parish }), or somewhere else — with a pin of its own ({ place })
+ * or only in words ({ elsewhere }). The same reading as worker/lib/venues.mjs.
+ */
+function heldAt(e) {
+  if (e.location_parish_id && e.location_parish_id !== e.parish_id) return { parish: e.location_parish_id };
+  if (e.location_lat != null && e.location_lng != null) return { place: [Number(e.location_lng), Number(e.location_lat)] };
+  if (e.location_override) return { elsewhere: true };
+  return null;
+}
+
+const FLAG_RANK = { now: 3, away: 2, today: 1 };
+
+/**
+ * Each parish's halo: 'now' (on here, now), 'away' (its own event, on now
+ * somewhere else) or 'today' (still to come today, here or elsewhere).
+ *
+ * An event at another parish lights both: the host and the venue toll on the
+ * day; once it is on, the venue is 'now' and the host 'away'. A combined
+ * service lights its host, which is where everybody is going.
+ */
+function parishTimeFlags(state) {
+  const flags = new Map();
+  const raise = (pid, flag) => {
+    if (pid && (FLAG_RANK[flag] || 0) > (FLAG_RANK[flags.get(pid)] || 0)) flags.set(pid, flag);
+  };
+  const now = Date.now();
+  for (const e of haloEvents(state)) {
+    const timing = eventTiming(e, now);
+    if (!timing) continue;
+    const at = heldAt(e);
+    if (timing === 'today') {
+      raise(e.parish_id, 'today');
+      if (at && at.parish) raise(at.parish, 'today');
+    } else if (!at) {
+      raise(e.parish_id, 'now');
+    } else {
+      raise(e.parish_id, 'away');
+      if (at.parish) raise(at.parish, 'now');
     }
   }
   return flags;
@@ -706,7 +779,8 @@ function parishTimeFlags(state) {
 
 /** Start or stop the loop to match the flags, and keep the minute tick going. */
 function syncHalos() {
-  haloAny = trueFeatures.some(f => f.properties.now || f.properties.today);
+  haloAny = trueFeatures.some(f => f.properties.now || f.properties.away || f.properties.today)
+    || venueFeaturesNow.some(f => f.properties.now || f.properties.today);
   if (!haloTimer) {
     haloTimer = setInterval(() => {
       if (haloState && styleLoaded && !document.hidden) refreshHaloFlags();
@@ -722,20 +796,23 @@ function syncHalos() {
   startHaloLoop();
 }
 
-/** The minute tick: the same features with `now`/`today` worked out again. */
+/** The minute tick: the same features with their flags worked out again. */
 function refreshHaloFlags() {
   const flags = parishTimeFlags(haloState);
   let changed = false;
   for (const f of trueFeatures) {
-    const now = flags.get(f.properties.parish_id) === 'now';
-    const today = flags.get(f.properties.parish_id) === 'today';
-    if (f.properties.now !== now || f.properties.today !== today) {
-      f.properties = { ...f.properties, now, today };
+    const flag = flags.get(f.properties.parish_id);
+    const now = flag === 'now', away = flag === 'away', today = flag === 'today';
+    if (f.properties.now !== now || f.properties.away !== away || f.properties.today !== today) {
+      f.properties = { ...f.properties, now, away, today };
       changed = true;
     }
   }
   // Same positions: the declutter cache is keyed on the token, untouched here.
-  if (changed) { paintParishSource(); syncHalos(); }
+  if (changed) paintParishSource();
+  // A place's square comes and goes with its events, so it is rebuilt whole.
+  const venuesChanged = paintVenueSource(haloState);
+  if (changed || venuesChanged) syncHalos();
 }
 
 function startHaloLoop() {
@@ -752,7 +829,19 @@ function haloFrame(t) {
   haloRaf = requestAnimationFrame(haloFrame);
 }
 
-/** One frame of both halos at time `t`; null paints them still. */
+// Every halo layer, by the marker it sits under and how it moves.
+const HALO_LAYERS = [
+  { id: 'parish-halo-now-dot', edge: HALO_EDGE.dot, move: 'breath' },
+  { id: 'parish-halo-away-dot', edge: HALO_EDGE.dot, move: 'breath' },
+  { id: 'parish-halo-toll-dot', edge: HALO_EDGE.dot, move: 'toll', ring: 18 },
+  { id: 'parish-halo-now-big', edge: HALO_EDGE.big, move: 'breath' },
+  { id: 'parish-halo-away-big', edge: HALO_EDGE.big, move: 'breath' },
+  { id: 'parish-halo-toll-big', edge: HALO_EDGE.big, move: 'toll', ring: 22 },
+  { id: 'venue-halo-now', edge: HALO_EDGE.venue, move: 'breath' },
+  { id: 'venue-halo-toll', edge: HALO_EDGE.venue, move: 'toll', ring: 18 },
+];
+
+/** One frame of every halo at time `t`; null paints them still. */
 function paintHalos(t) {
   // The breath: 0 → 1 → 0, eased at both ends the way breathing is.
   const breath = t == null ? 0.6 : (1 - Math.cos((2 * Math.PI * (t % HALO_NOW_MS)) / HALO_NOW_MS)) / 2;
@@ -760,15 +849,179 @@ function paintHalos(t) {
   const life = t == null ? 0.35 : Math.min(1, (t % HALO_TOLL_MS) / HALO_RING_MS);
   const spread = 1 - Math.pow(1 - life, 3);          // fast out of the dot, slowing as it goes
   const fade = life >= 1 ? 0 : Math.pow(1 - life, 1.6);
-  for (const size of ['dot', 'big']) {
-    const edge = HALO_EDGE[size];
-    const now = `parish-halo-now-${size}`, toll = `parish-halo-toll-${size}`;
-    map.setPaintProperty(now, 'circle-radius', edge + 4 + 8 * breath);
-    map.setPaintProperty(now, 'circle-opacity', 0.16 + 0.5 * breath);
-    map.setPaintProperty(toll, 'circle-radius', edge + 1 + (size === 'big' ? 22 : 18) * spread);
-    map.setPaintProperty(toll, 'circle-opacity', 0.16 * fade);
-    map.setPaintProperty(toll, 'circle-stroke-opacity', 0.8 * fade);
+  for (const h of HALO_LAYERS) {
+    if (!map.getLayer(h.id)) continue;
+    if (h.move === 'breath') {
+      map.setPaintProperty(h.id, 'circle-radius', h.edge + 4 + 8 * breath);
+      map.setPaintProperty(h.id, 'circle-opacity', 0.16 + 0.5 * breath);
+    } else {
+      map.setPaintProperty(h.id, 'circle-radius', h.edge + 1 + h.ring * spread);
+      map.setPaintProperty(h.id, 'circle-opacity', 0.16 * fade);
+      map.setPaintProperty(h.id, 'circle-stroke-opacity', 0.8 * fade);
+    }
   }
+}
+
+// ── Places: an event's own pin, drawn as a square ──────────────────────
+//
+// The first marker on the map that is not a parish. An event held at a place
+// of its own — "Somewhere else" with a pin, in the venue picker — is drawn
+// there as a square in its host's jurisdiction colour, labelled with the
+// event, and takes the halo of what is on there. Tapping it opens the event,
+// focused, in the sheet of the parish running it.
+//
+// One square per place per host: a weekly class at the same hall is one
+// square, and the tap goes to the soonest of them (the one on, if one is).
+// Ended events draw nothing. Where a group runs events and has no church of
+// its own, this is what it will be on the map.
+const VENUE_SOURCE = 'venues';
+const VENUE_ICON = 'venue-square';
+let venueFeaturesNow = [];
+
+function addVenueSourceAndLayers() {
+  map.addSource(VENUE_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: venueFeaturesNow } });
+  if (!map.hasImage(VENUE_ICON)) {
+    const img = venueSquareImage();
+    map.addImage(VENUE_ICON, img, { sdf: true, pixelRatio: img.pixelRatio });
+  }
+  // The halos under every marker, the squares over the dots, their names
+  // under the parishes' — a parish's name wins a collision with a place's.
+  map.addLayer({
+    id: 'venue-halo-now',
+    type: 'circle',
+    source: VENUE_SOURCE,
+    filter: ['==', ['get', 'now'], true],
+    paint: breathPaint('venue', HALO_NOW)
+  }, 'parish-circle-shadow');
+  map.addLayer({
+    id: 'venue-halo-toll',
+    type: 'circle',
+    source: VENUE_SOURCE,
+    filter: ['all', ['!=', ['get', 'now'], true], ['==', ['get', 'today'], true]],
+    paint: tollPaint('venue')
+  }, 'parish-circle-shadow');
+  map.addLayer({
+    id: 'venue-square',
+    type: 'symbol',
+    source: VENUE_SOURCE,
+    layout: {
+      'icon-image': VENUE_ICON,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'symbol-sort-key': ['case', ['==', ['get', 'now'], true], 0, 1]
+    },
+    paint: {
+      'icon-color': ['get', 'color'],
+      'icon-halo-color': getHalo(),
+      'icon-halo-width': 1.5
+    }
+  }, 'parish-label');
+  map.addLayer({
+    id: 'venue-label',
+    type: 'symbol',
+    source: VENUE_SOURCE,
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-font': FONT_MEDIUM,
+      'text-size': 11,
+      'text-variable-anchor': ['left', 'right'],
+      'text-radial-offset': 0.9,
+      'text-justify': 'auto',
+      'text-padding': 2,
+      'text-allow-overlap': false,
+      'text-optional': true
+    },
+    paint: {
+      'text-color': ['get', 'color'],
+      'text-halo-color': getHalo(),
+      'text-halo-width': 2,
+      'text-halo-blur': 0
+    }
+  }, 'parish-label');
+}
+
+/**
+ * The square, as a signed distance field so one image takes every colour
+ * (icon-color) and the ring (icon-halo). MapLibre reads an SDF icon's alpha as
+ * 0.75 at the edge, falling by 1/8 per CSS pixel outward. Raw pixels rather
+ * than a canvas: it is the same few lines either way, and this way it needs
+ * nothing from the browser.
+ */
+function venueSquareImage() {
+  const ratio = 2, size = 24 * ratio;               // 24 CSS px, room for the ring
+  const half = 4.75, round = 1.25;                  // the square, CSS px
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Signed distance from the rounded square, in CSS px; negative inside.
+      const px = Math.abs((x + 0.5) / ratio - 12) - (half - round);
+      const py = Math.abs((y + 0.5) / ratio - 12) - (half - round);
+      const d = Math.hypot(Math.max(px, 0), Math.max(py, 0)) + Math.min(Math.max(px, py), 0) - round;
+      const i = (y * size + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = 255;
+      data[i + 3] = Math.round(255 * Math.min(1, Math.max(0, 0.75 - d / 8)));
+    }
+  }
+  return { width: size, height: size, data, pixelRatio: ratio };
+}
+
+/** The squares the feed's events put on the map, each with its halo. */
+function venueFeatures(state) {
+  const now = Date.now();
+  const groups = new Map();
+  for (const e of haloEvents(state)) {
+    const at = heldAt(e);
+    if (!at || !at.place) continue;
+    if (e.is_tombstone || (e.status && e.status !== 'approved')) continue;
+    const start = Date.parse(e.start_utc);
+    if (!Number.isFinite(start)) continue;
+    const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
+    if (end < now) continue;
+    const p = parishesById.get(e.parish_id);
+    if (!p) continue;
+    const [lng, lat] = at.place;
+    const key = `${e.parish_id}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { e, start, at: at.place, p, now: false, today: false }));
+    else if (start < g.start) { g.e = e; g.start = start; }
+    const timing = eventTiming(e, now);
+    if (timing === 'now') g.now = true;
+    else if (timing === 'today') g.today = true;
+  }
+  return [...groups.values()].map((g) => {
+    const base = window.rawJurisColor ? window.rawJurisColor(g.p.jurisdiction) : (g.p.color || '#000');
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: g.at },
+      properties: {
+        event_id: String(g.e.id),
+        parish_id: g.e.parish_id,
+        label: g.e.title || '',
+        color: isDark() ? liftParishColor(base) : base,
+        now: g.now,
+        today: g.today && !g.now
+      }
+    };
+  });
+}
+
+/** Rebuild the squares; true if anything about them changed. */
+function paintVenueSource(state) {
+  const next = venueFeatures(state);
+  const same = next.length === venueFeaturesNow.length
+    && JSON.stringify(next) === JSON.stringify(venueFeaturesNow);
+  venueFeaturesNow = next;
+  const src = map && map.getSource(VENUE_SOURCE);
+  if (src && !same) src.setData({ type: 'FeatureCollection', features: next });
+  return !same;
+}
+
+function onVenueClick(props) {
+  const st = window.agoraStateRef;
+  if (!props || !props.parish_id) return;
+  // Choosing parishes is about parishes: the square stands in for its host.
+  if (st && st.selectionMode) { onParishClick(props.parish_id); return; }
+  if (window.openParishSheet) window.openParishSheet(props.parish_id, { focusEventId: props.event_id });
 }
 
 // ── Sprite registration ────────────────────────────────────────────────
@@ -1087,6 +1340,7 @@ function updateMap(state, opts = {}) {
       selected: selectedSet ? selectedSet.has(p.id) : false,
       active: activeSet.has(p.id),
       now: timeFlags.get(p.id) === 'now',
+      away: timeFlags.get(p.id) === 'away',
       today: timeFlags.get(p.id) === 'today'
     };
     if (logoRegistered.has(p.id)) props.focus_icon_id = `focus_${p.id}`;
@@ -1104,6 +1358,7 @@ function updateMap(state, opts = {}) {
   declutterToken++;
   declutterCache = new Map();
   paintParishSource();
+  paintVenueSource(state);
   haloState = state;
   syncHalos();
 
@@ -1166,6 +1421,9 @@ function fitPadding() {
 // focused or selected.
 const LABEL_LAYERS = ['parish-label', 'parish-label-above'];
 
+// Querying a layer the style does not have is an error, not an empty answer.
+const present = (ids) => ids.filter((id) => map.getLayer(id));
+
 function setupClickHandlers() {
   map.on('click', (e) => {
     // 20 px hit slop around the click — fingers aren't pixel-precise.
@@ -1181,13 +1439,17 @@ function setupClickHandlers() {
     const labelHit = map.queryRenderedFeatures([
       [e.point.x - 3, e.point.y - 3],
       [e.point.x + 3, e.point.y + 3]
-    ], { layers: LABEL_LAYERS });
+    ], { layers: present([...LABEL_LAYERS, 'venue-label']) });
+    if (labelHit.length && labelHit[0].properties.event_id) {
+      onVenueClick(labelHit[0].properties);
+      return;
+    }
     if (labelHit.length && labelHit[0].properties.parish_id) {
       onParishClick(labelHit[0].properties.parish_id);
       return;
     }
     const features = map.queryRenderedFeatures(bbox, {
-      layers: ['parish-circle', 'parish-cluster-icon']
+      layers: present(['venue-square', 'parish-circle', 'parish-cluster-icon'])
     });
     if (!features.length) {
       if (window.agoraClearParishFocus) window.agoraClearParishFocus();
@@ -1204,13 +1466,15 @@ function setupClickHandlers() {
     }
     if (best.layer.id === 'parish-cluster-icon') {
       handleClusterClick(best);
+    } else if (best.layer.id === 'venue-square') {
+      onVenueClick(best.properties);
     } else {
       onParishClick(best.properties.parish_id);
     }
   });
 
   // Cursor feedback (desktop hover).
-  for (const layerId of ['parish-circle', 'parish-cluster-icon', ...LABEL_LAYERS]) {
+  for (const layerId of present(['parish-circle', 'parish-cluster-icon', ...LABEL_LAYERS, 'venue-square', 'venue-label'])) {
     map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
   }

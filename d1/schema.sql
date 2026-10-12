@@ -257,7 +257,15 @@ CREATE TABLE schedules (
   -- (project.mjs). A BULLETIN never goes here — it is for a period, and lives
   -- on the occurrences it covers (patch_poster_path). d1/migrations/021.
   poster_path       TEXT,
-  description       TEXT
+  description       TEXT,
+
+  -- Where, when it is not the parish's own church (migration 023): at ANOTHER
+  -- parish on file (the venue's own name, address and pin), or at a place of
+  -- its own — location_override's words and this pin, which the map draws
+  -- as a square marker of its own.
+  location_parish_id TEXT,
+  location_lat      REAL,
+  location_lng      REAL
 );
 
 CREATE INDEX idx_schedules_parish ON schedules(parish_id);
@@ -297,7 +305,17 @@ CREATE TABLE events (
   hide_live         INTEGER NOT NULL DEFAULT 0,
   parish_scoped     INTEGER NOT NULL DEFAULT 0,
   created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+
+  -- Where, when it is not the parish's own church (migration 023): at ANOTHER
+  -- parish on file (the venue's own name, address and pin), or at a place of
+  -- its own — location_override's words and this pin, which the map draws
+  -- as a square marker of its own.
+  -- lat/lng above stay what distance is measured from: the venue's, when
+  -- there is one.
+  location_parish_id TEXT,
+  location_lat      REAL,
+  location_lng      REAL
 );
 
 -- Multiple NULLs are permitted by SQLite, so hand-entered events without a
@@ -374,6 +392,11 @@ CREATE TABLE schedule_overrides (
   -- Last, by the same append rule as `source` and `updated_by` above: it
   -- arrived by ALTER (d1/migrations/012) and ALTER appends.
   patch_poster_path       TEXT,
+  -- This date's venue, as a unit with patch_location_override (migration 023):
+  -- an override that names any part of a place names all of it.
+  patch_location_parish_id TEXT,
+  patch_location_lat      REAL,
+  patch_location_lng      REAL,
 
   UNIQUE(schedule_id, occurrence_date)
 );
@@ -1028,6 +1051,10 @@ CREATE TABLE draft_events (
   -- Migration 022. The last day of one event over several days — a festival
   -- from Friday to Sunday — with end_time the time it ends on that day. NULL
   -- is the usual single day. Published, it is simply a later end_utc.
-  end_date          TEXT
+  end_date          TEXT,
+  -- Migration 023: where, as on events.
+  location_parish_id TEXT,
+  location_lat      REAL,
+  location_lng      REAL
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);

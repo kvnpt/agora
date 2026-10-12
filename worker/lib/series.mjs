@@ -31,7 +31,8 @@ export const dayBefore = (d) => new Date(Date.parse(d + 'T00:00:00Z') - DAY_MS).
 export const RULE_COLS = ['parish_id', 'day_of_week', 'start_time', 'end_time', 'title', 'event_type',
   'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped',
   'effective_from', 'effective_to', 'location_override', 'source_name', 'source_ref',
-  'source_checked_at', 'week_parity', 'poster_path', 'description'];
+  'source_checked_at', 'week_parity', 'poster_path', 'description',
+  'location_parish_id', 'location_lat', 'location_lng'];
 
 /**
  * The drawer's form, read as a change to the RULE.
@@ -49,7 +50,11 @@ export function ruleChangesFrom(body, zone) {
   if (body.title !== undefined && body.title) out.title = body.title;
   if (body.event_type !== undefined && body.event_type) out.event_type = body.event_type;
   if (body.languages !== undefined) out.languages = body.languages || null;
-  if (body.location_override !== undefined) out.location_override = body.location_override || null;
+  // A place is a unit (lib/venues.mjs): the route has read all four, so a body
+  // that names one names them all.
+  for (const k of ['location_override', 'location_parish_id', 'location_lat', 'location_lng']) {
+    if (body[k] !== undefined) out[k] = body[k] ?? null;
+  }
   if (body.hide_live !== undefined) out.hide_live = body.hide_live ? 1 : 0;
   if (body.parish_scoped !== undefined) out.parish_scoped = body.parish_scoped ? 1 : 0;
   if (body.start_utc) {
@@ -73,7 +78,7 @@ export function describeLater(o) {
   if (o.patch_start_time) bits.push(`at ${o.patch_start_time}`);
   if (o.patch_title) bits.push(`as “${o.patch_title}”`);
   if (o.patch_poster_path) bits.push('a poster');
-  if (o.patch_location_override) bits.push('elsewhere');
+  if (o.patch_location_override || o.patch_location_parish_id || o.patch_location_lat != null) bits.push('at a different place');
   if (o.patch_description) bits.push('a note');
   return bits.length ? bits.join(', ') : 'changed';
 }

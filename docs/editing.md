@@ -344,6 +344,38 @@ parish's sheet, the feed filtered to it, its lite card — the title reads
 the sheet, so the label is in every combined card and a style rule written per
 surface (`setCombinedContext`) shows it where the surface is another parish.
 
+**Somewhere else is one of two places, picked, not typed.** A one-off, a rule
+and one date of a rule each have a **Where** control (`public/shared/venue-picker.js`,
+in every form that asks: a rule's form, Add schedule, an event's edit dialog,
+the add-event editor's cards). **At the parish** is nothing set. **Another
+parish** is one parish on file, picked from a list nearest-first and searched by
+name or suburb, the way Combine picks them — `location_parish_id`, whose name,
+address and pin it is. **Somewhere else** is the place in words
+(`location_override`) and a pin (`location_lat`/`lng`): looked up from the
+address through the parish form's own geocoder, or put on the door by hand with
+the parish form's own pin mover. Typing new words drops a looked-up pin (it
+described the old address) but never a hand-placed one.
+
+The four fields are **one unit** everywhere (`worker/lib/venues.mjs`): naming
+any part of a place writes all four, a parish venue keeps no words or pin of its
+own, and naming the host itself is "at home". One date's override holds the
+place as a unit too (`mergePatch`), and a date put back at the rule's own place
+stores nothing. A date put back **at home under a rule held elsewhere** stores
+the host's own id as its venue — "nothing named" would read as "where the rule
+says" — and `placeOf` (`project.mjs`) reads that as its own church.
+
+`events.lat`/`lng` stays the distance pin, and follows the place: the venue
+parish's pin, the place's own, the words looked up when no pin came with them,
+or the host's again once it is home. An event at another parish is **on at that
+parish too**: `attachExtraParishes` lists the venue in `extra_parishes`, so it is
+in the venue's sheet and its filters, and in `combined_parishes` only if a
+combine put it there — the COMBINED badge and "@ host" read that one. Cards say
+"@ St Nicholas, Bankstown" or "@ Antiochian Village" (the place's first words)
+everywhere but the venue's own sheet; the drawer gives the name and address and
+sends Directions to the venue's pin; a timetable row says "At St Nicholas,
+Bankstown". On the map a place of its own is a **square** — see
+[architecture.md](architecture.md).
+
 **A poster shows at the row's right edge.** Collapsed, an event with a poster
 has a thumbnail beside it and the row a little taller; open, the drawer shows it
 full size. Everything but the liturgical services shows one (a feast's poster is

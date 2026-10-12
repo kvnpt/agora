@@ -26,6 +26,7 @@
 // the wording of the source line, the timetable row shape) and not code.
 
 import services from '../../public/shared/services.js';
+import linkifyShared from '../../public/shared/linkify.js';
 import dates from '../../public/shared/dates.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
@@ -94,7 +95,7 @@ const endTimeOf = (e, zone) => {
  * `pinnedEvent` is the event a bare id named, resolved by the caller because it
  * may lie outside the window (a link to last month's feast still answers).
  */
-export function liteModel({ parish, rows, events = [], cross = [], links = [], route, pinnedEvent = null, now, origin, overrides = {} }) {
+export function liteModel({ parish, rows, events = [], cross = [], links = [], route, pinnedEvent = null, now, origin, overrides = {}, venues = {} }) {
   const zone = parish.timezone || DEFAULT_ZONE;
   const slug = parishSlug(parish);
   // /sgr/services is the parish's timetable — the rules, not the dates they
@@ -189,7 +190,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     && (!route.part || services.partOfDayOf(r, zone) === route.part));
 
   return {
-    parish, zone, slug, start, endBound, list, pinned, rules, timetable, links,
+    parish, zone, slug, start, endBound, list, pinned, rules, timetable, links, venues,
     route, servicesMode, indexable, canonical, appHref, origin, now,
     missingEvent: !!route.eventId && !pinned,
     ...pageColors(parish, overrides),
@@ -457,7 +458,7 @@ function eventStatus(e) {
 function badgesHTML(e) {
   const out = [];
   if (langsOf(e.languages).length >= 2) out.push('<span class="event-badge badge-bilingual">BILINGUAL</span>');
-  if (e.extra_parishes && e.extra_parishes.length) out.push('<span class="event-badge badge-combined">COMBINED</span>');
+  if (e.combined_parishes && e.combined_parishes.length) out.push('<span class="event-badge badge-combined">COMBINED</span>');
   if (e.status === 'combined') out.push('<span class="event-badge badge-combined">COMBINED</span>');
   if (e.status === 'cancelled') out.push('<span class="event-badge badge-cancelled">CANCELLED</span>');
   if (e.status === 'break') out.push('<span class="event-badge badge-break">BREAK</span>');
@@ -483,6 +484,22 @@ export function multiDaySpan(e, zone) {
 }
 
 /**
+ * Where an event or a rule is held when it is not its parish's church, or
+ * null at home — venueOf in app.js, from the venue parishes the route looked
+ * up (`venues`: id → {name, address}). `short` goes after a title, `line` in
+ * the details.
+ */
+export function venueLite(r, venues = {}) {
+  if (r.location_parish_id && r.location_parish_id !== r.parish_id) {
+    const p = venues[r.location_parish_id];
+    if (p) return { parishId: r.location_parish_id, short: p.name, line: p.address ? `${p.name} — ${p.address}` : p.name };
+  }
+  const words = String(r.location_override || '').trim();
+  if (!words) return null;
+  return { parishId: null, short: words.split(',')[0].trim(), line: words };
+}
+
+/**
  * renderEventCard, as a <details> so it opens with no JavaScript: the
  * summary is the card a visitor scans, the body what the app's drawer says.
  */
@@ -497,6 +514,10 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
   // A combined event hosted elsewhere says where — "@ St George, Redfern" —
   // as the app does at a parish that is not its host.
   const at = !ownParish && e.parish_name ? `<span class="event-at is-away"> @ ${esc(e.parish_name)}</span>` : '';
+  // Held somewhere else, unless that somewhere is this page's parish.
+  const venue = venueLite(e, m.venues);
+  const atVenue = venue && venue.short && venue.parishId !== m.parish.id
+    ? `<span class="event-venue"> @ ${esc(venue.short)}</span>` : '';
   const span = multiDaySpan(e, m.zone);
   return `
       <details class="lc-ev event-card${tomb ? ' event-cancelled tomb' : ''}${cls}" data-id="${esc(e.id)}" data-event-type="${esc(e.event_type || '')}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}"${open ? ' open' : ''}>
@@ -504,7 +525,7 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
           <div class="event-title-row">
             <span class="event-time">${eventTimeHTML(e._local.time)}</span>
             ${dot}
-            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${badgesHTML(e)}<span class="event-card-chev"></span></span></div>
+            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${atVenue}${badgesHTML(e)}<span class="event-card-chev"></span></span></div>
           </div>
           ${parishRow}
           ${span ? `<div class="event-span-row">${esc(span)}</div>` : ''}
@@ -531,12 +552,13 @@ function eventDetailsHTML(e, m) {
   const p = m.parish;
   const end = endTimeOf(e, m.zone);
   const langs = langsOf(e.languages);
-  const where = e.location_override || p.address || '';
+  const venue = venueLite(e, m.venues);
+  const where = venue ? venue.line : (p.address || '');
   return `
           <p class="lf-when">${esc(whenLine(e, m, end))}</p>
           ${where ? `<p class="lf-where">${esc(where)}</p>` : ''}
           ${langs.length ? `<p class="lf-langs">${esc(langs.join(', '))}</p>` : ''}
-          ${e.description ? `<p class="lf-desc">${esc(e.description).replace(/\n/g, '<br>')}</p>` : ''}
+          ${e.description ? `<p class="lf-desc">${linkifyShared.linkify(e.description).replace(/\n/g, '<br>')}</p>` : ''}
           ${e.poster_path ? `<img class="lf-poster" src="${esc(e.poster_path)}" alt="Poster for ${esc(e.title)}" loading="lazy">` : ''}`;
 }
 
@@ -598,7 +620,7 @@ function listHTML(m) {
 }
 
 /** renderScheduleDaysHTML's rows, read-only: a row opens that rule's own card. */
-export function scheduleRowsHTML(rules, slug, now) {
+export function scheduleRowsHTML(rules, slug, now, venues = {}) {
   let html = '';
   let dow = null;
   for (const r of rules) {
@@ -620,13 +642,19 @@ export function scheduleRowsHTML(rules, slug, now) {
     html += `<a class="schedule-item lt-row" href="${esc(href)}">
           <div class="si-main"><span class="schedule-item-time">${ruleTimeHTML(r.start_time)}</span><span class="si-title"><span class="schedule-item-title" title="${esc(r.title)}">${esc(r.title)}</span>${lang}<img class="si-chev" src="${icon('ph:caret-right-bold')}" alt=""></span></div>
           ${meta ? `<div class="si-meta">${meta}</div>` : ''}
-          ${r.location_override ? `<div class="si-where">${esc(r.location_override)}</div>` : ''}
+          ${whereRowHTML(r, venues)}
         </a>`;
   }
   // scheduleSourceHTML: one line, whoever changed the timetable last.
   const latest = rules.filter(r => r.source_name)
     .sort((a, b) => String(b.source_checked_at || '').localeCompare(String(a.source_checked_at || '')))[0];
   return html + (latest ? sourceLineHTMLApp(latest.source_name, latest.source_ref, latest.source_checked_at, now, 'sched-source') : '');
+}
+
+/** A rule's "meets elsewhere" line, as the app's timetable has it. */
+function whereRowHTML(r, venues) {
+  const v = venueLite(r, venues);
+  return v ? `<div class="si-where">${esc(v.parishId ? `At ${v.short}` : v.line)}</div>` : '';
 }
 
 /** parishTimetableHTML, read-only: the framed box the parish card shows, above its events. */
@@ -642,7 +670,7 @@ function timetableHTML(m, rules, empty) {
       <h2 class="section-header jurisdiction-header" id="lt-h">${esc(timetableLabel(p.jurisdiction))}</h2>
       <div class="parish-schedule ps-timetable">
         <div class="parish-schedule-head">${avatar}<div class="parish-schedule-name">${esc(p.name || p.full_name)}</div></div>
-        ${rules.length ? scheduleRowsHTML(rules, m.slug, m.now) : `<div class="ps-sched-empty">${esc(empty)}</div>`}
+        ${rules.length ? scheduleRowsHTML(rules, m.slug, m.now, m.venues) : `<div class="ps-sched-empty">${esc(empty)}</div>`}
       </div>
     </div>
   </section>`;

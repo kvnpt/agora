@@ -1394,6 +1394,19 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
    only where the surface is a parish other than its host (setCombinedContext
    in app.js writes the rule that shows it). */
 .event-at { display: none; color: var(--text-secondary); font-weight: 500; }
+/* Held somewhere else — another parish, or a place of its own. Shown
+   everywhere but that parish's own sheet, where it is home. */
+.event-venue { color: var(--text-secondary); font-weight: 500; }
+
+/* A link in a description — a registration page, an email — highlighted and
+   tappable (public/shared/linkify.js). Long URLs break rather than widen. */
+.desc-link {
+  color: var(--accent, #2b6cb0);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
 .event-at.is-away { display: inline; }   /* the lite card, which knows its parish */
 
 /* A multi-day event's span, under its parish: "Fri 16 – Sun 18 Oct, until 4 pm". */
@@ -4618,6 +4631,11 @@ button.ps-avatar { cursor: pointer; }
 #form-body .ps-details-editing { padding-left: 0; padding-right: 0; }
 #form-body .ps-header.ps-header-editing { position: static; padding: 0 0 12px; border-bottom: 0; background: none; }
 .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+/* Close beside Save: the same pill, outlined — it had no padding of its own. */
+.form-actions .btn-outline {
+  min-height: 44px; padding: 11px 22px; border-radius: 999px;
+  font: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; cursor: pointer;
+}
 
 /* No bottom padding: the editor's sticky action bar carries its own. With the
    dialog's 20px under it, the bar stuck 20px above the edge and the cards
@@ -5346,3 +5364,4 @@ body.page-mode[data-layout="desktop"] .parish-sheet-close {
 }
 body:not(.page-mode) .pm-hero { display: none; }
 
+.sef-venue { margin: 10px 0 12px; }
