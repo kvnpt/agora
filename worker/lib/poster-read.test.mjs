@@ -71,7 +71,7 @@ test('signs and programmes added no union-typed fields — structured output cap
   assert.deepStrictEqual(unions, ['.other_parish', '.other_parish.place', '.events[].title', '.events[].date',
     '.events[].weekday_printed', '.events[].start_time', '.events[].end_time', '.events[].venue',
     '.events[].description']);
-  assert.deepStrictEqual(READ_KINDS, ['event', 'several_events', 'bulletin', 'timetable', 'not_an_event']);
+  assert.deepStrictEqual(READ_KINDS, ['event', 'several_events', 'bulletin', 'timetable', 'recurring', 'not_an_event']);
 });
 
 test('the prompt asks for English, a timetable’s services, and a regular service only with its day', () => {
@@ -211,17 +211,42 @@ test('a sign: its weekly services as rules, its details, and nothing without a d
   assert.strictEqual(r.language, null, 'English is not a translation');
   assert.deepStrictEqual(r.services, [
     { title: 'Orthros & Divine Liturgy', day_of_week: 6, start_time: '08:00', end_time: '10:00',
-      week_of_month: null, languages: null, event_type: 'liturgy', read_notes: [] },
+      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, read_notes: [] },
     { title: 'Divine Liturgy', day_of_week: 0, start_time: '18:00', end_time: null,
-      week_of_month: 'second,fourth', languages: ['English'], event_type: 'liturgy',
+      week_of_month: 'second,fourth', languages: ['English'], event_type: 'liturgy', description: null, effective_from: null,
       read_notes: [{ field: 'weeks', text: 'Printed as "2nd & 4th".' }] },
     { title: 'Every week', day_of_week: 0, start_time: '09:00', end_time: null,
-      week_of_month: null, languages: null, event_type: 'liturgy', read_notes: [] },
+      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, read_notes: [] },
   ]);
   assert.deepStrictEqual(r.details, { address: 'Cnr Weekes & Carpenter Ave, Rookwood', phone: '(02) 9643 2850',
     email: null, website: 'https://www.example.org.au' });
   assert.strictEqual(normalizeRead({ details: { address: '', phone: '', email: '', website: '' } }).details, null);
   assert.deepStrictEqual(normalizeRead(ONE).services, [], 'an answer without them, too');
+});
+
+test('a flyer for something held every week: a rule with its words and its first date, and no event', () => {
+  // St John the Baptist, Croydon Park's choir practice, which was read as one
+  // event with no date — unpublishable — and caught at the timetable as "a
+  // poster for an event".
+  const r = normalizeRead({
+    kind: 'recurring', written_in: 'English', other_parish: null, events: [], notes: [],
+    services: [{ title: 'CHURCH CHOIR PRACTICE', day: 'Tuesday', start_time: '19:00', end_time: '',
+      weeks: [], languages: ['Arabic', 'English'], event_type: 'other',
+      description: ' Led by Simon Yazbek. No prior experience needed; all are welcome. ', starts: '2026-11-03', notes: [] },
+    { title: 'Bible study', day: 'Wednesday', start_time: '19:30', end_time: '', weeks: ['second'],
+      languages: [], event_type: 'talk', description: '', starts: 'next week', notes: [] }],
+    details: { address: '', phone: '', email: '', website: '' },
+  });
+  assert.strictEqual(r.kind, 'recurring');
+  assert.deepStrictEqual(r.events, []);
+  assert.strictEqual(r.details, null, 'a flyer’s contact is not the parish’s details');
+  assert.deepStrictEqual(r.services[0], { title: 'Church Choir Practice', day_of_week: 2, start_time: '19:00',
+    end_time: null, week_of_month: null, languages: ['Arabic', 'English'], event_type: 'other',
+    description: 'Led by Simon Yazbek. No prior experience needed; all are welcome.', effective_from: '2026-11-03', read_notes: [] });
+  assert.deepStrictEqual([r.services[1].description, r.services[1].effective_from, r.services[1].week_of_month],
+    [null, null, 'second'], 'no words, and a start that is not a date, are nothing');
+  assert.match(SYSTEM_PROMPT, /"recurring" for a poster or flyer about something held regularly on a weekday and dated nowhere/);
+  assert.match(SYSTEM_PROMPT, /Empty for a recurring poster\./);
 });
 
 test('a programme in Greek: English titles, each date’s saint as its feast, and what it was translated from', () => {

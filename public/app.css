@@ -1907,16 +1907,28 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 .schedule-item[data-sched-focus]:hover .si-chev { opacity: 0.7; }
 @media (prefers-color-scheme: dark) { .si-chev { filter: brightness(0) invert(1); } }
-/* Editing: the row IS the pencil. The glyph at its end says which of the two
-   things a tap does here, and it sits up where the chevron was rather than
-   wedged between the chips, so the whole row stays one target. */
-.schedule-item.editable .si-chev { opacity: 0.55; }
-.schedule-item.editable:hover .si-chev { opacity: 0.9; }
-.schedule-item.editable.editing-open {
-  background: var(--surface-2);
-  border-radius: 8px 8px 0 0;
+/* The row's pencil, for whoever may change the rule: small, at the row's
+   right edge, always there. Its own button, so the row around it still
+   focuses the rule; a 32px target in a row that is already a tap target. */
+.schedule-item.has-edit .si-main { grid-template-columns: var(--si-time-w, 66px) minmax(0, 1fr) auto; }
+.si-edit {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
 }
-.schedule-item.editable.editing-open .si-chev { opacity: 0.9; }
+.si-edit .ps-btn-glyph { width: 15px; height: 15px; opacity: 0.7; }
+.si-edit:hover, .si-edit:focus-visible { background: var(--surface-2, rgba(0,0,0,0.05)); }
+.si-edit:hover .ps-btn-glyph { opacity: 1; }
 /* Time in a column of its own, then the title straight after it — a day's
    services read down the page the way a printed timetable does, and the eye
    no longer has to cross the panel to pair a title with its time. */
@@ -2019,6 +2031,17 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 @media (prefers-color-scheme: dark) {
   .schedule-item-break { background: #382d18; color: #e3b86a; }
 }
+.schedule-item-poster {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.schedule-item-poster .ps-btn-glyph { width: 11px; height: 11px; }
 .schedule-item-scope {
   flex: none;
   font-size: 9.5px;
@@ -4987,52 +5010,39 @@ button.ps-avatar { cursor: pointer; }
 
 /* ── The timetable on a parish sheet ─────────────────────────────────────
    It carries the parish's logo and short name at its head, like the same
-   panel on the main services list, and its own edit mode behind a pencil. */
+   panel on the main services list, and for whoever may change it a green +
+   that adds a service (each row has its own pencil). */
 .ps-timetable { cursor: default; }
 .ps-timetable:active { background: none; }
 .ps-timetable .parish-schedule-head { margin-bottom: 0; }
-.ps-sched-pencil {
+.ps-sched-add {
   flex: none;
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 38px;
+  width: 38px;
   height: 38px;
-  padding: 0 11px;
+  padding: 0;
   border: none;
   border-radius: 999px;
-  background: var(--text);
-  color: var(--bg);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  background: var(--success, #2e7d32);
+  color: #fff;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-  transition: transform 120ms ease-out, opacity 120ms ease-out;
+  transition: transform 120ms ease-out, filter 120ms ease-out;
 }
-.ps-sched-pencil .ps-btn-glyph { width: 17px; height: 17px; }
-.ps-sched-pencil:hover { opacity: 0.88; }
-.ps-sched-pencil:active { transform: scale(0.94); }
-.ps-sched-pencil.on { background: var(--success, #2e7d32); color: #fff; }
-.ps-sched-add-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 7px 14px 7px 10px;
-  border: 1px dashed var(--border);
-  border-radius: 999px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.ps-sched-add-toggle .ps-btn-glyph { width: 14px; height: 14px; transition: transform 160ms ease-out; }
-.ps-sched-add-toggle.open .ps-btn-glyph { transform: rotate(45deg); }
+.ps-sched-add .ps-btn-glyph { width: 19px; height: 19px; }
+.ps-sched-add:hover { filter: brightness(1.08); }
+.ps-sched-add:active { transform: scale(0.94); }
+
+/* A rule's own poster, in its form. */
+.rule-poster { margin: 12px 0 4px; }
+.rule-poster-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px; }
+.rule-poster-label span { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
+.rule-poster-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rule-poster .poster-edit-thumb { cursor: zoom-in; }
+#form-body [data-ended-slot] .ps-ended { margin-top: 16px; }
 
 /* ── Editing a parish in place ───────────────────────────────────────────
    Each thing the sheet shows turns into the field that edits it, where it
@@ -5171,7 +5181,7 @@ button.ps-avatar { cursor: pointer; }
 }
 .ps-btn.ps-contribute .ps-btn-glyph { width: 13px; height: 13px; }
 
-/* Ended rules, in the timetable's edit mode only. */
+/* Ended rules, at the foot of the Add schedule dialog. */
 .ps-ended { margin-top: 10px; font-size: 12px; color: var(--text-muted); }
 .ps-ended summary { cursor: pointer; font-weight: 600; }
 .ps-ended-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }

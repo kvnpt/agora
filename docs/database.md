@@ -60,6 +60,9 @@ column to a table that exists, so the later columns — `drafts.read_parish`
 `read_services`, `read_details`; `draft_events.occurrence`, `feast`) — are
 looked for and added the same way when they are missing: one cheap read per
 isolate, which tests run against databases made before 019 and before 020.
+021 (a rule's own `poster_path` and `description`) has no such fallback —
+`schedules` is read and written everywhere — so it goes to production before
+the merge, like any other.
 
 The seed is safe to re-run — every statement inserts only if the row is missing.
 Parishes get `ON CONFLICT(id) DO NOTHING`; schedules have an AUTOINCREMENT id and

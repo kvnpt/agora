@@ -69,7 +69,6 @@ const state = {
   parishEditMode: null,
   // The timetable's own edit mode, separate from the details': one parish id
   // or null. See parishTimetableHTML.
-  scheduleEditMode: null,
 
   // Which EVENT is being edited, or null. The drawer's twin of
   // parishEditMode, and for the same reason: every admin control on an event
@@ -4896,9 +4895,8 @@ function closeParishSheet() {
   // the timetable and deliberately leaves the header and the actions row as
   // they were — so the sheet came back reading "Done" with the mode already
   // off. Dropping the cached id makes that one re-open a full render.
-  if (state.parishEditMode || state.scheduleEditMode) {
+  if (state.parishEditMode) {
     state.parishEditMode = null;
-    state.scheduleEditMode = null;
     // A staged pin is part of the unsaved form and goes with it. Left behind,
     // it would be offered again the next time this parish is edited, as if it
     // had been decided rather than abandoned.
@@ -6619,13 +6617,12 @@ function bindEventCards(container) {
 // list AND the parish-sheet Schedule section so both surfaces look identical,
 // including language chips, WOM labels, and admin edit affordances.
 function renderScheduleDaysHTML(items) {
-  // Editability is read from state per ROW rather than taken as an argument,
-  // because this renders three surfaces — the parish sheet, its partial
-  // refresh, and the main services panel, which mixes parishes — and three
-  // call sites passing the same flag is three chances for one to forget.
-  // Edit mode belongs to a parish, so a rule is editable wherever it appears
-  // exactly when its own parish is the one open for editing.
-  const canEdit = (s) => state.isAdmin && state.scheduleEditMode === s.parish_id;
+  // Editability is read per ROW rather than taken as an argument, because this
+  // renders three surfaces — the parish sheet, its partial refresh, and the
+  // main services panel, which mixes parishes — and three call sites passing
+  // the same flag is three chances for one to forget. It is the capability,
+  // per parish: a contact sees pencils on their own parish's rules only.
+  const canEdit = (s) => mayEditTimetable(s.parish_id);
   // A rule whose last day has passed is history, not timetable. The bundle
   // already leaves out a rule that ended before its window opened; this
   // catches one that ended inside it.
@@ -6640,7 +6637,6 @@ function renderScheduleDaysHTML(items) {
     if (!byDay.has(item.day_of_week)) byDay.set(item.day_of_week, []);
     byDay.get(item.day_of_week).push(item);
   }
-  const types = EVENT_TYPES;
   let html = '';
   for (const [day, scheds] of byDay) {
     html += `<div class="schedule-day">${DAYS[day]}</div>`;
@@ -6649,26 +6645,23 @@ function renderScheduleDaysHTML(items) {
       const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s, DAYS[day]);
-      const editing = canEdit(s);
+      const editable = canEdit(s);
       const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
-      // The row is the way in, and the mode decides what it opens.
-      //
-      // Reading, it focuses that rule's next occurrence at that parish.
-      // Editing, it opens the rule's own form — there is no pencil beside it
-      // any more. That pencil was an 11px glyph at 45% opacity wedged between
-      // the languages chip and the chevron, on a row that is already a button
-      // and already the full width of the panel; nothing put inside the row
-      // beats the row itself as a target. And narrowing the feed to one rule
-      // is not what somebody who has just said they are editing is asking
-      // for, so in edit mode the row no longer does it at all.
+      // The row focuses that rule's next occurrence at that parish, for
+      // everybody. Whoever may change the rule also gets a pencil at the
+      // row's right edge, always there: it opens the rule's form in the edit
+      // dialog. There is no edit mode to enter first — the pencil is the way
+      // in, and the green + in the timetable's head adds one.
       //
       // data-sched-parish carries the parish because the main services panel
       // renders rows for every parish at once.
       const focused = state.parishScheduleFocus
         && (state.parishScheduleFocus.ruleIds || []).includes(s.id);
-      const rowAttrs = editing ? ' data-sched-editable="1" aria-expanded="false"' : '';
-      const chevIcon = editing ? 'ph:pencil-simple-bold' : 'ph:caret-right-bold';
-      html += `<div class="schedule-item${focused ? ' focused' : ''}${editing ? ' editable' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}"${rowAttrs} role="button" tabindex="0">`;
+      const pencil = editable
+        ? `<button class="si-edit" type="button" data-sched-edit="${s.id}" aria-haspopup="dialog" aria-label="Edit ${esc(s.title)}" title="Edit">${glyph('ph:pencil-simple')}</button>`
+        : '';
+      const posterChip = s.poster_path ? `<span class="schedule-item-poster">${glyph('ph:image')}poster</span>` : '';
+      html += `<div class="schedule-item${focused ? ' focused' : ''}${editable ? ' has-edit' : ''}" data-sched-focus="${s.id}" data-sched-parish="${esc(s.parish_id)}" role="button" tabindex="0">`;
       const onBreak = scheduleBreakNow(s);
       const breakChip = onBreak ? `<span class="schedule-item-break">on break</span>` : '';
       // Time first, in a column of its own, so a day's services read down as a
@@ -6678,9 +6671,9 @@ function renderScheduleDaysHTML(items) {
       // The languages sit on the title's own line, before the chevron: they
       // are part of what the service IS ("Liturgy · Arabic, English"), and on
       // the line underneath they cost every bilingual parish a row per service.
-      html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span>${langLabel}<img class="si-chev" src="https://api.iconify.design/${chevIcon}.svg" alt=""></span></div>`;
+      html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span>${langLabel}<img class="si-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt=""></span>${pencil}</div>`;
       const rangeLabel = ruleRangeLabel(s);
-      const meta = `${womLabel}${rangeLabel}${scopeLabel}${breakChip}`;
+      const meta = `${womLabel}${rangeLabel}${scopeLabel}${posterChip}${breakChip}`;
       if (meta) html += `<div class="si-meta">${meta}</div>`;
       // While a rule is on a break the timetable still shows its time — the
       // rule has not changed — but the honest reading of the row is "not this
@@ -6691,37 +6684,6 @@ function renderScheduleDaysHTML(items) {
       // repeating it under every row would bury the one line that differs.
       if (s.location_override) html += `<div class="si-where">${esc(s.location_override)}</div>`;
       html += `</div>`;
-      if (editing) {
-        // No id. The main services panel and the parish sheet BOTH render this
-        // parish's rules, and both are in the document at once — an id here is
-        // two elements answering to one name, and getElementById hands back
-        // whichever the markup happened to put first, which is the services
-        // panel sitting behind the sheet. That is what a tap on the pencil used
-        // to open: the right form, on the wrong surface, under the sheet the
-        // person was looking at. Every lookup below walks from the row or the
-        // button that was pressed instead.
-        html += `<div class="schedule-edit-form" data-sid="${s.id}" style="display:none;" onclick="event.stopPropagation()">
-          <div class="schedule-edit-grid">
-            <input data-f="title" class="sef-full" value="${esc(s.title)}" placeholder="Title">
-            <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
-            <select data-f="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
-            <input data-f="start_time" type="time" value="${esc(s.start_time)}">
-            <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
-            <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
-            <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
-          </div>
-          ${cadencePickerHTML('data-f="cadence"', s)}
-          ${ruleDatesHTML('data-f', s)}
-          <div class="sef-toggles">
-            <label class="wom-check"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> No live badge</label>
-            <label class="wom-check"><input type="checkbox" data-f="parish_scoped" ${s.parish_scoped?'checked':''}> Parish only</label>
-          </div>
-          <div class="sef-actions">
-            <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
-            <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
-          </div>
-        </div>`;
-      }
     }
   }
   // Under the timetable, not above it: it describes the whole block, and a
@@ -6729,6 +6691,143 @@ function renderScheduleDaysHTML(items) {
   html += scheduleSourceHTML(items);
   return html;
 }
+
+/**
+ * One rule's form, for the edit dialog — built when its pencil is pressed,
+ * never painted into the timetable and hidden.
+ */
+function ruleEditFormHTML(s) {
+  const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
+  return `<div class="schedule-edit-form" data-sid="${s.id}">
+      <div class="schedule-edit-grid">
+        <input data-f="title" class="sef-full" value="${esc(s.title)}" placeholder="Title">
+        <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
+        <select data-f="event_type">${EVENT_TYPES.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
+        <input data-f="start_time" type="time" value="${esc(s.start_time)}">
+        <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
+        <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
+        <input data-f="location_override" class="sef-full" value="${esc(s.location_override || '')}" placeholder="Address — blank for the parish's own">
+        <textarea data-f="description" class="sef-full" rows="2" placeholder="Description — shown on every date (optional)">${esc(s.description || '')}</textarea>
+      </div>
+      ${cadencePickerHTML('data-f="cadence"', s)}
+      ${ruleDatesHTML('data-f', s)}
+      ${rulePosterHTML(s)}
+      <div class="sef-toggles">
+        <label class="wom-check"><input type="checkbox" data-f="hide_live" ${s.hide_live?'checked':''}> No live badge</label>
+        <label class="wom-check"><input type="checkbox" data-f="parish_scoped" ${s.parish_scoped?'checked':''}> Parish only</label>
+      </div>
+      <div class="sef-actions">
+        <button class="schedule-save-btn" data-sid="${s.id}">Save</button>
+        <button class="schedule-del-btn" data-sid="${s.id}">Delete</button>
+      </div>
+    </div>`;
+}
+
+/**
+ * A rule's own poster: the flyer of something held every week, on every date
+ * that has none of its own (schedules.poster_path, migration 021). Uploads as
+ * it is picked, like the event poster and the logo — outside Save.
+ */
+function rulePosterHTML(s) {
+  const has = !!s.poster_path;
+  return `
+    <div class="rule-poster" data-rule-poster="${s.id}">
+      <div class="rule-poster-label">Poster <span>— on every date, for something held every week</span></div>
+      <div class="rule-poster-row">
+        ${has ? `<img class="poster-edit-thumb" src="${esc(s.poster_path)}" alt="" data-rule-poster-view>` : ''}
+        <div class="poster-edit-actions">
+          <button class="ps-btn ps-btn-admin" type="button" data-rule-poster-pick="${s.id}">${glyph('ph:image-square')}${has ? 'Replace' : 'Add a poster'}</button>
+          ${has ? `<button class="ps-btn ps-btn-danger" type="button" data-rule-poster-clear="${s.id}">${glyph('ph:trash')}Remove</button>` : ''}
+        </div>
+      </div>
+      <div class="edit-row-hint" data-rule-poster-status></div>
+    </div>`;
+}
+
+/** Open a rule's form in the edit dialog. */
+function openRuleEditDialog(sid) {
+  const rule = ruleById(sid);
+  if (!rule) return;
+  const parish = (state.parishes || []).find(p => p.id === rule.parish_id);
+  const body = openFormDialog({
+    kind: 'rule',
+    title: 'Edit service',
+    sub: [rule.title, `${DAYS[rule.day_of_week]}s ${formatTime12(rule.start_time)}`, parish && parish.name]
+      .filter(Boolean).join(' · '),
+    html: ruleEditFormHTML(rule),
+  });
+  body.dataset.sid = String(rule.id);
+  wireScheduleAdminHandlers(body);
+}
+window.openRuleEditDialog = openRuleEditDialog;
+
+/** Redraw the open rule dialog's poster control from the rule as it now is. */
+function _repaintRulePoster(sid, msg, bad) {
+  const box = document.querySelector(`#form-body [data-rule-poster="${CSS.escape(String(sid))}"]`);
+  const rule = ruleById(sid);
+  if (box && rule) {
+    box.outerHTML = rulePosterHTML(rule);
+  }
+  const status = document.querySelector(`#form-body [data-rule-poster="${CSS.escape(String(sid))}"] [data-rule-poster-status]`);
+  if (status) { status.textContent = msg || ''; status.classList.toggle('edit-row-hint-bad', !!bad); }
+}
+
+/** After a rule's poster changes: the rule and every date it shows on. */
+async function _afterRulePosterChange(sid, msg) {
+  await fetchSchedules({ fresh: true });
+  await fetchEvents({ fresh: true, keepCount: true });
+  _repaintRulePoster(sid, msg);
+  repaintOpenEventDrawer();
+  if (state.parishSheetFocus && !state._openEventId) {
+    renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
+  }
+}
+
+/** Upload `file` as rule `sid`'s own poster. */
+async function uploadRulePoster(sid, file) {
+  if (!file) return { error: 'No file chosen.' };
+  if (file.size > 8 * 1024 * 1024) return { error: 'That poster is over 8 MB — the limit the Worker takes.' };
+  try {
+    const res = await fetch(`/api/admin/schedules/${encodeURIComponent(sid)}/poster`, {
+      method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file,
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { error: (body && body.error) || `The poster was refused (${res.status}).` };
+    return body;
+  } catch {
+    return { error: 'The poster could not be uploaded — check the connection.' };
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const pick = e.target.closest('[data-rule-poster-pick]');
+  const clear = e.target.closest('[data-rule-poster-clear]');
+  const view = e.target.closest('[data-rule-poster-view]');
+  if (view) { openPosterFullscreen(view.src); return; }
+  if (!pick && !clear) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (pick) {
+    const sid = pick.dataset.rulePosterPick;
+    const input = _posterInput();
+    input.value = '';
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      _repaintRulePoster(sid, 'Uploading…');
+      const r = await uploadRulePoster(sid, file);
+      if (r.error) return _repaintRulePoster(sid, r.error, true);
+      await _afterRulePosterChange(sid, 'Poster saved — it shows on every date.');
+    };
+    input.click();
+    return;
+  }
+  const sid = clear.dataset.rulePosterClear;
+  if (!confirm('Take this poster off the service? Dates with a poster of their own keep theirs.')) return;
+  const res = await fetch(`/api/admin/schedules/${encodeURIComponent(sid)}/poster`, { method: 'DELETE' }).catch(() => null);
+  if (!res || !res.ok) return _repaintRulePoster(sid, 'That failed — check the connection.', true);
+  await _afterRulePosterChange(sid, 'Poster removed.');
+});
 
 /**
  * "until 5 Oct", "from 1 Nov", "2 Mar – 20 Apr": a rule's dates, said only
@@ -7304,11 +7403,9 @@ function renderServices() {
   // directly rather than just setting a header focus on the main list).
   container.querySelectorAll('.parish-schedule').forEach(card => {
     card.addEventListener('click', e => {
-      // Don't hijack the admin controls inside the card. An editable row is
-      // one of them now — while its parish is in edit mode the row opens the
-      // rule's form in place, and opening the parish sheet over it would take
-      // that form off the screen the instant it appeared.
-      if (e.target.closest('[data-sched-editable], .schedule-save-btn, .schedule-del-btn, .schedule-edit-form')) return;
+      // Don't hijack the admin controls inside the card: a row's pencil opens
+      // its form in the edit dialog, and the + adds one.
+      if (e.target.closest('[data-sched-edit], [data-sched-add]')) return;
       const pid = card.dataset.parishId;
       if (typeof window.openParishSheet === 'function') window.openParishSheet(pid);
     });
@@ -7913,14 +8010,22 @@ function posterEditorHTML(evt) {
   // Shared = not the object this one service's own upload would have written,
   // so taking it off here leaves it on the others.
   const own = `/posters/${String(evt.id).replace(':', '-')}.`;
-  const shared = has && !String(evt.poster_path).startsWith(own);
+  // The rule's own poster (migration 021) is the rule's to change: this date
+  // shows it because it has none of its own, and taking it off here would
+  // take it off nothing.
+  const ruleOwn = has && !!evt.rule_poster;
+  const shared = has && !ruleOwn && !String(evt.poster_path).startsWith(own);
   const parish = evt.parish_name || 'this parish';
+  const sid = isRule ? String(evt.id).split(':')[0] : '';
   return `
     <div class="poster-edit" data-event-id="${eid}">
       ${has ? `<img class="poster-edit-thumb" src="${esc(evt.poster_path)}" alt="">` : ''}
-      <label class="poster-scope">Put it on
+      ${ruleOwn ? `<div class="edit-row-hint">On every ${esc(evt.title || 'date of this service')} — the service’s own poster.
+        <button type="button" class="series-edit" onclick="agoraEditSeries(${esc(sid)})">${glyph('ph:repeat')}Change it on the series</button></div>` : ''}
+      <label class="poster-scope">Put ${ruleOwn ? 'a different one' : 'it'} on
         <select data-poster-scope onchange="agoraPosterScope('${eid}')">
           <option value="">this service only</option>
+          ${isRule ? `<option value="series">every ${esc(evt.title || 'service like this')} — the service’s own</option>` : ''}
           ${isRule ? `<option value="rule">every ${esc(evt.title || 'service like this')} from…</option>` : ''}
           <option value="parish">everything at ${esc(parish)} from…</option>
         </select>
@@ -7932,8 +8037,8 @@ function posterEditorHTML(evt) {
       </div>
       <div class="poster-edit-actions">
         <button class="ps-btn ps-btn-admin" type="button"
-                onclick="agoraPickEventPoster('${eid}')">${glyph('ph:image-square')}${has ? 'Replace' : 'Add a poster'}</button>
-        ${has ? `<button class="ps-btn ps-btn-danger" type="button"
+                onclick="agoraPickEventPoster('${eid}')">${glyph('ph:image-square')}${has && !ruleOwn ? 'Replace' : 'Add a poster'}</button>
+        ${has && !ruleOwn ? `<button class="ps-btn ps-btn-danger" type="button"
                 onclick="agoraClearEventPoster('${eid}')">${glyph('ph:trash')}${shared ? 'Remove from this one' : 'Remove'}</button>` : ''}
         ${shared ? `<button class="ps-btn ps-btn-danger" type="button"
                 onclick="agoraClearEventPoster('${eid}', true)">${glyph('ph:trash')}Remove everywhere</button>` : ''}
@@ -7949,7 +8054,8 @@ window.agoraPosterScope = function (id) {
   const box = _posterBox(id);
   if (!box) return;
   const scope = box.querySelector('[data-poster-scope]').value;
-  box.querySelector('[data-poster-range]').hidden = !scope;
+  // The service's own poster has no dates: it is on every one.
+  box.querySelector('[data-poster-range]').hidden = !scope || scope === 'series';
 };
 
 /** The range the control asks for, as a query string, or '' for one service. */
@@ -7957,6 +8063,7 @@ function _posterRangeQuery(id) {
   const box = _posterBox(id);
   const scope = box && box.querySelector('[data-poster-scope]').value;
   if (!scope) return { query: '' };
+  if (scope === 'series') return { series: String(id).split(':')[0] };
   const from = box.querySelector('[data-poster-from]').value;
   const until = box.querySelector('[data-poster-until]').value;
   if (!from || !until) return { error: 'Pick the first and last day the poster covers.' };
@@ -8023,6 +8130,12 @@ window.agoraPickEventPoster = function (id) {
     const file = input.files && input.files[0];
     if (!file) return;
     _posterStatus(id, 'Uploading…');
+    if (range.series) {
+      const rr = await uploadRulePoster(range.series, file);
+      if (rr.error) return _posterStatus(id, rr.error, true);
+      _posterStatus(id, 'Poster saved on the service — it shows on every date.');
+      return _afterRulePosterChange(range.series);
+    }
     const r = await uploadEventPoster(id, file, range.query);
     if (r.error) return _posterStatus(id, r.error, true);
     const n = r.count || 1;
@@ -8291,23 +8404,11 @@ function seriesLineHTML(evt) {
     </div>`;
 }
 
-/** From an occurrence to its rule: the parish's timetable, in edit mode, with the rule open. */
+/** From an occurrence to its rule: the rule's own form, in the edit dialog. */
 window.agoraEditSeries = function (sid) {
-  const rule = ruleById(sid);
-  if (!rule) return;
-  const pid = rule.parish_id;
+  if (!ruleById(sid)) return;
   clearEventEditMode();
-  if (state.parishSheetFocus !== pid) openParishSheet(pid, { noServiceFocus: true });
-  window.setScheduleEditMode(pid, true);
-  // The sheet re-renders on the mode change; find the row once it has.
-  requestAnimationFrame(() => setTimeout(() => {
-    const scope = document.getElementById('parish-sheet-scroll') || document;
-    const row = scope.querySelector(`.parish-schedule .schedule-item[data-sched-focus="${CSS.escape(String(sid))}"]`);
-    if (!row) return;
-    const form = row.nextElementSibling;
-    if (form && form.style.display === 'none') toggleScheduleEditForm(row, sid);
-    row.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 60));
+  openRuleEditDialog(sid);
 };
 
 /**
@@ -8453,29 +8554,27 @@ function mayEditTimetable(parishId) {
  */
 function parishTimetableHTML(parish, scheds) {
   const pid = parish.id;
-  const editing = state.isAdmin && state.scheduleEditMode === pid;
   const jColor = getJurisdictionColor(parish.jurisdiction);
   const jLabel = timetableLabel(parish.jurisdiction);
   const initial = (parish.name || parish.full_name || '?')[0].toUpperCase();
   const avatar = parish.logo_path
     ? `<div class="parish-schedule-avatar"><img src="${esc(parish.logo_path)}" alt=""></div>`
     : `<div class="parish-schedule-avatar" style="background:${esc(jColor)}">${esc(initial)}</div>`;
-  const pencil = mayEditTimetable(pid)
-    ? `<button class="ps-sched-pencil${editing ? ' on' : ''}" type="button" data-sched-mode="${esc(pid)}"
-               aria-pressed="${editing}" aria-label="${editing ? 'Done editing service times' : 'Edit service times'}"
-               title="${editing ? 'Done' : 'Edit service times'}">${glyph(editing ? 'ph:check-bold' : 'ph:pencil-simple-fill')}${editing ? '<span>Done</span>' : ''}</button>`
+  // The green + adds a service; each row carries its own pencil. Both for
+  // whoever may change this timetable, and always there — no mode to enter.
+  const add = mayEditTimetable(pid)
+    ? `<button class="ps-sched-add" type="button" data-sched-add="${esc(pid)}" aria-haspopup="dialog"
+               aria-label="Add schedule" title="Add schedule">${glyph('ph:plus-bold')}</button>`
     : '';
   return `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">
       <div class="section-header jurisdiction-header">${esc(jLabel)}</div>
-      <div class="parish-schedule ps-timetable${editing ? ' editing' : ''}" data-parish-id="${esc(pid)}">
+      <div class="parish-schedule ps-timetable" data-parish-id="${esc(pid)}">
         <div class="parish-schedule-head">
           ${avatar}
           <div class="parish-schedule-name">${esc(parish.name || parish.full_name || '')}</div>
-          ${pencil}
+          ${add}
         </div>
         ${scheds.length ? renderScheduleDaysHTML(scheds) : '<div class="ps-sched-empty">No service times on file.</div>'}
-        ${editing ? `${endedServicesHTML(pid)}
-          <button class="ps-sched-add-toggle" type="button" data-sched-add="${esc(pid)}" aria-haspopup="dialog">${glyph('ph:plus-bold')}<span>Add schedule</span></button>` : ''}
       </div>
     </div>`;
 }
@@ -8524,12 +8623,14 @@ function contributeButtonHTML(parish) {
 }
 
 /**
- * Rules that have ended, under the timetable while it is being edited.
+ * Rules that have ended, at the foot of the Add schedule dialog.
  *
  * An ended rule leaves the timetable, which is right for a reader and was a
  * dead end for an admin: "clear the end date to bring it back" had nowhere to
- * be done. The bundle does not carry them (it drops a rule that ended before
- * its window), so they are fetched when the mode is entered.
+ * be done. Adding a service is when somebody wants it — the one they are
+ * about to type may be the one that ended. The bundle does not carry them (it
+ * drops a rule that ended before its window), so they are fetched when the
+ * dialog opens.
  */
 function endedServicesHTML(pid) {
   const ended = (state.endedRules && state.endedRules.pid === pid) ? state.endedRules.rows : [];
@@ -8547,17 +8648,17 @@ function endedServicesHTML(pid) {
     </details>`;
 }
 
-/** Fetch this parish's ended rules for the edit view. */
+/** Fetch this parish's ended rules into the open Add schedule dialog. */
 function loadEndedRules(pid) {
   fetch(`/api/admin/schedules?parish=${encodeURIComponent(pid)}`)
     .then(r => (r.ok ? r.json() : []))
     .then(rows => {
-      if (state.scheduleEditMode !== pid) return;
       const today = parishToday((rows[0] && rows[0].timezone) || TZ);
       state.endedRules = { pid, rows: rows.filter(r => r.active && r.effective_to && r.effective_to < today) };
-      if (state.parishSheetFocus === pid) renderParishSheetContent(pid, { fullRender: true });
+      const slot = formDialogKind() === 'add-rule' && document.querySelector(`#form-body [data-ended-slot="${CSS.escape(pid)}"]`);
+      if (slot) slot.innerHTML = endedServicesHTML(pid);
     })
-    .catch(() => { /* the timetable still edits without them */ });
+    .catch(() => { /* a service is still added without them */ });
 }
 
 document.addEventListener('click', async (e) => {
@@ -8596,7 +8697,7 @@ function contactGuideHTML(parish) {
       <div class="ps-guide-title">You can now keep ${esc(parish.name)} up to date</div>
       <ul>
         <li><b>Its details</b> — the pencil by the parish name: address, phone, website, logo.</li>
-        <li><b>Service times</b> — the pencil on the timetable. Add, change or end a service; a service can start or end on a date.</li>
+        <li><b>Service times</b> — the green + on the timetable adds one; the pencil on a service changes or ends it, and a service can start or end on a date. A flyer for something held every week can go on its service as its poster.</li>
         <li><b>One week is different</b> — open that service, tap <b>Edit</b>: change, cancel, or set a break. It asks whether you mean that date or every one after it.</li>
         <li><b>A one-off event</b> — the round + button.</li>
         <li><b>A monthly bulletin</b> — open any service in the month, <b>Edit → Poster → Put it on</b> everything from the 1st to the last day.</li>
@@ -8613,36 +8714,24 @@ document.addEventListener('click', (e) => {
   if (card) card.remove();
 });
 
-/**
- * Enter or leave the timetable's edit mode for one parish.
- *
- * Separate from `parishEditMode`: one is the parish's details, this is its
- * rules, and either can be on without the other.
- */
-window.setScheduleEditMode = function(id, on) {
-  const next = on ? id : null;
-  if (state.scheduleEditMode === next) return;
-  state.scheduleEditMode = next;
-  state.endedRules = null;
-  if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, { fullRender: true });
-  if (next) loadEndedRules(next);
-  if (typeof renderServices === 'function') renderServices();
-};
-
 // The timetable's own controls, bound once for the document: the panel is
 // rebuilt by both the full render and the partial refresh, and a listener on
-// the element would have to be re-bound after each.
+// the element would have to be re-bound after each. Capture phase, so a row's
+// pencil is the pencil's and never also a tap on the row it sits in.
 document.addEventListener('click', (e) => {
-  const mode = e.target.closest('[data-sched-mode]');
-  if (mode) {
+  const edit = e.target.closest('[data-sched-edit]');
+  if (edit) {
     e.stopPropagation();
-    const pid = mode.dataset.schedMode;
-    window.setScheduleEditMode(pid, state.scheduleEditMode !== pid);
+    e.preventDefault();
+    openRuleEditDialog(edit.dataset.schedEdit);
     return;
   }
   const add = e.target.closest('[data-sched-add]');
-  if (add) openAddScheduleDialog(add.dataset.schedAdd);
-});
+  if (add) {
+    e.stopPropagation();
+    openAddScheduleDialog(add.dataset.schedAdd);
+  }
+}, true);
 
 // "From a photo of the sign", in the timetable's add form. The photo is read by
 // the add-event editor — the one reader, the one review — opened expecting a
@@ -10167,12 +10256,18 @@ function _newEventEsc(e) {
   window.closeNewEventDialog();
 }
 
-/** The dialog's heading: what the read says the image is, or what it was opened for. */
+/**
+ * The dialog's heading: what the read says the image is, or what it was opened
+ * for. `timetable` is true, false, or 'recurring' — the flyer of something
+ * held every week, which goes on the timetable with the flyer on it.
+ */
 function _newEventHeading(timetable) {
   document.getElementById('new-event-title').textContent = timetable ? 'Add to the timetable' : 'Add an event';
-  document.getElementById('new-event-sub').textContent = timetable
-    ? 'Each service on the sign is set beside what is on file, and added only when you say so.'
-    : 'One date each — a service that runs every week is a rule, not an event.';
+  document.getElementById('new-event-sub').textContent = timetable === 'recurring'
+    ? 'This poster is for something held every week, so it goes on the timetable — with the poster on every date.'
+    : timetable
+      ? 'Each service on the sign is set beside what is on file, and added only when you say so.'
+      : 'One date each — a service that runs every week is a rule, not an event.';
 }
 
 /**
@@ -10202,17 +10297,22 @@ window.openNewEventDialog = function (parishId, { draftId = null, file = null, i
     intent,
     // A sign is the timetable's, whichever door it came in by, and events are
     // events; a photo given to the timetable that read as nothing stays there.
-    onRead: (draft) => _newEventHeading((draft.read_services || []).length > 0 || draft.read_kind === 'timetable'
-      || (intent === 'timetable' && !(draft.cards || []).some(c => c.title || c.date))),
+    onRead: (draft) => _newEventHeading(
+      draft.read_kind === 'recurring' && (draft.read_services || []).length ? 'recurring'
+        : (draft.read_services || []).length > 0 || draft.read_kind === 'timetable'
+          || (intent === 'timetable' && !(draft.cards || []).some(c => c.title || c.date))),
     openPoster: (url) => openPosterFullscreen(url),
     // A church sign writes to the parish itself — its timetable, its details —
     // and asks first, like any hand edit, whether to keep it by hand.
     keepByHand: (pid) => ensureKeptByHand(pid),
     onChanged: async ({ parishId, what }) => {
       // A new rule is in the bundle, which fetchSchedules reloads (and repaints
-      // the sheet from); a detail is on the parish the editor shares with state.
-      if (what === 'timetable') await fetchSchedules({ fresh: true });
-      else if (state.parishSheetFocus === parishId) renderParishSheetContent(parishId, { fullRender: true });
+      // the sheet from), and its dates are in the feed, which is projected
+      // from it; a detail is on the parish the editor shares with state.
+      if (what === 'timetable') {
+        await fetchSchedules({ fresh: true });
+        await fetchEvents({ fresh: true, keepCount: true });
+      } else if (state.parishSheetFocus === parishId) renderParishSheetContent(parishId, { fullRender: true });
     },
     onPublished: async ({ events, proposals }) => {
       window.closeNewEventDialog();
@@ -10791,9 +10891,8 @@ function initScheduleRowTaps() {
   const activate = (e) => {
     const row = e.target.closest('[data-sched-focus]');
     if (!row) return;
-    // The form sits after the row rather than inside it, but a stray tap that
-    // lands on it is still not a tap on the row.
-    if (e.target.closest('.schedule-edit-form')) return;
+    // The row's pencil is its own button (handled in the capture phase above).
+    if (e.target.closest('[data-sched-edit]')) return;
     if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     const sid = Number(row.dataset.schedFocus);
@@ -10801,15 +10900,6 @@ function initScheduleRowTaps() {
       || row.closest('[data-parish-id]')?.dataset.parishId
       || state.parishSheetFocus;
     if (!pid || !Number.isFinite(sid)) return;
-    // While this rule's parish is in edit mode, the row IS the way into the
-    // rule: it opens the form and does not touch the focus. Somebody who has
-    // said they are editing wants to change the 9am, not narrow the feed to
-    // it — and the focus they may already have set stays exactly as it was,
-    // with the banner's X still the way out of it.
-    if (row.dataset.schedEditable) {
-      toggleScheduleEditForm(row, sid);
-      return;
-    }
     // Tapping the focused row again is the third way out, alongside the
     // banner's X and the pinned card's.
     if (state.parishScheduleFocus && state.parishScheduleFocus.scheduleId === sid) {
@@ -10822,51 +10912,18 @@ function initScheduleRowTaps() {
   document.addEventListener('keydown', activate);
 }
 
-/**
- * Open this rule's form in the edit dialog.
- *
- * The form is built with the row, as it always was (renderScheduleDaysHTML),
- * and its handlers are bound where it was built. So the dialog takes the node
- * itself, and gives it back — hidden, where it came from — when it closes:
- * nothing is rebuilt, and nothing is bound twice. It was a panel opening
- * under the row, one at a time because two of them pushed everything off a
- * phone; in a dialog there is only ever one.
- */
-function toggleScheduleEditForm(row, sid) {
-  // The form is the row's own next sibling. Not `sef-${sid}` — see the note
-  // where it is built: that name belongs to two elements at once.
-  const form = row.nextElementSibling;
-  if (!form || !form.classList.contains('schedule-edit-form')
-      || String(form.dataset.sid) !== String(sid)) return;
-  const rule = ruleById(sid);
-  const home = document.createComment('schedule-edit-form');
-  form.parentNode.insertBefore(home, form);
-  form.style.display = 'block';
-  const parish = rule && (state.parishes || []).find(p => p.id === rule.parish_id);
-  openFormDialog({
-    kind: 'rule',
-    title: 'Edit service',
-    sub: rule ? [rule.title, `${DAYS[rule.day_of_week]}s ${String(rule.start_time || '').slice(0, 5)}`, parish && parish.name]
-      .filter(Boolean).join(' · ') : '',
-    html: form,
-    onClose: () => {
-      form.style.display = 'none';
-      if (home.parentNode) home.replaceWith(form);
-      else form.remove();
-    },
-  });
-}
-
 /** "Add schedule": a new rule's form in the edit dialog — the photo of the sign first. */
 function openAddScheduleDialog(pid) {
   const parish = (state.parishes || []).find(p => p.id === pid);
+  state.endedRules = null;
   const body = openFormDialog({
     kind: 'add-rule',
     title: 'Add schedule',
     sub: parish ? parish.name : '',
-    html: addServiceHTML(pid),
+    html: `${addServiceHTML(pid)}<div data-ended-slot="${esc(pid)}"></div>`,
   });
   wireScheduleAdminHandlers(body);
+  loadEndedRules(pid);
   const first = body.querySelector('[data-af="title"]');
   if (first) first.focus({ preventScroll: true });
 }

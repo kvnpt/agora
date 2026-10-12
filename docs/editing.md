@@ -35,24 +35,35 @@ new or seasonal service is announced) and drops one that has ended. The
 importers pair a scraped rule with the current row of a slot before an ended
 one, and never write an end date, so an ended rule is not revived by a re-read.
 
-In the timetable's edit mode, rules that have ended are listed under
-**Ended services** with **Bring back**, which clears the end date. The bundle
-does not carry them (it drops a rule that ended before its window), so they are
-fetched from `GET /api/admin/schedules?parish=` when the mode is entered.
+At the foot of the **Add schedule** dialog, rules that have ended are listed
+under **Ended services** with **Bring back**, which clears the end date — the
+service somebody is about to type may be the one that ended. The bundle does
+not carry them (it drops a rule that ended before its window), so they are
+fetched from `GET /api/admin/schedules?parish=` when the dialog opens.
 
-**A poster belongs to an occurrence, not to a rule.** `events.poster_path` is
-the last working piece of the WhatsApp ingestor and is still rendered on feasts,
-talks, socials and youth events. A rule has no poster — a weekly liturgy has no
-flyer — so `schedule_overrides.patch_poster_path` is the only place a projected
-instance can hold one, and it is the one `patch_*` where NULL means "there
-isn't one" rather than "inherit". `POST /api/admin/events/:id/poster` takes both
-id shapes and routes on the shape, like every other event route.
+**A poster belongs to an occurrence — or, for something held every week, to
+its rule.** `events.poster_path` is the last working piece of the WhatsApp
+ingestor and is still rendered on feasts, talks, socials and youth events. A
+weekly Liturgy has no flyer, but a weekly choir practice does: "Church Choir
+Practice, 7pm every Tuesday, led by Simon Yazbek, all are welcome" describes the
+RULE, and put on one date it was gone by the next. So a rule may carry its own
+`poster_path` and `description` (migration 021), which every occurrence shows
+unless its own override says otherwise (`project.mjs`: the date's
+`patch_poster_path`, else the rule's). An occurrence edit compares against the
+rule's, so saving a date with the inherited text writes nothing, and the
+occurrence's poster control says when what it shows is the rule's and sends
+changes to the series. The rule's poster is set from its form (the pencil on
+its row) or "Put it on: every … — the service's own" on any of its dates, via
+`POST|DELETE /api/admin/schedules/:id/poster`, and `releaseUnused` counts it.
+`POST /api/admin/events/:id/poster` takes both id shapes and routes on the
+shape, like every other event route.
 
 What a parish sends is a bulletin for a **period**, so the same route takes
 `?scope=rule|parish&from=&until=` and points every occurrence in the range — of
 that rule, or of every rule at the parish plus its one-offs — at **one** object
-under a key of its own (`worker/lib/poster-range.mjs`). Still not the rule:
-next month's Liturgy must not carry this month's commemorations. A range skips
+under a key of its own (`worker/lib/poster-range.mjs`). A bulletin is never
+the rule's own poster: next month's Liturgy must not carry this month's
+commemorations. A range skips
 a date a break silences (an override beats a break, so writing one there would
 bring the service back) and a hidden one, and keeps every other occurrence what
 it is. An object is deleted only once no event, no override and no draft names it, so
@@ -84,17 +95,20 @@ state, because `writeCombine` is a target state and removes what it is not
 told; a payload holding only the refused half would strip the applied half on
 approval.
 
-**Signed in is not the same as editing.** A parish sheet has two modes, each
-behind its own pencil. `state.parishEditMode` is the parish's DETAILS: the
-pencil opens them in the **edit dialog** (`openFormDialog` in `app.js`, the
-same frame as Add event) — the logo, the name and every field the sheet shows,
-with Save, Cancel and Delete parish — and the sheet underneath stays as a
-visitor reads it. `state.scheduleEditMode` is its TIMETABLE, entered from the
-pencil in the timetable's own head; only then do rules carry their pencils (on
-the sheet or the main services panel) and **Add schedule** appear, and each of
-those opens the edit dialog too: one rule's form, or a new one. Until either
-mode is on the sheet is the sheet a visitor sees: no schedule pencils, no logo
-button, no form in the DOM behind `display:none`.
+**Signed in is not the same as editing.** `state.parishEditMode` is the
+parish's DETAILS: **Edit details** opens them in the **edit dialog**
+(`openFormDialog` in `app.js`, the same frame as Add event) — the logo, the
+name and every field the sheet shows, with Save, Cancel and Delete parish —
+and the sheet underneath stays as a visitor reads it. The TIMETABLE has no
+mode: for whoever may change it (`mayEditTimetable`, the capability per
+parish), its head carries a green **+** that opens **Add schedule**, and each
+rule's row a small pencil at its right edge, always there, that opens that
+rule's form — on the sheet and on the main services panel alike. The row
+itself still focuses the rule, for an admin as for anybody. It had a mode,
+entered from a pencil in the head, and the owner found the step in the way:
+nobody opens a parish's timetable meaning to read it as an admin. No form is
+in the DOM behind `display:none` either way: a rule's form is built when its
+pencil is pressed.
 
 **Forms open over the page, never inside it.** Every edit — a parish's details,
 a rule, a new rule, an event — is a dialog, because a form spread through the
@@ -277,7 +291,7 @@ timetable can still mark it checked. Details fill an empty field or, where they
 differ, offer **Use the sign's**; an address is changed in the parish's details,
 where the pin moves with it.
 
-The timetable has its own way in: **Add schedule** (in the timetable's edit mode)
+The timetable has its own way in: **Add schedule** (the timetable's green +)
 opens a dialog with **From a photo of the sign** above the fields for typing a
 service. It
 is the same editor and the same read, opened expecting a timetable (`intent:
@@ -288,6 +302,20 @@ words ("This looks like a poster for an event, not the parish's timetable, so
 nothing has been added to the timetable") and its events wait below as the
 draft they are, to publish or discard. Nothing from a photo reaches the
 timetable but a service a person adds from the review.
+
+**A flyer for something held every week is read into the timetable too**, by
+either door. St John the Baptist, Croydon Park's "Church Choir Practice (Arabic
+& English), 7:00 pm every Tuesday" was read as one event with no date — which
+nobody could publish — and dropped on the timetable it was caught as "a poster
+for an event". The reader now has a `recurring` kind for a poster about
+something held regularly and dated nowhere (a choir practice, a Bible study, a
+youth group, a weekly Paraklesis): its `services` carry a `description` and the
+date it `starts`, if the flyer gives one, and no events. The editor shows the
+same review a sign gets, its forms open, headed "Held every week, from the
+poster"; what is added carries the flyer as the rule's own poster and its
+description, and names no source — one flyer is not where the rest of the
+timetable came from, and a timetable has one source line. A service already on
+file is offered **Put this poster on it**.
 
 Each of these is a write a person makes, through the route they would use by
 hand (`POST /api/admin/schedules`, `PATCH …/schedules/:id`,

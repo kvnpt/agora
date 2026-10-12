@@ -75,9 +75,16 @@ test('services the editor sends back are checked, and shaped as the read gives t
     week_of_month: 'second,first', languages: ['Greek', 'Greek', ' '], read_notes: [{ field: 'title', text: 'x' }] }]);
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.services[0], { title: 'Orthros', day_of_week: 6, start_time: '08:00', end_time: null,
-    week_of_month: 'first,second', languages: ['Greek'], event_type: 'liturgy', read_notes: [{ field: 'title', text: 'x' }] });
+    week_of_month: 'first,second', languages: ['Greek'], event_type: 'liturgy', description: null, effective_from: null,
+    read_notes: [{ field: 'title', text: 'x' }] });
+  // A flyer's: its words and its first date travel with it.
+  const flyer = S.validateServices([{ day_of_week: 2, start_time: '19:00', title: 'Choir practice',
+    description: ' All are welcome. ', effective_from: '2026-11-03' }]);
+  assert.deepEqual([flyer.services[0].description, flyer.services[0].effective_from], ['All are welcome.', '2026-11-03']);
+  assert.deepEqual(S.RULE_KINDS, ['timetable', 'recurring']);
   for (const [bad, words] of [[{ day_of_week: 7, start_time: '08:00' }, /day/], [{ day_of_week: 0, start_time: '8am' }, /08:00/],
-    [{ day_of_week: 0, start_time: '08:00', end_time: '10' }, /end time/], [{ day_of_week: 0, start_time: '08:00', event_type: 'mass' }, /kinds/]]) {
+    [{ day_of_week: 0, start_time: '08:00', end_time: '10' }, /end time/], [{ day_of_week: 0, start_time: '08:00', event_type: 'mass' }, /kinds/],
+    [{ day_of_week: 0, start_time: '08:00', effective_from: '3 Nov' }, /start date/]]) {
     const r = S.validateServices([bad]);
     assert.equal(r.ok, false);
     assert.match(r.error, words);

@@ -7,12 +7,15 @@
 //   wrangler dev ... --var ANTHROPIC_BASE_URL:http://127.0.0.1:8788
 //
 //   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
-//                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood","delay":60}
+//                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
+//                   |"recurring_croydonpark","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
 //                  programme_rookwood: St Athanasios's October 2026 programme, in
 //                    Greek, read in English — its Saturdays and Sundays with their saints
+//                  recurring_croydonpark: St John the Baptist, Croydon Park's flyer for
+//                    its choir practice, 7pm every Tuesday — a rule, not an event
 //                  (each written from the photo by hand: what a good read of it says)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
@@ -88,6 +91,18 @@ const DOCS = {
         languages: ['English'], event_type: 'liturgy', notes: [] },
     ],
     details: { address: '182 Hill End Road, Doonside 2767', phone: '', email: '', website: '' },
+  },
+  // "Church Choir Practice (Arabic & English), led by Simon Yazbek, 7:00 pm
+  // every Tuesday" — held every week and dated nowhere.
+  recurring_croydonpark: {
+    kind: 'recurring', written_in: 'English', other_parish: null, events: [], notes: [],
+    services: [
+      { title: 'Church Choir Practice', day: 'Tuesday', start_time: '19:00', end_time: '', weeks: [],
+        languages: ['Arabic', 'English'], event_type: 'other',
+        description: 'Led by Simon Yazbek. No prior experience or beautiful voice needed; all are welcome. For more information, contact Essa on 0426 700 720.',
+        starts: '', notes: [] },
+    ],
+    details: { address: '', phone: '', email: '', website: '' },
   },
   // ΠΡΟΓΡΑΜΜΑ ΜΗΝΟΣ ΟΚΤΩΒΡΙΟΥ: every Saturday and Sunday of October 2026,
   // Orthros and Divine Liturgy, with the day's saint.

@@ -249,7 +249,15 @@ CREATE TABLE schedules (
   -- and that is enforced in the routes, not by a CHECK, because adding one
   -- would mean rebuilding `schedules` and schedule_overrides references it ON
   -- DELETE CASCADE. See d1/migrations/014.
-  week_parity       TEXT     -- NULL | 'a' | 'b'
+  week_parity       TEXT,    -- NULL | 'a' | 'b'
+
+  -- The rule's own flyer and words, for something that happens every week and
+  -- has a poster saying so: "Church Choir Practice, every Tuesday 7pm, all are
+  -- welcome". Every occurrence shows them unless its override says otherwise
+  -- (project.mjs). A BULLETIN never goes here — it is for a period, and lives
+  -- on the occurrences it covers (patch_poster_path). d1/migrations/021.
+  poster_path       TEXT,
+  description       TEXT
 );
 
 CREATE INDEX idx_schedules_parish ON schedules(parish_id);
