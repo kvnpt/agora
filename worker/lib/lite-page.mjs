@@ -698,11 +698,14 @@ function copyChipHTML(value, shown, label) {
 function actionsHTML(m) {
   const p = m.parish;
   const btn = (href, label, cls = '', ic = '') => `<a class="ps-btn${cls}" href="${esc(href)}" target="_blank" rel="noopener">${ic ? `<img class="ps-btn-icon" src="${icon(ic)}" alt="">` : ''}<span>${esc(label)}</span></a>`;
+  // Masked glyphs, as the app's sheet has them (PARISH_BTN_GLYPH in app.js), so
+  // they follow the pill's text colour at rest and on hover.
+  const glyphBtn = (href, label, cls, ic, external = true) => `<a class="ps-btn${cls}" href="${esc(href)}"${external ? ' target="_blank" rel="noopener"' : ''}>${glyph(ic)}<span>${esc(label)}</span></a>`;
   const out = [];
   const maps = mapsHref(p);
-  if (maps) out.push(btn(maps, 'Google Maps', ' ps-btn-primary'));
-  if (p.website) out.push(btn(p.website, 'Website'));
-  if (p.phone) out.push(`<a class="ps-btn" href="tel:${esc(p.phone.replace(/\s+/g, ''))}"><span>Call</span></a>`);
+  if (maps) out.push(glyphBtn(maps, 'Google Maps', ' ps-btn-primary', 'ph:map-pin-fill'));
+  if (p.website) out.push(glyphBtn(p.website, 'Website', '', 'ph:globe'));
+  if (p.phone) out.push(glyphBtn(`tel:${p.phone.replace(/\s+/g, '')}`, 'Call', '', 'ph:phone', false));
   if (p.live_url) out.push(btn(p.live_url, 'Watch Live'));
   if (p.donation_url) out.push(btn(`/${m.slug}/donate`, 'Donate', ' ps-donate-btn', 'ph:hand-heart'));
   for (const l of m.links || []) if (l.url) out.push(btn(`/${m.slug}/${l.slug}`, l.label || l.slug));

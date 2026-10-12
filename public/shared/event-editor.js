@@ -655,7 +655,7 @@
             ${row('end_date', 'Last day', `<input type="date" id="${fieldId(card, 'end_date')}" data-ee-field="end_date">`)}
           </div>
           <div class="ee-hint" data-hint="zone">${esc(tzHint())}</div>
-          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type"><option value="">Choose a kind</option>${kinds}</select>`)}
+          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker><option value="">Choose a kind</option>${kinds}</select>`)}
           ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="3" placeholder="Optional"></textarea>`)}
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" placeholder="English, Greek" autocomplete="off">`)}
           ${row('location_override', 'Where', `<input type="hidden" id="${fieldId(card, 'location_override')}" data-ee-field="location_override"><div data-ee-venue></div>`,
@@ -1466,7 +1466,7 @@
             <div class="ee-svc-weeks"><span>Weeks of the month</span>${S.WEEKS.map(w => `<label><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${weeks.includes(w) ? ' checked' : ''}> ${w === 'last' ? 'Last' : ({ first: '1st', second: '2nd', third: '3rd', fourth: '4th' })[w]}</label>`).join('')}<small>None ticked is every week.</small></div>
             <div class="ee-grid">
               ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" placeholder="English, Greek" autocomplete="off">`)}
-              ${field('Kind', `<select data-sf="event_type" data-i="${i}">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
+              ${field('Kind', `<select data-sf="event_type" data-i="${i}" data-kind-picker>${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
             </div>
             ${flyer ? `
             ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
