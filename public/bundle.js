@@ -166,9 +166,12 @@ window.agoraBundle = (function () {
   function feed(from, to, opts = {}) {
     if (!raw || !mods) return [];
     const instances = mods.expandFrom(raw, from, to);
+    // A one-off in the window by its start — or still running into it: a
+    // festival from Friday to Sunday is in Saturday's feed, happening now.
     const oneOffs = (raw.events || []).filter(e => {
       const t = Date.parse(e.start_utc);
-      return t >= Date.parse(from) && t <= Date.parse(to);
+      const end = e.end_utc ? Date.parse(e.end_utc) : t;
+      return t <= Date.parse(to) && (t >= Date.parse(from) || end >= Date.parse(from));
     });
     // Jurisdiction/type filtering is left to app.js's own applyFilters, so the
     // two do not disagree about precedence.

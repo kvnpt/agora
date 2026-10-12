@@ -62,7 +62,8 @@ export const DRAFTS_DDL = [
   read_fields       TEXT,
   updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   occurrence        TEXT,
-  feast             TEXT
+  feast             TEXT,
+  end_date          TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -77,7 +78,7 @@ export const DRAFTS_DDL = [
 // answer is a query that works rather than one that errors.
 const LATER_COLUMNS = {
   drafts: ['read_parish', 'read_language', 'read_services', 'read_details'],
-  draft_events: ['occurrence', 'feast'],
+  draft_events: ['occurrence', 'feast', 'end_date'],
 };
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
@@ -106,12 +107,12 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * own: publishing writes it onto that occurrence (an override), not beside it.
  * `feast` is the commemoration such a card carries.
  */
-export const CARD_FIELDS = ['title', 'feast', 'date', 'start_time', 'end_time', 'event_type', 'description',
+export const CARD_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
   'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence'];
 const JSON_FIELDS = new Set(['languages', 'also_at', 'replaces']);
 
 /** The fields a poster read may fill — everything but the combine and the ask. */
-const READ_FIELDS = ['title', 'feast', 'date', 'start_time', 'end_time', 'event_type', 'description',
+const READ_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
   'languages', 'location_override', 'occurrence'];
 
 const MAX_LEN = { title: 200, feast: 200, description: 2000, location_override: 300, ask_reason: 1000 };
@@ -159,7 +160,7 @@ export function validateCard(body) {
     if (v != null && typeof v !== 'string') return bad(f, `${f} must be text.`);
     if (v != null) v = v.trim() || null;
     if (v != null) {
-      if (f === 'date' && !isLocalDate(v)) return bad(f, 'That is not a date.');
+      if ((f === 'date' || f === 'end_date') && !isLocalDate(v)) return bad(f, 'That is not a date.');
       if ((f === 'start_time' || f === 'end_time') && !isLocalTime(v)) return bad(f, 'Write the time like 19:30.');
       if (f === 'event_type' && !isEventType(v)) return bad(f, 'That is not one of the kinds of event.');
       if (f === 'occurrence' && !OCCURRENCE.test(v)) return bad(f, 'That is not a service on the timetable.');
@@ -176,7 +177,8 @@ export function cardOut(r) {
     id: r.id,
     draft_id: r.draft_id,
     position: r.position,
-    title: r.title, feast: r.feast || null, date: r.date, start_time: r.start_time, end_time: r.end_time,
+    title: r.title, feast: r.feast || null, date: r.date, end_date: r.end_date || null,
+    start_time: r.start_time, end_time: r.end_time,
     event_type: r.event_type, description: r.description,
     languages: parseList(r.languages),
     location_override: r.location_override,
@@ -203,7 +205,9 @@ export function draftOut(d, cards = []) {
     parish_name: d.parish_name,
     poster_path: d.poster_path,
     read_status: stale ? 'failed' : d.read_status,
-    read_kind: d.read_kind,
+    // Five kinds of poster became one (poster-read.mjs READ_KINDS); a draft read
+    // before that says which of the five, and is a poster.
+    read_kind: d.read_kind == null ? null : (['timetable', 'not_an_event'].includes(d.read_kind) ? d.read_kind : 'poster'),
     read_notes: parseList(d.read_notes),
     read_parish: parseObject(d.read_parish),
     // What the image was written in, when it was not English — and what a
@@ -437,7 +441,8 @@ export function matchOccurrences(read, rules) {
   const used = new Set();
   for (const ev of read.events) {
     ev.occurrence = null;
-    if (!ev.date || !ev.start_time) continue;
+    // A run of days is an event of its own, never one Sunday's service.
+    if (!ev.date || !ev.start_time || ev.end_date) continue;
     const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
     const same = (r) => titleKey(r.title) === titleKey(ev.title);
     const at = that.filter(r => r.start_time === ev.start_time);

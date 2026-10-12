@@ -8,7 +8,7 @@
 //
 //   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
-//                   |"recurring_croydonpark","delay":60}
+//                   |"recurring_croydonpark"|"festival_mixed","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -16,6 +16,9 @@
 //                    Greek, read in English — its Saturdays and Sundays with their saints
 //                  recurring_croydonpark: St John the Baptist, Croydon Park's flyer for
 //                    its choir practice, 7pm every Tuesday — a rule, not an event
+//                  festival_mixed: a poster with both categories — a parish festival over
+//                    a weekend (one event, three days) and a Paraklesis every Friday in
+//                    November (a regular service, for a period)
 //                  (each written from the photo by hand: what a good read of it says)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
@@ -28,7 +31,7 @@ const calls = [];
 
 const DOCS = {
   one: {
-    kind: 'event',
+    kind: 'poster',
     other_parish: null,
     events: [{
       title: 'Youth Night: Faith and Film', date: '2026-11-14', weekday_printed: 'Saturday', year_printed: false,
@@ -39,7 +42,7 @@ const DOCS = {
     notes: [],
   },
   three: {
-    kind: 'several_events',
+    kind: 'poster',
     other_parish: null,
     events: [
       { title: 'Lenten Talk: The Ladder of Divine Ascent', date: '2026-11-18', weekday_printed: 'Wednesday', year_printed: false,
@@ -57,7 +60,7 @@ const DOCS = {
   // Dropped at a parish other than St Elias: the reader says whose it is, and
   // gives St Elias's address as the venue — somewhere else, from there.
   elsewhere: {
-    kind: 'event',
+    kind: 'poster',
     other_parish: { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong' },
     events: [{
       title: 'Youth Movie Night', date: '2026-11-13', weekday_printed: 'Friday', year_printed: false,
@@ -95,7 +98,7 @@ const DOCS = {
   // "Church Choir Practice (Arabic & English), led by Simon Yazbek, 7:00 pm
   // every Tuesday" — held every week and dated nowhere.
   recurring_croydonpark: {
-    kind: 'recurring', written_in: 'English', other_parish: null, events: [], notes: [],
+    kind: 'poster', written_in: 'English', other_parish: null, events: [], notes: [],
     services: [
       { title: 'Church Choir Practice', day: 'Tuesday', start_time: '19:00', end_time: '', weeks: [],
         languages: ['Arabic', 'English'], event_type: 'other',
@@ -104,10 +107,23 @@ const DOCS = {
     ],
     details: { address: '', phone: '', email: '', website: '' },
   },
+  festival_mixed: {
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [],
+    events: [{
+      title: 'Parish Festival', feast: '', date: '2026-11-13', weekday_printed: 'Friday', year_printed: true,
+      start_time: '18:00', end_time: '16:00', end_date: '2026-11-15', event_type: 'social',
+      languages: [], venue: null, description: 'Food, music and dancing over the weekend. All are welcome.', notes: [],
+    }],
+    services: [{
+      title: 'Paraklesis', day: 'Friday', start_time: '19:00', end_time: '', weeks: [], languages: [],
+      event_type: 'prayer', description: 'Every Friday in November.', starts: '2026-11-06', until: '2026-11-27', notes: [],
+    }],
+    details: { address: '', phone: '', email: '', website: '' },
+  },
   // ΠΡΟΓΡΑΜΜΑ ΜΗΝΟΣ ΟΚΤΩΒΡΙΟΥ: every Saturday and Sunday of October 2026,
   // Orthros and Divine Liturgy, with the day's saint.
   programme_rookwood: {
-    kind: 'bulletin', written_in: 'Greek', other_parish: null, notes: [], services: [],
+    kind: 'poster', written_in: 'Greek', other_parish: null, notes: [], services: [],
     details: { address: 'Cnr Weekes & Carpenter Ave, Rookwood NSW 2141', phone: '(02) 9643 2850',
       email: 'stathanasiosrookwood@gmail.com', website: '' },
     events: [

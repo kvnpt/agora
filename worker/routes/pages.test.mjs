@@ -432,3 +432,19 @@ test("a page wears the app's colours: /admin's overrides, the parish's own, and 
   const tt = (await get('/antiochian')).html;
   assert.match(tt, /--j-antiochian:#123456/);
 });
+
+// ── A multi-day event's span on the lite card ──
+
+test('a multi-day event says its span; a vigil past midnight does not', async () => {
+  const { multiDaySpan } = await import('../lib/lite-page.mjs');
+  const zone = 'Australia/Sydney';
+  // Fri 13 Nov 6pm – Sun 15 Nov 4pm, Sydney (+11).
+  assert.equal(multiDaySpan({ start_utc: '2026-11-13T07:00:00.000Z', end_utc: '2026-11-15T05:00:00.000Z' }, zone),
+    'Fri 13 – Sun 15 Nov, until 4pm');
+  // Across a month.
+  assert.equal(multiDaySpan({ start_utc: '2026-10-30T07:00:00.000Z', end_utc: '2026-11-01T05:00:00.000Z' }, zone),
+    'Fri 30 Oct – Sun 1 Nov, until 4pm');
+  // 11pm–3am is the one night, not two days.
+  assert.equal(multiDaySpan({ start_utc: '2026-11-14T12:00:00.000Z', end_utc: '2026-11-14T16:00:00.000Z' }, zone), null);
+  assert.equal(multiDaySpan({ start_utc: '2026-11-14T12:00:00.000Z', end_utc: null }, zone), null);
+});

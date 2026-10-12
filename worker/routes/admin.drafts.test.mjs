@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 import { Router } from '../lib/router.mjs';
 import { registerAdminRoutes } from './admin.mjs';
 import { expandWindow } from '../lib/expand.mjs';
-import { DRAFTS_DDL, ensureDraftTables } from '../lib/drafts.mjs';
+import { DRAFTS_DDL, ensureDraftTables, matchOccurrences } from '../lib/drafts.mjs';
 import { isDataWrite } from '../lib/data-version.mjs';
 import { haikuStream, fakeFetch } from '../lib/test-fakes.mjs';
 import sse from '../../public/shared/sse.js';
@@ -244,7 +244,7 @@ test('a read streams into the cards: empty fields filled, the rest appended, a t
   assert.deepEqual([cards[0].printed_weekday, cards[0].year_printed], ['Saturday', 0]);
   assert.deepEqual([cards[1].title, cards[1].location_override, cards[1].languages], ['Talk on prayer', 'Church hall', ['Greek']]);
   assert.equal(frames[frames.length - 1].draft.read_status, 'read');
-  assert.equal(frames[frames.length - 1].draft.read_kind, 'several_events');
+  assert.equal(frames[frames.length - 1].draft.read_kind, 'poster');
 });
 
 test('an edit that lands while the poster is being read wins over the read', async () => {
@@ -316,6 +316,24 @@ test('publishing turns local wall-clock into instants, puts the poster on, and s
   assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM drafts').get().n, 0, 'the last card takes the draft');
   assert.ok(f.bucket.store.has(key), 'the poster stays — the events show it');
   assert.deepEqual(f.bucket.deleted, []);
+});
+
+test('a card over several days publishes its end on the last day, and never matches one Sunday', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  const r = await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`,
+    { title: 'Parish festival', date: '2026-11-13', end_date: '2026-11-15', start_time: '18:00', end_time: '16:00' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.end_date, '2026-11-15');
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`, { end_date: 'Sunday' })).status, 400);
+  const pub = await f.call('POST', `/api/admin/draft-events/${d.cards[0].id}/publish`, {});
+  assert.equal(pub.status, 201, JSON.stringify(pub.body));
+  assert.deepEqual([pub.body.event.start_utc, pub.body.event.end_utc],
+    ['2026-11-13T07:00:00.000Z', '2026-11-15T05:00:00.000Z']);
+  const read = matchOccurrences({ events: [{ title: 'Divine Liturgy', date: '2026-11-15', end_date: '2026-11-16', start_time: '09:00' }] },
+    [{ id: 1, title: 'Divine Liturgy', day_of_week: 0, start_time: '09:00', active: 1 }]);
+  assert.equal(read.events[0].occurrence, null, 'a run of days is an event of its own');
 });
 
 test('a card that is not ready to publish says what is missing and stays a draft', async () => {
@@ -720,7 +738,7 @@ test('a service added from a sign names the sign as the timetable’s source, an
   assert.deepEqual(f.bucket.deleted, []);
 });
 
-test('a database made before 020 gets the sign and programme columns on first use', async () => {
+test('a database made before 020 gets the sign and programme columns (and 022’s last day) on first use', async () => {
   const raw = new Database(':memory:');
   raw.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
   raw.exec(fs.readFileSync('d1/migrations/018-drafts.sql', 'utf8'));
@@ -729,5 +747,5 @@ test('a database made before 020 gets the sign and programme columns on first us
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
-  assert.deepEqual(cols('draft_events').slice(-2), ['occurrence', 'feast']);
+  assert.deepEqual(cols('draft_events').slice(-3), ['occurrence', 'feast', 'end_date']);
 });

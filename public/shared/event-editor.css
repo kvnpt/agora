@@ -464,3 +464,18 @@
 .ee.ee-sign-only .ee-head,
 .ee.ee-sign-only .ee-readiness,
 .ee.ee-sign-only [data-ee="publish"] { display: none; }
+
+/* One event over several days: the tick under Starts / Ends, and the last day
+   it brings out. The end time above is the time it ends on that day. */
+.ee-multiday {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary, var(--ee-muted));
+  cursor: pointer;
+}
+.ee-multiday[hidden] { display: none; }
+.ee-multiday input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent, #2b6cb0); }

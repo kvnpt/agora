@@ -178,8 +178,13 @@ export function localPartsOf(zone, epochMs) {
  *
  * @returns {{start_utc: string, end_utc: string|null}} ISO instants
  */
-export function localSpanToUtc(zone, dateStr, startTime, endTime) {
+export function localSpanToUtc(zone, dateStr, startTime, endTime, endDate = null) {
   const start = exactLocalToEpoch(zone, dateStr, startTime);
+  // One event over several days: the end time is on its last day.
+  if (endDate && endDate > dateStr && endTime) {
+    return { start_utc: new Date(start).toISOString(),
+      end_utc: new Date(exactLocalToEpoch(zone, endDate, endTime)).toISOString() };
+  }
   if (!endTime) return { start_utc: new Date(start).toISOString(), end_utc: null };
   let end = exactLocalToEpoch(zone, dateStr, endTime);
   if (end <= start) {

@@ -125,3 +125,14 @@ test('localSpanToUtc: an ordinary evening in Perth', () => {
   assert.strictEqual(span.start_utc, '2026-11-14T11:00:00.000Z');
   assert.strictEqual(span.end_utc, '2026-11-14T13:30:00.000Z');
 });
+
+test('localSpanToUtc: over several days, the end time is on the last day', () => {
+  // Across Sydney's clocks going forward (4 Oct 2026): the end is +11, the start +10.
+  assert.deepStrictEqual(localSpanToUtc('Australia/Sydney', '2026-10-02', '18:00', '16:00', '2026-10-04'), {
+    start_utc: ref('Australia/Sydney', '2026-10-02', '18:00'),
+    end_utc: ref('Australia/Sydney', '2026-10-04', '16:00'),
+  });
+  // A last day that is not after the first is the one day, with "after midnight".
+  assert.deepStrictEqual(localSpanToUtc('Australia/Sydney', '2026-11-14', '23:00', '02:00', '2026-11-14'),
+    localSpanToUtc('Australia/Sydney', '2026-11-14', '23:00', '02:00'));
+});
