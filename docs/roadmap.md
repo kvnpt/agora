@@ -126,24 +126,24 @@ cache per URL and per hour, which a crawler visiting each URL once defeats, and
 ## Probes for /.env, /.git/config, /wp-login.php
 
 Cloudflare's AI crawler reports showed requests for `antiochian.orthodoxy.au/.env`
-(12 October 2026). Nothing leaks: there is no `.env` anywhere a request can
+(12 October 2026). Nothing leaked: there is no `.env` anywhere a request can
 reach — secrets are in the Secrets Store, the Worker has no file system, and
-`public/` has no dotfiles. But every such probe is answered `200` with the app
-shell (`not_found_handling = "single-page-application"`), which a scanner logs as
-a hit, and it reaches the Worker first (`"/*"` in `run_worker_first`), where
-`liteKind` reads `.env`, `config` (from `/.git/config`) and `wp-login.php` as
-parish slugs and `findParish` scans `parishes` up to twice before giving up.
+`public/` has no dotfiles. But every probe was answered `200` with the app shell
+(`not_found_handling = "single-page-application"`), which a scanner logs as a
+hit, after reaching the router (whose `/:slug/:link` route queried D1 for
+`/.git/config`) and `servePage` (which read `.env` and `wp-login.php` as parish
+slugs and scanned `parishes` twice).
 
 `.env` is the most-probed path on the internet; scanners try it on every
 hostname they learn of (the zone's wildcard routes answer every subdomain),
 often under a borrowed AI-crawler user agent — so "AI agent" in the report is
 the label on the request, not necessarily who sent it.
 
-> *Probes cost a Worker run and two D1 scans each and are answered 200. In one
-> PR: answer them 404 before any D1 work — a path segment starting with "."
-> (except `/.well-known/`), or ending in `.php`, `.asp(x)`, `.env`, `.sql`,
-> `.bak`, `.ini`, `.yml` — and make `liteKind` refuse a slug no parish could
-> have (a leading dot, a file extension). Tests in worker/routes/pages.test.mjs.*
+**Done:** `worker/lib/probe.mjs` answers a dot-segment (not `/.well-known/`), a
+WordPress or cgi-bin directory, or a file type nothing here serves (`.php`,
+`.env`, `.sql`, `.bak`, `.yml`, `.zip`…) with a cacheable 404 before the router
+runs — no D1, no assets. And `liteKind` no longer reads a dotted segment as a
+parish (every iPhone's `/apple-touch-icon.png` was two scans).
 
 Owner, no code: a WAF custom rule that blocks those paths at the edge, before
 the Worker runs — `starts_with(http.request.uri.path, "/.") and not

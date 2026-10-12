@@ -12,6 +12,7 @@ import { registerAssetRoutes } from './routes/assets.mjs';
 import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
+import { isProbePath, probeResponse } from './lib/probe.mjs';
 
 const router = new Router();
 registerPublicRoutes(router);
@@ -80,6 +81,9 @@ router.get('/:slug/:link', async ({ env, params }) => {
 
 export default {
   async fetch(request, env, ctx) {
+    // /.env, /.git/config, /wp-login.php: a scanner's, answered before the
+    // router or a page can spend a D1 read on it (lib/probe.mjs).
+    if (isProbePath(new URL(request.url).pathname)) return probeResponse();
     try {
       const res = await router.handle(request, env, ctx);
       // A write that landed moves the data version, so the next /api/bundle
