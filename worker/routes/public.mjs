@@ -74,8 +74,9 @@ export function registerPublicRoutes(router) {
                 p.color AS parish_color, p.live_url AS parish_live_url,
                 p.timezone AS timezone
          FROM events e JOIN parishes p ON e.parish_id = p.id
-         WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?`
-      ).bind(from, to).all(),
+         WHERE e.source_adapter != 'schedule' AND e.start_utc <= ?
+           AND (e.start_utc >= ? OR e.end_utc >= ?)`
+      ).bind(to, from, from).all(),
       env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all(),
       jurisdictionColorOverrides(env.DB),
       // A parish's own links. Small — a handful of rows in total — and needed

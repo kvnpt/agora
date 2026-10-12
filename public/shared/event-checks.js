@@ -88,6 +88,15 @@
 
     if (!blank(f.end_time) && !isLocalTime(f.end_time)) add('end_time', 'block', 'Write the time like 21:00.');
 
+    // One event over several days: a last day after the first, and the time
+    // it ends on it — without one, nobody can say when it is over.
+    const multi = !blank(f.end_date);
+    if (multi) {
+      if (!isLocalDate(f.end_date)) add('end_date', 'block', 'That is not a date.');
+      else if (dateOk && f.end_date <= f.date) add('end_date', 'block', 'The last day must be after the first.');
+      else if (blank(f.end_time)) add('end_time', 'block', 'Needs the time it ends on its last day.');
+    }
+
     if (dateOk) {
       const said = printedWeekday(f.printed_weekday);
       const is = weekdayOf(f.date);
@@ -103,7 +112,7 @@
       }
     }
 
-    if (isLocalTime(f.start_time) && isLocalTime(f.end_time) && f.end_time <= f.start_time) {
+    if (!multi && isLocalTime(f.start_time) && isLocalTime(f.end_time) && f.end_time <= f.start_time) {
       add('end_time', 'info', 'Ends after midnight, on the next day.');
     }
     return out;

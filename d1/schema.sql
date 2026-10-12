@@ -1024,6 +1024,10 @@ CREATE TABLE draft_events (
   -- The saint or feast the date commemorates: an occurrence's patch_feast,
   -- the "✛" line under the service. A one-off has no feast column, so it says
   -- it in its title when published.
-  feast             TEXT
+  feast             TEXT,
+  -- Migration 022. The last day of one event over several days — a festival
+  -- from Friday to Sunday — with end_time the time it ends on that day. NULL
+  -- is the usual single day. Published, it is simply a later end_utc.
+  end_date          TEXT
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);

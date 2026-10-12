@@ -85,8 +85,9 @@
    */
   function summaryLine(f, { thisYear } = {}) {
     const feast = String(f.feast || '').trim();
+    const last = f.end_date && f.end_date > f.date ? dateLabel(f.end_date, thisYear) : '';
     return [
-      dateLabel(f.date, thisYear) || 'No date',
+      (dateLabel(f.date, thisYear) || 'No date') + (last ? ` – ${last}` : ''),
       timeRange(f.start_time, f.end_time) || 'No time',
       (f.title || '').trim() || 'Untitled',
       feast ? `✛ ${feast}` : kindLabel(f.event_type),
@@ -297,7 +298,7 @@
   }
 
   const blankFields = () => ({
-    title: '', feast: '', date: '', start_time: '', end_time: '', event_type: '', description: '',
+    title: '', feast: '', date: '', end_date: '', start_time: '', end_time: '', event_type: '', description: '',
     languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
   });
 
@@ -596,7 +597,7 @@
       card.id = row.id;
       const server = {
         title: row.title || '', feast: row.feast || '', occurrence: row.occurrence || '',
-        date: row.date || '', start_time: row.start_time || '',
+        date: row.date || '', end_date: row.end_date || '', start_time: row.start_time || '',
         end_time: row.end_time || '', event_type: row.event_type || '', description: row.description || '',
         languages: langsToText(row.languages), location_override: row.location_override || '',
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
@@ -636,7 +637,13 @@
           ${row('date', 'Date', `<input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">`)}
           <div class="ee-grid">
             ${row('start_time', 'Starts', `<input type="time" id="${fieldId(card, 'start_time')}" data-ee-field="start_time">`)}
-            ${row('end_time', 'Ends', `<input type="time" id="${fieldId(card, 'end_time')}" data-ee-field="end_time">`)}
+            ${row('end_time', '<span data-ends-label>Ends</span>', `<input type="time" id="${fieldId(card, 'end_time')}" data-ee-field="end_time">`)}
+          </div>
+          <!-- One event over several days: the tick brings out its last day,
+               and the end time above is the time it ends on that day. -->
+          <label class="ee-check ee-multiday"><input type="checkbox" data-ee-multiday> Multi-day</label>
+          <div class="ee-multiday-row" hidden>
+            ${row('end_date', 'Last day', `<input type="date" id="${fieldId(card, 'end_date')}" data-ee-field="end_date">`)}
           </div>
           <div class="ee-hint" data-hint="zone">${esc(tzHint())}</div>
           ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type"><option value="">Choose a kind</option>${kinds}</select>`)}
@@ -688,6 +695,19 @@
         const isText = TEXT_FIELDS.includes(f);
         inp.addEventListener(isText ? 'input' : 'change', () => onInput(card, f, inp.value, isText));
         if (isText) inp.addEventListener('blur', () => flush(card));
+      });
+      card.els.multi = node.querySelector('[data-ee-multiday]');
+      card.els.multiRow = node.querySelector('.ee-multiday-row');
+      card.els.endsLabel = node.querySelector('[data-ends-label]');
+      card.els.multi.addEventListener('change', () => {
+        card.multi = card.els.multi.checked;
+        if (card.multi) {
+          refreshMultiday(card);
+          card.els.inputs.end_date.focus({ preventScroll: true });
+        } else if (card.fields.end_date) {
+          card.els.inputs.end_date.value = '';
+          onInput(card, 'end_date', '', false);
+        } else refreshMultiday(card);
       });
       card.els.sum.addEventListener('click', () => toggleCard(card));
       node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
@@ -853,6 +873,7 @@
         card.els.err.hidden = false;
       }
       refreshOccurrence(card);
+      refreshMultiday(card);
       const single = !state.multi;
       card.els.sum.hidden = single;
       card.els.body.hidden = !single && !card.open;
@@ -860,6 +881,17 @@
       card.els.root.classList.toggle('is-open', single || card.open);
       card.els.root.classList.toggle('is-published', card.publish.state === 'done');
       refreshAsk(card);
+    }
+
+    /** The Multi-day tick: on while a last day is set or somebody ticked it. */
+    function refreshMultiday(card) {
+      if (!card.els || !card.els.multi) return;
+      const on = !!card.multi || !!card.fields.end_date;
+      card.els.multi.checked = on;
+      card.els.multiRow.hidden = !on;
+      card.els.endsLabel.textContent = on ? 'Ends, last day' : 'Ends';
+      // A programme's date is a regular service's: one day, never a run.
+      card.els.multi.closest('.ee-multiday').hidden = !!card.fields.occurrence;
     }
 
     /**
@@ -1194,7 +1226,7 @@
       setDraft(d.draft);
       // A flyer's few services open at once: the form to check against the
       // poster is the point of it, where a sign's many read better as a list.
-      if (d.draft.read_kind === 'recurring' && state.services.length <= 2) {
+      if (d.draft.read_kind !== 'timetable' && state.services.length <= 2) {
         state.services.forEach((_, i) => state.svcOpen.add(i));
       }
       const rows = d.draft.cards || [];
@@ -1221,22 +1253,29 @@
     }
 
     function readSummary(draft) {
-      const n = state.cards.length;
       const kind = draft.read_kind;
-      const regular = state.cards.filter(c => c.fields.occurrence).length;
+      const sign = kind === 'timetable';
+      const events = state.cards.filter(c => !isPristine(c));
+      const n = events.length;
+      const regular = events.filter(c => c.fields.occurrence).length;
       const svcs = (draft.read_services || state.services || []).length;
+      const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
       let text;
-      if (svcs && kind === 'recurring') {
-        text = `Read as something held every week, so it goes on the timetable rather than in the events. Check ${svcs === 1 ? 'it' : `all ${svcs}`} against the poster, then add ${svcs === 1 ? 'it' : 'them'} — the poster and its description go with ${svcs === 1 ? 'it' : 'them'}, on every date.`;
-      } else if (svcs && (kind === 'timetable' || state.cards.every(isPristine))) {
-        text = `Read as the parish’s timetable: ${svcs} weekly service${svcs === 1 ? '' : 's'}${draft.read_details ? ' and its details' : ''}. Check each against the photo, then add it.`;
-      } else if (kind === 'timetable') text = 'This looks like a sign, but no weekly services could be read from it — add them on the timetable by hand.';
-      else if (kind === 'recurring') text = 'This looks like a poster for something held every week, but no day and time could be read from it — add it on the timetable by hand.';
-      else if (kind === 'not_an_event') text = 'This does not look like an event poster — fill in the details by hand.';
-      else if (regular) {
-        text = `${n} date${n === 1 ? '' : 's'} read. ${regular === n ? (n === 1 ? 'It is' : 'All are') : `${regular} ${regular === 1 ? 'is' : 'are'}`} the parish’s regular services: publishing adds each day’s details and the poster to that service rather than a second card.`;
-      } else if (kind === 'bulletin') text = `Regular services change on the timetable — ${n === 1 && !state.cards[0].fields.title ? 'no' : n} one-off event${n === 1 ? '' : 's'} found.`;
-      else if (n > 1) text = `${n} events read from the poster. Check each one against it, then publish.`;
+      // Two categories, whatever the image is (poster-read.mjs): what is held
+      // regularly, for the timetable, and what happens once, for the feed.
+      if (sign && svcs) {
+        text = `Read as the parish’s timetable: ${plural(svcs, 'weekly service', 'weekly services')}${draft.read_details ? ' and its details' : ''}. Check each against the photo, then add it.`;
+      } else if (sign) {
+        text = 'This looks like a sign, but no weekly services could be read from it — add them on the timetable by hand.';
+      } else if (kind === 'not_an_event' && !svcs && !n) {
+        text = 'This does not look like an event poster — fill in the details by hand.';
+      } else if (svcs && n) {
+        text = `Read from the poster: ${plural(svcs, 'thing held regularly', 'things held regularly')}, for the timetable, and ${plural(n, 'event', 'events')} for the feed. Check each against it — what goes on the timetable takes the poster and its description with it.`;
+      } else if (svcs) {
+        text = `Read as something held regularly, so it goes on the timetable rather than in the events. Check ${svcs === 1 ? 'it' : `all ${svcs}`} against the poster, then add ${svcs === 1 ? 'it' : 'them'} — the poster and its description go with ${svcs === 1 ? 'it' : 'them'}, on every date.`;
+      } else if (regular) {
+        text = `${plural(n, 'date', 'dates')} read. ${regular === n ? (n === 1 ? 'It is' : 'All are') : `${regular} ${regular === 1 ? 'is' : 'are'}`} the parish’s regular services: publishing adds each day’s details and the poster to that service rather than a second card.`;
+      } else if (n > 1) text = `${n} events read from the poster. Check each one against it, then publish.`;
       else text = 'Read from the poster. Check the details against it, then publish.';
       // The read is in English; the poster stays attached in the original.
       if (draft.read_language) text += ` Translated from ${draft.read_language} — the poster keeps the original.`;
@@ -1328,7 +1367,7 @@
       // A flyer for something held every week, rather than the sign out the
       // front: its rules take the poster and its words, it says nothing about
       // the rest of the timetable, and it names no source.
-      const flyer = state.draft.read_kind === 'recurring';
+      const flyer = !S.fromSign(state.draft.read_kind);
       const { rows, missing } = S.compareSign(state.services, state.rules, today());
       const canAdd = may('schedule.create', pid);
       const canFill = may('schedule.edit', pid);
@@ -1387,9 +1426,10 @@
             ${flyer ? `
             ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
             <div class="ee-grid">
-              ${field('Starts', `<input type="date" data-sf="effective_from" data-i="${i}" value="${esc(sv.effective_from || '')}">`)}
+              ${field('From', `<input type="date" data-sf="effective_from" data-i="${i}" value="${esc(sv.effective_from || '')}">`)}
+              ${field('Until', `<input type="date" data-sf="effective_to" data-i="${i}" value="${esc(sv.effective_to || '')}">`)}
             </div>
-            <div class="ee-hint">Blank starts it now. The poster goes on every date.</div>` : ''}
+            <div class="ee-hint">Blank From starts it now; blank Until keeps it going. The poster goes on every date.</div>` : ''}
           </div>
         </div>`;
       };
@@ -1416,7 +1456,7 @@
       };
 
       box.innerHTML = `
-        ${rows.length ? `<div class="ee-section-title">${flyer ? 'Held every week, from the poster' : 'Weekly services on the sign'}</div>
+        ${rows.length ? `<div class="ee-section-title">${flyer ? 'Held regularly — for the timetable' : 'Weekly services on the sign'}</div>
         <div class="ee-svcs">${rows.map((r, i) => svcRow(r, i)).join('')}</div>` : ''}
         ${fresh.length > 1 && canAdd ? `<button type="button" class="ee-btn ee-btn-small" data-act="add-all"${dis}>Add all ${fresh.length} to the timetable</button>` : ''}
         ${rows.length && !canAdd && fresh.length ? '<div class="ee-hint">Somebody who edits this parish’s timetable can add these.</div>' : ''}
@@ -1518,7 +1558,7 @@
         }
       }
       if (!indices.length || !(await keepByHand())) return;
-      const flyer = state.draft.read_kind === 'recurring';
+      const flyer = !root.AgoraSigns.fromSign(state.draft.read_kind);
       let added = 0;
       for (const i of indices) {
         const sv = state.services[i];
@@ -1532,6 +1572,7 @@
           languages: sv.languages && sv.languages.length ? JSON.stringify(sv.languages) : null,
           week_of_month: sv.week_of_month || null,
           effective_from: sv.effective_from || null,
+          effective_to: sv.effective_to || null,
           // A sign names itself as the timetable's source; a flyer goes ON the
           // rule instead, with its words, and names nothing — one flyer is not
           // where the rest of the timetable came from.

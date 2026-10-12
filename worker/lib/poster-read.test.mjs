@@ -14,7 +14,7 @@ const PARISH = { name: 'St Nicholas', address: '1 Church St, Marrickville NSW', 
 const RULES = [{ day_of_week: 0, start_time: '09:00', title: 'Divine Liturgy' }];
 
 const ONE = {
-  kind: 'event',
+  kind: 'poster',
   events: [{
     title: 'YOUTH NIGHT: FAITH AND FILM', date: '2026-11-14', weekday_printed: 'Saturday', year_printed: false,
     start_time: '19:00', end_time: '21:30', event_type: 'youth', languages: [], venue: null,
@@ -71,13 +71,14 @@ test('signs and programmes added no union-typed fields — structured output cap
   assert.deepStrictEqual(unions, ['.other_parish', '.other_parish.place', '.events[].title', '.events[].date',
     '.events[].weekday_printed', '.events[].start_time', '.events[].end_time', '.events[].venue',
     '.events[].description']);
-  assert.deepStrictEqual(READ_KINDS, ['event', 'several_events', 'bulletin', 'timetable', 'recurring', 'not_an_event']);
+  assert.deepStrictEqual(READ_KINDS, ['timetable', 'poster', 'not_an_event']);
 });
 
 test('the prompt asks for English, a timetable’s services, and a regular service only with its day', () => {
   assert.match(SYSTEM_PROMPT, /Write in English/);
-  assert.match(SYSTEM_PROMPT, /"timetable" for a sign, board or notice giving the parish's regular weekly services/);
-  assert.match(SYSTEM_PROMPT, /is listed only when the image says something about that date/);
+  assert.match(SYSTEM_PROMPT, /"timetable" for a sign, board or notice giving the parish's regular services/);
+  assert.match(SYSTEM_PROMPT, /Everything an image announces is one of two things, and an image can announce both/);
+  assert.match(SYSTEM_PROMPT, /is listed in events only when the image says something about that date/);
   assert.match(SYSTEM_PROMPT, /with its commemoration in feast and not in the title/);
   assert.match(SYSTEM_PROMPT, /"every 2nd and 4th Sunday" is \["second", "fourth"\]/);
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
@@ -108,7 +109,7 @@ test('a streamed answer arrives as fields, then items, then the normalised read'
   assert.strictEqual(h['anthropic-version'], '2023-06-01');
   assert.strictEqual(f.calls[0].body.messages[0].content[0].source.data, Buffer.from(image).toString('base64'));
 
-  assert.deepStrictEqual(seen[0], { event: 'kind', kind: 'event' });
+  assert.deepStrictEqual(seen[0], { event: 'kind', kind: 'poster' });
   const titles = seen.filter(s => s.event === 'field' && s.name === 'title');
   assert.ok(titles.length > 1, 'the title streams in pieces');
   assert.ok(titles.slice(0, -1).every(t => !t.done) && titles[titles.length - 1].done);
@@ -119,7 +120,7 @@ test('a streamed answer arrives as fields, then items, then the normalised read'
 
   assert.deepStrictEqual(r.read.events[0], {
     title: 'Youth Night: Faith And Film', feast: null,
-    date: '2026-11-14', start_time: '19:00', end_time: '21:30', event_type: 'youth',
+    date: '2026-11-14', start_time: '19:00', end_time: '21:30', end_date: null, event_type: 'youth',
     description: 'A film and a talk for young adults. Bring a plate to share.',
     languages: null, location_override: null, printed_weekday: 'Saturday', year_printed: 0,
     read_notes: [{ field: 'start_time', text: 'Doors 6:30, film 7:00; used 7:00.' }],
@@ -168,7 +169,7 @@ test('normalising: shapes checked, odd values dropped with a note, the list capp
       ...Array.from({ length: MAX_EVENTS + 2 }, () => ({ title: 'x', date: '2026-11-14' })),
     ],
   });
-  assert.strictEqual(r.kind, 'several_events');
+  assert.strictEqual(r.kind, 'poster', 'a kind from before the two categories reads as a poster');
   assert.strictEqual(r.events.length, MAX_EVENTS);
   assert.match(r.notes[1], /more than 20 events/);
   const e = r.events[0];
@@ -176,7 +177,7 @@ test('normalising: shapes checked, odd values dropped with a note, the list capp
     [e.title, e.date, e.start_time, e.end_time, e.event_type, e.languages, e.location_override, e.year_printed],
     ['Talk on prayer', null, '07:30', null, 'other', ['Greek', 'English'], 'Hall', 1]);
   assert.match(e.read_notes[0].text, /2026-02-30.*not a date/);
-  assert.strictEqual(normalizeRead({ kind: 'nonsense' }).kind, 'event');
+  assert.strictEqual(normalizeRead({ kind: 'nonsense' }).kind, 'poster', 'whatever else the model says, the image announced something');
 });
 
 test('another parish’s poster: the name and place as printed, or nothing', () => {
@@ -211,12 +212,12 @@ test('a sign: its weekly services as rules, its details, and nothing without a d
   assert.strictEqual(r.language, null, 'English is not a translation');
   assert.deepStrictEqual(r.services, [
     { title: 'Orthros & Divine Liturgy', day_of_week: 6, start_time: '08:00', end_time: '10:00',
-      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, read_notes: [] },
+      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, effective_to: null, read_notes: [] },
     { title: 'Divine Liturgy', day_of_week: 0, start_time: '18:00', end_time: null,
-      week_of_month: 'second,fourth', languages: ['English'], event_type: 'liturgy', description: null, effective_from: null,
+      week_of_month: 'second,fourth', languages: ['English'], event_type: 'liturgy', description: null, effective_from: null, effective_to: null,
       read_notes: [{ field: 'weeks', text: 'Printed as "2nd & 4th".' }] },
     { title: 'Every week', day_of_week: 0, start_time: '09:00', end_time: null,
-      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, read_notes: [] },
+      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, effective_to: null, read_notes: [] },
   ]);
   assert.deepStrictEqual(r.details, { address: 'Cnr Weekes & Carpenter Ave, Rookwood', phone: '(02) 9643 2850',
     email: null, website: 'https://www.example.org.au' });
@@ -224,29 +225,29 @@ test('a sign: its weekly services as rules, its details, and nothing without a d
   assert.deepStrictEqual(normalizeRead(ONE).services, [], 'an answer without them, too');
 });
 
-test('a flyer for something held every week: a rule with its words and its first date, and no event', () => {
+test('a flyer for something held every week: a rule with its words and its period, and no event', () => {
   // St John the Baptist, Croydon Park's choir practice, which was read as one
   // event with no date — unpublishable — and caught at the timetable as "a
   // poster for an event".
   const r = normalizeRead({
-    kind: 'recurring', written_in: 'English', other_parish: null, events: [], notes: [],
+    kind: 'poster', written_in: 'English', other_parish: null, events: [], notes: [],
     services: [{ title: 'CHURCH CHOIR PRACTICE', day: 'Tuesday', start_time: '19:00', end_time: '',
       weeks: [], languages: ['Arabic', 'English'], event_type: 'other',
-      description: ' Led by Simon Yazbek. No prior experience needed; all are welcome. ', starts: '2026-11-03', notes: [] },
+      description: ' Led by Simon Yazbek. No prior experience needed; all are welcome. ', starts: '2026-11-03', until: '', notes: [] },
     { title: 'Bible study', day: 'Wednesday', start_time: '19:30', end_time: '', weeks: ['second'],
-      languages: [], event_type: 'talk', description: '', starts: 'next week', notes: [] }],
+      languages: [], event_type: 'talk', description: '', starts: 'next week', until: '2026-12-09', notes: [] }],
     details: { address: '', phone: '', email: '', website: '' },
   });
-  assert.strictEqual(r.kind, 'recurring');
+  assert.strictEqual(r.kind, 'poster');
   assert.deepStrictEqual(r.events, []);
   assert.strictEqual(r.details, null, 'a flyer’s contact is not the parish’s details');
   assert.deepStrictEqual(r.services[0], { title: 'Church Choir Practice', day_of_week: 2, start_time: '19:00',
     end_time: null, week_of_month: null, languages: ['Arabic', 'English'], event_type: 'other',
-    description: 'Led by Simon Yazbek. No prior experience needed; all are welcome.', effective_from: '2026-11-03', read_notes: [] });
-  assert.deepStrictEqual([r.services[1].description, r.services[1].effective_from, r.services[1].week_of_month],
-    [null, null, 'second'], 'no words, and a start that is not a date, are nothing');
-  assert.match(SYSTEM_PROMPT, /"recurring" for a poster or flyer about something held regularly on a weekday and dated nowhere/);
-  assert.match(SYSTEM_PROMPT, /Empty for a recurring poster\./);
+    description: 'Led by Simon Yazbek. No prior experience needed; all are welcome.', effective_from: '2026-11-03',
+    effective_to: null, read_notes: [] });
+  assert.deepStrictEqual([r.services[1].description, r.services[1].effective_from, r.services[1].effective_to, r.services[1].week_of_month],
+    [null, null, '2026-12-09', 'second'], 'no words, and a start that is not a date, are nothing; a period’s end is kept');
+  assert.match(SYSTEM_PROMPT, /"7pm every Tuesday" is one/);
 });
 
 test('a programme in Greek: English titles, each date’s saint as its feast, and what it was translated from', () => {
@@ -271,4 +272,12 @@ test('a long note about the poster is cut at a word, with an ellipsis, never mid
   assert.doesNotMatch(r.notes[0], / a…$/);
   assert.strictEqual(clip('Short and whole.', 500), 'Short and whole.');
   assert.strictEqual(clip('one two three four five six', 15), 'one two three…');
+});
+
+test('one event over several days keeps its last day; one that is not after the first is dropped', () => {
+  const base = { title: 'Parish festival', date: '2026-11-13', start_time: '18:00', end_time: '16:00' };
+  const r = normalizeRead({ kind: 'poster', events: [{ ...base, end_date: '2026-11-15' },
+    { ...base, end_date: '2026-11-13' }, { ...base, end_date: '' }] });
+  assert.deepStrictEqual(r.events.map(e => e.end_date), ['2026-11-15', null, null]);
+  assert.match(SYSTEM_PROMPT, /One event that runs over several days .* is ONE entry with its last day in end_date/);
 });

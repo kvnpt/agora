@@ -62,3 +62,12 @@ test('event kinds: one list, and every kind says what it is for', () => {
   assert.ok(T.isEventType('youth') && !T.isEventType('vespers'));
   assert.strictEqual(T.eventTypeLabel('youth'), 'Youth');
 });
+
+test('one event over several days: a last day after the first, and the time it ends on it', () => {
+  const festival = { ...ok, date: '2026-11-13', start_time: '18:00', end_date: '2026-11-15', end_time: '16:00' };
+  assert.deepStrictEqual(C.checkDraftEvent(festival, { today: '2026-10-08' }), [],
+    'an end earlier on the clock is the last day, not "after midnight"');
+  assert.deepStrictEqual(levels(C.checkDraftEvent({ ...festival, end_time: '' }, { today: '2026-10-08' })), ['end_time:block']);
+  assert.deepStrictEqual(levels(C.checkDraftEvent({ ...festival, end_date: '2026-11-13' }, { today: '2026-10-08' })), ['end_date:block']);
+  assert.deepStrictEqual(levels(C.checkDraftEvent({ ...festival, end_date: 'Sunday' }, { today: '2026-10-08' })), ['end_date:block']);
+});

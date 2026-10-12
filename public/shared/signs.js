@@ -23,13 +23,13 @@
   const SIGN_SOURCE = 'Church signage';
 
   /**
-   * Read kinds whose services are proposed for the timetable: a sign, and a
-   * flyer for something held every week ("Choir practice, every Tuesday 7pm").
-   * The flyer's rules carry the flyer (schedules.poster_path) and its words,
-   * and name no source: one flyer is not where the whole timetable came from,
-   * and a timetable shows one source line.
+   * Any image's regular services are proposed for the timetable. What the
+   * image IS decides how they are added: a sign (read kind 'timetable') names
+   * itself as the timetable's source; a poster's rules carry the poster
+   * (schedules.poster_path) and their words, and name no source — one flyer is
+   * not where the whole timetable came from, and a timetable shows one line.
    */
-  const RULE_KINDS = ['timetable', 'recurring'];
+  const fromSign = (kind) => kind === 'timetable';
 
   const WEEKS = ['first', 'second', 'third', 'fourth', 'last'];
   const isTime = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
@@ -69,6 +69,8 @@
       if (s.title != null && typeof s.title !== 'string') return bad('The title must be text.');
       if (s.event_type && types && !types.isEventType(s.event_type)) return bad('That is not one of the kinds of service.');
       if (s.effective_from && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_from))) return bad('Write the start date like 2026-11-03.');
+      if (s.effective_to && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_to))) return bad('Write the last date like 2026-12-24.');
+      if (s.effective_from && s.effective_to && s.effective_to < s.effective_from) return bad('It ends before it starts.');
       const langs = Array.isArray(s.languages)
         ? [...new Set(s.languages.map(l => String(l).trim().slice(0, 40)).filter(Boolean))].slice(0, 6) : [];
       const notes = (Array.isArray(s.read_notes) ? s.read_notes : [])
@@ -84,6 +86,7 @@
         event_type: s.event_type || 'liturgy',
         description: s.description ? String(s.description).trim().slice(0, 600) || null : null,
         effective_from: s.effective_from || null,
+        effective_to: s.effective_to || null,
         read_notes: notes,
       });
     }
@@ -194,7 +197,7 @@
     return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} & ${parts[parts.length - 1]}` : parts[0];
   }
 
-  const api = { SIGN_SOURCE, RULE_KINDS, WEEKS, weeksKey, weeksLabel, validateServices, compareSign, compareDetails };
+  const api = { SIGN_SOURCE, fromSign, WEEKS, weeksKey, weeksLabel, validateServices, compareSign, compareDetails };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraSigns = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

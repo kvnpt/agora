@@ -6195,7 +6195,31 @@ function renderParishNow(contentEl, events) {
 // rest of the loaded window. Sort toggle reorders within morning/evening
 // sub-groups across the whole stream. A date focus moves where the stream
 // starts; Load more moves where it ends, and there is no ceiling on that.
+/**
+ * "@ St George, Redfern" on a combined event, wherever the surface is showing
+ * a parish other than the event's host: the parish sheet of one of its other
+ * parishes, or the feed filtered to one. One style rule, rewritten — the cards
+ * are pooled between the feed and the sheet, so the label sits in every
+ * combined card and the surface decides whether it shows.
+ */
+function setCombinedContext() {
+  let el = document.getElementById('combined-context-style');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'combined-context-style';
+    document.head.appendChild(el);
+  }
+  const at = (scope, pid) => `${scope} .event-card:not([data-host="${String(pid).replace(/["\\]/g, '')}"]) .event-at{display:inline}`;
+  const rules = [];
+  if (state.parishSheetFocus) rules.push(at('#parish-sheet-content', state.parishSheetFocus));
+  const only = state.filters && state.filters.parishIds && state.filters.parishIds.size === 1
+    ? [...state.filters.parishIds][0] : null;
+  if (only) rules.push(at('#events-list', only));
+  el.textContent = rules.join('\n');
+}
+
 function renderStream(container, events, opts = {}) {
+  setCombinedContext();
   const { parishMode = false, showCount = SHOW_COUNT_STEP } = opts;
   // The focus is shared, so the parish card winds forward with the main feed.
   const dateFocus = state._dateFocus || null;
@@ -6209,6 +6233,12 @@ function renderStream(container, events, opts = {}) {
     const start = new Date(e.start_utc);
     const end = e.end_utc ? new Date(e.end_utc) : new Date(start.getTime() + 3600000);
     const isToday = dayKey(e.start_utc) === todayKey;
+    // An event that began on an earlier day and is still running — a festival
+    // over a weekend — is happening now, not a card under yesterday's header.
+    if (!isToday && !dateFocus && start < now && end >= now) {
+      if (!opts.omitNow) happeningNow.push(e);
+      continue;
+    }
     if (isToday && !dateFocus) {
       // The parish sheet shows these at its top instead (renderParishNow), so
       // they are left out here rather than drawn twice.
@@ -6500,6 +6530,31 @@ function eventTypeDotTextColor(type) {
   return (dark ? dk : light)[type] || (dark ? '#aaaaaa' : '#555');
 }
 
+/**
+ * One event over several days — a festival from Friday to Sunday, a retreat —
+ * as opposed to a vigil that runs past midnight: it ends on a later day of the
+ * parish's calendar, and lasts at least half a day.
+ */
+function isMultiDay(evt) {
+  if (!evt || !evt.end_utc) return false;
+  const s = Date.parse(evt.start_utc), e = Date.parse(evt.end_utc);
+  const zone = evt.timezone || TZ;
+  const day = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(new Date(t));
+  return e - s >= 12 * 3600000 && day(e) > day(s);
+}
+
+/** "Fri 16 – Sun 18 Oct, until 4 pm" — a multi-day event's span, for its card. */
+function multiDaySpan(evt) {
+  const zone = evt.timezone || TZ;
+  const s = new Date(evt.start_utc), e = new Date(evt.end_utc);
+  const wd = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: zone, weekday: 'short', day: 'numeric' }).format(d);
+  const mon = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: zone, month: 'short' }).format(d);
+  const until = new Intl.DateTimeFormat('en-AU', { timeZone: zone, hour: 'numeric', minute: '2-digit' })
+    .format(e).replace(':00', '').replace(/\s/g, ' ');
+  const first = mon(s) === mon(e) ? wd(s) : `${wd(s)} ${mon(s)}`;
+  return `${first} – ${wd(e)} ${mon(e)}, until ${until}`;
+}
+
 function renderEventCard(evt) {
   const start = new Date(evt.start_utc);
   const time = formatEventTime(start);
@@ -6565,12 +6620,20 @@ function renderEventCard(evt) {
   // Feast override surfaced for this occurrence (e.g. a normal Sunday that is a feast).
   const feastHtml = evt.feast ? `<div class="event-feast-row" style="font-size:12px;opacity:.75;margin-top:2px;">✛ ${esc(evt.feast)}</div>` : '';
 
-  // Posters always render for feasts, talks, socials, and youth events. Other
-  // event types keep the compact text-only card.
-  const hasPoster = !!(evt.poster_path && (evt.event_type === 'feast' || evt.event_type === 'talk' || evt.event_type === 'social' || evt.event_type === 'youth'));
+  // The poster, small, at the row's right edge — the row a little taller for
+  // it. Everything but the liturgical services, whose poster is a month's
+  // bulletin on every Sunday and would put the same thumbnail down the feed;
+  // a feast is the exception, its poster is its own.
+  const hasPoster = !!(evt.poster_path && (!LITURGICAL_TYPES.includes(evt.event_type) || evt.event_type === 'feast'));
   const posterImg = hasPoster
     ? `<img class="event-card-poster" src="${esc(evt.poster_path)}" alt="" loading="lazy">`
     : '';
+  // A combined event at a parish other than its host says where it is. The
+  // card is pooled across the feed and the parish sheet, so the label is
+  // always in the markup and shown by the surface (setCombinedContext).
+  const atHost = (evt.extra_parishes && evt.extra_parishes.length)
+    ? `<span class="event-at"> @ ${esc(evt.parish_name || '')}</span>` : '';
+  const spanHtml = isMultiDay(evt) ? `<div class="event-span-row">${esc(multiDaySpan(evt))}</div>` : '';
 
   const inlineBadges = [liveBadge, bilingualBadge, combinedBadge, combinedTombBadge, cancelledBadge, breakBadge].filter(Boolean).join('');
 
@@ -6579,16 +6642,17 @@ function renderEventCard(evt) {
   const altAddrHtml = altAddr ? `<div class="event-address-row">${esc(altAddr)}</div>` : '';
 
   return `
-    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-event-type="${esc(evt.event_type || '')}">
+    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}" data-id="${evt.id}" data-host="${esc(evt.parish_id || '')}" data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-time">${time}</span>
           ${typeDot}
           <div class="event-title-block">
-            <span class="event-title">${esc(evt.title)}${inlineBadges ? `<span class="event-inline-badges">${inlineBadges}</span>` : ''}<span class="event-card-chev"></span></span>
+            <span class="event-title">${esc(evt.title)}${atHost}${inlineBadges ? `<span class="event-inline-badges">${inlineBadges}</span>` : ''}<span class="event-card-chev"></span></span>
           </div>
         </div>
         <div class="event-parish-row">${acronym}${esc(evt.parish_name)}${distHtml}</div>
+        ${spanHtml}
         ${feastHtml}
         ${breakNoteHtml}
         ${altAddrHtml}
@@ -7639,6 +7703,13 @@ function renderEventDrawerHTML(evt, opts = {}) {
   if (evt.end_utc) {
     endStr = ` — ${new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(evt.end_utc))}`;
   }
+  // Over several days, the two lines are where it starts and where it ends.
+  let dateLine = dateFmt, timeLine = `${timeFmt}${endStr}`;
+  if (isMultiDay(evt)) {
+    const at = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).format(d);
+    dateLine = `From ${at(start)}`;
+    timeLine = `Until ${at(new Date(evt.end_utc))}`;
+  }
 
   const addr = evt.location_override || evt.parish_address || '';
   const parish = state.parishes.find(p => p.id === evt.parish_id);
@@ -7744,8 +7815,8 @@ function renderEventDrawerHTML(evt, opts = {}) {
     <button class="event-card-close" type="button" aria-label="Close">&times;</button>
     ${heroHtml}
     <div class="event-drawer-meta">
-      <div>${dateFmt}</div>
-      <div>${timeFmt}${endStr}</div>
+      <div>${dateLine}</div>
+      <div>${timeLine}</div>
       ${addrHtml}
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
       ${evt.languages ? `<div>${(() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })()}</div>` : ''}
@@ -7814,8 +7885,7 @@ function eventEditFormHTML(evt) {
         <select id="edit-parish-${evt.id}">${parishOpts}</select>
       </div>
       <div class="edit-row"><label>Languages</label><input id="edit-langs-${evt.id}" placeholder="English, Arabic" value="${esc(evt.languages ? JSON.parse(evt.languages).join(', ') : '')}"></div>
-      <div class="edit-row"><label>Start (Sydney)</label><input type="datetime-local" id="edit-start-${evt.id}" value="${utcToLocalInput(evt.start_utc)}"></div>
-      <div class="edit-row"><label>End (Sydney)</label><input type="datetime-local" id="edit-end-${evt.id}" value="${utcToLocalInput(evt.end_utc)}"></div>
+      ${eventWhenHTML(evt)}
       <div class="edit-row"><label>Address (override)</label><input id="edit-location-${evt.id}" placeholder="Leave blank to use parish address" value="${esc(evt.location_override || '')}"></div>
       ${evt.parish_live_url ? `<div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-hide-live-${evt.id}" ${evt.hide_live ? 'checked' : ''}> Hide live badge</label></div>` : ''}
       <div class="edit-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="edit-parish-scoped-${evt.id}" ${evt.parish_scoped ? 'checked' : ''}> Parish-only (hidden unless filtered to parish)</label></div>
@@ -7832,6 +7902,56 @@ function eventEditFormHTML(evt) {
         <button class="btn-outline" type="button" onclick="closeFormDialog()">Close</button>
       </div>
     </div>`;
+}
+
+/**
+ * Date, Starts, Ends — and for a one-off, a Multi-day tick that brings out
+ * its last day, the end time being the time it ends on that day. A rule's
+ * date is one day of a weekly service, so it has no tick.
+ */
+function eventWhenHTML(evt) {
+  const id = evt.id;
+  const s = utcToLocalInput(evt.start_utc), e = utcToLocalInput(evt.end_utc);
+  const multi = isMultiDay(evt);
+  const oneOff = !String(id).includes(':');
+  const eid = JSON.stringify(String(id)).replace(/"/g, '&quot;');
+  return `
+      <div class="edit-row"><label>Date (Sydney)</label><input type="date" id="edit-date-${id}" value="${esc(s.slice(0, 10))}"></div>
+      <div class="edit-row edit-pair">
+        <div><label>Starts</label><input type="time" id="edit-starttime-${id}" value="${esc(s.slice(11, 16))}"></div>
+        <div><label id="edit-endlabel-${id}">${multi ? 'Ends, last day' : 'Ends'}</label><input type="time" id="edit-endtime-${id}" value="${esc(e.slice(11, 16))}"></div>
+      </div>
+      ${oneOff ? `
+      <label class="edit-check"><input type="checkbox" id="edit-multi-${id}" ${multi ? 'checked' : ''} onchange="agoraEditMultiday(${eid})"> Multi-day</label>
+      <div class="edit-row" id="edit-lastday-${id}"${multi ? '' : ' hidden'}><label>Last day</label><input type="date" id="edit-enddate-${id}" value="${multi ? esc(e.slice(0, 10)) : ''}"></div>` : ''}`;
+}
+
+window.agoraEditMultiday = function (id) {
+  const on = document.getElementById(`edit-multi-${id}`).checked;
+  document.getElementById(`edit-lastday-${id}`).hidden = !on;
+  document.getElementById(`edit-endlabel-${id}`).textContent = on ? 'Ends, last day' : 'Ends';
+  if (on) document.getElementById(`edit-enddate-${id}`).focus({ preventScroll: true });
+};
+
+/** The edit form's Date / Starts / Ends / Last day as instants, or an error to say. */
+function readEventWhen(id) {
+  const val = (k) => { const el = document.getElementById(`edit-${k}-${id}`); return el ? el.value : ''; };
+  const date = val('date'), st = val('starttime'), et = val('endtime');
+  const multiEl = document.getElementById(`edit-multi-${id}`);
+  const multi = !!(multiEl && multiEl.checked);
+  const last = multi ? val('enddate') : '';
+  if (multi && (!last || !date || last <= date)) return { error: 'The last day must be after the first.' };
+  if (multi && !et) return { error: 'Give the time it ends on its last day.' };
+  const start_utc = date && st ? localInputToUtc(`${date}T${st}`) : undefined;
+  let end_utc = null;
+  if (et && date) {
+    end_utc = localInputToUtc(`${multi ? last : date}T${et}`);
+    // One day, and it ends earlier on the clock than it starts: after midnight.
+    if (!multi && start_utc && Date.parse(end_utc) <= Date.parse(start_utc)) {
+      end_utc = new Date(Date.parse(end_utc) + 86400000).toISOString();
+    }
+  }
+  return { start_utc, end_utc };
 }
 
 /** The line under the dialog's title: what, when, where. */
@@ -8259,8 +8379,8 @@ function refreshEventEditDialog() {
 }
 
 window.saveEvent = async function(id) {
-  const startVal = document.getElementById(`edit-start-${id}`).value;
-  const endVal = document.getElementById(`edit-end-${id}`).value;
+  const when = readEventWhen(id);
+  if (when.error) { alert(when.error); return; }
   const langsRaw = document.getElementById(`edit-langs-${id}`).value;
   const langsArr = langsRaw ? langsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
   const hideLiveEl = document.getElementById(`edit-hide-live-${id}`);
@@ -8270,8 +8390,8 @@ window.saveEvent = async function(id) {
     event_type: document.getElementById(`edit-type-${id}`).value,
     parish_id: document.getElementById(`edit-parish-${id}`).value,
     languages: langsArr.length ? JSON.stringify(langsArr) : null,
-    start_utc: startVal ? localInputToUtc(startVal) : undefined,
-    end_utc: endVal ? localInputToUtc(endVal) : null
+    start_utc: when.start_utc,
+    end_utc: when.end_utc
   };
   if (hideLiveEl) data.hide_live = hideLiveEl.checked;
   const parishScopedEl = document.getElementById(`edit-parish-scoped-${id}`);
@@ -10257,17 +10377,19 @@ function _newEventEsc(e) {
 }
 
 /**
- * The dialog's heading: what the read says the image is, or what it was opened
- * for. `timetable` is true, false, or 'recurring' — the flyer of something
- * held every week, which goes on the timetable with the flyer on it.
+ * The dialog's heading: what the read says the image announces, or what the
+ * dialog was opened for. One of 'event', 'sign' (the board out the front),
+ * 'regular' (a poster for something held regularly, which goes on the
+ * timetable with the poster on it), or 'both' (a poster with both).
  */
-function _newEventHeading(timetable) {
-  document.getElementById('new-event-title').textContent = timetable ? 'Add to the timetable' : 'Add an event';
-  document.getElementById('new-event-sub').textContent = timetable === 'recurring'
-    ? 'This poster is for something held every week, so it goes on the timetable — with the poster on every date.'
-    : timetable
-      ? 'Each service on the sign is set beside what is on file, and added only when you say so.'
-      : 'One date each — a service that runs every week is a rule, not an event.';
+function _newEventHeading(what) {
+  const [title, sub] = {
+    sign: ['Add to the timetable', 'Each service on the sign is set beside what is on file, and added only when you say so.'],
+    regular: ['Add to the timetable', 'This poster is for something held regularly, so it goes on the timetable — with the poster on every date.'],
+    both: ['Add from the poster', 'What is held regularly goes on the timetable; what happens once goes in the feed — each when you say so.'],
+  }[what] || ['Add an event', 'One date each — a service that runs every week is a rule, not an event.'];
+  document.getElementById('new-event-title').textContent = title;
+  document.getElementById('new-event-sub').textContent = sub;
 }
 
 /**
@@ -10288,7 +10410,7 @@ window.openNewEventDialog = function (parishId, { draftId = null, file = null, i
 
   // The editor's own picker says which parish: it starts at this sheet's, and
   // moves the draft when the poster turns out to be somebody else's.
-  _newEventHeading(intent === 'timetable');
+  _newEventHeading(intent === 'timetable' ? 'sign' : 'event');
   _newEventEditor = window.AgoraEventEditor.open(mount, {
     parish,
     parishes: state.parishes || [],
@@ -10297,10 +10419,14 @@ window.openNewEventDialog = function (parishId, { draftId = null, file = null, i
     intent,
     // A sign is the timetable's, whichever door it came in by, and events are
     // events; a photo given to the timetable that read as nothing stays there.
-    onRead: (draft) => _newEventHeading(
-      draft.read_kind === 'recurring' && (draft.read_services || []).length ? 'recurring'
-        : (draft.read_services || []).length > 0 || draft.read_kind === 'timetable'
-          || (intent === 'timetable' && !(draft.cards || []).some(c => c.title || c.date))),
+    onRead: (draft) => {
+      const services = (draft.read_services || []).length > 0;
+      const events = (draft.cards || []).some(c => c.title || c.date);
+      _newEventHeading(draft.read_kind === 'timetable' ? 'sign'
+        : services && events ? 'both'
+          : services ? 'regular'
+            : intent === 'timetable' && !events ? 'sign' : 'event');
+    },
     openPoster: (url) => openPosterFullscreen(url),
     // A church sign writes to the parish itself — its timetable, its details —
     // and asks first, like any hand edit, whether to keep it by hand.

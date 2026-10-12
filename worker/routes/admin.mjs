@@ -1613,7 +1613,7 @@ export function registerAdminRoutes(router) {
 
     const b = await readJson(c.request);
     const body = { ...publishBody(card, card.parish_id),
-      ...localSpanToUtc(zone, card.date, card.start_time, card.end_time) };
+      ...localSpanToUtc(zone, card.date, card.start_time, card.end_time, card.end_date) };
     // `propose` is the flag and the reason, as on POST /api/admin/events; the
     // card keeps the reason it was given, so a bare `true` uses that.
     if (b.propose) body.propose = typeof b.propose === 'string' ? b.propose : (card.ask_reason || true);

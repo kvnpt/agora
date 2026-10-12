@@ -303,19 +303,51 @@ nothing has been added to the timetable") and its events wait below as the
 draft they are, to publish or discard. Nothing from a photo reaches the
 timetable but a service a person adds from the review.
 
-**A flyer for something held every week is read into the timetable too**, by
-either door. St John the Baptist, Croydon Park's "Church Choir Practice (Arabic
-& English), 7:00 pm every Tuesday" was read as one event with no date — which
-nobody could publish — and dropped on the timetable it was caught as "a poster
-for an event". The reader now has a `recurring` kind for a poster about
-something held regularly and dated nowhere (a choir practice, a Bible study, a
-youth group, a weekly Paraklesis): its `services` carry a `description` and the
-date it `starts`, if the flyer gives one, and no events. The editor shows the
-same review a sign gets, its forms open, headed "Held every week, from the
-poster"; what is added carries the flyer as the rule's own poster and its
-description, and names no source — one flyer is not where the rest of the
-timetable came from, and a timetable has one source line. A service already on
-file is offered **Put this poster on it**.
+**Two categories, whatever the image is.** Everything a photo announces is a
+REGULAR SERVICE — held on a weekday every week or on some weeks of the month,
+perhaps only for a period — which goes on the timetable, or a ONE-OFF EVENT —
+on a date, or a run of dates — which goes in the feed; and a regular service's
+dated change (a saint, a new time, a cancellation) is an override, read as a
+dated entry and matched to its occurrence. The reader returns both lists for
+any image (`services`, `events`); its `kind` only says what the image IS:
+`timetable` (the sign out the front), `poster`, or `not_an_event`. It was five
+kinds of poster, and St John the Baptist, Croydon Park's "Church Choir Practice,
+7:00 pm every Tuesday" fitted none — read as one event with no date, which
+nobody could publish, and caught at the timetable as "a poster for an event".
+
+The kind decides one thing: how a regular service is added. A sign's name the
+sign as the timetable's source ("Church signage"). A poster's carry the poster
+as the rule's own and their description, with the period it gives (**From** /
+**Until**: "every Friday in November"), and name no source — one flyer is not
+where the rest of the timetable came from, and a timetable has one source line.
+A service already on file is offered **Put this poster on it**. The editor
+shows the services' review above the event cards, headed "Held regularly — for
+the timetable", and the dialog is "Add from the poster" when there are both.
+
+**One event can run over several days.** A card has **Multi-day** under its
+times: ticked, a **Last day** appears, and the end time is the time it ends on
+that day (`draft_events.end_date`, migration 022; `localSpanToUtc` takes it).
+Without the tick an end earlier than the start is still "after midnight". The
+reader gives `end_date` for one event over several days — a festival Friday to
+Sunday is ONE entry — and never matches one to a Sunday's service. Published
+it is only a later `end_utc`; the app calls an event multi-day when it ends on a
+later day of the parish's calendar and lasts at least twelve hours
+(`isMultiDay`), says its span on the card ("Fri 13 – Sun 15 Nov, until 4 pm"),
+and keeps it in the feed after its first day: the bundle and the projection
+take a one-off whose `end_utc` reaches into the window, and the stream puts one
+that began earlier and is still running under **Happening now**. The edit
+dialog has the same Date / Starts / Ends / Multi-day / Last day.
+
+**A combined event says where it is.** At a parish other than its host — that
+parish's sheet, the feed filtered to it, its lite card — the title reads
+"Deanery Vespers @ St George, Redfern". The card is pooled between the feed and
+the sheet, so the label is in every combined card and a style rule written per
+surface (`setCombinedContext`) shows it where the surface is another parish.
+
+**A poster shows at the row's right edge.** Collapsed, an event with a poster
+has a thumbnail beside it and the row a little taller; open, the drawer shows it
+full size. Everything but the liturgical services shows one (a feast's poster is
+its own; a Sunday's is usually the month's bulletin).
 
 Each of these is a write a person makes, through the route they would use by
 hand (`POST /api/admin/schedules`, `PATCH …/schedules/:id`,

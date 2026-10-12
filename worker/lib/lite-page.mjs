@@ -465,6 +465,24 @@ function badgesHTML(e) {
 }
 
 /**
+ * One event over several days, as the app tells (isMultiDay): it ends on a
+ * later day of the parish's calendar and lasts at least half a day. Its span
+ * then, "Fri 16 – Sun 18 Oct, until 4pm"; null for anything else.
+ */
+export function multiDaySpan(e, zone) {
+  if (!e.end_utc) return null;
+  const s = Date.parse(e.start_utc), t = Date.parse(e.end_utc);
+  const z = e.timezone || zone;
+  const a = localPartsOf(z, s), b = localPartsOf(z, t);
+  if (t - s < 12 * 3600000 || b.date <= a.date) return null;
+  const wd = (d) => new Intl.DateTimeFormat('en-AU', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
+    .format(new Date(`${d}T00:00:00Z`));
+  const mon = (d) => new Intl.DateTimeFormat('en-AU', { month: 'short', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`));
+  const first = mon(a.date) === mon(b.date) ? wd(a.date) : `${wd(a.date)} ${mon(a.date)}`;
+  return `${first} – ${wd(b.date)} ${mon(b.date)}, until ${time12(b.time)}`;
+}
+
+/**
  * renderEventCard, as a <details> so it opens with no JavaScript: the
  * summary is the card a visitor scans, the body what the app's drawer says.
  */
@@ -476,15 +494,20 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
   const acronym = ownParish ? m.parish.acronym : e.parish_acronym;
   const color = ownParish ? 'var(--parish)' : esc(e.parish_color || 'var(--text-secondary)');
   const parishRow = `<div class="event-parish-row">${acronym ? `<span class="event-parish-acronym" style="color:${color}">${esc(acronym)}</span>` : ''}${esc(e.parish_name || m.parish.name)}</div>`;
+  // A combined event hosted elsewhere says where — "@ St George, Redfern" —
+  // as the app does at a parish that is not its host.
+  const at = !ownParish && e.parish_name ? `<span class="event-at is-away"> @ ${esc(e.parish_name)}</span>` : '';
+  const span = multiDaySpan(e, m.zone);
   return `
       <details class="lc-ev event-card${tomb ? ' event-cancelled tomb' : ''}${cls}" data-id="${esc(e.id)}" data-event-type="${esc(e.event_type || '')}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}"${open ? ' open' : ''}>
         <summary class="event-content">
           <div class="event-title-row">
             <span class="event-time">${eventTimeHTML(e._local.time)}</span>
             ${dot}
-            <div class="event-title-block"><span class="event-title">${esc(e.title)}${badgesHTML(e)}<span class="event-card-chev"></span></span></div>
+            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${badgesHTML(e)}<span class="event-card-chev"></span></span></div>
           </div>
           ${parishRow}
+          ${span ? `<div class="event-span-row">${esc(span)}</div>` : ''}
           ${e.feast ? `<div class="event-feast-row">✛ ${esc(e.feast)}</div>` : ''}
           ${e.break_note ? `<div class="event-break-row">${esc(e.break_note)}</div>` : ''}
         </summary>
@@ -494,13 +517,23 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
       </details>`;
 }
 
+/** "Sunday 4 October · 6pm–8pm", or over several days "Friday 16 October 6pm – Sunday 18 October 4pm". */
+function whenLine(e, m, end) {
+  const year = m.start.slice(0, 4);
+  if (multiDaySpan(e, m.zone)) {
+    const last = localPartsOf(e.timezone || m.zone, Date.parse(e.end_utc));
+    return `${longDate(e._local.date, year)} ${time12(e._local.time)} – ${longDate(last.date, year)} ${time12(last.time)}`;
+  }
+  return `${longDate(e._local.date, year)} · ${time12(e._local.time)}${end ? `–${time12(end)}` : ''}`;
+}
+
 function eventDetailsHTML(e, m) {
   const p = m.parish;
   const end = endTimeOf(e, m.zone);
   const langs = langsOf(e.languages);
   const where = e.location_override || p.address || '';
   return `
-          <p class="lf-when">${esc(longDate(e._local.date, m.start.slice(0, 4)))} · ${esc(time12(e._local.time))}${end ? `–${esc(time12(end))}` : ''}</p>
+          <p class="lf-when">${esc(whenLine(e, m, end))}</p>
           ${where ? `<p class="lf-where">${esc(where)}</p>` : ''}
           ${langs.length ? `<p class="lf-langs">${esc(langs.join(', '))}</p>` : ''}
           ${e.description ? `<p class="lf-desc">${esc(e.description).replace(/\n/g, '<br>')}</p>` : ''}
