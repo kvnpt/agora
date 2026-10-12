@@ -2485,7 +2485,7 @@ export function registerAdminRoutes(router) {
 
 
   // Every rule, ended ones included — the bundle drops those, and the
-  // timetable's edit mode lists them so an end date can be cleared. `?parish=`
+  // Add schedule dialog lists them so an end date can be cleared. `?parish=`
   // narrows to one parish, which is all that view needs.
   router.get('/api/admin/schedules', guarded(async ({ env, query }) => {
     const parish = query.get('parish');
@@ -2536,17 +2536,21 @@ export function registerAdminRoutes(router) {
     ).bind(parish_id, day_of_week, start_time, title, b.week_of_month || '',
       b.week_parity ? String(b.week_parity).toLowerCase() : '').first();
     if (same) return json({ ...same, duplicate: true }, 200);
+    if (b.poster_path != null && b.poster_path !== '' && !isPosterPath(b.poster_path)) {
+      return json({ error: 'poster_path must be a poster already uploaded (/posters/…)' }, 400);
+    }
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
         languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
-        effective_from, effective_to)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
+        effective_from, effective_to, poster_path, description)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
       b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
       b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
       b.week_parity ? String(b.week_parity).toLowerCase() : null,
       b.effective_from || null, b.effective_to || null,
+      b.poster_path || null, (b.description && String(b.description).trim()) || null,
     ).first();
     // A rule added from a church sign names the sign as its source ("Church
     // signage", linking to the photo), and that becomes the timetable's line.
@@ -2563,17 +2567,27 @@ export function registerAdminRoutes(router) {
   const SCHEDULE_EDITABLE = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type',
     'active', 'languages', 'week_of_month', 'week_parity', 'concurrent', 'hide_live',
     'parish_scoped', 'effective_from', 'effective_to', 'location_override',
-    'source_name', 'source_ref', 'source_checked_at'];
+    'source_name', 'source_ref', 'source_checked_at', 'description', 'poster_path'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
+
+  /** A path naming a poster already in R2 under /posters/ — never a URL elsewhere. */
+  const isPosterPath = (v) => typeof v === 'string' && /^\/posters\/[A-Za-z0-9._-]+(\?v=\d+)?$/.test(v);
 
   router.patch('/api/admin/schedules/:id', guarded('schedule.edit', async (c) => {
     const { env, params, request } = c;
-    const row = await env.DB.prepare('SELECT id, parish_id FROM schedules WHERE id = ?')
+    const row = await env.DB.prepare('SELECT id, parish_id, poster_path FROM schedules WHERE id = ?')
       .bind(params.id).first();
     if (!row) return json({ error: 'Schedule not found' }, 404);
     const scoped = outOfScope(c, row.parish_id);
     if (scoped) return scoped;
     const b = await readJson(request);
+    if (b.poster_path !== undefined) {
+      if (b.poster_path === '') b.poster_path = null;
+      if (b.poster_path !== null && !isPosterPath(b.poster_path)) {
+        return json({ error: 'poster_path must be a poster already uploaded (/posters/…)' }, 400);
+      }
+    }
+    if (b.description !== undefined) b.description = (b.description && String(b.description).trim()) || null;
     // Checked against what the row will HOLD, not against what the body names,
     // so a body that clears week_of_month and sets week_parity in one go is a
     // legal move from one qualifier to the other rather than a moment where
@@ -2618,6 +2632,10 @@ export function registerAdminRoutes(router) {
     // v26: the edit shows up on the next read. No regeneration, no orphaned rows.
     await env.DB.prepare(`UPDATE schedules SET ${sets.join(', ')} WHERE id = ?`)
       .bind(...vals, params.id).run();
+    // A poster the rule no longer shows goes once nothing else does.
+    if (b.poster_path !== undefined && row.poster_path && row.poster_path !== b.poster_path) {
+      await releaseUnused(env, [row.poster_path], { keep: posterKeyOf(b.poster_path) });
+    }
     await stampTimetable(c, row.parish_id, b);
     return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(params.id).first());
   }));
@@ -2769,7 +2787,7 @@ export function registerAdminRoutes(router) {
   router.delete('/api/admin/schedules/:id', guarded('schedule.delete', async (c) => {
     const { env, params } = c;
     const row = await env.DB.prepare(
-      'SELECT id, parish_id, day_of_week, start_time, title, source_name, source_ref FROM schedules WHERE id = ?'
+      'SELECT id, parish_id, day_of_week, start_time, title, source_name, source_ref, poster_path FROM schedules WHERE id = ?'
     ).bind(params.id).first();
     if (!row) return json({ error: 'Schedule not found' }, 404);
     const scoped = outOfScope(c, row.parish_id);
@@ -2777,8 +2795,58 @@ export function registerAdminRoutes(router) {
 
     // schedule_overrides cascade via FK.
     await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(params.id).run();
+    // Its own poster, and the photo it was read from, go once nothing else
+    // names them — the sign's photo is usually still another rule's source.
+    await releaseUnused(env, [row.poster_path, row.source_ref]);
     await stampTimetable(c, row.parish_id);
     return json({ ok: true });
+  }));
+
+  // ── A rule's own poster ──
+  //
+  // The flyer of something that happens every week ("Church Choir Practice,
+  // every Tuesday 7pm"), shown on every occurrence that has none of its own
+  // (project.mjs). Raw body, like the event poster: the extension comes off
+  // the content type. A key of its own with a stamp, never derived from the
+  // rule's id alone, so a replacement is a new URL and nobody keeps
+  // yesterday's flyer from the day-long cache.
+  router.post('/api/admin/schedules/:id/poster', guarded('schedule.edit', async (c) => {
+    const { env, params, request } = c;
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+    const row = await env.DB.prepare('SELECT id, parish_id, poster_path FROM schedules WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'Schedule not found' }, 404);
+    const scoped = outOfScope(c, row.parish_id);
+    if (scoped) return scoped;
+    const contentType = request.headers.get('content-type') || '';
+    const ext = contentType.includes('png') ? 'png'
+              : contentType.includes('webp') ? 'webp'
+              : contentType.includes('gif') ? 'gif' : 'jpg';
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return json({ error: 'No data received' }, 400);
+    if (body.byteLength > 8 * 1024 * 1024) return json({ error: 'Poster too large (8 MB max)' }, 413);
+    const key = `posters/rule-${row.id}-${Date.now().toString(36)}.${ext}`;
+    await env.ASSETS_BUCKET.put(key, body, {
+      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
+    });
+    const posterPath = `/${key}`;
+    await env.DB.prepare('UPDATE schedules SET poster_path = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+      .bind(posterPath, NOW(), await editor(c), row.id).run();
+    await releaseUnused(env, [row.poster_path], { keep: key });
+    return json({ id: row.id, poster_path: posterPath });
+  }));
+
+  router.delete('/api/admin/schedules/:id/poster', guarded('schedule.edit', async (c) => {
+    const { env, params } = c;
+    const row = await env.DB.prepare('SELECT id, parish_id, poster_path FROM schedules WHERE id = ?')
+      .bind(params.id).first();
+    if (!row) return json({ error: 'Schedule not found' }, 404);
+    const scoped = outOfScope(c, row.parish_id);
+    if (scoped) return scoped;
+    await env.DB.prepare('UPDATE schedules SET poster_path = NULL, updated_at = ?, updated_by = ? WHERE id = ?')
+      .bind(NOW(), await editor(c), row.id).run();
+    await releaseUnused(env, [row.poster_path]);
+    return json({ id: row.id, poster_path: null });
   }));
 
   // ── breaks ──

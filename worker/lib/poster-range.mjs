@@ -154,26 +154,38 @@ export function namesPoster(col, key) {
  * as where it came from (`source_ref`, `info_source_ref`: "Church signage",
  * linking to it — public/shared/signs.js), and the sign's draft is discarded
  * once its services are added; the photo is what the source line links to.
+ * And so does a rule's own poster (schedules.poster_path, migration 021).
  */
 async function referenced(db, key) {
   const ev = namesPoster('poster_path', key);
   const ov = namesPoster('patch_poster_path', key);
   const dr = namesPoster('poster_path', key);
   const sr = namesPoster('source_ref', key);
+  const sp = namesPoster('poster_path', key);
   const ir = namesPoster('info_source_ref', key);
-  const row = await db.prepare(`
+  // One term per TABLE, never per column: D1 refuses a compound SELECT of
+  // more than five terms ("too many terms in compound SELECT"), where Node's
+  // SQLite allows hundreds — so a sixth term passes every test and fails
+  // every release in production. poster-range.test.mjs counts them.
+  const row = await db.prepare(referencedSql(ev, ov, dr, sr, sp, ir))
+    .bind(...ev.args, ...ov.args, ...dr.args, ...sr.args, ...sp.args, ...ir.args).first();
+  return !!row;
+}
+
+/** The query `referenced` runs: five terms at most, which is D1's cap. */
+export function referencedSql(ev, ov, dr, sr, sp, ir) {
+  return `
     SELECT 1 FROM events WHERE ${ev.sql}
     UNION ALL
     SELECT 1 FROM schedule_overrides WHERE ${ov.sql}
     UNION ALL
     SELECT 1 FROM drafts WHERE ${dr.sql}
     UNION ALL
-    SELECT 1 FROM schedules WHERE ${sr.sql}
+    SELECT 1 FROM schedules WHERE ${sr.sql} OR ${sp.sql}
     UNION ALL
     SELECT 1 FROM parishes WHERE ${ir.sql}
     LIMIT 1
-  `).bind(...ev.args, ...ov.args, ...dr.args, ...sr.args, ...ir.args).first();
-  return !!row;
+  `;
 }
 
 /**

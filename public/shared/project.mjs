@@ -62,7 +62,9 @@ export function project(s, date, o, cache) {
     schedule_id: s.id,
     source_adapter: 'schedule',
     title: (o && o.patch_title) || s.title,
-    description: (o && o.patch_description) || null,
+    // The occurrence's own words, else the rule's (a weekly activity's flyer
+    // text: "Led by Simon Yazbek. All are welcome").
+    description: (o && o.patch_description) || s.description || null,
     feast: (o && o.patch_feast) || null,
     start_utc: cache.toUtcISO(zone, date, startTime),
     end_utc: endTime ? cache.toUtcISO(zone, date, endTime) : null,
@@ -81,9 +83,11 @@ export function project(s, date, o, cache) {
     languages: (o && o.patch_languages != null) ? o.patch_languages : s.languages,
     hide_live: (o && o.patch_hide_live != null) ? o.patch_hide_live : (s.hide_live || 0),
     parish_scoped: (o && o.patch_parish_scoped != null) ? o.patch_parish_scoped : (s.parish_scoped || 0),
-    // A rule has no poster, so this is the override's or nothing — see
+    // This date's poster (a bulletin, a range), else the rule's own — the
+    // flyer of something that happens every week. schedules.poster_path and
     // schedule_overrides.patch_poster_path in d1/schema.sql.
-    poster_path: (o && o.patch_poster_path) || null,
+    poster_path: (o && o.patch_poster_path) || s.poster_path || null,
+    rule_poster: !!(s.poster_path && !(o && o.patch_poster_path)),
     source_url: null,
     source_hash: `schedule-${s.id}-${date}`,
     confidence: 'schedule',

@@ -22,6 +22,15 @@
   /** The source line a rule or a parish read off a sign shows. */
   const SIGN_SOURCE = 'Church signage';
 
+  /**
+   * Read kinds whose services are proposed for the timetable: a sign, and a
+   * flyer for something held every week ("Choir practice, every Tuesday 7pm").
+   * The flyer's rules carry the flyer (schedules.poster_path) and its words,
+   * and name no source: one flyer is not where the whole timetable came from,
+   * and a timetable shows one source line.
+   */
+  const RULE_KINDS = ['timetable', 'recurring'];
+
   const WEEKS = ['first', 'second', 'third', 'fourth', 'last'];
   const isTime = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
@@ -41,7 +50,8 @@
   /**
    * A list of services as the editor sends it back, checked field by field.
    * The same shape normalizeRead gives: {title, day_of_week, start_time,
-   * end_time, week_of_month, languages, event_type, read_notes}.
+   * end_time, week_of_month, languages, event_type, description,
+   * effective_from, read_notes}.
    *
    * @returns {{ok: true, services: Array} | {ok: false, error: string, index: number}}
    */
@@ -58,6 +68,7 @@
       if (s.end_time != null && s.end_time !== '' && !isTime(s.end_time)) return bad('Write the end time like 10:00.');
       if (s.title != null && typeof s.title !== 'string') return bad('The title must be text.');
       if (s.event_type && types && !types.isEventType(s.event_type)) return bad('That is not one of the kinds of service.');
+      if (s.effective_from && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_from))) return bad('Write the start date like 2026-11-03.');
       const langs = Array.isArray(s.languages)
         ? [...new Set(s.languages.map(l => String(l).trim().slice(0, 40)).filter(Boolean))].slice(0, 6) : [];
       const notes = (Array.isArray(s.read_notes) ? s.read_notes : [])
@@ -71,6 +82,8 @@
         week_of_month: weeksKey(s.week_of_month),
         languages: langs.length ? langs : null,
         event_type: s.event_type || 'liturgy',
+        description: s.description ? String(s.description).trim().slice(0, 600) || null : null,
+        effective_from: s.effective_from || null,
         read_notes: notes,
       });
     }
@@ -181,7 +194,7 @@
     return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} & ${parts[parts.length - 1]}` : parts[0];
   }
 
-  const api = { SIGN_SOURCE, WEEKS, weeksKey, weeksLabel, validateServices, compareSign, compareDetails };
+  const api = { SIGN_SOURCE, RULE_KINDS, WEEKS, weeksKey, weeksLabel, validateServices, compareSign, compareDetails };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraSigns = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

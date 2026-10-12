@@ -1192,6 +1192,11 @@
         return;
       }
       setDraft(d.draft);
+      // A flyer's few services open at once: the form to check against the
+      // poster is the point of it, where a sign's many read better as a list.
+      if (d.draft.read_kind === 'recurring' && state.services.length <= 2) {
+        state.services.forEach((_, i) => state.svcOpen.add(i));
+      }
       const rows = d.draft.cards || [];
       rows.forEach((row, i) => {
         const card = state.cards[i] || newCard();
@@ -1221,9 +1226,12 @@
       const regular = state.cards.filter(c => c.fields.occurrence).length;
       const svcs = (draft.read_services || state.services || []).length;
       let text;
-      if (svcs && (kind === 'timetable' || state.cards.every(isPristine))) {
+      if (svcs && kind === 'recurring') {
+        text = `Read as something held every week, so it goes on the timetable rather than in the events. Check ${svcs === 1 ? 'it' : `all ${svcs}`} against the poster, then add ${svcs === 1 ? 'it' : 'them'} — the poster and its description go with ${svcs === 1 ? 'it' : 'them'}, on every date.`;
+      } else if (svcs && (kind === 'timetable' || state.cards.every(isPristine))) {
         text = `Read as the parish’s timetable: ${svcs} weekly service${svcs === 1 ? '' : 's'}${draft.read_details ? ' and its details' : ''}. Check each against the photo, then add it.`;
       } else if (kind === 'timetable') text = 'This looks like a sign, but no weekly services could be read from it — add them on the timetable by hand.';
+      else if (kind === 'recurring') text = 'This looks like a poster for something held every week, but no day and time could be read from it — add it on the timetable by hand.';
       else if (kind === 'not_an_event') text = 'This does not look like an event poster — fill in the details by hand.';
       else if (regular) {
         text = `${n} date${n === 1 ? '' : 's'} read. ${regular === n ? (n === 1 ? 'It is' : 'All are') : `${regular} ${regular === 1 ? 'is' : 'are'}`} the parish’s regular services: publishing adds each day’s details and the poster to that service rather than a second card.`;
@@ -1317,6 +1325,10 @@
       if (!S || !state.rules) { box.innerHTML = '<div class="ee-empty">Checking the parish’s timetable…</div>'; return; }
       const pid = state.parish.id;
       const busy = state.signBusy || state.publishing;
+      // A flyer for something held every week, rather than the sign out the
+      // front: its rules take the poster and its words, it says nothing about
+      // the rest of the timetable, and it names no source.
+      const flyer = state.draft.read_kind === 'recurring';
       const { rows, missing } = S.compareSign(state.services, state.rules, today());
       const canAdd = may('schedule.create', pid);
       const canFill = may('schedule.edit', pid);
@@ -1340,10 +1352,15 @@
           const fills = Object.keys(r.fills);
           const what = fills.map(f => (f === 'end_time' ? 'end time' : 'languages')).join(' and ');
           const named = r.rule.title && r.rule.title !== sv.title ? ` as “${esc(r.rule.title)}”` : '';
+          // A flyer for a service already on file: its poster (and words, where
+          // the rule has none) can go onto that rule rather than a second one.
+          const posterOn = flyer && r.rule.poster_path === state.draft.poster_path;
+          const offerPoster = flyer && canFill && !posterOn;
           return `<div class="ee-svc is-on" data-i="${i}">
             <div class="ee-svc-top"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></div>
-            <div class="ee-svc-state">✓ On the timetable${named}${fills.length ? ` — the sign adds its ${what}.` : '.'}</div>
+            <div class="ee-svc-state">✓ On the timetable${named}${fills.length ? ` — the ${flyer ? 'poster' : 'sign'} adds its ${what}.` : '.'}${posterOn ? ' It shows this poster.' : ''}</div>
             ${fills.length && canFill ? `<button type="button" class="ee-btn ee-btn-small" data-act="fill" data-i="${i}"${dis}>Add its ${what}</button>` : ''}
+            ${offerPoster ? `<button type="button" class="ee-btn ee-btn-small" data-act="poster" data-i="${i}"${dis}>Put this poster on it${r.rule.poster_path ? ' instead' : ''}</button>` : ''}
             ${notes}</div>`;
         }
         const open = state.svcOpen.has(i);
@@ -1367,6 +1384,12 @@
               ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" placeholder="English, Greek" autocomplete="off">`)}
               ${field('Kind', `<select data-sf="event_type" data-i="${i}">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
             </div>
+            ${flyer ? `
+            ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
+            <div class="ee-grid">
+              ${field('Starts', `<input type="date" data-sf="effective_from" data-i="${i}" value="${esc(sv.effective_from || '')}">`)}
+            </div>
+            <div class="ee-hint">Blank starts it now. The poster goes on every date.</div>` : ''}
           </div>
         </div>`;
       };
@@ -1374,7 +1397,8 @@
       // Nothing to add, and the timetable does not yet say this sign is where
       // it was last checked: a sign that agrees is still somebody having looked.
       const pidRules = state.rules.filter(r => r.active !== 0);
-      const confirmable = canFill && rows.length && rows.every(r => r.status === 'on_file' && !Object.keys(r.fills).length)
+      // Not for a flyer: one activity's poster is no check of the whole timetable.
+      const confirmable = !flyer && canFill && rows.length && rows.every(r => r.status === 'on_file' && !Object.keys(r.fills).length)
         && pidRules.some(r => r.source_ref !== state.draft.poster_path);
       const details = S.compareDetails(state.draft.read_details, state.parish);
       const canDetail = may('parish.edit', pid);
@@ -1392,17 +1416,19 @@
       };
 
       box.innerHTML = `
-        ${rows.length ? `<div class="ee-section-title">Weekly services on the sign</div>
+        ${rows.length ? `<div class="ee-section-title">${flyer ? 'Held every week, from the poster' : 'Weekly services on the sign'}</div>
         <div class="ee-svcs">${rows.map((r, i) => svcRow(r, i)).join('')}</div>` : ''}
         ${fresh.length > 1 && canAdd ? `<button type="button" class="ee-btn ee-btn-small" data-act="add-all"${dis}>Add all ${fresh.length} to the timetable</button>` : ''}
         ${rows.length && !canAdd && fresh.length ? '<div class="ee-hint">Somebody who edits this parish’s timetable can add these.</div>' : ''}
         ${confirmable ? `<div class="ee-svc-state">Everything on the sign is on the timetable.</div>
           <button type="button" class="ee-btn ee-btn-small" data-act="confirm"${dis}>Mark the timetable as checked against this sign</button>` : ''}
-        ${missing.length && rows.length ? `<details class="ee-missing"><summary>${missing.length} on the timetable ${missing.length === 1 ? 'is' : 'are'} not on the sign</summary>
+        ${missing.length && rows.length && !flyer ? `<details class="ee-missing"><summary>${missing.length} on the timetable ${missing.length === 1 ? 'is' : 'are'} not on the sign</summary>
           ${missing.map(r => `<div class="ee-svc-line">${esc(serviceLine(r))}</div>`).join('')}
           <div class="ee-hint">Nothing changes for these: a sign often leaves out the weekday services. If one has stopped, end it from the parish’s timetable.</div></details>` : ''}
         ${details.length ? `<div class="ee-section-title">The parish’s details on the sign</div><div class="ee-details">${details.map(detailRow).join('')}</div>` : ''}
-        <div class="ee-hint">What you add shows “${esc(S.SIGN_SOURCE)}” as its source, linking to this photo.</div>
+        <div class="ee-hint">${flyer
+          ? 'What you add carries this poster, and its description, on every date.'
+          : `What you add shows “${esc(S.SIGN_SOURCE)}” as its source, linking to this photo.`}</div>
         <div class="ee-message ee-message-error ee-sign-error" hidden></div>`;
     }
 
@@ -1426,6 +1452,7 @@
           const { rows } = root.AgoraSigns.compareSign(state.services, state.rules, today());
           await addServices(rows.map((r, k) => (r.status === 'new' ? k : -1)).filter(k => k >= 0));
         } else if (act === 'fill') await fillRule(i);
+        else if (act === 'poster') await posterOntoRule(i);
         else if (act === 'confirm') await confirmTimetable();
         else if (act === 'detail') await useDetail(b.dataset.field);
       } finally {
@@ -1491,6 +1518,7 @@
         }
       }
       if (!indices.length || !(await keepByHand())) return;
+      const flyer = state.draft.read_kind === 'recurring';
       let added = 0;
       for (const i of indices) {
         const sv = state.services[i];
@@ -1503,14 +1531,38 @@
           event_type: sv.event_type || 'liturgy',
           languages: sv.languages && sv.languages.length ? JSON.stringify(sv.languages) : null,
           week_of_month: sv.week_of_month || null,
-          source_name: root.AgoraSigns.SIGN_SOURCE,
-          source_ref: state.draft.poster_path,
+          effective_from: sv.effective_from || null,
+          // A sign names itself as the timetable's source; a flyer goes ON the
+          // rule instead, with its words, and names nothing — one flyer is not
+          // where the rest of the timetable came from.
+          ...(flyer ? {
+            poster_path: state.draft.poster_path || null,
+            description: sv.description || null,
+          } : {
+            source_name: root.AgoraSigns.SIGN_SOURCE,
+            source_ref: state.draft.poster_path,
+          }),
         });
         if (!r.ok) { signError((r.body && r.body.error) || 'That service could not be added — check the connection.'); break; }
         state.svcOpen.delete(i);
         added++;
       }
       if (added) { await loadRules(); changed('timetable'); }
+    }
+
+    /** A flyer's poster onto the rule already on file, and its words where the rule has none. */
+    async function posterOntoRule(i) {
+      const { rows } = root.AgoraSigns.compareSign(state.services, state.rules, today());
+      const row = rows[i];
+      if (!row || !row.rule || !state.draft.poster_path) return;
+      if (!(await keepByHand())) return;
+      const sv = state.services[i];
+      const body = { poster_path: state.draft.poster_path };
+      if (!row.rule.description && sv && sv.description) body.description = sv.description;
+      const r = await http('PATCH', `/api/admin/schedules/${row.rule.id}`, body);
+      if (!r.ok) return signError((r.body && r.body.error) || 'It could not be added — check the connection.');
+      await loadRules();
+      changed('timetable');
     }
 
     /** What the sign says that a rule on file leaves empty. */

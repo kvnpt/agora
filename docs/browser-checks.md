@@ -236,7 +236,8 @@ stream, slowly enough to watch the fields fill:
 ```bash
 # A stand-in for the Messages API: replays a canned Haiku stream per mode
 # (one event, three events, not_an_event, a 529 — and `elsewhere`, St Elias,
-# Wollongong's poster as read at another parish, for the move) with a delay
+# Wollongong's poster as read at another parish, for the move; the signs and the
+# programme; `recurring_croydonpark`, a choir practice's weekly flyer) with a delay
 # between deltas. Switch with POST /__mode {"mode": "elsewhere"}.
 node scripts/mock-anthropic.mjs 8788 &
 

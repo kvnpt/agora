@@ -64,7 +64,9 @@ for them, are in the doc it links to — read that before changing the area.
 - "This and every following" ends or splits a rule with its own
   `effective_from`/`effective_to` — never edits it in place. Ending is the one
   deliberate exception to *nothing disappears*.
-- A poster belongs to an occurrence (or a range of them), never to a rule.
+- A poster belongs to an occurrence (or a range of them) — or, for something
+  held every week (a choir practice's flyer), to its rule, which every date
+  shows unless its own says otherwise. A bulletin never goes on the rule.
 - Adding an event is a draft until Publish: `drafts`/`draft_events` hold the
   parish's LOCAL wall clock, and only `…/draft-events/:id/publish` writes
   `events`, one card per request. A poster read only ever fills empty fields.
@@ -77,7 +79,8 @@ for them, are in the doc it links to — read that before changing the area.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.
-- Signed in is not editing: each surface has its own mode behind its own pencil.
+- Signed in is not editing: details and events open behind their own pencil;
+  the timetable carries a green + and a pencil per rule, for whoever may edit it.
 
 **Sources** — [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md)
 - A parish's address is where the service is.

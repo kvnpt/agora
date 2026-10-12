@@ -48,15 +48,18 @@ function mergePatch(s, zone, body, cur) {
   if ('event_type' in body) cur.patch_event_type = (body.event_type && body.event_type !== s.event_type) ? body.event_type : null;
   if ('languages' in body) cur.patch_languages = ((body.languages || null) !== (s.languages || null)) ? (body.languages || null) : null;
   if ('feast' in body) cur.patch_feast = body.feast || null;
-  if ('description' in body) cur.patch_description = body.description || null;
+  // Against the rule's own words, now that a rule can have some (migration
+  // 021): a drawer saved with the inherited text unchanged writes nothing.
+  if ('description' in body) cur.patch_description = (body.description && body.description !== (s.description || null)) ? body.description : null;
   if ('location_override' in body) cur.patch_location_override = body.location_override || null;
   if ('hide_live' in body) cur.patch_hide_live = ((body.hide_live ? 1 : 0) !== (s.hide_live || 0)) ? (body.hide_live ? 1 : 0) : null;
   if ('parish_scoped' in body) cur.patch_parish_scoped = ((body.parish_scoped ? 1 : 0) !== (s.parish_scoped || 0)) ? (body.parish_scoped ? 1 : 0) : null;
-  // No comparison against the rule, unlike every line above: a rule has no
-  // poster to differ from. Set means this occurrence has one, null means it
-  // does not — so clearing a poster is `poster_path: null`, which is also how
-  // it stops being the only thing holding the override open.
-  if ('poster_path' in body) cur.patch_poster_path = body.poster_path || null;
+  // Set means this occurrence has a poster of its own (a bulletin, a range);
+  // null means it shows the rule's, if the rule has one (migration 021), or
+  // none. The rule's own poster is never copied onto a date, so clearing is
+  // `poster_path: null`, which is also how it stops being the only thing
+  // holding the override open.
+  if ('poster_path' in body) cur.patch_poster_path = (body.poster_path && body.poster_path !== (s.poster_path || null)) ? body.poster_path : null;
 }
 
 const hasContent = (cur) =>

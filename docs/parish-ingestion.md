@@ -1150,9 +1150,15 @@ Ilija (МПЦ Свети пророк Илија – Силванија), 56–5
 read the child pages of `/цркви/`, and Sylvania is not one: it is a post
 (`/мпц-свети-пророк-илија-силванија/`, id 43068) linked only from the site's
 CHURCHES menu, where it is the fourteenth entry. Found in October 2026 by
-somebody looking for it on the map. Nothing re-reads this jurisdiction —
-`automation: 'none'` in `worker/lib/jurisdictions.mjs` — so the next read takes
-the menu, not the page tree, and Sylvania is added by hand until then.
+somebody looking for it on the map, and added by hand on 12 October 2026 as
+`macedonian-stprophetilija-sylvania` (SPSY). The diocese prints "56-57 Princes
+Hwy", which is no address: NSW Spatial Services has 55-57 and 56-58 on opposite
+sides of the highway, and Church Histories lists the church — a former
+Congregational church, foundation stone 1903 — at 56. OSM has no building for
+it, so the pin is the 56-58 address point: street-level, not a building.
+Nothing re-reads this jurisdiction — `automation: 'none'` in
+`worker/lib/jurisdictions.mjs` — so the next read takes the menu, not the page
+tree.
 
 **Final confidence: 14 pins on a building, 12 street-level, 1 locality
 centroid.** `info_verified_at` is NULL on all 27. The weakest of the twelve

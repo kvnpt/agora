@@ -1447,3 +1447,88 @@ test('deleting a rule is just a delete — nothing is recorded against the slot'
   assert.equal((await f.call('PATCH', `/api/admin/schedules/${keep}`, { ...thursday, parish_scoped: 1 })).status, 200);
 });
 
+
+// ── A rule's own poster (migration 021) ──
+//
+// The flyer of something held every week — "Church Choir Practice, every
+// Tuesday 7pm" — is the RULE's, and every date shows it unless the date has a
+// poster of its own. Its R2 object goes only once nothing names it.
+
+test('a rule’s own poster shows on every date without one of its own, and its words with it', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  const inst = await firstInstance(f.db, parishId);
+  const [sid] = splitInstance(inst.id);
+
+  const up = await f.callRaw('POST', `/api/admin/schedules/${sid}/poster`, png(), 'image/png');
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  assert.match(up.body.poster_path, new RegExp(`^/posters/rule-${sid}-[a-z0-9]+\\.png$`));
+  assert.ok(b.store.has(up.body.poster_path.slice(1)));
+  assert.equal(f.raw.prepare('SELECT poster_path FROM schedules WHERE id = ?').get(sid).poster_path, up.body.poster_path);
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${sid}`, { description: ' Led by Simon. All welcome. ' })).status, 200);
+
+  let all = (await expandWindow(f.db, FROM, TO)).filter(e => e.schedule_id === sid);
+  assert.ok(all.length > 1);
+  assert.ok(all.every(e => e.poster_path === up.body.poster_path && e.rule_poster), 'every date shows the rule’s poster');
+  assert.ok(all.every(e => e.description === 'Led by Simon. All welcome.'));
+
+  // One date's own poster wins on that date only.
+  const own = await f.callRaw('POST', `/api/admin/events/${inst.id}/poster`, png(), 'image/jpeg');
+  assert.equal(own.status, 200);
+  all = (await expandWindow(f.db, FROM, TO)).filter(e => e.schedule_id === sid);
+  const mine = all.find(e => e.id === inst.id);
+  assert.equal(mine.poster_path, own.body.poster_path);
+  assert.equal(mine.rule_poster, false);
+  assert.ok(all.filter(e => e.id !== inst.id).every(e => e.poster_path === up.body.poster_path));
+
+  // A date saved with the inherited words unchanged writes nothing of them.
+  const other = all.find(e => e.id !== inst.id);
+  const before = f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n;
+  assert.equal((await f.call('PATCH', `/api/admin/events/${other.id}`,
+    { description: 'Led by Simon. All welcome.', poster_path: up.body.poster_path })).status, 200);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM schedule_overrides').get().n, before,
+    'the rule’s own words and poster were copied onto a date');
+
+  // Off the rule: off every date that had only the rule's, and out of R2.
+  const del = await f.call('DELETE', `/api/admin/schedules/${sid}/poster`);
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  assert.ok(b.deleted.includes(up.body.poster_path.slice(1)), b.deleted.join(','));
+  all = (await expandWindow(f.db, FROM, TO)).filter(e => e.schedule_id === sid);
+  assert.ok(all.filter(e => e.id !== inst.id).every(e => !e.poster_path));
+  assert.equal(all.find(e => e.id === inst.id).poster_path, own.body.poster_path, 'the date’s own poster stays');
+});
+
+test('a rule is created with a flyer’s poster and words, and only a poster path already in R2 is taken', async () => {
+  const f = fresh({ role: 'editor' });
+  const b = withBucket(f);
+  const [parishId] = twoParishes(f.raw);
+  b.store.set('posters/draft-9.jpg', { size: 1 });
+  const made = await f.call('POST', '/api/admin/schedules', {
+    parish_id: parishId, title: 'Church Choir Practice', day_of_week: 2, start_time: '19:00',
+    event_type: 'other', languages: '["Arabic","English"]', effective_from: '2026-11-03',
+    poster_path: '/posters/draft-9.jpg', description: 'Led by Simon Yazbek. All are welcome.',
+  });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  assert.equal(made.body.poster_path, '/posters/draft-9.jpg');
+  assert.equal(made.body.description, 'Led by Simon Yazbek. All are welcome.');
+  assert.equal(made.body.effective_from, '2026-11-03');
+
+  for (const bad of ['https://example.com/x.jpg', '/logos/x.png', '/posters/../x.png']) {
+    const r = await f.call('POST', '/api/admin/schedules', {
+      parish_id: parishId, title: `Bad ${bad}`, day_of_week: 3, start_time: '19:00', poster_path: bad });
+    assert.equal(r.status, 400, bad);
+    assert.equal((await f.call('PATCH', `/api/admin/schedules/${made.body.id}`, { poster_path: bad })).status, 400, bad);
+  }
+
+  // Two rules naming one object: taking it off one keeps it; deleting the
+  // other rule, the last to name it, releases it.
+  const second = await f.call('POST', '/api/admin/schedules', {
+    parish_id: parishId, title: 'Choir practice (youth)', day_of_week: 4, start_time: '18:00',
+    poster_path: '/posters/draft-9.jpg' });
+  assert.equal(second.status, 201);
+  assert.equal((await f.call('PATCH', `/api/admin/schedules/${made.body.id}`, { poster_path: null })).status, 200);
+  assert.ok(!b.deleted.includes('posters/draft-9.jpg'), 'deleted while another rule shows it');
+  assert.equal((await f.call('DELETE', `/api/admin/schedules/${second.body.id}`)).status, 200);
+  assert.ok(b.deleted.includes('posters/draft-9.jpg'), b.deleted.join(','));
+});
