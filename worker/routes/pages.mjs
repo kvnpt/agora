@@ -69,7 +69,7 @@ const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezo
   color, logo_path`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
   languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
-  source_name, source_ref, source_checked_at`;
+  source_name, source_ref, source_checked_at, location_override, location_parish_id`;
 
 async function buildTimetable(env, url, kind, now) {
   const [parishes, rules, overrides] = await Promise.all([
@@ -147,12 +147,26 @@ async function buildLite(env, url, kind, now) {
     jurisdictionColorOverrides(db),
   ]);
 
+  // The parishes this page's events and rules are held at, when not here —
+  // named on the card (venueLite). One read, whatever the count.
+  const venueIds = [...new Set([
+    ...(rows.schedules || []).map(r => r.location_parish_id),
+    ...(rows.overrides || []).map(o => o.patch_location_parish_id),
+    ...(events.results || []).map(e => e.location_parish_id),
+    pinnedEvent && pinnedEvent.location_parish_id,
+  ].filter(Boolean))];
+  const venueRows = venueIds.length
+    ? await db.prepare('SELECT id, name, address FROM parishes WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(venueIds)).all().catch(() => ({ results: [] }))
+    : { results: [] };
+
   const model = liteModel({
     parish, rows,
     events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
     cross: cross.results || [],
     links: links.results || [],
     route, pinnedEvent, now, origin: url.origin, overrides,
+    venues: Object.fromEntries((venueRows.results || []).map(p => [p.id, { name: p.name, address: p.address }])),
   });
   return renderLitePage(model);
 }

@@ -738,7 +738,7 @@ test('a service added from a sign names the sign as the timetable’s source, an
   assert.deepEqual(f.bucket.deleted, []);
 });
 
-test('a database made before 020 gets the sign and programme columns (and 022’s last day) on first use', async () => {
+test('a database made before 020 gets the sign and programme columns (and 022’s last day, 023’s place) on first use', async () => {
   const raw = new Database(':memory:');
   raw.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
   raw.exec(fs.readFileSync('d1/migrations/018-drafts.sql', 'utf8'));
@@ -747,5 +747,7 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
-  assert.deepEqual(cols('draft_events').slice(-3), ['occurrence', 'feast', 'end_date']);
+  assert.deepEqual(cols('draft_events').slice(-6), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng']);
+  const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));
+  assert.deepEqual([types.location_lat, types.location_lng, types.end_date], ['REAL', 'REAL', 'TEXT'], 'a pin is a number');
 });

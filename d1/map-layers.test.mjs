@@ -23,7 +23,12 @@ function buildStack() {
   const painted = [];
   const fakeMap = {
     addSource(id, spec) { sources[id] = spec; },
-    addLayer(spec) { added.push(spec); },
+    // Honours beforeId, as MapLibre does: the layer goes under the one named.
+    addLayer(spec, before) {
+      const at = before ? added.findIndex((l) => l.id === before) : -1;
+      if (before && at < 0) throw new Error(`${spec.id} is added before ${before}, which is not there`);
+      if (at < 0) added.push(spec); else added.splice(at, 0, spec);
+    },
     getLayer: (id) => added.find((l) => l.id === id),
     setPaintProperty(id, prop, value) { painted.push({ id, prop, value }); },
     hasImage: (id) => Object.prototype.hasOwnProperty.call(images, id),
@@ -52,10 +57,13 @@ function buildStack() {
   // `map` is a top-level `let`, so it lives in the context's lexical scope
   // rather than on the context object — assign to it from inside.
   vm.runInContext('map = __fakeMap; addParishSourceAndLayers();', ctx);
-  return { layers: added, images, sources, painted, ctx };
+  // What the parish layers register, before the places' square is added.
+  const parishImages = Object.keys(images);
+  vm.runInContext('addVenueSourceAndLayers();', ctx);
+  return { layers: added, images, parishImages, sources, painted, ctx };
 }
 
-const { layers: LAYERS, images: IMAGES, sources: SOURCES, painted: PAINTED, ctx: CTX } = buildStack();
+const { layers: LAYERS, images: IMAGES, parishImages: PARISH_IMAGES, sources: SOURCES, painted: PAINTED, ctx: CTX } = buildStack();
 const byId = Object.fromEntries(LAYERS.map((l) => [l.id, l]));
 const order = LAYERS.map((l) => l.id);
 
@@ -97,8 +105,8 @@ test('parish labels are lifted by a halo, not by a shadow', () => {
     assert.ok(!l.paint['text-translate'],
       `${l.id} is translated, which is how the per-glyph shadow underlay was built`);
   }
-  assert.deepEqual(Object.keys(IMAGES), [],
-    `addParishSourceAndLayers registers sprites again: ${Object.keys(IMAGES).join(', ')}`);
+  assert.deepEqual(PARISH_IMAGES, [],
+    `addParishSourceAndLayers registers sprites again: ${PARISH_IMAGES.join(', ')}`);
 });
 
 test('a dot that was moved off its parish does not get to keep its label', () => {
@@ -139,6 +147,11 @@ function evaluate(expr, props) {
     case '==': return evaluate(args[0], props) === evaluate(args[1], props);
     case '!=': return evaluate(args[0], props) !== evaluate(args[1], props);
     case '!': return !evaluate(args[0], props);
+    case '>': return evaluate(args[0], props) > evaluate(args[1], props);
+    case 'coalesce': {
+      for (const a of args) { const v = evaluate(a, props); if (v != null) return v; }
+      return null;
+    }
     case 'has': return Object.prototype.hasOwnProperty.call(props, args[0]);
     case 'get': return props[args[0]];
     default: throw new Error('unhandled expression: ' + op);
@@ -211,10 +224,13 @@ test('the stack a visitor gets is the clustered one', () => {
 
 // ── Halos ────────────────────────────────────────────────────────────────
 
-const HALOS = LAYERS.filter((l) => l.id.startsWith('parish-halo-'));
+const HALOS = LAYERS.filter((l) => l.id.startsWith('parish-halo-') || l.id.startsWith('venue-halo-'));
 
 test('the halos paint under the dots, their shadow included', () => {
-  assert.equal(HALOS.length, 4, 'one breath and one toll for each size of marker');
+  assert.equal(HALOS.filter((l) => l.id.startsWith('parish-')).length, 6,
+    'a green breath, a neutral breath and a toll for each size of marker');
+  assert.equal(HALOS.filter((l) => l.id.startsWith('venue-')).length, 2,
+    'a place\'s square has the green breath and the toll');
   for (const l of HALOS) {
     assert.ok(order.indexOf(l.id) < order.indexOf('parish-circle-shadow'),
       `${l.id} paints over the dot's shadow, so over the jurisdiction colour`);
@@ -242,6 +258,32 @@ test('a grape carries the halos of the parishes in it', () => {
   const props = SOURCES.parishes.clusterProperties || {};
   assert.ok(props.now_count && props.today_count,
     'the clustered source drops now/today, so a grape over a service that is on shows nothing');
+  assert.ok(props.away_count,
+    'the clustered source drops away, so a grape over a parish running something elsewhere is still');
+});
+
+test('one halo per marker: green, then the neutral breath, then the toll', () => {
+  // Which halo layers draw under a marker with these flags. A dot, and a grape
+  // carrying the same flags as counts.
+  const drawn = (size, props) => HALOS
+    .filter((l) => l.id.startsWith('parish-halo-') && l.id.endsWith(`-${size}`))
+    .filter((l) => evaluate(l.filter, props))
+    .map((l) => l.id.replace(/^parish-halo-|-(dot|big)$/g, ''));
+  const CASES = [
+    [{ now: true, away: true, today: true }, ['now']],
+    [{ away: true, today: true }, ['away']],
+    [{ today: true }, ['toll']],
+    [{}, []],
+  ];
+  for (const [flags, want] of CASES) {
+    assert.deepEqual(drawn('dot', flags), want, `a dot flagged ${JSON.stringify(flags)}`);
+    const counts = Object.fromEntries(Object.keys(flags).map((k) => [`${k}_count`, 1]));
+    assert.deepEqual(drawn('big', { point_count: 3, ...counts }), want, `a grape counting ${JSON.stringify(counts)}`);
+  }
+  // The neutral breath is the toll's colour, breathing: same colour, no ring.
+  const away = byId['parish-halo-away-dot'].paint, toll = byId['parish-halo-toll-dot'].paint;
+  assert.equal(away['circle-color'], toll['circle-color'], 'the neutral breath is not the toll\'s colour');
+  assert.ok(!('circle-stroke-width' in away), 'the neutral breath has grown the toll\'s ring');
 });
 
 test('on now, later today in the parish\'s own zone, and nothing else', () => {
@@ -265,4 +307,99 @@ test('on now, later today in the parish\'s own zone, and nothing else', () => {
     finally { Date.now = real; }
   })()`, CTX);
   assert.deepEqual({ ...flags }, { on: 'now', later: 'today', nz: 'today' });
+});
+
+// ── Held elsewhere ───────────────────────────────────────────────────────
+
+const NOON = Date.parse('2026-10-11T01:00:00Z');                 // 12:00 in Sydney
+const withClock = (expr) => vm.runInContext(`(() => {
+  const real = Date.now;
+  Date.now = () => ${NOON};
+  try { return ${expr}; }
+  finally { Date.now = real; }
+})()`, CTX);
+
+test('an event elsewhere lights where it is, and its host breathes neutral', () => {
+  const on = { start_utc: '2026-10-11T00:30:00Z', end_utc: '2026-10-11T02:00:00Z' };
+  const later = { start_utc: '2026-10-11T08:00:00Z' };            // 19:00 Sydney
+  CTX.__events = [
+    // At another parish: on now there, run from here.
+    { parish_id: 'host', location_parish_id: 'venue', ...on },
+    // At another parish this evening: both toll.
+    { parish_id: 'host2', location_parish_id: 'venue2', ...later },
+    // At a place with its own pin, and at a place in words only.
+    { parish_id: 'host3', location_lat: -34.75, location_lng: 149.7, location_override: 'Antiochian Village', ...on },
+    { parish_id: 'host4', location_override: 'AYC Carpark', ...on },
+    // On at home beats on elsewhere; on elsewhere beats later today.
+    { parish_id: 'busy', ...on },
+    { parish_id: 'busy', location_parish_id: 'venue3', ...on },
+    { parish_id: 'away-and-later', location_lat: -33.9, location_lng: 151.1, ...on },
+    { parish_id: 'away-and-later', ...later },
+    // A venue that also has its own evening service: on now wins there too.
+    { parish_id: 'venue', ...later },
+    // Naming itself as the venue is at home.
+    { parish_id: 'self', location_parish_id: 'self', ...on },
+  ];
+  const flags = withClock('Object.fromEntries(parishTimeFlags({ events: __events }))');
+  assert.deepEqual({ ...flags }, {
+    host: 'away', venue: 'now',
+    host2: 'today', venue2: 'today',
+    host3: 'away', host4: 'away',
+    busy: 'now', venue3: 'now',
+    'away-and-later': 'away',
+    self: 'now',
+  });
+});
+
+test('a place with a pin is one square per host, tapping to its soonest event', () => {
+  vm.runInContext(`parishesById.set('h', { id: 'h', jurisdiction: 'antiochian', color: '#1f6f3f' });`, CTX);
+  const VILLAGE = { location_lat: -34.75, location_lng: 149.7, location_override: 'Antiochian Village' };
+  CTX.__events = [
+    { id: 'done', parish_id: 'h', title: 'Yesterday', start_utc: '2026-10-10T00:00:00Z', ...VILLAGE },
+    { id: 'next', parish_id: 'h', title: 'Youth camp', start_utc: '2026-10-11T00:30:00Z', end_utc: '2026-10-11T03:00:00Z', ...VILLAGE },
+    { id: 'later', parish_id: 'h', title: 'Camp, day two', start_utc: '2026-10-12T00:00:00Z', ...VILLAGE },
+    { id: 'gone', parish_id: 'h', title: 'Cancelled', start_utc: '2026-10-11T00:30:00Z', status: 'cancelled',
+      location_lat: -33, location_lng: 150 },
+    { id: 'parish', parish_id: 'h', title: 'At a parish', start_utc: '2026-10-11T00:30:00Z', location_parish_id: 'v' },
+    { id: 'orphan', parish_id: 'nobody', title: 'No host on file', start_utc: '2026-10-11T00:30:00Z', ...VILLAGE },
+  ];
+  const squares = withClock('venueFeatures({ events: __events })');
+  assert.equal(squares.length, 1, `expected the village once, got ${JSON.stringify(squares.map((f) => f.properties))}`);
+  const [sq] = squares;
+  assert.deepEqual([...sq.geometry.coordinates], [149.7, -34.75]);
+  assert.equal(sq.properties.event_id, 'next', 'the tap goes to the one on now, the soonest');
+  assert.equal(sq.properties.parish_id, 'h');
+  assert.equal(sq.properties.label, 'Youth camp');
+  assert.equal(sq.properties.now, true);
+  assert.equal(sq.properties.today, false, 'green and the toll at once');
+});
+
+test('the square paints over the dots, under their names, its halos under everything', () => {
+  for (const id of ['venue-halo-now', 'venue-halo-toll']) {
+    assert.ok(order.indexOf(id) < order.indexOf('parish-circle-shadow'), `${id} paints over the dots`);
+  }
+  assert.ok(order.indexOf('venue-square') > order.indexOf('parish-circle'), 'the square is under the dots');
+  assert.ok(order.indexOf('venue-square') < order.indexOf('parish-label'), 'the square covers parish names');
+  assert.ok(order.indexOf('venue-label') < order.indexOf('parish-label'),
+    'a place\'s name is placed ahead of a parish\'s, so wins the collision');
+  const sq = byId['venue-square'];
+  assert.equal(sq.layout['icon-image'], 'venue-square');
+  assert.deepEqual(sq.paint['icon-color'], ['get', 'color'], 'the square is not in its host\'s colour');
+  assert.ok(IMAGES['venue-square'] && IMAGES['venue-square'].options.sdf, 'the square is not an SDF, so it cannot take a colour');
+});
+
+test('the square image is a square: solid inside, the edge at 0.75, clear in the corners', () => {
+  const { data, width, height } = IMAGES['venue-square'].data;
+  const alpha = (x, y) => data[(y * width + x) * 4 + 3];
+  const c = width / 2;
+  assert.equal(alpha(c, c), 255, 'the middle is not solid');
+  assert.equal(alpha(0, 0), 0, 'the corner of the image is not clear');
+  // Along the middle row the edge is at 4.75 CSS px out, 9.5 image px at 2x —
+  // the pixel whose centre that is, centres being at half pixels.
+  const edge = alpha(Math.floor(c + 9.5), c);
+  assert.ok(Math.abs(edge - 191) < 12, `the edge reads ${edge}, not 0.75`);
+  // Square, not round: as far out along the diagonal as along the side, the
+  // square is still inside where a circle would not be.
+  assert.ok(alpha(c + 8, c + 8) > 191, 'the square has rounded into a circle');
+  assert.equal(width, height);
 });

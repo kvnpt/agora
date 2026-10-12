@@ -62,13 +62,25 @@ export function filterByStatus(events, status) {
     || e.status === 'combined' || e.status === 'break');
 }
 
-/** Attach cross-parish links. Only integer-id rows (stored events) can have them. */
+/**
+ * The parishes besides its own an event shows at: the ones a combine added
+ * (`combined_parishes` — only integer-id rows, stored events, can have them),
+ * and the parish it is held at when that is another (location_parish_id —
+ * worker/lib/venues.mjs). Everything that asks "is this on at that parish" —
+ * its sheet, a parish filter, the viewport — reads `extra_parishes`; the
+ * COMBINED badge and "@ host" read only the combine's.
+ */
 export function attachExtraParishes(events, crossRows) {
   const map = {};
   for (const row of crossRows || []) {
     (map[row.event_id] ||= []).push(row.parish_id);
   }
-  return events.map(e => ({ ...e, extra_parishes: map[e.id] || [] }));
+  return events.map(e => {
+    const combined = map[e.id] || [];
+    const venue = e.location_parish_id && e.location_parish_id !== e.parish_id
+      && !combined.includes(e.location_parish_id) ? [e.location_parish_id] : [];
+    return { ...e, extra_parishes: [...combined, ...venue], combined_parishes: combined };
+  });
 }
 
 export function haversineKm(lat1, lon1, lat2, lon2) {

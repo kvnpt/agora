@@ -62,7 +62,12 @@ looked for and added the same way when they are missing: one cheap read per
 isolate, which tests run against databases made before 019 and before 020.
 021 (a rule's own `poster_path` and `description`) has no such fallback —
 `schedules` is read and written everywhere — so it goes to production before
-the merge, like any other.
+the merge, like any other. So does 023 (venues: `location_parish_id`,
+`location_lat`, `location_lng` on `schedules`, `events` and `draft_events`, and
+their `patch_` columns on `schedule_overrides`); its draft columns are also
+added on first use, as REAL for the two coordinates. 023 also backfills: an
+event whose words already named a place and whose pin was not its parish's had
+been geocoded there, so that pin becomes the place's own, and the event a square.
 
 The seed is safe to re-run — every statement inserts only if the row is missing.
 Parishes get `ON CONFLICT(id) DO NOTHING`; schedules have an AUTOINCREMENT id and

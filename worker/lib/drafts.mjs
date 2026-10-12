@@ -63,7 +63,10 @@ export const DRAFTS_DDL = [
   updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   occurrence        TEXT,
   feast             TEXT,
-  end_date          TEXT
+  end_date          TEXT,
+  location_parish_id TEXT,
+  location_lat      REAL,
+  location_lng      REAL
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -78,7 +81,7 @@ export const DRAFTS_DDL = [
 // answer is a query that works rather than one that errors.
 const LATER_COLUMNS = {
   drafts: ['read_parish', 'read_language', 'read_services', 'read_details'],
-  draft_events: ['occurrence', 'feast', 'end_date'],
+  draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng'],
 };
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
@@ -90,7 +93,9 @@ export async function ensureDraftTables(db) {
     } catch {
       const have = new Set(((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).map(c => c.name));
       for (const c of cols) {
-        if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} TEXT`).run();
+        // A pin is a number; everything else these add is text.
+        const type = /_(lat|lng)$/.test(c) ? 'REAL' : 'TEXT';
+        if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} ${type}`).run();
       }
     }
   }
@@ -108,7 +113,10 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * `feast` is the commemoration such a card carries.
  */
 export const CARD_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
-  'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence'];
+  'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence',
+  'location_parish_id', 'location_lat', 'location_lng'];
+/** A pin's two halves: numbers, where every other field here is text. */
+const NUMBER_FIELDS = new Set(['location_lat', 'location_lng']);
 const JSON_FIELDS = new Set(['languages', 'also_at', 'replaces']);
 
 /** The fields a poster read may fill — everything but the combine and the ask. */
@@ -146,6 +154,13 @@ export function validateCard(body) {
     if (!(f in b)) continue;
     let v = b[f];
     if (v === '' || v === undefined) v = null;
+    if (NUMBER_FIELDS.has(f)) {
+      const n = v == null ? null : Number(v);
+      if (n != null && !Number.isFinite(n)) return bad(f, 'A pin is two numbers.');
+      if (n != null && Math.abs(n) > (f === 'location_lat' ? 90 : 180)) return bad(f, 'That pin is not on the map.');
+      patch[f] = n;
+      continue;
+    }
     if (JSON_FIELDS.has(f)) {
       if (v == null) { patch[f] = null; continue; }
       if (!Array.isArray(v) || !v.every(x => typeof x === 'string' || typeof x === 'number')) {
@@ -186,6 +201,9 @@ export function cardOut(r) {
     replaces: parseList(r.replaces).map(String),
     ask_reason: r.ask_reason,
     occurrence: r.occurrence || null,
+    location_parish_id: r.location_parish_id || null,
+    location_lat: r.location_lat != null ? r.location_lat : null,
+    location_lng: r.location_lng != null ? r.location_lng : null,
     printed_weekday: r.printed_weekday,
     year_printed: r.year_printed,
     read_notes: parseList(r.read_notes),
@@ -546,6 +564,9 @@ export function publishBody(card, parishId) {
     description: card.description || null,
     languages: card.languages && card.languages !== '[]' ? card.languages : null,
     location_override: card.location_override || null,
+    location_parish_id: card.location_parish_id || null,
+    location_lat: card.location_lat != null ? card.location_lat : null,
+    location_lng: card.location_lng != null ? card.location_lng : null,
     additive_parish_ids: parseList(card.also_at).map(String),
     replaced_event_ids: parseList(card.replaces).map(String),
   };
@@ -569,7 +590,13 @@ export function occurrenceBody(card, posterPath) {
   if (has(card.description)) body.description = card.description;
   if (has(card.event_type)) body.event_type = card.event_type;
   if (has(card.languages)) body.languages = card.languages;
-  if (has(card.location_override)) body.location_override = card.location_override;
+  // A place, whole (lib/venues.mjs): another parish, or words and a pin.
+  if (has(card.location_parish_id) || has(card.location_override) || card.location_lat != null) {
+    body.location_parish_id = card.location_parish_id || null;
+    body.location_override = card.location_parish_id ? null : (card.location_override || null);
+    body.location_lat = card.location_parish_id ? null : card.location_lat ?? null;
+    body.location_lng = card.location_parish_id ? null : card.location_lng ?? null;
+  }
   if (posterPath) body.poster_path = posterPath;
   return body;
 }

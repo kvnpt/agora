@@ -18,12 +18,16 @@ const PATCH_COLS = [
   'patch_title', 'patch_start_time', 'patch_end_time', 'patch_event_type',
   'patch_languages', 'patch_feast', 'patch_description', 'patch_location_override',
   'patch_hide_live', 'patch_parish_scoped', 'patch_poster_path',
+  'patch_location_parish_id', 'patch_location_lat', 'patch_location_lng',
 ];
 const DISPLAY_FIELDS = [
   'title', 'description', 'start_utc', 'end_utc', 'event_type',
   'languages', 'location_override', 'hide_live', 'parish_scoped', 'feast',
-  'poster_path',
+  'poster_path', 'location_parish_id', 'location_lat', 'location_lng',
 ];
+
+/** The four fields that say where (lib/venues.mjs), written as one. */
+const LOCATION = ['location_override', 'location_parish_id', 'location_lat', 'location_lng'];
 
 // A UTC instant -> 'HH:MM' on the parish's wall clock.
 function localHHMM(zone, utc) {
@@ -51,7 +55,19 @@ function mergePatch(s, zone, body, cur) {
   // Against the rule's own words, now that a rule can have some (migration
   // 021): a drawer saved with the inherited text unchanged writes nothing.
   if ('description' in body) cur.patch_description = (body.description && body.description !== (s.description || null)) ? body.description : null;
-  if ('location_override' in body) cur.patch_location_override = body.location_override || null;
+  // Where, as a unit: a date at the rule's own place patches nothing; anywhere
+  // else patches all four, so a place is never half one date's and half the
+  // rule's. "At home" is nothing named — which, under a rule held elsewhere,
+  // would read as "as the rule says". So that one date says it in so many
+  // words: the parish's OWN id as the venue, which placeOf (project.mjs) reads
+  // as its own church, the way readVenue reads a host naming itself.
+  if (LOCATION.some(k => k in body)) {
+    const want = Object.fromEntries(LOCATION.map(k => [k, body[k] == null || body[k] === '' ? null : body[k]]));
+    const empty = LOCATION.every(k => want[k] == null);
+    const same = LOCATION.every(k => want[k] === (s[k] == null ? null : s[k]));
+    for (const k of LOCATION) cur[`patch_${k}`] = same || empty ? null : want[k];
+    if (empty && !same) cur.patch_location_parish_id = s.parish_id;
+  }
   if ('hide_live' in body) cur.patch_hide_live = ((body.hide_live ? 1 : 0) !== (s.hide_live || 0)) ? (body.hide_live ? 1 : 0) : null;
   if ('parish_scoped' in body) cur.patch_parish_scoped = ((body.parish_scoped ? 1 : 0) !== (s.parish_scoped || 0)) ? (body.parish_scoped ? 1 : 0) : null;
   // Set means this occurrence has a poster of its own (a bulletin, a range);
@@ -70,8 +86,9 @@ function upsert(db, scheduleId, date, kind, cur) {
     INSERT INTO schedule_overrides
       (schedule_id, occurrence_date, kind, patch_title, patch_start_time, patch_end_time,
        patch_event_type, patch_languages, patch_feast, patch_description, patch_location_override,
-       patch_hide_live, patch_parish_scoped, patch_poster_path, combined_into_event_id, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+       patch_hide_live, patch_parish_scoped, patch_poster_path, combined_into_event_id,
+       patch_location_parish_id, patch_location_lat, patch_location_lng, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
     ON CONFLICT(schedule_id, occurrence_date) DO UPDATE SET
       kind=excluded.kind,
       patch_title=excluded.patch_title, patch_start_time=excluded.patch_start_time,
@@ -82,6 +99,9 @@ function upsert(db, scheduleId, date, kind, cur) {
       patch_hide_live=excluded.patch_hide_live, patch_parish_scoped=excluded.patch_parish_scoped,
       patch_poster_path=excluded.patch_poster_path,
       combined_into_event_id=excluded.combined_into_event_id,
+      patch_location_parish_id=excluded.patch_location_parish_id,
+      patch_location_lat=excluded.patch_location_lat,
+      patch_location_lng=excluded.patch_location_lng,
       updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
   `).bind(
     scheduleId, date, kind,
@@ -91,6 +111,7 @@ function upsert(db, scheduleId, date, kind, cur) {
     cur.patch_hide_live ?? null, cur.patch_parish_scoped ?? null,
     cur.patch_poster_path ?? null,
     cur.combined_into_event_id ?? null,
+    cur.patch_location_parish_id ?? null, cur.patch_location_lat ?? null, cur.patch_location_lng ?? null,
   ).run();
 }
 

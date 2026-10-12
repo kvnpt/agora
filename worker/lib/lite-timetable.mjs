@@ -140,8 +140,13 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   ];
   const canonicalPath = segs.length ? pathOf(segs) : '/services';
 
+  // The parishes a rule meets at, when it meets at another (venueLite).
+  const venueIds = new Set(rules.map(r => r.location_parish_id).filter(Boolean));
+  const venues = Object.fromEntries(parishes.filter(p => venueIds.has(p.id))
+    .map(p => [p.id, { name: p.name, address: p.address }]));
+
   return {
-    route, named, loc, groups, parishCount, withoutTimes, scopeCount: scope.length, now, origin,
+    route, named, loc, groups, parishCount, withoutTimes, scopeCount: scope.length, now, origin, venues,
     canonical: `${origin}${canonicalPath}`,
     // The dated feed for the same link, and the Schedules view, where the
     // parishes with no times are listed by name. ?app is the Worker's cue to
@@ -210,7 +215,7 @@ function parishHTML({ parish: p, rules }, m, n) {
   return `
         <div class="parish-schedule tt-parish pc-${n}">
           <a class="parish-schedule-head" href="/${esc(slug)}">${avatar}<div class="parish-schedule-name"><span class="tt-name">${esc(p.name)}</span>${p.address ? `<span class="tt-addr">${esc(p.address)}</span>` : ''}</div></a>
-          ${scheduleRowsHTML(rules, slug, m.now)}
+          ${scheduleRowsHTML(rules, slug, m.now, m.venues)}
         </div>`;
 }
 

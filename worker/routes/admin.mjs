@@ -40,6 +40,7 @@ import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, ins
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
   placeRead, moveDraft, matchOccurrences, occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
+import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
@@ -441,6 +442,12 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
   const parish = await env.DB.prepare('SELECT id, lat, lng FROM parishes WHERE id = ?')
     .bind(parish_id).first();
   if (!parish) return { response: json({ error: 'Invalid parish_id' }, 400) };
+  // Where, when it is not here (lib/venues.mjs): another parish, or a place
+  // with a pin of its own. Distance is measured from the venue.
+  const v = await readVenue(env.DB, b, { hostParishId: parish_id });
+  if (v.error) return { response: json({ error: v.error }, 400) };
+  const venue = v.present ? v.venue : { location_parish_id: null, location_override: null, location_lat: null, location_lng: null };
+  const pin = v.pin || { lat: parish.lat, lng: parish.lng };
 
   // `source_adapter` is what the bundle query filters on ('schedule' is scar
   // tissue from the nightly generator), and 'manual' is what says a person
@@ -449,25 +456,19 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
   const row = await env.DB.prepare(
     `INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
        location_override, lat, lng, event_type, status, mutation_type, languages,
-       hide_live, parish_scoped, poster_path)
-     VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?,?) RETURNING *`
+       hide_live, parish_scoped, poster_path, location_parish_id, location_lat, location_lng)
+     VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?,?,?,?,?) RETURNING *`
   ).bind(
     parish_id, title, b.description || null, startUtc, endUtc,
-    b.location_override || null, parish.lat, parish.lng,
+    venue.location_override, pin.lat, pin.lng,
     b.event_type || 'other', b.languages || null,
     b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, posterPath,
+    venue.location_parish_id, venue.location_lat, venue.location_lng,
   ).first();
 
-  // A venue of its own gets its own dot. Best-effort: a geocoder that cannot
-  // find it leaves the parish's coordinates, which is where the service is
-  // unless somebody says otherwise.
-  if (b.location_override) {
-    const coords = await geocode(b.location_override);
-    if (coords) {
-      await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
-        .bind(coords.lat, coords.lng, row.id).run();
-    }
-  }
+  // A place given in words and no pin: looked up. Best-effort — a geocoder
+  // that cannot find it leaves the words, and the parish's coordinates.
+  if (venue.location_override && venue.location_lat == null) await pinFromWords(env.DB, row.id, venue.location_override);
 
   const { refused, ask } = await applyEscalation(c, row, b);
   if (refused) {
@@ -575,15 +576,24 @@ const signedIn = (fn) => async (c) => {
   return fn(c);
 };
 
-// Keep an event's coordinates in step with its parish, unless it has an override.
+// Keep an event's coordinates in step with its parish, unless it is elsewhere.
 async function syncEventCoordsForParish(db, parishId) {
   if (!parishId || parishId === '_unassigned') return;
   const p = await db.prepare('SELECT lat, lng FROM parishes WHERE id = ?').bind(parishId).first();
   if (!p || p.lat == null) return;
   await db.prepare(
     `UPDATE events SET lat = ?, lng = ? WHERE parish_id = ?
-     AND (location_override IS NULL OR location_override = '')`
+     AND (location_override IS NULL OR location_override = '')
+     AND location_parish_id IS NULL AND location_lat IS NULL`
   ).bind(p.lat, p.lng, parishId).run();
+}
+
+/** A place given in words: its pin looked up, and kept as the place's own. */
+async function pinFromWords(db, eventId, words) {
+  const coords = await geocode(words);
+  if (!coords) return;
+  await db.prepare('UPDATE events SET lat = ?, lng = ?, location_lat = ?, location_lng = ? WHERE id = ?')
+    .bind(coords.lat, coords.lng, coords.lat, coords.lng, eventId).run();
 }
 
 export function registerAdminRoutes(router) {
@@ -981,6 +991,11 @@ export function registerAdminRoutes(router) {
       if (!rule) return json({ error: 'Event not found' }, 404);
       const scopedRule = outOfScope(c, rule.parish_id);
       if (scopedRule) return scopedRule;
+      // One date's place, read like any other (lib/venues.mjs) and written as
+      // a unit of the override's patch_location_* (lib/overrides.mjs).
+      const v = await readVenue(env.DB, body, { hostParishId: rule.parish_id });
+      if (v.error) return json({ error: v.error }, 400);
+      if (v.present) Object.assign(body, v.venue);
       const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, body);
       return r.error ? json({ error: r.error }, r.code || 400) : json(r.instance);
     }
@@ -992,7 +1007,7 @@ export function registerAdminRoutes(router) {
 
     const {
       status, parish_id, title, description, start_utc, end_utc, event_type,
-      languages, location_override, hide_live, parish_scoped,
+      languages, hide_live, parish_scoped,
     } = body;
 
     if (status && !['approved', 'rejected', 'cancelled', 'hidden'].includes(status)) {
@@ -1008,7 +1023,10 @@ export function registerAdminRoutes(router) {
     if (end_utc !== undefined) put('end_utc', end_utc || null);
     if (event_type) put('event_type', event_type);
     if (languages !== undefined) put('languages', languages || null);
-    if (location_override !== undefined) put('location_override', location_override || null);
+    // Where: another parish, a place with a pin, or home again (lib/venues.mjs).
+    const v = await readVenue(env.DB, body, { hostParishId: parish_id || event.parish_id });
+    if (v.error) return json({ error: v.error }, 400);
+    if (v.present) for (const [k, val] of Object.entries(v.venue)) put(k, val);
     if (hide_live !== undefined) put('hide_live', hide_live ? 1 : 0);
     if (parish_scoped !== undefined) put('parish_scoped', parish_scoped ? 1 : 0);
 
@@ -1028,17 +1046,21 @@ export function registerAdminRoutes(router) {
     await env.DB.prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`)
       .bind(...vals, params.id).run();
 
-    if (location_override) {
-      const coords = await geocode(location_override);
-      if (coords) {
+    // Distance is from where it is: the venue's pin, a place's words looked
+    // up, or the parish's own pin once it is home again.
+    if (v.present) {
+      if (v.pin) {
         await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
-          .bind(coords.lat, coords.lng, params.id).run();
-      }
-    } else if (location_override === '') {
-      const p = await env.DB.prepare('SELECT lat, lng FROM parishes WHERE id = ?').bind(event.parish_id).first();
-      if (p) {
-        await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
-          .bind(p.lat, p.lng, params.id).run();
+          .bind(v.pin.lat, v.pin.lng, params.id).run();
+      } else if (v.venue.location_override) {
+        await pinFromWords(env.DB, params.id, v.venue.location_override);
+      } else {
+        const p = await env.DB.prepare('SELECT lat, lng FROM parishes WHERE id = ?')
+          .bind(parish_id || event.parish_id).first();
+        if (p) {
+          await env.DB.prepare('UPDATE events SET lat = ?, lng = ? WHERE id = ?')
+            .bind(p.lat, p.lng, params.id).run();
+        }
       }
     }
 
@@ -1266,6 +1288,7 @@ export function registerAdminRoutes(router) {
              AND patch_title IS NULL AND patch_start_time IS NULL AND patch_end_time IS NULL
              AND patch_event_type IS NULL AND patch_languages IS NULL AND patch_feast IS NULL
              AND patch_description IS NULL AND patch_location_override IS NULL
+             AND patch_location_parish_id IS NULL AND patch_location_lat IS NULL
              AND patch_hide_live IS NULL AND patch_parish_scoped IS NULL
              AND combined_into_event_id IS NULL`
         ).bind(...ovName.args, anchor.parishId),
@@ -1663,6 +1686,9 @@ export function registerAdminRoutes(router) {
     ).bind(inst.scheduleId, inst.date).first();
     const span = localSpanToUtc(zone, card.date, card.start_time, card.end_time);
     const body = { ...occurrenceBody(card, card.poster_path), start_utc: span.start_utc };
+    const v = await readVenue(env.DB, body, { hostParishId: card.parish_id });
+    if (v.error) return json({ error: v.error }, 400);
+    if (v.present) Object.assign(body, v.venue);
     if (card.end_time) body.end_utc = span.end_utc;
     const r = await applyAdminEdit(env.DB, inst.scheduleId, inst.date, body);
     if (r.error) return json({ error: r.error }, r.code || 400);
@@ -2043,13 +2069,14 @@ export function registerAdminRoutes(router) {
   // A preview that consulted a different geocoder from the save would show a
   // dot the save then moved.
   //
-  // `parish.edit`, not a capability of its own: this answers exactly the
-  // question "where would saving this address put the pin", and anybody who
-  // may not edit a parish has no use for the answer.
+  // `event.edit`, not a capability of its own: it answers "where would saving
+  // this address put the pin", for a parish's address or for the place an
+  // event or a service is held (lib/venues.mjs) — and every role that may
+  // edit a parish may edit its events.
   //
   // Deliberately a read. It is pressed while somebody is still typing, and a
   // route that wrote would turn a preview into a half-finished save.
-  router.post('/api/admin/geocode', guarded('parish.edit', async ({ request }) => {
+  router.post('/api/admin/geocode', guarded('event.edit', async ({ request }) => {
     const b = await readJson(request);
     const address = typeof b.address === 'string' ? b.address.trim() : '';
     if (!address) return json({ error: 'An address is required' }, 400);
@@ -2539,18 +2566,23 @@ export function registerAdminRoutes(router) {
     if (b.poster_path != null && b.poster_path !== '' && !isPosterPath(b.poster_path)) {
       return json({ error: 'poster_path must be a poster already uploaded (/posters/…)' }, 400);
     }
+    // Where it is held, when not here (lib/venues.mjs).
+    const v = await readVenue(env.DB, b, { hostParishId: parish_id });
+    if (v.error) return json({ error: v.error }, 400);
+    const place = v.present ? v.venue : { location_parish_id: null, location_override: null, location_lat: null, location_lng: null };
     const row = await env.DB.prepare(
       `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
         languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
-        effective_from, effective_to, poster_path, description)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
+        effective_from, effective_to, poster_path, description, location_parish_id, location_lat, location_lng)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
       b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
-      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, b.location_override || null,
+      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, place.location_override,
       b.week_parity ? String(b.week_parity).toLowerCase() : null,
       b.effective_from || null, b.effective_to || null,
       b.poster_path || null, (b.description && String(b.description).trim()) || null,
+      place.location_parish_id, place.location_lat, place.location_lng,
     ).first();
     // A rule added from a church sign names the sign as its source ("Church
     // signage", linking to the photo), and that becomes the timetable's line.
@@ -2567,7 +2599,8 @@ export function registerAdminRoutes(router) {
   const SCHEDULE_EDITABLE = ['day_of_week', 'start_time', 'end_time', 'title', 'event_type',
     'active', 'languages', 'week_of_month', 'week_parity', 'concurrent', 'hide_live',
     'parish_scoped', 'effective_from', 'effective_to', 'location_override',
-    'source_name', 'source_ref', 'source_checked_at', 'description', 'poster_path'];
+    'source_name', 'source_ref', 'source_checked_at', 'description', 'poster_path',
+    'location_parish_id', 'location_lat', 'location_lng'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
   /** A path naming a poster already in R2 under /posters/ — never a URL elsewhere. */
@@ -2588,6 +2621,10 @@ export function registerAdminRoutes(router) {
       }
     }
     if (b.description !== undefined) b.description = (b.description && String(b.description).trim()) || null;
+    // A place is written whole: naming any part of it sets all four.
+    const v = await readVenue(env.DB, b, { hostParishId: row.parish_id });
+    if (v.error) return json({ error: v.error }, 400);
+    if (v.present) Object.assign(b, v.venue);
     // Checked against what the row will HOLD, not against what the body names,
     // so a body that clears week_of_month and sets week_parity in one go is a
     // legal move from one qualifier to the other rather than a moment where
@@ -2679,6 +2716,9 @@ export function registerAdminRoutes(router) {
     }
     if (b.action !== 'edit') return json({ error: "action must be 'end' or 'edit'" }, 400);
 
+    const v = await readVenue(env.DB, b, { hostParishId: rule.parish_id });
+    if (v.error) return json({ error: v.error }, 400);
+    if (v.present) Object.assign(b, v.venue);
     const changes = ruleChangesFrom(b, zone);
     const target = { ...rule, ...changes };
     const qErr = weekQualifierError({ week_of_month: target.week_of_month || null, week_parity: target.week_parity || null });
@@ -2772,7 +2812,7 @@ export function registerAdminRoutes(router) {
     if (!has && !b.description) return;
     const body = {};
     for (const k of ['title', 'start_utc', 'end_utc', 'event_type', 'languages', 'location_override',
-      'hide_live', 'parish_scoped', 'description']) {
+      'location_parish_id', 'location_lat', 'location_lng', 'hide_live', 'parish_scoped', 'description']) {
       if (b[k] !== undefined) body[k] = b[k];
     }
     await applyAdminEdit(db, scheduleId, date, body);
@@ -3502,6 +3542,7 @@ export function registerAdminRoutes(router) {
           feast: row.patch_feast,
           description: row.patch_description,
           location_override: row.patch_location_override,
+          location_parish_id: row.patch_location_parish_id,
         }).filter(([, v]) => v != null && v !== '')),
         combinedIntoEventId: row.combined_into_event_id || null,
       }));
