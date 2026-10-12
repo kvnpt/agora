@@ -2291,6 +2291,10 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
+  /* The lines the parish wrote stay lines: a programme, an RSVP list, an
+     address under a heading. Runs of spaces still collapse. */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 .detail-actions {
   display: flex;
@@ -4101,6 +4105,7 @@ button.ps-avatar { cursor: pointer; }
 .ps-btn {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   font: inherit;
   font-size: 13px;
   font-weight: 600;

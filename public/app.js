@@ -5189,13 +5189,13 @@ function paintParishSheetContent(parishId, opts = {}) {
   // Google routes to); the pin otherwise.
   const mapsHref = parishMapsHref(parish);
   const dirBtn = mapsHref
-    ? `<a class="ps-btn ps-btn-primary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Google Maps</a>`
+    ? `<a class="ps-btn ps-btn-primary" href="${esc(mapsHref)}" target="_blank" rel="noopener">${glyph(PARISH_BTN_GLYPH.maps)}<span>Google Maps</span></a>`
     : '';
   const webBtn = parish.website
-    ? `<a class="ps-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">Website</a>`
+    ? `<a class="ps-btn" href="${esc(parish.website)}" target="_blank" rel="noopener">${glyph(PARISH_BTN_GLYPH.website)}<span>Website</span></a>`
     : '';
   const phoneBtn = parish.phone
-    ? `<a class="ps-btn" href="tel:${esc(parish.phone)}">Call</a>`
+    ? `<a class="ps-btn" href="tel:${esc(parish.phone)}">${glyph(PARISH_BTN_GLYPH.phone)}<span>Call</span></a>`
     : '';
   const watchBtn = parish.live_url
     ? `<a class="ps-btn" href="${esc(parish.live_url)}" target="_blank" rel="noopener">Watch Live</a>`
@@ -6521,17 +6521,12 @@ function hexToRgba(hex, alpha) {
 // Light/dark palettes mirror the .badge-* CSS rules so the small circle
 // badge in collapsed cards matches the rectangular LITURGY/PRAYER/etc.
 // badge in the expanded drawer.
+// A kind's colours live in public/shared/event-types.js, with the kinds.
 function eventTypeDotColor(type) {
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const light = { liturgy: '#e8d5e8', feast: '#f5ecd0', prayer: '#d5e0f0', talk: '#f0e8d5', youth: '#d0e8f5', social: '#d5ead5', other: '#e8e8e8' };
-  const dk    = { liturgy: '#3a2840', feast: '#3a3220', prayer: '#1f2a3a', talk: '#3a2f1c', youth: '#1c303d', social: '#1f2e1f', other: '#26272c' };
-  return (dark ? dk : light)[type] || (dark ? '#26272c' : '#e8e8e8');
+  return window.AgoraEventTypes.kindColors(type, matchMedia('(prefers-color-scheme: dark)').matches).bg;
 }
 function eventTypeDotTextColor(type) {
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const light = { liturgy: '#6b2d6b', feast: '#7a6520', prayer: '#2d4a7a', talk: '#7a5a20', youth: '#2d5a8a', social: '#2d6a2d', other: '#555' };
-  const dk    = { liturgy: '#d4a3d4', feast: '#d4c082', prayer: '#9bb8e0', talk: '#d4b682', youth: '#a8c8de', social: '#a3c8a3', other: '#aaaaaa' };
-  return (dark ? dk : light)[type] || (dark ? '#aaaaaa' : '#555');
+  return window.AgoraEventTypes.kindColors(type, matchMedia('(prefers-color-scheme: dark)').matches).fg;
 }
 
 /**
@@ -6839,7 +6834,7 @@ function ruleEditFormHTML(s) {
       <div class="schedule-edit-grid">
         <input data-f="title" class="sef-full" value="${esc(s.title)}" placeholder="Title">
         <select data-f="day_of_week">${[0,1,2,3,4,5,6].map(d => `<option value="${d}" ${s.day_of_week===d?'selected':''}>${DAYS[d]}</option>`).join('')}</select>
-        <select data-f="event_type">${EVENT_TYPES.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
+        <select data-f="event_type" data-kind-picker>${EVENT_TYPES.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
         <input data-f="start_time" type="time" value="${esc(s.start_time)}">
         <input data-f="end_time" type="time" value="${esc(s.end_time || '')}">
         <input data-f="languages" class="sef-full" value="${esc(langs.join(', '))}" placeholder="Languages (comma-separated)">
@@ -6889,7 +6884,8 @@ function openRuleEditDialog(sid) {
   const body = openFormDialog({
     kind: 'rule',
     title: 'Edit service',
-    sub: [rule.title, `${DAYS[rule.day_of_week]}s ${formatTime12(rule.start_time)}`, parish && parish.name]
+    // The subtitle is text, and formatTime12 is markup (its AM/PM is a span).
+    sub: [rule.title, `${DAYS[rule.day_of_week]}s ${formatTime12(rule.start_time).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}`, parish && parish.name]
       .filter(Boolean).join(' · '),
     html: ruleEditFormHTML(rule),
   });
@@ -7271,7 +7267,7 @@ function addServiceHTML(parishId) {
         <input data-af="title" class="sef-full" placeholder="Divine Liturgy">
         <select data-af="day_of_week">${DAYS.map((d, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${d}</option>`).join('')}</select>
         <input data-af="start_time" type="time" value="09:00">
-        <select data-af="event_type" class="sef-full">${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+        <select data-af="event_type" class="sef-full" data-kind-picker>${types.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
       </div>
       ${venueFieldsHTML('data-af')}
       ${cadencePickerHTML('data-af="cadence"')}
@@ -7821,40 +7817,34 @@ function renderEventDrawerHTML(evt, opts = {}) {
   const addr = venue ? venue.line : (evt.parish_address || '');
   const parish = state.parishes.find(p => p.id === evt.parish_id);
 
-  // Where Directions actually goes, which has to be the address this drawer is
-  // showing rather than the parish it belongs to.
+  // Where the Google Maps button goes: the PLACE, not a route — the parish
+  // sheet's rule (parishMapsHref), for its reason: a reader wants to see where
+  // it is, and Google's page has Directions one tap further on. It has to be
+  // the place this drawer names, not the parish it belongs to.
   //
-  // An override is TEXT — d1/schema.sql says so for the rule and says why: the
-  // pin stays the parish's, because geocoding every rule would put a second
-  // class of unverified pin on the map. So a projected occurrence carries the
-  // PARISH's coordinates in evt.lat/evt.lng (project.mjs copies p_lat/p_lng),
-  // and the old "override ? the event's own coords : the parish's" read the
-  // same numbers down either branch. The drawer named a hall down the road and
-  // then drove the reader to the church — the one place an override exists to
-  // say the service is not.
-  //
-  // Only a stored one-off can carry a pin of its own (events.lat/lng), and only
-  // there is a coordinate more precise than the words. Everything else
-  // navigates to the override's address and lets Maps geocode it, which is what
-  // a reader holding the printed address would type in themselves.
+  // A rule's override is TEXT (d1/schema.sql says why), so a projected
+  // occurrence carries the PARISH's coordinates in evt.lat/evt.lng; only a
+  // stored one-off has a pin of its own there, and only then is a coordinate
+  // more precise than the words. A venue (worker/lib/venues.mjs) is exact: the
+  // other parish's own Maps entry or pin, or the place's own pin.
   const hasOwnPin = evt.lat != null && evt.lng != null
     && !(parish && evt.lat === parish.lat && evt.lng === parish.lng);
-  //
-  // A venue (worker/lib/venues.mjs) is exact: the other parish's pin, or the
-  // place's own. Words with no pin are the case above.
-  let destination = '';
-  if (venue && venue.lat != null && venue.lng != null) {
-    destination = `${venue.lat},${venue.lng}`;
+  const mapsAt = (query) => `https://www.google.com/maps/search/?api=1&query=${query}`;
+  let mapsHref = '';
+  if (venue && venue.parishId) {
+    mapsHref = parishMapsHref(state.parishes.find(p => p.id === venue.parishId));
+  } else if (venue && venue.lat != null && venue.lng != null) {
+    mapsHref = mapsAt(`${venue.lat},${venue.lng}`);
   } else if (venue) {
-    destination = hasOwnPin ? `${evt.lat},${evt.lng}` : encodeURIComponent(venue.words || venue.line);
-  } else if (parish && parish.lat != null && parish.lng != null) {
-    // No override: the parish's pin, which is always current where a copy sitting
-    // on the event row may be stale.
-    destination = `${parish.lat},${parish.lng}`;
+    mapsHref = hasOwnPin ? mapsAt(`${evt.lat},${evt.lng}`) : mapsAt(encodeURIComponent(venue.words || venue.line));
+  } else if (parishMapsHref(parish)) {
+    // At home: the parish's own Maps entry, or its pin — always current where a
+    // copy on the event row may be stale.
+    mapsHref = parishMapsHref(parish);
   } else if (hasOwnPin) {
-    destination = `${evt.lat},${evt.lng}`;
+    mapsHref = mapsAt(`${evt.lat},${evt.lng}`);
   } else if (addr) {
-    destination = encodeURIComponent(addr);
+    mapsHref = mapsAt(encodeURIComponent(addr));
   }
 
   const watchLiveCta = (evt.parish_live_url && !evt.hide_live)
@@ -7933,10 +7923,10 @@ function renderEventDrawerHTML(evt, opts = {}) {
       ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
       ${evt.languages ? `<div>${(() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })()}</div>` : ''}
     </div>
-    ${evt.description ? `<div class="detail-description">${linkifyText(evt.description)}</div>` : ''}
+    ${evt.description && evt.description.trim() ? `<div class="detail-description">${linkifyText(evt.description.trim())}</div>` : ''}
     <div class="detail-actions">
-      ${destination ? `<a class="btn-action btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${destination}" target="_blank" rel="noopener">
-        <img class="btn-action-icon" src="https://api.iconify.design/ph:map-trifold-fill.svg" alt="">Directions
+      ${mapsHref ? `<a class="btn-action btn-primary btn-google-maps" href="${esc(mapsHref)}" target="_blank" rel="noopener">
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:map-pin-fill.svg" alt="">Google Maps
       </a>` : ''}
       <button class="btn-action btn-share-event" type="button" data-share-id="${evt.id}">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share
@@ -7987,7 +7977,7 @@ function eventEditFormHTML(evt) {
       <div class="edit-row"><label>Title</label><input id="edit-title-${evt.id}" value="${esc(evt.title)}"></div>
       <div class="edit-row"><label>Description</label><textarea id="edit-desc-${evt.id}">${esc(evt.description || '')}</textarea></div>
       <div class="edit-row"><label>Type</label>
-        <select id="edit-type-${evt.id}">
+        <select id="edit-type-${evt.id}" data-kind-picker>
           ${EVENT_TYPES.map(t =>
             `<option value="${t}" ${evt.event_type === t ? 'selected' : ''}>${t}</option>`
           ).join('')}
@@ -8201,7 +8191,7 @@ function showParishDetail(parishId) {
     </div>
     ${schedHtml ? `<div style="margin-bottom:16px;">${schedHtml}</div>` : ''}
     <div class="detail-actions">
-      <a class="btn-primary" href="https://www.google.com/maps/dir/?api=1&destination=${parish.lat},${parish.lng}" target="_blank" rel="noopener">Directions</a>
+      ${parishMapsHref(parish) ? `<a class="btn-primary" href="${esc(parishMapsHref(parish))}" target="_blank" rel="noopener">Google Maps</a>` : ''}
       ${websiteCta}
     </div>`;
 
@@ -8764,6 +8754,10 @@ window.deleteEvent = async function(id) {
   }
 };
 
+// The parish sheet's three way-to-reach-them buttons, iconed the same in the
+// sheet and in its edit view (and on the lite card, worker/lib/lite-page.mjs).
+const PARISH_BTN_GLYPH = { maps: 'ph:map-pin-fill', website: 'ph:globe', phone: 'ph:phone' };
+
 /** Where the sheet's Google Maps button goes: the parish's own entry, or its pin. */
 function parishMapsHref(parish) {
   if (!parish) return '';
@@ -9066,7 +9060,7 @@ function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
   const acro = (parish.acronym || '').toLowerCase().replace(/\s+/g, '');
   const pencil = `<span class="ps-btn-pencil" aria-hidden="true">${glyph('ph:pencil-simple-fill')}</span>`;
   const linkBtn = (kind, label, has) =>
-    `<button type="button" class="ps-btn ps-btn-editable${has ? '' : ' ps-btn-empty'}${kind === 'maps' ? ' ps-btn-primary' : ''}" data-link-edit="${kind}">${esc(label)}${pencil}</button>`;
+    `<button type="button" class="ps-btn ps-btn-editable${has ? '' : ' ps-btn-empty'}${kind === 'maps' ? ' ps-btn-primary' : ''}" data-link-edit="${kind}">${PARISH_BTN_GLYPH[kind] ? glyph(PARISH_BTN_GLYPH[kind]) : ''}<span>${esc(label)}</span>${pencil}</button>`;
   const hasLinks = !!(parish.donation_url || parish.raffle_url || parish.payment_url || parish.gala_url
     || (state.parishLinks || []).some(l => l.parish_id === parish.id));
   const suburb = String(parish.address || '').split(',').slice(-2, -1)[0] || '';

@@ -974,7 +974,7 @@
           <div class="field full"><label>Parish</label><select name="parish_id" required id="schedule-parish-select"></select></div>
           <div class="field"><label>Title</label><input name="title" required placeholder="Sunday Divine Liturgy"></div>
           <div class="field"><label>Type</label>
-            <select name="event_type">
+            <select name="event_type" data-kind-picker>
               <option value="liturgy">Liturgy</option><option value="prayer">Prayer</option><option value="feast">Feast</option>
               <option value="talk">Talk</option><option value="youth">Youth</option><option value="social">Social</option><option value="other">Other</option>
             </select>
@@ -1186,6 +1186,7 @@
   <!-- The add-event editor — the same one the app's parish sheet opens — and
        what it stands on. -->
   <script src="/shared/event-types.js"></script>
+  <script src="/shared/kind-picker.js"></script>
   <script src="/shared/event-checks.js"></script>
   <script src="/shared/sse.js"></script>
   <script src="/shared/signs.js"></script>
@@ -2768,7 +2769,7 @@
                   <div class="field"><label>Start${s.timezone ? ' (' + esc(tzLabel(s.timezone)) + ')' : ''}</label><input type="time" value="${esc(s.start_time)}" data-field="start_time"></div>
                   <div class="field"><label>End${s.timezone ? ' (' + esc(tzLabel(s.timezone)) + ')' : ''}</label><input type="time" value="${esc(s.end_time || '')}" data-field="end_time"></div>
                   <div class="field"><label>Type</label>
-                    <select data-field="event_type">${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
+                    <select data-field="event_type" data-kind-picker>${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
                   </div>
                   <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages"></div>
                   <div class="field full"><label>Address</label><input value="${esc(s.location_override || '')}" data-field="location_override" placeholder="Blank — meets at the parish's own address"></div>

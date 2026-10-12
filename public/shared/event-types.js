@@ -24,6 +24,30 @@
 
   const EVENT_TYPES = KINDS.map(k => k.id);
 
+  // Each kind's colours — the type dot on a card, the badge in a drawer, the
+  // kind picker's chips — as [background, text], in light and in dark. One
+  // table, so a kind looks the same wherever it is named (app.css's
+  // .badge-<kind> rules carry the same pairs, for the markup that has no JS).
+  const COLORS = {
+    light: {
+      liturgy: ['#e8d5e8', '#6b2d6b'], prayer: ['#d5e0f0', '#2d4a7a'], feast: ['#f5ecd0', '#7a6520'],
+      talk: ['#f0e8d5', '#7a5a20'], youth: ['#d0e8f5', '#2d5a8a'], social: ['#d5ead5', '#2d6a2d'],
+      other: ['#e8e8e8', '#555555'],
+    },
+    dark: {
+      liturgy: ['#3a2840', '#d4a3d4'], prayer: ['#1f2a3a', '#9bb8e0'], feast: ['#3a3220', '#d4c082'],
+      talk: ['#3a2f1c', '#d4b682'], youth: ['#1c303d', '#a8c8de'], social: ['#1f2e1f', '#a3c8a3'],
+      other: ['#26272c', '#aaaaaa'],
+    },
+  };
+
+  /** A kind's colours: { bg, fg }. Unknown kinds wear "other"'s. */
+  function kindColors(id, dark = false) {
+    const table = dark ? COLORS.dark : COLORS.light;
+    const [bg, fg] = table[id] || table.other;
+    return { bg, fg };
+  }
+
   /** Is this one of the seven? */
   const isEventType = (v) => EVENT_TYPES.includes(v);
 
@@ -33,7 +57,7 @@
     return k ? k.label : String(id || '');
   }
 
-  const api = { KINDS, EVENT_TYPES, isEventType, eventTypeLabel };
+  const api = { KINDS, EVENT_TYPES, isEventType, eventTypeLabel, kindColors };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventTypes = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
