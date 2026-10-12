@@ -59,6 +59,10 @@ export function liteKind(pathname, now = Date.now()) {
   if (!first || SITE_PATHS.has(first.toLowerCase())) return null;
   const r = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) });
   const kind = urlState.pageKind(r);
+  // No parish id or acronym has a dot in it, so a dotted single segment is a
+  // file — /apple-touch-icon.png, which every iPhone asks for — and not worth
+  // two scans of `parishes` to find out.
+  if (kind === 'parish' && r.parishSlugs[0].includes('.')) return null;
   if (kind === 'parish') return { kind, slug: r.parishSlugs[0], route: r };
   return kind ? { kind, route: r } : null;
 }

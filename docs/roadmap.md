@@ -123,6 +123,76 @@ cache per URL and per hour, which a crawler visiting each URL once defeats, and
 > - *build timetable pages from the cached `/api/bundle` body instead of D1;*
 > - *if a single bot is the cause, a WAF rule or Bot Fight Mode first — no code.*
 
+## Probes for /.env, /.git/config, /wp-login.php
+
+Cloudflare's AI crawler reports showed requests for `antiochian.orthodoxy.au/.env`
+(12 October 2026). Nothing leaked: there is no `.env` anywhere a request can
+reach — secrets are in the Secrets Store, the Worker has no file system, and
+`public/` has no dotfiles. But every probe was answered `200` with the app shell
+(`not_found_handling = "single-page-application"`), which a scanner logs as a
+hit, after reaching the router (whose `/:slug/:link` route queried D1 for
+`/.git/config`) and `servePage` (which read `.env` and `wp-login.php` as parish
+slugs and scanned `parishes` twice).
+
+`.env` is the most-probed path on the internet; scanners try it on every
+hostname they learn of (the zone's wildcard routes answer every subdomain),
+often under a borrowed AI-crawler user agent — so "AI agent" in the report is
+the label on the request, not necessarily who sent it.
+
+**Done:** `worker/lib/probe.mjs` answers a dot-segment (not `/.well-known/`), a
+WordPress or cgi-bin directory, or a file type nothing here serves (`.php`,
+`.env`, `.sql`, `.bak`, `.yml`, `.zip`…) with a cacheable 404 before the router
+runs — no D1, no assets. And `liteKind` no longer reads a dotted segment as a
+parish (every iPhone's `/apple-touch-icon.png` was two scans).
+
+Owner, no code: a WAF custom rule that blocks those paths at the edge, before
+the Worker runs — `starts_with(http.request.uri.path, "/.") and not
+starts_with(http.request.uri.path, "/.well-known/")`, or the path ending in
+`.php`. Before blocking AI crawlers as a class (AI Crawl Control), check which
+of them send search traffic: the lite pages are there to be found.
+
+## How the work is done
+
+What a long session of features (PRs #82–#85, 12 October 2026) showed about
+the workflow itself. Highest leverage first.
+
+1. **"Migration before merge" as a CI check, not a rule.** Every merge deploys,
+   so a merge that beats its migration breaks production. Fail the PR when a new
+   file in `d1/migrations/` is not applied to production — adopting
+   `wrangler d1 migrations apply` gives a tracking table to check against; CI
+   needs a read-only D1 token.
+2. **Browser checks committed and run in CI.** CI runs none of `app.js`,
+   `map.js`, `filters.js`, `bundle.js`, and each PR's Playwright checks were
+   scripts in a scratchpad that did not outlive the session. A smoke suite
+   against `wrangler dev` with a fixture seed and stubbed tiles: the map loads, a
+   sheet opens, a card expands, the edit dialogs open.
+3. **Tests that know D1's limits.** better-sqlite3 accepted a six-term
+   compound SELECT that D1 refuses, and every draft delete returned 500 in
+   production. Run route tests on workerd's D1, or a test that counts UNION terms
+   and bound parameters in the SQL.
+4. **Smaller PRs.** #85 was 32 files mixing links, the venue model, the picker
+   and the map; links alone was a five-file change. Schema and API first (inert
+   until used), then the UI.
+5. **A review pass before merge.** PRs merged a minute after green CI with no
+   review; a real bug in #85 surfaced only because a test happened to cover it.
+   `/code-review` before opening the PR, or a review bot as a second gate.
+6. **A checklist back before a long request is built.** Dictated requests carry
+   reversals and leave calls open; anything with several features or a
+   production-data effect (023's backfill of 68 events) gets a short spec that
+   the owner approves first.
+7. **Evals for the poster reader's judgement.** The mock reader tests plumbing,
+   so "a weekly flyer read as a one-off" could not be caught. A handful of real
+   images (the choir flyer, a festival poster, a programme, a church sign) with
+   the expected categories, run against the real model when the prompt changes.
+8. **Cloud sessions that start ready.** A SessionStart hook that installs,
+   builds the local D1 and applies every migration (and a `db:migrate:local`
+   script); the geocoder's host allowed in the environment's network policy;
+   R2 write on the Cloudflare token so the data-version bump stops answering
+   403; one session per feature, since a long one loses detail to compaction.
+
+Keep: CLAUDE.md's rules that bite, each linking its doc — they stopped real
+mistakes — and route tests through the real Router on a real schema.
+
 ## Owner to-dos (not code)
 
 - Switch Cloudflare Access to "Everyone + One-time PIN" so People is the only
@@ -132,3 +202,6 @@ cache per URL and per hour, which a crawler visiting each URL once defeats, and
 - Search Console: export Performance in late October and add it to
   `docs/search-console.md`.
 - Workers Observability: check CPU per request for the lite pages.
+- Give the Cloudflare API token Zone → Analytics: Read, so a session can answer
+  "who is crawling this" from the request logs instead of guessing.
+- A WAF rule for `/.env`-style probes — "Probes for /.env" above.
