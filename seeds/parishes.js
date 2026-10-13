@@ -1,12 +1,7 @@
 // Seed data: the parishes and recurrence rules a fresh database starts with.
 //
-// Colours come from the shared jurisdiction table rather than constants here.
-// The local GREEK_BLUE was #0d5eaf against the app's #00508f, so a seeded Greek
-// parish carried one blue in the database and the app drew another wherever it
-// asked the table directly. See public/shared/jurisdiction-colors.js.
-const { jurisdictionColor } = require('../public/shared/jurisdiction-colors.js');
-const ANTIOCHIAN_BLUE = jurisdictionColor('antiochian');
-const GREEK_BLUE = jurisdictionColor('greek');
+// No colours: a parish wears its jurisdiction's, from
+// public/shared/jurisdiction-colors.js.
 
 const parishes = [
   {
@@ -17,8 +12,7 @@ const parishes = [
     address: 'Cnr Walker & Cooper Streets, Redfern NSW 2016',
     lat: -33.8910, lng: 151.2089,
     website: 'https://stgeorgecathedral.com.au/',
-    languages: '["Arabic", "English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["Arabic", "English"]'
   },
   {
     // Melbourne, not Sydney — a mission at the Monash University Religious
@@ -39,8 +33,7 @@ const parishes = [
     lat: -37.9115, lng: 145.1330,
     timezone: 'Australia/Melbourne',
     website: 'https://www.thegoodshepherd.org.au/',
-    languages: '["English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["English"]'
   },
   {
     id: 'antiochian-stnicholas-punchbowl',
@@ -50,8 +43,7 @@ const parishes = [
     address: '11 Henry St, Punchbowl NSW 2196',
     lat: -33.9222, lng: 151.0546,
     website: 'https://stnicholaspunchbowl.org.au/',
-    languages: '["Arabic", "English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["Arabic", "English"]'
   },
   {
     id: 'antiochian-stmary-mayshill',
@@ -61,8 +53,7 @@ const parishes = [
     address: '139 Burnett St, Mays Hill NSW 2145',
     lat: -33.8200, lng: 150.9909,
     website: 'https://www.saintmary.org.au/',
-    languages: '["English", "Arabic"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["English", "Arabic"]'
   },
   {
     id: 'antiochian-stmichaelgabriel-ryde',
@@ -72,8 +63,7 @@ const parishes = [
     address: '72 Belmore St, Ryde NSW 2112',
     lat: -33.8181, lng: 151.0986,
     website: 'https://smg.org.au/',
-    languages: '["English", "Arabic"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["English", "Arabic"]'
   },
   {
     id: 'antiochian-stnicholas-bankstown',
@@ -83,8 +73,7 @@ const parishes = [
     address: '2a Weigand Ave, Bankstown NSW 2200',
     lat: -33.9160, lng: 151.0287,
     website: 'https://www.stnicholas-bankstown.org/',
-    languages: '["Arabic", "English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["Arabic", "English"]'
   },
   {
     id: 'antiochian-stspeterpaul-doonside',
@@ -93,8 +82,7 @@ const parishes = [
     jurisdiction: 'antiochian',
     address: '182 Hill End Road, Doonside NSW 2767',
     lat: -33.7485, lng: 150.8719,
-    languages: '["Arabic", "English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["Arabic", "English"]'
   },
   {
     id: 'antiochian-stjohnbaptist-croydonpark',
@@ -104,8 +92,7 @@ const parishes = [
     address: '12-14 Balmoral Ave, Croydon Park NSW 2133',
     lat: -33.8997, lng: 151.1017,
     website: 'https://stjohnthebaptist.church/',
-    languages: '["Arabic", "English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["Arabic", "English"]'
   },
   {
     // Publishes a monthly programme as a bordered PDF table — the source
@@ -133,8 +120,7 @@ const parishes = [
     // parish's programme apart. See provenance() in scripts/gen-seed-sql.js.
     source_checked: '2026-09-11T08:49:48Z',
     // The programme marks which services are in English; the rest are Greek.
-    languages: '["Greek", "English"]',
-    color: GREEK_BLUE
+    languages: '["Greek", "English"]'
   },
   {
     // Queensland, and the first parish here outside the Antiochian
@@ -168,8 +154,7 @@ const parishes = [
     website: 'https://orthodoxsunshinecoast.org/',
     source_checked: '2026-09-11T06:04:04Z',
     // The programme is published twice over, English and Greek, in one file.
-    languages: '["English", "Greek"]',
-    color: GREEK_BLUE
+    languages: '["English", "Greek"]'
   },
   {
     id: 'antiochian-stelias-wollongong',
@@ -179,8 +164,7 @@ const parishes = [
     address: '86 Kenny Street, Wollongong NSW 2500',
     lat: -34.4364, lng: 150.8905,
     website: 'https://www.saintelias.org.au/',
-    languages: '["Arabic", "English"]',
-    color: ANTIOCHIAN_BLUE
+    languages: '["Arabic", "English"]'
   }
 ];
 

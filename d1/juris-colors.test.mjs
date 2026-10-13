@@ -17,32 +17,21 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 
-import { JURISDICTIONS, HEX, jurisdictionColorOverrides } from '../worker/lib/juris-colors.mjs';
+import { JURISDICTIONS, HEX, jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../worker/lib/juris-colors.mjs';
 
 const require = createRequire(import.meta.url);
 const { JURISDICTION_COLORS, JURISDICTION_COLOR_FALLBACK, jurisdictionColor,
-  setJurisdictionColors } = require('../public/shared/jurisdiction-colors.js');
+  setJurisdictionColors, jurisdictionColorFrom } = require('../public/shared/jurisdiction-colors.js');
+const Database = require('better-sqlite3');
 const { parishes } = require('../seeds/parishes.js');
 
-test('every seeded parish carries its jurisdiction colour', () => {
-  for (const p of parishes) {
-    assert.equal(p.color, jurisdictionColor(p.jurisdiction),
-      `${p.id} (${p.jurisdiction}) has ${p.color}`);
-  }
-});
-
-test('the generated seed SQL carries the same colours', () => {
-  // Guards the generate-and-commit step: gen-seed-sql.js reads seeds/
-  // parishes.js, so a colour change that is not regenerated leaves the .sql
-  // holding the old hex and CI's diff check is the only thing that would
-  // catch it.
+test('the seed gives no parish a colour: a parish wears its jurisdiction\u2019s', () => {
+  // parishes.color went stale under 49 production parishes when /admin
+  // repainted their jurisdictions, and only the lite pages still drew it.
+  for (const p of parishes) assert.ok(!('color' in p), `${p.id} carries a colour`);
   for (const path of ['d1/seed-parishes.sql', 'd1/seed-parishes.console.sql']) {
     const sql = fs.readFileSync(path, 'utf8');
-    const hexes = new Set([...sql.matchAll(/'(#[0-9a-fA-F]{6})'/g)].map(m => m[1].toLowerCase()));
-    const known = new Set(Object.values(JURISDICTION_COLORS).map(h => h.toLowerCase()));
-    for (const hex of hexes) {
-      assert.ok(known.has(hex), `${path} has ${hex}, which is not a jurisdiction colour`);
-    }
+    assert.doesNotMatch(sql, /\bcolor\b/, `${path} writes a colour`);
   }
 });
 
@@ -200,4 +189,40 @@ test('the dark-mode lift is shared, and lifts only what is too dark to read', ()
   assert.equal(J.jurisdictionColorFrom({ greek: '#123456' }, 'greek'), '#123456');
   assert.equal(J.jurisdictionColorFrom({ greek: 'red; }' }, 'greek'), J.JURISDICTION_COLORS.greek);
   assert.equal(J.jurisdictionColorFrom({}, 'other'), J.JURISDICTION_COLOR_FALLBACK);
+});
+
+test("in SQL, a parish's colour is its jurisdiction's: a valid override, else the table, else grey", () => {
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE jurisdiction_colors (jurisdiction TEXT PRIMARY KEY, color TEXT NOT NULL);
+           CREATE TABLE parishes (id TEXT PRIMARY KEY, jurisdiction TEXT NOT NULL, color TEXT);
+           INSERT INTO parishes VALUES ('a', 'antiochian', '#d20000'), ('g', 'greek', NULL),
+             ('s', 'serbian', NULL), ('m', 'macedonian', '#d20000'), ('o', 'other', NULL),
+             ('r', 'russian', NULL), ('ro', 'romanian', NULL);
+           INSERT INTO jurisdiction_colors VALUES ('greek', '#123456'), ('serbian', 'red; }'), ('macedonian', '#abc'),
+             ('russian', '#12345g'), ('romanian', '#4E7A27');`);
+  const got = Object.fromEntries(db.prepare(`SELECT p.id, ${PARISH_COLOR_SQL} AS c FROM parishes p`).all()
+    .map(r => [r.id, r.c]));
+  assert.deepEqual(got, {
+    a: JURISDICTION_COLORS.antiochian,   // the stored #d20000 is not read
+    g: '#123456',                        // /admin's override
+    s: JURISDICTION_COLORS.serbian,      // an override that is not a colour falls through
+    m: '#abc',                           // three digits is a colour
+    o: JURISDICTION_COLOR_FALLBACK,
+    r: JURISDICTION_COLORS.russian,      // seven characters, one not hex
+    ro: '#4E7A27',                       // capitals are hex too
+  });
+  // The same answer the browser gets from the same overrides.
+  const overrides = { greek: '#123456', macedonian: '#abc' };
+  for (const [id, j] of [['a', 'antiochian'], ['g', 'greek'], ['m', 'macedonian'], ['o', 'other']]) {
+    assert.equal(got[id], jurisdictionColorFrom(overrides, j), j);
+  }
+});
+
+test('the colour SQL stays inside what D1 accepts', () => {
+  // D1 caps a LIKE or GLOB pattern at 50 bytes and better-sqlite3 does not, so
+  // a pattern one digit at a time passed every test here and failed every
+  // query that carried it under wrangler dev.
+  const patterns = [...PARISH_COLOR_SQL.matchAll(/\b(?:GLOB|LIKE)\s+'([^']*)'/gi)].map(m => m[1]);
+  assert.ok(patterns.length, 'found no pattern to check');
+  for (const pat of patterns) assert.ok(Buffer.byteLength(pat) <= 50, `pattern ${pat} is over D1's 50 bytes`);
 });

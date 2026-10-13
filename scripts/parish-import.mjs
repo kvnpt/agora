@@ -178,11 +178,12 @@ const sql = (v) => (v === null || v === undefined || v === ''
   : `'${String(v).replace(/'/g, "''")}'`);
 
 const COLUMNS = ['id', 'name', 'jurisdiction', 'address', 'lat', 'lng', 'timezone',
-  'website', 'phone', 'email', 'languages', 'color', 'feast_day',
+  'website', 'phone', 'email', 'languages', 'feast_day',
   'info_source_type', 'info_source_ref', 'info_source_name', 'info_checked_at'];
 
-// Columns a re-run may refresh. id and jurisdiction are identity; languages,
-// color and info_verified_at are set by people, not by scrapes.
+// Columns a re-run may refresh. id and jurisdiction are identity; languages
+// and info_verified_at are set by people, not by scrapes. There is no colour:
+// a parish wears its jurisdiction's (public/shared/jurisdiction-colors.js).
 //
 // `info_source_type` travels with `info_source_ref` and always did — leaving it
 // out was an oversight, and it cost real rows. The ROCOR run first wrote

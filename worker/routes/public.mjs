@@ -13,7 +13,7 @@
 import { pdfSourceOverrides, publicOverridePayload } from '../lib/pdf-source-overrides.mjs';
 import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
-import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
+import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
 import { coverageState, coverageMessage } from '../lib/coverage.mjs';
 import { cachedJson } from '../lib/data-version.mjs';
 
@@ -41,7 +41,7 @@ function withoutAuthor(row) {
 }
 
 const PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
-  website, phone, email, logo_path, acronym, chant_style, languages, color, live_url,
+  website, phone, email, logo_path, acronym, chant_style, languages, live_url,
   donation_url, raffle_url, payment_url, gala_url, feast_day,
   info_source_type, info_source_ref, info_source_name, info_checked_at,
   info_verified_at, maps_url, read_from`;
@@ -71,7 +71,7 @@ export function registerPublicRoutes(router) {
         `SELECT e.*, p.name AS parish_name, p.jurisdiction, p.address AS parish_address,
                 p.website AS parish_website, p.logo_path AS parish_logo,
                 p.languages AS parish_languages, p.acronym AS parish_acronym,
-                p.color AS parish_color, p.live_url AS parish_live_url,
+                ${PARISH_COLOR_SQL} AS parish_color, p.live_url AS parish_live_url,
                 p.timezone AS timezone
          FROM events e JOIN parishes p ON e.parish_id = p.id
          WHERE e.source_adapter != 'schedule' AND e.start_utc <= ?
@@ -146,7 +146,7 @@ export function registerPublicRoutes(router) {
       SELECT s.*, p.name AS parish_name, p.full_name, p.jurisdiction, p.timezone,
              p.address AS parish_address, p.lat, p.lng, p.website AS parish_website,
              p.logo_path AS parish_logo, p.languages AS parish_languages,
-             p.acronym AS parish_acronym, p.color AS parish_color
+             p.acronym AS parish_acronym, ${PARISH_COLOR_SQL} AS parish_color
       FROM schedules s JOIN parishes p ON s.parish_id = p.id
       WHERE s.active = 1 AND p.id != '_unassigned'
       ${jurisdiction ? 'AND p.jurisdiction = ?' : ''}

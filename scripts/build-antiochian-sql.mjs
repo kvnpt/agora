@@ -78,7 +78,6 @@ function toRow(p, checkedAt) {
     // ever lands on an insert and a person's correction is never undone.
     // Spaced to match the 172 rows already in the table — `["Greek", "English"]`.
     languages: p.languages ? JSON.stringify(p.languages).replace(/","/g, '", "') : null,
-    color: null,
     // Kept as the parish words it. "St George day – April / May ( depending on
     // Easter )" is not a date and normalising it would invent one.
     feast_day: feast ? feast.split('\n')[0].replace(/\s+/g, ' ').trim() : null,

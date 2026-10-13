@@ -444,22 +444,16 @@ test('an ended rule is off the timetable page too', async () => {
 });
 
 
-test("a page wears the app's colours: /admin's overrides, the parish's own, and the dark lift", async () => {
+test("a page wears the app's colours: the jurisdiction's, as /admin set it, and the dark lift", async () => {
   const { raw, get } = fresh();
   raw.prepare(`INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES ('antiochian', '#123456')`).run();
-  raw.prepare(`UPDATE parishes SET color = '#7c3bc1' WHERE id = ?`).run(PARISH);
   const { html } = await get('/sgr');
   const style = /<style>([\s\S]*?)<\/style>/.exec(html)[1];
-  assert.match(style, /:root\{[^}]*--parish:#7c3bc1/, "the parish's own colour leads");
-  assert.match(style, /:root\{[^}]*--juris:#123456/, "the timetable box takes the jurisdiction's, as /admin set it");
+  assert.match(style, /:root\{[^}]*--parish:#123456/, "the parish wears its jurisdiction's, as /admin set it");
+  assert.match(style, /:root\{[^}]*--juris:#123456/, 'and so does the timetable box');
   assert.match(style, /@media \(prefers-color-scheme:dark\)\{:root\{[^}]*--juris:#[0-9a-f]{6}/, 'with a dark variant');
   assert.doesNotMatch(/@media \(prefers-color-scheme:dark\)\{:root\{([^}]*)\}/.exec(style)[1], /--juris:#123456/,
     'lifted, as the app lifts it, not repeated');
-
-  // A parish with no colour of its own wears its jurisdiction's.
-  raw.prepare(`UPDATE parishes SET color = NULL WHERE id = ?`).run(PARISH);
-  const bare = /<style>([\s\S]*?)<\/style>/.exec((await get('/sgr')).html)[1];
-  assert.match(bare, /:root\{[^}]*--parish:#123456/);
   // And the timetable page reads the same overrides.
   const tt = (await get('/antiochian')).html;
   assert.match(tt, /--j-antiochian:#123456/);

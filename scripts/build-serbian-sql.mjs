@@ -21,11 +21,7 @@
 // an absent parish, because the absent one is obviously missing.
 
 import { readFile, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { reconcile, buildUpsert } from './parish-import.mjs';
-
-const require = createRequire(import.meta.url);
-const { jurisdictionColor } = require('../public/shared/jurisdiction-colors.js');
 
 const LIVE = 'https://agora.orthodoxy.au/api/parishes';
 
@@ -71,13 +67,6 @@ function toRow(p, checkedAt) {
     // "Serbian". Giving it the jurisdiction's languages would be the one place
     // a jurisdiction-wide answer is demonstrably wrong.
     languages: /serbian/i.test(p.directory_title || '') ? LANGUAGES : '["English"]',
-    // Migration 004 had to paint 51 imported parishes after the fact because
-    // the two previous imports wrote null here, on the reasoning that a colour
-    // is a person's choice. It is — but the jurisdiction's colour is the
-    // baseline every card already draws, and a row without one falls back to
-    // grey. `color` is not refreshable, so this lands on the insert and a
-    // later per-parish choice is never overwritten by a re-run.
-    color: jurisdictionColor('serbian'),
     // The directory publishes no patronal feast, and deriving one from the
     // dedication is a guess that splits on Old versus New Calendar.
     feast_day: null,

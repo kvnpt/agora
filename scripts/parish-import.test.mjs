@@ -264,7 +264,7 @@ test('provenance is refreshed as a pair, and human work still is not', () => {
   assert.match(out, /WHERE parishes\.info_verified_at IS NULL AND parishes\.read_from = 'directory';/);
   assert.doesNotMatch(out, /info_verified_at=excluded/);
   assert.doesNotMatch(out, /languages=excluded/);
-  assert.doesNotMatch(out, /color=excluded/);
+  assert.doesNotMatch(out, /\bcolor\b/, 'a parish has no colour column to write');
   assert.doesNotMatch(out, /jurisdiction=excluded/);
 });
 

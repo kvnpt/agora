@@ -2373,33 +2373,6 @@ export function registerAdminRoutes(router) {
     return json(await jurisdictionColorOverrides(env.DB));
   }));
 
-  // POST /api/admin/parishes/repaint
-  //
-  // A jurisdiction's colour and a parish's own colour are different things —
-  // the map draws the first, a card draws the second — so changing one does
-  // not change the other, and migration 004 is the only reason they currently
-  // agree for almost every row.
-  //
-  // This is that migration as an explicit, counted action: only rows still
-  // carrying the colour being replaced are repainted, so a parish somebody
-  // gave its own hue keeps it. `from` is what the admin panel just had on
-  // screen, which is why it is a parameter rather than something re-derived
-  // here: the answer to "what am I replacing" belongs to the page that showed
-  // it, and a mismatch repaints nothing rather than the wrong rows.
-  router.post('/api/admin/parishes/repaint', guarded('colors.edit', async ({ env, request }) => {
-    const b = await readJson(request);
-    const { jurisdiction, from, to } = b || {};
-    if (!JURISDICTIONS.has(jurisdiction)) return json({ error: 'jurisdiction is required' }, 400);
-    if (!HEX.test(String(from || '')) || !HEX.test(String(to || ''))) {
-      return json({ error: 'from and to must both be colours' }, 400);
-    }
-    const r = await env.DB.prepare(
-      `UPDATE parishes SET color = ?
-       WHERE jurisdiction = ? AND id != '_unassigned' AND lower(color) = lower(?)`
-    ).bind(to, jurisdiction, from).run();
-    return json({ jurisdiction, from, to, repainted: r.meta ? r.meta.changes : 0 });
-  }));
-
   // ── parishes ──
 
   // The panel's own read of the parish table.
@@ -2552,7 +2525,7 @@ export function registerAdminRoutes(router) {
 
   const PARISH_EDITABLE = [
     'name', 'full_name', 'jurisdiction', 'address', 'website', 'email', 'phone',
-    'acronym', 'chant_style', 'languages', 'lat', 'lng', 'color', 'live_url',
+    'acronym', 'chant_style', 'languages', 'lat', 'lng', 'live_url',
     'donation_url', 'raffle_url', 'payment_url', 'gala_url', 'timezone',
     'info_source_type', 'info_source_ref', 'info_source_name', 'info_checked_at',
     'info_verified_at', 'maps_url', 'read_from',

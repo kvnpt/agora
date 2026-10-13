@@ -66,7 +66,6 @@ function toRow(p, checkedAt) {
     phone: null,
     email: null,
     languages: LANGUAGES,
-    color: null,
     // The directory publishes no patronal feast, and deriving one from the
     // dedication is a guess that splits on Old versus New Calendar. The schema
     // wants the parish's own answer, so it stays empty until somebody asks.
