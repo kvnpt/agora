@@ -9672,11 +9672,12 @@ window.confirmParishPin = function() {
 
 /**
  * The parish row a PATCH answers with, into state as the bundle would have
- * given it. The row is straight from D1, so it carries the stored `color`,
- * which bundle.js deliberately ignores for the jurisdiction's: merged as it
- * came, it painted the sheet's logo and buttons with a colour nothing else
- * draws — grey for a parish added since, whose `color` was never set — until
- * the next reload put the jurisdiction's back.
+ * given it: with its jurisdiction's colour, which bundle.js sets on load. The
+ * row came straight from D1 carrying the stored `parishes.color` until that
+ * column was dropped (migration 026), and merged as it came it painted the
+ * sheet's logo and buttons grey for a parish added since. The row has no
+ * colour now, so this is what keeps one — and keeps it right when the save
+ * changed the jurisdiction.
  */
 function mergeSavedParish(pid, row) {
   const idx = state.parishes.findIndex(p => p.id === pid);
