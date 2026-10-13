@@ -296,13 +296,13 @@ test('the timetable drops an ended rule and marks one that starts later', async 
     'a rule that has not started is not what the times are');
 });
 
-test('the lite card offers "Become a contributor" under its source line, not under the timetable', async () => {
+test('the lite card offers "Suggest edits" under its source line, not under the timetable', async () => {
   const { get } = fresh();
   for (const path of ['/sgr', '/sgr/services']) {
     const { html } = await get(path);
-    const button = 'href="/admin?claim=antiochian-stgeorge-redfern" rel="nofollow">';
+    const button = 'href="/admin?suggest=antiochian-stgeorge-redfern" rel="nofollow">';
     assert.equal(html.split(button).length - 1, 1, `${path}: once`);
-    assert.match(html, /<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="\/admin\?claim=antiochian-stgeorge-redfern" rel="nofollow"><span class="ps-btn-glyph"[^>]*><\/span>Become a contributor<\/a>/,
+    assert.match(html, /<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="\/admin\?suggest=antiochian-stgeorge-redfern" rel="nofollow"><span class="ps-btn-glyph"[^>]*><\/span>Suggest edits<\/a>/,
       `${path}: the app's button`);
     const info = html.slice(html.indexOf('<section class="ps-section lc-info">'), html.indexOf('</section>', html.indexOf('<section class="ps-section lc-info">')));
     assert.ok(info.includes(button), `${path}: in the parish's details`);
@@ -310,7 +310,7 @@ test('the lite card offers "Become a contributor" under its source line, not und
     // The seed gives St George's a source ("Parish website"), so the line is there.
     const src = info.indexOf('lc-src');
     assert.ok(src >= 0 && src < info.indexOf(button), `${path}: below the source line`);
-    assert.doesNotMatch(html, /Is this your parish\?/, `${path}: the old link is gone`);
+    assert.doesNotMatch(html, /Is this your parish\?|Become a contributor/, `${path}: the old links are gone`);
   }
 });
 

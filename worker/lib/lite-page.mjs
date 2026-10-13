@@ -682,12 +682,13 @@ function bannerHTML(text, id = 'll-h') {
 }
 
 /**
- * "Become a contributor": the claim (/admin?claim=, behind Cloudflare Access),
- * under the parish's source line, where the app's card puts it
- * (contributeButtonHTML). nofollow: it leads to a sign-in.
+ * "Suggest edits": a change or an event for whoever keeps the parish, and the
+ * claim behind its box (/admin?suggest=, behind Cloudflare Access), under the
+ * parish's source line, where the app's card puts it (contributeButtonHTML).
+ * nofollow: it leads to a sign-in.
  */
 function contributeHTML(m) {
-  return `<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="/admin?claim=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${glyph('ph:user-plus')}Become a contributor</a>`;
+  return `<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="/admin?suggest=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${glyph('ph:note-pencil')}Suggest edits</a>`;
 }
 
 /** The info section's copy chips — the app's ps-info-copy. lite.js does the copying. */

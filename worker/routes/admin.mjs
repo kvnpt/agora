@@ -14,6 +14,8 @@ import { expandWindow, expandOne, parseInstanceId, fetchWindowRows, isValidOccur
 import { exactLocalToEpoch, localDateOf, localSpanToUtc } from '../../public/shared/tz.mjs';
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
 import { validateClaim, alreadyCovers, planGrant, describeClaim, ensureClaimsTable } from '../lib/claims.mjs';
+import { validateSuggestion, describeSuggestion, cardFromSuggestion, scopeClause, ensureSuggestionsTable,
+  OPEN_LIMIT } from '../lib/suggestions.mjs';
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
   from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
@@ -563,9 +565,23 @@ async function openAskCount(db) {
 }
 
 /**
+ * How many suggestions are open at the parishes this person may edit — their
+ * own for a contact, all of them for an editor or owner. Somebody with no role
+ * can act on none. A missing table reads as none.
+ */
+async function openSuggestionCount(db, who) {
+  if (!who || !who.role) return 0;
+  const { where, binds } = scopeClause(who);
+  const r = await db.prepare(`SELECT COUNT(*) AS n FROM parish_suggestions WHERE status = 'open' AND ${where}`)
+    .bind(...binds).first().catch(() => null);
+  return r ? r.n : 0;
+}
+
+/**
  * Signed in, role or not. For the few routes a person with NO role must reach:
- * saying who they are, and asking for a parish. Access has still verified the
- * address — this only skips the "and you are on the list" half of `guarded`.
+ * saying who they are, suggesting an edit, and asking for a parish. Access has
+ * still verified the address — this only skips the "and you are on the list"
+ * half of `guarded`.
  */
 const signedIn = (fn) => async (c) => {
   const denied = await requireAdmin(c);
@@ -625,12 +641,16 @@ export function registerAdminRoutes(router) {
     // them — this is the half of the dot that is theirs.
     parishNotices: (await parishNotices(c.env.DB, myParishes(c), c.who.identity))
       .filter(n => !n.seen).length,
+    // "Suggest edits" waiting at the parishes this person may edit. Unlike an
+    // ask, a contact can act on these, so it counts for them too.
+    suggestions: await openSuggestionCount(c.env.DB, c.who),
   })));
 
-  // ── claims: "Become a contributor" ──
+  // ── "Suggest edits": suggestions, and claims behind its box ──
   //
-  // worker/lib/claims.mjs has the why. The claimant is signed in but usually
-  // has no role yet, so these two use `signedIn`, not `guarded`.
+  // worker/lib/suggestions.mjs and worker/lib/claims.mjs have the why. The
+  // person here is signed in but usually has no role, so sending a suggestion,
+  // making a claim and withdrawing your own use `signedIn`, not `guarded`.
 
   /** Who am I, for a page that must work for somebody with no role. */
   router.get('/api/admin/whoami', signedIn(async (c) => {
@@ -639,13 +659,120 @@ export function registerAdminRoutes(router) {
        FROM parish_claims k LEFT JOIN parishes p ON p.id = k.parish_id
        WHERE lower(k.email) = lower(?) ORDER BY k.created_at DESC LIMIT 20`
     ).bind(c.who.identity).all().catch(() => ({ results: [] }));
+    // What you suggested and what became of it — the form shows them back, so
+    // a note left on one is read by the person it was written for.
+    const sent = await c.env.DB.prepare(
+      `SELECT s.id, s.parish_id, p.name AS parish_name, s.kind, s.about, s.body, s.title, s.date, s.start_time,
+              s.status, s.created_at, s.decided_at, s.decision_note
+       FROM parish_suggestions s LEFT JOIN parishes p ON p.id = s.parish_id
+       WHERE lower(s.email) = lower(?) ORDER BY s.created_at DESC, s.id DESC LIMIT 20`
+    ).bind(c.who.identity).all().catch(() => ({ results: [] }));
     return json({
       identity: c.who.identity,
       role: c.who.role || null,
       parishIds: c.who.parishIds || [],
       bootstrap: !!c.who.bootstrap,
       claims: mine.results || [],
+      suggestions: sent.results || [],
     });
+  }));
+
+  router.post('/api/admin/suggestions', signedIn(async (c) => {
+    const { env, request } = c;
+    const v = validateSuggestion(await readJson(request));
+    if (!v.ok) return json({ error: v.error, field: v.field }, 400);
+    const parish = await env.DB.prepare("SELECT id, name FROM parishes WHERE id = ? AND id != '_unassigned'")
+      .bind(v.suggestion.parish_id).first();
+    if (!parish) return json({ error: 'That parish was not found.' }, 404);
+    // Somebody who may edit it has the pencil; a suggestion would be a note
+    // to themselves.
+    if (alreadyCovers(c.who, parish.id)) {
+      return json({ error: `You can already edit ${parish.name} — open it and use the pencils.`, covered: true }, 409);
+    }
+    await ensureSuggestionsTable(env.DB);
+    const open = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM parish_suggestions WHERE lower(email) = lower(?) AND status = 'open'"
+    ).bind(c.who.identity).first();
+    if (open && open.n >= OPEN_LIMIT) {
+      return json({ error: `You have ${open.n} suggestions waiting already. Once some have been looked at, send more.` }, 429);
+    }
+    const s = v.suggestion;
+    const row = await env.DB.prepare(
+      `INSERT INTO parish_suggestions (parish_id, email, name, kind, about, body, title, date, start_time, end_time, place, link)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`
+    ).bind(parish.id, c.who.identity, s.name, s.kind, s.about, s.body, s.title, s.date,
+      s.start_time, s.end_time, s.place, s.link).first();
+    return json({ id: row.id, status: 'open' }, 201);
+  }));
+
+  router.post('/api/admin/suggestions/:id/withdraw', signedIn(async (c) => {
+    const r = await c.env.DB.prepare(
+      `UPDATE parish_suggestions SET status = 'withdrawn', decided_at = ?
+       WHERE id = ? AND lower(email) = lower(?) AND status = 'open'`
+    ).bind(NOW(), c.params.id, c.who.identity).run().catch(() => null);
+    return r && r.meta && r.meta.changes ? json({ ok: true }) : json({ error: 'Nothing to withdraw.' }, 404);
+  }));
+
+  // The suggestions at the parishes this person may edit — every one for an
+  // editor or owner, their own parishes' for a contact.
+  router.get('/api/admin/suggestions', guarded('parish.edit', async (c) => {
+    const { where, binds } = scopeClause(c.who, 's.parish_id');
+    const r = await c.env.DB.prepare(
+      `SELECT s.*, p.name AS parish_name, p.acronym AS parish_acronym FROM parish_suggestions s
+       LEFT JOIN parishes p ON p.id = s.parish_id
+       WHERE ${where}
+       ORDER BY (s.status = 'open') DESC, s.created_at DESC, s.id DESC LIMIT 100`
+    ).bind(...binds).all().catch(() => ({ results: [] }));
+    return json((r.results || []).map(s => ({ ...s, summary: describeSuggestion(s, s.parish_name) })));
+  }));
+
+  /** A suggestion this person may act on, or the response saying why not. */
+  async function openSuggestionInScope(c) {
+    const s = await c.env.DB.prepare('SELECT * FROM parish_suggestions WHERE id = ?')
+      .bind(c.params.id).first().catch(() => null);
+    if (!s) return { response: json({ error: 'Suggestion not found' }, 404) };
+    const scoped = outOfScope(c, s.parish_id);
+    if (scoped) return { response: scoped };
+    if (s.status !== 'open') return { response: json({ error: `That suggestion is already ${s.status}.` }, 409) };
+    return { suggestion: s };
+  }
+
+  // Done (somebody made the change) or dismissed (nobody will). Either way it
+  // is a person's word about it; nothing here edits the parish.
+  router.post('/api/admin/suggestions/:id/decide', guarded('parish.edit', async (c) => {
+    const b = await readJson(c.request);
+    if (b.decision !== 'done' && b.decision !== 'dismiss') {
+      return json({ error: "decision must be 'done' or 'dismiss'" }, 400);
+    }
+    const r = await openSuggestionInScope(c);
+    if (r.response) return r.response;
+    const status = b.decision === 'done' ? 'done' : 'dismissed';
+    const note = typeof b.note === 'string' ? b.note.trim().slice(0, 1000) || null : null;
+    await c.env.DB.prepare(
+      'UPDATE parish_suggestions SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?'
+    ).bind(status, await editor(c), NOW(), note, r.suggestion.id).run();
+    return json({ ok: true, status });
+  }));
+
+  // A suggested event, as a draft: the same draft "+ Event" starts, holding
+  // the parish's local wall clock, which a person then checks and publishes.
+  // The suggestion is done once the draft exists — what happens next is the
+  // draft's business, and the drafts list is where it waits.
+  router.post('/api/admin/suggestions/:id/draft', guarded('event.edit', async (c) => {
+    const r = await openSuggestionInScope(c);
+    if (r.response) return r.response;
+    const s = r.suggestion;
+    if (s.kind !== 'event') return json({ error: 'Only a suggested event can become a draft.' }, 400);
+    const v = validateCard(cardFromSuggestion(s));
+    if (!v.ok) return json({ error: v.error, field: v.field }, 400);
+    await ensureDraftTables(c.env.DB);
+    const who = await editor(c);
+    const draft = await createDraft(c.env.DB, { parishId: s.parish_id, createdBy: who || 'unknown', card: v.patch });
+    await c.env.DB.prepare(
+      `UPDATE parish_suggestions SET status = 'done', decided_by = ?, decided_at = ?, decision_note = ?, draft_id = ?
+       WHERE id = ?`
+    ).bind(who, NOW(), 'Started a draft from it.', draft.id, s.id).run();
+    return json(draft, 201);
   }));
 
   router.post('/api/admin/claims', signedIn(async (c) => {

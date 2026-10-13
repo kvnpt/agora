@@ -263,19 +263,53 @@
       .ov-actions { width: 100%; }
     }
 
-    /* The claim page: a single card, readable on a phone, no panel chrome. */
-    .claim-page { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; box-sizing: border-box; background: var(--bg-secondary, #f5f5f5); }
-    .claim-card { width: 100%; max-width: 30rem; background: var(--bg, #fff); color: var(--text, #111); border: 1px solid var(--border-light, #ddd); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm); font-size: 15px; line-height: 1.5; }
-    .claim-kicker { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted, #666); }
-    .claim-card h1 { font-size: 22px; margin: 4px 0 10px; line-height: 1.2; }
-    .claim-form { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-    .claim-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
-    .claim-form label span { font-weight: 400; color: var(--text-muted, #666); }
-    .claim-form input, .claim-form textarea { font: inherit; font-weight: 400; padding: 9px 10px; border: 1px solid var(--border, #ccc); border-radius: 8px; background: var(--bg, #fff); color: inherit; width: 100%; box-sizing: border-box; }
-    .claim-btn { display: inline-block; font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 8px; border: 0; background: var(--accent, #1f3a5f); color: #fff; cursor: pointer; text-decoration: none; }
-    .claim-btn.ghost { background: transparent; color: inherit; border: 1px solid var(--border, #ccc); }
-    .claim-error { color: #b91c1c; font-size: 13px; }
-    .claim-foot { margin-top: 18px; font-size: 12px; color: var(--text-muted, #666); }
+    /* "Suggest edits": a single card, readable on a phone, no panel chrome. */
+    .suggest-page { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; box-sizing: border-box; background: var(--page-bg); }
+    .suggest-card { width: 100%; max-width: 32rem; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--border-light); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm); font-size: 15px; line-height: 1.5; }
+    .suggest-kicker { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+    .suggest-card h1 { font-size: 22px; margin: 4px 0 10px; line-height: 1.2; }
+    .suggest-lead { margin: 0; }
+    .suggest-form { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+    .suggest-group { display: flex; flex-direction: column; gap: 12px; }
+    .suggest-group[hidden], .suggest-contact-fields[hidden] { display: none; }
+    /* Block, not a flex column: a label's "(optional)" stays on its line. */
+    .suggest-form label { display: block; font-size: 13px; font-weight: 600; min-width: 0; }
+    .suggest-form label span { font-weight: 400; color: var(--muted); }
+    .suggest-form input:not([type=radio]):not([type=checkbox]), .suggest-form textarea, .suggest-form select { display: block; margin-top: 4px; font: inherit; font-weight: 400; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: inherit; width: 100%; min-width: 0; box-sizing: border-box; }
+    /* Two kinds, as a segmented control: the one chosen is a raised tab. */
+    .suggest-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 10px; background: var(--soft-bg); }
+    .suggest-form .suggest-kinds label { position: relative; display: flex; justify-content: center; align-items: center; padding: 8px 10px; border-radius: 7px; font-size: 14px; cursor: pointer; color: var(--muted); }
+    .suggest-kinds input { position: absolute; opacity: 0; pointer-events: none; }
+    .suggest-form .suggest-kinds label:has(input:checked) { background: var(--bg); color: var(--accent-text); box-shadow: 0 1px 3px rgba(15,17,21,0.12); }
+    .suggest-kinds label:has(input:focus-visible) { outline: 3px solid var(--accent-ring); }
+    .suggest-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+    @media (max-width: 440px) { .suggest-row { grid-template-columns: 1fr 1fr; } .suggest-row > :first-child { grid-column: 1 / -1; } }
+    .suggest-hint { margin: -6px 0 0; font-size: 12px; color: var(--muted); }
+    .suggest-contact { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--border-light); border-radius: 10px; }
+    .suggest-contact-fields { display: flex; flex-direction: column; gap: 12px; }
+    .suggest-contact-fields p { margin: 0; font-size: 14px; }
+    .suggest-form label.suggest-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 14px; }
+    .suggest-check input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+    .suggest-form .suggest-check span { color: var(--text); }
+    .suggest-check small { display: block; font-size: 13px; color: var(--muted); }
+    .suggest-btn { display: inline-block; font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; }
+    .suggest-btn:disabled { opacity: .6; cursor: default; }
+    .suggest-btn.ghost { background: transparent; color: inherit; border: 1px solid var(--border); }
+    .suggest-link { font: inherit; font-size: 13px; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; text-decoration: underline; }
+    .suggest-error { color: var(--danger); font-size: 13px; }
+    .suggest-fine { margin: 0; font-size: 12px; color: var(--muted); }
+    .suggest-note { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--accent-bg); font-size: 14px; }
+    .suggest-done p { margin: 0 0 10px; }
+    .suggest-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px !important; }
+    .suggest-sent { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-light); font-size: 14px; }
+    .suggest-sent-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+    .suggest-sent ul { list-style: none; margin: 0; padding: 0; }
+    .suggest-sent li { padding: 6px 0; }
+    .suggest-status { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--soft-bg); color: var(--muted); margin-right: 4px; }
+    .suggest-status-done { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+    .suggest-when { color: var(--muted); font-size: 12px; }
+    .suggest-reply { margin-top: 2px; color: var(--muted); font-size: 13px; }
+    .suggest-foot { margin-top: 18px; font-size: 12px; color: var(--muted); }
     .ask { border: 1px solid var(--border-light); border-left: 3px solid var(--warn); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; background: var(--bg); box-shadow: var(--shadow-sm); }
     .ask-what { font-size: 14px; font-weight: 500; }
     .ask-why { font-size: 13px; color: var(--muted); margin-top: 6px; }
@@ -768,12 +802,22 @@
         <h2>Asks</h2>
         <p class="section-lead" id="proposals-intro"></p>
       </div>
-      <!-- "Become a contributor" — people asking to keep one parish right.
-           Above the asks because each one is a person waiting to be let in,
-           and approving it is the whole of what they need. -->
+      <!-- "Become a parish contact", the box on "Suggest edits" — people
+           asking to keep one parish right. Above the asks because each one is
+           a person waiting to be let in, and approving it is the whole of what
+           they need. -->
       <div id="claims-block" hidden>
         <div class="subhead">People asking to keep a parish up to date</div>
         <div id="claim-list"></div>
+      </div>
+
+      <!-- "Suggest edits" — what somebody spotted at a parish this account may
+           edit. A message for a person to act on, never an edit waiting to
+           apply: make the change and press Done, dismiss it, or start a draft
+           from a suggested event. A contact sees their own parishes'. -->
+      <div id="suggestions-block" hidden>
+        <div class="subhead">Suggestions</div>
+        <div id="suggestion-list"></div>
       </div>
 
       <div id="proposal-list"></div>
@@ -3684,11 +3728,17 @@
     let parishNotices = [];
 
     let claims = [];
+    let suggestions = [];
 
     async function loadProposals() {
-      claims = may('people.manage')
-        ? await fetch('/api/admin/claims', { headers }).then(r => r.ok ? r.json() : []).catch(() => [])
-        : [];
+      [claims, suggestions] = await Promise.all([
+        may('people.manage')
+          ? fetch('/api/admin/claims', { headers }).then(r => r.ok ? r.json() : []).catch(() => [])
+          : [],
+        may('parish.edit')
+          ? fetch('/api/admin/suggestions', { headers }).then(r => r.ok ? r.json() : []).catch(() => [])
+          : [],
+      ]);
       [proposals, myAsks, parishNotices] = await Promise.all([
         fetch('/api/admin/proposals', { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
         // Own asks, whatever their status — the only way to learn an outcome.
@@ -3702,11 +3752,16 @@
       if (!el) return;
       const countEl = document.getElementById('count-proposals');
       const openClaims = claims.filter(k => k.status === 'open');
-      countEl.textContent = proposals.length + openClaims.length;
+      const openSuggestions = suggestions.filter(x => x.status === 'open');
+      countEl.textContent = proposals.length + openClaims.length + openSuggestions.length;
       // Open asks are work only for somebody who can decide them; for anybody
-      // else a red count is noise about their own pending requests.
-      const waiting = may('people.manage') && (proposals.length + openClaims.length) > 0;
+      // else a red count is noise about their own pending requests. A
+      // suggestion is work for whoever sees it — the list is already only the
+      // parishes they may edit.
+      const waiting = (may('people.manage') && (proposals.length + openClaims.length) > 0)
+        || openSuggestions.length > 0;
       renderClaims();
+      renderSuggestions();
       countEl.classList.toggle('alert', waiting);
       document.getElementById('menu-dot').hidden = !waiting;
       // Before the empty-list early return below. These two are not about open
@@ -3720,7 +3775,10 @@
         : 'Things you have asked an owner to do. They stay here until somebody decides.';
 
       if (!proposals.length) {
-        el.innerHTML = `<div class="empty">${decider ? 'Nothing waiting.' : 'You have not asked for anything.'}</div>`;
+        // "Nothing waiting" under a list of claims or suggestions reads as if
+        // they were not waiting either.
+        const above = openClaims.length + openSuggestions.length > 0;
+        el.innerHTML = `<div class="empty">${decider ? (above ? 'No other asks.' : 'Nothing waiting.') : 'You have not asked for anything.'}</div>`;
         return;
       }
       el.innerHTML = proposals.map(p => `
@@ -3787,6 +3845,75 @@
         ? (body.grant === 'none' ? 'Approved — they could already edit it' : 'Approved — added to People')
         : 'Declined');
       await loadAll();
+    }
+
+    /**
+     * Suggestions: somebody signed in telling whoever keeps a parish that its
+     * page is wrong, or that an event is coming up. Nothing here edits the
+     * parish — the person reading makes the change with the usual tools and
+     * presses Done, or dismisses it with a word the suggester will read. A
+     * suggested event can start a draft, which then waits under Events like any
+     * other until somebody publishes it.
+     */
+    function renderSuggestions() {
+      const block = document.getElementById('suggestions-block');
+      const el = document.getElementById('suggestion-list');
+      if (!block || !el) return;
+      const open = suggestions.filter(x => x.status === 'open');
+      const recent = suggestions.filter(x => x.status !== 'open' && x.status !== 'withdrawn').slice(0, 5);
+      block.hidden = !(open.length || recent.length);
+      const when = (x) => [x.date ? draftDate(x.date) : '',
+        [x.start_time, x.end_time].filter(Boolean).join('\u2013'), x.place || ''].filter(Boolean).join(' \u00b7 ');
+      el.innerHTML = [...open, ...recent].map(x => {
+        const parishLink = `/${encodeURIComponent(String(x.parish_acronym || x.parish_id).toLowerCase())}?app`;
+        const decided = x.status !== 'open';
+        return `
+        <div class="ask"${decided ? ' style="opacity:.7;border-left-color:var(--border-light);"' : ' style="border-left-color:var(--accent);"'}>
+          <div class="ask-what">${esc(x.summary)}</div>
+          ${x.kind === 'event' && when(x) ? `<div class="ask-why">${esc(when(x))}</div>` : ''}
+          ${x.body ? `<div class="ask-why" style="white-space:pre-line;">\u201c${esc(x.body)}\u201d</div>` : ''}
+          ${x.link ? `<div class="ask-why"><a href="${attr(x.link)}" target="_blank" rel="noopener nofollow">${esc(x.link)}</a></div>` : ''}
+          <div class="ask-meta">${esc(x.email)} \u00b7 ${relativeTime(x.created_at)}</div>
+          ${decided
+            ? `<div class="ask-meta"><b>${esc(x.status)}</b>${x.decided_by ? ' by ' + esc(x.decided_by) : ''}${x.decision_note ? ' \u2014 \u201c' + esc(x.decision_note) + '\u201d' : ''}</div>`
+            : `<div class="btn-row">
+              <a class="btn btn-outline" href="${attr(parishLink)}" target="_blank" rel="noopener">Open the parish</a>
+              ${x.kind === 'event' && may('event.edit') ? `<button class="btn btn-approve" data-sdraft="${x.id}">Start a draft</button>` : ''}
+              <button class="btn ${x.kind === 'event' ? 'btn-outline' : 'btn-approve'}" data-sdecide="${x.id}" data-decision="done">Done</button>
+              <button class="btn btn-outline" data-sdecide="${x.id}" data-decision="dismiss">Dismiss</button>
+            </div>`}
+        </div>`;
+      }).join('');
+      el.querySelectorAll('[data-sdecide]').forEach(b =>
+        b.addEventListener('click', () => decideSuggestion(Number(b.dataset.sdecide), b.dataset.decision)));
+      el.querySelectorAll('[data-sdraft]').forEach(b =>
+        b.addEventListener('click', () => draftFromSuggestion(Number(b.dataset.sdraft))));
+    }
+
+    async function decideSuggestion(id, decision) {
+      let note = null;
+      if (decision === 'dismiss') {
+        note = prompt('Why not? (They will see this.)');
+        if (note === null) return;
+      }
+      const res = await fetch(`/api/admin/suggestions/${id}/decide`, {
+        method: 'POST', headers, body: JSON.stringify({ decision, note }),
+      });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      toast(decision === 'done' ? 'Marked done' : 'Dismissed');
+      await loadProposals();
+      renderProposals();
+    }
+
+    /** A suggested event, as a draft in the editor — checked and published by a person. */
+    async function draftFromSuggestion(id) {
+      const res = await fetch(`/api/admin/suggestions/${id}/draft`, { method: 'POST', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      const draft = await res.json();
+      await Promise.all([loadProposals(), loadDrafts()]);
+      renderProposals();
+      renderDrafts();
+      openEventEditor(draft.parish_id, draft.id);
     }
 
     /** The outcome of an ask you made, which used to just disappear. */
@@ -4126,20 +4253,25 @@
     }
 
     /**
-     * The claim page: who you are (Access verified it), which parish, and a
-     * short form. Replaces the panel entirely — the person here is usually not
-     * on the admin list and has no use for it.
+     * "Suggest edits": who you are (Access verified it), which parish, and a
+     * short form for what you came with — a change to something listed, or an
+     * event the page does not show (no poster: the essentials, typed). Becoming
+     * a parish contact is a box on the same form, unticked, and the claim's own
+     * fields wait behind it. worker/lib/suggestions.mjs has the why.
+     *
+     * Replaces the panel entirely — the person here is usually not on the admin
+     * list and has no use for it.
      */
-    async function claimPage(parishId) {
+    async function suggestPage(parishId) {
       const res = await fetch('/api/admin/whoami', { headers }).catch(() => null);
       if (!res || res.status === 401) {
-        // Not signed in yet: go through Access, and come back to this claim.
+        // Not signed in yet: go through Access, and come back to this page.
         let tried = true;
         try {
           tried = sessionStorage.getItem('claim-access-retry') === '1';
           if (!tried) sessionStorage.setItem('claim-access-retry', '1');
         } catch { /* fall through to the message */ }
-        if (!tried) { location.replace(`/admin.html?claim=${encodeURIComponent(parishId)}`); return; }
+        if (!tried) { location.replace(`/admin.html?suggest=${encodeURIComponent(parishId)}`); return; }
         blockPage('Could not sign you in.', 'Signing in did not produce a session. Try again from the parish page.');
         return;
       }
@@ -4150,19 +4282,20 @@
       const parish = parishes.find(p => p.id === parishId);
       const name = parish ? (parish.full_name || parish.name) : parishId;
       const link = parish ? `/${encodeURIComponent((parish.acronym || parish.id).toLowerCase())}?app` : '/';
-      const mine = (me.claims || []).find(k => k.parish_id === parishId && k.status === 'open');
+      const claim = (me.claims || []).find(k => k.parish_id === parishId && k.status === 'open');
+      const sent = (me.suggestions || []).filter(s => s.parish_id === parishId && s.status !== 'withdrawn');
       const covers = me.role === 'owner' || me.role === 'editor'
         || (me.role === 'parish' && (me.parishIds || []).includes(parishId));
 
       const wrap = document.createElement('div');
-      wrap.className = 'claim-page';
+      wrap.className = 'suggest-page';
       const page = (inner) => {
         wrap.innerHTML = `
-          <div class="claim-card">
-            <div class="claim-kicker">orthodoxy.au</div>
+          <div class="suggest-card">
+            <div class="suggest-kicker">orthodoxy.au</div>
             <h1>${esc(name)}</h1>
             ${inner}
-            <p class="claim-foot">Signed in as <b>${esc(me.identity)}</b> \u00b7 <a href="/cdn-cgi/access/logout">not you?</a> \u00b7 <a href="${esc(link)}">back to the parish</a></p>
+            <p class="suggest-foot">Signed in as <b>${esc(me.identity)}</b> · <a href="/cdn-cgi/access/logout">not you?</a> · <a href="${esc(link)}">back to the parish</a></p>
           </div>`;
         document.body.replaceChildren(wrap);
       };
@@ -4170,44 +4303,212 @@
       if (!parish) { page('<p>That parish was not found. Go back and try from its page.</p>'); return; }
       if (covers) {
         page(`<p>You can already edit this parish. Open it, then use the pencils on its details and its service times.</p>
-              <p><a class="claim-btn" href="${esc(link)}">Open ${esc(parish.name)}</a></p>`);
+              <p><a class="suggest-btn" href="${esc(link)}">Open ${esc(parish.name)}</a></p>`);
         return;
       }
-      if (me.bootstrap) {
-        page('<p>This site has no list of people yet, so there is nothing to ask to join. The site owner needs to add themselves under People first.</p>');
-        return;
-      }
-      if (mine) {
-        page(`<p>Thanks — your request is with the site owner. Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times.</p>
-              <p><button type="button" class="claim-btn ghost" id="claim-withdraw">Withdraw the request</button></p>`);
-        document.getElementById('claim-withdraw').addEventListener('click', async () => {
-          await fetch(`/api/admin/claims/${mine.id}/withdraw`, { method: 'POST', headers });
-          location.reload();
-        });
-        return;
-      }
+
+      // "What is it about?" — the parish's own service times, so a change
+      // names the row it means. Optional: free text says it just as well.
+      const today = new Date().toISOString().slice(0, 10);
+      const rules = parish.jurisdiction
+        ? await fetch(`/api/schedules?jurisdiction=${encodeURIComponent(parish.jurisdiction)}`)
+          .then(r => r.ok ? r.json() : []).catch(() => [])
+        : [];
+      const clock = (t) => {
+        const [h, m] = String(t || '').split(':').map(Number);
+        if (!Number.isFinite(h)) return t || '';
+        return `${h % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
+      };
+      const services = [...new Set(rules
+        .filter(r => r.parish_id === parishId && !(r.effective_to && r.effective_to < today))
+        .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(b.start_time))
+        .map(r => `${DAYS[r.day_of_week]} ${clock(r.start_time)} · ${r.title}`))];
+
+      // Times are the parish's wall clock, as its page shows them. Say whose
+      // only when it is not the reader's own.
+      let zoneNote = '';
+      try {
+        if (parish.timezone && parish.timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone) {
+          zoneNote = `<p class="suggest-hint">Times as they are in ${esc(parish.timezone.split('/').pop().replace(/_/g, ' '))}.</p>`;
+        }
+      } catch { /* no zone, no note */ }
+
+      const STATUS = { open: 'Waiting', done: 'Done', dismissed: 'Not changed' };
+      const sentHTML = sent.length ? `
+        <div class="suggest-sent">
+          <div class="suggest-sent-head">What you have sent here</div>
+          <ul>${sent.map(s => {
+            const what = s.kind === 'event'
+              ? `${s.title || 'An event'}${s.date ? ', ' + s.date : ''}`
+              : (s.about || String(s.body || '').slice(0, 80));
+            return `<li>
+              <span class="suggest-status suggest-status-${esc(s.status)}">${esc(STATUS[s.status] || s.status)}</span>
+              ${esc(what)} <span class="suggest-when">· ${relativeTime(s.created_at)}</span>
+              ${s.decision_note ? `<div class="suggest-reply">“${esc(s.decision_note)}”</div>` : ''}
+              ${s.status === 'open' ? `<button type="button" class="suggest-link" data-withdraw-suggestion="${s.id}">Withdraw</button>` : ''}
+            </li>`;
+          }).join('')}</ul>
+        </div>` : '';
+
+      // The claim needs a People list to be approved onto; with none, every
+      // signed-in person is already an owner and `covers` answered above.
+      const canClaim = !claim && !me.bootstrap;
+
       page(`
-        <p>Become a contributor and help keep this parish's page right: its service times, its events and its details. The site owner checks each request before giving access.</p>
-        <form id="claim-form" class="claim-form">
-          <label>Your name<input name="name" required maxlength="120" autocomplete="name"></label>
-          <label>Your role at the parish<input name="relation" maxlength="120" placeholder="Parish priest, secretary, council member…"></label>
-          <label>Phone <span>(optional — in case the owner wants to check)</span><input name="phone" maxlength="40" autocomplete="tel"></label>
-          <label>Anything else<textarea name="note" maxlength="1000" rows="3"></textarea></label>
-          <div class="claim-error" id="claim-error" hidden></div>
-          <button type="submit" class="claim-btn">Send the request</button>
-        </form>`);
-      document.getElementById('claim-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const f = new FormData(e.target);
-        const r = await fetch('/api/admin/claims', {
-          method: 'POST', headers,
-          body: JSON.stringify({ parish_id: parishId, ...Object.fromEntries(f.entries()) }),
-        });
-        if (r.ok) { location.reload(); return; }
-        const err = document.getElementById('claim-error');
-        err.textContent = await adminError(r);
+        <p class="suggest-lead">Spotted something wrong on this parish's page, or know of something coming up that it does not show? Tell the people who keep it.</p>
+        ${claim ? `<div class="suggest-note">Your request to become a parish contact is with the site owner. Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times. <button type="button" class="suggest-link" id="claim-withdraw">Withdraw the request</button></div>` : ''}
+        <form id="suggest-form" class="suggest-form" novalidate>
+          <div class="suggest-kinds" role="radiogroup" aria-label="What is it?">
+            <label><input type="radio" name="kind" value="change" checked>Fix something</label>
+            <label><input type="radio" name="kind" value="event">Add an event</label>
+          </div>
+          <div class="suggest-group" data-kind="change">
+            <label>What is it about? <span>(optional)</span>
+              <select name="about">
+                <option value="">Choose…</option>
+                ${services.length ? `<optgroup label="Service times">${services.map(o => `<option>${esc(o)}</option>`).join('')}</optgroup>` : ''}
+                <optgroup label="${services.length ? 'Something else' : 'What part of the page'}">
+                  <option>A service time not listed</option>
+                  <option>An event</option>
+                  <option>The parish's details — address, phone, website</option>
+                  <option>Something else</option>
+                </optgroup>
+              </select></label>
+            <label>What should it say?<textarea name="change_body" rows="4" maxlength="2000" placeholder="Liturgy is at 9:30 from November. The phone number is …"></textarea></label>
+          </div>
+          <div class="suggest-group" data-kind="event" hidden>
+            <label>What is it?<input name="title" maxlength="200" placeholder="A talk, a youth night, a feast-day liturgy…"></label>
+            <div class="suggest-row">
+              <label>Date<input type="date" name="date"></label>
+              <label>Starts <span>(optional)</span><input type="time" name="start_time"></label>
+              <label>Ends <span>(optional)</span><input type="time" name="end_time"></label>
+            </div>
+            ${zoneNote}
+            <label>Where <span>(if not at the church)</span><input name="place" maxlength="300" placeholder="The hall, or an address"></label>
+            <label>Details <span>(optional)</span><textarea name="event_body" rows="3" maxlength="2000"></textarea></label>
+            <label>A link with more <span>(optional)</span><input type="url" name="link" maxlength="500" placeholder="https://"></label>
+          </div>
+          <label>Your name <span id="suggest-name-hint">(optional)</span><input name="name" maxlength="120" autocomplete="name"></label>
+          ${canClaim ? `
+          <div class="suggest-contact">
+            <label class="suggest-check"><input type="checkbox" name="contact">
+              <span><b>Become a parish contact</b><small>Keep this parish's service times, events and details up to date yourself.</small></span></label>
+            <div class="suggest-contact-fields" id="suggest-contact-fields" hidden>
+              <p>A parish contact changes this parish's page themselves — its service times, its events and its details. The site owner checks each request before giving access.</p>
+              <label>Your role at the parish<input name="relation" maxlength="120" placeholder="Parish priest, secretary, council member…"></label>
+              <label>Phone <span>(optional — in case the owner wants to check)</span><input name="phone" maxlength="40" autocomplete="tel"></label>
+              <label>Anything else for the owner<textarea name="note" maxlength="1000" rows="2"></textarea></label>
+            </div>
+          </div>` : ''}
+          <div class="suggest-error" id="suggest-error" role="alert" hidden></div>
+          <button type="submit" class="suggest-btn" id="suggest-submit">Send suggestion</button>
+          <p class="suggest-fine">Whoever keeps this parish sees what you send and your email address, so they can write back. Nothing on the page changes until one of them has looked.</p>
+        </form>
+        ${sentHTML}`);
+
+      const form = document.getElementById('suggest-form');
+      const f = form.elements;
+      const err = document.getElementById('suggest-error');
+      const submit = document.getElementById('suggest-submit');
+      const contactFields = document.getElementById('suggest-contact-fields');
+      // Sent once, never twice: if the claim after it fails, pressing Send
+      // again retries the claim alone.
+      let suggested = false;
+
+      const kind = () => f.kind.value;
+      const contact = () => !!(f.contact && f.contact.checked);
+      const said = () => kind() === 'change'
+        ? !!f.change_body.value.trim()
+        : !!(f.title.value.trim() || f.date.value || f.place.value.trim() || f.event_body.value.trim());
+      const sync = () => {
+        form.querySelectorAll('[data-kind]').forEach(g => { g.hidden = g.dataset.kind !== kind(); });
+        if (contactFields) contactFields.hidden = !contact();
+        document.getElementById('suggest-name-hint').textContent = contact() ? '' : '(optional)';
+        submit.textContent = suggested || (contact() && !said()) ? 'Send request'
+          : contact() ? 'Send suggestion and request' : 'Send suggestion';
+      };
+      form.addEventListener('input', sync);
+      form.addEventListener('change', sync);
+      sync();
+
+      const fail = (msg, field) => {
+        err.textContent = msg;
         err.hidden = false;
+        if (field && f[field] && f[field].focus) f[field].focus();
+      };
+      const reason = async (r) => {
+        const b = await r.json().catch(() => ({}));
+        return { error: b.error || `Failed (${r.status})`, field: b.field };
+      };
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        err.hidden = true;
+        const wantsClaim = contact();
+        if (wantsClaim && !f.name.value.trim()) { fail('Tell us your name, so the owner knows who is asking.', 'name'); return; }
+        if (!wantsClaim && !said()) {
+          fail(kind() === 'change' ? 'Say what should change.' : 'What is the event called?', kind() === 'change' ? 'change_body' : 'title');
+          return;
+        }
+        submit.disabled = true;
+        try {
+          if (said() && !suggested) {
+            const body = kind() === 'change'
+              ? { kind: 'change', about: f.about.value, body: f.change_body.value }
+              : { kind: 'event', title: f.title.value, date: f.date.value, start_time: f.start_time.value,
+                  end_time: f.end_time.value, place: f.place.value, body: f.event_body.value, link: f.link.value };
+            const r = await fetch('/api/admin/suggestions', {
+              method: 'POST', headers, body: JSON.stringify({ parish_id: parishId, name: f.name.value, ...body }),
+            });
+            if (!r.ok) {
+              const { error, field } = await reason(r);
+              fail(error, field === 'body' ? (kind() === 'change' ? 'change_body' : 'event_body') : field);
+              return;
+            }
+            suggested = true;
+          }
+          if (wantsClaim) {
+            const r = await fetch('/api/admin/claims', {
+              method: 'POST', headers,
+              body: JSON.stringify({ parish_id: parishId, name: f.name.value, relation: f.relation.value,
+                phone: f.phone.value, note: f.note.value }),
+            });
+            if (!r.ok) {
+              const { error } = await reason(r);
+              fail(suggested ? `Your suggestion was sent. Asking to become a parish contact was not: ${error}` : error);
+              sync();
+              return;
+            }
+          }
+          thanks(suggested, wantsClaim);
+        } finally {
+          submit.disabled = false;
+        }
       });
+
+      function thanks(didSuggest, didClaim) {
+        page(`
+          <div class="suggest-done">
+            <p><b>Thank you — sent.</b></p>
+            ${didSuggest ? `<p>Whoever keeps ${esc(parish.name)} will see your suggestion. Come back to this page to see what became of it.</p>` : ''}
+            ${didClaim ? `<p>Your request to become a parish contact is with the site owner. Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times.</p>` : ''}
+            <p class="suggest-actions">
+              <a class="suggest-btn" href="${esc(link)}">Back to the parish</a>
+              <button type="button" class="suggest-btn ghost" id="suggest-again">Suggest something else</button>
+            </p>
+          </div>`);
+        document.getElementById('suggest-again').addEventListener('click', () => location.reload());
+      }
+
+      const withdrawClaim = document.getElementById('claim-withdraw');
+      if (withdrawClaim) withdrawClaim.addEventListener('click', async () => {
+        await fetch(`/api/admin/claims/${claim.id}/withdraw`, { method: 'POST', headers });
+        location.reload();
+      });
+      wrap.querySelectorAll('[data-withdraw-suggestion]').forEach(b => b.addEventListener('click', async () => {
+        await fetch(`/api/admin/suggestions/${b.dataset.withdrawSuggestion}/withdraw`, { method: 'POST', headers });
+        location.reload();
+      }));
     }
 
     function blockPage(title, detail) {
@@ -4306,12 +4607,14 @@
       // asking. The old code also called /auth/whoami because magic-link phone
       // auth could authenticate someone the Caddy gate had not seen yet; that
       // endpoint and that whole subsystem went with the VM.
-      // "Become a contributor" — /admin?claim=<parish id>. Reached from under
-      // the source line on the parish sheet and on the lite card. Answered before the panel, because the
-      // person arriving usually has no role at all and the panel would only
-      // tell them so.
-      const claimFor = new URLSearchParams(location.search).get('claim');
-      if (claimFor) { await claimPage(claimFor); return; }
+      // "Suggest edits" — /admin?suggest=<parish id>. Reached from under the
+      // source line on the parish sheet and on the lite card; ?claim= is what
+      // it was called before, kept for the links already out there. Answered
+      // before the panel, because the person arriving usually has no role at
+      // all and the panel would only tell them so.
+      const params = new URLSearchParams(location.search);
+      const suggestFor = params.get('suggest') || params.get('claim');
+      if (suggestFor) { await suggestPage(suggestFor); return; }
 
       const ping = await fetch('/api/admin/ping', { headers }).catch(() => null);
 
@@ -4326,7 +4629,7 @@
         blockPage('Signed in, but not on the admin list.',
           waiting && waiting.length
             ? `Your request to keep ${waiting.map(k => k.parish_name || k.parish_id).join(', ')} up to date is waiting on an owner. Once it is approved, sign in again and the parish will have a pencil on it.`
-            : (detail.error || 'Ask an owner of this site to give your account a role — or open your parish in the app and choose \u201cBecome a contributor\u201d.'));
+            : (detail.error || 'Ask an owner of this site to give your account a role — or open your parish in the app, choose \u201cSuggest edits\u201d and tick \u201cBecome a parish contact\u201d.'));
         return;
       }
 

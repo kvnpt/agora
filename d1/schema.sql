@@ -757,7 +757,7 @@ CREATE TABLE admin_proposals (
 CREATE INDEX idx_admin_proposals_open ON admin_proposals(status, created_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────
--- parish_claims — "Become a contributor"
+-- parish_claims — "Become a parish contact", the box on "Suggest edits"
 --
 -- Somebody asking to keep one parish's page right. Made by a VERIFIED address:
 -- the claimant signs in through Cloudflare Access first, and `email` is the
@@ -788,6 +788,50 @@ CREATE TABLE parish_claims (
   decision_note TEXT
 );
 CREATE INDEX idx_parish_claims_open ON parish_claims(status, created_at);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- parish_suggestions — "Suggest edits"
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Somebody telling whoever keeps a parish that something on its page is
+-- wrong (kind 'change': what it is about, and what it should say), or that
+-- something is coming up it does not show (kind 'event': a title, the
+-- parish's LOCAL date and times, a place in words — no poster).
+--
+-- A MESSAGE, NOT AN EDIT WAITING TO APPLY. Nothing reads this back into the
+-- feed. A person who may edit the parish acts on it with the ordinary tools,
+-- or starts a draft from a suggested event (`draft_id`), and marks it done or
+-- dismissed. Its contacts, editors and owners all see it.
+--
+-- Made by a VERIFIED address, like a claim: `email` is the one Cloudflare
+-- Access vouched for. Becoming a parish contact is a box on the same form, and
+-- a ticked box writes a parish_claims row beside this one.
+--
+-- worker/lib/suggestions.mjs also creates this table IF NOT EXISTS on first
+-- use, with the same DDL, so a deploy that lands before migration 024 does not
+-- fail the first suggestion.
+CREATE TABLE parish_suggestions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id     TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL,
+  name          TEXT,
+  kind          TEXT NOT NULL CHECK(kind IN ('change','event')),
+  about         TEXT,
+  body          TEXT,
+  title         TEXT,
+  date          TEXT,
+  start_time    TEXT,
+  end_time      TEXT,
+  place         TEXT,
+  link          TEXT,
+  status        TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','done','dismissed','withdrawn')),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  decided_by    TEXT,
+  decided_at    TEXT,
+  decision_note TEXT,
+  draft_id      INTEGER
+);
+CREATE INDEX idx_parish_suggestions_open ON parish_suggestions(status, parish_id, created_at);
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- parish_notices_seen — which cross-parish listings a contact has looked at
