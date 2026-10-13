@@ -447,8 +447,6 @@ test('an ended rule is off the timetable page too', async () => {
 test("a page wears the app's colours: the jurisdiction's, as /admin set it, and the dark lift", async () => {
   const { raw, get } = fresh();
   raw.prepare(`INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES ('antiochian', '#123456')`).run();
-  // What 49 production parishes held after their jurisdictions were repainted.
-  raw.prepare(`UPDATE parishes SET color = '#d20000' WHERE id = ?`).run(PARISH);
   const { html } = await get('/sgr');
   const style = /<style>([\s\S]*?)<\/style>/.exec(html)[1];
   assert.match(style, /:root\{[^}]*--parish:#123456/, "the parish wears its jurisdiction's, as /admin set it");

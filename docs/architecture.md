@@ -122,10 +122,10 @@ reader draws the jurisdiction's without being taught to. Where the Worker joins
 a parish in SQL (a rule projected for a lite page, `/api/schedules`, a one-off
 event), it selects the same colour as `parish_color` with `PARISH_COLOR_SQL`
 (`worker/lib/juris-colors.mjs`): the override where there is a valid one, the
-table's otherwise. `parishes.color` is read by nothing and written by nothing,
-and is on its way out of the schema. It had gone stale under 49 Macedonian and
-Romanian parishes when /admin repainted their jurisdictions, and the lite pages,
-the last thing still drawing it, showed those parishes in the old colours.
+table's otherwise. There was a `parishes.color`, dropped in migration 026: it
+had gone stale under 49 Macedonian and Romanian parishes when /admin repainted
+their jurisdictions, and the lite pages, the last thing still drawing it, showed
+those parishes in the old colours.
 
 **The map marks time with halos, not colour.** Three of them, under the dot. A
 parish with a service on now breathes green; one with something still to come

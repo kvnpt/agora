@@ -47,7 +47,8 @@ CREATE TABLE parishes (
   -- parish's own answer, not a date Agora computes or resolves to a year.
   feast_day        TEXT,
   languages        TEXT NOT NULL DEFAULT '["English"]',
-  color            TEXT,
+  -- No colour: a parish wears its jurisdiction's (jurisdiction_colors below,
+  -- over public/shared/jurisdiction-colors.js). `color` was dropped in 026.
   live_url         TEXT,
 
   -- Payment deep links: /<acronym>/donate|raffle|payment|gala 302 to these.
@@ -535,10 +536,10 @@ CREATE TABLE parish_links (
 -- expression, so a malformed row falls back to the file rather than reaching
 -- either. See setJurisdictionColors() in the shared file.
 --
--- Changing a jurisdiction's colour here does NOT rewrite parishes.color, which
--- is a per-parish identity mark that a jurisdiction-wide choice has no business
--- overwriting — the admin panel offers that as a separate, counted action, and
--- only for rows still carrying the colour being replaced.
+-- It is every parish's colour too: a parish has none of its own. It had one,
+-- `parishes.color`, until migration 026 — copied from here once and never
+-- again, so it went stale under every parish whose jurisdiction /admin
+-- repainted.
 -- ─────────────────────────────────────────────────────────────────────────
 CREATE TABLE jurisdiction_colors (
   jurisdiction TEXT PRIMARY KEY CHECK(jurisdiction IN
