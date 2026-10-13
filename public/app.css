@@ -5199,39 +5199,115 @@ button.ps-avatar { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 2s; } }
 
 /* ── The hero ──
-   Over every lite page (worker/lib/lite-page.mjs HERO_HTML) and over the
+   Over every lite page (worker/lib/lite-page.mjs heroHTML) and over the
    app's page mode below: orthodoxy.au's parishes as points of light
    (public/og/hero.jpg, scripts/build-hero.mjs) where the app has its map.
    Shown at its full height and centred, never cropped to a band: the image's
    edges are this navy, so a wide screen gets navy either side and no seam.
    The page below overlaps its foot by --hero-overlap, as the parish sheet
-   overlaps the map. */
+   overlaps the map. VIEW MAP sits in the middle of what shows of it, the
+   name small in its lower-left corner, on the card's left edge. */
 :root { --hero-h: 148px; --hero-overlap: 18px; }
 @media (min-width: 720px) { :root { --hero-h: 184px; } }
 .lite-hero {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  justify-content: center;
   height: var(--hero-h);
   padding: 0 20px var(--hero-overlap);
   background: #1b3453 url(/og/hero.jpg) 58% center / auto 100% no-repeat;
+  --hero-inset: 20px;
 }
 @media (min-width: 720px) {
-  .lite-hero { padding-left: max(20px, calc(50% - 340px + 20px)); background-position: center; }
+  .lite-hero { --hero-inset: max(20px, calc(50% - 340px + 20px)); background-position: center; }
 }
 .lite-hero-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: #fff !important;
+  position: absolute;
+  left: var(--hero-inset);
+  bottom: calc(var(--hero-overlap) + 11px);
+  color: rgba(255, 255, 255, .88) !important;
   text-decoration: none;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   text-shadow: 0 1px 8px rgba(0, 0, 0, .35);
 }
-.lite-hero-cross { width: 13px; height: 22px; flex: none; }
+@media (hover: hover) { .lite-hero-brand:hover { color: #fff !important; } }
+
+/* VIEW MAP. Glass where the browser can blur what is behind it: the lights
+   come through it soft, brightened and more saturated, under a lit top edge
+   and a sheen across its upper half, as light catches a curved pane. Where it
+   cannot, or the viewer has asked for less transparency, a plain see-through
+   pill that reads the same. */
+.lite-hero-map {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 42px;
+  padding: 0 26px;
+  border-radius: 999px;
+  color: #fff !important;
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  background: rgba(255, 255, 255, .16);
+  border: 1px solid rgba(255, 255, 255, .42);
+  box-shadow: 0 6px 18px rgba(4, 12, 28, .3);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .lite-hero-map {
+    background: rgba(255, 255, 255, .07);
+    border-color: rgba(255, 255, 255, .24);
+    -webkit-backdrop-filter: blur(9px) saturate(1.8) brightness(1.18);
+    backdrop-filter: blur(9px) saturate(1.8) brightness(1.18);
+    box-shadow:
+      inset 0 1px 1px rgba(255, 255, 255, .65),
+      inset 0 -1px 1px rgba(255, 255, 255, .2),
+      inset 0 -12px 18px -14px rgba(255, 255, 255, .45),
+      0 8px 26px rgba(4, 12, 28, .38);
+  }
+  .lite-hero-map::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 1px;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, .04) 55%, rgba(255, 255, 255, 0));
+    pointer-events: none;
+  }
+}
+@media (hover: hover) {
+  .lite-hero-map:hover { background-color: rgba(255, 255, 255, .2); transform: translateY(-1px); }
+}
+.lite-hero-map:active { transform: scale(.97); }
+.lite-hero-map:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+@media (prefers-reduced-transparency: reduce) {
+  .lite-hero-map,
+  .lite-hero-map:hover,
+  .lite-hero-map:active {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(12, 26, 46, .88);
+  }
+  .lite-hero-map::before { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lite-hero-map { transition: none; }
+  .lite-hero-map:hover, .lite-hero-map:active { transform: none; }
+}
 
 /* ── Page mode ──
    An admin arriving at a parish or event link: the parish sheet laid out as

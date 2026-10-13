@@ -155,6 +155,16 @@ a server-rendered card, not the app. Three things follow for a browser script:
   meant to read without it.
 - `curl -D - http://localhost:8787/sgr` shows `x-agora-page: lite` on a card.
   Nothing on an app response says so.
+- **What a lite page shows on its way into the app** (the loading screen `lite.js`
+  puts up before it navigates) cannot be caught by waiting: `page.click`, `evaluate`
+  and `screenshot` all wait out a navigation the page has started, and a route that
+  holds the response back does not keep the old page up either. Keep the page instead:
+  `addEventListener('beforeunload', e => e.preventDefault())` in the page, dismiss the
+  dialog (`page.on('dialog', d => d.dismiss())`), click with `noWaitAfter: true` — the
+  navigation is cancelled and the page stays as it was when it tried to leave.
+- **The dev bypass makes every browser an admin** — the app sets `agora_admin` — so
+  Back from the app to a parish link reloads it as page mode. For a visitor's Back,
+  answer `/api/admin/ping` with a 403 in the context (`ctx.route`).
 
 ## Useful handles the app exposes
 

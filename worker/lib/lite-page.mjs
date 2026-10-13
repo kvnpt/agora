@@ -794,6 +794,7 @@ export function renderLitePage(m) {
     color: m.color,
     vars: m.colors,
     jsonLd: churchJsonLd(m),
+    mapHref: m.appHref,
     main: `
   <div class="ps-header lc-head">
     ${avatar}
@@ -822,9 +823,10 @@ export function renderLitePage(m) {
  *
  * /app.css first, so the page wears the app's own styles, then LITE_CSS for
  * what only a page needs, then the page's colours. `vars` is
- * { name: light, nameDark: dark } — see colorVarsCSS.
+ * { name: light, nameDark: dark } — see colorVarsCSS. `mapHref` is where the
+ * hero's VIEW MAP goes: this page's link in the app.
  */
-export function liteDocument({ title, description, canonical, indexable, ogType, image, twitterCard = 'summary', color, vars = {}, jsonLd = '', main }) {
+export function liteDocument({ title, description, canonical, indexable, ogType, image, twitterCard = 'summary', color, vars = {}, jsonLd = '', mapHref = '/', main }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -846,7 +848,7 @@ ${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>\n` : ''}<link 
 <style>${LITE_CSS}${DOT_CSS}${colorVarsCSS({ page: color, pageDark: jurisColors.liftForDark(color), ...vars })}</style>
 </head>
 <body class="lite">
-${HERO_HTML}
+${heroHTML(mapHref)}
 <main class="lite-card">
 <a class="lite-close" href="/" aria-label="Close — to the map">&times;</a>${main}
 </main>
@@ -857,16 +859,22 @@ ${HERO_HTML}
 
 /**
  * The hero over every page: orthodoxy.au's parishes as points of light
- * (public/og/hero.jpg, drawn by scripts/build-hero.mjs), with the cross and
- * the name over it as text, linking to the map. It stands where the app has
- * its map, and the page below is a card over it — the parish sheet over the
- * map, which is the "parish card" a shared link opens. The app's page mode
- * puts the same markup at the top of its sheet (pageHeroHTML in app.js); the
- * styles are app.css's `.lite-hero`, which both load.
+ * (public/og/hero.jpg, drawn by scripts/build-hero.mjs), with the name in its
+ * lower-left corner as text and VIEW MAP in the middle — this page's link in
+ * the app (`mapHref`), so a parish opens on its pin and a timetable on its
+ * filters. It stands where the app has its map, and the page below is a card
+ * over it — the parish sheet over the map, which is the "parish card" a shared
+ * link opens. Anywhere else on it, like the card's X, is the app as it opens
+ * with no link (lite.js). The app's page mode puts the same markup at the top
+ * of its sheet (pageHeroHTML in app.js); the styles are app.css's
+ * `.lite-hero`, which both load.
  */
-export const HERO_HTML = `<header class="lite-hero">
-  <a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map"><svg class="lite-hero-cross" viewBox="0 0 60 100" aria-hidden="true"><g fill="currentColor"><rect x="26" y="0" width="8" height="100"/><rect x="16" y="14" width="28" height="7"/><rect x="4" y="32" width="52" height="8"/><rect x="14" y="70" width="32" height="7" transform="rotate(18 30 73.5)"/></g></svg><span>orthodoxy.au</span></a>
+export function heroHTML(mapHref) {
+  return `<header class="lite-hero">
+  <a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map">orthodoxy.au</a>
+  <a class="lite-hero-map" href="${esc(mapHref)}">View map</a>
 </header>`;
+}
 
 // What a page needs that a sheet does not, on top of /app.css. The app's
 // tokens (--bg, --text, --text-secondary, --border, --surface-2) are app.css's

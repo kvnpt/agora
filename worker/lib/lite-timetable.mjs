@@ -277,6 +277,9 @@ export function renderTimetablePage(m) {
     image,
     color: m.color,
     vars,
+    // The map with this page's filters: the dated feed's link, which is the
+    // app's map and list together.
+    mapHref: m.eventsHref,
     main: `
   <style>${parishVars}</style>
   <section class="lc-head tt-head">
