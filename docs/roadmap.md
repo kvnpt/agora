@@ -9,9 +9,10 @@ The engine is done and well ahead of the content. Production has 293 parishes
 and about 82 service rules, so most parish pages have no times. Everything a
 parish contact needs now exists — in-place editing, a timetable mode with
 "this and every following", breaks, bulletin posters over a date range, asks,
-notices — and as of the claims work, so does the way in: **"Is this your
-parish?"** on every parish sheet and lite card, approved by an owner under
-**Asks** (docs/people-and-access.md).
+notices — and so does the way in: **"Suggest edits"** on every parish sheet
+and lite card, which sends a change or an event to whoever keeps the parish,
+with **Become a parish contact** a box on the same form for an owner to approve
+under **Asks** (docs/people-and-access.md).
 
 So the next phases are about getting service times into the database, then
 about keeping the code that renders them honest.
@@ -43,7 +44,8 @@ below.
 ## 2. Tell people what happened to their claim
 
 A claimant learns the outcome only by signing in again, and an owner learns of
-a claim only from the red dot. Both want a message.
+a claim only from the red dot. Both want a message. So does a suggestion: its
+sender sees what became of it only by opening "Suggest edits" again.
 
 > *Send an email when a parish claim is filed (to the owners) and when it is
 > decided (to the claimant), using Cloudflare Email Routing's send_email

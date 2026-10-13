@@ -180,7 +180,9 @@ export function isDataWrite(request, response) {
   // would rebuild the bundle for everybody for nothing. The exception is the
   // other way round from a list of routes that touch the bundle, so a draft
   // route that forgets to join it costs a rebuild, never a stale page.
-  // Publishing writes `events`, and bumps like any other write.
-  if (/^\/api\/admin\/(drafts|draft-events)(\/|$)/.test(path) && !path.endsWith('/publish')) return false;
+  // Publishing writes `events`, and bumps like any other write. A suggestion
+  // is the same — a message for a person, which the bundle never reads, and
+  // starting a draft from one is a draft.
+  if (/^\/api\/admin\/(drafts|draft-events|suggestions)(\/|$)/.test(path) && !path.endsWith('/publish')) return false;
   return true;
 }

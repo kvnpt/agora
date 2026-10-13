@@ -104,8 +104,10 @@ for them, are in the doc it links to — read that before changing the area.
 - Access says who you are; `admin_roles` says what you may do. Routes name a
   capability, never a role. An EMPTY table makes everyone an owner.
 - Admin fails closed. `AGORA_DEV_ADMIN` is for `wrangler dev` only.
-- A refusal with somewhere to go becomes an ask; "Become a contributor" becomes
-  a claim. Neither is a moderation queue.
+- A refusal with somewhere to go becomes an ask; "Suggest edits" becomes a
+  suggestion to whoever may edit the parish, and a claim only when its box is
+  ticked. None is a moderation queue: a suggestion is a message, never an edit
+  waiting to apply.
 
 **Shipping** — [docs/deploy-and-ci.md](docs/deploy-and-ci.md), [docs/database.md](docs/database.md)
 - Every push to `main` deploys (Workers Builds). Green CI is the merge gate.
@@ -126,7 +128,7 @@ for them, are in the doc it links to — read that before changing the area.
 | [docs/architecture.md](docs/architecture.md) | The lens, the bundle, lite pages, dates, time zones, dedup, colours, the cron |
 | [docs/editing.md](docs/editing.md) | Occurrences, series, posters, combines, modes, the three "hides" |
 | [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md) | Addresses, provenance, where a parish is read from, adapters |
-| [docs/people-and-access.md](docs/people-and-access.md) | Roles, asks, claims, notices, and setting up Cloudflare Access |
+| [docs/people-and-access.md](docs/people-and-access.md) | Roles, asks, suggestions, claims, notices, and setting up Cloudflare Access |
 | [docs/deploy-and-ci.md](docs/deploy-and-ci.md) | Workers Builds, the CI gate, secrets |
 | [docs/database.md](docs/database.md) | Schema, seed, migrations |
 | [docs/history.md](docs/history.md) | The VM, the WhatsApp pipeline, scar tissue |

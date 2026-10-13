@@ -5154,7 +5154,7 @@ button.ps-avatar { cursor: pointer; }
 .ps-link-field > .ps-btn-ghost { margin-bottom: 10px; }
 .ps-delete-parish { margin-left: auto; }
 
-/* "Become a contributor", under the parish's source line: a small ghost pill,
+/* "Suggest edits", under the parish's source line: a small ghost pill,
    so it reads as an offer about the page and not as one of the parish's own
    actions in the row below it. */
 .ps-btn.ps-contribute {

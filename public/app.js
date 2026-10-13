@@ -53,7 +53,7 @@ const state = {
   //
   // Convenience only, exactly as in /admin: every route re-checks server-side,
   // and a button this leaves on screen still gets a 403.
-  adminWho: { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0 },
+  adminWho: { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0, suggestions: 0 },
 
   // Which parish is being EDITED, or null. Signing in and editing are two
   // states, not one: before this, every admin control was on screen the whole
@@ -1866,8 +1866,11 @@ async function checkAdmin() {
         // not looked at. An owner decides asks; a parish contact decides
         // nothing and gets this half instead. Most accounts have neither.
         parishNotices: who.parishNotices || 0,
+        // "Suggest edits" waiting at the parishes they may edit — the one
+        // count an owner, an editor and a contact can all act on.
+        suggestions: who.suggestions || 0,
       }
-    : { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0 };
+    : { role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0, suggestions: 0 };
 
   // Tell the Worker who is looking, for one purpose only: a shared parish or
   // event link is answered with a lite card (worker/routes/pages.mjs), and
@@ -1979,13 +1982,15 @@ function syncAccountMenu() {
   // Something is waiting for this person. Two halves that never both apply:
   // `openAsks` is an owner's queue and is zero for anybody who cannot decide
   // one; `parishNotices` is what was done to a contact's own parishes and is
-  // zero for anybody who is not one. The Worker answers both, so this asks how
+  // zero for anybody who is not one. `suggestions` is anybody's, scoped to the
+  // parishes they may edit. The Worker answers all three, so this asks how
   // many rather than who.
   const who = state.adminWho || {};
   const asks = who.openAsks || 0;
   const notices = who.parishNotices || 0;
+  const suggested = who.suggestions || 0;
   const dot = document.getElementById('account-dot');
-  if (dot) dot.hidden = !(state.isAdmin && (asks + notices) > 0);
+  if (dot) dot.hidden = !(state.isAdmin && (asks + notices + suggested) > 0);
   if (btn) {
     btn.classList.toggle('signed-in', !!state.isAdmin);
     // The count goes in the label, not in the dot: nine pixels cannot carry a
@@ -1993,6 +1998,7 @@ function syncAccountMenu() {
     const parts = [];
     if (asks) parts.push(`${asks} ${asks === 1 ? 'ask' : 'asks'} waiting`);
     if (notices) parts.push(`${notices} new at your ${notices === 1 ? 'parish' : 'parishes'}`);
+    if (suggested) parts.push(`${suggested} ${suggested === 1 ? 'suggestion' : 'suggestions'}`);
     const label = !state.isAdmin ? 'Sign in'
       : parts.length ? `Account — ${parts.join(', ')}`
       : 'Account';
@@ -2019,6 +2025,7 @@ async function refreshOpenAsks() {
       ...state.adminWho,
       openAsks: who.openAsks || 0,
       parishNotices: who.parishNotices || 0,
+      suggestions: who.suggestions || 0,
     };
     syncAccountMenu();
   } catch { /* offline — the dot keeps whatever it last knew */ }
@@ -5253,7 +5260,7 @@ function paintParishSheetContent(parishId, opts = {}) {
   );
   // Shown even with no rules: a parish whose times have never been entered is
   // exactly the one somebody opens this to fix — with the pencil, or with
-  // "Become a contributor" under the source line for somebody who cannot yet.
+  // "Suggest edits" under the source line for somebody who cannot.
   const schedSectionHtml = `
       <div class="ps-section ps-sched-section">${parishTimetableHTML(parish, scheds)}</div>`;
 
@@ -7554,7 +7561,7 @@ function renderServices() {
 // The parishes in view that have no times on file at all — most of them, for
 // now (253 of 293 in October 2026). Listed by name under the timetables so the
 // view is the whole of the parishes it covers, not only the ones with times;
-// each opens its parish sheet, where "Become a contributor" asks for them.
+// each opens its parish sheet, where "Suggest edits" asks for them.
 //
 // No rules at all, not "none matching": under /liturgy a parish whose only
 // rule is Vespers has times, it just has no Liturgy. Same scope as the rules
@@ -8825,22 +8832,26 @@ function feedHeaderHTML(parish) {
 }
 
 /**
- * "Become a contributor" — the way in for somebody who could keep it right.
+ * "Suggest edits" — the way in for somebody who has spotted something wrong.
  *
  * Shown to anyone who cannot already edit this parish, visitors included: most
  * parishes have nobody looking after their page, and the person who could is
  * most likely to be reading it. It sits under the parish's source line, which
  * says where the page came from and how old it is — the natural place to offer
- * to keep it right — rather than under the timetable, where it read as a note
+ * to put it right — rather than under the timetable, where it read as a note
  * about the service times alone. The lite card puts it in the same place
  * (worker/lib/lite-page.mjs).
  *
- * It is the claim: /admin?claim=, behind Cloudflare Access, so the address on
- * the request is one Access verified (worker/lib/claims.mjs).
+ * It was "Become a contributor", which asked for a role before anybody could
+ * say what was wrong. Now it opens a form for the thing they came with — a
+ * change, or an event the page does not show (worker/lib/suggestions.mjs) —
+ * and becoming a parish contact is a box on it, unticked, which makes the claim
+ * (worker/lib/claims.mjs). /admin?suggest= is behind Cloudflare Access, so the
+ * address on either is one Access verified.
  */
 function contributeButtonHTML(parish) {
   if (mayEditTimetable(parish.id)) return '';
-  return `<a class="ps-btn ps-btn-ghost ps-contribute" href="/admin?claim=${encodeURIComponent(parish.id)}">${glyph('ph:user-plus')}Become a contributor</a>`;
+  return `<a class="ps-btn ps-btn-ghost ps-contribute" href="/admin?suggest=${encodeURIComponent(parish.id)}">${glyph('ph:note-pencil')}Suggest edits</a>`;
 }
 
 /**
