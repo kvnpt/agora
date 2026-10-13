@@ -126,6 +126,45 @@ A newly approved contact sees a one-time guide on their own parish's sheet —
 details, service times, one-week changes, one-offs, a monthly bulletin — kept
 per browser in localStorage, since it is a convenience.
 
+## Emails about claims
+
+Without them a claimant learned the outcome only by signing in again, and an
+owner learned of a claim only from the red dot. `worker/lib/mail.mjs` sends two
+plain-text messages:
+
+- **A claim is made** → each owner, separately (an editor decides nothing):
+  who asked, for which parish, their role, phone and note, and a link to Asks.
+- **A claim is decided** → the claimant, at the address Access verified:
+  approved, with a link to `/admin?suggest=<parish>` — behind Access, so it
+  signs them in on the way, and for somebody who may now edit the parish it
+  says so and opens it — or declined, with the owner's note, if any, and the
+  parish page, where they can still suggest changes.
+
+The panel and the Suggest edits page promise an email only when this
+deployment sends one (`mail` on `/api/admin/ping` and `/whoami`), and the
+toast after a decision says *emailed them* only when it did. A send that fails
+is a log line and nothing more: the approval is a write to `admin_roles`, and a
+bounce must never undo it or show the owner an error.
+
+It is **Cloudflare Email Sending**, through a `send_email` binding named
+`EMAIL` — no API key stored anywhere, the same reason deploys go through
+Workers Builds. What it asks of the account instead, and why it is off until
+then:
+
+1. **The Workers Paid plan.** On Free, Email Sending reaches only addresses
+   verified under Email Routing; a claimant's address is never one of those.
+2. **orthodoxy.au onboarded as a sending domain** — dashboard → Compute →
+   Email Service → Email Sending → Onboard Domain, which adds the bounce MX,
+   SPF, DKIM and DMARC records itself (the zone is on Cloudflare DNS). The mail
+   is from `noreply@orthodoxy.au` (`MAIL_FROM` in lib/mail.mjs; a `MAIL_FROM`
+   var overrides it).
+3. **Uncomment `[[send_email]] name = "EMAIL"` in `wrangler.toml`** and merge.
+   It is commented out, not declared early, because an account that cannot
+   send yet might refuse the binding at deploy, and every merge deploys.
+
+Suggestions do not email anybody yet: their sender sees what became of each one
+on the Suggest edits page, and the people who keep the parish see the red dot.
+
 ## Setting up Cloudflare Access so People is the only list
 
 Access answers **who are you**; `admin_roles` (the **People** tab) answers

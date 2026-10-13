@@ -44,6 +44,7 @@ import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, ins
 import signs from '../../public/shared/signs.js';
 import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
+import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
 const { isResolvableTimezone, DEFAULT_TIMEZONE } = timezones;
@@ -616,6 +617,16 @@ const signedIn = (fn) => async (c) => {
   return fn(c);
 };
 
+/**
+ * Work the response need not wait for — an email — under waitUntil, so the
+ * person's screen is not held up by somebody else's inbox. Without a ctx (the
+ * tests) it is the promise itself, for the route to await.
+ */
+const afterResponse = (c, promise) => {
+  if (c.ctx && typeof c.ctx.waitUntil === 'function') { c.ctx.waitUntil(promise); return null; }
+  return promise;
+};
+
 /** Who a suggester's poster belongs to: the address Access verified, as one case. */
 const posterOwner = (c) => String(c.who.identity).trim().toLowerCase();
 
@@ -703,6 +714,9 @@ export function registerAdminRoutes(router) {
     // "Suggest edits" waiting at the parishes this person may edit. Unlike an
     // ask, a contact can act on these, so it counts for them too.
     suggestions: await openSuggestionCount(c.env.DB, c.who),
+    // Whether deciding a claim emails the claimant (lib/mail.mjs), so the
+    // panel says so only when it does.
+    mail: canMail(c.env),
   })));
 
   // ── "Suggest edits": suggestions, and claims behind its box ──
@@ -741,6 +755,9 @@ export function registerAdminRoutes(router) {
       // What adding a poster to a suggested event does here: 'read' fills the
       // form from it, 'store' only sends it along, null offers no poster.
       posters: !c.env.ASSETS_BUCKET ? null : (await readSecret(c.env.ANTHROPIC_API_KEY)) ? 'read' : 'store',
+      // Whether a claim's outcome will reach them by email, so the page only
+      // promises it when it is true.
+      mail: canMail(c.env),
     });
   }));
 
@@ -1007,6 +1024,15 @@ export function registerAdminRoutes(router) {
       `INSERT INTO parish_claims (parish_id, email, name, relation, phone, note)
        VALUES (?,?,?,?,?,?) RETURNING id`
     ).bind(parish.id, c.who.identity, v.claim.name, v.claim.relation, v.claim.phone, v.claim.note).first();
+    // The owners hear of it — they are the ones who decide — rather than
+    // only from the red dot the next time they happen to open the site.
+    if (canMail(env)) {
+      const owners = (await env.DB.prepare("SELECT email FROM admin_roles WHERE role = 'owner'").all()).results || [];
+      const to = owners.map(o => o.email).filter(e => e.toLowerCase() !== String(c.who.identity).toLowerCase());
+      await afterResponse(c, sendMail(env, {
+        to, ...claimFiledMail({ ...v.claim, email: c.who.identity }, parish, new URL(request.url).origin),
+      }));
+    }
     return json({ id: row.id, status: 'open' }, 201);
   }));
 
@@ -1060,10 +1086,23 @@ export function registerAdminRoutes(router) {
           .bind(JSON.stringify(grant.parishIds), email).run();
       }
     }
+    const note = (b.note || '').trim() || null;
     await env.DB.prepare(
       'UPDATE parish_claims SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?'
-    ).bind(approve ? 'approved' : 'declined', who, NOW(), (b.note || '').trim() || null, params.id).run();
-    return json({ ok: true, status: approve ? 'approved' : 'declined', grant: grant.action });
+    ).bind(approve ? 'approved' : 'declined', who, NOW(), note, params.id).run();
+    // The claimant hears what was decided — before this they found out only
+    // by signing in again. After the write, and never able to undo it.
+    let mailed = false;
+    if (canMail(env)) {
+      const parish = await env.DB.prepare('SELECT id, name, acronym FROM parishes WHERE id = ?').bind(k.parish_id).first();
+      if (parish && isEmail(k.email)) {
+        await afterResponse(c, sendMail(env, {
+          to: k.email, ...claimDecidedMail(k, parish, { approved: approve, note }, new URL(request.url).origin),
+        }));
+        mailed = true;
+      }
+    }
+    return json({ ok: true, status: approve ? 'approved' : 'declined', grant: grant.action, mailed });
   }));
 
   // ── people ──

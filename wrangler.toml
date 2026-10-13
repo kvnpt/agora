@@ -148,6 +148,27 @@ store_id = "caf2bffa59d544e88e6649b71c3e6c09"
 secret_name = "ANTHROPIC_API_KEY"
 
 
+# Email — telling a claimant what was decided, and the owners that a claim was
+# made (worker/lib/mail.mjs). Cloudflare's own Email Sending: no API key stored
+# anywhere, but it needs the account set up first, so it is OFF until then.
+#
+# OPTIONAL in the code: with no EMAIL binding nothing is sent and nothing else
+# changes, and a send that fails never fails the approval it reports.
+#
+# To turn it on (docs/people-and-access.md, "Emails about claims"):
+#   1. Workers Paid plan — on Free, Email Sending reaches only addresses
+#      verified under Email Routing, and a claimant's is not one of those.
+#   2. Onboard the sending domain: dashboard → Compute → Email Service →
+#      Email Sending → Onboard Domain → orthodoxy.au (it adds the DNS records).
+#   3. Uncomment the two lines below and merge. Declared here, not in the
+#      dashboard, for the reason at the top of the secrets section.
+#
+# Left commented rather than declared early: an account that cannot send yet
+# might refuse the binding at deploy, and every merge to main deploys.
+# [[send_email]]
+# name = "EMAIL"
+
+
 # Which repository holds the "Extract parish PDFs" workflow.
 #
 # A plain var, not a secret: an owner/repo pair is an identifier, and the panel

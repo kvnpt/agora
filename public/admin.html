@@ -1332,7 +1332,7 @@
     // guards consult — so a control this greys out and a route that refuses
     // cannot disagree. Convenience only: every one of these is re-checked
     // server-side, and a hidden button is not a permission system.
-    let me = { role: null, parishIds: [], bootstrap: false, can: {} };
+    let me = { role: null, parishIds: [], bootstrap: false, can: {}, mail: false };
     const may = (capability) => !!me.can[capability];
 
     // A parish-scoped account sees its own parishes and nothing else. Applied
@@ -3850,9 +3850,9 @@
       const k = claims.find(x => x.id === id);
       let note = null;
       if (decision === 'decline') {
-        note = prompt('Why not? (Kept with the claim.)');
+        note = prompt(me.mail ? 'Why not? (Sent to them in the email saying so.)' : 'Why not? (Kept with the claim.)');
         if (note === null) return;
-      } else if (!confirm(`${k.summary}\n\nApprove? ${k.email} will be able to edit ${k.parish_name || k.parish_id} — its details, service times and events — next time they sign in.`)) {
+      } else if (!confirm(`${k.summary}\n\nApprove? ${k.email} will be able to edit ${k.parish_name || k.parish_id} — its details, service times and events — next time they sign in.${me.mail ? ' They will get an email saying so.' : ''}`)) {
         return;
       }
       const res = await fetch(`/api/admin/claims/${id}/decide`, {
@@ -3860,9 +3860,10 @@
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { toast(body.error || await adminError(res), 'error'); return; }
+      const told = body.mailed ? ' — emailed them' : '';
       toast(decision === 'approve'
-        ? (body.grant === 'none' ? 'Approved — they could already edit it' : 'Approved — added to People')
-        : 'Declined');
+        ? (body.grant === 'none' ? `Approved — they could already edit it${told}` : `Approved — added to People${told}`)
+        : `Declined${told}`);
       await loadAll();
     }
 
@@ -4379,10 +4380,14 @@
       // The claim needs a People list to be approved onto; with none, every
       // signed-in person is already an owner and `covers` answered above.
       const canClaim = !claim && !me.bootstrap;
+      // What happens next, promising an email only where this site sends one.
+      const awaitIt = me.mail && /@/.test(me.identity || '')
+        ? `You will get an email at <b>${esc(me.identity)}</b> when it is decided. Once it is approved, sign in with that address and ${esc(parish.name)} will have a pencil on its details and its service times.`
+        : `Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times.`;
 
       page(`
         <p class="suggest-lead">Spotted something wrong on this parish's page, or know of something coming up that it does not show? Tell the people who keep it.</p>
-        ${claim ? `<div class="suggest-note">Your request to become a parish contact is with the site owner. Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times. <button type="button" class="suggest-link" id="claim-withdraw">Withdraw the request</button></div>` : ''}
+        ${claim ? `<div class="suggest-note">Your request to become a parish contact is with the site owner. ${awaitIt} <button type="button" class="suggest-link" id="claim-withdraw">Withdraw the request</button></div>` : ''}
         <form id="suggest-form" class="suggest-form" novalidate>
           <div class="suggest-kinds" role="radiogroup" aria-label="What is it?">
             <label><input type="radio" name="kind" value="change" checked>Fix something</label>
@@ -4726,7 +4731,7 @@
           <div class="suggest-done">
             <p><b>Thank you — sent.</b></p>
             ${didSuggest ? `<p>Whoever keeps ${esc(parish.name)} will see your suggestion. Come back to this page to see what became of it.</p>` : ''}
-            ${didClaim ? `<p>Your request to become a parish contact is with the site owner. Once it is approved, sign in again and ${esc(parish.name)} will have a pencil on its details and its service times.</p>` : ''}
+            ${didClaim ? `<p>Your request to become a parish contact is with the site owner. ${awaitIt}</p>` : ''}
             <p class="suggest-actions">
               <a class="suggest-btn" href="${esc(link)}">Back to the parish</a>
               <button type="button" class="suggest-btn ghost" id="suggest-again">Suggest something else</button>
@@ -4929,6 +4934,7 @@
           parishIds: Array.isArray(body.parishIds) ? body.parishIds : [],
           bootstrap: !!body.bootstrap,
           can: body.can || {},
+          mail: !!body.mail,
         };
       } catch { /* leave `me` as no-role; every control stays off */ }
 

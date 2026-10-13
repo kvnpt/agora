@@ -65,6 +65,11 @@ Secrets (set once, via `wrangler secret put` or the dashboard):
 | `ACCESS_AUD` | The Access application's audience tag |
 | `ANTHROPIC_API_KEY` | Reading a dropped poster with Claude (optional — without it the editor is typed by hand). Set a monthly spend limit on the key in the Anthropic Console |
 
+Not a secret but worth knowing here: the `EMAIL` binding (Cloudflare Email
+Sending, for the claim emails) is commented out in `wrangler.toml` until the
+account is on Workers Paid with orthodoxy.au onboarded as a sending domain —
+docs/people-and-access.md, "Emails about claims".
+
 A secret reaches `env` as a **string** (a Worker secret) or as an **object with
 `.get()`** (a Secrets Store binding). `readSecret()` in `worker/lib/secrets.mjs`
 takes either. Do not compare a binding for truthiness and call it configured —
