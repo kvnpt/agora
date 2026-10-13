@@ -63,7 +63,7 @@ Secrets (set once, via `wrangler secret put` or the dashboard):
 | `GOOGLE_API_KEY` | The Google Calendar adapter |
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access, e.g. `yourteam.cloudflareaccess.com` |
 | `ACCESS_AUD` | The Access application's audience tag |
-| `ANTHROPIC_API_KEY` | Reading a dropped poster with Claude (optional — without it the editor is typed by hand). Set a monthly spend limit on the key in the Anthropic Console |
+| `ANTHROPIC_API_KEY` | Reading a dropped poster with Claude, and suggesting a parish's acronym from its names (optional — without it the editor is typed by hand, and the acronym comes from the initials rule). Set a monthly spend limit on the key in the Anthropic Console |
 
 Not a secret but worth knowing here: the `EMAIL` binding (Cloudflare Email
 Sending, for the claim emails) is commented out in `wrangler.toml` until the

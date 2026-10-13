@@ -99,4 +99,5 @@ test('only a successful admin write moves the version', () => {
   assert.ok(!isDataWrite(r('GET', '/api/admin/schedules'), ok), 'a read');
   assert.ok(!isDataWrite(r('PATCH', '/api/admin/schedules/4'), new Response(null, { status: 403 })), 'a refusal');
   assert.ok(!isDataWrite(r('POST', '/api/bundle'), ok), 'not an admin route');
+  assert.ok(!isDataWrite(r('POST', '/api/admin/acronym-suggestion'), ok), 'a suggestion writes nothing');
 });

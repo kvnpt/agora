@@ -532,6 +532,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 150);
   }
 
+  // "Add parish" in /admin comes here next, with the parish it made in
+  // sessionStorage: open that parish's editor, which has what its form did not
+  // ask (the logo, the buttons, the links). Once, and only for somebody who
+  // may edit it.
+  let editPid = null;
+  try {
+    editPid = sessionStorage.getItem('agora-edit-parish');
+    sessionStorage.removeItem('agora-edit-parish');
+  } catch { /* no storage: the card opens as any link's would */ }
+  if (editPid && (state.parishes || []).some(p => p.id === editPid) && adminMay('parish.edit', editPid)) {
+    setTimeout(() => {
+      if (state.parishSheetFocus !== editPid) openParishSheet(editPid, { replaceUrl: true });
+      window.setParishEditMode(editPid, true);
+    }, 300);
+  }
+
   // Patch LIVE badges in place every minute. Was scheduleRenderEvents
   // before — full list re-render fired the events-pending fade animation
   // every 60s for any list with a parish_live_url event, which the user
@@ -9123,6 +9139,7 @@ function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
         <label class="ps-field"><span>Short link</span>
           <input id="pse-acro-${pid}" data-acronym-field value="${esc(parish.acronym || '')}" placeholder="acronym">
           <span class="edit-row-hint" data-acronym-hint>orthodoxy.au/<span data-acronym-preview>${esc(acro || 'acronym')}</span></span>
+          <span class="edit-row-hint" data-acronym-suggested hidden>Suggested from the names — keep it, change it, or clear it.</span>
         </label>
         <label class="ps-field"><span>Languages</span>
           <input id="pse-langs-${pid}" placeholder="English, Greek" value="${esc(langsVal)}">
@@ -9318,6 +9335,35 @@ function openParishDetailsDialog(pid) {
   body.querySelector('[data-logo-edit]').addEventListener('click', () => openParishLogoEditor(pid));
   wireParishDetailsEdit(body, pid);
   wireAcronymHint(body, pid);
+  wireAcronymSuggestion(body, parish);
+}
+
+/**
+ * A parish with no short link gets one suggested from its names
+ * (public/shared/acronym-suggest.js) — for whoever may set it, since a save
+ * carrying an acronym from anybody else is refused. It fills the field and
+ * says so; nothing is kept until Save, and clearing the field keeps none.
+ */
+function wireAcronymSuggestion(root, parish) {
+  const pid = parish.id;
+  const input = root.querySelector('[data-acronym-field]');
+  const note = root.querySelector('[data-acronym-suggested]');
+  if (!input || !window.AgoraAcronymSuggest || (parish.acronym || '').trim()
+      || !adminMay('parish.acronym', pid)) return;
+  input.addEventListener('input', (e) => { if (e.isTrusted && note) note.hidden = true; });
+  const field = (name) => document.getElementById(`pse-${name}-${pid}`);
+  window.AgoraAcronymSuggest.wire({
+    input,
+    parishId: pid,
+    names: () => ({
+      name: (field('name') || {}).value || '',
+      full_name: (field('fullname') || {}).value || '',
+      jurisdiction: (field('jurisdiction') || {}).value || '',
+    }),
+    watch: [field('name'), field('fullname')],
+    onFill: () => { if (note) note.hidden = false; },
+    now: true,
+  });
 }
 
 // Kept so an old inline handler, a bookmarklet or a half-updated cached copy
@@ -9624,6 +9670,23 @@ window.confirmParishPin = function() {
   renderPinStatus(pid);
 };
 
+/**
+ * The parish row a PATCH answers with, into state as the bundle would have
+ * given it: with its jurisdiction's colour, which bundle.js sets on load. The
+ * row came straight from D1 carrying the stored `parishes.color` until that
+ * column was dropped (migration 026), and merged as it came it painted the
+ * sheet's logo and buttons grey for a parish added since. The row has no
+ * colour now, so this is what keeps one — and keeps it right when the save
+ * changed the jurisdiction.
+ */
+function mergeSavedParish(pid, row) {
+  const idx = state.parishes.findIndex(p => p.id === pid);
+  if (idx === -1 || !row) return;
+  const merged = { ...state.parishes[idx], ...row };
+  if (window.agoraJurisdictionColor) merged.color = window.agoraJurisdictionColor(merged.jurisdiction);
+  state.parishes[idx] = merged;
+}
+
 window.saveParish = async function(id) {
   const pid = id;
   const val = (name) => {
@@ -9688,8 +9751,7 @@ window.saveParish = async function(id) {
     return false;
   }
   const updated = await res.json();
-  const idx = state.parishes.findIndex(p => p.id === pid);
-  if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
+  mergeSavedParish(pid, updated);
   if (draft) clearPinDraft();
   // A ruling is attempted after the write and reported rather than thrown, so
   // the save can succeed while the pin that was meant to protect it did not.
@@ -10112,9 +10174,7 @@ async function _saveParishLinks() {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
     });
     if (!res.ok) { alert((await res.json().catch(() => ({}))).error || 'Save failed'); return; }
-    const updated = await res.json();
-    const idx = state.parishes.findIndex(p => p.id === pid);
-    if (idx !== -1) state.parishes[idx] = { ...state.parishes[idx], ...updated };
+    mergeSavedParish(pid, await res.json());
 
     const res2 = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/links`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ links }),

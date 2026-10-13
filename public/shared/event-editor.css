@@ -569,6 +569,10 @@
   box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
 }
 .kp.kp-up .kp-list { top: auto; bottom: calc(100% + 4px); }
+/* `display: flex` above outranks the UA's [hidden], so a closed list was an
+   empty bordered box under every picker outside the add-event editor (whose
+   `.ee [hidden]` happened to cover it). */
+.kp-list[hidden] { display: none; }
 .kp-item {
   display: flex; align-items: center; justify-content: space-between;
   min-height: 40px; padding: 4px 8px 4px 5px;

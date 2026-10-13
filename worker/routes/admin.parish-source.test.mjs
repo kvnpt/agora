@@ -122,3 +122,51 @@ test('a save that changes nothing about the details leaves the provenance alone'
   assert.equal(r.body.info_source_type, before.info_source_type);
   assert.equal(r.body.info_checked_at, before.info_checked_at);
 });
+
+// ── a parish added by hand ─────────────────────────────────────────────────
+
+const NEW_PARISH = {
+  name: 'St George Monastery, Yellow Rock', full_name: 'Holy Monastery of St George',
+  jurisdiction: 'antiochian', lat: -33.69, lng: 150.62, timezone: 'Australia/Sydney',
+};
+
+test('a parish somebody adds is kept by hand, and says who added it', async () => {
+  const { call } = fresh();
+  const r = await call('POST', '/api/admin/parishes', NEW_PARISH);
+  assert.equal(r.status, 201);
+  assert.equal(r.body.read_from, 'hand');
+  assert.equal(r.body.info_source_type, 'person');
+  assert.equal(r.body.info_source_name, 'Admin');
+  assert.equal(r.body.updated_by, 'dev');
+  // So its first edit is not asked "keep it by hand?" (ensureKeptByHand).
+  const edit = await call('PATCH', `/api/admin/parishes/${r.body.id}`, { phone: '02 4577 0000' });
+  assert.equal(edit.body.read_from, 'hand');
+});
+
+test('an add may still name its source and where it is read from', async () => {
+  const { call } = fresh();
+  const r = await call('POST', '/api/admin/parishes', {
+    ...NEW_PARISH, read_from: 'website', info_source_type: 'website', info_source_name: 'Its website',
+  });
+  assert.equal(r.body.read_from, 'website');
+  assert.equal(r.body.info_source_name, 'Its website');
+  assert.equal((await call('POST', '/api/admin/parishes', { ...NEW_PARISH, name: 'Other', read_from: 'x' })).status, 400);
+});
+
+test('an acronym is suggested from the names, free and not a reserved link', async () => {
+  const { call, raw } = fresh();
+  raw.prepare('UPDATE parishes SET acronym = ? WHERE id = ?').run('sgy', OTHER);
+  const r = await call('POST', '/api/admin/acronym-suggestion', { name: NEW_PARISH.name, full_name: NEW_PARISH.full_name });
+  assert.equal(r.status, 200);
+  // No key in the test env, so the rule: sgy is taken, so the next.
+  assert.deepEqual([r.body.acronym, r.body.source], ['sgyr', 'rule']);
+  assert.equal((await call('POST', '/api/admin/acronym-suggestion', {})).status, 400);
+});
+
+test('a parish contact is not offered one: an acronym is not theirs to set', async () => {
+  const { call } = fresh([
+    { email: 'boss@example.org', role: 'owner' },
+    { email: 'dev', role: 'parish', parishIds: [PARISH] },
+  ]);
+  assert.equal((await call('POST', '/api/admin/acronym-suggestion', { name: 'St George, Redfern' })).status, 403);
+});
