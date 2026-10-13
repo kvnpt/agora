@@ -57,11 +57,40 @@ panel, because the person arriving usually has no role at all.
 
 The form is for what they came with: **Fix something** (optionally naming one
 of the parish's service times, then what it should say) or **Add an event** (a
-title, the parish's local date and times, a place in words, details, a link —
-no poster; reading posters is an editor's tool). **Become a parish contact** is
-a box on the same form, unticked; ticking it shows the claim's own fields (role
-at the parish, phone, a note for the owner) and sends a claim beside the
-suggestion — or alone, when there is nothing to suggest.
+title, the parish's local date and times, a place in words, details, a link,
+and its poster). **Become a parish contact** is a box on the same form,
+unticked; ticking it shows the claim's own fields (role at the parish, phone, a
+note for the owner) and sends a claim beside the suggestion — or alone, when
+there is nothing to suggest.
+
+**A suggested event can carry its poster, and the poster fills in the form.**
+Everybody on this page has confirmed their email — Access let them in — so it
+is offered to all of them. The image is shrunk in the browser like the
+editor's, stored in R2, read by the same reader (`worker/lib/poster-read.mjs`,
+answered whole rather than streamed), and what it read fills the fields that
+are still **empty**; a poster with several events asks which one is theirs.
+Without `ANTHROPIC_API_KEY` the poster still goes along and the form says the
+details are typed by hand. Each upload is a row in `suggestion_posters`
+(migration 025), which is what holds three lines:
+
+- **Ten a day per address.** Anybody with an inbox can sign in and every read
+  is paid for. A row is deleted only once it is a day old, so taking a poster
+  off the form does not give the read back.
+- **Only your own, at that parish, once.** A suggestion carries a poster only
+  if its sender added it there and it has not gone with another.
+- **Nothing left behind.** Taking it off the form deletes it at once; a poster
+  added to a form nobody sent is swept on a later upload, a day on; withdrawing
+  or dismissing the suggestion lets it go; **Done** keeps it, since it is what
+  the change was made from. **Start a draft** hands it to the draft, which owns
+  it from then — the editor opens with it, can read it again for anything the
+  suggestion left out, and publishing puts it on the event.
+
+Access's sign-in lasts as long as its session, and a page left open past that
+cannot read a poster or send. The form catches that — the request fails rather
+than answering — and says so: confirming the email again unlocks it, and what
+was typed is kept in the browser's session storage and put back after the
+round trip through Access. It is the one place somebody could be left typing by
+hand for want of a confirmed email.
 
 **A suggestion is a message, not an edit waiting to apply.** It lives in
 `parish_suggestions` (migration 024; `worker/lib/suggestions.mjs`) and nothing
@@ -79,11 +108,12 @@ pressing a button.
 
 Claims live in `parish_claims` (migration 016; `worker/lib/claims.mjs`), not
 `admin_proposals`: that table's capability CHECK would need a rebuild to widen,
-and a stranger asking to be let in is not an ask an editor was refused. Three
+and a stranger asking to be let in is not an ask an editor was refused. A few
 routes are reachable WITHOUT a role — `GET /api/admin/whoami`,
-`POST /api/admin/suggestions` and `POST /api/admin/claims` (plus withdrawing
-your own) — through `signedIn`, which is `guarded` minus the "and you are on the
-list" half. Everything else still refuses a role-less person.
+`POST /api/admin/suggestions`, `POST|DELETE /api/admin/suggestions/poster` and
+`POST /api/admin/claims` (plus withdrawing your own) — through `signedIn`,
+which is `guarded` minus the "and you are on the list" half. Everything else
+still refuses a role-less person.
 
 An owner sees open claims at the top of **Asks**, and they count towards the
 red dot. Approving writes `admin_roles` and **only ever grants**: no row

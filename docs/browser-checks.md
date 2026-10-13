@@ -292,6 +292,17 @@ gone, the venue empty, and `drafts.parish_id` changed; Publish should land the
 event on St Elias's sheet. As a contact of Punchbowl alone, the suggestion says
 whose it is and offers no button, and the picker holds one parish.
 
+**Suggest edits with a poster.** The page needs somebody with no role: insert
+an owner who is not `dev` (`INSERT INTO admin_roles (email, role) VALUES
+('someone@else','owner')`) and open `/admin?suggest=<parish id>`. The door is
+**Add an event**; the poster box is `#suggest-poster-pick`, its input
+`#suggest-poster-file` (`setInputFiles`), its status `#suggest-poster-status`,
+and the which-event select `#suggest-poster-pickone` (`three` mode). Assert the
+input and the select are *hidden* too: the form's `display: block` beats
+`[hidden]`, which is how they first came out visible. A lapsed Access sign-in is
+`page.route('**/api/admin/suggestions/poster**', r => r.abort())` — the form
+should offer **Confirm my email again** and bring back what was typed.
+
 ## Screenshots
 
 Worth taking; they catch layout problems nothing else will (a native date input

@@ -15,7 +15,7 @@ import { exactLocalToEpoch, localDateOf, localSpanToUtc } from '../../public/sha
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
 import { validateClaim, alreadyCovers, planGrant, describeClaim, ensureClaimsTable } from '../lib/claims.mjs';
 import { validateSuggestion, describeSuggestion, cardFromSuggestion, scopeClause, ensureSuggestionsTable,
-  OPEN_LIMIT } from '../lib/suggestions.mjs';
+  formFromRead, suggestionPosterKey, OPEN_LIMIT, POSTER_DAILY_LIMIT, POSTER_SWEEP_MS } from '../lib/suggestions.mjs';
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
   from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
@@ -577,6 +577,30 @@ async function openSuggestionCount(db, who) {
   return r ? r.n : 0;
 }
 
+/** What a poster may be, and the extension it is stored under. */
+const POSTER_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+/**
+ * What the poster reader needs about a parish that is not on the poster: the
+ * parish, its zone, its own today, and the services it holds every week.
+ */
+async function readContext(db, parishId) {
+  const parish = await db.prepare('SELECT id, name, address, timezone FROM parishes WHERE id = ?')
+    .bind(parishId).first();
+  const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
+  const today = localDateOf(zone, Date.now());
+  // Whole rows: the context names them, and a programme's dated services
+  // are matched to their occurrences (matchOccurrences) — which needs the
+  // weeks and the dates a rule runs between, not just its day and time.
+  const rules = (await db.prepare(
+    `SELECT id, day_of_week, start_time, end_time, title, event_type, active, week_of_month,
+            week_parity, effective_from, effective_to FROM schedules
+     WHERE parish_id = ? AND active = 1 AND (effective_to IS NULL OR effective_to >= ?)
+     ORDER BY day_of_week, start_time`
+  ).bind(parishId, today).all()).results || [];
+  return { parish, zone, today, rules };
+}
+
 /**
  * Signed in, role or not. For the few routes a person with NO role must reach:
  * saying who they are, suggesting an edit, and asking for a parish. Access has
@@ -591,6 +615,41 @@ const signedIn = (fn) => async (c) => {
   c.who = { ...(await resolveRole(c.env.DB, identity)), identity };
   return fn(c);
 };
+
+/** Who a suggester's poster belongs to: the address Access verified, as one case. */
+const posterOwner = (c) => String(c.who.identity).trim().toLowerCase();
+
+/**
+ * A suggestion's poster, let go: off the suggestion, and out of R2 unless
+ * something else shows it (a draft started from it holds its own reference).
+ */
+async function releaseSuggestionPoster(env, suggestionId) {
+  const sp = await env.DB.prepare(
+    'SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ? AND poster_path IS NOT NULL'
+  ).bind(suggestionId).first().catch(() => null);
+  if (!sp) return;
+  await env.DB.prepare('UPDATE suggestion_posters SET poster_path = NULL WHERE suggestion_id = ?')
+    .bind(suggestionId).run();
+  await releaseUnused(env, [sp.poster_path]);
+}
+
+/**
+ * Posters added to a form nobody sent, a day on: out of R2 unless something
+ * shows them, and their rows gone — which is also when they stop counting
+ * towards the day's limit, so the sweep can never reset it early. Rows a
+ * suggestion let go of go too. A few at a time, on the next upload.
+ */
+async function sweepSuggestionPosters(env, before) {
+  const old = (await env.DB.prepare(
+    `SELECT id, poster_path FROM suggestion_posters
+     WHERE created_at <= ? AND (suggestion_id IS NULL OR poster_path IS NULL) LIMIT 20`
+  ).bind(before).all()).results || [];
+  if (!old.length) return;
+  const paths = old.map(r => r.poster_path).filter(Boolean);
+  if (paths.length) await releaseUnused(env, paths);
+  await env.DB.prepare('DELETE FROM suggestion_posters WHERE id IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(old.map(r => r.id))).run();
+}
 
 // Keep an event's coordinates in step with its parish, unless it is elsewhere.
 async function syncEventCoordsForParish(db, parishId) {
@@ -654,6 +713,10 @@ export function registerAdminRoutes(router) {
 
   /** Who am I, for a page that must work for somebody with no role. */
   router.get('/api/admin/whoami', signedIn(async (c) => {
+    // The list below joins the posters table, which a deploy ahead of
+    // migration 025 has not got yet — and without it the list would read as
+    // empty rather than fail.
+    await ensureSuggestionsTable(c.env.DB).catch(() => {});
     const mine = await c.env.DB.prepare(
       `SELECT k.id, k.parish_id, p.name AS parish_name, k.status, k.created_at, k.decided_at, k.decision_note
        FROM parish_claims k LEFT JOIN parishes p ON p.id = k.parish_id
@@ -663,8 +726,9 @@ export function registerAdminRoutes(router) {
     // a note left on one is read by the person it was written for.
     const sent = await c.env.DB.prepare(
       `SELECT s.id, s.parish_id, p.name AS parish_name, s.kind, s.about, s.body, s.title, s.date, s.start_time,
-              s.status, s.created_at, s.decided_at, s.decision_note
+              s.status, s.created_at, s.decided_at, s.decision_note, sp.poster_path
        FROM parish_suggestions s LEFT JOIN parishes p ON p.id = s.parish_id
+       LEFT JOIN suggestion_posters sp ON sp.suggestion_id = s.id
        WHERE lower(s.email) = lower(?) ORDER BY s.created_at DESC, s.id DESC LIMIT 20`
     ).bind(c.who.identity).all().catch(() => ({ results: [] }));
     return json({
@@ -674,6 +738,9 @@ export function registerAdminRoutes(router) {
       bootstrap: !!c.who.bootstrap,
       claims: mine.results || [],
       suggestions: sent.results || [],
+      // What adding a poster to a suggested event does here: 'read' fills the
+      // form from it, 'store' only sends it along, null offers no poster.
+      posters: !c.env.ASSETS_BUCKET ? null : (await readSecret(c.env.ANTHROPIC_API_KEY)) ? 'read' : 'store',
     });
   }));
 
@@ -697,12 +764,128 @@ export function registerAdminRoutes(router) {
       return json({ error: `You have ${open.n} suggestions waiting already. Once some have been looked at, send more.` }, 429);
     }
     const s = v.suggestion;
+    // A poster goes only with the suggestion of the person who added it, at
+    // the parish they added it at, and only once.
+    let upload = null;
+    if (s.poster_path) {
+      upload = await env.DB.prepare(
+        `SELECT id FROM suggestion_posters
+         WHERE email = ? AND parish_id = ? AND poster_path = ? AND suggestion_id IS NULL`
+      ).bind(posterOwner(c), parish.id, s.poster_path).first();
+      if (!upload) {
+        return json({ error: 'That poster is no longer on file — add it again, or send this without it.', field: 'poster' }, 400);
+      }
+    }
     const row = await env.DB.prepare(
       `INSERT INTO parish_suggestions (parish_id, email, name, kind, about, body, title, date, start_time, end_time, place, link)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`
     ).bind(parish.id, c.who.identity, s.name, s.kind, s.about, s.body, s.title, s.date,
       s.start_time, s.end_time, s.place, s.link).first();
-    return json({ id: row.id, status: 'open' }, 201);
+    if (upload) {
+      await env.DB.prepare('UPDATE suggestion_posters SET suggestion_id = ? WHERE id = ?').bind(row.id, upload.id).run();
+    }
+    return json({ id: row.id, status: 'open', poster_path: upload ? s.poster_path : null }, 201);
+  }));
+
+  // ── a poster on a suggested event ──
+  //
+  // Added to the form before it is sent: stored, read by Claude, and answered
+  // with what the form can fill in — whole, not streamed; the form shows one
+  // line while it waits. lib/suggestions.mjs and suggestion_posters in
+  // d1/schema.sql have the why. Every upload is counted, read or not, and a
+  // poster added to a form nobody sent is swept a day later.
+  router.post('/api/admin/suggestions/poster', signedIn(async (c) => {
+    const { env, request } = c;
+    if (!env.ASSETS_BUCKET) return json({ error: 'Poster storage is not set up on this site.' }, 503);
+    const parishId = c.query.get('parish') || '';
+    const parish = await env.DB.prepare("SELECT id, name FROM parishes WHERE id = ? AND id != '_unassigned'")
+      .bind(parishId).first();
+    if (!parish) return json({ error: 'That parish was not found.' }, 404);
+    // Somebody who may edit it has the add-event editor, which reads posters
+    // into drafts of their own.
+    if (alreadyCovers(c.who, parish.id)) {
+      return json({ error: `You can already edit ${parish.name} — add the event from its page.`, covered: true }, 409);
+    }
+    const mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const ext = POSTER_TYPES[mediaType];
+    if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image.' }, 415);
+
+    await ensureSuggestionsTable(env.DB);
+    const owner = posterOwner(c);
+    const since = new Date(Date.now() - POSTER_SWEEP_MS).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const key = suggestionPosterKey(parish.id, ext);
+    const posterPath = `/${key}`;
+    // Counted and claimed in ONE statement, so ten uploads sent at once
+    // cannot all pass a count taken before any of them was written.
+    const slot = await env.DB.prepare(
+      `INSERT INTO suggestion_posters (parish_id, email, poster_path)
+       SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM suggestion_posters WHERE email = ? AND created_at > ?) < ?
+       RETURNING id`
+    ).bind(parish.id, owner, posterPath, owner, since, POSTER_DAILY_LIMIT).first();
+    if (!slot) {
+      return json({ error: `You have added ${POSTER_DAILY_LIMIT} posters today, the most for one day. Fill in the details by hand, or add it again tomorrow.`, limit: true }, 429);
+    }
+
+    const bytes = await request.arrayBuffer();
+    // Nothing was stored or read, so the slot is given back.
+    const refuse = async (body, status) => {
+      await env.DB.prepare('DELETE FROM suggestion_posters WHERE id = ?').bind(slot.id).run();
+      return json(body, status);
+    };
+    if (!bytes.byteLength) return refuse({ error: 'No image received' }, 400);
+    if (bytes.byteLength > 5 * 1024 * 1024) {
+      return refuse({ error: 'That image is over 5 MB, the most the reader takes.' }, 413);
+    }
+
+    await sweepSuggestionPosters(env, since);
+    await env.ASSETS_BUCKET.put(key, bytes, {
+      httpMetadata: { contentType: mediaType, cacheControl: 'public, max-age=86400' },
+    });
+
+    const apiKey = await readSecret(env.ANTHROPIC_API_KEY);
+    if (!apiKey) return json({ poster_path: posterPath, configured: false, events: [] }, 201);
+
+    const { parish: at, zone, today, rules } = await readContext(env.DB, parish.id);
+    const read = await readPoster({
+      apiKey,
+      baseUrl: env.ANTHROPIC_BASE_URL,
+      image: bytes,
+      mediaType,
+      context: posterContext({ ...at, timezone: zone }, today, rules),
+    });
+    console.log(JSON.stringify({ poster_read: {
+      suggestion: true, parish: parish.id, ok: read.ok, ms: read.ms,
+      ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
+    } }));
+    if (!read.ok) {
+      return json({ poster_path: posterPath, configured: true, events: [], error: read.error, retry: read.retry }, 201);
+    }
+    // The parish's own address is not a "where", and a poster for another
+    // parish is worth telling the person about before they send it.
+    await placeRead(env.DB, read.read, at);
+    return json({
+      poster_path: posterPath,
+      configured: true,
+      events: formFromRead(read.read),
+      services: read.read.services.length,
+      other_parish: read.read.parish || null,
+      language: read.read.language,
+    }, 201);
+  }));
+
+  // Take a poster off the form before sending: it goes from R2 at once. The
+  // row stays until the sweep, still counting towards the day's limit.
+  router.delete('/api/admin/suggestions/poster', signedIn(async (c) => {
+    const b = await readJson(c.request);
+    const path = typeof b.poster_path === 'string' ? b.poster_path : '';
+    await ensureSuggestionsTable(c.env.DB);
+    const r = await c.env.DB.prepare(
+      `UPDATE suggestion_posters SET poster_path = NULL
+       WHERE email = ? AND poster_path = ? AND suggestion_id IS NULL RETURNING id`
+    ).bind(posterOwner(c), path).first();
+    if (!r) return json({ error: 'Nothing to take off.' }, 404);
+    await releaseUnused(c.env, [path]);
+    return json({ ok: true });
   }));
 
   router.post('/api/admin/suggestions/:id/withdraw', signedIn(async (c) => {
@@ -710,16 +893,20 @@ export function registerAdminRoutes(router) {
       `UPDATE parish_suggestions SET status = 'withdrawn', decided_at = ?
        WHERE id = ? AND lower(email) = lower(?) AND status = 'open'`
     ).bind(NOW(), c.params.id, c.who.identity).run().catch(() => null);
-    return r && r.meta && r.meta.changes ? json({ ok: true }) : json({ error: 'Nothing to withdraw.' }, 404);
+    if (!(r && r.meta && r.meta.changes)) return json({ error: 'Nothing to withdraw.' }, 404);
+    await releaseSuggestionPoster(c.env, c.params.id);
+    return json({ ok: true });
   }));
 
   // The suggestions at the parishes this person may edit — every one for an
   // editor or owner, their own parishes' for a contact.
   router.get('/api/admin/suggestions', guarded('parish.edit', async (c) => {
     const { where, binds } = scopeClause(c.who, 's.parish_id');
+    await ensureSuggestionsTable(c.env.DB).catch(() => {});
     const r = await c.env.DB.prepare(
-      `SELECT s.*, p.name AS parish_name, p.acronym AS parish_acronym FROM parish_suggestions s
+      `SELECT s.*, p.name AS parish_name, p.acronym AS parish_acronym, sp.poster_path FROM parish_suggestions s
        LEFT JOIN parishes p ON p.id = s.parish_id
+       LEFT JOIN suggestion_posters sp ON sp.suggestion_id = s.id
        WHERE ${where}
        ORDER BY (s.status = 'open') DESC, s.created_at DESC, s.id DESC LIMIT 100`
     ).bind(...binds).all().catch(() => ({ results: [] }));
@@ -751,6 +938,9 @@ export function registerAdminRoutes(router) {
     await c.env.DB.prepare(
       'UPDATE parish_suggestions SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?'
     ).bind(status, await editor(c), NOW(), note, r.suggestion.id).run();
+    // Nobody will act on a dismissed one, so its poster has no use left. A
+    // done one keeps its poster: it is what the change was made from.
+    if (status === 'dismissed') await releaseSuggestionPoster(c.env, r.suggestion.id);
     return json({ ok: true, status });
   }));
 
@@ -766,8 +956,24 @@ export function registerAdminRoutes(router) {
     const v = validateCard(cardFromSuggestion(s));
     if (!v.ok) return json({ error: v.error, field: v.field }, 400);
     await ensureDraftTables(c.env.DB);
+    await ensureSuggestionsTable(c.env.DB);
     const who = await editor(c);
-    const draft = await createDraft(c.env.DB, { parishId: s.parish_id, createdBy: who || 'unknown', card: v.patch });
+    let draft = await createDraft(c.env.DB, { parishId: s.parish_id, createdBy: who || 'unknown', card: v.patch });
+    // Its poster goes with it, and is the draft's from now on: the editor can
+    // read it again for anything the suggestion left out, and publishing puts
+    // it on the event. The suggestion lets go of it, so a draft discarded
+    // later takes the poster with it rather than leaving it to nobody.
+    const sp = await c.env.DB.prepare(
+      'SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ? AND poster_path IS NOT NULL'
+    ).bind(s.id).first();
+    if (sp) {
+      await c.env.DB.batch([
+        c.env.DB.prepare("UPDATE drafts SET poster_path = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?")
+          .bind(sp.poster_path, draft.id),
+        c.env.DB.prepare('UPDATE suggestion_posters SET poster_path = NULL WHERE suggestion_id = ?').bind(s.id),
+      ]);
+      draft = await getDraft(c.env.DB, draft.id);
+    }
     await c.env.DB.prepare(
       `UPDATE parish_suggestions SET status = 'done', decided_by = ?, decided_at = ?, decision_note = ?, draft_id = ?
        WHERE id = ?`
@@ -1600,7 +1806,6 @@ export function registerAdminRoutes(router) {
   // draft as merged — or `error` and then `result`. The read runs under
   // waitUntil, so closing the dialog does not lose it: the cards are there
   // when the draft is continued. lib/poster-read.mjs has the model side.
-  const POSTER_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
   router.post('/api/admin/drafts/:id/poster', guarded('event.edit', async (c) => {
     const { env, request, ctx } = c;
     if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
@@ -1662,19 +1867,7 @@ export function registerAdminRoutes(router) {
         return finish();
       }
       await setReadStatus(env.DB, draft.id, 'reading');
-      const parish = await env.DB.prepare('SELECT id, name, address, timezone FROM parishes WHERE id = ?')
-        .bind(draft.parish_id).first();
-      const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
-      const today = localDateOf(zone, Date.now());
-      // Whole rows: the context names them, and a programme's dated services
-      // are matched to their occurrences (matchOccurrences) — which needs the
-      // weeks and the dates a rule runs between, not just its day and time.
-      const rules = (await env.DB.prepare(
-        `SELECT id, day_of_week, start_time, end_time, title, event_type, active, week_of_month,
-                week_parity, effective_from, effective_to FROM schedules
-         WHERE parish_id = ? AND active = 1 AND (effective_to IS NULL OR effective_to >= ?)
-         ORDER BY day_of_week, start_time`
-      ).bind(draft.parish_id, today).all()).results || [];
+      const { parish, zone, today, rules } = await readContext(env.DB, draft.parish_id);
 
       const read = await readPoster({
         apiKey,
