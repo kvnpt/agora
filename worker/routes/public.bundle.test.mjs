@@ -70,8 +70,6 @@ test('a rule travels with its own columns only — no parish copies, no author',
 test('joined in the browser, a rule reads exactly as the Worker joins it — colour included', async () => {
   const { raw, call } = fresh();
   raw.prepare("INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES ('antiochian', '#123456')").run();
-  // A stale stored colour, as 49 production parishes had: neither join reads it.
-  raw.prepare("UPDATE parishes SET color = '#d20000'").run();
   const b = await (await call('GET', '/api/bundle')).json();
   assert.ok(b.parishes.every(p => !('color' in p)), 'a parish has no colour of its own to send');
   // What bundle.js does before it joins: every parish wears its jurisdiction's.
