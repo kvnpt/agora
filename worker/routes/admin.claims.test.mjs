@@ -31,8 +31,8 @@ class S {
 
 const PARISH = 'antiochian-stgeorge-redfern';
 
-/** `roles`: rows for admin_roles. The dev bypass signs in as 'dev'. */
-function fresh(roles = []) {
+/** `roles`: rows for admin_roles. The dev bypass signs in as 'dev'. `extra`: more of env. */
+function fresh(roles = [], extra = {}) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'agora-claims-')), 'x.db');
   const raw = new Database(file);
   raw.exec(fs.readFileSync('d1/schema.sql', 'utf8'));
@@ -43,7 +43,7 @@ function fresh(roles = []) {
   }
   const router = new Router();
   registerAdminRoutes(router);
-  const env = { DB: new D1(raw), AGORA_DEV_ADMIN: 'true' };
+  const env = { DB: new D1(raw), AGORA_DEV_ADMIN: 'true', ...extra };
   const call = async (method, url, body) => {
     const init = { method };
     if (body !== undefined) { init.body = JSON.stringify(body); init.headers = { 'Content-Type': 'application/json' }; }
@@ -163,4 +163,100 @@ test('a claim before migration 016 is applied makes the table rather than failin
   const r = await call('POST', '/api/admin/claims', { parish_id: PARISH, name: 'Fr John' });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM parish_claims').get().n, 1);
+});
+
+// ── telling people: lib/mail.mjs ──
+
+/** The send_email binding, keeping what it was asked to send. `fail` throws like a bounce. */
+function outbox({ fail = false } = {}) {
+  const sent = [];
+  return {
+    sent,
+    async send(m) {
+      if (fail) { const e = new Error('nope'); e.code = 'E_RECIPIENT_SUPPRESSED'; throw e; }
+      sent.push(m);
+      return { messageId: `m${sent.length}` };
+    },
+  };
+}
+
+const claimFrom = (raw, email) => raw.prepare(
+  `INSERT INTO parish_claims (parish_id, email, name, relation) VALUES (?,?,?,?)`
+).run(PARISH, email, 'Maria', 'Secretary').lastInsertRowid;
+
+test('a claim emails the owners, one message each, and never the claimant', async () => {
+  const EMAIL = outbox();
+  const { call } = fresh([
+    { email: 'boss@example.org', role: 'owner' },
+    { email: 'second@example.org', role: 'owner' },
+    { email: 'ed@example.org', role: 'editor' },
+  ], { EMAIL });
+  const r = await call('POST', '/api/admin/claims', {
+    parish_id: PARISH, name: 'Maria', relation: 'Secretary', phone: '0400 000 000', note: 'I keep the bulletin.',
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.deepEqual(EMAIL.sent.map(m => m.to).sort(), ['boss@example.org', 'second@example.org'], 'the owners decide; an editor does not');
+  const [m] = EMAIL.sent;
+  assert.equal(m.from.email, 'noreply@orthodoxy.au');
+  assert.equal(m.subject, 'Maria asks to keep St George Cathedral, Redfern');
+  assert.match(m.text, /Maria \(Secretary\), dev, asks to become a parish contact/);
+  assert.match(m.text, /0400 000 000/);
+  assert.match(m.text, /I keep the bulletin/);
+  assert.match(m.text, /https:\/\/orthodoxy\.au\/admin#proposals/);
+
+  EMAIL.sent.length = 0;
+  assert.equal((await call('POST', '/api/admin/claims', { parish_id: PARISH, name: 'Maria' })).body.already, true);
+  assert.equal(EMAIL.sent.length, 0, 'asking again is not news');
+});
+
+test('deciding a claim emails the claimant what was decided, with the owner’s note', async () => {
+  const EMAIL = outbox();
+  const { raw, call } = fresh([{ email: 'dev', role: 'owner' }], { EMAIL });
+  const yes = claimFrom(raw, 'maria@example.org');
+  const ok = await call('POST', `/api/admin/claims/${yes}/decide`, { decision: 'approve', note: 'Welcome aboard.' });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.mailed, true);
+  const [m] = EMAIL.sent;
+  assert.equal(m.to, 'maria@example.org');
+  assert.equal(m.subject, 'You can now keep St George Cathedral, Redfern up to date');
+  assert.match(m.text, /has been approved/);
+  assert.match(m.text, /https:\/\/orthodoxy\.au\/admin\?suggest=antiochian-stgeorge-redfern/,
+    'a link that goes through Access, so it signs them in');
+  assert.match(m.text, /Welcome aboard\./);
+
+  const no = raw.prepare(
+    "INSERT INTO parish_claims (parish_id, email, name) VALUES (?, 'nikos@example.org', 'Nikos')").run(PARISH).lastInsertRowid;
+  const declined = await call('POST', `/api/admin/claims/${no}/decide`, { decision: 'decline', note: 'We have a contact already.' });
+  assert.equal(declined.status, 200);
+  const d = EMAIL.sent[1];
+  assert.equal(d.to, 'nikos@example.org');
+  assert.equal(d.subject, 'About your request for St George Cathedral, Redfern');
+  assert.match(d.text, /was not approved/);
+  assert.match(d.text, /We have a contact already\./);
+  assert.match(d.text, /suggest changes from the parish's page/);
+});
+
+test('an email that cannot be sent never undoes or refuses the approval', async () => {
+  const { raw, call } = fresh([{ email: 'dev', role: 'owner' }], { EMAIL: outbox({ fail: true }) });
+  const id = claimFrom(raw, 'maria@example.org');
+  const r = await call('POST', `/api/admin/claims/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(raw.prepare('SELECT role FROM admin_roles WHERE email = ?').get('maria@example.org').role, 'parish');
+  assert.equal(raw.prepare('SELECT status FROM parish_claims WHERE id = ?').get(id).status, 'approved');
+});
+
+test('with no email set up nothing is sent and nothing is promised', async () => {
+  const { raw, call } = fresh([{ email: 'dev', role: 'owner' }]);
+  const id = claimFrom(raw, 'maria@example.org');
+  const r = await call('POST', `/api/admin/claims/${id}/decide`, { decision: 'approve' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.mailed, false);
+  assert.equal((await call('GET', '/api/admin/ping')).body.mail, false, 'the panel promises no email');
+  assert.equal((await call('GET', '/api/admin/whoami')).body.mail, false, 'nor does the Suggest edits page');
+
+  const on = fresh([{ email: 'dev', role: 'owner' }], { EMAIL: outbox() });
+  assert.equal((await on.call('GET', '/api/admin/ping')).body.mail, true);
+  // An identity Access gave with no address (a bare `sub`) has no inbox to write to.
+  const sub = claimFrom(on.raw, 'a1b2c3-sub');
+  assert.equal((await on.call('POST', `/api/admin/claims/${sub}/decide`, { decision: 'decline' })).body.mailed, false);
 });

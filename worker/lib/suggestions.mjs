@@ -26,8 +26,18 @@
 //
 // Dates and times are the parish's LOCAL wall clock, as the person sees the
 // page — the same as a draft's, which is what one becomes.
+//
+// A SUGGESTED EVENT CAN CARRY ITS POSTER. Whoever adds one has confirmed their
+// address with Access like everybody else here, and Claude reads it into the
+// form's EMPTY fields before they send it — the same reader the add-event
+// editor uses, answered whole rather than streamed. Each upload is a row in
+// suggestion_posters (d1/schema.sql has why it is a table of its own): the
+// daily limit on reads, which suggestion it went with, and the sweep of
+// posters added to a form nobody sent. Starting a draft from the suggestion
+// hands the poster to the draft, which owns it from then on.
 
 import checks from '../../public/shared/event-checks.js';
+import { posterKeyOf } from './poster-range.mjs';
 
 const { isLocalDate, isLocalTime } = checks;
 
@@ -35,6 +45,15 @@ export const KINDS = ['change', 'event'];
 
 /** How many open suggestions one address may have waiting, across parishes. */
 export const OPEN_LIMIT = 20;
+
+/**
+ * How many posters one address may add in a day. Every one is read, and every
+ * read is paid for; anybody with an inbox can sign in.
+ */
+export const POSTER_DAILY_LIMIT = 10;
+
+/** A poster nobody sent goes after this long — and only then does its row stop counting. */
+export const POSTER_SWEEP_MS = 24 * 3600 * 1000;
 
 const MAX = { name: 120, about: 200, body: 2000, title: 200, place: 300, link: 500 };
 
@@ -61,7 +80,7 @@ export function validateSuggestion(body) {
     parish_id: parishId,
     kind,
     name: clean(b.name, MAX.name) || null,
-    about: null, body: null, title: null, date: null, start_time: null, end_time: null, place: null,
+    about: null, body: null, title: null, date: null, start_time: null, end_time: null, place: null, poster_path: null,
     link: clean(b.link, MAX.link) || null,
   };
   if (s.link && !isHttpLink(s.link)) return bad('link', 'A link starts with https://');
@@ -73,6 +92,8 @@ export function validateSuggestion(body) {
     return { ok: true, suggestion: s };
   }
 
+  // Which upload it is; the route checks it is this sender's, at this parish.
+  s.poster_path = posterKeyOf(b.poster_path) ? clean(b.poster_path, 300) : null;
   s.title = clean(b.title, MAX.title) || null;
   s.date = clean(b.date, 10) || null;
   s.start_time = clean(b.start_time, 5) || null;
@@ -111,6 +132,29 @@ export function cardFromSuggestion(s) {
   if (s.end_time) card.end_time = s.end_time;
   if (s.place) card.location_override = s.place;
   return card;
+}
+
+/**
+ * What a poster read offers the suggestion form: each event as the form's own
+ * fields, in the order the poster gives them. A dated regular service is an
+ * event to the person sending it — the editor works out later that it is an
+ * occurrence. The read is in English (the poster keeps the original).
+ */
+export function formFromRead(read) {
+  return (read.events || []).map(e => ({
+    title: e.title || '',
+    date: e.date || '',
+    start_time: e.start_time || '',
+    end_time: e.end_time || '',
+    place: e.location_override || '',
+    body: e.description || '',
+  })).filter(e => e.title || e.date);
+}
+
+/** An R2 key for a suggester's poster: one path segment, like a draft's. */
+export function suggestionPosterKey(parishId, ext) {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `posters/suggested-${parishId}-${Date.now().toString(36)}-${rand}.${ext}`;
 }
 
 /**
@@ -155,8 +199,23 @@ export const SUGGESTIONS_DDL = [
   draft_id      INTEGER
 )`,
   'CREATE INDEX IF NOT EXISTS idx_parish_suggestions_open ON parish_suggestions(status, parish_id, created_at)',
+  `CREATE TABLE IF NOT EXISTS suggestion_posters (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id     TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL,
+  poster_path   TEXT,
+  suggestion_id INTEGER,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+)`,
+  'CREATE INDEX IF NOT EXISTS idx_suggestion_posters_email ON suggestion_posters(email, created_at)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_suggestion_posters_suggestion ON suggestion_posters(suggestion_id)',
 ];
 
+// Once per database per isolate, like drafts.mjs: the reads join the posters
+// table, so they make sure of it too, and a round trip each time is a cost.
+const ensured = new WeakSet();
 export async function ensureSuggestionsTable(db) {
+  if (ensured.has(db)) return;
   await db.batch(SUGGESTIONS_DDL.map(sql => db.prepare(sql)));
+  ensured.add(db);
 }

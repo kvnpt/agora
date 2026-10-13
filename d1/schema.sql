@@ -796,7 +796,8 @@ CREATE INDEX idx_parish_claims_open ON parish_claims(status, created_at);
 -- Somebody telling whoever keeps a parish that something on its page is
 -- wrong (kind 'change': what it is about, and what it should say), or that
 -- something is coming up it does not show (kind 'event': a title, the
--- parish's LOCAL date and times, a place in words — no poster).
+-- parish's LOCAL date and times, a place in words, and perhaps a poster —
+-- which lives in suggestion_posters, below).
 --
 -- A MESSAGE, NOT AN EDIT WAITING TO APPLY. Nothing reads this back into the
 -- feed. A person who may edit the parish acts on it with the ordinary tools,
@@ -832,6 +833,41 @@ CREATE TABLE parish_suggestions (
   draft_id      INTEGER
 );
 CREATE INDEX idx_parish_suggestions_open ON parish_suggestions(status, parish_id, created_at);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- suggestion_posters — a poster added to a suggested event
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Somebody suggesting an event can add its poster, and Claude reads it into
+-- the form's empty fields before they send it (worker/lib/suggestions.mjs).
+-- The image goes to R2 the moment it is added, so it has a row of its own
+-- from then — before there is any suggestion to hang it on.
+--
+-- One row per upload, and the row is what makes three things possible:
+--   * a LIMIT on reads per address per day, because anybody with an inbox can
+--     sign in, and every read is paid for. Rows are only ever deleted once
+--     they are a day old, so the count cannot be reset by removing a poster;
+--   * OWNERSHIP: a suggestion can carry only a poster its own sender added, at
+--     the same parish (`suggestion_id` is set when it is sent);
+--   * a SWEEP: a poster added to a form nobody sent goes after a day.
+--
+-- `poster_path` is NULL once the image is no longer the suggestion's — taken
+-- off the form, withdrawn or dismissed (and deleted from R2 when nothing else
+-- shows it), or handed to the draft started from it, which owns it from then.
+--
+-- Not a column on parish_suggestions so that this is a NEW table: created on
+-- first use as well as by migration 025, so neither order of deploy and
+-- migration fails anything.
+CREATE TABLE suggestion_posters (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  parish_id     TEXT NOT NULL REFERENCES parishes(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL,
+  poster_path   TEXT,
+  suggestion_id INTEGER,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX idx_suggestion_posters_email ON suggestion_posters(email, created_at);
+CREATE UNIQUE INDEX idx_suggestion_posters_suggestion ON suggestion_posters(suggestion_id);
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- parish_notices_seen — which cross-parish listings a contact has looked at

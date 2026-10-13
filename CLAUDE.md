@@ -108,6 +108,9 @@ for them, are in the doc it links to — read that before changing the area.
   suggestion to whoever may edit the parish, and a claim only when its box is
   ticked. None is a moderation queue: a suggestion is a message, never an edit
   waiting to apply.
+- A claim emails the owners, and its decision the claimant, through the
+  optional `EMAIL` binding (off until the account can send). An email never
+  fails or undoes the write it reports.
 
 **Shipping** — [docs/deploy-and-ci.md](docs/deploy-and-ci.md), [docs/database.md](docs/database.md)
 - Every push to `main` deploys (Workers Builds). Green CI is the merge gate.

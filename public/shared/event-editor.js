@@ -2079,8 +2079,10 @@
     };
   }
 
+  // shrinkPoster too: "Suggest edits" adds a poster to a suggested event at
+  // the same size the editor stores one (admin.html suggestPage).
   const api = { open, summaryLine, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
-    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion };
+    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -43,14 +43,17 @@ below.
 
 ## 2. Tell people what happened to their claim
 
-A claimant learns the outcome only by signing in again, and an owner learns of
-a claim only from the red dot. Both want a message. So does a suggestion: its
-sender sees what became of it only by opening "Suggest edits" again.
+**Built, and off until the account can send.** A claim emails the owners when
+it is made and the claimant when it is decided (`worker/lib/mail.mjs`), through
+Cloudflare Email Sending — which needs the Workers Paid plan and orthodoxy.au
+onboarded as a sending domain, then one binding uncommented in `wrangler.toml`
+(docs/people-and-access.md, "Emails about claims"). What is left is a
+suggestion: its sender still sees what became of it only by opening "Suggest
+edits" again.
 
-> *Send an email when a parish claim is filed (to the owners) and when it is
-> decided (to the claimant), using Cloudflare Email Routing's send_email
-> binding or MailChannels — whichever needs no stored credential. Keep the
-> wording to one line and a link. Plan first; check what the account allows.*
+> *Email a suggestion's sender when it is marked done, dismissed or made into
+> a draft, through lib/mail.mjs — one line, the note if any, and the parish
+> link. Only once the EMAIL binding is live.*
 
 ## 3. One renderer for the parish card
 

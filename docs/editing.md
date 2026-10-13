@@ -211,6 +211,11 @@ closing the dialog mid-read still leaves the cards filled next time. Without
 `ANTHROPIC_API_KEY` the poster is still stored and attached and the fields are
 typed by hand.
 
+The same reader fills in **Suggest edits** for somebody with no role who adds a
+suggested event's poster (docs/people-and-access.md). That is a message, not a
+draft: nothing is written but the suggestion, and **Start a draft** from it
+opens this editor with the poster attached, to read again or publish with.
+
 The review is the editor: a model read the date off a photograph, and a misread
 7:30 sends somebody to a locked church. Each field the read filled says **from
 poster** until a person edits it (kept in `read_fields`, so a draft continued
