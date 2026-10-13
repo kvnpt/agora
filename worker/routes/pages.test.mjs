@@ -389,6 +389,13 @@ test('a service, a day and a part of the day narrow the rules', async () => {
   assert.match(lit, /<h1>Orthodox Liturgies on Sundays<\/h1>/);
   assert.doesNotMatch(between(lit, 'class="tt-region"', 'class="lc-app"'), /Vespers/);
   assert.match(lit, /href="\/sun\/liturgy\?app"/);
+  // The parishes with no rules at all are not counted under a link that asks
+  // something of the rules: nothing on file is not "no Liturgy".
+  for (const p of ['/sun/liturgy', '/evening', '/antiochian/liturgy', '/en', '/en-only']) {
+    assert.doesNotMatch((await get(p)).html, /class="tt-more"/, p);
+  }
+  assert.match((await get('/antiochian')).html, /<a class="tt-more" href="\/antiochian\/services\?app#no-times">\d+ parish(es)? without service times on file →<\/a>/,
+    'a jurisdiction asks nothing of the rules, so it counts them');
 });
 
 test('a language narrows to the rules served in it, falling back to the parish', async () => {

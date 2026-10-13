@@ -14,7 +14,9 @@
 //
 // Most parishes have no times on file yet — 253 of 293 in October 2026 — so
 // the page says how many, and that count opens the app's Schedules view, which
-// lists them by name.
+// lists them by name. Not under a link that asks something of the rules
+// (timetable.narrowsRules): a parish with nothing on file is not one without
+// a Bible study.
 //
 // PURE, like lite-page.mjs: rows in, a model out, markup out of the model.
 // Which parishes and rules a link means is public/shared/timetable.js, the
@@ -148,6 +150,9 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
 
   return {
     route, named, loc, groups, parishCount, withoutTimes, scopeCount: scope.length, now, origin, venues,
+    // Still counted when it is not shown: "none of these parishes has its
+    // service times on file" is the truer empty page under /macedonian/liturgy.
+    countsNoTimes: !timetable.narrowsRules(f),
     canonical: `${origin}${canonicalPath}`,
     // The dated feed for the same link, and the Schedules view, where the
     // parishes with no times are listed by name. ?app is the Worker's cue to
@@ -287,7 +292,7 @@ export function renderTimetablePage(m) {
     ${sub ? `<p>${esc(sub)}</p>` : ''}
   </section>
   ${groups}
-  ${m.withoutTimes ? `<a class="tt-more" href="${esc(m.servicesHref)}">${esc(plural(m.withoutTimes, 'parish', 'parishes'))} without service times on file →</a>` : ''}
+  ${m.withoutTimes && m.countsNoTimes ? `<a class="tt-more" href="${esc(m.servicesHref)}">${esc(plural(m.withoutTimes, 'parish', 'parishes'))} without service times on file →</a>` : ''}
   <a class="lc-app" href="${esc(m.eventsHref)}">View upcoming events →</a>`,
   });
 }

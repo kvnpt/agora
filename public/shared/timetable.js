@@ -74,7 +74,19 @@
     return true;
   }
 
-  const api = { langsOf, parishInScope, ruleMatches };
+  /**
+   * Does the link ask something of the rules — a service, a day, a part of
+   * the day, a language? Then the parishes with no rules at all are not
+   * counted under it. Nothing on file is not "no Bible study", and counting
+   * it put Howick's mission, alone of 24 Antiochian parishes, under
+   * /antiochian/bible-study: the other 19 without one have rules, so they
+   * fell out at ruleMatches. A jurisdiction or region page still counts them.
+   */
+  function narrowsRules(f) {
+    return !!(f.service || f.day != null || f.part || f.englishOnly);
+  }
+
+  const api = { langsOf, parishInScope, ruleMatches, narrowsRules };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraTimetable = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

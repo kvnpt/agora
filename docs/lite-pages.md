@@ -154,6 +154,22 @@ pages every such link booted the app, map first, to show what is really a list.
   `noTimesHTML` lists them by name and the app scrolls to them once. "No times" means
   no rules at all, not none matching: under `/liturgy` a parish with only Vespers has
   times.
+- **Not under a link that asks something of the rules** — a service, a day, a part
+  of the day, a language (`narrowsRules` in `timetable.js`): neither the count here
+  nor the app's list. Nothing on file is not "no Bible study". It was counted until
+  October 2026, and `/antiochian/bible-study` read "4 parishes with times … 1 parish
+  without service times on file": Howick's mission in Auckland, the one Antiochian
+  parish with no rules, while the 19 with rules but no Bible study fell out at
+  `ruleMatches` uncounted. The model still counts them, for the empty page's "None of
+  these parishes has its service times on file yet."
+- **Landing there must not leave the list dim.** The Schedules view fades its list
+  while the map moves (`markEventsPending` on `movestart`) and releases it in the
+  move's list phase (`onViewportListPhase`). The link lands mid-fit, and `#no-times`
+  snaps the sheet to full; the list phase skips a snap's moves, and it used to skip
+  the fit's too, so the view sat at a third of its brightness until the next move.
+  It also never released after `renderServices`, so any pan that changed the
+  parishes in view did the same. A list phase now releases whatever a real move
+  marked.
 - **View upcoming events →** opens the app's dated feed with the same filters.
 - The canonical is the link's filters in the app's order, without `/services` — the
   page *is* the timetable — except bare `/services`, which keeps it.

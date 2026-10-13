@@ -1511,9 +1511,12 @@ function onViewportListPhase() {
   // didn't change the parish set (stable cutoff), so neither render
   // nor applied-animation should fire. The flag is set on snap and
   // checked here with a generous 1100ms window.
+  // Unless a real move marked the list pending before the snap — a deep
+  // link's fit, then #no-times snapping the sheet to full: that move is owed
+  // its list phase, or the list stays dim until the next one.
   const recentSheetSnap = window.__agoraSheetSnapAt
     && (Date.now() - window.__agoraSheetSnapAt) < 1100;
-  if (recentSheetSnap) return;
+  if (recentSheetSnap && !_eventsPendingActive) return;
   // If a drawer is open we still need to release any pending state
   // markEventsPending fired on movestart — otherwise the list stays in
   // the dim/saturated state forever.
@@ -1531,7 +1534,15 @@ function onViewportListPhase() {
     return;
   }
   state._lastViewportSig = sig;
-  if (state.mode === 'services') renderServices(); else scheduleRenderEvents();
+  // renderServices is synchronous and releases nothing itself, so release the
+  // pending the move put on the list here — scheduleRenderEvents' commit does
+  // the same for the feed.
+  if (state.mode === 'services') {
+    renderServices();
+    if (typeof markEventsApplied === 'function') markEventsApplied();
+  } else {
+    scheduleRenderEvents();
+  }
 }
 
 window.agoraOnViewportMapPhase = onViewportMapPhase;
@@ -7568,10 +7579,15 @@ function renderServices() {
   // The timetable page's "N parishes without service times on file" lands
   // here with #no-times. Once: the fragment is spent as soon as it is used, so
   // the next render (a map move) does not pull the list back up.
+  // Under a filter that lists none (noTimesHTML) there is nothing to land on —
+  // an older page's link — so it is spent too, or clearing the filter later
+  // would pull the list up.
   if (location.hash === '#no-times') {
     const box = document.getElementById('no-times');
-    if (box) {
+    if (box || T.narrowsRules(state.filters)) {
       try { history.replaceState(history.state, '', location.pathname + location.search); } catch {}
+    }
+    if (box) {
       if (typeof snapMainSheetToFull === 'function') snapMainSheetToFull();
       requestAnimationFrame(() => box.scrollIntoView({ block: 'start' }));
     }
@@ -7583,12 +7599,15 @@ function renderServices() {
 // view is the whole of the parishes it covers, not only the ones with times;
 // each opens its parish sheet, where "Suggest edits" asks for them.
 //
-// No rules at all, not "none matching": under /liturgy a parish whose only
-// rule is Vespers has times, it just has no Liturgy. Same scope as the rules
-// above — the link's jurisdiction, region and parishes, then the viewport —
-// and the same count the timetable page links here with.
+// No rules at all, not "none matching": a parish whose only rule is Vespers
+// has times, it just has no Liturgy. Same scope as the rules above — the
+// link's jurisdiction, region and parishes, then the viewport — and the same
+// count the timetable page links here with. Not under a filter that asks
+// something of the rules (a service, a day, a part, a language): nothing on
+// file is not "no Bible study", so it would stand alone under one.
 function noTimesHTML() {
   const T = window.AgoraTimetable;
+  if (T.narrowsRules(state.filters)) return '';
   const withTimes = new Set((state.schedules || []).map(s => s.parish_id));
   const vp = state.viewportParishIds;
   const none = (state.parishes || [])
