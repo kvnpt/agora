@@ -22,11 +22,24 @@
   const services = isCjs ? require('./services.js') : (root && root.AgoraServices);
   const dates = isCjs ? require('./dates.js') : (root && root.AgoraDates);
   const locations = isCjs ? require('./locations.js') : (root && root.AgoraLocations);
+  const slugs = isCjs ? require('./slugs.js') : (root && root.AgoraSlugs);
 
   // The jurisdictions a path segment filters to. Not slugs.js's JURISDICTIONS,
   // which also holds 'other' — a value a parish can carry but not a view
   // anybody links to.
   const JURISDICTION_KEYS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
+
+  // /en, /english, /bilingual, /some-english… mean any service with English
+  // in it; /en-only, /english-only, /full-english mean English and nothing
+  // else. slugs.js keeps the spellings, because an acronym may not take one.
+  const ENGLISH = (slugs && slugs.ENGLISH_SEGMENTS) || ['en'];
+  const ENGLISH_ONLY = (slugs && slugs.ENGLISH_ONLY_SEGMENTS) || ['en-only'];
+
+  /** The segment a link writes for a language filter, or null when there is none. */
+  function englishSegment(f) {
+    if (!f || !f.englishOnly) return null;
+    return f.englishStrict ? ENGLISH_ONLY[0] : ENGLISH[0];
+  }
 
   /** A stored event's id (`102`) or a projected occurrence's (`42:2026-10-04`). */
   const EVENT_ID = /^\d+$|^\d+:\d{4}-\d{2}-\d{2}$/;
@@ -75,12 +88,12 @@
         out.socialOnly = true;
       } else if (seg === 'services') {
         out.services = true;
-      } else if (seg === 'en') {
-        out.englishOnly = true;
-        out.englishStrict = true;
-      } else if (seg === 'bilingual') {
+      } else if (ENGLISH.includes(seg)) {
         out.englishOnly = true;
         out.englishStrict = false;
+      } else if (ENGLISH_ONLY.includes(seg)) {
+        out.englishOnly = true;
+        out.englishStrict = true;
       } else if (seg === 'donate') {
         out.donate = true;
       } else if (isEventId(seg)) {
@@ -164,7 +177,7 @@
     return names ? 'timetable' : null;
   }
 
-  const api = { JURISDICTION_KEYS, isEventId, classifyPath, firstEventOnDay, pageKind };
+  const api = { JURISDICTION_KEYS, isEventId, classifyPath, firstEventOnDay, pageKind, englishSegment };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraUrlState = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

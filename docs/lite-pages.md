@@ -126,6 +126,14 @@ pages every such link booted the app, map first, to show what is really a list.
 - **View upcoming events →** opens the app's dated feed with the same filters.
 - The canonical is the link's filters in the app's order, without `/services` — the
   page *is* the timetable — except bare `/services`, which keeps it.
+- **Two languages, many spellings.** `/en`, `/english`, `/bilingual`, `/half-english`,
+  `/english-half` and `/some-english` are *English services* — any service with English
+  in it, alone or beside another language. `/en-only`, `/english-only` and
+  `/full-english` are *fully-English services* — English and nothing else. The
+  spellings live in `public/shared/slugs.js` (an acronym may not take one); a link
+  writes, and a canonical names, only `/en` and `/en-only`. In the app the button
+  reads "Any language", then "English", with an "only" beside it that narrows to the
+  second.
 
 ## Caching
 

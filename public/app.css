@@ -362,7 +362,7 @@ input, select, textarea {
 }
 
 /* ── Mode bar ──
-   Two-row layout. Top: English toggle + in-view chip. Bottom: pill row
+   Two-row layout. Top: language filter + in-view chip. Bottom: pill row
    with Schedules / Socials / Admin (Admin hidden until auth). */
 .mode-bar {
   flex: none;
@@ -403,59 +403,47 @@ input, select, textarea {
   align-items: center;
   gap: 6px;
 }
-/* English toggle in mode-bar — replaces the share pill's old slot. Pill
-   button (NOT a filters-menu-item) so the menu's vertical-list layout
-   doesn't override the inline-flex pill look. */
+/* The language filter in the mode-bar — replaces the share pill's old slot.
+   "Any language", then "English" filled, with an "only" pill beside it that
+   fills in turn. Pill buttons (NOT filters-menu-items) so the menu's
+   vertical-list layout doesn't override the inline-flex pill look. */
+.mode-bar-lang {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .mode-bar-en {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   background: var(--fab-bg);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 11px;
+  font: inherit;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
 }
 .mode-bar-en:hover { color: var(--text); }
-.mode-bar-en .fm-en-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 1px 4px;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  line-height: 1;
-}
-/* Inactive English button is just the EN glyph — label is hidden so the
-   pill compacts down to icon-only. Becomes visible when active. */
-.mode-bar-en .mode-bar-en-label { display: none; }
-.mode-bar-en.active .mode-bar-en-label { display: inline; }
 .mode-bar-en.active {
   background: var(--text);
   color: var(--bg);
   border-color: var(--text);
 }
-/* Bilingual (active not strict): pill is filled in the inverse colour, so
-   the badge needs to read against that filled bg. Outline-style with a
-   thicker border + inverse-text — stands out against the filled pill. */
-.mode-bar-en.active .fm-en-badge {
-  background: transparent;
-  border: 1.5px solid var(--bg);
-  color: var(--bg);
+/* Same [hidden] trap as .mode-bar-pill below: inline-flex outranks it. */
+.mode-bar-en[hidden], .ps-filter-pill[hidden] { display: none; }
+/* "only" arrives beside "English" rather than blinking in. */
+.mode-bar-en-only, .ps-filter-en-only { animation: en-only-in 0.18s ease-out; }
+@keyframes en-only-in {
+  from { opacity: 0; transform: scale(0.85); }
 }
-/* Strict (active + strict): badge is fully filled inverse — the box itself
-   becomes the indicator. Text uses var(--text) so it reads against the
-   filled badge bg (not currentColor, which would match the bg → invisible). */
-.mode-bar-en.active.strict .fm-en-badge {
-  background: var(--bg);
-  border-color: var(--bg);
-  color: var(--text);
+@media (prefers-reduced-motion: reduce) {
+  .mode-bar-en-only, .ps-filter-en-only { animation: none; }
 }
 /* Mode-bar pill row — Schedules / Socials / Admin. Each pill is icon +
    label, FAB-styled like the parish pills. Standalone class (not
@@ -600,7 +588,6 @@ input, select, textarea {
 @media (prefers-color-scheme: dark) {
   /* Dark mode: --bg is charcoal, so .active bg=var(--text) means light-on-dark
      is already correct; icon needs to flip to dark to match the inverse text. */
-  .mode-bar-en .fm-en-badge { filter: none; }
   .mode-bar-pill .mode-bar-pill-icon { filter: brightness(0) invert(1); }
   .mode-bar-pill.active .mode-bar-pill-icon { filter: brightness(0); }
 }
@@ -750,23 +737,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .filters-btn-content { display: inline-flex; align-items: center; gap: 4px; }
 .filters-btn-content img { width: 14px; height: 14px; opacity: 0.8; }
 .filters-btn-label { font-size: 12px; font-weight: 500; letter-spacing: 0.02em; }
-.filters-btn-content .fm-en-badge {
-  opacity: 1;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 1px 5px;
-  border: 1px solid var(--text);
-  border-radius: 4px;
-  line-height: 1;
-  color: var(--text);
-  background: transparent;
-}
-.filters-btn-content .fm-en-badge.strict {
-  background: var(--text);
-  color: var(--bg);
-  border-color: var(--text);
-}
 
 /* ── Filters dropdown menu ──
    "Grows" out of the filters button: menu starts with a clip-path matching
@@ -853,20 +823,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .filters-menu-item.active .fm-icon {
   filter: none;
   opacity: 1;
-}
-.fm-en-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 1px 4px;
-  border: 1px solid var(--text);
-  border-radius: 4px;
-  color: var(--text);
-  line-height: 1;
-}
-.filters-menu-item.fm-english.strict .fm-en-badge {
-  background: var(--text);
-  color: var(--bg);
 }
 
 .pill {
@@ -3972,28 +3928,6 @@ button.ps-avatar { cursor: pointer; }
   cursor: pointer;
 }
 .ps-focus-banner-x:hover { color: var(--text); background: var(--surface-2); }
-.ps-filter-en .fm-en-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 1px 4px;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  line-height: 1;
-}
-.ps-filter-pill.ps-filter-en .ps-filter-en-label { display: none; }
-.ps-filter-pill.ps-filter-en.active .ps-filter-en-label { display: inline; }
-.ps-filter-pill.ps-filter-en.active .fm-en-badge {
-  background: transparent;
-  border: 1.5px solid var(--bg);
-  color: var(--bg);
-}
-.ps-filter-pill.ps-filter-en.active.strict .fm-en-badge {
-  background: var(--bg);
-  border-color: var(--bg);
-  color: var(--text);
-}
 @media (prefers-color-scheme: dark) {
   .ps-filter-pill .ps-filter-pill-icon { filter: brightness(0) invert(1); }
   .ps-filter-pill.active .ps-filter-pill-icon { filter: brightness(0); }

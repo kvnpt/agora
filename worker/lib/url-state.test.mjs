@@ -33,12 +33,40 @@ test('app views are not parishes', () => {
   assert.deepEqual([g.jurisdiction, g.location, g.parishSlugs], ['greek', 'qld', null]);
   assert.equal(U.classifyPath('/services').services, true);
   assert.equal(U.classifyPath('/social/services').socialOnly, false, 'services wins');
-  assert.equal(U.classifyPath('/en').englishStrict, true);
-  assert.equal(U.classifyPath('/bilingual').englishStrict, false);
   assert.equal(U.classifyPath('/liturgy').service, 'liturgy');
   assert.equal(U.classifyPath('/next-tue', { today }).dateFocus, '2026-10-06');
   assert.deepEqual(U.classifyPath('/smg+sgr').parishSlugs, ['smg', 'sgr']);
   assert.equal(U.classifyPath('/donate').donate, true);
+});
+
+test('English is any service with English in it; English only is nothing else', () => {
+  for (const p of ['/en', '/English', '/bilingual', '/half-english', '/English-half', '/some-english']) {
+    const r = U.classifyPath(p);
+    assert.deepEqual([r.englishOnly, r.englishStrict, r.parishSlugs], [true, false, null], p);
+  }
+  for (const p of ['/EN-only', '/english-only', '/full-English']) {
+    const r = U.classifyPath(p);
+    assert.deepEqual([r.englishOnly, r.englishStrict, r.parishSlugs], [true, true, null], p);
+  }
+  const g = U.classifyPath('/greek/qld/english-only');
+  assert.deepEqual([g.jurisdiction, g.location, g.englishStrict], ['greek', 'qld', true]);
+});
+
+test('a language filter writes one spelling of each', () => {
+  assert.equal(U.englishSegment({ englishOnly: false }), null);
+  assert.equal(U.englishSegment({ englishOnly: true, englishStrict: false }), 'en');
+  assert.equal(U.englishSegment({ englishOnly: true, englishStrict: true }), 'en-only');
+  // and each reads back as what wrote it
+  assert.equal(U.classifyPath('/en-only').englishStrict, true);
+  assert.equal(U.classifyPath('/en').englishStrict, false);
+});
+
+test('no acronym may spell a language', () => {
+  const slugs = require('../../public/shared/slugs.js');
+  for (const s of ['en', 'english', 'bilingual', 'half-english', 'english-half', 'some-english',
+    'en-only', 'english-only', 'full-english']) {
+    assert.ok(slugs.reservedSlugReason(s), s);
+  }
 });
 
 test('a part of the day combines with everything a feed filter does', () => {

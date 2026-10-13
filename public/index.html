@@ -292,10 +292,12 @@
          `display: inline-flex` outranks the UA's [hidden]. -->
     <div class="mode-bar" id="mode-bar">
       <div class="mode-bar-row mode-bar-row-top">
-        <button class="mode-bar-en" id="btn-english" type="button" role="checkbox" aria-checked="false">
-          <span class="fm-en-badge">EN</span>
-          <span class="mode-bar-en-label">English</span>
-        </button>
+        <!-- The language filter: "Any language", then "English" with an
+             "only" beside it once it is on (initEnglishFilter). -->
+        <div class="mode-bar-lang">
+          <button class="mode-bar-en" id="btn-english" type="button" role="checkbox" aria-checked="false">Any language</button>
+          <button class="mode-bar-en mode-bar-en-only" id="btn-english-only" type="button" role="checkbox" aria-checked="false" hidden>only</button>
+        </div>
         <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Scroll sheet">
           <span class="in-view-count" id="in-view-count">Loading…</span>
           <span class="in-view-chevron" aria-hidden="true"></span>
@@ -305,8 +307,8 @@
           <span class="in-view-date-clear" id="in-view-date-clear" role="button" tabindex="0"
                 aria-label="Back to the whole feed" hidden>&times;</span>
         </button>
-        <!-- Jump to any date, however far out. Same height as the EN pill on
-             the other side of the chip. -->
+        <!-- Jump to any date, however far out. Same height as the language
+             pill on the other side of the chip. -->
         <button class="agora-cal-btn mode-bar-cal" id="btn-date-focus" type="button"
                 aria-haspopup="dialog" aria-label="Jump to a date" title="Jump to a date">
           <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">

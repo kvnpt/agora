@@ -1208,9 +1208,8 @@ function buildPathSegs(opts = {}) {
     const dateSeg = dateSlugFor(state._dateFocus, state._dateFocusPrecision);
     if (dateSeg) segs.push(dateSeg);
   }
-  if (state.filters.englishOnly) {
-    segs.push(state.filters.englishStrict ? 'en' : 'bilingual');
-  }
+  const langSeg = window.AgoraUrlState.englishSegment(state.filters);
+  if (langSeg) segs.push(langSeg);
   // The focused occurrence is already named by the parish + service pair, and
   // appending its id as well would make the shared link point at one date
   // rather than at "the next one" — which is the thing being linked to.
@@ -1622,7 +1621,8 @@ function renderEmptyStateHTML() {
     headline = 'No parishes in this area';
     cta = `<button class="empty-state-cta" data-cta="show-nearest-parish" type="button">Show nearest parish</button>`;
   } else if (filtersExcluding) {
-    const label = state.filters.socialOnly ? 'socials' : 'English-friendly services';
+    const label = state.filters.socialOnly ? 'socials'
+      : state.filters.englishStrict ? 'fully-English services' : 'English services';
     headline = `No ${label} in this area`;
     cta = `<button class="empty-state-cta" data-cta="find-matching-parish" type="button">Find nearest match</button>`;
   }
@@ -2744,29 +2744,47 @@ function initSocialFilter() {
   });
 }
 
-// ── English filter (tri-state: off → any-english → strict → off) ──
+// ── Language filter ──
+// Two buttons. "Any language" until it is tapped; then "English" — any
+// service with English in it, alone or beside another language (/en) — and
+// an "only" appears beside it, which narrows to English and nothing else
+// (/en-only). Tapping "English" again turns both off. The parish sheet's
+// pills are the same two buttons over its own copy, state.parishFilters.
+function toggleEnglishFilter(f, which) {
+  if (which === 'only') {
+    if (f.englishOnly) f.englishStrict = !f.englishStrict;
+  } else if (f.englishOnly) {
+    f.englishOnly = false;
+    f.englishStrict = false;
+  } else {
+    f.englishOnly = true;
+    f.englishStrict = false;
+  }
+}
+
+/** Paint a language button and its "only" from a filter set. */
+function syncLanguageButtons(btn, only, f) {
+  const on = !!f.englishOnly;
+  const strict = on && !!f.englishStrict;
+  btn.classList.toggle('active', on);
+  btn.setAttribute('aria-checked', String(on));
+  btn.textContent = on ? 'English' : 'Any language';
+  if (!only) return;
+  only.hidden = !on;
+  only.classList.toggle('active', strict);
+  only.setAttribute('aria-checked', String(strict));
+}
+
 function initEnglishFilter() {
-  const btn = document.getElementById('btn-english');
-  btn.addEventListener('click', () => {
+  const tap = (which) => {
     if (window.agoraParishSheetVisible) {
-      const f = state.parishFilters;
-      if (!f.englishOnly) { f.englishOnly = true; f.englishStrict = false; }
-      else if (!f.englishStrict) { f.englishStrict = true; }
-      else { f.englishOnly = false; f.englishStrict = false; }
+      toggleEnglishFilter(state.parishFilters, which);
       syncEnglishButton();
       syncFiltersButton();
       renderParishSheetContent(state.parishSheetFocus);
       return;
     }
-    if (!state.filters.englishOnly) {
-      state.filters.englishOnly = true;
-      state.filters.englishStrict = false;
-    } else if (!state.filters.englishStrict) {
-      state.filters.englishStrict = true;
-    } else {
-      state.filters.englishOnly = false;
-      state.filters.englishStrict = false;
-    }
+    toggleEnglishFilter(state.filters, which);
     syncEnglishButton();
     renderCurrentView();
     syncFiltersButton();
@@ -2774,7 +2792,9 @@ function initEnglishFilter() {
     // toggles, parish set changes too; recount.
     if (typeof renderInViewChip === 'function') renderInViewChip();
     syncURL();
-  });
+  };
+  document.getElementById('btn-english').addEventListener('click', () => tap('english'));
+  document.getElementById('btn-english-only').addEventListener('click', () => tap('only'));
   syncEnglishButton();
 }
 
@@ -2782,22 +2802,7 @@ function syncEnglishButton() {
   const btn = document.getElementById('btn-english');
   if (!btn) return;
   const f = window.agoraParishSheetVisible ? state.parishFilters : state.filters;
-  btn.classList.toggle('active', f.englishOnly);
-  btn.classList.toggle('strict', f.englishStrict);
-  // Three states baked into the EN badge text — the box itself carries the
-  // mode label so the visual is one unit instead of badge + separate label.
-  //   inactive: "EN"
-  //   bilingual: "EN+BILINGUAL"
-  //   strict:   "EN-ONLY"
-  const badge = btn.querySelector('.fm-en-badge');
-  if (badge) {
-    if (f.englishStrict) badge.textContent = 'EN-ONLY';
-    else if (f.englishOnly) badge.textContent = 'EN+BILINGUAL';
-    else badge.textContent = 'EN';
-  }
-  // Drop any companion label — badge text carries everything now.
-  const label = btn.querySelector('.mode-bar-en-label, .fm-label');
-  if (label) label.style.display = 'none';
+  syncLanguageButtons(btn, document.getElementById('btn-english-only'), f);
 }
 
 // ── Filters menu dropdown ──
@@ -3286,9 +3291,9 @@ function syncFilterActiveStack() {
   if (state.filters.service) chips.push({ kind: 'service', label: serviceLabelFor(state.filters.service) });
   if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Socials' });
   if (state.filters.englishOnly) {
-    // Mirror the English button's tri-state vocabulary: strict = "English",
-    // loose (any-bilingual) = "Bilingual".
-    chips.push({ kind: 'english', label: state.filters.englishStrict ? 'English' : 'Bilingual' });
+    // The language button's own words: "English", and "English only" once
+    // its "only" is on.
+    chips.push({ kind: 'english', label: state.filters.englishStrict ? 'English only' : 'English' });
   }
   if (state.mode === 'services') chips.push({ kind: 'schedules', label: 'Schedules' });
   const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
@@ -4820,29 +4825,15 @@ function eventLocalDow(e) {
 
 // Mirror parishFilters state onto the in-card pills. parishFilters is
 // the parish-sheet's local scoped filter state (separate from the main
-// mode-bar's state.filters). The EN badge text widens to "EN+BILINGUAL"
-// or "EN-ONLY" to match the main button's badge vocabulary.
+// mode-bar's state.filters). The language pills are the main bar's two
+// buttons: "Any language", then "English" with its "only".
 function syncParishFilterPills() {
   const row = document.getElementById('ps-filter-row');
   if (!row) return;
   const f = state.parishFilters || {};
-  const social = !!f.socialOnly;
-  const english = !!f.englishOnly;
-  const strict = !!f.englishStrict;
-  row.querySelectorAll('.ps-filter-pill').forEach(btn => {
-    const kind = btn.dataset.psFilter;
-    if (kind === 'social') btn.classList.toggle('active', social);
-    else if (kind === 'english') {
-      btn.classList.toggle('active', english);
-      btn.classList.toggle('strict', strict);
-      const badge = btn.querySelector('.fm-en-badge');
-      if (badge) {
-        if (strict) badge.textContent = 'EN-ONLY';
-        else if (english) badge.textContent = 'EN+BILINGUAL';
-        else badge.textContent = 'EN';
-      }
-    }
-  });
+  row.querySelector('[data-ps-filter="social"]')?.classList.toggle('active', !!f.socialOnly);
+  const en = row.querySelector('[data-ps-filter="english"]');
+  if (en) syncLanguageButtons(en, row.querySelector('[data-ps-filter="english-only"]'), f);
 }
 window.agoraSyncParishFilterPills = syncParishFilterPills;
 
@@ -5331,9 +5322,8 @@ function paintParishSheetContent(parishId, opts = {}) {
         <img class="ps-filter-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
         <span>Socials</span>
       </button>
-      <button class="ps-filter-pill ps-filter-en" data-ps-filter="english" type="button">
-        <span class="fm-en-badge">EN</span>
-      </button>
+      <button class="ps-filter-pill" data-ps-filter="english" type="button" role="checkbox" aria-checked="false">Any language</button>
+      <button class="ps-filter-pill ps-filter-en-only" data-ps-filter="english-only" type="button" role="checkbox" aria-checked="false" hidden>only</button>
       ${calendarButtonHTML('ps-filter-cal')}
     </div>
     ${schedSectionHtml}
@@ -5514,10 +5504,9 @@ function paintParishSheetContent(parishId, opts = {}) {
       if (kind === 'social') {
         f.socialOnly = !f.socialOnly;
       } else if (kind === 'english') {
-        // Tri-state: off → bilingual → strict → off
-        if (!f.englishOnly) { f.englishOnly = true; f.englishStrict = false; }
-        else if (!f.englishStrict) { f.englishStrict = true; }
-        else { f.englishOnly = false; f.englishStrict = false; }
+        toggleEnglishFilter(f, 'english');
+      } else if (kind === 'english-only') {
+        toggleEnglishFilter(f, 'only');
       }
       syncParishFilterPills();
       // Partial refresh only — events list + schedule card. Header,
