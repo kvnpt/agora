@@ -4,8 +4,8 @@
 // <details> for the event cards (worker/lib/lite-page.mjs) — so everything here
 // is an upgrade: the address bar settling on the canonical link, "now" and
 // "past" read off the viewer's own clock (the server cannot bake them in, the
-// page is cached for an hour), Share, copy-the-address, and fetching the app
-// in the background so ← Back to App is quick.
+// page is cached for an hour), Share, copy-the-address, and the app's loading
+// screen the moment somebody asks for the app.
 (function () {
   'use strict';
 
@@ -96,18 +96,89 @@
     });
   });
 
-  // The app, fetched while nobody is waiting on it, so ← Back to App opens
-  // from cache. Not on a connection that has asked us to save data.
-  var conn = navigator.connection || {};
-  if (!conn.saveData && !/2g/.test(conn.effectiveType || '')) {
-    var idle = window.requestIdleCallback || function (fn) { setTimeout(fn, 2500); };
-    idle(function () {
-      ['/app.css', '/app.js', '/lib/maplibre-gl.js', '/lib/maplibre-gl.css'].forEach(function (href) {
-        var l = document.createElement('link');
-        l.rel = 'prefetch';
-        l.href = href;
-        document.head.appendChild(l);
-      });
+  // The way into the app: the ✕ and anywhere on the hero are the app as it
+  // opens with no link; VIEW MAP and the buttons in the card are this page's
+  // link in it (?app). Nothing of the app is fetched until one is pressed —
+  // most people sent a link read it and go — and then the app's own loading
+  // screen goes up at once, in this tab, and the app loads behind it as it
+  // always has: index.html paints the same screen and carries on from there.
+  function intoApp(a) {
+    if ((a.target && a.target !== '_self') || a.hasAttribute('download')) return false;
+    var u;
+    try { u = new URL(a.href, location.href); } catch (e) { return false; }
+    return u.origin === location.origin
+      && (u.pathname === '/' || /(^|&)app(=|&|$)/.test(u.search.slice(1)));
+  }
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  // The tree as index.html draws it before anything has loaded: the pale
+  // outline, nothing filled yet. index.html keeps the last one it drew; with
+  // none kept, fetch one and keep it, so the app most likely draws the same.
+  function mountTree(wrap, text) {
+    var src = new DOMParser().parseFromString(text, 'image/svg+xml').querySelector('svg');
+    if (!src) return;
+    var out = document.createElementNS(SVG_NS, 'svg');
+    out.setAttribute('class', 'ls-tree');
+    out.setAttribute('viewBox', src.getAttribute('viewBox') || '0 0 2048 2048');
+    out.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    out.setAttribute('aria-hidden', 'true');
+    var outline = document.createElementNS(SVG_NS, 'g');
+    outline.setAttribute('class', 'ls-outline-pass');
+    Array.prototype.forEach.call(src.childNodes, function (n) { outline.appendChild(n.cloneNode(true)); });
+    out.appendChild(outline);
+    wrap.appendChild(out);
+  }
+  function showLoading() {
+    if (document.getElementById('loading-screen')) return;
+    var screen = document.createElement('div');
+    screen.id = 'loading-screen';
+    screen.setAttribute('aria-hidden', 'true');
+    screen.innerHTML = '<div class="ls-header">orthodoxy.au</div><div class="ls-tree-wrap"></div>'
+      + '<div class="ls-log"><div class="ls-log-line">» boot orthodoxy.au</div></div>';
+    document.body.appendChild(screen);
+    document.body.setAttribute('aria-busy', 'true');
+    var wrap = screen.querySelector('.ls-tree-wrap');
+    var kept = null;
+    try { kept = localStorage.getItem('ls-tree-svg'); } catch (e) { /* storage off */ }
+    if (kept) { mountTree(wrap, kept); return; }
+    var idx = Math.floor(Math.random() * 7) + 1;
+    fetch('/eucalyptus/eucalyptus-' + idx + '.svg')
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (text) {
+        if (!text) return;
+        try {
+          localStorage.setItem('ls-tree-svg', text);
+          localStorage.setItem('ls-tree-idx', String(idx));
+        } catch (e) { /* storage off */ }
+        if (wrap.isConnected && !wrap.firstChild) mountTree(wrap, text);
+      })
+      .catch(function () { /* the screen reads without a tree */ });
+  }
+  function openApp(href) {
+    showLoading();
+    // Two frames, so the screen has been painted before this page starts going.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { location.assign(href); });
     });
   }
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest('a[href]');
+    if (a) {
+      if (!intoApp(a)) return;
+      e.preventDefault();
+      openApp(a.href);
+    } else if (e.target.closest('.lite-hero')) {
+      openApp('/');
+    }
+  });
+  var hero = document.querySelector('.lite-hero');
+  if (hero) hero.style.cursor = 'pointer';
+  // Back from the app can bring this page back as it was left — screen and all.
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    var screen = document.getElementById('loading-screen');
+    if (screen) screen.parentNode.removeChild(screen);
+    document.body.removeAttribute('aria-busy');
+  });
 })();

@@ -767,15 +767,21 @@ function decidePageMode() {
   }
 }
 
-// The hero over the page — worker/lib/lite-page.mjs HERO_HTML, copied as the
+// The hero over the page — worker/lib/lite-page.mjs heroHTML, copied as the
 // lite markup is until the renderers move into public/shared/ (roadmap).
-const PAGE_HERO_HTML = `<a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map"><svg class="lite-hero-cross" viewBox="0 0 60 100" aria-hidden="true"><g fill="currentColor"><rect x="26" y="0" width="8" height="100"/><rect x="16" y="14" width="28" height="7"/><rect x="4" y="32" width="52" height="8"/><rect x="14" y="70" width="32" height="7" transform="rotate(18 30 73.5)"/></g></svg><span>orthodoxy.au</span></a>`;
+function pageHeroHTML(mapHref) {
+  return `<a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map">orthodoxy.au</a><a class="lite-hero-map" href="${esc(mapHref)}">View map</a>`;
+}
 
 /**
  * Page mode wears the visitor's page: the hero at the top of the sheet's
  * scroll, and the X on the card under it, scrolling with the card — so the X
  * moves into the scroll, and back out to the sheet when the page is put away.
  * The hero stays in the scroll, hidden outside page mode (app.css).
+ *
+ * The hero does here what it does on the visitor's page (lite.js): VIEW MAP
+ * is this card on the map — the page put away with the sheet left open over
+ * its pin — and anywhere else on it is the app with no link.
  */
 function placePageChrome(onPage) {
   const sheet = document.getElementById('parish-sheet');
@@ -786,7 +792,21 @@ function placePageChrome(onPage) {
     if (!scroll.querySelector('.pm-hero')) {
       const hero = document.createElement('header');
       hero.className = 'lite-hero pm-hero';
-      hero.innerHTML = PAGE_HERO_HTML;
+      hero.innerHTML = pageHeroHTML(`${window.location.pathname}?app`);
+      hero.style.cursor = 'pointer';
+      hero.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (e.target.closest('.lite-hero-map')) {
+          e.preventDefault();
+          // Opened again as a sheet: up from the foot to half, the map
+          // centred on the parish above it, as a parish opened from the map.
+          const pid = state.parishSheetFocus;
+          exitPageMode();
+          if (pid) openParishSheet(pid, { replaceUrl: true });
+        } else if (!e.target.closest('a')) {
+          window.location.assign('/');
+        }
+      });
       scroll.insertBefore(hero, scroll.firstChild);
     }
     scroll.insertBefore(close, scroll.querySelector('#parish-sheet-content'));

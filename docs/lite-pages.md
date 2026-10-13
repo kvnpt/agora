@@ -28,7 +28,7 @@ empty shell.
    parish, `/social`, `/donate` — returns null and the app loads as it always did.
 4. **It fails open.** A render that throws returns null and the app answers the link.
 
-Two ways past it: `?app` (the card's "Open in the app" button) and the `agora_admin`
+Two ways past it: `?app` (VIEW MAP on the hero, and the card's "Open in the app" button) and the `agora_admin`
 cookie, which the app sets while somebody holds a role. The cookie grants nothing — the
 API checks the Access token on every request — and it only matters at a parish or an
 event link: an admin there gets the app, because the editors live in the app.
@@ -38,7 +38,9 @@ the app lays that card out AS the page when it is the one answering a parish or 
 link (`decidePageMode` in `app.js`, deciding by url-state's `pageKind`, the Worker's own
 rule): the parish sheet full-screen and still, the map put away behind it, the same hero
 on top and the same card under it with its ✕ (`placePageChrome` moves the sheet's ✕ into
-the scroll, onto the card). Every in-place editor works there as it does on the sheet. The ✕ puts the card away and the map comes forward. Only on arriving at such
+the scroll, onto the card). Every in-place editor works there as it does on the sheet. The ✕ puts the card away and the map comes forward. VIEW MAP puts the page away
+and opens the card again as the sheet, at half over the map with its pin centred above;
+the rest of the hero reloads the app at `/`, as on a visitor's page. Only on arriving at such
 a link — a parish opened from the map is still the sheet over the map, and `?app` asks
 for the map app. A timetable page has nothing to edit, so admins get it like anyone.
 
@@ -64,7 +66,8 @@ for the map app. A timetable page has nothing to edit, so admins get it like any
   narrows it, in the app's sheet as here;
 - times in the parish's zone; nothing "now"-relative is baked in — `public/lite.js`
   marks "Now" and fades past services on the viewer's clock, settles relative dates in
-  the address bar (`/next-tue` → `/2026-10-06`), and prefetches the app on idle.
+  the address bar (`/next-tue` → `/2026-10-06`), and puts up the app's loading screen
+  when somebody asks for the app (below). It fetches nothing of the app until then.
 
 **It wears the app's design.** The page links `/app.css` and writes the app's own class
 names — `ps-header`, the `jurisdiction-box` timetable above the events, `day-section` /
@@ -72,7 +75,7 @@ names — `ps-header`, the `jurisdiction-box` timetable above the events, `day-s
 visitor's page and an admin's page-mode card look the same. Each markup function in
 `lite-page.mjs` names the app function it mirrors; it is copied, not shared, until roadmap
 phase 3 moves the renderers into `public/shared/`. `LITE_CSS` holds only what a page
-needs that a sheet does not: the card and its ✕ (to the map, where "← Back to App" was),
+needs that a sheet does not: the card and its ✕ (to the app, where "← Back to App" was),
 the column, `<details>` so an event opens with no JavaScript, and the colours.
 
 **A hero over every page, and the page is a card over it.** The app opens on its map and
@@ -81,8 +84,10 @@ stand where the map would. That is `public/og/hero.jpg`: the site's navy and eve
 on file as a point of light at its own latitude and longitude, on a faint outline of
 Australia and New Zealand — Sydney and Melbourne glow where they are dense, Perth and
 Auckland sit out on their own. `scripts/build-hero.mjs` draws it from the live
-`/api/parishes` (re-run it after an import) and Natural Earth's land; the cross and
-"orthodoxy.au" over it are the page's own text (`HERO_HTML`), linking to the map. It is
+`/api/parishes` (re-run it after an import) and Natural Earth's land. Over it, as the
+page's own text (`heroHTML`): "orthodoxy.au", small in the lower-left corner on the card's
+left edge (it had a cross beside it, centred on the left, until October 2026), and
+**VIEW MAP** in the middle — see the way into the app, below. It is
 shown at its full height and centred, never cropped to a band — its edges are the
 background's navy, so a wide screen gets plain navy either side. The content is a card
 that overlaps its foot (`--hero-overlap`), rounded at the top, and behaves as the app's
@@ -91,6 +96,32 @@ as the page scrolls, and the ✕ — sticky itself — stays on its corner. `lit
 the header into `--ps-stack-h`, as the app does, so the day headers stop under it. The
 styles are app.css's `.lite-hero`, which page mode wears too, with the sheet's ✕ moved
 onto the card (`placePageChrome`).
+
+**The way into the app.** Three doors, and the app is fetched only once one is used:
+
+| | Goes to | |
+|---|---|---|
+| **VIEW MAP** on the hero | this page's link in the app, `?app` | a parish or event opens its sheet over the map, flown to its pin (`appHref`); a timetable page opens the map with its filters, without `/services` (`eventsHref`) |
+| the ✕, the hero's name, anywhere else on the hero | `/` | the app as it opens with no link: no filters |
+| **Open in the app →**, **View upcoming events →**, the no-times count | their `?app` links | as before |
+
+`lite.js` catches the click (a plain one: a modified or middle click is left to the
+browser, for a new tab), puts up the app's own loading screen over the page at once —
+`#loading-screen`, which `/app.css` already styles, with the eucalyptus index.html last
+drew (`ls-tree-svg` in localStorage; with none kept it fetches one and keeps it, so the
+app most likely draws the same) — then navigates in the same tab two frames later.
+index.html paints the same screen first thing, so the screen carries on across the load.
+A page restored by Back (`pageshow` with `persisted`) takes the screen down. Without
+JavaScript the ✕, the name and VIEW MAP are plain links; the rest of the hero does nothing.
+
+The page used to prefetch `app.js`, `app.css` and MapLibre on idle, so the way back was
+quick. It no longer does: most people sent a link read it and leave, and `app.js` and MapLibre
+are 1.3 MB (some 360 KB compressed) they would never use.
+
+VIEW MAP is glass where the browser has `backdrop-filter` — the lights come through it
+blurred, brightened and more saturated, under a lit top edge and a sheen — and a plain
+see-through pill where it has not, or where the viewer asks for reduced transparency.
+The styles are app.css's `.lite-hero-map`.
 
 **Its colours are the app's.** `/admin`'s overrides (`jurisdiction_colors`) over the
 shared table, the parish's own colour where the parish is the subject and its
