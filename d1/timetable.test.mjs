@@ -36,6 +36,16 @@ test('a rule answers the service, day, part of the day and language asked for', 
     { parishLanguages: '["Arabic"]' }), 'a rule in English is English whatever the parish speaks');
 });
 
+test('a service, a day, a part of the day or a language asks something of the rules; a place does not', () => {
+  for (const f of [{ service: 'bible-study' }, { day: 0 }, { day: 3 }, { part: 'evening' }, { englishOnly: true }]) {
+    assert.ok(T.narrowsRules(f), JSON.stringify(f));
+  }
+  for (const f of [{}, { jurisdiction: 'antiochian' }, { location: 'nsw' }, { parishIds: new Set(['sgr', 'bud']) },
+    { service: null, day: null, part: null, englishOnly: false }]) {
+    assert.ok(!T.narrowsRules(f), JSON.stringify(f));
+  }
+});
+
 test('a parish_scoped rule is only in a list that names its one parish', () => {
   const setup = { parish_id: 'sgr', day_of_week: 2, start_time: '19:00', title: 'Setup', parish_scoped: 1 };
   assert.ok(!T.ruleMatches(setup, {}));
