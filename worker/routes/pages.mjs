@@ -32,13 +32,13 @@ import { cachedHtml } from '../lib/data-version.mjs';
 import { liteModel, liteWindow, liteStartDate, renderLitePage } from '../lib/lite-page.mjs';
 import { timetableModel, renderTimetablePage } from '../lib/lite-timetable.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
-import { jurisdictionColorOverrides } from '../lib/juris-colors.mjs';
+import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
 // The parish columns a page shows. Not SELECT *: `updated_by` is an admin's
 // email and nothing public carries it.
-const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone, color,
+const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone,
   website, phone, email, logo_path, acronym, languages, live_url, donation_url,
   info_source_name, info_source_ref, info_checked_at, maps_url, updated_at`;
 
@@ -70,7 +70,7 @@ export function liteKind(pathname, now = Date.now()) {
 // The parish columns the timetable page reads — address and pin for the
 // region, languages for /en, and nothing an admin wrote about themselves.
 const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezone, acronym, languages,
-  color, logo_path`;
+  logo_path`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
   languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
   source_name, source_ref, source_checked_at, location_override, location_parish_id`;
@@ -139,7 +139,7 @@ async function buildLite(env, url, kind, now) {
   const [rows, events, cross, links, overrides] = await Promise.all([
     fetchWindowRows(db, fromUtc, toUtc, { parishId: parish.id }),
     db.prepare(
-      `SELECT e.*, p.name AS parish_name, p.acronym AS parish_acronym, p.color AS parish_color,
+      `SELECT e.*, p.name AS parish_name, p.acronym AS parish_acronym, ${PARISH_COLOR_SQL} AS parish_color,
               p.jurisdiction, p.timezone
        FROM events e JOIN parishes p ON e.parish_id = p.id
        WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?

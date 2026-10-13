@@ -51,11 +51,11 @@ for (const p of parishes) {
   const pr = provenance(p);
   lines.push(
     'INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, ' +
-    'timezone, website, languages, color, info_source_type, info_source_ref,\n' +
+    'timezone, website, languages, info_source_type, info_source_ref,\n' +
     '        info_source_name, info_checked_at) VALUES (\n' +
     `  ${q(p.id)}, ${q(p.name)}, ${q(p.full_name)}, ${q(p.jurisdiction)}, ${q(p.address)},\n` +
     `  ${p.lat}, ${p.lng}, ${q(p.timezone || 'Australia/Sydney')},\n` +
-    `  ${q(p.website)}, ${q(p.languages || '["English"]')}, ${q(p.color)},\n` +
+    `  ${q(p.website)}, ${q(p.languages || '["English"]')},\n` +
     `  ${q(pr.type)}, ${q(pr.ref)}, ${q(pr.name)}, ${q(pr.checked)}\n) ON CONFLICT(id) DO NOTHING;`
   );
 }

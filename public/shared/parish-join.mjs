@@ -31,8 +31,16 @@ export const PARISH_JOIN = [
   ['live_url', 'parish_live_url'],
 ];
 
-/** The SELECT list the Worker joins with, `p` being the parishes alias. */
-export const PARISH_JOIN_SQL = PARISH_JOIN.map(([col, as]) => `p.${col} AS ${as}`).join(', ');
+/**
+ * The SELECT list the Worker joins with, `p` being the parishes alias.
+ *
+ * Every column but the colour. A parish has no colour of its own — it wears
+ * its jurisdiction's, which bundle.js puts on `color` before this join runs in
+ * the browser — so there is no `parishes.color` to select, and the Worker adds
+ * the jurisdiction's itself (PARISH_COLOR_SQL in worker/lib/juris-colors.mjs).
+ */
+export const PARISH_JOIN_SQL = PARISH_JOIN.filter(([col]) => col !== 'color')
+  .map(([col, as]) => `p.${col} AS ${as}`).join(', ');
 
 /**
  * A rule with its parish's fields attached, as the SQL join would have given

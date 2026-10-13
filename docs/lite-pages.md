@@ -124,8 +124,8 @@ see-through pill where it has not, or where the viewer asks for reduced transpar
 The styles are app.css's `.lite-hero-map`.
 
 **Its colours are the app's.** `/admin`'s overrides (`jurisdiction_colors`) over the
-shared table, the parish's own colour where the parish is the subject and its
-jurisdiction's on the timetable box, and the app's OKLab dark-mode lift — now in
+shared table — the jurisdiction's, for the parish and its timetable box alike, since a
+parish has no colour of its own — and the app's OKLab dark-mode lift — now in
 `public/shared/jurisdiction-colors.js` (`liftForDark`) so the Worker can compute it. A
 cached page cannot choose at render time, so it carries both as custom properties and a
 `prefers-color-scheme` query picks.
