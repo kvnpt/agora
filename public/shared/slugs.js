@@ -25,8 +25,16 @@
     'antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian', 'other',
   ];
 
+  // The language segments, every spelling people type. ENGLISH is any service
+  // with English in it (English, or English beside another language);
+  // ENGLISH_ONLY is a service in English and nothing else. The first of each
+  // is the one the app writes. url-state.js reads them from here, because
+  // /admin loads this file and not that one.
+  const ENGLISH_SEGMENTS = ['en', 'english', 'bilingual', 'half-english', 'english-half', 'some-english'];
+  const ENGLISH_ONLY_SEGMENTS = ['en-only', 'english-only', 'full-english'];
+
   // Path segments detectUrlState gives a meaning of their own.
-  const PATH_KEYWORDS = ['social', 'services', 'en', 'bilingual'];
+  const PATH_KEYWORDS = ['social', 'services', ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
 
   // The second segment of a payment deep link, /<acronym>/donate. Reserved as
   // a first segment too, because /donate/donate could not be read either way.
@@ -112,6 +120,7 @@
 
   const api = {
     RESERVED_SLUGS, JURISDICTIONS, PATH_KEYWORDS, PAY_KINDS, SITE_PATHS,
+    ENGLISH_SEGMENTS, ENGLISH_ONLY_SEGMENTS,
     normaliseSlug, reservedSlugReason,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;

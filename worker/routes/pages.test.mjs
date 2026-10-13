@@ -71,10 +71,11 @@ test('which paths are lite pages', () => {
     '/102': 'event', '/42:2026-10-04': 'event',
     '/greek': 'timetable', '/qld': 'timetable', '/greek/qld': 'timetable', '/services': 'timetable',
     '/liturgy': 'timetable', '/evening': 'timetable', '/wed/evening/vespers': 'timetable',
-    '/en': 'timetable', '/smg+sgr': 'timetable', '/greek/services': 'timetable',
+    '/en': 'timetable', '/en-only': 'timetable', '/full-english': 'timetable',
+    '/smg+sgr': 'timetable', '/greek/services': 'timetable',
     '/': null, '/greek/next-sun': null, '/liturgy/2026-10-04': null, '/social': null, '/greek/social': null,
     '/donate': null, '/greek/donate': null, '/greek/sgr': null,
-    '/sgr/en': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
+    '/sgr/en': null, '/sgr/english-only': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
     '/102/services': null, '/102/evening': null, '/%E0%A4%A': null,
   };
   for (const [p, want] of Object.entries(kinds)) {
@@ -384,10 +385,24 @@ test('a language narrows to the rules served in it, falling back to the parish',
   const { raw, get } = fresh();
   raw.prepare(`UPDATE schedules SET languages = '["English"]' WHERE parish_id = ?`).run(PARISH);
   raw.prepare(`UPDATE parishes SET languages = '["Arabic","English"]' WHERE id = 'antiochian-stelias-wollongong'`).run();
-  const strict = names((await get('/en')).html);
-  assert.ok(strict.includes('St George Cathedral, Redfern'));
-  assert.ok(!strict.includes('St Elias, Wollongong'), 'Arabic and English is not English only');
-  assert.ok(names((await get('/bilingual')).html).includes('St Elias, Wollongong'));
+  const full = (await get('/en-only')).html;
+  assert.ok(names(full).includes('St George Cathedral, Redfern'));
+  assert.ok(!names(full).includes('St Elias, Wollongong'), 'Arabic and English is not English only');
+  assert.match(full, /<h1>Orthodox fully-English services<\/h1>/);
+  assert.equal(canonical(full), 'https://orthodoxy.au/en-only');
+  for (const p of ['/en', '/english', '/bilingual', '/half-english', '/english-half', '/some-english']) {
+    const { html } = await get(p);
+    assert.ok(names(html).includes('St Elias, Wollongong'), p);
+    assert.ok(names(html).includes('St George Cathedral, Redfern'), p);
+    assert.match(html, /<h1>Orthodox services in English<\/h1>/, p);
+    assert.equal(canonical(html), 'https://orthodoxy.au/en', p);
+  }
+  for (const p of ['/english-only', '/full-english']) {
+    assert.equal(canonical((await get(p)).html), 'https://orthodoxy.au/en-only', p);
+  }
+  const lit = (await get('/sun/liturgy/full-english')).html;
+  assert.match(lit, /<h1>Orthodox fully-English Liturgies on Sundays<\/h1>/);
+  assert.equal(canonical(lit), 'https://orthodoxy.au/sun/liturgy/en-only');
 });
 
 test('several parishes by name, and the rules only their own card shows', async () => {

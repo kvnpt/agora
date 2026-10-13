@@ -23,6 +23,7 @@
 import services from '../../public/shared/services.js';
 import locations from '../../public/shared/locations.js';
 import timetable from '../../public/shared/timetable.js';
+import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import {
@@ -136,7 +137,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
     ...(named ? [named.map(parishSlug).join('+')] : []),
-    ...(route.englishOnly ? [route.englishStrict ? 'en' : 'bilingual'] : []),
+    ...(route.englishOnly ? [urlState.englishSegment(route)] : []),
   ];
   const canonicalPath = segs.length ? pathOf(segs) : '/services';
 
@@ -162,21 +163,27 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
 
 /**
  * "Greek Orthodox service times in Queensland", "Orthodox evening Vespers on
- * Wednesdays", "Antiochian Orthodox Liturgies in English".
+ * Wednesdays", "Antiochian Orthodox Liturgies in English", "Orthodox
+ * fully-English services".
+ *
+ * Two languages, two names: /en is English services — English, or English
+ * beside another language — and /en-only is fully-English services, English
+ * and nothing else.
  */
 export function timetableHeading(m) {
   const r = m.route;
   const who = r.jurisdiction ? jurisLabel(r.jurisdiction) : 'Orthodox';
   const svc = r.service ? services.servicePlural(r.service) : null;
-  const noun = svc || (isNarrowed(r) ? 'services' : 'service times');
+  const full = r.englishOnly && r.englishStrict;
+  const noun = svc || (isNarrowed(r) || r.englishOnly ? 'services' : 'service times');
   const day = r.day != null ? ` on ${services.dayName(r.day)}s` : '';
-  const lang = r.englishOnly ? (r.englishStrict ? ' in English' : ' in English or bilingual') : '';
+  const lang = r.englishOnly && !full ? ' in English' : '';
   let where = m.loc ? ` in ${m.loc.label}` : '';
   if (m.named) {
     const names = m.named.map(p => p.name);
     where = ` at ${names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ')}`;
   }
-  return [who, r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
+  return [who, full ? 'fully-English' : '', r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
