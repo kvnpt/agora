@@ -115,12 +115,17 @@ about Greek. `jurisdiction_colors` in D1 does not make it four: it holds only
 the rows */admin* → Colours has deliberately changed, absence means the file's
 value, and a reset deletes the row rather than writing the default into it.
 
-**Parishes have no colour of their own.** `parishes.color` is still a column and
-still in the payload, and `public/bundle.js` overwrites it with the
-jurisdiction's colour the moment the bundle lands — before the join copies it
-onto rules and events as `parish_color` — so every reader draws the
-jurisdiction's without being taught to. The panel no longer offers a parish
-colour or a repaint.
+**Parishes have no colour of their own.** `public/bundle.js` puts the
+jurisdiction's colour on every parish as `color` the moment the bundle lands —
+before the join copies it onto rules and events as `parish_color` — so every
+reader draws the jurisdiction's without being taught to. Where the Worker joins
+a parish in SQL (a rule projected for a lite page, `/api/schedules`, a one-off
+event), it selects the same colour as `parish_color` with `PARISH_COLOR_SQL`
+(`worker/lib/juris-colors.mjs`): the override where there is a valid one, the
+table's otherwise. `parishes.color` is read by nothing and written by nothing,
+and is on its way out of the schema. It had gone stale under 49 Macedonian and
+Romanian parishes when /admin repainted their jurisdictions, and the lite pages,
+the last thing still drawing it, showed those parishes in the old colours.
 
 **The map marks time with halos, not colour.** Three of them, under the dot. A
 parish with a service on now breathes green; one with something still to come

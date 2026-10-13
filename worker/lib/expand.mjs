@@ -7,6 +7,7 @@
 
 import { OffsetCache } from '../../public/shared/tz.mjs';
 import { PARISH_JOIN_SQL } from '../../public/shared/parish-join.mjs';
+import { PARISH_COLOR_SQL } from './juris-colors.mjs';
 import {
   expandFrom, project, isValidOccurrence, parseInstanceId,
   breaksFor, breakCovering, nextOccurrenceAfterBreak,
@@ -23,7 +24,7 @@ const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
 // The parish fields a rule borrows. One list, shared with the browser's own
 // join (public/shared/parish-join.mjs), because the bundle no longer sends
 // them — see there.
-const PARISH_COLS = PARISH_JOIN_SQL;
+const PARISH_COLS = `${PARISH_JOIN_SQL}, ${PARISH_COLOR_SQL} AS parish_color`;
 
 /**
  * Fetch the rows a window needs. Returns what expandFrom consumes.

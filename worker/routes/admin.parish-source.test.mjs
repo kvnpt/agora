@@ -117,7 +117,7 @@ test('editing a detail makes the row a person’s, checked today — and pins no
 test('a save that changes nothing about the details leaves the provenance alone', async () => {
   const { call, raw } = fresh();
   const before = raw.prepare('SELECT * FROM parishes WHERE id=?').get(PARISH);
-  const r = await call('PATCH', `/api/admin/parishes/${PARISH}`, { color: '#123456' });
+  const r = await call('PATCH', `/api/admin/parishes/${PARISH}`, { live_url: 'https://youtube.com/@stgeorge' });
   assert.equal(r.status, 200);
   assert.equal(r.body.info_source_type, before.info_source_type);
   assert.equal(r.body.info_checked_at, before.info_checked_at);

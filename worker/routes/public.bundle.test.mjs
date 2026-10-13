@@ -10,7 +10,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import worker from '../index.mjs';
 import { fakeBucket, fakeCache } from '../lib/test-fakes.mjs';
-import { joinParishes, PARISH_JOIN } from '../../public/shared/parish-join.mjs';
+import { joinParishes, PARISH_JOIN, PARISH_JOIN_SQL } from '../../public/shared/parish-join.mjs';
+import { PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -66,13 +67,21 @@ test('a rule travels with its own columns only — no parish copies, no author',
   assert.ok(!('generated_at' in b), 'a clock in the body would change the ETag on every rebuild');
 });
 
-test('joined in the browser, a rule reads exactly as the SQL join gave it', async () => {
+test('joined in the browser, a rule reads exactly as the Worker joins it — colour included', async () => {
   const { raw, call } = fresh();
+  raw.prepare("INSERT INTO jurisdiction_colors (jurisdiction, color) VALUES ('antiochian', '#123456')").run();
+  // A stale stored colour, as 49 production parishes had: neither join reads it.
+  raw.prepare("UPDATE parishes SET color = '#d20000'").run();
   const b = await (await call('GET', '/api/bundle')).json();
-  const joined = joinParishes(b.schedules, b.parishes);
-  const cols = PARISH_JOIN.map(([c, as]) => `p.${c} AS ${as}`).join(', ');
+  assert.ok(b.parishes.every(p => !('color' in p)), 'a parish has no colour of its own to send');
+  // What bundle.js does before it joins: every parish wears its jurisdiction's.
+  const J = require('../../public/shared/jurisdiction-colors.js');
+  const parishes = b.parishes.map(p => ({ ...p, color: J.jurisdictionColorFrom(b.jurisdiction_colors, p.jurisdiction) }));
+  const joined = joinParishes(b.schedules, parishes);
+  assert.ok(joined.some(s => s.parish_color === '#123456'), "the seed's rules wear the override");
   for (const s of joined) {
-    const viaSql = raw.prepare(`SELECT ${cols} FROM parishes p WHERE p.id = ?`).get(s.parish_id);
+    const viaSql = raw.prepare(`SELECT ${PARISH_JOIN_SQL}, ${PARISH_COLOR_SQL} AS parish_color FROM parishes p WHERE p.id = ?`)
+      .get(s.parish_id);
     for (const [, as] of PARISH_JOIN) assert.equal(s[as], viaSql[as], `${as} for rule ${s.id}`);
   }
 });

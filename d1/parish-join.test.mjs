@@ -44,4 +44,7 @@ test('the Worker builds its join from this list, not its own', () => {
   const expand = fs.readFileSync('worker/lib/expand.mjs', 'utf8');
   assert.ok(expand.includes("from '../../public/shared/parish-join.mjs'"));
   assert.ok(!/p\.website AS parish_website/.test(expand), 'expand.mjs grew its own alias list back');
+  // A parish has no colour column to select; the Worker joins its jurisdiction's.
+  assert.doesNotMatch(PARISH_JOIN_SQL, /p\.color/);
+  assert.ok(expand.includes('${PARISH_COLOR_SQL} AS parish_color'));
 });

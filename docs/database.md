@@ -46,6 +46,13 @@ deploying, and both orderings of the mistake fail quietly:
 - migrate first and it is always safe, because the deployed code does not
   reference the new column yet.
 
+**A DROP is the other way round.** Until the code that reads a column is gone
+from production, dropping it breaks every query that names it — `parishes.color`
+was selected by `/api/bundle`, so dropping it first would have taken the site
+down. So it is two pull requests: the first stops every read and write and
+deploys; then the column is dropped in production, and the second brings the
+baseline and its migration in line.
+
 CI catches the two files disagreeing. It cannot catch production being behind,
 so check it: `npx wrangler d1 execute agora --remote --command "SELECT …"`
 before the merge.

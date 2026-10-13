@@ -212,10 +212,9 @@ export function timetableMeta(m) {
 // parish-schedule block per parish, renderScheduleDaysHTML's rows. The state
 // headings over them are the page's own — the app's view has no states.
 
-/** A parish's colour, as the app picks it: its own, else its jurisdiction's. */
+/** A parish's colour, as the app picks it: its jurisdiction's. */
 function parishColor(p, m) {
-  const own = typeof p.color === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(p.color.trim()) ? p.color.trim() : null;
-  return own || jurisColors.jurisdictionColorFrom(m.overrides, p.jurisdiction);
+  return jurisColors.jurisdictionColorFrom(m.overrides, p.jurisdiction);
 }
 
 function parishHTML({ parish: p, rules }, m, n) {

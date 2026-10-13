@@ -198,23 +198,23 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
 }
 
 /**
- * The page's two colours and their dark variants, as the app paints them: the
- * PARISH's own colour where the parish is the subject (its avatar, its
- * buttons, its event groups), the JURISDICTION's on the timetable box, with
- * /admin's overrides over the shared table and the app's OKLab lift for dark.
- * The table alone was what lite pages used to read, and production's
- * overrides had replaced every one of its colours.
+ * The page's colours and their dark variants, as the app paints them: the
+ * jurisdiction's, with /admin's overrides over the shared table and the app's
+ * OKLab lift for dark. The table alone was what lite pages used to read, and
+ * production's overrides had replaced every one of its colours.
+ *
+ * `--parish` (the avatar, the buttons, the event groups) and `--juris` (the
+ * timetable box) are both the jurisdiction's. They were two because a parish
+ * could carry a colour of its own in `parishes.color`; the app stopped drawing
+ * it, and the column then went stale under 49 parishes whose jurisdictions
+ * /admin had repainted, which only these pages still showed.
  */
 export function pageColors(parish, overrides = {}) {
   const juris = jurisColors.jurisdictionColorFrom(overrides, parish.jurisdiction);
-  const own = typeof parish.color === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(parish.color.trim())
-    ? parish.color.trim() : juris;
+  const dark = jurisColors.liftForDark(juris);
   return {
-    color: own,
-    colors: {
-      parish: own, parishDark: jurisColors.liftForDark(own),
-      juris, jurisDark: jurisColors.liftForDark(juris),
-    },
+    color: juris,
+    colors: { parish: juris, parishDark: dark, juris, jurisDark: dark },
   };
 }
 
