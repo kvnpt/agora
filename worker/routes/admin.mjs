@@ -45,6 +45,7 @@ import signs from '../../public/shared/signs.js';
 import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
 import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
+import { suggestAcronym } from '../lib/acronym-suggest.mjs';
 
 const { normaliseSlug, reservedSlugReason } = slugs;
 const { isResolvableTimezone, DEFAULT_TIMEZONE } = timezones;
@@ -2499,7 +2500,27 @@ export function registerAdminRoutes(router) {
     });
   }));
 
-  router.post('/api/admin/parishes', guarded('parish.create', async ({ env, request }) => {
+  // An acronym for a parish, suggested from its names (lib/acronym-suggest.mjs).
+  // A read in all but verb: the panel fills the field with it, and a person
+  // saves it or not. For whoever may set one — on a new parish (parish.create),
+  // or on any (parish.acronym).
+  router.post('/api/admin/acronym-suggestion', guarded(async (c) => {
+    const { env, request } = c;
+    if (!can(c.who.role, 'parish.create') && !can(c.who.role, 'parish.acronym')) {
+      return json({ error: denial(c.who.role, 'parish.acronym'), role: c.who.role }, 403);
+    }
+    const b = await readJson(request);
+    const str = (v) => (typeof v === 'string' ? v.trim().slice(0, 200) : '');
+    const name = str(b.name), fullName = str(b.full_name);
+    if (!name && !fullName) return json({ error: 'A name is needed to suggest an acronym' }, 400);
+    return json(await suggestAcronym(
+      { name, fullName, jurisdiction: str(b.jurisdiction), parishId: str(b.parish_id) || null },
+      { db: env.DB, apiKey: await readSecret(env.ANTHROPIC_API_KEY), baseUrl: env.ANTHROPIC_BASE_URL },
+    ));
+  }));
+
+  router.post('/api/admin/parishes', guarded('parish.create', async (c) => {
+    const { env, request } = c;
     const b = await readJson(request);
     const { name, jurisdiction, lat, lng } = b;
     if (!name || !jurisdiction || lat == null || lng == null) {
@@ -2517,13 +2538,21 @@ export function registerAdminRoutes(router) {
       const conflict = await acronymConflict(env.DB, b.acronym, id);
       if (conflict) return json({ error: conflict, field: 'acronym' }, 409);
     }
+    // A parish somebody typed in is theirs to keep: no directory listed it, so
+    // the column's 'directory' default would say something untrue, and its
+    // first edit would ask "keep it by hand?" of the person who just made it.
+    if (b.read_from !== undefined && !readFromShared.READ_FROM.includes(b.read_from)) {
+      return json({ error: `read_from must be one of ${readFromShared.READ_FROM.join(', ')}`, field: 'read_from' }, 400);
+    }
+    const sourceGiven = b.info_source_type || b.info_source_name || b.info_source_ref;
 
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO parishes (id, name, full_name, jurisdiction, address, lat, lng, timezone,
           website, email, phone, acronym, languages, live_url, donation_url, raffle_url, payment_url, gala_url,
-          info_source_type, info_source_ref, info_source_name, info_checked_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+          info_source_type, info_source_ref, info_source_name, info_checked_at, read_from,
+          updated_at, updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         id, name, b.full_name || null, jurisdiction, b.address || null, lat, lng,
         b.timezone || DEFAULT_TIMEZONE,
@@ -2533,12 +2562,18 @@ export function registerAdminRoutes(router) {
         b.languages || '["English"]',
         b.live_url || null, b.donation_url || null, b.raffle_url || null,
         b.payment_url || null, b.gala_url || null,
-        b.info_source_type || null, b.info_source_ref || null, b.info_source_name || null,
+        // Who says so: the person adding it, as an edit would record them
+        // (lib/provenance.mjs), unless the caller names the source itself.
+        sourceGiven ? (b.info_source_type || null) : 'person',
+        b.info_source_ref || null,
+        sourceGiven ? (b.info_source_name || null) : adminSourceName(c.who && c.who.role),
         // Adding a parish by hand IS reading its source, so the row is stamped
         // now unless the caller says when they actually looked. It stamps the
         // CHECK, never info_verified_at — nobody has stood in front of the
         // place because somebody typed its address into a form.
-        b.info_checked_at || new Date().toISOString(),
+        b.info_checked_at || NOW(),
+        b.read_from || 'hand',
+        NOW(), await editor(c),
       ),
       // A generic inactive rule so the parish shows up in the schedules list.
       env.DB.prepare(

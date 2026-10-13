@@ -36,8 +36,10 @@ an import asks before writing:
 A website import may also take over a `directory` parish, and its SQL sets
 `read_from = 'website'` as it writes: finding a parish's own site is exactly
 what ends the stopgap. The directory never takes back a `website` parish, and
-nothing writes a `hand` one. Approving a claim sets `hand`, and an adapter
-refuses to run against a `hand` parish.
+nothing writes a `hand` one. Approving a claim sets `hand`, and so does adding
+a parish in /admin (no directory listed it, and the column's `directory`
+default would be untrue of it); an adapter refuses to run against a `hand`
+parish.
 
 The first hand edit at a parish that is still read from a source asks, once:
 **keep it by hand from now on, or keep reading it?** (`ensureKeptByHand` in

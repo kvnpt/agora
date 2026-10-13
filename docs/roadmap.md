@@ -66,6 +66,19 @@ same thing that can drift.
 > public/shared/ so the app and the lite card call the same functions, with node
 > tests. No behaviour change; browser-check before and after.*
 
+The parish's DETAILS have the same problem in the editor: the app's edit dialog
+and /admin's parish card are two forms over one row, and each has fields the
+other lacks (the app: the logo crop, the buttons, the links, the Maps place;
+/admin: email, chant style, the source fields, a typed pin, the time zone).
+/admin's **New parish** already hands off to the app's dialog (docs/editing.md).
+What is left is one editor:
+
+> *Make the app's parish details dialog the one parish editor. Move the fields
+> only /admin's card has (email, time zone, chant style, the source line's three
+> fields) into the dialog, then turn /admin's card into a summary with "Edit in
+> app" — the same hand-off New parish uses. Plan first: whether a contact sees
+> the source fields, and how /admin, which has no map, offers Move pin.*
+
 ## 4. Small follow-ups
 
 > *Small follow-ups, then PR and merge:*

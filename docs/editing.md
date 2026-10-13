@@ -110,6 +110,20 @@ nobody opens a parish's timetable meaning to read it as an admin. No form is
 in the DOM behind `display:none` either way: a rule's form is built when its
 pencil is pressed.
 
+**A new parish is finished in that dialog.** /admin's **New parish** asks only
+what the row needs to exist — the names, the short link, the jurisdiction, the
+time zone, the pin — and on Add goes to the parish in the app with its edit
+dialog open (`agora-edit-parish` in `sessionStorage`, read once on load), where
+the logo, the buttons, the links and the Maps place are. The short link is
+suggested from the names as they are typed (`POST
+/api/admin/acronym-suggestion`, `worker/lib/acronym-suggest.mjs`: Claude Haiku
+with the site's own acronyms as its examples, or the initials rule — "St George,
+Yellow Rock" → `sgy` — without a key), and only ever fills an empty field or
+one still holding its own suggestion; the details dialog does the same for a
+parish with none, for whoever may set one. Every candidate passes the checks a
+save does, so what fills the field can be saved. The parish is added kept by
+hand (docs/sources-and-ingestion.md).
+
 **Forms open over the page, never inside it.** Every edit — a parish's details,
 a rule, a new rule, an event — is a dialog, because a form spread through the
 timetable or under a card pushed what it was editing off the screen on a phone,

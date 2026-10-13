@@ -360,20 +360,30 @@
     .jur-auto.person { color: var(--warn); }
 
     /* Form elements */
-    .field { margin-top: 10px; }
+    /* min-width: 0 on the field and its control, and minmax(0, 1fr) on the
+       grid, because a grid track will not shrink below its widest control's
+       intrinsic width: on a phone the date input (iOS draws its own) and a
+       long <option> pushed the parish card off the side of the screen. */
+    .field { margin-top: 10px; min-width: 0; }
     .field > label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
-    .field input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=file]), .field select, .field textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: inherit; background: var(--bg); }
+    .field input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=file]), .field select, .field textarea { width: 100%; min-width: 0; max-width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: inherit; background: var(--bg); }
+    .field input[type=date] { -webkit-appearance: none; appearance: none; display: block; min-height: 38px; text-align: left; color: inherit; }
+    .field input[type=date]::-webkit-date-and-time-value { text-align: left; }
+    .field input[type=file] { max-width: 100%; }
     .field input[type=color] { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
     .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
     .field textarea { resize: vertical; min-height: 60px; }
+    .field-hint { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .field input.is-suggesting { background-image: linear-gradient(90deg, transparent, var(--accent-ring), transparent); background-size: 200% 100%; animation: suggesting 1.2s linear infinite; }
+    @keyframes suggesting { from { background-position: 100% 0; } to { background-position: -100% 0; } }
     .field-row { display: flex; gap: 8px; }
     .field-row > .field { flex: 1; min-width: 0; }
     .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 400; color: var(--text); cursor: pointer; margin-top: 10px; }
     .check input { width: 16px; height: 16px; accent-color: var(--accent); }
 
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
     .grid .full { grid-column: 1 / -1; }
-    @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 500px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 
     /* Buttons */
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; font: inherit; font-size: 13px; font-weight: 600; border-radius: 17px; cursor: pointer; border: 1px solid transparent; text-decoration: none; white-space: nowrap; transition: filter 0.15s, background 0.15s; }
@@ -978,11 +988,20 @@
         <h2 id="add-parish-title">New parish</h2>
         <button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('add-parish-backdrop')"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
-      <div class="modal-subtitle">A name and a pin are enough to start. Links, logo and acronym are set on its card once it exists.</div>
+      <div class="modal-subtitle">A name and a pin are enough to start. Once it is added, its editor in the app opens for the logo, the buttons and the links.</div>
       <form id="parish-form">
         <div class="grid">
           <div class="field"><label>Nickname</label><input name="name" required placeholder="St Mary's, Mount Pritchard"></div>
           <div class="field"><label>Full name</label><input name="full_name" placeholder="St Mary's Antiochian Orthodox Church of the Dormition"></div>
+          <!-- The parish's short link. Suggested from the two names above
+               (public/shared/acronym-suggest.js) and checked as it is typed;
+               nobody holds a link to a parish that does not exist yet, so
+               whoever may add a parish may name it. -->
+          <div class="field full"><label for="add-parish-acronym">Short link</label>
+            <input name="acronym" id="add-parish-acronym" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="sgr">
+            <span class="acronym-warn" style="font-size:11px;color:#e67e22;display:block;margin-top:2px;"></span>
+            <span class="field-hint" id="add-parish-acronym-hint">orthodoxy.au/…</span>
+          </div>
           <div class="field"><label>Jurisdiction</label>
             <select name="jurisdiction" required>
               <option value="antiochian">Antiochian</option>
@@ -1243,6 +1262,7 @@
   <script src="/shared/services.js"></script>
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
+  <script src="/shared/acronym-suggest.js"></script>
   <!-- Logos are shrunk before they are uploaded, by the same code the app's
        cropper uses. -->
   <script src="/shared/logo-image.js"></script>
@@ -2490,9 +2510,11 @@
       return `
       <div class="prov">
         <div class="prov-head">Details and service times</div>
-        <select data-field="read_from" onchange="this.nextElementSibling.textContent = window.AgoraReadFrom.HINTS[this.value]">
-          ${RF.READ_FROM.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(RF.LABELS[v])}</option>`).join('')}
-        </select>
+        <div class="field" style="margin-top:0">
+          <select data-field="read_from" onchange="this.parentElement.nextElementSibling.textContent = window.AgoraReadFrom.HINTS[this.value]">
+            ${RF.READ_FROM.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(RF.LABELS[v])}</option>`).join('')}
+          </select>
+        </div>
         <div class="prov-line">${esc(RF.HINTS[cur])}</div>
       </div>`;
     }
@@ -2633,6 +2655,31 @@
       if (res.ok) { toast('Logo uploaded'); loadAll(); } else toast(await adminError(res), 'error');
     }
 
+    // The new parish's short link: suggested from its names, checked as typed.
+    (function wireAddParishAcronym() {
+      const f = document.getElementById('parish-form');
+      const input = f.acronym, hint = document.getElementById('add-parish-acronym-hint');
+      let suggested = false;
+      const paint = () => {
+        checkAcronymClash(input, null);
+        const slug = slugNorm(input.value);
+        hint.textContent = slug
+          ? `orthodoxy.au/${slug}${suggested ? ' \u2014 suggested from the names; keep it, or type the one the parish uses' : ''}`
+          : 'orthodoxy.au/\u2026 \u2014 filled in from the names once they are typed';
+      };
+      input.addEventListener('input', (e) => { if (e.isTrusted) suggested = false; paint(); });
+      if (window.AgoraAcronymSuggest) {
+        window.AgoraAcronymSuggest.wire({
+          input,
+          names: () => ({ name: f.name.value.trim(), full_name: f.full_name.value.trim(), jurisdiction: f.jurisdiction.value }),
+          watch: [f.name, f.full_name],
+          onFill: () => { suggested = true; paint(); },
+        });
+      }
+      f.addEventListener('reset', () => { suggested = false; setTimeout(paint, 0); });
+      paint();
+    })();
+
     document.getElementById('parish-form').addEventListener('submit', async e => {
       e.preventDefault(); const f = e.target;
       const langsRaw = f.languages.value.trim();
@@ -2642,8 +2689,21 @@
         live_url: f.live_url.value.trim() || null,
         timezone: f.timezone.value,
         languages: langsRaw ? JSON.stringify(langsRaw.split(',').map(s => s.trim())) : '["English"]' };
+      if (f.acronym.value.trim()) data.acronym = f.acronym.value.trim();
       const res = await fetch('/api/admin/parishes', { method: 'POST', headers, body: JSON.stringify(data) });
-      if (res.ok) { toast('Parish added'); f.reset(); closeModal('add-parish-backdrop'); loadAll(); } else toast(await adminError(res), 'error');
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      const made = await res.json().catch(() => null);
+      toast('Parish added');
+      f.reset(); closeModal('add-parish-backdrop');
+      // On to its editor in the app — the one with the logo, the buttons, the
+      // links and the Google Maps place, none of which this form asks. The app
+      // reads the key once it has loaded and opens the editor on that parish.
+      if (made && made.id) {
+        try { sessionStorage.setItem('agora-edit-parish', made.id); } catch { /* the card still opens */ }
+        location.href = appParishUrl(made);
+        return;
+      }
+      loadAll();
     });
 
     // ── Deleting a parish ──

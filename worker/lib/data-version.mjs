@@ -182,7 +182,9 @@ export function isDataWrite(request, response) {
   // route that forgets to join it costs a rebuild, never a stale page.
   // Publishing writes `events`, and bumps like any other write. A suggestion
   // is the same — a message for a person, which the bundle never reads, and
-  // starting a draft from one is a draft.
+  // starting a draft from one is a draft. An acronym suggestion writes nothing
+  // at all; it is a POST only because it carries the names.
   if (/^\/api\/admin\/(drafts|draft-events|suggestions)(\/|$)/.test(path) && !path.endsWith('/publish')) return false;
+  if (path === '/api/admin/acronym-suggestion') return false;
   return true;
 }
