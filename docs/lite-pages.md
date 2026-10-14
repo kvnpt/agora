@@ -178,9 +178,10 @@ pages every such link booted the app, map first, to show what is really a list.
   in it, alone or beside another language. `/en-only`, `/english-only` and
   `/full-english` are *fully-English services* — English and nothing else. The
   spellings live in `public/shared/slugs.js` (an acronym may not take one); a link
-  writes, and a canonical names, only `/en` and `/en-only`. In the app the button
-  reads "Any language", then "English", with an "only" beside it that narrows to the
-  second.
+  writes, and a canonical names, only `/en` and `/en-only`. Any other language is
+  `/in-greek`, or `/in-greek-only` for nothing but Greek, and its heading says
+  "Greek-only". In the app the button reads "Any language", then the language, with
+  an up-and-down segment that opens the languages on file and an "only" beside it.
 
 ## Caching
 

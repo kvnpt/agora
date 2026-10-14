@@ -70,7 +70,8 @@ it is. An object is deleted only once no event, no override and no draft names i
 taking a bulletin off one Sunday leaves the others; `DELETE …/poster?everywhere`
 takes it off the whole parish.
 
-**Combine is three mechanisms**, routed by the shape of the target id
+**Combine is three mechanisms** — "Include other parishes…" on an event, in the
+app — routed by the shape of the target id
 (`POST /api/admin/events/:id/escalate`, and `POST /api/admin/events`, which
 takes the same two lists so a one-off entered *because* it replaces something
 never exists for a round trip beside the thing it replaces):
@@ -83,6 +84,13 @@ never exists for a round trip beside the thing it replaces):
 
 `event_replaces` is described as legacy in old comments. It is pre-v26 but **not**
 redundant: it is the only path for combining against a stored one-off.
+
+**Shown at a parish that is only taking part**, a combined event is framed in the
+Combined badge's colour (`--combined-fg` / `--combined-bg`), on the app's card and
+the lite card alike, so it does not read as that parish's own. At its venue — the
+parish whose church it is in, the host's own when it is held at home — it is not.
+Its participating parishes are a button of their logos ("+ ◯◯◯", up to eight, then
+an ellipsis), and the list it opens names the venue as such.
 
 A combine is the one write whose target is **not** the parish in the URL, which
 makes it the one a parish contact can use to reach out of their own scope. So
@@ -156,6 +164,12 @@ event.** Worth knowing before reaching for one:
 | `status='hidden'`, override `kind='hidden'` | the row, or the override | Drops it from the feed entirely. **Not a tombstone** — no card, no "CANCELLED", gone |
 | `hide_live` | `events`/`schedules`, patchable per occurrence | Nothing to do with hiding. Suppresses the **Watch Live** badge for that one service |
 | `parish_scoped` | same | Shows only on its parish's own card, never in the main feed |
+
+**"Other" is parish-only until somebody says otherwise.** A council meeting or a
+working bee is the parish's own business, so picking Other in a rule's or an
+event's form ticks *Parish only*, and `createOneOff` stores an Other with no
+`parish_scoped` in the body as parish-scoped. Untick it and it is in the feed
+like anything else; the box is the decision, the default only a guess.
 
 `filterByStatus` in `merge.mjs` passes `approved`, `cancelled` and `combined` —
 the last two still render, as tombstones, because nothing disappears.

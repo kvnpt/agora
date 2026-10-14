@@ -10,6 +10,12 @@
 :root {
   color-scheme: light dark;
 
+  /* A combined event's colour — the COMBINED badge's — wherever it is drawn:
+     the badge, the participating button, the frame round a combined service
+     shown at a parish other than its host. */
+  --combined-bg: #ccf0f0;
+  --combined-fg: #0e7070;
+
   /* surfaces */
   --bg: #ffffff;
   --surface: #ffffff;
@@ -95,6 +101,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --combined-bg: #1a3434;
+    --combined-fg: #9ad4d4;
     /* surfaces — bumped up to a charcoal floor so the sheet + jurisdiction
        banner don't read as OLED black. Apple/Google ship dark UIs around
        L≈0.13–0.18; we sit at the lower end of that range. --bg stays
@@ -218,8 +226,11 @@ input, select, textarea {
   padding-top: env(safe-area-inset-top);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  display: flex;
 }
 .jurisdiction-banner {
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 0;
   overflow-x: auto;
@@ -239,7 +250,7 @@ input, select, textarea {
   z-index: 1;
 }
 .jurisdiction-banner-wrap::before {
-  left: env(safe-area-inset-left);
+  left: calc(env(safe-area-inset-left) + 36px);
   background: linear-gradient(to right, var(--bg) 0, transparent);
 }
 .jurisdiction-banner-wrap::after {
@@ -367,8 +378,8 @@ input, select, textarea {
 }
 
 /* ── Mode bar ──
-   Two-row layout. Top: language filter + in-view chip. Bottom: pill row
-   with Schedules / Socials / Admin (Admin hidden until auth). */
+   The sheet's toolbar, three rows (see .mode-bar-row-pills below). The parish
+   card's toolbar is built by the same builders (.ps-filter-row). */
 .mode-bar {
   flex: none;
   position: relative;
@@ -387,37 +398,16 @@ input, select, textarea {
   min-height: 32px;
   position: relative;
 }
-/* Two labelled pills and one round one. It used to scroll sideways, with
-   edge fades, because it carried Schedules, Socials, Admin and Log out — four
-   labelled pills that did not fit a phone. Admin is an icon now and Log out
-   only exists for somebody signed in, so what is left fits, and a row that
-   fits must not scroll: a horizontal scroller inside a vertical sheet steals
-   the drag that closes the sheet. */
-.mode-bar-row-pills {
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-/* The signed-in pills, locked to the right and away from the two mode
-   toggles: they leave the app rather than changing what it is showing, and a
-   destination that moves as its neighbours change width is one people
-   mis-tap. Grouped rather than given a margin each — two auto margins split
-   the free space between them and put Log out in the middle of the row. */
-.mode-bar-pill-group {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-/* The language filter in the mode-bar — replaces the share pill's old slot.
-   "Any language", then "English" filled, with an "only" pill beside it that
-   fills in turn. Pill buttons (NOT filters-menu-items) so the menu's
-   vertical-list layout doesn't override the inline-flex pill look. */
-.mode-bar-lang {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
+/* ── The toolbar's three rows ──
+   1. the language, what is on;                          Clear all
+   2. the kind of event, bookmarks;                      Save filter
+   3. the timetable, and when;                    the link, building
+   No row scrolls sideways: a horizontal scroller inside a vertical sheet
+   steals the drag that closes the sheet. The filter slots are boxes the JS
+   paints into, and lay their contents straight into the row. */
+.mode-bar-row-pills { gap: 6px; flex-wrap: nowrap; }
+.mode-bar-row-when { gap: 6px; min-height: 28px; }
+.filter-slot { display: contents; }
 .mode-bar-en {
   flex: none;
   display: inline-flex;
@@ -478,72 +468,58 @@ input, select, textarea {
    everybody, signed in or not, for as long as both have existed. Same fix the
    filter menu already carries for its own items. */
 .mode-bar-pill[hidden] { display: none; }
-/* Account is icon-only and round: a 34px circle the size of the row, with the
-   label kept in the markup for a screen reader rather than deleted. */
-.mode-bar-pill.fm-account {
-  /* The containing block for .account-dot. .mode-bar-pill is not positioned,
-     so without this the dot would anchor to the mode bar and sit at its
-     corner rather than the button's. */
+/* ── The account chip ──
+   The jurisdiction banner's first chip: a square the banner's height, outside
+   the scrolling row so it stays put while the jurisdictions scroll under the
+   fade beside it. Sign in, or the menu, for whoever is signed in. */
+.juris-account {
+  /* The containing block for .account-dot. */
   position: relative;
-  width: 34px;
-  height: 34px;
-  padding: 0;
+  flex: none;
+  width: 36px;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  padding: 0;
+  background: var(--surface-2, var(--border-light));
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.mode-bar-pill.fm-account .mode-bar-pill-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.juris-account-icon { width: 19px; height: 19px; opacity: 0.75; }
+.juris-account.signed-in .juris-account-icon { opacity: 1; }
+.juris-account[aria-expanded="true"] { background: var(--text); }
+.juris-account[aria-expanded="true"] .juris-account-icon { filter: brightness(0) invert(1); opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  .juris-account-icon { filter: brightness(0) invert(1); }
+  .juris-account[aria-expanded="true"] .juris-account-icon { filter: brightness(0); }
 }
-.mode-bar-pill.fm-account .mode-bar-pill-icon { width: 17px; height: 17px; opacity: 1; }
-/* Signed in reads as a filled, darker glyph — the only difference between
-   "this is how you get in" and "you are in" that a 17px icon can carry. */
-.mode-bar-pill.fm-account.signed-in {
-  border-color: var(--text);
-  color: var(--text);
-}
-.mode-bar-pill.fm-account[aria-expanded="true"] {
-  background: var(--text);
-  border-color: var(--text);
-}
-.mode-bar-pill.fm-account[aria-expanded="true"] .mode-bar-pill-icon { filter: brightness(0) invert(1); }
 
 /* Something is waiting for this person to decide.
    A dot and not a number: the count is in the label for anyone who needs it,
-   and at 34px a badge with a digit in it is a smudge. Positioned against the
-   button, which is why .mode-bar-pill.fm-account carries `position: relative`
-   above — the base pill class does not. */
+   and on a 19px glyph a badge with a digit in it is a smudge. */
 .account-dot {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 9px;
-  height: 9px;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  /* Ringed in the bar's own background so the dot reads as sitting ON the
-     button rather than as part of the glyph, in both schemes. */
+  /* Ringed in the chip's own background so the dot reads as sitting ON it. */
   box-shadow: 0 0 0 2px var(--bg);
   pointer-events: none;
 }
 .account-dot[hidden] { display: none; }
-/* Open, the button fills with --text and the ring has to follow it or the dot
-   sits in a pale halo on a dark circle. */
-.mode-bar-pill.fm-account[aria-expanded="true"] .account-dot {
-  box-shadow: 0 0 0 2px var(--text);
-}
+.juris-account[aria-expanded="true"] .account-dot { box-shadow: 0 0 0 2px var(--text); }
 
-/* The menu behind it. Anchored to the mode bar (position: relative) at its
-   right edge, under the button. */
+/* The menu behind it, dropping from the chip (initAccountMenu sets left and
+   top): fixed, because the banner clips whatever overflows it. */
 .account-menu {
-  position: absolute;
-  right: 12px;
-  top: calc(100% - 2px);
-  z-index: 40;
+  position: fixed;
+  z-index: 1200;
   min-width: 168px;
   display: flex;
   flex-direction: column;
@@ -584,15 +560,6 @@ input, select, textarea {
   opacity: 0.85;
 }
 .mode-bar-pill-label { font-size: 12px; }
-/* Three labelled pills now — Schedules, Services, Socials — and the account.
-   They must still fit without scrolling (see .mode-bar-row-pills): tighter on
-   a 375px phone, and without their icons on a 320px one. */
-@media (max-width: 400px) {
-  .mode-bar-row-pills .mode-bar-pill:not(.fm-account) { padding: 5px 9px; gap: 4px; }
-}
-@media (max-width: 350px) {
-  .mode-bar-row-pills .mode-bar-pill:not(.fm-account) .mode-bar-pill-icon { display: none; }
-}
 .mode-bar-pill.active {
   background: var(--text);
   color: var(--bg);
@@ -908,61 +875,53 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent);
 }
 
-/* Multi-toggle FAB sits outside the scrolling pill row inside
-   .parish-filter-row-wrap, so no sticky positioning needed. Active state
-   mirrors selection mode (state.filters.multiParish || state.selectionMode
-   → .active). */
-.parish-multi-toggle {
+/* The favourites star and the parish counter sit outside the scrolling pill
+   row inside .parish-filter-row-wrap, so they stay put as the pills scroll. */
+.parish-fav-fab,
+.parish-counter {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
   height: 28px;
   padding: 0;
   background: var(--fab-bg);
   border: 1px solid var(--border);
-  border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
   cursor: pointer;
-  margin-right: 2px;
+  -webkit-tap-highlight-color: transparent;
 }
-/* "Clear all", at the head of the bar whenever anything is filtered. */
-.parish-clear-all {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
+.parish-fav-fab { width: 28px; border-radius: 50%; }
+.parish-fav-fab img { width: 15px; height: 15px; opacity: 0.8; }
+.parish-fav-fab.has-favs img {
+  /* gold, from the black glyph */
+  filter: brightness(0) saturate(100%) invert(72%) sepia(62%) saturate(1300%) hue-rotate(358deg) brightness(101%);
+  opacity: 1;
+}
+.parish-fav-fab[aria-expanded="true"] { border-color: #e0a315; }
+/* "⛪ 3": the parishes in view. Tapped, it is selection mode, and fills. */
+.parish-counter {
   gap: 4px;
-  height: 28px;
-  padding: 0 11px 0 9px;
+  padding: 0 10px 0 8px;
   margin-right: 2px;
-  background: var(--text);
-  color: var(--bg);
-  border: 1px solid var(--text);
   border-radius: 999px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
-.parish-clear-all span { font-size: 16px; line-height: 1; margin-top: -1px; }
-.parish-clear-all[hidden] { display: none; }
-.parish-multi-toggle img {
-  width: 16px;
-  height: 16px;
-  opacity: 0.85;
-}
-.parish-multi-toggle.active {
-  background: var(--text);
-  border-color: var(--text);
-}
-.parish-multi-toggle.active img { filter: brightness(0) invert(1); opacity: 1; }
+.parish-counter img { width: 15px; height: 15px; opacity: 0.85; }
+.parish-counter.active { background: var(--text); border-color: var(--text); color: var(--bg); }
+.parish-counter.active img { filter: brightness(0) invert(1); opacity: 1; }
 @media (prefers-color-scheme: dark) {
-  .parish-multi-toggle img { filter: brightness(0) invert(1); }
-  .parish-multi-toggle.active img { filter: brightness(0); }
+  .parish-counter img { filter: brightness(0) invert(1); }
+  .parish-counter.active img { filter: brightness(0); }
+  .parish-fav-fab:not(.has-favs) img { filter: brightness(0) invert(1); }
 }
+/* A favourite's star, before its acronym. */
+.pill-fav { color: #e0a315; font-size: 10px; margin-right: 3px; line-height: 1; }
+.parish-pill.active .pill-fav { color: inherit; }
 
 /* Inner pill container — flex row so pills sit horizontally next to the
    sticky toggle, scroll independently when overflowing. */
@@ -1099,7 +1058,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   /* In parish-sheet, --ps-stack-h is set to the combined height of
      .ps-header + .ps-filter-row so day headers stick below them.
      Outside parish-sheet, the var resolves to 0 (default). */
-  top: var(--ps-stack-h, 0);
+  top: calc(var(--ps-stack-h, 0px) + var(--month-h, 0px));
   /* Above expanded event cards AND above .time-card-head (which sits
      37px below it). When two day-sections meet during scroll, the
      incoming day-hdr should paint over the outgoing time-card-head.
@@ -1174,7 +1133,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   /* Sticks 37px below the day-hdr (its measured height of ~38px). In
      parish-sheet add --ps-stack-h on top so it sits below the
      header + filter row + day-hdr. */
-  top: calc(var(--ps-stack-h, 0px) + 37px);
+  top: calc(var(--ps-stack-h, 0px) + var(--month-h, 0px) + 37px);
   /* Above expanded event cards (auto) so the morning/evening label
      stays visible when scrolling past a drawer; below .day-hdr (z=5)
      so the day header always paints over the time-of-day label when
@@ -1256,6 +1215,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.parish-group-dist { flex: none; font-size: 12px; white-space: nowrap; }
 .parish-group-acro {
   font-size: 9.5px;
   font-weight: 700;
@@ -1292,15 +1252,56 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 }
 /* Within a parish group the border stroke already separates — no inner dividers. */
 .parish-group .event-card + .event-card { border-top: none; }
+/* A month after this one: compact — a line the height of a day header — but
+   a step above the days, in size and in weight, with the year quieter beside
+   it. In the main feed it sticks while its own days scroll under it, and the
+   next month's pushes it away (each month is a .month-block). */
+.month-block { position: relative; }
 .month-header {
-  padding: 28px 14px 12px;
-  font-size: 20px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 9px 14px 0;
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.005em;
   color: var(--text);
+  background: var(--bg);
   border-top: 1px solid var(--border-light);
-  margin-top: 16px;
+  border-bottom: 1px solid var(--border-light);
 }
+.month-year { font-size: 12px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.04em; }
+.events-list .month-block { --month-h: 36px; }
+.events-list .month-block > .month-header {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+}
+
+/* A header's link: copied, it ticks. */
+.hdr-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 2px;
+  margin-left: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.15s;
+  align-self: center;
+}
+.hdr-link img { width: 13px; height: 13px; display: block; }
+.hdr-link:hover, .day-hdr:hover .hdr-link, .month-header:hover .hdr-link { opacity: 0.75; }
+.hdr-link.copied { opacity: 1; }
+.hdr-link.copied img { content: url('https://api.iconify.design/ph:check-bold.svg?color=%232e7d32'); }
+.month-header .hdr-link { margin-left: 2px; }
+@media (prefers-color-scheme: dark) { .hdr-link img { filter: brightness(0) invert(1); } }
 .section-header .now-dot {
   display: inline-block;
   width: 6px;
@@ -1400,6 +1401,14 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   overflow-wrap: anywhere;
 }
 .event-at.is-away { display: inline; }   /* the lite card, which knows its parish */
+/* …and frames it, as the app's sheet does (setCombinedContext). */
+details.lc-ev.event-card.lc-away {
+  box-shadow: inset 0 0 0 1.5px var(--combined-fg);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--combined-bg) 40%, transparent);
+  padding-left: 10px;
+  margin: 4px 0;
+}
 
 /* A multi-day event's span, under its parish: "Fri 16 – Sun 18 Oct, until 4 pm". */
 .event-span-row { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
@@ -1705,51 +1714,81 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .event-drawer-hero-title .edp-feast { margin-top: 4px; font-size: 14px; }
 .event-drawer-hero-title .edp-feast .feast-of { font-size: 1.15em; }
 
-/* "Participating parishes • 3" on a combined event, opening the list. */
+/* A combined event's parishes, as their logos ("+ ◯◯◯"), in the Combined
+   badge's colour, on a button only as wide as they are — so the poster
+   floating at the right can sit up beside it. */
 .event-drawer-participating {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 10px 14px 10px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border-light);
+  max-width: 100%;
+  margin: 0 0 10px;
+  padding: 4px 10px 4px 8px;
+  background: color-mix(in srgb, var(--combined-bg) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--combined-fg) 45%, transparent);
   border-radius: 999px;
   font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  text-align: left;
-  color: var(--text);
+  color: var(--combined-fg);
   cursor: pointer;
 }
-.event-drawer-participating:active { background: var(--surface-2); }
-.event-drawer-participating .edp-part-dot { color: var(--text-muted); }
-.event-drawer-participating .edp-part-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.event-drawer-participating .edp-chev {
-  margin-left: auto;
-  width: 16px;
-  height: 16px;
-  opacity: 0.75;
-  filter: brightness(0) saturate(100%) invert(20%);
+.event-drawer-participating:active { background: var(--combined-bg); }
+.edp-part-plus { font-size: 16px; font-weight: 700; line-height: 1; }
+.edp-part-logos { display: inline-flex; align-items: center; }
+.edp-part-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-shadow: 0 0 0 2px var(--bg);
 }
+.edp-part-logo + .edp-part-logo { margin-left: -7px; }
+.edp-part-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.edp-part-more { font-weight: 700; letter-spacing: 0.05em; }
 .participating-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+#form-backdrop[data-kind="participating"] .form-modal { border-top: 4px solid var(--combined-fg); }
+#form-backdrop[data-kind="participating"] #form-title { color: var(--combined-fg); }
+.participating-list .event-drawer-parish-btn { border-color: color-mix(in srgb, var(--combined-fg) 30%, var(--border-light)); }
+.participating-role {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--combined-bg);
+  color: var(--combined-fg);
+}
 
 /* What the drawer says about it, with its poster at the right — the side the
-   collapsed card keeps it on. */
-.event-drawer-body.has-poster {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-.event-drawer-text { flex: 1; min-width: 0; }
+   collapsed card keeps it on — floating, so the lines run beside it and on
+   underneath it. The buttons clear it. */
+.event-drawer-body { display: flow-root; }
 .event-drawer-body .detail-poster {
-  flex: none;
+  float: right;
   width: 36%;
   max-width: 168px;
-  margin: 2px 0 12px;
+  margin: 2px 0 10px 14px;
   justify-content: flex-end;
 }
 .event-drawer-body .detail-poster img { width: 100%; }
+.event-card-drawer .detail-actions { clear: both; }
+/* The description is the event's own words, not its particulars: set apart
+   from the time and place above it, in the text colour, with a rule down
+   its side. */
+.event-drawer-body .detail-description {
+  margin: 10px 0 12px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--accent-glow, var(--border));
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-line;
+}
 .event-drawer-hero-title .edp-time .t-min,
 .event-drawer-hero-title .edp-time .t-mer { font-size: 0.72em; font-weight: 700; }
 
@@ -1873,8 +1912,8 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   width: 12px;
   height: 12px;
   flex-shrink: 0;
-  opacity: 0.6;
-  filter: brightness(0) saturate(100%) invert(30%);
+  opacity: 0.75;
+  filter: brightness(0) saturate(100%) invert(20%);
 }
 .event-drawer-address:active .event-drawer-address-copy { opacity: 1; }
 .event-drawer-address.copied {
@@ -2096,6 +2135,20 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   overflow-wrap: anywhere;
 }
 .parish-schedule-head + .schedule-day { margin-top: 6px; }
+/* Where a day's services turn to evening — the feed's moon, on a hairline. */
+.schedule-evening {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--evening);
+}
+.schedule-evening::after { content: ''; flex: 1; height: 1px; background: var(--border-light); }
+.schedule-evening .tc-icon { width: 10px; height: 10px; flex: none; }
 /* The timetable starts on today; the first day says so. */
 .schedule-day-today {
   margin-left: 6px;
@@ -2390,6 +2443,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   .detail-url-copy,
   .mode-url-copy,
   .ps-url-copy,
+  .event-drawer-address-copy,
   .ps-info-copy-icon { filter: brightness(0) invert(1); }
   /* Filter FAB sliders glyph + filter-menu list-item glyphs (Iconify imgs).
      img.fm-icon — the EN badge is a span, no filter applied (it picks up
@@ -2979,7 +3033,7 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
   transition: color 0.15s;
 }
 .filter-clear-chip:hover { color: var(--text); }
-.filter-chip-list { display: flex; flex-direction: column; gap: 4px; }
+.filter-chip-list { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .filter-chip-label {
   font: inherit;
   display: inline-flex;
@@ -3170,30 +3224,6 @@ body.map-expanded #filter-active-stack.visible { display: flex; pointer-events: 
 }
 .btn-share-event .btn-action-icon { width: 16px; height: 16px; }
 
-#reset-fab {
-  position: fixed;
-  left: 50%;
-  top: calc(50vh - 52px);
-  transform: translateX(-50%);
-  z-index: 600;
-  display: none;
-  padding: 7px 16px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--text-secondary, #555);
-  background: var(--fab-bg);
-  border: 1px solid var(--border, #d0d0d0);
-  border-radius: 18px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-  opacity: 1;
-  transition: opacity 0.45s ease;
-}
-body.map-expanded #reset-fab.visible { display: block; }
-#reset-fab.fading { opacity: 0; pointer-events: none; }
-
 /* ── Location FAB (bottom right) ── */
 #location-fab {
   position: fixed;
@@ -3359,50 +3389,6 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
   transform: rotate(135deg) translateY(-1px);
 }
 
-/* ── The chip under a date focus ──
-   "Showing from 3/7/2027", inverted. The chip normally counts what is on
-   today; once the stream starts somewhere else that count is answering a
-   question nobody asked, so it says where instead — and looks like a state
-   rather than a reading, because it is one the user has to be able to leave. */
-.in-view-chip.date-focused {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--bg);
-  font-weight: 600;
-  flex: 0 1 auto;
-  max-width: 100%;
-  overflow: hidden;
-}
-.in-view-chip.date-focused .in-view-count {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The chevron is the sheet control, and it has to give way: the × is the
-   thing the user needs at this width. */
-.in-view-chip.date-focused .in-view-chevron { display: none; }
-#bottom-sheet.peeking .in-view-chip.date-focused {
-  background: var(--text);
-  border-color: var(--text);
-}
-.in-view-date-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 17px;
-  height: 17px;
-  margin-left: 2px;
-  margin-right: -4px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--bg) 22%, transparent);
-  color: var(--bg);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-}
-.in-view-date-clear[hidden] { display: none; }
-.in-view-date-clear:hover { background: color-mix(in srgb, var(--bg) 38%, transparent); }
-
 /* ── Calendar button ──
    One shape wherever it appears: the mode bar beside the chip, the parish
    card's filter row, both feed footers, and (smaller, borderless) each day
@@ -3435,47 +3421,6 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 @media (prefers-color-scheme: dark) {
   .agora-cal-btn img { filter: brightness(0) invert(1); }
   .agora-cal-btn.active img { filter: brightness(0); }
-}
-/* Mode bar: the EN pill measures 24px tall, and this sits at the other end of
-   the same row — a row of two nearly-equal heights reads as a mistake, so it
-   is pinned to the same number rather than to a look-alike. */
-.mode-bar-cal { width: 24px; height: 24px; }
-.mode-bar-cal img { width: 13px; height: 13px; }
-/* Parish card filter row: pinned to the right, away from the pills, because
-   it does not filter — it moves the stream. */
-.ps-filter-cal { width: 28px; height: 28px; margin-left: auto; }
-/* Under a date focus it is the main feed's chip: the date, and its ×. First
-   in the row, so the row's scroll never hides where the list starts. */
-.ps-filter-cal .cal-btn-label,
-.ps-filter-cal .cal-btn-x { display: none; }
-.ps-filter-cal.active {
-  order: -1;
-  width: auto;
-  height: 30px;
-  margin-left: 0;
-  padding: 0 4px 0 11px;
-  gap: 7px;
-  border-radius: 999px;
-}
-.ps-filter-cal.active .cal-btn-label {
-  display: inline;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  color: var(--bg);
-}
-.ps-filter-cal.active .cal-btn-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--bg) 22%, transparent);
-  color: var(--bg);
-  font-size: 14px;
-  line-height: 1;
 }
 /* Feed footer: beside Load more, and big enough to be a tap target next to a
    44px button. */
@@ -3624,6 +3569,49 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 .date-pop-today:hover { color: var(--text); border-color: #bbb; }
 
 /* ── Parish sheet (secondary sheet opened from event drawer) ── */
+/* The event sheet: one event, expanded, rising from the bottom over the map
+   and whichever sheet is open (openEventSheet in app.js). As tall as the
+   event, at most most of the screen. */
+.event-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 850;
+  max-height: 86dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-radius: 22px 22px 0 0;
+  box-shadow: var(--sheet-shadow, 0 -8px 28px rgba(0, 0, 0, 0.18));
+  transform: translateY(100%);
+  transition: transform 0.26s cubic-bezier(0.2, 0, 0, 1);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.event-sheet.open { transform: translateY(0); }
+.event-sheet.dragging { transition: none; }
+.event-sheet.hidden { display: none; }
+.event-sheet-handle {
+  flex: none;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+.event-sheet-handle::after {
+  content: '';
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.event-sheet-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.event-sheet .event-card { cursor: default; }
+@media (min-width: 1024px) {
+  .event-sheet { right: auto; width: min(440px, 100vw); border-radius: 0 22px 0 0; }
+}
+
 .parish-sheet {
   position: fixed;
   left: 0;
@@ -4805,11 +4793,21 @@ button.ps-avatar { cursor: pointer; }
 .df-clear[hidden] { display: none; }
 /* The month grid over a dialog when a form opened it. */
 .date-pop.date-pop-field { z-index: 3100; }
-/* Close beside Save: the same pill, outlined — it had no padding of its own. */
-.form-actions .btn-outline {
+/* Close beside Save: the same pill, outlined — it had no padding of its own.
+   Delete too, red-outlined and filling red on hover, the drawer's danger pill
+   (it was a bare red box in the system font). */
+.form-actions .btn-outline,
+.form-actions .btn-danger {
   min-height: 44px; padding: 11px 22px; border-radius: 999px;
   font: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; cursor: pointer;
 }
+.form-actions .btn-danger {
+  margin-left: auto;
+  background: none;
+  color: var(--danger);
+  border: 1px solid var(--danger-soft, var(--danger));
+}
+.form-actions .btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
 
 /* No bottom padding: the editor's sticky action bar carries its own. With the
    dialog's 20px under it, the bar stuck 20px above the edge and the cards
@@ -4925,7 +4923,7 @@ button.ps-avatar { cursor: pointer; }
     left: 16px;
     right: auto;
   }
-  body[data-layout="desktop"] #mode-url.share-fab {
+  body[data-layout="desktop"] #mode-url.save-fabs {
     top: auto !important;
     bottom: max(20px, env(safe-area-inset-bottom));
     left: calc(16px + 44px);
@@ -4936,10 +4934,6 @@ button.ps-avatar { cursor: pointer; }
     right: auto;
     bottom: calc(max(20px, env(safe-area-inset-bottom)) + 60px) !important;
     top: auto !important;
-  }
-  body[data-layout="desktop"] #reset-fab {
-    left: calc((100vw - 420px) / 2);
-    transform: translateX(-50%);
   }
 
   body[data-layout="desktop"] .events-list,
@@ -5553,7 +5547,6 @@ button.ps-avatar { cursor: pointer; }
 body.page-mode .map-container,
 body.page-mode #jurisdiction-banner-wrap,
 body.page-mode #parish-filter-row-wrap,
-body.page-mode #reset-fab,
 body.page-mode #location-fab,
 body.page-mode #filter-active-stack,
 body.page-mode #mode-url,
@@ -5615,3 +5608,349 @@ body.page-mode[data-layout="desktop"] .parish-sheet-close {
 body:not(.page-mode) .pm-hero { display: none; }
 
 .sef-venue { margin: 10px 0 12px; }
+
+/* ── The toolbar's controls ──────────────────────────────────────────────
+   Built once for both toolbars (filterControlsHTML in app.js): the main
+   sheet's three rows, and the parish card's two lines (.ps-filter-line). */
+
+/* "3 events": only as wide as its count, between the language and Clear all. */
+.mode-bar-row-top .in-view-chip { flex: 0 1 auto; margin: 0 auto; padding: 5px 12px; }
+
+/* Clear all, at the end of the first row whenever anything narrows the feed. */
+.mode-bar-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  background: var(--text);
+  color: var(--bg);
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mode-bar-clear span { font-size: 15px; line-height: 1; margin-top: -1px; }
+.mode-bar-clear[hidden] { display: none; }
+
+/* The language: "Any language"; on, the language with an up-and-down
+   segment welded to it (our own list, not the system's), and "only". */
+.lang-filter { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.lang-filter.on .lang-main { border-radius: 999px 0 0 999px; padding-right: 8px; }
+.lang-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 22px;
+  margin-left: -4px;
+  padding: 0;
+  background: var(--text);
+  color: var(--bg);
+  border: 1px solid var(--text);
+  border-left: 1px solid color-mix(in srgb, var(--bg) 35%, transparent);
+  border-radius: 0 999px 999px 0;
+  cursor: pointer;
+}
+.lang-pick svg { margin-left: -2px; }
+.lang-pop {
+  position: fixed;
+  z-index: 1300;
+  min-width: 160px;
+  max-height: min(320px, 60vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
+  overscroll-behavior: contain;
+}
+.lang-pop.hidden { display: none; }
+.lang-item {
+  padding: 9px 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lang-item:hover { background: var(--surface-2, var(--border-light)); }
+.lang-item.on { background: var(--text); color: var(--bg); font-weight: 600; }
+.lang-item:first-child { color: var(--text-secondary); }
+
+/* The kind: a cycle — Any event, Services, Studies, Socials — and, for
+   Services and Socials, their roundels. One roundel at a time narrows it and
+   spells its name out in its own colours. */
+.kind-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; min-width: 0; }
+.kind-cycle { min-width: 76px; justify-content: center; }
+.kind-subs { display: inline-flex; align-items: center; gap: 4px; animation: en-only-in 0.18s ease-out; }
+.kind-sub {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--k-bg);
+  color: var(--k-fg);
+  border: 1px solid color-mix(in srgb, var(--k-fg) 25%, transparent);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: padding 0.18s ease, opacity 0.18s ease;
+}
+.kind-sub.on { padding: 0 10px; border-color: var(--k-fg); }
+.kind-subs:has(.kind-sub.on) .kind-sub:not(.on) { opacity: 0.45; }
+
+/* When: Today, This week (with the calendar), or the date chosen. */
+.when-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.when-cal { width: 28px; height: 28px; animation: en-only-in 0.18s ease-out; }
+
+/* The timetable: a list icon until it is on, then its name too. */
+.mode-bar-schedules { padding: 5px 8px; }
+.mode-bar-schedules:not(.active) .mode-bar-pill-label { display: none; }
+
+/* Bookmarks: once there are any, the count, to show only them. */
+.bookmarks-btn { gap: 4px; padding: 5px 10px 5px 8px; font-variant-numeric: tabular-nums; }
+.bookmarks-btn .mode-bar-pill-icon { width: 14px; height: 14px; }
+
+/* Save filter, at the end of the second row: it pulses whenever a filter
+   changes, and the link it saves builds under it, in the third. */
+.mode-bar-save {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.mode-bar-save img { width: 17px; height: 17px; opacity: 0.85; }
+@media (prefers-color-scheme: dark) { .mode-bar-save img { filter: brightness(0) invert(1); } }
+.mode-bar-save.pulse { animation: save-pulse 0.9s ease-out; }
+@keyframes save-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(21, 101, 192, 0.55); transform: scale(1); }
+  25%  { transform: scale(1.12); border-color: #1565c0; }
+  100% { box-shadow: 0 0 0 12px rgba(21, 101, 192, 0); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .mode-bar-save.pulse { animation: none; } }
+.mode-bar-row-when .mode-url-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 58%;
+  margin-left: auto;
+  display: block;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: right;
+  cursor: pointer;
+}
+.mode-bar-row-when .mode-url-text::-webkit-scrollbar { display: none; }
+.mode-url-host { opacity: 0.8; }
+
+/* A tight phone: the pills give up some padding before anything wraps. */
+@media (max-width: 390px) {
+  .mode-bar .mode-bar-pill { padding: 5px 9px; }
+  .kind-cycle { min-width: 0; }
+  .mode-bar-row-when .mode-url-text { max-width: 46%; }
+}
+
+/* The parish card's toolbar: two lines, the main toolbar's controls. */
+.ps-filter-row { flex-direction: column; gap: 6px; overflow: visible; }
+.ps-filter-line { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.ps-filter-line .when-filter { margin-left: auto; }
+
+/* ── Save filter, and the filters saved (bottom-left, over the map) ── */
+.save-fabs {
+  position: fixed;
+  left: max(16px, calc(16px + env(safe-area-inset-left)));
+  top: calc(50vh - 52px);
+  z-index: 600;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  opacity: 1;
+  transition: opacity 0.45s ease;
+}
+body.map-expanded .save-fabs { display: inline-flex; }
+.save-fabs.fading { opacity: 0; pointer-events: none; }
+.save-fabs .share-fab { position: static; display: inline-flex; }
+.saved-filters-fab {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+.saved-filters-fab[hidden] { display: none; }
+.saved-filters-fab img { width: 19px; height: 19px; opacity: 0.85; }
+@media (prefers-color-scheme: dark) { .saved-filters-fab img { filter: brightness(0) invert(1); } }
+body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
+
+/* "Saved": the link, to copy, and Share this filter. */
+.saved-filter { display: flex; flex-direction: column; gap: 14px; }
+.saved-url {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface-2, var(--border-light));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.saved-url-text { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.saved-url-copy { width: 18px; height: 18px; flex: none; opacity: 0.85; }
+.saved-url.copied { border-color: #2e7d32; }
+.saved-url.copied .saved-url-text::after { content: '  — copied'; color: #2e7d32; font-family: inherit; }
+@media (prefers-color-scheme: dark) { .saved-url-copy { filter: brightness(0) invert(1); } }
+.saved-filter .btn-save { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.saved-filter .btn-save .btn-action-icon { filter: brightness(0) invert(1); }
+.saved-list { display: flex; flex-direction: column; gap: 6px; }
+.saved-row { display: flex; align-items: center; gap: 6px; }
+.saved-row-link {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.saved-row-link b { color: var(--text); }
+.saved-row-link:hover { border-color: var(--text-secondary); }
+.saved-row-del {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  font-size: 20px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.saved-row-del:hover { background: var(--surface-2, var(--border-light)); color: var(--text); }
+
+/* ── Favourites: the star's column, dropping from it ── */
+.fav-list {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 2px;
+  animation: fav-drop 0.18s ease-out;
+}
+.fav-list.hidden { display: none; }
+@keyframes fav-drop { from { opacity: 0; transform: translateY(-6px); } }
+.fav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 4px 12px 4px 4px;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.fav-item-avatar {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.fav-item-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fav-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-empty {
+  max-width: 240px;
+  padding: 10px 12px;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* The parish card's star. */
+.ps-fav-btn.on { border-color: #e0a315; color: #9a6b00; }
+.ps-fav-btn.on .ps-btn-icon {
+  filter: brightness(0) saturate(100%) invert(72%) sepia(62%) saturate(1300%) hue-rotate(358deg) brightness(101%);
+  opacity: 1;
+}
+@media (prefers-color-scheme: dark) { .ps-fav-btn.on { color: #f2c04e; } }
+
+/* An event's bookmark, and — for one date of a weekly service — the cycle
+   arrows that keep every date of it. */
+.btn-bookmark.on, .btn-bookmark-rule.on { color: #1565c0; }
+.btn-bookmark.on .btn-action-icon, .btn-bookmark-rule.on .btn-action-icon {
+  filter: brightness(0) saturate(100%) invert(26%) sepia(89%) saturate(2050%) hue-rotate(203deg) brightness(91%);
+  opacity: 1;
+}
+.btn-bookmark-rule { animation: en-only-in 0.18s ease-out; }
+.bookmark-slot { display: contents; }
+@media (prefers-color-scheme: dark) { .btn-bookmark.on, .btn-bookmark-rule.on { color: #8ab4f8; } }
+/* A long language ("Church Slavonic") must not push Clear all off the row:
+   the name gives way first, then the count. */
+.lang-filter .lang-main {
+  display: block;
+  max-width: 32vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mode-bar-row-top .in-view-chip { min-width: 0; overflow: hidden; }
+.mode-bar-row-top .in-view-count { overflow: hidden; text-overflow: ellipsis; }

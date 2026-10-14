@@ -35,10 +35,49 @@
   const ENGLISH = (slugs && slugs.ENGLISH_SEGMENTS) || ['en'];
   const ENGLISH_ONLY = (slugs && slugs.ENGLISH_ONLY_SEGMENTS) || ['en-only'];
 
-  /** The segment a link writes for a language filter, or null when there is none. */
+  /** 'Church Slavonic' → 'church-slavonic': a language as a path segment's tail. */
+  const langSlug = (name) => String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  /** 'church-slavonic' → 'Church Slavonic'. */
+  const langFromSlug = (slug) => String(slug || '').split('-').filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+  /**
+   * The segment a link writes for a language filter, or null when there is
+   * none. English keeps its old spellings (/en, /en-only); any other language
+   * is /in-greek, or /in-greek-only for nothing but Greek.
+   *
+   * `f` is a filter set: { lang, langStrict }, or the older englishOnly /
+   * englishStrict pair, which means English.
+   */
   function englishSegment(f) {
-    if (!f || !f.englishOnly) return null;
-    return f.englishStrict ? ENGLISH_ONLY[0] : ENGLISH[0];
+    if (!f) return null;
+    const lang = f.lang || (f.englishOnly ? 'English' : null);
+    if (!lang) return null;
+    const strict = f.lang ? !!f.langStrict : !!f.englishStrict;
+    if (/^english$/i.test(lang)) return strict ? ENGLISH_ONLY[0] : ENGLISH[0];
+    return `in-${langSlug(lang)}${strict ? '-only' : ''}`;
+  }
+
+  // The feed's kind filter: Any event, then Services (liturgy, prayer, feast),
+  // Studies (talks), Socials (social and youth), each segment its kind and, for
+  // two of them, one sub-kind. /social is older than the rest and stays.
+  const KIND_SEGMENTS = {
+    worship: ['services', null],
+    'worship-liturgy': ['services', 'liturgy'],
+    'worship-prayer': ['services', 'prayer'],
+    'worship-feast': ['services', 'feast'],
+    studies: ['studies', null],
+    social: ['socials', null],
+    'social-gatherings': ['socials', 'social'],
+    'social-youth': ['socials', 'youth'],
+  };
+  /** The segment for a kind filter, or null for any event. */
+  function kindSegment(kind, sub) {
+    if (!kind) return null;
+    for (const [seg, [k, s]] of Object.entries(KIND_SEGMENTS)) {
+      if (k === kind && (s || null) === (sub || null)) return seg;
+    }
+    return null;
   }
 
   /** A stored event's id (`102`) or a projected occurrence's (`42:2026-10-04`). */
@@ -58,11 +97,16 @@
   function classifyPath(pathname, { today = null } = {}) {
     const out = {
       jurisdiction: null,
+      kind: null,
+      kindSub: null,
       socialOnly: false,
       worshipOnly: false,
       services: false,
+      lang: null,
+      langStrict: false,
       englishOnly: false,
       englishStrict: false,
+      week: false,
       donate: false,
       eventId: null,
       dateFocus: null,
@@ -85,20 +129,24 @@
       let d, loc, svc, part;
       if (JURISDICTION_KEYS.includes(seg)) {
         out.jurisdiction = seg;
-      } else if (seg === 'social') {
-        out.socialOnly = true;
-      } else if (seg === 'worship') {
-        // The feed's Services button: liturgies, prayer services and feasts —
-        // what Socials leaves out. /services is already the timetable.
-        out.worshipOnly = true;
+      } else if (KIND_SEGMENTS[seg]) {
+        // The feed's kind (/worship is Services — /services is already the
+        // timetable), perhaps with one sub-kind.
+        [out.kind, out.kindSub] = KIND_SEGMENTS[seg];
       } else if (seg === 'services') {
         out.services = true;
+      } else if (seg === 'this-week') {
+        out.week = true;
       } else if (ENGLISH.includes(seg)) {
-        out.englishOnly = true;
-        out.englishStrict = false;
+        out.lang = 'English';
+        out.langStrict = false;
       } else if (ENGLISH_ONLY.includes(seg)) {
-        out.englishOnly = true;
-        out.englishStrict = true;
+        out.lang = 'English';
+        out.langStrict = true;
+      } else if (/^in-[a-z0-9-]+$/.test(seg) && seg.length > 3) {
+        const strict = /-only$/.test(seg);
+        out.lang = langFromSlug(seg.slice(3).replace(/-only$/, ''));
+        out.langStrict = strict;
       } else if (seg === 'donate') {
         out.donate = true;
       } else if (isEventId(seg)) {
@@ -123,11 +171,14 @@
         out.parishSlugs = [seg];
       }
     }
-    // Services and socials are exclusive, and services wins. Socials and
-    // worship are each other's complement, so a path naming both names
-    // neither.
-    if (out.services) { out.socialOnly = false; out.worshipOnly = false; }
-    if (out.socialOnly && out.worshipOnly) { out.socialOnly = false; out.worshipOnly = false; }
+    // The timetable (/services) and a kind of event are exclusive, and the
+    // timetable wins. A later kind segment replaced an earlier one above.
+    if (out.services) { out.kind = null; out.kindSub = null; }
+    // The older names, for readers that ask them.
+    out.socialOnly = out.kind === 'socials';
+    out.worshipOnly = out.kind === 'services';
+    out.englishOnly = !!out.lang && /^english$/i.test(out.lang);
+    out.englishStrict = out.englishOnly && out.langStrict;
     return out;
   }
 
@@ -166,10 +217,10 @@
    * as a sheet over the map. The two must agree on which links are pages.
    */
   function pageKind(r) {
-    if (!r || r.socialOnly || r.worshipOnly || r.donate) return null;
+    if (!r || r.kind || r.week || r.donate) return null;
     // A card is one parish's, so a jurisdiction, a region or a language beside
     // one is a question the card does not answer; the app does.
-    const scoped = r.jurisdiction || r.location || r.englishOnly;
+    const scoped = r.jurisdiction || r.location || r.lang;
     if (r.parishSlugs && r.parishSlugs.length === 1) return scoped ? null : 'parish';
     if (r.eventId) {
       const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
@@ -185,7 +236,8 @@
     return names ? 'timetable' : null;
   }
 
-  const api = { JURISDICTION_KEYS, isEventId, classifyPath, firstEventOnDay, pageKind, englishSegment };
+  const api = { JURISDICTION_KEYS, KIND_SEGMENTS, isEventId, classifyPath, firstEventOnDay, pageKind,
+    englishSegment, kindSegment, langSlug, langFromSlug };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraUrlState = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

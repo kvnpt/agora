@@ -534,12 +534,12 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
     ? `<span class="event-venue"> @ ${esc(venue.short)}</span>` : '';
   const span = multiDaySpan(e, m.zone);
   return `
-      <details class="lc-ev event-card${tomb ? ' event-cancelled tomb' : ''}${cls}" data-id="${esc(e.id)}" data-event-type="${esc(e.event_type || '')}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}"${open ? ' open' : ''}>
+      <details class="lc-ev event-card${tomb ? ' event-cancelled tomb' : ''}${!ownParish && !(venue && venue.parishId === m.parish.id) ? ' lc-away' : ''}${cls}" data-id="${esc(e.id)}" data-event-type="${esc(e.event_type || '')}" data-start="${esc(e.start_utc)}" data-end="${esc(e.end_utc || '')}"${open ? ' open' : ''}>
         <summary class="event-content">
           <div class="event-title-row">
             <span class="event-time">${eventTimeHTML(e._local.time)}</span>
             ${dot}
-            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${atVenue}${badgesHTML(e)}<span class="event-card-chev"></span></span>${e.feast ? `<span class="event-feast-row feast-line"><span class="feast-of">of</span> ${esc(e.feast)}</span>` : ''}</div>
+            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${atVenue}${badgesHTML(e)}<span class="event-card-chev"></span></span>${e.feast ? `<span class="event-feast-row feast-line"><span class="feast-of">for</span> ${esc(e.feast)}</span>` : ''}</div>
           </div>
           ${parishRow}
           ${span ? `<div class="event-span-row">${esc(span)}</div>` : ''}
@@ -647,11 +647,18 @@ export function weekFrom(today) {
 export function scheduleRowsHTML(rules, slug, now, venues = {}) {
   let html = '';
   let dow = null;
+  let evening = false;
   for (const r of rules) {
     if (r.day_of_week !== dow) {
       dow = r.day_of_week;
+      evening = false;
       const isToday = r._today && new Date(`${r._today}T00:00:00Z`).getUTCDay() === dow;
       html += `<div class="schedule-day">${esc(services.DAY_NAMES[dow])}${isToday ? '<span class="schedule-day-today">today</span>' : ''}</div>`;
+    }
+    // The app's Evening divider (renderScheduleDaysHTML); morning has none.
+    if (!evening && services.partOfDayOf(r) === 'evening') {
+      evening = true;
+      html += `<div class="schedule-evening">${EVENING_HEAD.replace('<div class="time-card-head">', '').replace('<span class="tc-label">Evening</span></div>', '<span>Evening</span>')}</div>`;
     }
     const svc = services.serviceOf(r);
     const href = `/${slug}/${services.daySlug(dow)}${svc ? `/${svc}` : ''}`;

@@ -211,21 +211,54 @@
   <!-- Jurisdiction banner — wrapper carries the fixed positioning + edge
        fade overlays; inner div is the actual horizontally-scrolling row. -->
   <div class="jurisdiction-banner-wrap" id="jurisdiction-banner-wrap">
+    <!-- The account, as the banner's first chip: a square, and outside the
+         scrolling row so it stays put while the jurisdictions scroll. It
+         starts the Cloudflare Access sign-in when nobody is signed in, and
+         opens the menu below when somebody is. -->
+    <button class="juris-account fm-account" id="btn-account" type="button"
+            aria-haspopup="menu" aria-expanded="false" aria-label="Account" title="Account">
+      <img class="juris-account-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
+      <!-- Something is waiting for this person to decide (syncAccountMenu). -->
+      <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
+    </button>
     <div class="jurisdiction-banner" id="jurisdiction-chips"></div>
   </div>
+  <!-- Signed-in menu, dropping from the account chip. Hidden outright until
+       the ping says this browser can administer; Sign in takes its place
+       until then. -->
+  <div class="account-menu hidden" id="account-menu" role="menu" aria-labelledby="btn-account">
+    <a class="account-menu-item" id="btn-admin" href="/admin" role="menuitem" hidden>
+      <img class="account-menu-icon" src="https://api.iconify.design/ph:sliders-horizontal.svg" alt="">
+      <span>Admin panel</span>
+    </a>
+    <button class="account-menu-item" id="btn-logout" type="button" role="menuitem" hidden>
+      <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
+      <span>Log out</span>
+    </button>
+    <a class="account-menu-item" id="btn-signin" href="/admin" role="menuitem">
+      <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-in.svg" alt="">
+      <span>Sign in</span>
+    </a>
+  </div>
+
 
   <!-- Parish filter pills — wrapper handles fixed positioning + fade
-       overlays; inner row is the scrolling flex container. The leading
-       multi-toggle FAB is OUTSIDE the scroll so it doesn't move with
-       content. Pill buttons render into the inner #parish-pills-list. -->
+       overlays; inner row is the scrolling flex container. The favourites
+       star and the parish counter are OUTSIDE the scroll so they don't move
+       with it. Pill buttons render into the inner #parish-pills-list. -->
   <div class="parish-filter-row-wrap" id="parish-filter-row-wrap">
-    <button class="parish-multi-toggle" id="parish-multi-toggle" type="button"
-            aria-label="Toggle multi-select" aria-pressed="false">
-      <img src="https://api.iconify.design/ph:list-checks.svg" alt="">
+    <!-- Favourites: the parishes this browser starred, newest first, as a
+         column of their own dropping down from here (toggleFavouritesList). -->
+    <button class="parish-fav-fab" id="btn-favourites" type="button"
+            aria-haspopup="true" aria-expanded="false" aria-label="Favourite parishes" title="Favourite parishes">
+      <img src="https://api.iconify.design/ph:star.svg" alt="">
     </button>
-    <!-- Clear all, whenever anything narrows the feed (syncClearFilters). -->
-    <button class="parish-clear-all" id="btn-clear-filters" type="button" hidden>
-      <span aria-hidden="true">&times;</span>Clear all
+    <!-- The parishes in view, counted. A tap chooses them: multi-select with
+         those already ticked — or, with none in view, multi-select and the
+         map out to the nearest (renderParishCounter). -->
+    <button class="parish-counter" id="btn-parish-counter" type="button" aria-label="Parishes in view">
+      <img src="https://api.iconify.design/ph:church.svg" alt="">
+      <span class="parish-counter-n" id="parish-counter-n">0</span>
     </button>
     <div class="parish-filter-row" id="parish-filter-row">
       <div class="parish-pills-list" id="parish-pills-list"></div>
@@ -236,9 +269,6 @@
   <div class="map-container" id="map-container">
     <div id="map"></div>
   </div>
-
-  <!-- Reset filter pill (top center, visible when any filter active) -->
-  <button id="reset-fab" type="button">Show all</button>
 
   <!-- Location FAB (bottom right, above sheet) -->
   <button id="location-fab" type="button" title="My location" aria-label="My location">
@@ -259,13 +289,18 @@
     <div id="filter-chip-list" class="filter-chip-list"></div>
   </div>
 
-  <!-- Share View FAB — bottom-left (took the filter FAB's X position).
-       Icon-only by default; reveals "Share View" text when filters are
-       active. -->
-  <button class="map-fab share-fab" id="mode-url" type="button" aria-label="Share view">
-    <img class="share-pill-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">
-    <span class="share-pill-label">Share View</span>
-  </button>
+  <!-- Save Filter (it was Share View) and, beside it, the filters saved so
+       far (the monocle). Bottom-left over the map; the pair follows the
+       sheet as the old fab did. -->
+  <div class="save-fabs" id="mode-url">
+    <button class="map-fab share-fab" id="btn-save-filter" type="button" aria-label="Save filter">
+      <img class="share-pill-icon" src="https://api.iconify.design/ph:floppy-disk-back.svg" alt="">
+      <span class="share-pill-label">Save filter</span>
+    </button>
+    <button class="map-fab saved-filters-fab" id="btn-saved-filters" type="button" aria-label="Saved filters" title="Saved filters" hidden>
+      <img src="https://api.iconify.design/hugeicons:monocle.svg" alt="">
+    </button>
+  </div>
 
 
   <!-- Map-selection overlay (visible when state.selectionMode is true).
@@ -295,81 +330,43 @@
          CSS rule as well as the attribute, because a pill's own
          `display: inline-flex` outranks the UA's [hidden]. -->
     <div class="mode-bar" id="mode-bar">
+      <!-- Three rows, each filter rendered by the same builders as the parish
+           card's (filterControlsHTML in app.js):
+             1. the language (with its picker) and what is on;     Clear all
+             2. the kind of event, and bookmarks;                   Save filter
+             3. the timetable, and when;                     the link, building -->
       <div class="mode-bar-row mode-bar-row-top">
-        <!-- The language filter: "Any language", then "English" with an
-             "only" beside it once it is on (initEnglishFilter). -->
-        <div class="mode-bar-lang">
-          <button class="mode-bar-en" id="btn-english" type="button" role="checkbox" aria-checked="false">Any language</button>
-          <button class="mode-bar-en mode-bar-en-only" id="btn-english-only" type="button" role="checkbox" aria-checked="false" hidden>only</button>
-        </div>
+        <div class="filter-slot" data-filter-slot="lang" data-filter-scope="main"></div>
         <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Scroll sheet">
           <span class="in-view-count" id="in-view-count">Loading…</span>
           <span class="in-view-chevron" aria-hidden="true"></span>
-          <!-- Leaves the date focus. A span rather than a button because it
-               lives inside one, and a button inside a button is not something
-               the parser keeps. -->
-          <span class="in-view-date-clear" id="in-view-date-clear" role="button" tabindex="0"
-                aria-label="Back to the whole feed" hidden>&times;</span>
         </button>
-        <!-- Jump to any date, however far out. Same height as the language
-             pill on the other side of the chip. -->
-        <button class="agora-cal-btn mode-bar-cal" id="btn-date-focus" type="button"
-                aria-haspopup="dialog" aria-label="Jump to a date" title="Jump to a date">
-          <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">
+        <button class="mode-bar-clear" id="btn-clear-filters" type="button" hidden>
+          <span aria-hidden="true">&times;</span>Clear all
         </button>
       </div>
       <div class="mode-bar-row mode-bar-row-pills" id="mode-bar-row-pills">
-        <button class="mode-bar-pill" id="btn-services" type="button" role="checkbox" aria-checked="false">
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:church.svg" alt="">
+        <div class="filter-slot" data-filter-slot="kind" data-filter-scope="main"></div>
+        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="main"></div>
+        <!-- Save filter, where the account button was: the link to exactly this
+             view, kept and shown to copy or share (openSavedFilterDialog). It
+             pulses whenever a filter changes. -->
+        <button class="mode-bar-save" id="btn-save-filter-bar" type="button"
+                aria-label="Save this filter" title="Save this filter">
+          <img src="https://api.iconify.design/ph:floppy-disk-back.svg" alt="">
+        </button>
+      </div>
+      <div class="mode-bar-row mode-bar-row-when">
+        <!-- The timetable: a list icon until it is on, then its name. -->
+        <button class="mode-bar-pill mode-bar-schedules" id="btn-services" type="button" role="checkbox" aria-checked="false"
+                aria-label="Schedules" title="Schedules">
+          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:list-bullets.svg" alt="">
           <span class="mode-bar-pill-label">Schedules</span>
         </button>
-        <!-- Services: the feed's liturgies, prayer services and feasts — the
-             complement of Socials (/worship; Schedules is the timetable). -->
-        <button class="mode-bar-pill" id="btn-worship" type="button" role="checkbox" aria-checked="false">
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:hands-praying.svg" alt="">
-          <span class="mode-bar-pill-label">Services</span>
-        </button>
-        <button class="mode-bar-pill" id="btn-social" type="button" role="checkbox" aria-checked="false">
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
-          <span class="mode-bar-pill-label">Socials</span>
-        </button>
-        <!-- The account button, pinned right and always present.
-             It used to be an Admin pill that stayed `hidden` until
-             /api/admin/ping answered — so to everybody else the app bar had a
-             gap where the control should be, and there was nowhere at all to
-             sign IN from. The person icon is now always here: it starts the
-             Cloudflare Access login when nobody is signed in, and opens the
-             menu below when somebody is. -->
-        <div class="mode-bar-pill-group">
-          <button class="mode-bar-pill fm-account" id="btn-account" type="button"
-                  aria-haspopup="menu" aria-expanded="false" aria-label="Account" title="Account">
-            <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
-            <span class="mode-bar-pill-label">Account</span>
-            <!-- Something is waiting for this person to decide. Shown only to
-                 an account that can actually decide it — see syncAccountMenu.
-                 aria-hidden because the button's own label carries the count:
-                 a dot announced as "dot" tells a screen reader nothing. -->
-            <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
-          </button>
-        </div>
+        <div class="filter-slot" data-filter-slot="when" data-filter-scope="main"></div>
+        <span class="mode-url-text" id="mode-url-text" aria-label="This view's link"></span>
       </div>
 
-      <!-- Signed-in menu. Hidden outright until the ping says this browser can
-           administer; Sign in takes its place until then. -->
-      <div class="account-menu hidden" id="account-menu" role="menu" aria-labelledby="btn-account">
-        <a class="account-menu-item" id="btn-admin" href="/admin" role="menuitem" hidden>
-          <img class="account-menu-icon" src="https://api.iconify.design/ph:sliders-horizontal.svg" alt="">
-          <span>Admin panel</span>
-        </a>
-        <button class="account-menu-item" id="btn-logout" type="button" role="menuitem" hidden>
-          <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-          <span>Log out</span>
-        </button>
-        <a class="account-menu-item" id="btn-signin" href="/admin" role="menuitem">
-          <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-in.svg" alt="">
-          <span>Sign in</span>
-        </a>
-      </div>
     </div>
 
     <!-- Archdiocese events banner (shown in services mode when jurisdiction selected) -->
@@ -405,6 +402,15 @@
     <button class="parish-sheet-close" id="parish-sheet-close" type="button" aria-label="Close">&times;</button>
     <div id="parish-sheet-scroll" class="parish-sheet-scroll">
       <div id="parish-sheet-content"></div>
+    </div>
+  </div>
+
+  <!-- The event sheet: one event, expanded, opened from a place's square on
+       the map or from a parish card's pinned event (openEventSheet). -->
+  <div id="event-sheet" class="event-sheet hidden" aria-hidden="true" role="dialog" aria-label="Event">
+    <div class="event-sheet-handle" aria-hidden="true"></div>
+    <div id="event-sheet-scroll" class="event-sheet-scroll">
+      <div id="event-sheet-content"></div>
     </div>
   </div>
 
@@ -522,13 +528,13 @@
   <!-- Escalate modal (admin-only, injected at runtime) -->
   <div class="escalate-backdrop" id="escalate-backdrop" onclick="if(event.target===this)closePublicEscalateModal()">
     <div class="escalate-modal">
-      <h2>Extend event scope</h2>
+      <h2>Include other parishes</h2>
       <div class="escalate-modal-sub" id="escalate-pub-sub"></div>
 
-      <div class="escalate-section-title">Appear at parishes</div>
+      <div class="escalate-section-title">Include these parishes too</div>
       <div class="escalate-list" id="escalate-pub-parishes"></div>
 
-      <div class="escalate-section-title">Replace events at selected parishes (optional)</div>
+      <div class="escalate-section-title">…in place of their own services (optional)</div>
       <div class="escalate-list" id="escalate-pub-events"><div class="escalate-empty">Loading…</div></div>
 
       <div class="escalate-btn-row">

@@ -237,6 +237,7 @@ async function initMap(state) {
   for (const p of state.parishes || []) parishesById.set(p.id, p);
 
   map.on('load', async () => {
+    addFavStarImage();
     addParishSourceAndLayers();
     addVenueSourceAndLayers();
     addUserLocSourceAndLayer(state);
@@ -305,6 +306,7 @@ async function initMap(state) {
       map.setStyle(await buildBaseStyle(), { diff: false });
       map.once('style.load', async () => {
         const st = window.agoraStateRef || { parishes: [], locationActive: false };
+        addFavStarImage();
         addParishSourceAndLayers();
         addVenueSourceAndLayers();
         addUserLocSourceAndLayer(st);
@@ -429,6 +431,29 @@ function addParishSourceAndLayers() {
       // hardcoded white ring — that's the universal "I am here" pin.
       'circle-stroke-color': getHalo(),
       'circle-stroke-width': DOT_STROKE_WIDTH
+    }
+  });
+
+  // A favourite parish (this browser's star, app.js) wears a small gold star
+  // at its dot's shoulder, as its pill in the row above does. The image is
+  // registered before this runs (addFavStarImage): nothing here registers a
+  // sprite, which is how the label-shadow guard in d1/map-layers.test.mjs
+  // keeps watch.
+  map.addLayer({
+    id: 'parish-fav-star',
+    type: 'symbol',
+    source: PARISH_SOURCE,
+    filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'fav'], true]],
+    layout: {
+      'icon-image': FAV_STAR_ICON,
+      'icon-offset': [7, -7],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true
+    },
+    paint: {
+      'icon-color': FAV_STAR_COLOR,
+      'icon-halo-color': getHalo(),
+      'icon-halo-width': 1.25
     }
   });
 
@@ -638,9 +663,13 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 // with its own constant radius. The loop only runs while something is
 // flagged and the page is visible; under reduced motion the halos stand still.
 const HALO_NOW = '#22c55e';
-const HALO_NOW_MS = 2600;        // one breath, in and out
-const HALO_TOLL_MS = 3400;       // one toll, ring and silence
-const HALO_RING_MS = 2200;       // how long the ring takes to spread and fade
+const HALO_NOW_MS = 3000;        // one breath, in and out
+// One toll: the ring spreads and fades for HALO_RING_MS, then a short silence.
+// It was a fast ease-out over 2.2s of 3.4s, so it sprang out of the dot and
+// was gone for a third of the cycle; now it travels at a near-even pace and
+// is visible for all but the last half second.
+const HALO_TOLL_MS = 3800;
+const HALO_RING_MS = 3300;
 const HALO_FRAME_MS = 33;        // ~30fps is plenty for a glow
 // Where a marker's edge is: the dot with its ring; a grape's spread or a logo;
 // a place's square with its ring.
@@ -659,57 +688,53 @@ let haloState = null;            // the state updateMap last drew, for the minut
 let haloAny = false;             // is anything flagged — no flags, no loop
 let haloRaf = 0, haloLastFrame = 0, haloTimer = 0;
 
+// The ring's grey, a step lighter than slate-500 so it reads as a ring rather
+// than as an outline; a thin white ring sits just inside it.
 function haloTollColor() {
-  return isDark() ? '#cbd5e1' : '#64748b';
+  return isDark() ? '#cbd5e1' : '#7d8899';
 }
+const HALO_INNER = '#ffffff';
 
 function addHaloLayers() {
   for (const size of ['dot', 'big']) {
     const isBig = size === 'big' ? HALO_BIG : ['!', HALO_BIG];
-    map.addLayer({
-      id: `parish-halo-now-${size}`,
-      type: 'circle',
-      source: PARISH_SOURCE,
-      filter: ['all', HALO_IS_NOW, isBig],
-      paint: breathPaint(size, HALO_NOW)
-    });
+    addRingLayers(`parish-halo-now-${size}`, PARISH_SOURCE, ['all', HALO_IS_NOW, isBig], size, HALO_NOW);
     // On elsewhere: the breath, in the toll's colour.
-    map.addLayer({
-      id: `parish-halo-away-${size}`,
-      type: 'circle',
-      source: PARISH_SOURCE,
-      filter: ['all', ['!', HALO_IS_NOW], HALO_IS_AWAY, isBig],
-      paint: breathPaint(size, haloTollColor())
-    });
-    map.addLayer({
-      id: `parish-halo-toll-${size}`,
-      type: 'circle',
-      source: PARISH_SOURCE,
-      filter: ['all', ['!', HALO_IS_NOW], ['!', HALO_IS_AWAY], HALO_IS_TODAY, isBig],
-      paint: tollPaint(size)
-    });
+    addRingLayers(`parish-halo-away-${size}`, PARISH_SOURCE,
+      ['all', ['!', HALO_IS_NOW], HALO_IS_AWAY, isBig], size, haloTollColor());
+    addRingLayers(`parish-halo-toll-${size}`, PARISH_SOURCE,
+      ['all', ['!', HALO_IS_NOW], ['!', HALO_IS_AWAY], HALO_IS_TODAY, isBig], size, haloTollColor());
   }
   // The loop is started by updateMap, which follows every (re)build of these.
   haloLastFrame = 0;
 }
 
-function breathPaint(size, color) {
-  return {
-    'circle-radius': HALO_EDGE[size] + 6,
-    'circle-color': color,
-    'circle-opacity': 0.4,
-    'circle-blur': 0.55
-  };
+/**
+ * One halo as the toll draws it: a ring in its colour over the faintest fill,
+ * and a thin white ring just inside it, as a layer of its own on top. The
+ * breath (green, or the neutral "on elsewhere") is the same ring, swelling and
+ * fading a little; the toll spreads out of the dot. `before` places both.
+ */
+function addRingLayers(id, source, filter, size, color, before) {
+  map.addLayer({ id, type: 'circle', source, filter, paint: ringPaint(size, color) }, before);
+  map.addLayer({ id: `${id}-inner`, type: 'circle', source, filter, paint: ringPaint(size, HALO_INNER, true) }, before);
 }
 
-function tollPaint(size) {
+// No transitions: every frame sets these, and MapLibre's default 300ms ease
+// between paint values is what made the toll visibly shrink back into the dot
+// before each ring.
+const NO_EASE = { duration: 0, delay: 0 };
+function ringPaint(size, color, inner = false) {
   return {
     'circle-radius': HALO_EDGE[size] + 6,
-    'circle-color': haloTollColor(),
+    'circle-radius-transition': NO_EASE,
+    'circle-color': color,
     'circle-opacity': 0,
-    'circle-stroke-color': haloTollColor(),
-    'circle-stroke-width': 1.5,
-    'circle-stroke-opacity': 0
+    'circle-opacity-transition': NO_EASE,
+    'circle-stroke-color': color,
+    'circle-stroke-width': inner ? 1 : 1.5,
+    'circle-stroke-opacity': 0,
+    'circle-stroke-opacity-transition': NO_EASE
   };
 }
 
@@ -837,7 +862,8 @@ function haloFrame(t) {
   haloRaf = requestAnimationFrame(haloFrame);
 }
 
-// Every halo layer, by the marker it sits under and how it moves.
+// Every halo layer, by the marker it sits under and how it moves. Each has a
+// white `-inner` ring painted with it (addRingLayers).
 const HALO_LAYERS = [
   { id: 'parish-halo-now-dot', edge: HALO_EDGE.dot, move: 'breath' },
   { id: 'parish-halo-away-dot', edge: HALO_EDGE.dot, move: 'breath' },
@@ -851,21 +877,36 @@ const HALO_LAYERS = [
 
 /** One frame of every halo at time `t`; null paints them still. */
 function paintHalos(t) {
-  // The breath: 0 → 1 → 0, eased at both ends the way breathing is.
+  // The breath: 0 → 1 → 0, eased at both ends the way breathing is — a ring
+  // that swells a little and brightens a little, never leaving the dot.
   const breath = t == null ? 0.6 : (1 - Math.cos((2 * Math.PI * (t % HALO_NOW_MS)) / HALO_NOW_MS)) / 2;
-  // The toll: the ring's life from 0 to 1, then still until the next.
+  // The toll: the ring's life from 0 to 1, then still until the next. Nearly
+  // even speed outward (a gentle ease, not a spring), and a fade that holds
+  // the ring visible most of the way before letting it go.
   const life = t == null ? 0.35 : Math.min(1, (t % HALO_TOLL_MS) / HALO_RING_MS);
-  const spread = 1 - Math.pow(1 - life, 3);          // fast out of the dot, slowing as it goes
-  const fade = life >= 1 ? 0 : Math.pow(1 - life, 1.6);
+  const spread = 1 - Math.pow(1 - life, 1.35);
+  const fade = life >= 1 ? 0 : Math.cos(life * Math.PI / 2);
   for (const h of HALO_LAYERS) {
     if (!map.getLayer(h.id)) continue;
+    let r, fill, ring;
     if (h.move === 'breath') {
-      map.setPaintProperty(h.id, 'circle-radius', h.edge + 4 + 8 * breath);
-      map.setPaintProperty(h.id, 'circle-opacity', 0.16 + 0.5 * breath);
+      r = h.edge + 5 + 2.5 * breath;
+      fill = 0.1 + 0.12 * breath;
+      ring = 0.55 + 0.35 * breath;
     } else {
-      map.setPaintProperty(h.id, 'circle-radius', h.edge + 1 + h.ring * spread);
-      map.setPaintProperty(h.id, 'circle-opacity', 0.16 * fade);
-      map.setPaintProperty(h.id, 'circle-stroke-opacity', 0.8 * fade);
+      r = h.edge + 2 + h.ring * spread;
+      fill = 0.12 * fade;
+      ring = 0.85 * fade;
+    }
+    map.setPaintProperty(h.id, 'circle-radius', r);
+    map.setPaintProperty(h.id, 'circle-opacity', fill);
+    map.setPaintProperty(h.id, 'circle-stroke-opacity', ring);
+    const inner = `${h.id}-inner`;
+    if (map.getLayer(inner)) {
+      // Just inside the coloured ring: its stroke straddles r, and so does
+      // this one's, a ring's width further in.
+      map.setPaintProperty(inner, 'circle-radius', Math.max(0, r - 1.5));
+      map.setPaintProperty(inner, 'circle-stroke-opacity', ring * 0.9);
     }
   }
 }
@@ -894,20 +935,9 @@ function addVenueSourceAndLayers() {
   }
   // The halos under every marker, the squares over the dots, their names
   // under the parishes' — a parish's name wins a collision with a place's.
-  map.addLayer({
-    id: 'venue-halo-now',
-    type: 'circle',
-    source: VENUE_SOURCE,
-    filter: ['==', ['get', 'now'], true],
-    paint: breathPaint('venue', HALO_NOW)
-  }, 'parish-circle-shadow');
-  map.addLayer({
-    id: 'venue-halo-toll',
-    type: 'circle',
-    source: VENUE_SOURCE,
-    filter: ['all', ['!=', ['get', 'now'], true], ['==', ['get', 'today'], true]],
-    paint: tollPaint('venue')
-  }, 'parish-circle-shadow');
+  addRingLayers('venue-halo-now', VENUE_SOURCE, ['==', ['get', 'now'], true], 'venue', HALO_NOW, 'parish-circle-shadow');
+  addRingLayers('venue-halo-toll', VENUE_SOURCE,
+    ['all', ['!=', ['get', 'now'], true], ['==', ['get', 'today'], true]], 'venue', haloTollColor(), 'parish-circle-shadow');
   map.addLayer({
     id: 'venue-square',
     type: 'symbol',
@@ -973,6 +1003,50 @@ function venueSquareImage() {
   return { width: size, height: size, data, pixelRatio: ratio };
 }
 
+// ── A favourite's star ─────────────────────────────────────────────────
+const FAV_STAR_ICON = 'fav-star';
+const FAV_STAR_COLOR = '#f2b01e';
+
+function addFavStarImage() {
+  if (map.hasImage(FAV_STAR_ICON)) return;
+  const img = favStarImage();
+  map.addImage(FAV_STAR_ICON, img, { sdf: true, pixelRatio: img.pixelRatio });
+}
+
+/**
+ * A five-pointed star, as a signed distance field like the square above, so
+ * the halo rings it in the map's own white (or charcoal, in dark).
+ */
+function favStarImage() {
+  const ratio = 2, size = 18 * ratio, c = 9;        // 18 CSS px, room for the ring
+  const outer = 5.2, inner = 2.3;
+  const pts = [];
+  for (let k = 0; k < 10; k++) {
+    const r = k % 2 ? inner : outer;
+    const a = -Math.PI / 2 + k * Math.PI / 5;
+    pts.push([c + r * Math.cos(a), c + r * Math.sin(a)]);
+  }
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const qx = (x + 0.5) / ratio, qy = (y + 0.5) / ratio;
+      let d = Infinity, inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [ax, ay] = pts[j], [bx, by] = pts[i];
+        const ex = bx - ax, ey = by - ay;
+        const t = Math.max(0, Math.min(1, ((qx - ax) * ex + (qy - ay) * ey) / (ex * ex + ey * ey)));
+        d = Math.min(d, Math.hypot(qx - ax - t * ex, qy - ay - t * ey));
+        if ((ay > qy) !== (by > qy) && qx < ax + (qy - ay) * ex / ey) inside = !inside;
+      }
+      const sd = inside ? -d : d;
+      const i = (y * size + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = 255;
+      data[i + 3] = Math.round(255 * Math.min(1, Math.max(0, 0.75 - sd / 8)));
+    }
+  }
+  return { width: size, height: size, data, pixelRatio: ratio };
+}
+
 /** The squares the feed's events put on the map, each with its halo. */
 function venueFeatures(state) {
   const now = Date.now();
@@ -1029,7 +1103,11 @@ function onVenueClick(props) {
   if (!props || !props.parish_id) return;
   // Choosing parishes is about parishes: the square stands in for its host.
   if (st && st.selectionMode) { onParishClick(props.parish_id); return; }
-  if (window.openParishSheet) window.openParishSheet(props.parish_id, { focusEventId: props.event_id });
+  // The event, in a sheet of its own, and the map stays where it is: the
+  // square is already what the reader is looking at, and flying to the host
+  // parish took them away from it. Its parish button goes to the parish.
+  if (window.agoraOpenEventSheet) window.agoraOpenEventSheet(props.event_id);
+  else if (window.openParishSheet) window.openParishSheet(props.parish_id, { focusEventId: props.event_id });
 }
 
 // ── Sprite registration ────────────────────────────────────────────────
@@ -1294,7 +1372,7 @@ function updateMap(state, opts = {}) {
   // every parish is) even while a content filter is active. Only the English
   // filter still hard-prunes parishes off the map (a non-English parish
   // genuinely has no relevant content for the English-filter view).
-  const hardFilterOnEvents = state.filters.englishOnly;
+  const hardFilterOnEvents = !!state.filters.lang;
 
   const locFilter = (state.filters.location && window.AgoraLocations)
     ? window.AgoraLocations.resolveLocation(state.filters.location)
@@ -1349,7 +1427,8 @@ function updateMap(state, opts = {}) {
       active: activeSet.has(p.id),
       now: timeFlags.get(p.id) === 'now',
       away: timeFlags.get(p.id) === 'away',
-      today: timeFlags.get(p.id) === 'today'
+      today: timeFlags.get(p.id) === 'today',
+      fav: !!(window.agoraIsFavourite && window.agoraIsFavourite(p.id))
     };
     if (logoRegistered.has(p.id)) props.focus_icon_id = `focus_${p.id}`;
     features.push({

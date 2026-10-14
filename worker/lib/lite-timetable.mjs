@@ -86,7 +86,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   const f = {
     jurisdiction: route.jurisdiction, location: route.location,
     service: route.service, day: route.day, part: route.part,
-    englishOnly: route.englishOnly, englishStrict: route.englishStrict,
+    lang: route.lang, langStrict: route.langStrict,
     parishIds: named ? new Set(named.map(p => p.id)) : null,
   };
 
@@ -139,7 +139,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
     ...(named ? [named.map(parishSlug).join('+')] : []),
-    ...(route.englishOnly ? [urlState.englishSegment(route)] : []),
+    ...(route.lang ? [urlState.englishSegment(route)] : []),
   ];
   const canonicalPath = segs.length ? pathOf(segs) : '/services';
 
@@ -179,16 +179,17 @@ export function timetableHeading(m) {
   const r = m.route;
   const who = r.jurisdiction ? jurisLabel(r.jurisdiction) : 'Orthodox';
   const svc = r.service ? services.servicePlural(r.service) : null;
-  const full = r.englishOnly && r.englishStrict;
-  const noun = svc || (isNarrowed(r) || r.englishOnly ? 'services' : 'service times');
+  // English keeps its words ("fully-English"); another language is "Greek-only".
+  const full = r.lang && r.langStrict ? (/^english$/i.test(r.lang) ? 'fully-English' : `${r.lang}-only`) : '';
+  const noun = svc || (isNarrowed(r) || r.lang ? 'services' : 'service times');
   const day = r.day != null ? ` on ${services.dayName(r.day)}s` : '';
-  const lang = r.englishOnly && !full ? ' in English' : '';
+  const lang = r.lang && !full ? ` in ${r.lang}` : '';
   let where = m.loc ? ` in ${m.loc.label}` : '';
   if (m.named) {
     const names = m.named.map(p => p.name);
     where = ` at ${names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ')}`;
   }
-  return [who, full ? 'fully-English' : '', r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
+  return [who, full, r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;

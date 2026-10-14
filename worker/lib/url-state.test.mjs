@@ -37,7 +37,7 @@ test('app views are not parishes', () => {
   assert.equal(U.classifyPath('/greek/worship').worshipOnly, true);
   assert.equal(U.classifyPath('/worship/services').worshipOnly, false, 'services wins over worship too');
   const both = U.classifyPath('/social/worship');
-  assert.ok(!both.socialOnly && !both.worshipOnly, 'socials and services are complements: both is neither');
+  assert.deepEqual([both.kind, both.socialOnly, both.worshipOnly], ['services', false, true], 'one kind at a time: the later wins');
   assert.equal(U.pageKind(U.classifyPath('/worship')), null, 'the app answers it, as it does /social');
   assert.equal(U.classifyPath('/liturgy').service, 'liturgy');
   assert.equal(U.classifyPath('/next-tue', { today }).dateFocus, '2026-10-06');
@@ -97,4 +97,43 @@ test('a day focus pins only an event on that day', () => {
   assert.equal(U.firstEventOnDay(events, '2026-10-05', 'day', local), null, 'a quiet day pins nothing');
   assert.equal(U.firstEventOnDay(events, '2026-10-01', 'month', local), null, 'a month is not a day');
   assert.equal(U.firstEventOnDay([{ ...events[0], is_tombstone: 1 }], '2026-10-06', 'day', local), null);
+});
+
+test('the kind filter: Services and its three, Studies, Socials and its two', () => {
+  const k = (p) => { const r = U.classifyPath(p); return [r.kind, r.kindSub]; };
+  assert.deepEqual(k('/worship'), ['services', null]);
+  assert.deepEqual(k('/worship-liturgy'), ['services', 'liturgy']);
+  assert.deepEqual(k('/greek/worship-prayer'), ['services', 'prayer']);
+  assert.deepEqual(k('/worship-feast'), ['services', 'feast']);
+  assert.deepEqual(k('/studies'), ['studies', null]);
+  assert.deepEqual(k('/social'), ['socials', null]);
+  assert.deepEqual(k('/social-gatherings'), ['socials', 'social']);
+  assert.deepEqual(k('/social-youth'), ['socials', 'youth']);
+  assert.deepEqual(k('/'), [null, null]);
+  assert.deepEqual(k('/studies/services'), [null, null], 'the timetable wins');
+  for (const [seg, [kind, sub]] of Object.entries(U.KIND_SEGMENTS)) {
+    assert.equal(U.kindSegment(kind, sub), seg, 'every segment round-trips');
+  }
+  assert.equal(U.kindSegment(null), null);
+  for (const p of ['/studies', '/social-youth', '/this-week']) assert.equal(U.pageKind(U.classifyPath(p)), null, `${p} is the app's`);
+});
+
+test('a language filter is any language: English keeps its spellings, the rest are /in-<language>', () => {
+  const l = (p) => { const r = U.classifyPath(p); return [r.lang, r.langStrict, r.englishOnly]; };
+  assert.deepEqual(l('/en'), ['English', false, true]);
+  assert.deepEqual(l('/en-only'), ['English', true, true]);
+  assert.deepEqual(l('/in-greek'), ['Greek', false, false]);
+  assert.deepEqual(l('/in-church-slavonic-only'), ['Church Slavonic', true, false]);
+  assert.equal(U.englishSegment({ lang: 'English' }), 'en');
+  assert.equal(U.englishSegment({ lang: 'English', langStrict: true }), 'en-only');
+  assert.equal(U.englishSegment({ lang: 'Church Slavonic', langStrict: true }), 'in-church-slavonic-only');
+  assert.equal(U.englishSegment({ englishOnly: true, englishStrict: false }), 'en', 'the older names still mean English');
+  assert.equal(U.englishSegment({}), null);
+  assert.equal(U.pageKind(U.classifyPath('/sgr/in-greek')), null, 'a language beside a parish is the app\'s');
+});
+
+test('/this-week is the feed for the next seven days', () => {
+  assert.equal(U.classifyPath('/this-week').week, true);
+  assert.equal(U.classifyPath('/greek/this-week').jurisdiction, 'greek');
+  assert.equal(U.classifyPath('/next-week', { today: '2026-10-14' }).week, false, 'next-week is still a date');
 });

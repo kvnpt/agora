@@ -232,16 +232,34 @@ test('grapes gather only dots that would touch, and never close in', () => {
 
 // ── Halos ────────────────────────────────────────────────────────────────
 
-const HALOS = LAYERS.filter((l) => l.id.startsWith('parish-halo-') || l.id.startsWith('venue-halo-'));
+const ALL_HALOS = LAYERS.filter((l) => l.id.startsWith('parish-halo-') || l.id.startsWith('venue-halo-'));
+const HALOS = ALL_HALOS.filter((l) => !l.id.endsWith('-inner'));
 
 test('the halos paint under the dots, their shadow included', () => {
   assert.equal(HALOS.filter((l) => l.id.startsWith('parish-')).length, 6,
     'a green breath, a neutral breath and a toll for each size of marker');
   assert.equal(HALOS.filter((l) => l.id.startsWith('venue-')).length, 2,
     'a place\'s square has the green breath and the toll');
-  for (const l of HALOS) {
+  for (const l of ALL_HALOS) {
     assert.ok(order.indexOf(l.id) < order.indexOf('parish-circle-shadow'),
       `${l.id} paints over the dot's shadow, so over the jurisdiction colour`);
+  }
+});
+
+test('every halo is the toll\'s ring, with a thin white ring inside it, and nothing eases between frames', () => {
+  for (const l of HALOS) {
+    const inner = byId[`${l.id}-inner`];
+    assert.ok(inner, `${l.id} has no white inner ring`);
+    assert.ok(order.indexOf(inner.id) > order.indexOf(l.id), `${l.id}'s inner ring paints under it`);
+    assert.equal(inner.paint['circle-stroke-color'], '#ffffff');
+    assert.ok(inner.paint['circle-stroke-width'] < l.paint['circle-stroke-width'], 'the inner ring is the thinner');
+    assert.ok(l.paint['circle-stroke-width'] > 0, `${l.id} is not a ring`);
+    for (const x of [l, inner]) {
+      for (const prop of ['circle-radius', 'circle-opacity', 'circle-stroke-opacity']) {
+        assert.deepEqual(x.paint[`${prop}-transition`], { duration: 0, delay: 0 },
+          `${x.id} eases ${prop}, which is how the toll shrank back into the dot before each ring`);
+      }
+    }
   }
 });
 
@@ -288,10 +306,10 @@ test('one halo per marker: green, then the neutral breath, then the toll', () =>
     const counts = Object.fromEntries(Object.keys(flags).map((k) => [`${k}_count`, 1]));
     assert.deepEqual(drawn('big', { point_count: 3, ...counts }), want, `a grape counting ${JSON.stringify(counts)}`);
   }
-  // The neutral breath is the toll's colour, breathing: same colour, no ring.
+  // The neutral breath is the toll's ring in the toll's colour, breathing.
   const away = byId['parish-halo-away-dot'].paint, toll = byId['parish-halo-toll-dot'].paint;
   assert.equal(away['circle-color'], toll['circle-color'], 'the neutral breath is not the toll\'s colour');
-  assert.ok(!('circle-stroke-width' in away), 'the neutral breath has grown the toll\'s ring');
+  assert.equal(away['circle-stroke-width'], toll['circle-stroke-width'], 'the breath is not the toll\'s ring');
 });
 
 test('on now, later today in the parish\'s own zone, and nothing else', () => {
@@ -410,4 +428,25 @@ test('the square image is a square: solid inside, the edge at 0.75, clear in the
   // square is still inside where a circle would not be.
   assert.ok(alpha(c + 8, c + 8) > 191, 'the square has rounded into a circle');
   assert.equal(width, height);
+});
+
+test('the toll only ever grows, at a near-even pace, and is seen for most of its cycle', () => {
+  const at = (t) => {
+    PAINTED.length = 0;
+    vm.runInContext(`paintHalos(${t});`, CTX);
+    const get = (prop) => PAINTED.find((p) => p.id === 'parish-halo-toll-dot' && p.prop === prop).value;
+    return { r: get('circle-radius'), o: get('circle-stroke-opacity') };
+  };
+  const cycle = vm.runInContext('HALO_TOLL_MS', CTX);
+  const steps = 40;
+  const frames = Array.from({ length: steps }, (_, i) => at((i * cycle) / steps));
+  const visible = frames.filter((f) => f.o > 0.05);
+  for (let i = 1; i < visible.length; i++) {
+    assert.ok(visible[i].r >= visible[i - 1].r, `the ring shrinks while seen (frame ${i})`);
+  }
+  assert.ok(visible.length / steps >= 0.75, `seen for only ${Math.round((100 * visible.length) / steps)}% of the cycle`);
+  // Near-even: the first quarter of the ring's life covers well under half its spread.
+  const ring = vm.runInContext('HALO_RING_MS', CTX);
+  const r0 = at(0).r, rq = at(ring / 4).r, rEnd = at(ring - 1).r;
+  assert.ok((rq - r0) / (rEnd - r0) < 0.45, 'it still springs out of the dot');
 });

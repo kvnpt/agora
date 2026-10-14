@@ -82,7 +82,28 @@ every run reports errors:
   proxy, so **every glyph is missing**. A blank circular button in a screenshot
   is usually this, not your CSS.
 - `Bad response code: 404` from `pmtiles.js` — the basemap archive is not in
-  local R2, so the map is a grey rectangle. `docs/deploy.md` covers it.
+  local R2, so the map is a grey rectangle. `docs/deploy.md` covers it. Worse,
+  the style never finishes loading, so **none of the app's own layers draw** —
+  no dots, squares, stars or halos, and `state.viewportParishIds` stays null.
+  To check anything on the map, drop the archive's source from the base style
+  before the app asks for it:
+
+  ```js
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const orig = window.buildBaseStyle;
+      window.buildBaseStyle = async (...a) => {
+        const st = await orig(...a);
+        const bad = Object.keys(st.sources).filter(k => /pmtiles/.test(st.sources[k].url || ''));
+        bad.forEach(k => delete st.sources[k]);
+        st.layers = st.layers.filter(l => !bad.includes(l.source));
+        return st;
+      };
+    });
+  });
+  ```
+
+  Glyphs and sprites are served locally, so labels and icons still draw.
 
 ```js
 page.on('console', m => {

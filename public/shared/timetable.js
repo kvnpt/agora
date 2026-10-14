@@ -9,8 +9,9 @@
 // and both ask it.
 //
 // `f` is the filter set as the app keeps it in state.filters — jurisdiction,
-// location (a slug), service, day, part, englishOnly, englishStrict, and
-// parishIds (a Set) — and as the Worker builds it from the URL.
+// location (a slug), service, day, part, lang and langStrict (the older
+// englishOnly / englishStrict pair still means English), kind and kindSub,
+// and parishIds (a Set) — and as the Worker builds it from the URL.
 //
 // Same dual-mode wrapper as its neighbours.
 (function (root) {
@@ -28,6 +29,44 @@
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Does a language column's entry name the language asked for? Loosely, both
+   * ways round, so "English" finds "English (some)" and "Slavonic" finds
+   * "Church Slavonic".
+   */
+  function langIs(entry, want) {
+    const a = String(entry || '').trim().toLowerCase();
+    const b = String(want || '').trim().toLowerCase();
+    return !!a && !!b && (a.includes(b) || b.includes(a));
+  }
+
+  /** The language filter a set asks for, or null: { lang, strict }. */
+  function langFilterOf(f) {
+    if (!f) return null;
+    if (f.lang) return { lang: f.lang, strict: !!f.langStrict };
+    if (f.englishOnly) return { lang: 'English', strict: !!f.englishStrict };
+    return null;
+  }
+
+  /** Does a row's languages answer a language filter: any of them, or (strict) all? */
+  function langsMatch(langs, lf) {
+    if (!lf) return true;
+    if (!langs) return false;
+    return lf.strict ? langs.every(l => langIs(l, lf.lang)) : langs.some(l => langIs(l, lf.lang));
+  }
+
+  // What the feed calls a kind, of the seven event types (event-types.js),
+  // after vespers and matins have been read as prayer.
+  const DISPLAY_TYPE = { vespers: 'prayer', matins: 'prayer', festival: 'social', fundraiser: 'social' };
+  const KIND_TYPES = { services: ['liturgy', 'prayer', 'feast'], studies: ['talk'], socials: ['social', 'youth'] };
+  /** Is an event or a rule of the kind (and sub-kind) asked for? Any, with none asked. */
+  function kindMatches(row, f) {
+    if (!f || !f.kind) return true;
+    const t = DISPLAY_TYPE[row && row.event_type] || (row && row.event_type) || 'other';
+    if (f.kindSub) return t === f.kindSub;
+    return (KIND_TYPES[f.kind] || []).includes(t);
   }
 
   /** Is this parish one the link covers: its jurisdiction, its region, the parishes it names? */
@@ -63,13 +102,12 @@
     if (f.service && services && !services.serviceMatches(f.service, rule)) return false;
     if (f.day != null && rule.day_of_week !== f.day) return false;
     if (f.part && services && services.partOfDayOf(rule) !== f.part) return false;
-    if (f.englishOnly) {
+    if (!kindMatches(rule, f)) return false;
+    const lf = langFilterOf(f);
+    if (lf) {
       const langs = langsOf(rule.languages)
         || langsOf(parishLanguages !== undefined ? parishLanguages : rule.parish_languages);
-      if (!langs) return false;
-      return f.englishStrict
-        ? langs.every(l => /english/i.test(l))
-        : langs.some(l => /english/i.test(l));
+      return langsMatch(langs, lf);
     }
     return true;
   }
@@ -83,10 +121,10 @@
    * fell out at ruleMatches. A jurisdiction or region page still counts them.
    */
   function narrowsRules(f) {
-    return !!(f.service || f.day != null || f.part || f.englishOnly);
+    return !!(f.service || f.day != null || f.part || langFilterOf(f) || f.kind);
   }
 
-  const api = { langsOf, parishInScope, ruleMatches, narrowsRules };
+  const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, parishInScope, ruleMatches, narrowsRules };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraTimetable = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

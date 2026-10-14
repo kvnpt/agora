@@ -34,7 +34,9 @@
   const ENGLISH_ONLY_SEGMENTS = ['en-only', 'english-only', 'full-english'];
 
   // Path segments detectUrlState gives a meaning of their own.
-  const PATH_KEYWORDS = ['social', 'worship', 'services', ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
+  const PATH_KEYWORDS = ['social', 'social-gatherings', 'social-youth', 'worship', 'worship-liturgy',
+    'worship-prayer', 'worship-feast', 'studies', 'this-week', 'services',
+    ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
 
   // The second segment of a payment deep link, /<acronym>/donate. Reserved as
   // a first segment too, because /donate/donate could not be read either way.
@@ -111,6 +113,9 @@
     }
     if (/^\d{4}-\d{2}(-\d{2})?$/.test(slug)) {
       return 'An acronym cannot look like a date — /2026-07 winds the feed on to July.';
+    }
+    if (/^in-./.test(slug)) {
+      return 'An acronym cannot start with "in-" — /in-greek is the feed in Greek.';
     }
     if (RESERVED_SLUGS.has(slug)) {
       return `"${slug}" is a reserved link — it already means a jurisdiction, a region or a page, so /${slug} would never reach this parish.`;
