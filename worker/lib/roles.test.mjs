@@ -1,4 +1,4 @@
-// The role model, and the bootstrap rule that makes it safe to deploy.
+// The role model, and the bootstrap rule: dev-only, and nobody in production.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,20 +15,45 @@ const row = (email, role, parishIds) => ({
 
 // ── the bootstrap rule ──
 
-test('an empty table makes everybody an owner, and says that it did', async () => {
-  // The deploy that adds this must not lock the existing admin out of their
-  // own panel. Before roles existed, everyone through Access was effectively
-  // an owner — an empty table reproduces exactly that.
-  const r = await resolveRole(db([]), 'anyone@example.org');
-  assert.equal(r.role, 'owner');
-  assert.equal(r.bootstrap, true);
+test('in production an empty table grants nothing, to anybody', async () => {
+  // Access lets in everybody with an email address (Include: Everyone, a
+  // one-time PIN). An emptied table must lock them all out, not make them all
+  // owners — one row of SQL recovers from the first, nothing undoes the second.
+  for (const who of ['anyone@example.org', 'owner@example.org', null, '']) {
+    const r = await resolveRole(db([]), who);
+    assert.equal(r.role, null, `${JSON.stringify(who)} got in`);
+    assert.equal(r.bootstrap, false);
+    assert.equal(r.empty, true);
+  }
 });
 
-test('a missing table reads as empty rather than throwing', async () => {
-  // The code can deploy before the schema change lands, in either order.
-  const r = await resolveRole(db(new Error('no such table: admin_roles')), 'a@b.c');
+test('in production a table that cannot be read grants nothing either', async () => {
+  // A D1 error is not permission. It used to read as "empty", and empty used
+  // to read as "owner".
+  for (const err of [new Error('no such table: admin_roles'), new Error('D1_ERROR: network connection lost')]) {
+    const r = await resolveRole(db(err), 'a@b.c');
+    assert.equal(r.role, null);
+    assert.equal(r.bootstrap, false);
+  }
+});
+
+test('under wrangler dev an empty table makes the caller an owner, and says that it did', async () => {
+  // A fresh local database needs somebody who can open People and add the
+  // first row. Only AGORA_DEV_ADMIN turns this on (routes/admin.mjs roleOf).
+  const r = await resolveRole(db([]), 'dev', { bootstrap: true });
   assert.equal(r.role, 'owner');
   assert.equal(r.bootstrap, true);
+  assert.equal(r.empty, true);
+  const missing = await resolveRole(db(new Error('no such table: admin_roles')), 'dev', { bootstrap: true });
+  assert.equal(missing.role, 'owner');
+});
+
+test('the bootstrap switch does nothing once the table has rows', async () => {
+  const rows = [row('owner@example.org', 'owner')];
+  const stranger = await resolveRole(db(rows), 'dev', { bootstrap: true });
+  assert.equal(stranger.role, null);
+  assert.equal(stranger.bootstrap, false);
+  assert.equal(stranger.empty, false);
 });
 
 test('the first row flips the rule: absence stops meaning owner', async () => {

@@ -183,7 +183,8 @@ window.agoraAdminMay(cap, pid) // the same two questions the Worker asks
 
 `AGORA_DEV_ADMIN=true` makes `adminIdentity()` return `'dev'`, so the role is
 whatever `admin_roles` says for `'dev'` — and an **empty table means owner**
-(the bootstrap rule). Switch roles between reloads:
+(the bootstrap rule, which only `AGORA_DEV_ADMIN` turns on; in production an
+empty table is nobody). Switch roles between reloads:
 
 ```bash
 D1="npx wrangler d1 execute agora --local --command"

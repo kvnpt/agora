@@ -102,7 +102,8 @@ for them, are in the doc it links to — read that before changing the area.
 
 **People** — [docs/people-and-access.md](docs/people-and-access.md)
 - Access says who you are; `admin_roles` says what you may do. Routes name a
-  capability, never a role. An EMPTY table makes everyone an owner.
+  capability, never a role. An EMPTY table is nobody in production (an owner
+  only under `wrangler dev`); the first owner is one row of SQL.
 - Admin fails closed. `AGORA_DEV_ADMIN` is for `wrangler dev` only.
 - A refusal with somewhere to go becomes an ask; "Suggest edits" becomes a
   suggestion to whoever may edit the parish, and a claim only when its box is
