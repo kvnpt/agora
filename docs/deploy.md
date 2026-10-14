@@ -221,7 +221,8 @@ missing (Step 4).
 In **Zero Trust → Access → Applications → Add an application → Self-hosted**:
 
 - Application domain `orthodoxy.au`
-- **Three paths: `/admin`, `/admin.html`, and `/api/admin/*`**
+- **Three paths: `/admin`, `/admin.html`, and `/api/admin/*`** — on
+  `orthodoxy.au` and again on `*.orthodoxy.au` (six destinations)
 - A policy allowing your own email to start with. Once you are listed under
   **People** in the panel, switch it to **Include: Everyone** with the
   **One-time PIN** login method, so People is the only list of who may edit —
@@ -240,6 +241,13 @@ application written against `admin.html` alone protects the doormat and not the
 door — you get signed in on the way through `/admin.html`, but arriving at
 `/admin` directly skips Access entirely and the page dead-ends on a `fetch` it
 cannot authenticate. Both paths, and the API.
+
+**And cover the subdomains.** The zone routes `*.orthodoxy.au/*` to the same
+Worker, so `greek.orthodoxy.au/admin` is the admin page too — and with Access
+on `orthodoxy.au` alone it loaded there for anyone. The Worker now sends an
+admin path on any subdomain to `orthodoxy.au` with a 307
+(`worker/lib/admin-host.mjs`), and Access covers the same three paths on
+`*.orthodoxy.au` so the redirect is not the only thing standing there.
 
 Then the Worker's secrets. **Put the values in the Secrets Store and leave the
 bindings to `wrangler.toml`** — do not add them in the dashboard.

@@ -12,6 +12,10 @@ compatibility_flags = ["nodejs_compat"]
 # verifies the Access JWT's signature and audience itself, on every hostname),
 # so this closes a door rather than a hole. Preview URLs are on the same
 # subdomain and go with it.
+#
+# The routes' *.orthodoxy.au/* wildcard is the same door on every subdomain.
+# worker/lib/admin-host.mjs sends an admin path there to orthodoxy.au, and the
+# Access application covers *.orthodoxy.au's admin paths as well.
 workers_dev = false
 preview_urls = false
 
