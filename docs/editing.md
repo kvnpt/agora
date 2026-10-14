@@ -101,7 +101,10 @@ parish's DETAILS: **Edit details** opens them in the **edit dialog**
 name and every field the sheet shows, with Save, Cancel and Delete parish —
 and the sheet underneath stays as a visitor reads it. The TIMETABLE has no
 mode: for whoever may change it (`mayEditTimetable`, the capability per
-parish), its head carries a green **+** that opens **Add schedule**, and each
+parish), its head carries a green **+** that opens **Add schedule** — every
+field a rule has, the poster included (`ruleFieldsHTML`, the same form the
+pencil opens; times from quarter-hours or typed, `public/shared/time-field.js`,
+and dates from the feed's own month grid, never the system pickers) — and each
 rule's row a small pencil at its right edge, always there, that opens that
 rule's form — on the sheet and on the main services panel alike. The row
 itself still focuses the rule, for an admin as for anybody. It had a mode,
@@ -354,7 +357,9 @@ later day of the parish's calendar and lasts at least twelve hours
 (`isMultiDay`), says its span on the card ("Fri 13 – Sun 15 Nov, until 4 pm"),
 and keeps it in the feed after its first day: the bundle and the projection
 take a one-off whose `end_utc` reaches into the window, and the stream puts one
-that began earlier and is still running under **Happening now**. The edit
+that began earlier and is still running under **Happening now**. It shows
+under every later day it covers too, as a card of its own (`multiDayContinuations`:
+"all day", or "until 2pm" on its last, opening the same event). The edit
 dialog has the same Date / Starts / Ends / Multi-day / Last day.
 
 **A combined event says where it is.** At a parish other than its host — that

@@ -223,6 +223,10 @@
             aria-label="Toggle multi-select" aria-pressed="false">
       <img src="https://api.iconify.design/ph:list-checks.svg" alt="">
     </button>
+    <!-- Clear all, whenever anything narrows the feed (syncClearFilters). -->
+    <button class="parish-clear-all" id="btn-clear-filters" type="button" hidden>
+      <span aria-hidden="true">&times;</span>Clear all
+    </button>
     <div class="parish-filter-row" id="parish-filter-row">
       <div class="parish-pills-list" id="parish-pills-list"></div>
     </div>
@@ -318,6 +322,12 @@
         <button class="mode-bar-pill" id="btn-services" type="button" role="checkbox" aria-checked="false">
           <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:church.svg" alt="">
           <span class="mode-bar-pill-label">Schedules</span>
+        </button>
+        <!-- Services: the feed's liturgies, prayer services and feasts — the
+             complement of Socials (/worship; Schedules is the timetable). -->
+        <button class="mode-bar-pill" id="btn-worship" type="button" role="checkbox" aria-checked="false">
+          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:hands-praying.svg" alt="">
+          <span class="mode-bar-pill-label">Services</span>
         </button>
         <button class="mode-bar-pill" id="btn-social" type="button" role="checkbox" aria-checked="false">
           <img class="mode-bar-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
@@ -420,6 +430,7 @@
 
   <!-- Fullscreen poster lightbox -->
   <div id="poster-fullscreen" class="poster-fullscreen hidden">
+    <button id="poster-close" class="poster-close" type="button" aria-label="Close">&times;</button>
     <img id="poster-fullscreen-img" src="" alt="Event poster">
     <a id="poster-download" class="poster-download" download aria-label="Download poster">
       <img src="https://api.iconify.design/ph:download-simple-bold.svg" alt="" class="poster-download-icon">
@@ -479,6 +490,8 @@
        a card shows, and the SSE parser its poster reader streams through. -->
   <script src="/shared/event-types.js"></script>
   <script src="/shared/kind-picker.js"></script>
+  <script src="/shared/time-field.js"></script>
+  <script src="/shared/suggest-dialog.js"></script>
   <script src="/shared/event-checks.js"></script>
   <script src="/shared/sse.js"></script>
   <script src="/shared/signs.js"></script>

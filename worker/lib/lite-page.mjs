@@ -180,7 +180,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   const rules = [...rows.schedules]
     .filter(r => r.parish_id === parish.id && (!r.effective_to || r.effective_to >= today))
     .map(r => ({ ...r, _today: today }))
-    .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time)));
+    .sort(weekFrom(today));
   // The timetable /services shows: the rules the link's filters name. A card
   // keeps the whole timetable under its list, as it always has — there it is
   // the parish's times, not the answer to the link.
@@ -226,9 +226,23 @@ const JURIS_LABEL = {
 };
 export const jurisLabel = (j) => JURIS_LABEL[j] || 'Orthodox';
 
-/** timetableLabel in app.js: "Antiochian timetable" over a jurisdiction's box of rules. */
+/**
+ * timetableLabel in app.js: "Russian Archdiocese" over a jurisdiction's box of
+ * parishes on a timetable page. A parish's own card says "Timetable".
+ */
 export const timetableLabel = (j) => (j && j !== 'other' && JURIS_LABEL[j]
-  ? `${j.charAt(0).toUpperCase()}${j.slice(1)} timetable` : 'Timetable');
+  ? `${j.charAt(0).toUpperCase()}${j.slice(1)} Archdiocese` : 'Other parishes');
+
+/**
+ * parishAvatarParts in app.js: the logo, or the acronym in `ink` on white
+ * (the first letter of the name where there is no acronym). `cls` is the
+ * avatar's own class; `style` anything else it carries.
+ */
+export function avatarHTML(p, cls, ink, style = '') {
+  if (p.logo_path) return `<div class="${cls}"${style ? ` style="${style}"` : ''}><img src="${esc(p.logo_path)}" alt=""></div>`;
+  const text = String(p.acronym || (p.name || p.full_name || '?').trim()[0]).toUpperCase();
+  return `<div class="${cls} avatar-acronym" style="--avatar-ink:${ink};${style}"><span class="avatar-acronym-text" data-len="${Math.min(text.length, 5)}">${esc(text)}</span></div>`;
+}
 
 /** '10:00' → '10am', '18:30' → '6:30pm'. */
 export function time12(hhmm) {
@@ -525,11 +539,10 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
           <div class="event-title-row">
             <span class="event-time">${eventTimeHTML(e._local.time)}</span>
             ${dot}
-            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${atVenue}${badgesHTML(e)}<span class="event-card-chev"></span></span></div>
+            <div class="event-title-block"><span class="event-title">${esc(e.title)}${at}${atVenue}${badgesHTML(e)}<span class="event-card-chev"></span></span>${e.feast ? `<span class="event-feast-row feast-line"><span class="feast-of">of</span> ${esc(e.feast)}</span>` : ''}</div>
           </div>
           ${parishRow}
           ${span ? `<div class="event-span-row">${esc(span)}</div>` : ''}
-          ${e.feast ? `<div class="event-feast-row">✛ ${esc(e.feast)}</div>` : ''}
           ${e.break_note ? `<div class="event-break-row">${esc(e.break_note)}</div>` : ''}
         </summary>
         <div class="lc-ev-body">${eventDetailsHTML(e, m)}
@@ -620,13 +633,25 @@ function listHTML(m) {
 }
 
 /** renderScheduleDaysHTML's rows, read-only: a row opens that rule's own card. */
+/**
+ * Day, then time, the week starting on `today` (the parish's 'YYYY-MM-DD') —
+ * the order the app's timetable reads in (renderScheduleDaysHTML).
+ */
+export function weekFrom(today) {
+  const t = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const from = (d) => (d - t + 7) % 7;
+  return (a, b) => from(a.day_of_week) - from(b.day_of_week)
+    || String(a.start_time).localeCompare(String(b.start_time));
+}
+
 export function scheduleRowsHTML(rules, slug, now, venues = {}) {
   let html = '';
   let dow = null;
   for (const r of rules) {
     if (r.day_of_week !== dow) {
       dow = r.day_of_week;
-      html += `<div class="schedule-day">${esc(services.DAY_NAMES[dow])}</div>`;
+      const isToday = r._today && new Date(`${r._today}T00:00:00Z`).getUTCDay() === dow;
+      html += `<div class="schedule-day">${esc(services.DAY_NAMES[dow])}${isToday ? '<span class="schedule-day-today">today</span>' : ''}</div>`;
     }
     const svc = services.serviceOf(r);
     const href = `/${slug}/${services.daySlug(dow)}${svc ? `/${svc}` : ''}`;
@@ -660,14 +685,11 @@ function whereRowHTML(r, venues) {
 /** parishTimetableHTML, read-only: the framed box the parish card shows, above its events. */
 function timetableHTML(m, rules, empty) {
   const p = m.parish;
-  const initial = (p.name || p.full_name || '?').trim()[0].toUpperCase();
-  const avatar = p.logo_path
-    ? `<div class="parish-schedule-avatar"><img src="${esc(p.logo_path)}" alt=""></div>`
-    : `<div class="parish-schedule-avatar" style="background:var(--juris)">${esc(initial)}</div>`;
+  const avatar = avatarHTML(p, 'parish-schedule-avatar', 'var(--juris)');
   return `
   <section class="lc-times ps-section ps-sched-section" aria-labelledby="lt-h">
     <div class="jurisdiction-box" style="--juris-color:var(--juris)">
-      <h2 class="section-header jurisdiction-header" id="lt-h">${esc(timetableLabel(p.jurisdiction))}</h2>
+      <h2 class="section-header jurisdiction-header" id="lt-h">Timetable</h2>
       <div class="parish-schedule ps-timetable">
         <div class="parish-schedule-head">${avatar}<div class="parish-schedule-name">${esc(p.name || p.full_name)}</div></div>
         ${rules.length ? scheduleRowsHTML(rules, m.slug, m.now, m.venues) : `<div class="ps-sched-empty">${esc(empty)}</div>`}
@@ -688,7 +710,7 @@ function bannerHTML(text, id = 'll-h') {
  * nofollow: it leads to a sign-in.
  */
 function contributeHTML(m) {
-  return `<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="/admin?suggest=${esc(encodeURIComponent(m.parish.id))}" rel="nofollow">${glyph('ph:note-pencil')}Suggest edits</a>`;
+  return `<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="/admin?suggest=${esc(encodeURIComponent(m.parish.id))}" data-parish-name="${esc(m.parish.full_name || m.parish.name || '')}" rel="nofollow">${glyph('ph:note-pencil')}Suggest edits</a>`;
 }
 
 /** The info section's copy chips — the app's ps-info-copy. lite.js does the copying. */
@@ -777,10 +799,7 @@ function bodyHTML(m) {
 export function renderLitePage(m) {
   const p = m.parish;
   const meta = liteMeta(m);
-  const initial = (p.name || p.full_name || '?').trim()[0].toUpperCase();
-  const avatar = p.logo_path
-    ? `<div class="ps-avatar" style="--parish-glow:color-mix(in srgb,var(--parish) 45%,transparent)"><img src="${esc(p.logo_path)}" alt=""></div>`
-    : `<div class="ps-avatar" style="background:var(--parish);--parish-glow:color-mix(in srgb,var(--parish) 45%,transparent)">${esc(initial)}</div>`;
+  const avatar = avatarHTML(p, 'ps-avatar', 'var(--parish)', '--parish-glow:color-mix(in srgb,var(--parish) 45%,transparent)');
   const website = p.website ? p.website.replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
 
   return liteDocument({
@@ -853,6 +872,7 @@ ${heroHTML(mapHref)}
 <a class="lite-close" href="/" aria-label="Close — to the map">&times;</a>${main}
 </main>
 <script src="/lite.js" defer></script>
+<script src="/shared/suggest-dialog.js" defer></script>
 </body>
 </html>`;
 }
@@ -933,7 +953,7 @@ details.lc-ev.past{opacity:.55}
 .tt-head h1{margin:0;font-size:21px;font-weight:700;line-height:1.2}
 .tt-head p{margin:4px 0 0;color:var(--text-secondary);font-size:13px}
 .tt-region>.month-header{margin-top:6px}
-.tt-parish .parish-schedule-avatar{background:var(--pc)}
+.tt-parish .parish-schedule-avatar:not(.avatar-acronym){background:var(--pc)}
 .tt-parish a.parish-schedule-head{color:inherit;text-decoration:none}
 .tt-addr{display:block;margin-top:1px;font-size:12px;font-weight:400;color:var(--text-secondary)}
 .tt-more{display:block;margin:16px;padding:12px 14px;border-radius:12px;background:var(--surface-2);color:var(--text) !important;font-size:14px;font-weight:600;text-decoration:none}

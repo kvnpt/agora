@@ -222,6 +222,14 @@ test('the stack a visitor gets is the clustered one', () => {
   assert.ok(SOURCES.parishes.clusterRadius > 0, 'clustering is on with no radius to cluster by');
 });
 
+test('grapes gather only dots that would touch, and never close in', () => {
+  // A grape where four churches a street apart should be four dots was the
+  // complaint: 38px and clustering up to MapLibre's default zoom 14.
+  assert.ok(SOURCES.parishes.clusterRadius <= 24, 'the radius gathers parishes a gap apart again');
+  assert.ok(SOURCES.parishes.clusterMaxZoom != null && SOURCES.parishes.clusterMaxZoom <= 11,
+    'grapes form at suburb zoom again (no clusterMaxZoom means 14)');
+});
+
 // ── Halos ────────────────────────────────────────────────────────────────
 
 const HALOS = LAYERS.filter((l) => l.id.startsWith('parish-halo-') || l.id.startsWith('venue-halo-'));

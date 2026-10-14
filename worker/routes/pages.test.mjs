@@ -114,7 +114,7 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   assert.match(html, /<a class="lc-app" href="\/sgr\?app">/, 'the way into the app with this card open');
   assert.match(html, /<details class="lc-ev/, 'the occurrences open without JavaScript');
   // The timetable's box is the timetable; the list under it is what it projects.
-  assert.match(html, /<h2 class="section-header jurisdiction-header" id="lt-h">Antiochian timetable<\/h2>/);
+  assert.match(html, /<h2 class="section-header jurisdiction-header" id="lt-h">Timetable<\/h2>/);
   assert.match(html, /<h2 class="section-header feed-header" id="ll-h"[^>]*>Coming up<\/h2>/);
 });
 
@@ -308,10 +308,12 @@ test('the lite card offers "Suggest edits" under its source line, not under the 
   const { get } = fresh();
   for (const path of ['/sgr', '/sgr/services']) {
     const { html } = await get(path);
-    const button = 'href="/admin?suggest=antiochian-stgeorge-redfern" rel="nofollow">';
+    const button = 'href="/admin?suggest=antiochian-stgeorge-redfern" data-parish-name="St George Antiochian Orthodox Cathedral" rel="nofollow">';
     assert.equal(html.split(button).length - 1, 1, `${path}: once`);
-    assert.match(html, /<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="\/admin\?suggest=antiochian-stgeorge-redfern" rel="nofollow"><span class="ps-btn-glyph"[^>]*><\/span>Suggest edits<\/a>/,
+    assert.match(html, /<a class="ps-btn ps-btn-ghost ps-contribute lc-contrib" href="\/admin\?suggest=antiochian-stgeorge-redfern" data-parish-name="[^"]+" rel="nofollow"><span class="ps-btn-glyph"[^>]*><\/span>Suggest edits<\/a>/,
       `${path}: the app's button`);
+    // It asks what should change before the sign-in (public/shared/suggest-dialog.js).
+    assert.match(html, /<script src="\/shared\/suggest-dialog\.js" defer><\/script>/, `${path}: the dialog comes with it`);
     const info = html.slice(html.indexOf('<section class="ps-section lc-info">'), html.indexOf('</section>', html.indexOf('<section class="ps-section lc-info">')));
     assert.ok(info.includes(button), `${path}: in the parish's details`);
     assert.ok(info.indexOf(button) < info.indexOf('lc-actions'), `${path}: above the parish's own buttons`);
@@ -343,7 +345,7 @@ test('/services is every parish timetable, by state then jurisdiction, alphabeti
   assert.match(html, /<h1>Orthodox service times<\/h1>/);
   assert.deepEqual(regions(html), ['New South Wales', 'Queensland']);
   const nsw = between(html, 'aria-label="New South Wales"', 'aria-label="Queensland"');
-  assert.match(nsw, /<div class="jurisdiction-box tt-juris-box"[^>]*>\s*<div class="section-header jurisdiction-header">Antiochian timetable<\/div>/,
+  assert.match(nsw, /<div class="jurisdiction-box tt-juris-box"[^>]*>\s*<div class="section-header jurisdiction-header">Antiochian Archdiocese<\/div>/,
     "each jurisdiction in the app's framed box, named for what it is");
   const listed = names(nsw);
   assert.deepEqual(listed, [...listed].sort((a, b) => a.localeCompare(b)), 'parishes alphabetical');
@@ -500,4 +502,20 @@ test('an event and a rule held at another parish, or a place, say where on the c
   const place = (await get(`/${away}`)).html;
   assert.ok(place.includes('<span class="event-venue"> @ Antiochian Village</span>'), 'a place is not named by its first words');
   assert.ok(place.includes('<p class="lf-where">Antiochian Village, Kangaroo Valley</p>'));
+});
+
+// ── the timetable starts today; a parish with no logo wears its acronym ──
+
+test('a timetable reads from today round the week, and a parish with no logo shows its acronym', async () => {
+  const { weekFrom, avatarHTML, timetableLabel } = await import('../lib/lite-page.mjs');
+  const rules = [[0, '09:00'], [3, '18:00'], [6, '17:00'], [3, '07:00'], [1, '10:00']]
+    .map(([day_of_week, start_time]) => ({ day_of_week, start_time }));
+  const wed = '2026-10-14';   // a Wednesday
+  assert.deepEqual([...rules].sort(weekFrom(wed)).map(r => `${r.day_of_week} ${r.start_time}`),
+    ['3 07:00', '3 18:00', '6 17:00', '0 09:00', '1 10:00'], 'Wednesday first, then the week as it comes');
+  const a = avatarHTML({ acronym: 'smg', name: 'Sts Michael & Gabriel' }, 'ps-avatar', 'var(--parish)');
+  assert.match(a, /class="ps-avatar avatar-acronym" style="--avatar-ink:var\(--parish\);"/);
+  assert.match(a, /data-len="3">SMG</);
+  assert.match(avatarHTML({ logo_path: '/logos/x.png', acronym: 'SMG' }, 'ps-avatar', 'x'), /<img src="\/logos\/x\.png"/);
+  assert.equal(timetableLabel('russian'), 'Russian Archdiocese');
 });
