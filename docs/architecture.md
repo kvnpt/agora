@@ -79,6 +79,39 @@ disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` 
 a parish, the acronym resolves last, and reserving it would not raise a clash but
 silently take that parish's link away.
 
+**`/this-week` is the next seven days**, from today. It is the middle of the
+toolbar's When control — Today, This week, then a date from its calendar, which
+takes This week's place — and, like a date, it is shared by the feed and the
+parish card. A date segment and `/this-week` do not stand together: picking a
+date ends the week.
+
+**What kind of event, and in what language, are segments too.** `/worship` is
+Services (liturgy, prayer, feast — `/services` was already the timetable), with
+one of them as `/worship-liturgy`, `/worship-prayer` or `/worship-feast`;
+`/studies` is talks; `/social` is socials and youth, `/social-gatherings` or
+`/social-youth` one of the two. One kind at a time: a later kind segment
+replaces an earlier one, and the timetable wins over all of them. A language is
+`/in-greek`, or `/in-greek-only` for nothing but Greek; English keeps `/en` and
+`/en-only`. An acronym cannot start `in-` (`reservedSlugReason`). The kind and
+the language narrow the timetable too — `kindMatches` and `langsMatch` in
+`public/shared/timetable.js`, read by the app and the timetable pages alike.
+`KIND_SEGMENTS` in `url-state.js` is the table.
+
+**One set of controls for both toolbars.** The main sheet's toolbar and the
+parish card's are painted by the same builders (`renderFilterSlots` in
+`app.js`) over two filter sets: `state.filters` for the feed,
+`state.parishFilters` for the card, which narrows the card's timetable as well
+as its events. The When control is the one they share, because the date is.
+
+**What this browser keeps** — favourite parishes, bookmarked events, saved
+filters — lives in `localStorage` and nowhere else. Nobody signs in to read
+the app, so there is no account to hang them on, and none of it is ever sent:
+a saved filter is a link, and a bookmark is an id. A bookmark is an event (a
+stored one, or one date of a rule by its synthetic id) or a whole rule, which
+covers every date of it. Bookmarks are a toolbar filter but not a segment: a
+link to "my bookmarks" would mean nothing in another browser. Every read and
+write survives storage being refused; the controls come back empty.
+
 **`/morning` and `/evening` split the day at 2pm**, on the parish's own clock — the
 line the feed already drew its Morning and Evening cards on, so a link and the
 cards it lands on agree. `partOfDayOf` in `public/shared/services.js` is the one
@@ -127,10 +160,14 @@ had gone stale under 49 Macedonian and Romanian parishes when /admin repainted
 their jurisdictions, and the lite pages, the last thing still drawing it, showed
 those parishes in the old colours.
 
-**The map marks time with halos, not colour.** Three of them, under the dot. A
-parish with a service on now breathes green; one with something still to come
-today, in its own zone, tolls — a neutral ring that spreads out of the dot and
-fades; one whose own event is on now **somewhere else** breathes in the toll's
+**The map marks time with halos, not colour.** Three of them, under the dot,
+all one design: a ring with a thin white ring just inside it. A parish with a
+service on now has a green one that breathes — a little bigger and smaller, a
+little brighter and fainter; one with something still to come today, in its own
+zone, tolls — a neutral ring that spreads out of the dot at a steady pace and
+fades, without first shrinking (the paint transitions are off — `NO_EASE` —
+because MapLibre's default 300 ms eased every frame's step back towards the
+last); one whose own event is on now **somewhere else** breathes in the toll's
 neutral colour, because the parish is running something and the green belongs
 where the people are. An event held at another parish (`location_parish_id`)
 lights both: both toll on the day, and once it starts the venue breathes green
@@ -147,10 +184,17 @@ the first marker on the map that is not a parish: a square in its host's
 jurisdiction colour, labelled with the event, with the venue's halo under it.
 One square per place per host (a weekly class at one hall is one square), ended
 events draw none, and a tap opens the soonest of them — the one on, if one is —
-focused in the sheet of the parish running it. The square is one SDF image built
+in the event sheet, expanded, without moving the map: the square is already
+where the reader is looking. The event's parish button hands over to that
+parish's card with the event pinned at its head, collapsed; tapping it there
+opens the event sheet again and puts the card away. The square is one SDF image built
 from raw pixels, so `icon-color` paints it any colour and the vm test can build
 it — `map.js`, "Places". It is also where a group with events and no church of
 its own will sit on the map.
+
+**A favourite wears a star**, gold, at its dot's shoulder (`parish-fav-star`,
+another SDF image) and before its acronym in the pill row. The star is this
+browser's, so it is a feature property rebuilt with the rest, not data.
 
 **The Cron Trigger is a heartbeat, not a schedule.** A trigger is fixed at deploy
 time and a Worker cannot change its own, so `wrangler.toml` fires hourly and

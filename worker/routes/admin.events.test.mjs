@@ -142,6 +142,22 @@ test('an editor adds a one-off, and it is stored as a hand-entered instant', asy
   assert.deepEqual(r.body.replaces, []);
 });
 
+test('an Other is parish-only unless the body says otherwise; a kind is not', async () => {
+  const { raw, call } = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(raw);
+  const make = async (extra) => {
+    const r = await call('POST', '/api/admin/events', {
+      parish_id: parishId, title: 'Council meeting', start_utc: '2026-09-15T09:00:00.000Z', ...extra,
+    });
+    assert.equal(r.status, 201, r.body && r.body.error);
+    return raw.prepare('SELECT parish_scoped FROM events WHERE id = ?').get(r.body.id).parish_scoped;
+  };
+  assert.equal(await make({ event_type: 'other' }), 1, 'an Other starts parish-only');
+  assert.equal(await make({}), 1, 'no kind is an Other');
+  assert.equal(await make({ event_type: 'other', parish_scoped: false }), 0, 'unticked is unticked');
+  assert.equal(await make({ event_type: 'social' }), 0, 'a social is for everyone');
+});
+
 test('the required three are required, and a start that is not an instant is refused', async () => {
   const { raw, call } = fresh({ role: 'editor' });
   const [parishId] = twoParishes(raw);

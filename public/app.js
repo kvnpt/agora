@@ -97,8 +97,10 @@ const state = {
   _parishEventsShowCount: SHOW_COUNT_STEP,
   // `location` is a region slug from /shared/locations.js ('qld', 'syd', 'nz'),
   // not the viewer's own position — that is locationActive/userLat below.
-  filters: { jurisdiction: null, location: null, service: null, day: null, part: null, type: '', parishIds: null, socialOnly: false, worshipOnly: false, englishOnly: false, englishStrict: false, showAllParishes: null, multiParish: false },
-  parishFilters: { socialOnly: false, worshipOnly: false, englishOnly: false, englishStrict: false },
+  // kind / kindSub / lang / langStrict / bookmarked: the toolbar's filters
+  // (blankFilterFlags). The parish card keeps its own copy.
+  filters: { jurisdiction: null, location: null, service: null, day: null, part: null, type: '', parishIds: null, kind: null, kindSub: null, lang: null, langStrict: false, bookmarked: false, showAllParishes: null, multiParish: false },
+  parishFilters: { kind: null, kindSub: null, lang: null, langStrict: false, bookmarked: false },
   selectionMode: false,
   subdomainJurisdiction: null,
   locationActive: false,  // true once we have coords (set by either Near pill or Nearby sort)
@@ -198,6 +200,8 @@ window.setDateFocus = async function (dateStr, opts = {}) {
   // that shows a different feed from the one it was copied out of.
   state._dateFocus = month ? `${String(dateStr).slice(0, 7)}-01` : dateStr;
   state._dateFocusPrecision = month ? 'month' : 'day';
+  // A date takes This week's place in the When control (whenControlHTML).
+  state._week = false;
   const refetched = await ensureHorizonReaches(dateStr);
   renderDateFocus({ rerender: !refetched });
   if (opts.silent !== true) syncURL();
@@ -243,6 +247,7 @@ function renderDateFocus({ rerender = true } = {}) {
   renderInViewChip();
   syncParishDateBanner();
   syncClearFilters();
+  renderFilterSlots();
 }
 
 /** "3/7/2027" / "July 2026" — what both chips say. */
@@ -272,33 +277,17 @@ let _mainDeferredCount = 0;
 let _parishDeferredCount = 0;
 
 /**
- * The round calendar button, wherever it appears. One spelling, four sites.
- *
- * On the parish card it carries the date too: under a focus it widens into
- * "From 24/10/2026 ×", as the main feed's chip does, so the card says where
- * its list starts and how to leave it. The × is a span, for the reason the
- * chip's is — a button inside a button is not something the parser keeps.
+ * The round calendar button, wherever it appears: the feed's footer beside
+ * Load more. The toolbars' calendar is the When control's (whenControlHTML).
  */
 function calendarButtonHTML(cls) {
   const on = !!state._dateFocus;
-  const labelled = cls === 'ps-filter-cal';
   return `<button class="agora-cal-btn ${cls}${on ? ' active' : ''}" type="button"
       onclick="openDatePicker(this)" aria-haspopup="dialog"
       aria-label="Jump to a date" title="Jump to a date">
-      <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">${labelled ? `
-      <span class="cal-btn-label">${on ? esc(`From ${dateFocusLabel()}`) : ''}</span>
-      <span class="cal-btn-x" data-cal-clear role="button" tabindex="0" aria-label="Back to the whole feed">&times;</span>` : ''}
+      <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">
     </button>`;
 }
-
-// The × in a labelled calendar button: the button around it opens the picker,
-// so this goes first, in the capture phase, and stops the click there.
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('[data-cal-clear]')) return;
-  e.preventDefault();
-  e.stopPropagation();
-  window.clearDateFocus();
-}, true);
 
 function datePopEl() { return document.getElementById('date-pop'); }
 
@@ -459,24 +448,6 @@ function initDatePicker() {
   }, true);
 }
 
-/** The mode-bar's own calendar button, and the × that leaves the focus. */
-function initDateFocusControls() {
-  const cal = document.getElementById('btn-date-focus');
-  if (cal) cal.addEventListener('click', () => openDatePicker(cal));
-  // A <span>, not a <button>: it lives inside the in-view chip, and a button
-  // inside a button is not something the parser keeps.
-  const x = document.getElementById('in-view-date-clear');
-  if (x) {
-    x.addEventListener('click', (e) => { e.stopPropagation(); window.clearDateFocus(); });
-    x.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      e.stopPropagation();
-      window.clearDateFocus();
-    });
-  }
-}
-
 // History flags — track whether we pushed a state entry so we know whether to call history.back()
 let detailHistoryPushed = false;
 let posterHistoryPushed = false;
@@ -533,14 +504,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initBottomSheet();
   initParishSheet();
   initParishFilter();
-  initSocialFilter();
-  initEnglishFilter();
+  initFilterControls();
+  initTopBar();
   initScheduleRowTaps();
   initFiltersMenu();
   initMultiParishToggle();
   initParishMultiToggle();
   initDatePicker();
-  initDateFocusControls();
   initAccountMenu();
   // The pill row no longer scrolls — two labelled pills and a round Admin fit
   // any phone — so there are no edges left to fade.
@@ -912,13 +882,13 @@ function detectUrlState() {
   }
   const U = window.AgoraUrlState.classifyPath(window.location.pathname, { today: todayIso() });
   if (U.jurisdiction) state.filters.jurisdiction = U.jurisdiction;
-  if (U.socialOnly) state.filters.socialOnly = true;
-  if (U.worshipOnly) state.filters.worshipOnly = true;
+  if (U.kind) { state.filters.kind = U.kind; state.filters.kindSub = U.kindSub || null; }
   if (U.services) state._startMode = 'services';
-  if (U.englishOnly) {
-    state.filters.englishOnly = true;
-    state.filters.englishStrict = U.englishStrict;
+  if (U.lang) {
+    state.filters.lang = U.lang;
+    state.filters.langStrict = !!U.langStrict;
   }
+  if (U.week) state._week = true;
   // /donate, /<juris>/donate, or /<acronym>/donate that fell through the server
   // redirect (parish has no link on file) → open the picker dialog.
   if (U.donate) state._donateIntent = true;
@@ -938,8 +908,8 @@ function detectUrlState() {
 
   // social + services are mutex — services wins
   if (state._startMode === 'services') {
-    state.filters.socialOnly = false;
-    state.filters.worshipOnly = false;
+    state.filters.kind = null;
+    state.filters.kindSub = null;
   }
 
   // A day, a part of the day or a service beside a parish is a schedule
@@ -1258,8 +1228,10 @@ function buildPathSegs(opts = {}) {
   if (state.filters.part && !state.parishScheduleFocus) segs.push(state.filters.part);
   if (state.filters.service && !state.parishScheduleFocus) segs.push(state.filters.service);
   if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
-  else if (state.filters.socialOnly) segs.push('social');
-  else if (state.filters.worshipOnly) segs.push('worship');
+  else if (state.filters.kind) {
+    const k = window.AgoraUrlState.kindSegment(state.filters.kind, state.filters.kindSub);
+    if (k) segs.push(k);
+  }
   const psfId = state.parishSheetFocus;
   const psfParish = psfId ? state.parishes.find(x => x.id === psfId) : null;
   let parishSegWritten = false;
@@ -1295,6 +1267,8 @@ function buildPathSegs(opts = {}) {
   if (state._dateFocus) {
     const dateSeg = dateSlugFor(state._dateFocus, state._dateFocusPrecision);
     if (dateSeg) segs.push(dateSeg);
+  } else if (state._week) {
+    segs.push('this-week');
   }
   const langSeg = window.AgoraUrlState.englishSegment(state.filters);
   if (langSeg) segs.push(langSeg);
@@ -1352,10 +1326,8 @@ async function reconcileStateFromUrl() {
     state.parishScheduleFocus = null;
     state.filters.parishIds = null;
     state.filters.multiParish = loadMultiParishPref();
-    state.filters.socialOnly = false;
-    state.filters.worshipOnly = false;
-    state.filters.englishOnly = false;
-    state.filters.englishStrict = false;
+    Object.assign(state.filters, blankFilterFlags(), { bookmarked: state.filters.bookmarked });
+    state._week = false;
     state.filters.showAllParishes = null;
     state.parishFocus = null;
     state._dateFocus = null;
@@ -1418,11 +1390,7 @@ async function reconcileStateFromUrl() {
     }
 
     // 6) Filter menu items + derived UI
-    const socialBtn = document.getElementById('btn-social');
-    if (socialBtn) socialBtn.classList.toggle('active', !!state.filters.socialOnly);
-    const worshipBtn = document.getElementById('btn-worship');
-    if (worshipBtn) worshipBtn.classList.toggle('active', !!state.filters.worshipOnly);
-    if (typeof syncEnglishButton === 'function') syncEnglishButton();
+    renderFilterSlots();
     if (typeof syncMultiParishButton === 'function') syncMultiParishButton();
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
     if (typeof syncResetFab === 'function') syncResetFab();
@@ -1475,6 +1443,9 @@ async function reconcileStateFromUrl() {
     }
   } finally {
     _reconciling = false;
+    // The link under Save filter is the URL's, and the URL just changed
+    // without syncURL (the back button, a saved filter opened).
+    updateModeUrl();
   }
 }
 
@@ -1709,7 +1680,7 @@ function renderEmptyStateHTML() {
 
   let filtersExcluding = false;
   if (!viewportEmpty && viewportVisible && !explicitParish
-      && (state.filters.socialOnly || state.filters.worshipOnly || state.filters.englishOnly)) {
+      && (state.filters.kind || state.filters.lang)) {
     const vp = state.viewportParishIds;
     const eventsInViewport = state.events.filter(e =>
       vp.has(e.parish_id) || (e.extra_parishes && e.extra_parishes.some(pid => vp.has(pid)))
@@ -1723,9 +1694,11 @@ function renderEmptyStateHTML() {
     headline = 'No parishes in this area';
     cta = `<button class="empty-state-cta" data-cta="show-nearest-parish" type="button">Show nearest parish</button>`;
   } else if (filtersExcluding) {
-    const label = state.filters.socialOnly ? 'socials'
-      : state.filters.worshipOnly && !state.filters.englishOnly ? 'services'
-      : state.filters.englishStrict ? 'fully-English services' : 'English services';
+    const f = state.filters;
+    const kind = f.kindSub ? `${window.AgoraEventTypes.eventTypeLabel(f.kindSub).toLowerCase()} events`
+      : f.kind ? KIND_NAMES[f.kind].toLowerCase() : 'services';
+    const label = !f.lang ? kind
+      : f.langStrict ? `${f.lang}-only ${kind}` : `${kind} in ${f.lang}`;
     headline = `No ${label} in this area`;
     cta = `<button class="empty-state-cta" data-cta="find-matching-parish" type="button">Find nearest match</button>`;
   }
@@ -1841,6 +1814,8 @@ async function fetchEvents(opts = {}) {
 
   scheduleRenderEvents(300);
   updateMap(state, { fit: !!opts.fit });
+  // The count of what is on is the events', and is due as soon as they are.
+  renderInViewChip();
   if (state.parishSheetFocus) renderParishSheetContent(state.parishSheetFocus, {});
 }
 
@@ -2051,7 +2026,12 @@ function initAccountMenu() {
     menu.classList.add('hidden');
     btn.setAttribute('aria-expanded', 'false');
   };
+  // The button is the banner's first chip now, at the top left: the menu
+  // drops from under it, fixed, since the banner clips what overflows it.
   const open = () => {
+    const r = btn.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, r.left)}px`;
+    menu.style.top = `${r.bottom + 6}px`;
     menu.classList.remove('hidden');
     btn.setAttribute('aria-expanded', 'true');
   };
@@ -2154,41 +2134,11 @@ async function refreshOpenAsks() {
 }
 
 // ── Mode bar ──
+// The Schedules button: the timetable of every parish in view, in place of the
+// feed. The kind and the language narrow both (timetable.js), so turning it on
+// keeps them.
 function initModeBar() {
-  const eventsBtn = document.getElementById('btn-events');
   const servicesBtn = document.getElementById('btn-services');
-
-  if (eventsBtn) {
-    eventsBtn.addEventListener('click', () => {
-      closeFiltersMenuAnim();
-      if (window.agoraParishSheetVisible) {
-        if (!state.parishFilters.socialOnly && !state.parishFilters.worshipOnly) return;
-        state.parishFilters.socialOnly = false;
-        state.parishFilters.worshipOnly = false;
-        syncFiltersButton();
-        renderParishSheetContent(state.parishSheetFocus);
-        return;
-      }
-      // Events is the default mode — clicking exits services and/or socialOnly.
-      const wasServices = state.mode === 'services';
-      const wasSocial = !!(state.filters.socialOnly || state.filters.worshipOnly);
-      state.mode = 'events';
-      servicesBtn.classList.remove('active');
-      if (wasSocial) {
-        state.filters.socialOnly = false;
-        state.filters.worshipOnly = false;
-        document.getElementById('btn-social').classList.remove('active');
-        document.getElementById('btn-worship')?.classList.remove('active');
-      }
-      showView('events');
-      if (wasServices || wasSocial || !state.events.length) fetchEvents();
-      updateArchdioceseEventsBanner();
-      if (typeof syncFiltersButton === 'function') syncFiltersButton();
-      if (typeof syncResetFab === 'function') syncResetFab();
-      syncURL();
-    });
-  }
-
   servicesBtn.addEventListener('click', () => {
     closeFiltersMenuAnim();
     // Entering services mode makes the currently-open event irrelevant —
@@ -2198,31 +2148,20 @@ function initModeBar() {
     }
     if (state.mode === 'services') {
       state.mode = 'events';
-      servicesBtn.classList.remove('active');
       showView('events');
       fetchEvents();
-      updateArchdioceseEventsBanner();
     } else {
       state.mode = 'services';
-      servicesBtn.classList.add('active');
-      // Mutex: turning services on turns social off, and the Services
-      // filter too — both narrow the feed, which this mode replaces.
-      if (state.filters.socialOnly) {
-        state.filters.socialOnly = false;
-        document.getElementById('btn-social').classList.remove('active');
-      }
-      if (state.filters.worshipOnly) {
-        state.filters.worshipOnly = false;
-        document.getElementById('btn-worship')?.classList.remove('active');
-      }
       showView('services');
       fetchSchedules();
-      updateArchdioceseEventsBanner();
     }
+    updateArchdioceseEventsBanner();
+    renderFilterSlots();
     if (typeof syncFiltersButton === 'function') syncFiltersButton();
     if (typeof syncResetFab === 'function') syncResetFab();
     snapMainSheetToFull();
     syncURL();
+    pulseSaveFilter();
   });
 }
 
@@ -2250,9 +2189,7 @@ function showView(name) {
 async function applyStartMode() {
   const servicesBtn = document.getElementById('btn-services');
 
-  if (state.filters.englishOnly) {
-    syncEnglishButton();
-  }
+  renderFilterSlots();
 
   if (state._startMode === 'services') {
     state.mode = 'services';
@@ -2433,9 +2370,11 @@ function renderParishPills() {
   for (const p of relevant) {
     const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
     const distLabel = (p._dist != null && isFinite(p._dist)) ? `·${Math.round(p._dist)}km` : '';
-    const labelHtml = distLabel
+    // A favourite wears a small star before its name, as its marker does.
+    const star = isFavourite(p.id) ? '<span class="pill-fav" aria-label="Favourite">★</span>' : '';
+    const labelHtml = star + (distLabel
       ? `${esc(acronym)}<span class="pill-dist">${esc(distLabel)}</span>`
-      : esc(acronym);
+      : esc(acronym));
     const isSelected = state.filters.parishIds && state.filters.parishIds.has(p.id);
     const color = getParishDisplayColor(p.color || '#000');
     let style;
@@ -2537,6 +2476,7 @@ function setSelectionMode(on) {
   syncParishMultiToggle();
   closeFiltersMenuAnim();
   renderParishPills();
+  renderParishCounter();
   if (typeof window.updateMap === 'function') window.updateMap(state);
   if (!on) {
     renderCurrentView();
@@ -2709,95 +2649,56 @@ function updateInViewChevron() {
 function renderInViewChip() {
   const countEl = document.getElementById('in-view-count');
   if (!countEl) return;
+  // "3 events": what is on in the period the When control names — what is
+  // left of today, the next seven days, or the date the stream starts from —
+  // among the events the feed would show here. The parishes in view are the
+  // parish counter's to count now (renderParishCounter), not this chip's.
+  const n = eventsInPeriodCount();
+  countEl.textContent = `${n} ${n === 1 ? 'event' : 'events'}`;
   const chip = document.getElementById('in-view-chip');
-  const x = document.getElementById('in-view-date-clear');
-
-  // Under a date focus the chip stops counting and starts saying where the
-  // stream begins. It is the same question either way — "what am I looking
-  // at" — and a count of today's events is the wrong answer once today is not
-  // what is on screen. Inverted, because a focused feed is a modal state and
-  // ought to look like one.
-  if (state._dateFocus) {
-    countEl.textContent = `Showing from ${dateFocusLabel()}`;
-    if (chip) chip.classList.add('date-focused');
-    if (x) x.hidden = false;
-    const cal = document.getElementById('btn-date-focus');
-    if (cal) cal.classList.add('active');
-    updateInViewChevron();
-    return;
+  if (chip) {
+    const when = state._dateFocus ? `on ${dateFocusLabel()}` : state._week ? 'this week' : 'today';
+    chip.title = `${n} ${n === 1 ? 'event' : 'events'} ${when}`;
   }
-  if (chip) chip.classList.remove('date-focused');
-  if (x) x.hidden = true;
-  const calOff = document.getElementById('btn-date-focus');
-  if (calOff) calOff.classList.remove('active');
-
-  const todayKey = isoDateSyd(new Date().toISOString());
-  const nowMs = Date.now();
-  const j = state.filters.jurisdiction;
-  const englishOnly = state.filters.englishOnly;
-  const englishStrict = state.filters.englishStrict;
-
-  let n = 0;
-  if (state.viewportParishIds && state.events) {
-    for (const e of state.events) {
-      if (!e.parish_id) continue;
-      const inView = state.viewportParishIds.has(e.parish_id)
-        || (Array.isArray(e.extra_parishes) && e.extra_parishes.some(id => state.viewportParishIds.has(id)));
-      if (!inView) continue;
-      if (j) {
-        const p = state.parishes.find(pa => pa.id === e.parish_id);
-        if (!p || p.jurisdiction !== j) continue;
-      }
-      if (englishOnly) {
-        const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
-        if (!langs) continue;
-        const ok = englishStrict ? langs.every(l => /english/i.test(l)) : langs.some(l => /english/i.test(l));
-        if (!ok) continue;
-      }
-      if (isoDateSyd(e.start_utc) !== todayKey) continue;
-      const endMs = e.end_utc ? new Date(e.end_utc).getTime() : new Date(e.start_utc).getTime() + 3600000;
-      if (endMs <= nowMs) continue;
-      n++;
-    }
-  }
-  const hour = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()));
-  const when = hour >= 16 ? 'tonight' : 'today';
-  const noun = n === 1 ? 'event' : 'events';
-  const events = `${n} ${noun} ${when}`;
-
-  // Two numbers, because a zero in the second one means two different things.
-  // "0 events today" on its own reads as "there is nothing here" when what it
-  // often means is "there are four parishes here and none of them has anything
-  // left on today" — which is the cue to scroll, not to pan. Counting the
-  // parishes first separates "nowhere near a church" from "nothing on".
-  //
-  // The parish half counts what the MAP is showing: the viewport set narrowed
-  // by the jurisdiction filter, which is the one filter map.js applies to its
-  // markers. The English and socials filters are deliberately not applied —
-  // they select events, and a parish is not English.
-  const vp = state.viewportParishIds;
-  if (!(vp instanceof Set)) {
-    // Before the first moveend there is no viewport, so there is no honest
-    // parish number. The event count is still true.
-    countEl.textContent = events;
-    updateInViewChevron();
-    return;
-  }
-  let parishes = 0;
-  for (const id of vp) {
-    if (id === '_unassigned') continue;
-    if (j) {
-      const p = state.parishes.find(pa => pa.id === id);
-      if (!p || p.jurisdiction !== j) continue;
-    }
-    parishes++;
-  }
-  countEl.textContent = parishes === 0
-    // The empty state already says this in full; the chip agreeing with it
-    // beats "0 parishes • 0 events today", which counts nothing twice.
-    ? 'No parishes in view'
-    : `${parishes} ${parishes === 1 ? 'parish' : 'parishes'} \u2022 ${events}`;
   updateInViewChevron();
+  renderParishCounter();
+}
+
+/** 'YYYY-MM-DD' `n` days after `iso`. */
+function addDaysIso(iso, n) {
+  return new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+}
+/** Midnight, in Sydney, at the start of the day `n` days from today. */
+function sydneyMidnightMs(daysFromToday) {
+  return Date.parse(localInputToUtc(`${addDaysIso(todayIso(), daysFromToday)}T00:00`));
+}
+/** Where This week ends: the start of the eighth day. */
+function weekEndMs() { return sydneyMidnightMs(7); }
+
+/** How many events the feed shows in the When control's period. */
+function eventsInPeriodCount() {
+  const now = Date.now();
+  let from = now, to;
+  if (state._dateFocus) {
+    const d = state._dateFocus;
+    from = Date.parse(localInputToUtc(`${d.length === 7 ? `${d}-01` : d}T00:00`));
+    if (state._dateFocusPrecision === 'month' || d.length === 7) {
+      const [y, m] = d.split('-').map(Number);
+      to = Date.parse(localInputToUtc(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01T00:00`));
+    } else {
+      to = Date.parse(localInputToUtc(`${addDaysIso(d, 1)}T00:00`));
+    }
+  } else {
+    to = state._week ? weekEndMs() : sydneyMidnightMs(1);
+  }
+  let n = 0;
+  for (const e of applyFilters(state.events || [])) {
+    if (e.is_tombstone || (e.status && e.status !== 'approved')) continue;
+    const start = Date.parse(e.start_utc);
+    const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
+    if (end > from && start < to) n++;
+  }
+  return n;
 }
 window.agoraRenderInViewChip = renderInViewChip;
 
@@ -2860,107 +2761,580 @@ function exitMultiParish() {
   syncURL();
 }
 
-// ── Social filter, and its complement ──
+// ── What this browser keeps: favourite parishes, bookmarks, saved filters ──
 //
-// Socials is everything that is not a service; Services (/worship) is the
-// services alone — liturgies, prayer services, feasts (LITURGICAL_TYPES).
-// One or the other or neither, never both: together they would show nothing.
-function initSocialFilter() {
-  wireKindFilter('btn-social', 'socialOnly', 'worshipOnly');
-  wireKindFilter('btn-worship', 'worshipOnly', 'socialOnly');
+// Nobody signs in to read the app, so these live in localStorage, per browser:
+// a person's own short list of parishes, the events they mean to go to, and
+// the views they come back to. Every read and write survives storage being
+// refused (a private window) — the controls simply come back empty.
+
+const STORE = { fav: 'agora-favourites', bm: 'agora-bookmarks', saved: 'agora-saved-filters' };
+const _storeCache = {};
+function readStore(key) {
+  if (_storeCache[key]) return _storeCache[key];
+  let v = [];
+  try { v = JSON.parse(localStorage.getItem(key) || '[]'); } catch { v = []; }
+  return (_storeCache[key] = Array.isArray(v) ? v : []);
+}
+function writeStore(key, v) {
+  _storeCache[key] = v;
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* kept for this page only */ }
 }
 
-function wireKindFilter(id, key, other) {
-  const btn = document.getElementById(id);
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    closeFiltersMenuAnim();
-    if (window.agoraParishSheetVisible) {
-      state.parishFilters[key] = !state.parishFilters[key];
-      if (state.parishFilters[key]) state.parishFilters[other] = false;
-      syncFiltersButton();
-      renderParishSheetContent(state.parishSheetFocus);
-      return;
-    }
-    const willActivate = !state.filters[key];
-    state.filters[key] = willActivate;
-    btn.classList.toggle('active', willActivate);
-    if (willActivate && state.filters[other]) {
-      state.filters[other] = false;
-      document.getElementById(key === 'socialOnly' ? 'btn-worship' : 'btn-social')?.classList.remove('active');
-    }
-    if (state._openEventId) closeDetailDOM();
-    if (willActivate && state.mode === 'services') {
-      document.getElementById('btn-services').click();
-      return;
-    }
-    renderCurrentView();
-    syncFiltersButton();
-    snapMainSheetToFull();
-    if (typeof renderInViewChip === 'function') renderInViewChip();
-    syncURL();
+// Favourites: [{ id, at }], newest first.
+function favourites() {
+  const ids = new Set((state.parishes || []).map(p => p.id));
+  return [...readStore(STORE.fav)].filter(f => ids.has(f.id)).sort((a, b) => b.at - a.at);
+}
+function isFavourite(pid) { return readStore(STORE.fav).some(f => f.id === pid); }
+window.agoraIsFavourite = isFavourite;
+function toggleFavourite(pid) {
+  const list = readStore(STORE.fav);
+  writeStore(STORE.fav, isFavourite(pid) ? list.filter(f => f.id !== pid) : [{ id: pid, at: Date.now() }, ...list]);
+  document.querySelectorAll(`[data-fav-parish="${CSS.escape(pid)}"]`).forEach(b => paintFavouriteButton(b, pid));
+  renderParishPills();
+  renderFavouritesList();
+  if (typeof window.updateMap === 'function') window.updateMap(state);
+}
+function favouriteButtonHTML(pid) {
+  const on = isFavourite(pid);
+  return `<button class="ps-btn ps-fav-btn${on ? ' on' : ''}" type="button" data-fav-parish="${esc(pid)}" aria-pressed="${on}">
+      <img class="ps-btn-icon" src="https://api.iconify.design/ph:star${on ? '-fill' : ''}.svg" alt=""><span>${on ? 'Favourite' : 'Favourite'}</span></button>`;
+}
+function paintFavouriteButton(btn, pid) {
+  const on = isFavourite(pid);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', String(on));
+  const img = btn.querySelector('img');
+  if (img) img.src = `https://api.iconify.design/ph:star${on ? '-fill' : ''}.svg`;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fav-parish]');
+  if (b) { e.preventDefault(); toggleFavourite(b.dataset.favParish); }
+});
+
+/** The star fab's column: the favourites as fabs, logo and name, newest first. */
+function renderFavouritesList() {
+  const list = document.getElementById('fav-list');
+  if (!list) return;
+  const favs = favourites();
+  const byId = new Map((state.parishes || []).map(p => [p.id, p]));
+  list.innerHTML = favs.length
+    ? favs.map(f => {
+        const p = byId.get(f.id);
+        return `<button class="fav-item" type="button" data-fav-open="${esc(p.id)}">
+            ${parishAvatarHTML(p, 'fav-item-avatar', 'span')}<span class="fav-item-name">${esc(p.name)}</span></button>`;
+      }).join('')
+    : '<div class="fav-empty">Tap the star on a parish’s card and it is kept here.</div>';
+  const btn = document.getElementById('btn-favourites');
+  if (btn) btn.classList.toggle('has-favs', favs.length > 0);
+}
+function toggleFavouritesList(open) {
+  let list = document.getElementById('fav-list');
+  if (!list) {
+    list = document.createElement('div');
+    list.id = 'fav-list';
+    list.className = 'fav-list hidden';
+    document.body.appendChild(list);
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-fav-open]');
+      if (!item) return;
+      toggleFavouritesList(false);
+      openParishSheet(item.dataset.favOpen);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (list.classList.contains('hidden')) return;
+      if (list.contains(e.target) || e.target.closest('#btn-favourites')) return;
+      toggleFavouritesList(false);
+    }, true);
+  }
+  const btn = document.getElementById('btn-favourites');
+  const show = open == null ? list.classList.contains('hidden') : open;
+  if (show) {
+    renderFavouritesList();
+    const r = btn.getBoundingClientRect();
+    list.style.left = `${Math.max(8, r.left)}px`;
+    list.style.top = `${r.bottom + 6}px`;
+  }
+  list.classList.toggle('hidden', !show);
+  if (btn) btn.setAttribute('aria-expanded', String(show));
+}
+
+// Bookmarks: [{ id, kind: 'event' | 'rule', at }] — an event (a stored one,
+// or one occurrence of a rule by its "<rule>:<date>" id), or a whole rule.
+function bookmarks() { return readStore(STORE.bm); }
+function bookmarkCount() { return bookmarks().length; }
+function isBookmarkedEvent(id) { return bookmarks().some(b => b.kind === 'event' && String(b.id) === String(id)); }
+function isBookmarkedRule(sid) { return sid != null && bookmarks().some(b => b.kind === 'rule' && String(b.id) === String(sid)); }
+/** Is this event bookmarked, itself or as one of its rule's? */
+function isBookmarked(e) {
+  return isBookmarkedEvent(e.id) || isBookmarkedRule(e.schedule_id != null ? e.schedule_id : ruleIdOf(e.id));
+}
+/** The rule an occurrence's synthetic id names, or null for a stored one-off. */
+function ruleIdOf(id) {
+  const m = String(id || '').match(/^(\d+):\d{4}-\d{2}-\d{2}$/);
+  return m ? Number(m[1]) : null;
+}
+function toggleBookmark(kind, id) {
+  const list = bookmarks();
+  const has = list.some(b => b.kind === kind && String(b.id) === String(id));
+  writeStore(STORE.bm, has ? list.filter(b => !(b.kind === kind && String(b.id) === String(id)))
+    : [{ id: String(id), kind, at: Date.now() }, ...list]);
+}
+/** The drawer's bookmark, and — for one occurrence of a rule — the rule's. */
+function bookmarkButtonsHTML(evt) {
+  const on = isBookmarkedEvent(evt.id);
+  const sid = evt.schedule_id != null ? evt.schedule_id : ruleIdOf(evt.id);
+  const ruleOn = isBookmarkedRule(sid);
+  const eid = esc(String(evt.id));
+  let html = `<button class="btn-action btn-bookmark${on || ruleOn ? ' on' : ''}" type="button" data-bookmark-event="${eid}" aria-pressed="${on}">
+      <img class="btn-action-icon" src="https://api.iconify.design/ph:bookmark-simple${on || ruleOn ? '-fill' : ''}.svg" alt="">${on || ruleOn ? 'Bookmarked' : 'Bookmark'}
+    </button>`;
+  // Bookmarking one date of a weekly service offers the service itself: the
+  // cycle arrows keep every date of it.
+  if (sid != null && (on || ruleOn)) {
+    html += `<button class="btn-action btn-bookmark-rule${ruleOn ? ' on' : ''}" type="button" data-bookmark-rule="${esc(String(sid))}" data-for-event="${eid}"
+        aria-pressed="${ruleOn}" aria-label="${ruleOn ? 'Every date is bookmarked' : 'Bookmark every date of this service'}" title="Every date of this service">
+        <img class="btn-action-icon" src="https://api.iconify.design/ph:arrows-clockwise${ruleOn ? '-bold' : ''}.svg" alt="">${ruleOn ? 'Every date' : 'Every date?'}
+      </button>`;
+  }
+  return html;
+}
+document.addEventListener('click', (e) => {
+  const ev = e.target.closest('[data-bookmark-event]');
+  const rule = e.target.closest('[data-bookmark-rule]');
+  if (!ev && !rule) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const id = ev ? ev.dataset.bookmarkEvent : rule.dataset.forEvent;
+  if (ev) {
+    // Un-bookmarking a date the rule's bookmark covers takes the rule's too:
+    // the button reads Bookmarked for either, and pressing it should leave
+    // nothing behind.
+    const evt = (state.events || []).find(x => String(x.id) === String(id));
+    const sid = evt && (evt.schedule_id != null ? evt.schedule_id : ruleIdOf(evt.id));
+    if (!isBookmarkedEvent(id) && isBookmarkedRule(sid)) toggleBookmark('rule', sid);
+    else toggleBookmark('event', id);
+  } else {
+    toggleBookmark('rule', rule.dataset.bookmarkRule);
+  }
+  // Repaint the buttons wherever this event is open, and the toolbar's count.
+  const evt = (state.events || []).find(x => String(x.id) === String(id));
+  if (evt) {
+    document.querySelectorAll(`.event-card[data-id="${CSS.escape(String(id))}"] .bookmark-slot`)
+      .forEach(slot => { slot.innerHTML = bookmarkButtonsHTML(evt); });
+  }
+  renderFilterSlots();
+  if (state.filters.bookmarked || state.parishFilters.bookmarked) {
+    if (!bookmarkCount()) { state.filters.bookmarked = false; state.parishFilters.bookmarked = false; }
+  }
+}, true);   // capture: an expanded card's own handlers stop the click bubbling
+
+// Saved filters: [{ url, path, at }], newest first — the views this browser
+// came back to, as links (Save Filter, and the monocle beside it).
+function savedFilters() { return [...readStore(STORE.saved)].sort((a, b) => b.at - a.at); }
+function currentFilterLink() {
+  const path = '/' + buildPathSegs().join('/');
+  return { path, url: `${location.origin}${path === '/' ? '/' : path}` };
+}
+function saveCurrentFilter() {
+  const { path, url } = currentFilterLink();
+  writeStore(STORE.saved, [{ url, path, at: Date.now() }, ...readStore(STORE.saved).filter(x => x.path !== path)]);
+  syncSavedFiltersFab();
+  return { path, url };
+}
+function syncSavedFiltersFab() {
+  const b = document.getElementById('btn-saved-filters');
+  if (b) b.hidden = !savedFilters().length;
+}
+/** "Saved": in the middle of the screen, the link to copy, and Share. */
+function openSavedFilterDialog() {
+  const { url } = saveCurrentFilter();
+  const sentence = feedFilterSentence && feedFilterSentence();
+  const body = openFormDialog({
+    kind: 'saved',
+    title: 'Saved',
+    sub: sentence || 'This view, as a link — kept under the monocle beside Save filter.',
+    html: `<div class="saved-filter">
+        <button type="button" class="saved-url" data-copy-url="${esc(url)}" title="Copy">
+          <span class="saved-url-text">${esc(url.replace(/^https?:\/\//, ''))}</span>
+          <img class="saved-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+        </button>
+        <div class="form-actions">
+          <button type="button" class="btn-save" data-share-saved="${esc(url)}">
+            <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share this filter
+          </button>
+          <button type="button" class="btn-outline" onclick="closeFormDialog()">Done</button>
+        </div>
+      </div>`,
+  });
+  return body;
+}
+/** The monocle: every saved filter, to open or to forget. */
+function openSavedFiltersList() {
+  const list = savedFilters();
+  const host = location.host.replace(/^www\./, '');
+  openFormDialog({
+    kind: 'saved-list',
+    title: 'Saved filters',
+    sub: list.length ? 'Tap one to open it.' : 'Nothing saved yet.',
+    html: `<div class="saved-list">${list.map(x => `
+        <div class="saved-row">
+          <a class="saved-row-link" href="${esc(x.path)}" data-open-saved="${esc(x.path)}">${esc(host)}<b>${esc(x.path === '/' ? '' : x.path)}</b></a>
+          <button type="button" class="saved-row-del" data-forget-saved="${esc(x.path)}" aria-label="Forget this filter">&times;</button>
+        </div>`).join('')}</div>`,
   });
 }
+document.addEventListener('click', async (e) => {
+  const copy = e.target.closest('[data-copy-url]');
+  const share = e.target.closest('[data-share-saved]');
+  const open = e.target.closest('[data-open-saved]');
+  const forget = e.target.closest('[data-forget-saved]');
+  if (copy) {
+    e.preventDefault();
+    try { await navigator.clipboard.writeText(copy.dataset.copyUrl); } catch { /* the text is there to select */ }
+    copy.classList.add('copied');
+    setTimeout(() => copy.classList.remove('copied'), 1100);
+  } else if (share) {
+    e.preventDefault();
+    await shareUrl(share.dataset.shareSaved, document.title, share);
+  } else if (open) {
+    e.preventDefault();
+    closeFormDialog();
+    history.pushState({}, '', open.dataset.openSaved);
+    reconcileStateFromUrl();
+  } else if (forget) {
+    e.preventDefault();
+    writeStore(STORE.saved, readStore(STORE.saved).filter(x => x.path !== forget.dataset.forgetSaved));
+    syncSavedFiltersFab();
+    openSavedFiltersList();
+  }
+});
 
-// ── Language filter ──
-// Two buttons. "Any language" until it is tapped; then "English" — any
-// service with English in it, alone or beside another language (/en) — and
-// an "only" appears beside it, which narrows to English and nothing else
-// (/en-only). Tapping "English" again turns both off. The parish sheet's
-// pills are the same two buttons over its own copy, state.parishFilters.
-function toggleEnglishFilter(f, which) {
-  if (which === 'only') {
-    if (f.englishOnly) f.englishStrict = !f.englishStrict;
-  } else if (f.englishOnly) {
-    f.englishOnly = false;
-    f.englishStrict = false;
-  } else {
-    f.englishOnly = true;
-    f.englishStrict = false;
+/** The toolbar's Save button, pulsing: something about the view just changed. */
+function pulseSaveFilter() {
+  const b = document.getElementById('btn-save-filter-bar');
+  if (!b) return;
+  b.classList.remove('pulse');
+  void b.offsetWidth;
+  b.classList.add('pulse');
+}
+
+/**
+ * "⛪ 3": the parishes the map is showing — the viewport, by the jurisdiction
+ * and region the map filters its markers by. A tap chooses them: multi-select
+ * with those already ticked; with none in view, multi-select and the map out
+ * to the nearest parish.
+ */
+function viewportParishes() {
+  const vp = state.viewportParishIds;
+  if (!(vp instanceof Set)) return [];
+  const j = state.filters.jurisdiction;
+  return (state.parishes || []).filter(p => p.id !== '_unassigned' && vp.has(p.id)
+    && (!j || p.jurisdiction === j) && parishPassesLocation(p));
+}
+function renderParishCounter() {
+  const n = document.getElementById('parish-counter-n');
+  if (!n) return;
+  const count = viewportParishes().length;
+  n.textContent = String(count);
+  const btn = document.getElementById('btn-parish-counter');
+  if (btn) {
+    btn.setAttribute('aria-label', `${count} ${count === 1 ? 'parish' : 'parishes'} in view — choose them`);
+    btn.classList.toggle('active', !!state.selectionMode);
   }
 }
-
-/** Paint a language button and its "only" from a filter set. */
-function syncLanguageButtons(btn, only, f) {
-  const on = !!f.englishOnly;
-  const strict = on && !!f.englishStrict;
-  btn.classList.toggle('active', on);
-  btn.setAttribute('aria-checked', String(on));
-  btn.textContent = on ? 'English' : 'Any language';
-  if (!only) return;
-  only.hidden = !on;
-  only.classList.toggle('active', strict);
-  only.setAttribute('aria-checked', String(strict));
-}
-
-function initEnglishFilter() {
-  const tap = (which) => {
-    if (window.agoraParishSheetVisible) {
-      toggleEnglishFilter(state.parishFilters, which);
-      syncEnglishButton();
-      syncFiltersButton();
-      renderParishSheetContent(state.parishSheetFocus);
-      return;
+function initTopBar() {
+  const counter = document.getElementById('btn-parish-counter');
+  if (counter) counter.addEventListener('click', () => {
+    if (state.selectionMode) { setSelectionMode(false); return; }
+    const visible = viewportParishes();
+    if (visible.length) {
+      state.filters.parishIds = new Set(visible.map(p => p.id));
+      setSelectionMode(true);
+    } else {
+      setSelectionMode(true);
+      const j = state.filters.jurisdiction;
+      const target = findNearestParishWhere(p => !j || p.jurisdiction === j);
+      if (target && window.agoraMap) {
+        const c = visibleCentreLatLng() || { lat: state.userLat, lng: state.userLng };
+        window.agoraMap.fitBounds(window.agoraPadBounds(window.agoraBoundsFromPoints([c, { lat: target.lat, lng: target.lng }]), 0.25),
+          { maxZoom: 13, duration: 600 });
+      }
     }
-    toggleEnglishFilter(state.filters, which);
-    syncEnglishButton();
-    renderCurrentView();
-    syncFiltersButton();
-    // The in-view chip pre-filters by parish — when the English filter
-    // toggles, parish set changes too; recount.
-    if (typeof renderInViewChip === 'function') renderInViewChip();
-    syncURL();
-  };
-  document.getElementById('btn-english').addEventListener('click', () => tap('english'));
-  document.getElementById('btn-english-only').addEventListener('click', () => tap('only'));
-  syncEnglishButton();
+  });
+  const fav = document.getElementById('btn-favourites');
+  if (fav) fav.addEventListener('click', () => toggleFavouritesList());
+  const saveFab = document.getElementById('btn-save-filter');
+  if (saveFab) saveFab.addEventListener('click', () => openSavedFilterDialog());
+  const saveBar = document.getElementById('btn-save-filter-bar');
+  if (saveBar) saveBar.addEventListener('click', () => openSavedFilterDialog());
+  const savedFab = document.getElementById('btn-saved-filters');
+  if (savedFab) savedFab.addEventListener('click', () => openSavedFiltersList());
+  syncSavedFiltersFab();
+  renderFavouritesList();
+  renderParishCounter();
 }
 
-function syncEnglishButton() {
-  const btn = document.getElementById('btn-english');
-  if (!btn) return;
-  const f = window.agoraParishSheetVisible ? state.parishFilters : state.filters;
-  syncLanguageButtons(btn, document.getElementById('btn-english-only'), f);
+// ── The filter controls ─────────────────────────────────────────────────
+//
+// One set of builders for both toolbars — the main sheet's and the parish
+// card's — so the two read and behave as one thing, each over its own filter
+// set: state.filters for the feed, state.parishFilters for the open card
+// (which is also what narrows the card's timetable). The When control is the
+// one they share, because the date the stream starts from is shared.
+//
+//   Language  "Any language", then a language with an up-and-down segment
+//             that opens our own list of the languages on file, and "only".
+//   Kind      a cycle — Any event, Services, Studies, Socials — where
+//             Services spawns three roundels (L, P, F) and Socials two (S, Y);
+//             one roundel at a time narrows it, and spells its name out.
+//   When      Today, then This week (the next seven days) with a calendar
+//             beside it, and any date from that calendar in its place.
+//   Bookmarks the events this browser bookmarked, once there are any.
+
+const KIND_CYCLE = [null, 'services', 'studies', 'socials'];
+const KIND_NAMES = { services: 'Services', studies: 'Studies', socials: 'Socials' };
+const KIND_SUBS = { services: ['liturgy', 'prayer', 'feast'], socials: ['social', 'youth'] };
+
+/** The filter set a toolbar edits. */
+function filterSetFor(scope) {
+  return scope === 'parish' ? state.parishFilters : state.filters;
+}
+/** A filter set with nothing in it: any event, any language, everything. */
+function blankFilterFlags() {
+  return { kind: null, kindSub: null, lang: null, langStrict: false, bookmarked: false };
+}
+
+/** Does an event pass a set's kind, language and bookmarks? */
+function eventPassesFlags(e, f) {
+  const T = window.AgoraTimetable;
+  if (!T.kindMatches(e, f)) return false;
+  const lf = T.langFilterOf(f);
+  if (lf && !T.langsMatch(parseLangs(e.languages) || parseLangs(e.parish_languages), lf)) return false;
+  if (f.bookmarked && !isBookmarked(e)) return false;
+  return true;
+}
+
+/**
+ * The languages on file — parishes', rules', events' — most used first, and
+ * English first of all. What the language picker offers.
+ */
+function languagesInUse() {
+  const count = new Map();
+  const add = (v) => {
+    for (const l of parseLangs(v) || []) {
+      const name = String(l || '').trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const had = count.get(key);
+      count.set(key, { name: had ? had.name : name, n: (had ? had.n : 0) + 1 });
+    }
+  };
+  for (const p of state.parishes || []) add(p.languages);
+  for (const r of state.schedules || []) add(r.languages);
+  for (const e of state.events || []) add(e.languages);
+  return [...count.values()]
+    .sort((a, b) => (b.name === 'English') - (a.name === 'English') || b.n - a.n || a.name.localeCompare(b.name))
+    .map(x => x.name);
+}
+
+function langControlHTML(f) {
+  const on = !!f.lang;
+  return `<div class="lang-filter${on ? ' on' : ''}">
+      <button class="mode-bar-en lang-main${on ? ' active' : ''}" type="button" data-lang-toggle role="checkbox" aria-checked="${on}">${esc(on ? f.lang : 'Any language')}</button>${on ? `
+      <button class="lang-pick" type="button" data-lang-pick aria-haspopup="listbox" aria-label="Choose the language" title="Choose the language">
+        <svg viewBox="0 0 12 16" width="10" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6 6 2.5 9.5 6M2.5 10 6 13.5 9.5 10"/></svg>
+      </button>
+      <button class="mode-bar-en mode-bar-en-only${f.langStrict ? ' active' : ''}" type="button" data-lang-only role="checkbox" aria-checked="${!!f.langStrict}">only</button>` : ''}
+    </div>`;
+}
+
+/** A roundel's colours: the kind's own, from public/shared/event-types.js. */
+function kindRoundelStyle(id) {
+  const c = window.AgoraEventTypes.kindColors(id, matchMedia('(prefers-color-scheme: dark)').matches);
+  return `--k-bg:${c.bg};--k-fg:${c.fg}`;
+}
+
+function kindControlHTML(f) {
+  const kind = f.kind || null;
+  const subs = (KIND_SUBS[kind] || []).map(id => {
+    const on = f.kindSub === id;
+    const label = window.AgoraEventTypes.eventTypeLabel(id);
+    return `<button class="kind-sub${on ? ' on' : ''}" type="button" data-kind-sub="${id}" style="${kindRoundelStyle(id)}"
+        aria-pressed="${on}" aria-label="${esc(label)}" title="${esc(label)}">${on ? esc(label) : esc(label[0])}</button>`;
+  }).join('');
+  return `<div class="kind-filter">
+      <button class="mode-bar-pill kind-cycle${kind ? ' active' : ''}" type="button" data-kind-cycle
+        aria-label="${esc(kind ? `${KIND_NAMES[kind]} — tap for the next kind` : 'Any event — tap to narrow by kind')}">
+        <span class="mode-bar-pill-label">${esc(kind ? KIND_NAMES[kind] : 'Any event')}</span>
+      </button>${subs ? `<span class="kind-subs">${subs}</span>` : ''}
+    </div>`;
+}
+
+/** "Today", "This week", or the date the stream starts from. */
+function whenLabel() {
+  if (state._dateFocus) return dateFocusLabel();
+  return state._week ? 'This week' : 'Today';
+}
+function whenControlHTML() {
+  const on = !!(state._week || state._dateFocus);
+  return `<div class="when-filter">
+      <button class="mode-bar-pill when-btn${on ? ' active' : ''}" type="button" data-when-cycle
+        aria-label="${esc(state._dateFocus ? `From ${whenLabel()} — tap for today` : state._week ? 'This week — tap for today' : 'Today — tap for this week')}">
+        <span class="mode-bar-pill-label">${esc(whenLabel())}</span>
+      </button>${on ? `
+      <button class="agora-cal-btn when-cal${state._dateFocus ? ' active' : ''}" type="button" data-when-cal
+        aria-haspopup="dialog" aria-label="Choose a date" title="Choose a date">
+        <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">
+      </button>` : ''}
+    </div>`;
+}
+
+function bookmarksControlHTML(f) {
+  const n = bookmarkCount();
+  if (!n && !f.bookmarked) return '';
+  return `<button class="mode-bar-pill bookmarks-btn${f.bookmarked ? ' active' : ''}" type="button" data-bookmarks
+      aria-pressed="${!!f.bookmarked}" aria-label="Bookmarked events (${n})" title="Bookmarked events">
+      <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:bookmark-simple${f.bookmarked ? '-fill' : ''}.svg" alt="">
+      <span class="bookmarks-count">${n}</span>
+    </button>`;
+}
+
+/** Paint every filter control on the page from the state. */
+function renderFilterSlots(root = document) {
+  root.querySelectorAll('[data-filter-slot]').forEach(slot => {
+    const f = filterSetFor(slot.dataset.filterScope);
+    const what = slot.dataset.filterSlot;
+    const html = what === 'lang' ? langControlHTML(f)
+      : what === 'kind' ? kindControlHTML(f)
+      : what === 'when' ? whenControlHTML()
+      : bookmarksControlHTML(f);
+    if (slot.innerHTML !== html) slot.innerHTML = html;
+  });
+  const sched = document.getElementById('btn-services');
+  if (sched) {
+    sched.classList.toggle('active', state.mode === 'services');
+    sched.setAttribute('aria-checked', String(state.mode === 'services'));
+  }
+}
+// The names the rest of the app already calls them by.
+function syncEnglishButton() { renderFilterSlots(); }
+function syncParishFilterPills() { renderFilterSlots(); }
+window.agoraSyncParishFilterPills = syncParishFilterPills;
+
+/** Something in a toolbar changed: show it, in the feed or the card it narrows. */
+function onFiltersChanged(scope) {
+  renderFilterSlots();
+  if (scope === 'parish') {
+    if (state.parishSheetFocus) refreshParishContentPortion(state.parishSheetFocus);
+    return;
+  }
+  if (state._openEventId && !state.eventSheetId) closeDetailDOM();
+  renderCurrentView();
+  syncFiltersButton();
+  if (typeof renderInViewChip === 'function') renderInViewChip();
+  syncURL();
+  pulseSaveFilter();
+}
+
+/** This week, on or off — shared by the feed and the card, as the date is. */
+function setWeek(on) {
+  state._week = !!on;
+  if (on && state._dateFocus) {
+    state._dateFocus = null;
+    state._dateFocusPrecision = 'day';
+  }
+  renderFilterSlots();
+  renderDateFocus();
+  syncURL();
+  pulseSaveFilter();
+}
+
+function initFilterControls() {
+  document.addEventListener('click', (e) => {
+    const slot = e.target.closest('[data-filter-scope]');
+    if (!slot) return;
+    const scope = slot.dataset.filterScope;
+    const f = filterSetFor(scope);
+    const hit = (sel) => e.target.closest(sel);
+    if (hit('[data-lang-toggle]')) {
+      if (f.lang) { f.lang = null; f.langStrict = false; }
+      else f.lang = state._lastLang || 'English';
+      onFiltersChanged(scope);
+    } else if (hit('[data-lang-only]')) {
+      f.langStrict = !f.langStrict;
+      onFiltersChanged(scope);
+    } else if (hit('[data-lang-pick]')) {
+      openLangPicker(hit('[data-lang-pick]'), scope);
+    } else if (hit('[data-kind-cycle]')) {
+      f.kind = KIND_CYCLE[(KIND_CYCLE.indexOf(f.kind || null) + 1) % KIND_CYCLE.length];
+      f.kindSub = null;
+      onFiltersChanged(scope);
+    } else if (hit('[data-kind-sub]')) {
+      const id = hit('[data-kind-sub]').dataset.kindSub;
+      f.kindSub = f.kindSub === id ? null : id;
+      onFiltersChanged(scope);
+    } else if (hit('[data-when-cycle]')) {
+      if (state._dateFocus) window.clearDateFocus();
+      else setWeek(!state._week);
+    } else if (hit('[data-when-cal]')) {
+      openDatePicker(hit('[data-when-cal]'));
+    } else if (hit('[data-bookmarks]')) {
+      f.bookmarked = !f.bookmarked;
+      onFiltersChanged(scope);
+    }
+  });
+  renderFilterSlots();
+}
+
+// The language list: our own, under the button that opened it.
+function langPopEl() {
+  let pop = document.getElementById('lang-pop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'lang-pop';
+    pop.className = 'lang-pop hidden';
+    pop.setAttribute('role', 'listbox');
+    document.body.appendChild(pop);
+    pop.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-lang-value]');
+      if (!item) return;
+      const f = filterSetFor(pop._scope);
+      const v = item.dataset.langValue;
+      if (v) { f.lang = v; state._lastLang = v; }
+      else { f.lang = null; f.langStrict = false; }
+      closeLangPicker();
+      onFiltersChanged(pop._scope);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (pop.classList.contains('hidden') || pop.contains(e.target) || e.target.closest('[data-lang-pick]')) return;
+      closeLangPicker();
+    }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLangPicker(); });
+    document.addEventListener('scroll', () => closeLangPicker(), true);
+  }
+  return pop;
+}
+function openLangPicker(btn, scope) {
+  const pop = langPopEl();
+  if (!pop.classList.contains('hidden') && pop._anchor === btn) { closeLangPicker(); return; }
+  const f = filterSetFor(scope);
+  pop._scope = scope;
+  pop._anchor = btn;
+  const langs = languagesInUse();
+  if (f.lang && !langs.some(l => l.toLowerCase() === f.lang.toLowerCase())) langs.unshift(f.lang);
+  pop.innerHTML = `<button type="button" class="lang-item" data-lang-value="">Any language</button>`
+    + langs.map(l => `<button type="button" class="lang-item${f.lang && l.toLowerCase() === f.lang.toLowerCase() ? ' on' : ''}" role="option" data-lang-value="${esc(l)}">${esc(l)}</button>`).join('');
+  pop.classList.remove('hidden');
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = `${Math.max(8, Math.min(r.left - 40, innerWidth - w - 8))}px`;
+  pop.style.top = `${r.bottom + h + 8 > innerHeight ? Math.max(8, r.top - h - 6) : r.bottom + 6}px`;
+}
+function closeLangPicker() {
+  const pop = document.getElementById('lang-pop');
+  if (pop && !pop.classList.contains('hidden')) { pop.classList.add('hidden'); pop._anchor = null; }
 }
 
 // ── Filters menu dropdown ──
@@ -3142,20 +3516,9 @@ function syncFiltersButton() {
     if (el) el.classList.toggle('active', on);
   };
   if (window.agoraParishSheetVisible) {
-    const f = state.parishFilters;
-    setActive('btn-events', !f.socialOnly && !f.worshipOnly);
     setActive('btn-services', false);
-    setActive('btn-social', !!f.socialOnly);
-    setActive('btn-worship', !!f.worshipOnly);
   } else {
-    const isEvents = state.mode !== 'services' && !state.filters.socialOnly && !state.filters.worshipOnly;
-    const isServices = state.mode === 'services';
-    const isSocial = state.mode !== 'services' && !!state.filters.socialOnly;
-    const isWorship = state.mode !== 'services' && !!state.filters.worshipOnly;
-    setActive('btn-events', isEvents);
-    setActive('btn-services', isServices);
-    setActive('btn-social', isSocial);
-    setActive('btn-worship', isWorship);
+    setActive('btn-services', state.mode === 'services');
   }
   syncClearFilters();
 }
@@ -3163,8 +3526,8 @@ function syncFiltersButton() {
 // ── Reset FAB (top center) ──
 function hasActiveFilters() {
   return state.filters.jurisdiction || state.filters.location || state.filters.service ||
-    state.filters.day != null || state.filters.part || state.filters.parishIds || state.filters.socialOnly ||
-    state.filters.worshipOnly || state.filters.englishOnly || state.parishFocus || state.filters.multiParish;
+    state.filters.day != null || state.filters.part || state.filters.parishIds || state.filters.kind ||
+    state.filters.lang || state.filters.bookmarked || state.parishFocus || state.filters.multiParish;
 }
 
 /**
@@ -3178,7 +3541,7 @@ function anyFilterToClear() {
   const picked = f.parishIds && f.parishIds.size
     && !(state.parishFocus && f.parishIds.size === 1 && f.parishIds.has(state.parishFocus));
   return !!(f.jurisdiction || f.location || f.service || f.day != null || f.part || picked
-    || f.socialOnly || f.worshipOnly || f.englishOnly || state._dateFocus || state.mode === 'services');
+    || f.kind || f.lang || f.bookmarked || state._dateFocus || state._week || state.mode === 'services');
 }
 function syncClearFilters() {
   const btn = document.getElementById('btn-clear-filters');
@@ -3193,36 +3556,10 @@ function hasResettableScope() {
     || (state.filters.parishIds && state.filters.parishIds.size));
 }
 
+// The "Show all" fab is gone — Clear all in the toolbar is the way back to
+// everything, and the parish counter is the way to the parishes in view — so
+// this keeps the name its many callers use and syncs what is left.
 function syncResetFab() {
-  const fab = document.getElementById('reset-fab');
-  if (!fab) return;
-  const vp = state.viewportParishIds;
-  const viewportKnown = vp instanceof Set;
-  const viewportEmpty = viewportKnown && vp.size === 0;
-
-  let show;
-  if (viewportEmpty) {
-    show = true; // "no parishes in area" — show nearest parish CTA
-  } else if (hasResettableScope()) {
-    if (viewportKnown) {
-      // Only show if at least one matching parish is outside the viewport
-      const allInView = state.parishes
-        .filter(p =>
-          p.id !== '_unassigned' && p.lat != null && p.lng != null &&
-          (!state.filters.jurisdiction || p.jurisdiction === state.filters.jurisdiction) &&
-          parishPassesLocation(p) &&
-          (!state.filters.parishIds || state.filters.parishIds.has(p.id))
-        )
-        .every(p => vp.has(p.id));
-      show = !allInView;
-    } else {
-      show = true; // viewport not yet initialised — assume needed
-    }
-  } else {
-    show = false;
-  }
-
-  fab.classList.toggle('visible', show);
   syncFilterActiveStack();
   renderInViewChip();
   syncClearFilters();
@@ -3245,10 +3582,8 @@ function clearAllFilters() {
   state.parishScheduleFocus = null;
   state.filters.parishIds = null;
   state.filters.showAllParishes = null;
-  state.filters.socialOnly = false;
-  state.filters.worshipOnly = false;
-  state.filters.englishOnly = false;
-  state.filters.englishStrict = false;
+  Object.assign(state.filters, blankFilterFlags());
+  state._week = false;
   state.parishFocus = null;
   // "Clear all" means the whole feed from today. Leaving the stream wound on to
   // March while every chip said the filters were gone would read as a bug.
@@ -3261,9 +3596,7 @@ function clearAllFilters() {
     showView('events');
   }
   document.querySelectorAll('.jurisdiction-chip').forEach(c => c.classList.remove('active'));
-  document.getElementById('btn-social')?.classList.remove('active');
-  document.getElementById('btn-worship')?.classList.remove('active');
-  if (typeof syncEnglishButton === 'function') syncEnglishButton();
+  renderFilterSlots();
   if (typeof applyChipColors === 'function') applyChipColors(document.getElementById('jurisdiction-chips'));
   syncParishRowVisibility();
   syncResetFab();
@@ -3275,48 +3608,8 @@ function clearAllFilters() {
 }
 
 function initResetFab() {
-  const fab = document.getElementById('reset-fab');
-  if (!fab) return;
-  // "Show all" zooms the map to fit all parishes matching current filters,
-  // accounting for how much of the map is visible above the bottom sheet.
-  fab.addEventListener('click', () => {
-    // Close parish sheet first (no-op if already closed). closeParishSheet
-    // also deselects the implicit single-parish pill — clearAllFilters then
-    // wipes everything else.
-    if (window.agoraParishSheetVisible && typeof window.closeParishSheet === 'function') {
-      window.closeParishSheet();
-    }
-    clearAllFilters();
-    const matching = state.parishes.filter(p =>
-      p.id !== '_unassigned' && p.lat != null && p.lng != null
-    );
-    if (matching.length && window.agoraMap) {
-      const b = window.agoraPadBounds(window.agoraBoundsFromPoints(matching), 0.2);
-      const isDesktop = window.agoraIsDesktop?.() ?? false;
-      let bottomPad = 0;
-      let rightPad = 0;
-      if (isDesktop) {
-        rightPad = 440;
-      } else {
-        const sheetY = window.agoraSheetY ? window.agoraSheetY() : window.innerHeight;
-        const snapHalf = window.agoraSnapHalf ? window.agoraSnapHalf() : window.innerHeight * 0.5;
-        const snapPeek = window.agoraSnapPeek ? window.agoraSnapPeek() : window.innerHeight * 0.85;
-        if (sheetY <= snapHalf + 10) {
-          bottomPad = window.innerHeight - sheetY + 20;
-        } else if (sheetY < snapPeek - 10) {
-          const t = (sheetY - snapHalf) / (snapPeek - snapHalf);
-          bottomPad = Math.round((window.innerHeight - sheetY + 20) * (1 - t));
-        }
-      }
-      window.agoraMap.fitBounds(b, {
-        maxZoom: 13, duration: 700,
-        padding: { top: 0, right: rightPad, bottom: bottomPad, left: 0 }
-      });
-    }
-  });
-
-  // "Clear" button inside the filter active stack clears all filters, and
-  // so does the one at the head of the top filter bar.
+  // Clear all (the toolbar's, and the one in the filter stack over the map),
+  // whether or not the old Show all fab is in the page.
   const clearBtn = document.getElementById('filter-clear-btn');
   if (clearBtn) {
     clearBtn.addEventListener('click', e => { e.stopPropagation(); clearAllFilters(); });
@@ -3325,7 +3618,6 @@ function initResetFab() {
   if (barClear) {
     barClear.addEventListener('click', e => { e.stopPropagation(); clearAllFilters(); syncClearFilters(); });
   }
-
   syncResetFab();
 }
 let _lastFilterCount = null;      // null = not yet initialised; skip wave on first render
@@ -3380,16 +3672,17 @@ function clearOneFilter(kind) {
     state.filters.service = null;
     state.filters.day = null;
     state.filters.part = null;
-  } else if (kind === 'social') {
-    state.filters.socialOnly = false;
-    document.getElementById('btn-social')?.classList.remove('active');
-  } else if (kind === 'worship') {
-    state.filters.worshipOnly = false;
-    document.getElementById('btn-worship')?.classList.remove('active');
+  } else if (kind === 'eventkind') {
+    state.filters.kind = null;
+    state.filters.kindSub = null;
+    renderFilterSlots();
+  } else if (kind === 'bookmarks') {
+    state.filters.bookmarked = false;
+    renderFilterSlots();
   } else if (kind === 'english') {
-    state.filters.englishOnly = false;
-    state.filters.englishStrict = false;
-    if (typeof syncEnglishButton === 'function') syncEnglishButton();
+    state.filters.lang = null;
+    state.filters.langStrict = false;
+    renderFilterSlots();
   } else if (kind === 'schedules') {
     state.mode = 'events';
     const servicesBtn = document.getElementById('btn-services');
@@ -3480,12 +3773,15 @@ function syncFilterActiveStack() {
   if (state.filters.day != null) chips.push({ kind: 'day', label: dayNameFor(state.filters.day) });
   if (state.filters.part) chips.push({ kind: 'part', label: partLabelFor(state.filters.part) });
   if (state.filters.service) chips.push({ kind: 'service', label: serviceLabelFor(state.filters.service) });
-  if (state.filters.socialOnly) chips.push({ kind: 'social', label: 'Socials' });
-  if (state.filters.worshipOnly) chips.push({ kind: 'worship', label: 'Services' });
-  if (state.filters.englishOnly) {
+  if (state.filters.kind) {
+    chips.push({ kind: 'eventkind', label: state.filters.kindSub
+      ? window.AgoraEventTypes.eventTypeLabel(state.filters.kindSub) : KIND_NAMES[state.filters.kind] });
+  }
+  if (state.filters.bookmarked) chips.push({ kind: 'bookmarks', label: 'Bookmarked' });
+  if (state.filters.lang) {
     // The language button's own words: "English", and "English only" once
     // its "only" is on.
-    chips.push({ kind: 'english', label: state.filters.englishStrict ? 'English only' : 'English' });
+    chips.push({ kind: 'english', label: state.filters.langStrict ? `${state.filters.lang} only` : state.filters.lang });
   }
   if (state.mode === 'services') chips.push({ kind: 'schedules', label: 'Schedules' });
   const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
@@ -3684,21 +3980,12 @@ function applyNonViewportFilters(events) {
   if (state.filters.part) {
     filtered = filtered.filter(e => partOfDayOfRow(e) === state.filters.part);
   }
-  if (state.filters.socialOnly) {
-    // Social = youth, social, talk, other, festival, fundraiser (everything NOT liturgical)
-    filtered = filtered.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
-  }
-  if (state.filters.worshipOnly) {
-    // Services = liturgy, prayer (vespers, matins…) and feast: what Socials leaves out.
-    filtered = filtered.filter(e => LITURGICAL_TYPES.includes(e.event_type));
-  }
-  if (state.filters.englishOnly) {
-    filtered = filtered.filter(e => {
-      const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
-      if (!langs) return false;
-      if (state.filters.englishStrict) return langs.every(l => /english/i.test(l));
-      return langs.some(l => /english/i.test(l));
-    });
+  // The toolbar's kind, language and bookmarks (eventPassesFlags), and This
+  // week: the next seven days and no further.
+  filtered = filtered.filter(e => eventPassesFlags(e, state.filters));
+  if (state._week) {
+    const end = weekEndMs();
+    filtered = filtered.filter(e => Date.parse(e.start_utc) < end);
   }
   return filtered;
 }
@@ -3744,35 +4031,24 @@ function filterParishEventsBySession(events) {
       return true;
     });
   }
-  if (f.socialOnly) {
-    out = out.filter(e => !LITURGICAL_TYPES.includes(e.event_type));
-  }
-  if (f.worshipOnly) {
-    out = out.filter(e => LITURGICAL_TYPES.includes(e.event_type));
-  }
-  if (f.englishOnly) {
-    out = out.filter(e => {
-      const langs = parseLangs(e.languages) || parseLangs(e.parish_languages);
-      if (!langs) return false;
-      if (f.englishStrict) return langs.every(l => /english/i.test(l));
-      return langs.some(l => /english/i.test(l));
-    });
+  out = out.filter(e => eventPassesFlags(e, f));
+  if (state._week) {
+    const end = weekEndMs();
+    out = out.filter(e => Date.parse(e.start_utc) < end);
   }
   return out;
 }
 
-// Schedules counterpart for parishFilters EN filter — service-times card
-// should hide entries that don't match the chosen English mode, mirroring
-// the main schedules list's behaviour.
+// The card's timetable answers the card's toolbar too: its kind and its
+// language, as the main Schedules view answers the main one (timetable.js).
+// Bookmarks are of events, so a rule is never left out for them.
 function filterParishSchedulesBySession(schedules) {
   const f = state.parishFilters;
-  if (!f.englishOnly) return schedules;
-  return schedules.filter(s => {
-    const langs = parseLangs(s.languages) || parseLangs(s.parish_languages);
-    if (!langs) return false;
-    if (f.englishStrict) return langs.every(l => /english/i.test(l));
-    return langs.some(l => /english/i.test(l));
-  });
+  const T = window.AgoraTimetable;
+  const lf = T.langFilterOf(f);
+  if (!f.kind && !lf) return schedules;
+  return schedules.filter(s => T.kindMatches(s, f)
+    && (!lf || T.langsMatch(parseLangs(s.languages) || parseLangs(s.parish_languages), lf)));
 }
 
 // ── Bottom sheet ──
@@ -3782,14 +4058,13 @@ function initBottomSheet() {
   const modeBar = document.getElementById('mode-bar');
   const scroll = document.getElementById('sheet-scroll');
   const fab = document.getElementById('location-fab');
-  const resetFab = document.getElementById('reset-fab');
   const filterFab = document.getElementById('btn-filters');
   const shareFab = document.getElementById('mode-url');
   const isDesktop = () => window.agoraIsDesktop?.() ?? false;
   // All sheet-following FABs share the lifecycle — fade during drag, snap
   // to (currentY - 52) on settle. Keeping them in an array lets the drag /
   // snap handlers iterate once instead of duplicating every touchpoint.
-  const trackedFabs = [fab, resetFab, filterFab, shareFab].filter(Boolean);
+  const trackedFabs = [fab, filterFab, shareFab].filter(Boolean);
   const filterStack = document.getElementById('filter-active-stack');
   function positionFilterStack(y) {
     if (filterStack) filterStack.style.bottom = (window.innerHeight - y + 60) + 'px';
@@ -4811,7 +5086,7 @@ function initParishSheet() {
     window.agoraParishSheetVisible = true;
     document.body.classList.add('parish-sheet-open');
     syncParishAddEventFab();
-    state.parishFilters = { socialOnly: false, worshipOnly: false, englishOnly: false, englishStrict: false };
+    state.parishFilters = blankFilterFlags();
     syncFiltersButton();
     syncEnglishButton();
     // Ensure we start at SNAP_HIDDEN, then force layout so transition fires.
@@ -4822,11 +5097,6 @@ function initParishSheet() {
     // Open at half: map stays visible above, parish card + events below.
     snapTo(SNAP_HALF);
     if (window.agoraMainHide) window.agoraMainHide();
-    // Reset-fab belongs to the main list scope — hide while parish sheet
-    // owns the surface (main sheet's onDone won't touch the fabs while
-    // parish sheet is visible, so do it explicitly here).
-    const rFab = document.getElementById('reset-fab');
-    if (rFab) rFab.classList.add('fading');
     // Seed filter FAB + stack position so they appear at the right spot when revealed.
     if (filterFab) filterFab.style.top = (SNAP_HALF - 52) + 'px';
     if (window.agoraPositionFilterStack) window.agoraPositionFilterStack(SNAP_HALF);
@@ -5075,20 +5345,6 @@ function eventLocalDow(e) {
   return new Date(local + 'T00:00:00Z').getUTCDay();
 }
 
-// Mirror parishFilters state onto the in-card pills. parishFilters is
-// the parish-sheet's local scoped filter state (separate from the main
-// mode-bar's state.filters). The language pills are the main bar's two
-// buttons: "Any language", then "English" with its "only".
-function syncParishFilterPills() {
-  const row = document.getElementById('ps-filter-row');
-  if (!row) return;
-  const f = state.parishFilters || {};
-  row.querySelector('[data-ps-filter="social"]')?.classList.toggle('active', !!f.socialOnly);
-  row.querySelector('[data-ps-filter="worship"]')?.classList.toggle('active', !!f.worshipOnly);
-  const en = row.querySelector('[data-ps-filter="english"]');
-  if (en) syncLanguageButtons(en, row.querySelector('[data-ps-filter="english-only"]'), f);
-}
-window.agoraSyncParishFilterPills = syncParishFilterPills;
 
 function openParishSheet(parishId, opts = {}) {
   if (_parishSheetAPI) _parishSheetAPI.open(parishId, opts);
@@ -5165,6 +5421,7 @@ function closeParishSheet() {
     delete state._openEventId;
     collapseEventCardDOM({ instant: true });
   }
+  state._pinnedEventId = null;
   if (_parishSheetAPI) _parishSheetAPI.close();
   // Closing the parish card also clears the implicit single-parish pill
   // selection that opening it set. Multi-parish picker mode keeps its
@@ -5249,11 +5506,10 @@ function refreshParishContentPortion(parishId, opts = {}) {
     const sec = document.createElement('div');
     sec.className = 'ps-section ps-sched-section';
     sec.innerHTML = innerHTML;
-    // Above the filter row, which sits between the service times and the
-    // events list — mounting before the stream instead would drop it on the
-    // wrong side of the pills.
-    const anchor = contentEl.querySelector('.ps-filter-row') || streamEl;
-    anchor.parentNode.insertBefore(sec, anchor);
+    // Under the card's toolbar, which narrows it, and above the events list.
+    const row = contentEl.querySelector('.ps-filter-row');
+    const anchor = row ? row.nextSibling : streamEl;
+    (row || streamEl).parentNode.insertBefore(sec, anchor);
   }
 
   if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
@@ -5455,7 +5711,8 @@ function paintParishSheetContent(parishId, opts = {}) {
   const donateBtn = parish.donation_url
     ? `<a class="ps-btn ps-donate-btn" href="${esc(parish.donation_url)}" target="_blank" rel="noopener"><img class="ps-btn-icon" src="https://api.iconify.design/ph:hand-heart.svg" alt=""><span>Donate</span></a>`
     : '';
-  const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}"><img class="ps-btn-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt=""><span>Share</span></button>`;
+  const shareParishBtn = `<button class="ps-btn ps-share-btn" type="button" data-share-parish="${esc(parishId)}"><img class="ps-btn-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt=""><span>Share</span></button>`
+    + favouriteButtonHTML(parishId);
   // A parish's own links, beside the buttons the four columns produce. Named
   // by their label and not by their slug: the slug is a URL and a URL is not a
   // name, which is the same reasoning info_source_name carries.
@@ -5538,7 +5795,9 @@ function paintParishSheetContent(parishId, opts = {}) {
 
   // Focused event hoist: when deep-linked via URL, pin the target event right
   // under the parish header so it's the first thing the user sees.
-  const focusEventId = opts.focusEventId ?? state._openEventId ?? null;
+  // …or one handed over from an expanded event's parish button, pinned
+  // collapsed (openParishFromEvent): it stays pinned across re-renders.
+  const focusEventId = opts.focusEventId ?? state._openEventId ?? state._pinnedEventId ?? null;
   const focusedEvent = (focusEventId
     ? parishEvents.find(e => e.id === focusEventId)
     : null) || (focusEventId ? null : dateFocusPinFor(parishEvents));
@@ -5574,23 +5833,19 @@ function paintParishSheetContent(parishId, opts = {}) {
       ${parishAdminHtml}
     </div>`}
     <div class="ps-now"></div>
-    <!-- Sticky filter pill row above the events list. Operates on
-         parishFilters (scoped local state, separate from main). It sits
-         ABOVE the service times because the English pill prunes rows from
-         that panel too — it is not only the events list it acts on.
-         Schedules pill removed — service times always render below. -->
+    <!-- The card's toolbar: the main sheet's controls, built by the same
+         builders (filterControlsHTML), over the card's own filter set
+         (state.parishFilters). Above the service times, because the kind and
+         the language narrow the timetable too; the When control is shared. -->
     <div class="ps-filter-row" id="ps-filter-row">
-      <button class="ps-filter-pill" data-ps-filter="worship" type="button">
-        <img class="ps-filter-pill-icon" src="https://api.iconify.design/ph:hands-praying.svg" alt="">
-        <span>Services</span>
-      </button>
-      <button class="ps-filter-pill" data-ps-filter="social" type="button">
-        <img class="ps-filter-pill-icon" src="https://api.iconify.design/fluent:people-community-16-regular.svg" alt="">
-        <span>Socials</span>
-      </button>
-      <button class="ps-filter-pill" data-ps-filter="english" type="button" role="checkbox" aria-checked="false">Any language</button>
-      <button class="ps-filter-pill ps-filter-en-only" data-ps-filter="english-only" type="button" role="checkbox" aria-checked="false" hidden>only</button>
-      ${calendarButtonHTML('ps-filter-cal')}
+      <div class="ps-filter-line">
+        <div class="filter-slot" data-filter-slot="lang" data-filter-scope="parish"></div>
+        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="parish"></div>
+      </div>
+      <div class="ps-filter-line">
+        <div class="filter-slot" data-filter-slot="kind" data-filter-scope="parish"></div>
+        <div class="filter-slot" data-filter-slot="when" data-filter-scope="parish"></div>
+      </div>
     </div>
     ${schedSectionHtml}
     ${feedHeaderHTML(parish)}
@@ -5614,7 +5869,12 @@ function paintParishSheetContent(parishId, opts = {}) {
             delete state._openEventId;
             syncURL();
           } else {
-            expandEventCard(focusedEvent.id, { scope, card: pinnedCard });
+            // The pinned card opens the event itself, in its own sheet, and
+            // the parish card goes: the person came here from the event and
+            // is going back to it.
+            const id = focusedEvent.id;
+            closeParishSheet();
+            openEventSheet(id);
           }
         });
       }
@@ -5640,10 +5900,12 @@ function paintParishSheetContent(parishId, opts = {}) {
         const wasDatePin = isDateFocusPin(focusedEvent.id);
         if (wasDatePin) state._dateFocusPin.dismissed = true;
         delete state._openEventId;
+        const wasHanded = state._pinnedEventId != null;
+        state._pinnedEventId = null;
         collapseEventCardDOM();
         syncURL();
         // Full, so the pinned slot itself goes; the partial refresh leaves it.
-        if (pid) renderParishSheetContent(pid, wasDatePin ? { fullRender: true } : {});
+        if (pid) renderParishSheetContent(pid, (wasDatePin || wasHanded) ? { fullRender: true } : {});
       });
       pinned.appendChild(closeBtn);
     }
@@ -5758,34 +6020,9 @@ function paintParishSheetContent(parishId, opts = {}) {
   // handlers if the admin is viewing.
   if (state.isAdmin) wireScheduleAdminHandlers(contentEl);
 
-  // Wire the in-card filter pill row. Pills operate on parishFilters
-  // (the parish-sheet's own filter state) — separate from the main
-  // mode-bar's state.filters. User wants parish-card filters to act
-  // like a scoped local copy: toggling Social inside a parish only
-  // affects that parish's view, doesn't change the main filter.
-  contentEl.querySelectorAll('.ps-filter-pill').forEach(btn => {
-    const kind = btn.dataset.psFilter;
-    btn.addEventListener('click', () => {
-      const f = state.parishFilters;
-      if (kind === 'social') {
-        f.socialOnly = !f.socialOnly;
-        if (f.socialOnly) f.worshipOnly = false;
-      } else if (kind === 'worship') {
-        f.worshipOnly = !f.worshipOnly;
-        if (f.worshipOnly) f.socialOnly = false;
-      } else if (kind === 'english') {
-        toggleEnglishFilter(f, 'english');
-      } else if (kind === 'english-only') {
-        toggleEnglishFilter(f, 'only');
-      }
-      syncParishFilterPills();
-      // Partial refresh only — events list + schedule card. Header,
-      // pinned event, ps-filter-row stay in place; refresh handles its
-      // own scroll preservation.
-      if (state.parishSheetFocus) refreshParishContentPortion(state.parishSheetFocus);
-    });
-  });
-  syncParishFilterPills();
+  // The card's toolbar (filter slots): the delegated listener in
+  // initFilterControls answers it; this paints it.
+  renderFilterSlots(contentEl);
   // After the parish-sheet content paints, write the measured heights
   // into CSS vars so sticky descendants land at the right offsets:
   //   --ps-header-h: just below .ps-header (used by .ps-filter-row)
@@ -5851,7 +6088,7 @@ function paintParishSheetContent(parishId, opts = {}) {
     // Open before this paint, and not a fresh focus asked for by the caller:
     // the re-expand below is restoring state, not answering a tap.
     const restoring = (!!state._openEventId && !opts.focusEventId) || !!opts.scrollToFeed;
-    if (opts.focusEventId && !state._openEventId) {
+    if (opts.focusEventId && !state._openEventId && !opts.pinCollapsed) {
       state._openEventId = opts.focusEventId;
     }
     if (state._openEventId && scopeEl) {
@@ -6177,12 +6414,9 @@ async function shareUrl(url, title = '', feedbackEl = null) {
 }
 
 function initModeUrl() {
-  const btn = document.getElementById('mode-url');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    const url = location.origin + '/' + buildPathSegs().join('/');
-    await shareUrl(url, document.title);
-  });
+  // The link under the toolbar's Save button, building as the filters change.
+  const el = document.getElementById('mode-url-text');
+  if (el) el.addEventListener('click', () => openSavedFilterDialog());
   updateModeUrl();
 }
 
@@ -6239,6 +6473,7 @@ function updateModeUrl() {
   // Hot-glow the whole URL (not just a single segment) whenever the URL
   // changes. Restarts the CSS animation by yanking and re-adding the class.
   if (urlChanged) {
+    pulseSaveFilter();
     el.style.setProperty('--url-glow', hexToRgba(tint, 0.55));
     el.classList.remove('mode-url-flash');
     // Force reflow so the animation restarts even on rapid updates.
@@ -6364,6 +6599,9 @@ function renderParishGroupsHTML(events, reserveHost) {
     html += `<div class="parish-group-footer">`;
     if (first.parish_acronym) html += `<span class="parish-group-acro" style="color:${esc(color)}">${esc(first.parish_acronym)}</span>`;
     html += `<span class="parish-group-name">${esc(first.parish_name || '')}</span>`;
+    // How far, when we know where the reader is — on the parish's line, as the
+    // ungrouped card has it, in the location blue.
+    if (first.distance_km != null) html += `<span class="parish-group-dist distance-blue">· ${esc(String(first.distance_km))} km</span>`;
     html += `</div></div>`;
   }
   return html;
@@ -6471,7 +6709,12 @@ function setCombinedContext() {
     el.id = 'combined-context-style';
     document.head.appendChild(el);
   }
-  const at = (scope, pid) => `${scope} .event-card:not([data-host="${String(pid).replace(/["\\]/g, '')}"]) .event-at{display:inline}`;
+  const q = (pid) => String(pid).replace(/["\\]/g, '');
+  // …and framed, in the Combined badge's colour, so a service brought here
+  // from another parish stands apart from this parish's own. Not where it is
+  // held: at its venue it is simply on.
+  const at = (scope, pid) => `${scope} .event-card:not([data-host="${q(pid)}"]) .event-at{display:inline}\n`
+    + `${scope} .event-card-combined:not([data-host="${q(pid)}"]):not([data-venue="${q(pid)}"]){box-shadow:inset 0 0 0 1.5px var(--combined-fg);border-radius:12px;background:color-mix(in srgb,var(--combined-bg) 40%,transparent);padding-left:10px;margin:4px 0}`;
   const rules = [];
   if (state.parishSheetFocus) {
     rules.push(at('#parish-sheet-content', state.parishSheetFocus));
@@ -6632,6 +6875,7 @@ function renderFutureDays(events, reserveHost, opts = {}) {
   const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);
 
   let html = '';
+  let inMonthBlock = false;
   let prevMonthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
   for (const [, evts] of groups) {
     const d = parseLocalDate(evts[0].start_utc);
@@ -6642,10 +6886,18 @@ function renderFutureDays(events, reserveHost, opts = {}) {
     const dateStr = isoDateSyd(evts[0].start_utc);
     const isFocused = showDateNav && state._dateFocus === dateStr;
 
+    // Each month after this one is a block of its own, its header sticking
+    // while its days scroll under it and giving way to the next month's. The
+    // current month has no header: it is the one the feed opens on.
     const monthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
     if (monthKey !== prevMonthKey) {
-      const monthLabel = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'long', year: 'numeric' }).format(d);
-      html += `<div class="month-header">${monthLabel}</div>`;
+      const month = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'long' }).format(d);
+      const year = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric' }).format(d);
+      if (inMonthBlock) html += `</div>`;
+      html += `<div class="month-block"><div class="month-header"><span class="month-name">${month}</span><span class="month-year">${year}</span>`
+        + (showDateNav ? headerLinkBtn(`${dateStr.slice(0, 7)}-01`, 'month', `${month} ${year}`) : '')
+        + `</div>`;
+      inMonthBlock = true;
       prevMonthKey = monthKey;
     }
 
@@ -6653,6 +6905,7 @@ function renderFutureDays(events, reserveHost, opts = {}) {
       ? (isFocused
           ? `<button class="day-date-clear" type="button" onclick="clearDateFocus()" title="Back to stream">&times;</button>`
           : `<button class="day-date-pick" type="button" onclick="openDatePicker(this)" title="Jump to date"><img src="https://api.iconify.design/ph:calendar.svg" alt=""></button>`)
+        + headerLinkBtn(dateStr, 'day', dayFmt)
       : '';
 
     if (groupByParish) {
@@ -6665,8 +6918,40 @@ function renderFutureDays(events, reserveHost, opts = {}) {
     html = renderSubDaySections(evts, html, reserveHost, opts);
     html += `</div>`;
   }
+  if (inMonthBlock) html += `</div>`;
   return html;
 }
+
+// ── A day's or a month's link ──
+// Each header in the main feed copies the link to the feed from that day (or
+// month) on, with whatever else narrows it now: /smg/2026-11 is "St Mary's,
+// from November". The date segment is a FROM, as it is everywhere.
+function headerLinkBtn(date, precision, label) {
+  return `<button class="hdr-link" type="button" data-copy-date="${date}" data-precision="${precision}"
+      aria-label="Copy the link to ${esc(label)}" title="Copy the link from ${esc(label)}">
+      <img src="https://api.iconify.design/ph:link-simple.svg" alt=""></button>`;
+}
+function linkFromDate(date, precision) {
+  const keep = [state._dateFocus, state._dateFocusPrecision, state._week];
+  state._dateFocus = date;
+  state._dateFocusPrecision = precision;
+  state._week = false;
+  try { return `${location.origin}/${buildPathSegs().join('/')}`; }
+  finally { [state._dateFocus, state._dateFocusPrecision, state._week] = keep; }
+}
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-copy-date]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const url = linkFromDate(btn.dataset.copyDate, btn.dataset.precision);
+  let copied = false;
+  try { await navigator.clipboard.writeText(url); copied = true; } catch { /* below */ }
+  if (!copied) { await shareUrl(url, document.title); return; }
+  btn.classList.add('copied');
+  clearTimeout(btn._copiedTimer);
+  btn._copiedTimer = setTimeout(() => btn.classList.remove('copied'), 1200);
+});
 
 function formatEventTime(date) {
   const parts = new Intl.DateTimeFormat('en-AU', {
@@ -6817,11 +7102,11 @@ function multiDaySpan(evt) {
 }
 
 /**
- * "of St Luke the Evangelist": the saint or feast an occurrence keeps, the way
- * a service book heads it. One line, for the card and its drawer alike.
+ * "for St Luke the Evangelist": the saint or feast an occurrence keeps, the
+ * way a service book heads it. One line, for the card and its drawer alike.
  */
 function feastLineHTML(feast, cls) {
-  return `<span class="${cls} feast-line"><span class="feast-of">of</span> ${esc(feast)}</span>`;
+  return `<span class="${cls} feast-line"><span class="feast-of">for</span> ${esc(feast)}</span>`;
 }
 
 /**
@@ -6912,7 +7197,7 @@ function renderEventCard(evt) {
     if (state.locationActive) {
       distClass = km <= 5 ? 'distance-near' : km <= 15 ? 'distance-mid' : 'distance-far';
     }
-    distHtml = ` · <span class="${distClass}">${evt.distance_km} km</span>`;
+    distHtml = ` · <span class="${distClass || 'distance-blue'}">${evt.distance_km} km</span>`;
   }
 
   const isCancelled = evt.status === 'cancelled';
@@ -6963,7 +7248,7 @@ function renderEventCard(evt) {
   const altAddrHtml = altAddr ? `<div class="event-address-row">${esc(altAddr)}</div>` : '';
 
   return `
-    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}${evt._cont ? ' event-card-cont' : ''}" data-id="${evt.id}"${evt._cont ? ` data-cont-day="${esc(evt._cont.day)}"` : ''} data-host="${esc(evt.parish_id || '')}"${venue && venue.parishId ? ` data-venue="${esc(venue.parishId)}"` : ''} data-event-type="${esc(evt.event_type || '')}">
+    <div class="event-card${(isCancelled || isCombined || isBreak) ? ' event-cancelled' : ''}${hasPoster ? ' has-poster' : ''}${evt._cont ? ' event-card-cont' : ''}${(evt.combined_parishes && evt.combined_parishes.length) ? ' event-card-combined' : ''}" data-id="${evt.id}"${evt._cont ? ` data-cont-day="${esc(evt._cont.day)}"` : ''} data-host="${esc(evt.parish_id || '')}"${venue && venue.parishId ? ` data-venue="${esc(venue.parishId)}"` : ''} data-event-type="${esc(evt.event_type || '')}">
       <div class="event-content">
         <div class="event-title-row">
           <span class="event-time">${time}</span>
@@ -7042,7 +7327,14 @@ function renderScheduleDaysHTML(items) {
   let html = '';
   for (const [day, scheds] of byDay) {
     html += `<div class="schedule-day">${DAYS[day]}${day === today ? '<span class="schedule-day-today">today</span>' : ''}</div>`;
+    // Where the day turns to evening, the line the feed's Evening card is
+    // drawn on (2pm, partOfDayOf). Morning needs no mark: it is where a day starts.
+    let evening = false;
     for (const s of scheds) {
+      if (!evening && partOfDayOfRow(s) === 'evening') {
+        evening = true;
+        html += SCHEDULE_EVENING_HTML;
+      }
       const t = formatTime12(s.start_time);
       const langs = (() => { try { return JSON.parse(s.languages || '[]'); } catch { return []; } })();
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
@@ -7094,6 +7386,9 @@ function renderScheduleDaysHTML(items) {
   html += scheduleSourceHTML(items);
   return html;
 }
+
+/** The timetable's Evening divider: the feed's moon and word, on a hairline. */
+const SCHEDULE_EVENING_HTML = '<div class="schedule-evening"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg><span>Evening</span></div>';
 
 // ── Where it is held: the venue picker (public/shared/venue-picker.js) ──
 
@@ -7210,6 +7505,18 @@ function ruleFieldsHTML(attr, s = {}, { adding = false } = {}) {
         <label class="edit-check"><input type="checkbox" ${attr}="parish_scoped"${s.parish_scoped ? ' checked' : ''}> Parish only</label>
       </div>`;
 }
+
+// Picking "Other" for a rule or an event ticks Parish only on the same form:
+// an Other is the parish's own business (a council meeting, a working bee)
+// until somebody says otherwise. Only on the change TO Other — unticking it
+// afterwards is the person's to do, and sticks.
+document.addEventListener('change', (e) => {
+  const sel = e.target;
+  if (!sel.matches || !sel.matches('select[data-kind-picker]') || sel.value !== 'other') return;
+  const form = sel.closest('.schedule-edit-form, .schedule-add, .detail-edit-form');
+  const box = form && form.querySelector('[data-f="parish_scoped"], [data-af="parish_scoped"], input[id^="edit-parish-scoped-"]');
+  if (box) box.checked = true;
+});
 
 /** A time of day for a rule's form: the hidden 'HH:MM' its reader reads, dressed by time-field.js. */
 function timeFieldHTML(attr, name, value, { label = '', optional = false, none = '', near = '' } = {}) {
@@ -8373,13 +8680,15 @@ function renderEventDrawerHTML(evt, opts = {}) {
     ? `<div class="detail-poster"><img src="${esc(evt.poster_path)}" alt="Event poster"></div>`
     : '';
 
-  // A combined event's parishes, counted, and listed in a dialog of their own:
-  // the host, then the parishes the combine added, once each.
+  // A combined event's parishes, as their logos — "+ ◯◯◯", up to eight and
+  // then an ellipsis — on a button only as wide as they are, opening the list.
   const participating = participatingParishes(evt);
-  const participatingHtml = participating.length > 1
-    ? `<button type="button" class="event-drawer-participating" data-participating="${esc(String(evt.id))}">
-         <span>Participating parishes</span><span class="edp-part-dot">•</span><span class="edp-part-count">${participating.length}</span>
-         <img class="edp-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt="">
+  const participatingHtml = (evt.combined_parishes && evt.combined_parishes.length && participating.length > 1)
+    ? `<button type="button" class="event-drawer-participating" data-participating="${esc(String(evt.id))}"
+         aria-label="Participating parishes: ${participating.length}" title="Participating parishes">
+         <span class="edp-part-plus" aria-hidden="true">+</span>
+         <span class="edp-part-logos">${participating.slice(0, 8).map(({ parish: p }) => parishAvatarHTML(p, 'edp-part-logo', 'span')).join('')}</span>
+         ${participating.length > 8 ? '<span class="edp-part-more" aria-hidden="true">…</span>' : ''}
        </button>`
     : '';
 
@@ -8407,7 +8716,6 @@ function renderEventDrawerHTML(evt, opts = {}) {
           <span class="edp-time">${heroTime}</span><span class="edp-title-wrap"><span class="edp-title">${esc(evt.title)}</span>${evt.feast ? feastLineHTML(evt.feast, 'edp-feast') : ''}</span>
         </div>
         ${parishRow}
-        ${participatingHtml}
       </div>`;
   }
 
@@ -8418,20 +8726,21 @@ function renderEventDrawerHTML(evt, opts = {}) {
        </button>`
     : '';
 
+  // The poster floats at the right, from just under the parish, and what the
+  // drawer says flows beside it and on underneath it.
   return `
     <button class="event-card-close" type="button" aria-label="Close">&times;</button>
     ${heroHtml}
     <div class="event-drawer-body${posterHtml ? ' has-poster' : ''}">
-      <div class="event-drawer-text">
-        <div class="event-drawer-meta">
-          ${lines.map(l => `<div>${esc(l)}</div>`).join('')}
-          ${addrHtml}
-          ${evt.distance_km != null ? `<div>${evt.distance_km} km away</div>` : ''}
-          ${evt.languages ? `<div>${esc((() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })())}</div>` : ''}
-        </div>
-        ${evt.description && evt.description.trim() ? `<div class="detail-description">${linkifyText(evt.description.trim())}</div>` : ''}
-      </div>
       ${posterHtml}
+      ${participatingHtml}
+      <div class="event-drawer-meta">
+        ${lines.map(l => `<div>${esc(l)}</div>`).join('')}
+        ${addrHtml}
+        ${evt.distance_km != null ? `<div class="distance-blue">${esc(String(evt.distance_km))} km away</div>` : ''}
+        ${evt.languages ? `<div>${esc((() => { try { return JSON.parse(evt.languages).join(', '); } catch { return evt.languages; } })())}</div>` : ''}
+      </div>
+      ${evt.description && evt.description.trim() ? `<div class="detail-description">${linkifyText(evt.description.trim())}</div>` : ''}
     </div>
     <div class="detail-actions">
       ${mapsHref ? `<a class="btn-action btn-primary btn-google-maps" href="${esc(mapsHref)}" target="_blank" rel="noopener">
@@ -8440,22 +8749,34 @@ function renderEventDrawerHTML(evt, opts = {}) {
       <button class="btn-action btn-share-event" type="button" data-share-id="${evt.id}">
         <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share
       </button>
+      <span class="bookmark-slot">${bookmarkButtonsHTML(evt)}</span>
       ${watchLiveCta}
       ${serviceBookCta}
       ${adminActions}
     </div>`;
 }
 
-/** Every parish taking part in a combined event, its host first, once each. */
+/**
+ * Every parish taking part in a combined event, once each, with its part in
+ * it: the host first, then where it is held when that is another parish
+ * (the venue), then the parishes the combine added.
+ */
 function participatingParishes(evt) {
-  const ids = [evt.parish_id, ...(evt.combined_parishes || [])];
+  const venue = venueOf(evt);
+  const venueId = venue && venue.parishId;
+  const ids = [evt.parish_id, venueId, ...(evt.combined_parishes || [])];
   const seen = new Set();
   const out = [];
   for (const id of ids) {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const p = (state.parishes || []).find(x => x.id === id);
-    if (p) out.push(p);
+    if (!p) continue;
+    // The venue is the parish whose church it is held in: another parish's
+    // when it is held there, the host's own when it is held at home. A host
+    // whose event is somewhere else is only the host.
+    const atHome = !venue && id === evt.parish_id;
+    out.push({ parish: p, role: id === venueId || atHome ? 'venue' : id === evt.parish_id ? 'host' : 'participant' });
   }
   return out;
 }
@@ -8469,12 +8790,14 @@ function openParticipatingDialog(id) {
     kind: 'participating',
     title: `Participating parishes · ${parishes.length}`,
     sub: evt.title,
-    html: `<div class="participating-list">${parishes.map(p => `
-        <button type="button" class="event-drawer-parish-btn" data-parish-id="${esc(p.id)}">
+    html: `<div class="participating-list">${parishes.map(({ parish: p, role }) => `
+        <button type="button" class="event-drawer-parish-btn participating-${role}" data-parish-id="${esc(p.id)}">
           ${parishAvatarHTML(p, 'event-drawer-avatar', 'span')}
           <span class="edp-text">
             <span class="edp-name">${esc(p.name)}</span>
-            <span class="edp-juris">${esc(p.id === evt.parish_id ? 'Host' : `${capitalize(p.jurisdiction || '')} Orthodox`)}</span>
+            <span class="edp-juris">${role === 'host' ? '<span class="participating-role">Host</span>'
+              : role === 'venue' ? '<span class="participating-role">Venue</span>'
+              : esc(`${capitalize(p.jurisdiction || '')} Orthodox`)}</span>
           </span>
           <img class="edp-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt="">
         </button>`).join('')}</div>`,
@@ -8517,7 +8840,7 @@ function eventEditFormHTML(evt) {
       ${breakBtn}
       ${isScheduleOrigin ? `<button class="btn-outline btn-hide-event" onclick="setEventStatus(${eid},'${isHidden ? 'approved' : 'hidden'}')">${isHidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
       ${isHeadless ? `<button class="btn-danger" onclick="deleteEvent(${eid})">Delete</button>` : ''}
-      ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Combine…</button>`}
+      ${isScheduleOrigin ? '' : `<button class="btn-outline" onclick="openPublicEscalateModal(${eid})">Include other parishes…</button>`}
     </div>
     <div class="detail-edit-form" id="edit-form-${evt.id}">
       ${seriesLineHTML(evt)}
@@ -8650,7 +8973,7 @@ function wireEventDrawer(drawer, evt) {
   if (parishBtn) {
     parishBtn.addEventListener('click', () => {
       const pid = parishBtn.dataset.parishId;
-      if (pid) openParishSheet(pid);
+      if (pid) openParishFromEvent(pid, evt.id);
     });
   }
 
@@ -11430,6 +11753,8 @@ function initPosterZoom(img) {
 }
 
 function closeDetailDOM() {
+  // The event sheet holds one event; with the event gone, so is it.
+  if (state.eventSheetId) closeEventSheetDOM();
   // Legacy modal path (parish detail still uses #event-detail + backdrop).
   const panel = document.getElementById('event-detail');
   if (panel && !panel.classList.contains('hidden')) {
@@ -11459,6 +11784,7 @@ function closeDetail() {
   // of the same card expanded in the main list (hidden behind the sheet)
   // so it doesn't re-appear when the sheet closes.
   clearEventEditMode();
+  if (state.eventSheetId) { closeEventSheet(); return; }
   const pinned = document.querySelector('.ps-pinned-event .event-card.expanded');
   if (pinned && state.parishSheetFocus && typeof renderParishSheetContent === 'function') {
     const pid = state.parishSheetFocus;
@@ -11542,6 +11868,119 @@ document.getElementById('close-detail').addEventListener('click', closeDetail);
       setTimeout(() => { panel.style.transition = ''; }, 300);
     }
   }, { passive: true });
+})();
+
+// ── The event sheet: one event, expanded, on its own ──────────────────────
+//
+// For an event opened from somewhere that is not a list it sits in: a place's
+// square on the map (a fair at the showground, not at the church), or the
+// pinned card a parish's sheet shows for the event somebody came from. It
+// never moves the map — the square is already where the reader is looking —
+// and its parish button hands over to that parish's card with the event
+// pinned there, collapsed (openParishFromEvent). One sheet, one event; closing
+// the event closes it.
+
+function openEventSheet(id) {
+  const evt = (state.events || []).find(e => String(e.id) === String(id));
+  const sheet = document.getElementById('event-sheet');
+  const content = document.getElementById('event-sheet-content');
+  if (!evt || !sheet || !content) return;
+  clearEventEditMode();
+  collapseEventCardDOM({ instant: true });
+  delete state._openEventId;
+  content.innerHTML = renderEventCard(evt);
+  const card = content.querySelector('.event-card');
+  state.eventSheetId = String(evt.id);
+  sheet.classList.remove('hidden');
+  sheet.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('event-sheet-open');
+  expandEventCard(card.dataset.id, { scope: content, card, keepScroll: true });
+  document.getElementById('event-sheet-scroll').scrollTop = 0;
+  requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.add('open')));
+}
+window.agoraOpenEventSheet = openEventSheet;
+
+function closeEventSheetDOM() {
+  const sheet = document.getElementById('event-sheet');
+  state.eventSheetId = null;
+  document.body.classList.remove('event-sheet-open');
+  if (!sheet) return;
+  sheet.classList.remove('open');
+  sheet.setAttribute('aria-hidden', 'true');
+  sheet.style.transform = '';
+  setTimeout(() => {
+    if (state.eventSheetId) return;
+    sheet.classList.add('hidden');
+    document.getElementById('event-sheet-content').replaceChildren();
+  }, 260);
+}
+
+function closeEventSheet() {
+  clearEventEditMode();
+  closeEventSheetDOM();
+  delete state._openEventId;
+  syncURL();
+}
+
+/**
+ * An expanded event's parish button: that parish's card, with the event
+ * pinned at its head and collapsed, and its feed collapsed too. Tapping the
+ * pinned card opens the event again, in the event sheet, and the parish card
+ * goes away.
+ */
+function openParishFromEvent(pid, eventId) {
+  clearEventEditMode();
+  if (state.eventSheetId) closeEventSheetDOM();
+  delete state._openEventId;
+  collapseEventCardDOM({ instant: true });
+  state._pinnedEventId = eventId;
+  const contentEl = document.getElementById('parish-sheet-content');
+  // A full paint: the pinned slot is part of the head, which the partial
+  // refresh of an already-open card leaves as it was.
+  if (state.parishSheetFocus === pid && contentEl) {
+    renderParishSheetContent(pid, { fullRender: true, focusEventId: eventId, pinCollapsed: true });
+    syncURL();
+    return;
+  }
+  openParishSheet(pid, { focusEventId: eventId, pinCollapsed: true });
+}
+
+(function initEventSheet() {
+  const sheet = document.getElementById('event-sheet');
+  if (!sheet) return;
+  // Down off the handle, or off the top of the sheet's scroll, dismisses it.
+  let startY = 0, dy = 0, dragging = false;
+  const scroll = document.getElementById('event-sheet-scroll');
+  sheet.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const onHandle = !!e.target.closest('.event-sheet-handle');
+    if (!onHandle && scroll.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    dy = 0;
+    dragging = true;
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    dy = Math.max(0, e.touches[0].clientY - startY);
+    if (dy > 4) {
+      sheet.classList.add('dragging');
+      sheet.style.transform = `translateY(${dy}px)`;
+    }
+  }, { passive: true });
+  sheet.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    sheet.classList.remove('dragging');
+    if (dy > 90) closeEventSheet();
+    else sheet.style.transform = '';
+  });
+  const x = document.getElementById('event-sheet-close');
+  if (x) x.addEventListener('click', () => closeEventSheet());
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !state.eventSheetId) return;
+    if (document.querySelector('.escalate-backdrop.open, .poster-fullscreen.open')) return;
+    closeEventSheet();
+  });
 })();
 
 // ── Fullscreen poster lightbox ──

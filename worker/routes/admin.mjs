@@ -463,6 +463,12 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
   // tissue from the nightly generator), and 'manual' is what says a person
   // typed this. 'headless' is the mutation_type for a one-off with no rule
   // behind it, matching what the adapters write.
+  // An "Other" is the parish's own business — a council meeting, a working
+  // bee — until somebody says otherwise, so it is parish-only unless the body
+  // says which it is. The add-event editor has no box for it; the forms that
+  // do tick it when Other is picked.
+  const kind = b.event_type || 'other';
+  const parishOnly = b.parish_scoped != null ? !!b.parish_scoped : kind === 'other';
   const row = await env.DB.prepare(
     `INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
        location_override, lat, lng, event_type, status, mutation_type, languages,
@@ -471,8 +477,8 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
   ).bind(
     parish_id, title, b.description || null, startUtc, endUtc,
     venue.location_override, pin.lat, pin.lng,
-    b.event_type || 'other', b.languages || null,
-    b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, posterPath,
+    kind, b.languages || null,
+    b.hide_live ? 1 : 0, parishOnly ? 1 : 0, posterPath,
     venue.location_parish_id, venue.location_lat, venue.location_lng,
   ).first();
 
