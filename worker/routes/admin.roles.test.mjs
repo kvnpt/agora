@@ -40,7 +40,7 @@ class S {
 const PARISH_A = 'antiochian-stgeorge-redfern';
 let PARISH_B = null;
 
-function fresh(roleRow) {
+function fresh(roleRow, envOver = {}) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'agora-r-')), 'x.db');
   const raw = new Database(file);
   raw.pragma('foreign_keys = ON');
@@ -60,13 +60,13 @@ function fresh(roleRow) {
 
   const router = new Router();
   registerAdminRoutes(router);
-  const env = { DB: new D1(raw), AGORA_DEV_ADMIN: 'true' };
+  const env = { DB: new D1(raw), AGORA_DEV_ADMIN: 'true', ...envOver };
 
-  const call = async (method, url, body) => {
-    const init = { method };
+  const call = async (method, url, body, headers = {}) => {
+    const init = { method, headers: { ...headers } };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
-      init.headers = { 'Content-Type': 'application/json' };
+      init.headers['Content-Type'] = 'application/json';
     }
     const res = await router.handle(new Request(`https://orthodoxy.au${url}`, init), env, {});
     assert.ok(res, `no route matched ${method} ${url}`);
@@ -79,13 +79,13 @@ function fresh(roleRow) {
 
 // ── the bootstrap case ──
 
-test('with no rows, the signed-in user is an owner and is told so', async () => {
+test('under wrangler dev, with no rows, the signed-in user is an owner and is told so', async () => {
   const { call } = fresh(null);
   const ping = await call('GET', '/api/admin/ping');
   assert.equal(ping.status, 200);
   assert.equal(ping.body.role, 'owner');
   assert.equal(ping.body.bootstrap, true);
-  // The deploy that adds roles must not lock the existing admin out.
+  // A fresh local database needs somebody who can add the first row.
   assert.equal((await call('DELETE', `/api/admin/parishes/${PARISH_A}`)).status !== 403, true);
 });
 
@@ -561,4 +561,76 @@ test('once the first row exists the guard steps aside', async () => {
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM admin_roles').get().n, 1);
   // And the caller is out, deliberately this time.
   assert.equal((await call('GET', '/api/admin/ping')).status, 403);
+});
+
+
+// ── production: an empty table is nobody ──
+//
+// Everything above runs as `wrangler dev` does, with AGORA_DEV_ADMIN. These run
+// as production does — a real Access JWT, signed and verified — because the
+// bootstrap rule is switched by that flag, and the switch is the thing to prove.
+
+const TEAM = 'team.cloudflareaccess.com';
+const AUD = 'aud-tag';
+
+async function accessSigner() {
+  const kid = `roles-${Math.random().toString(36).slice(2)}`;
+  const { publicKey, privateKey } = await crypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true, ['sign', 'verify'],
+  );
+  const jwk = await crypto.subtle.exportKey('jwk', publicKey);
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const sign = async (email) => {
+    const head = enc({ alg: 'RS256', kid });
+    const body = enc({ aud: AUD, iss: `https://${TEAM}`, email, exp: Math.floor(Date.now() / 1000) + 600 });
+    const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(`${head}.${body}`));
+    return `${head}.${body}.${Buffer.from(sig).toString('base64url')}`;
+  };
+  return { jwks: { keys: [{ ...jwk, kid, alg: 'RS256' }] }, sign };
+}
+
+/** A production env (no AGORA_DEV_ADMIN), Access answering with these keys. */
+async function production(fn) {
+  const { jwks, sign } = await accessSigner();
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify(jwks), { status: 200 });
+  try {
+    const t = fresh(null, { AGORA_DEV_ADMIN: undefined, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD });
+    const as = async (email) => ({ 'Cf-Access-Jwt-Assertion': await sign(email) });
+    return await fn({ ...t, as });
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+test('in production, with no rows, a signed-in stranger is refused everywhere', async () => {
+  await production(async ({ call, as }) => {
+    const me = await as('anybody@example.org');
+    const ping = await call('GET', '/api/admin/ping', undefined, me);
+    assert.equal(ping.status, 403);
+    assert.match(ping.body.error, /not on the admin list/);
+    assert.equal((await call('DELETE', `/api/admin/parishes/${PARISH_A}`, undefined, me)).status, 403);
+    assert.equal((await call('PUT', '/api/admin/people/anybody@example.org', { role: 'owner' }, me)).status, 403);
+  });
+});
+
+test('in production, with no rows, a claim is refused rather than queued for nobody', async () => {
+  await production(async ({ raw, call, as }) => {
+    const res = await call('POST', '/api/admin/claims', { parish_id: PARISH_A }, await as('anybody@example.org'));
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /no People list yet/);
+    assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM parish_claims').get().n, 0);
+  });
+});
+
+test('in production, the owner row from SQL is all it takes to get back in', async () => {
+  await production(async ({ raw, call, as }) => {
+    raw.prepare("INSERT INTO admin_roles (email, role) VALUES ('you@example.org', 'owner')").run();
+    const ping = await call('GET', '/api/admin/ping', undefined, await as('You@Example.org'));
+    assert.equal(ping.status, 200);
+    assert.equal(ping.body.role, 'owner');
+    assert.equal(ping.body.bootstrap, false);
+    assert.equal((await call('GET', '/api/admin/ping', undefined, await as('anybody@example.org'))).status, 403);
+  });
 });

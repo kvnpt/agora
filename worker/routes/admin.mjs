@@ -99,6 +99,12 @@ async function acronymConflict(db, acronym, parishId) {
 //
 // Omitting the capability means "any recognised role", which is right for the
 // reads: a parish contact needs the parish list to render their own card.
+// The bootstrap rule — an empty admin_roles makes the caller an owner — is for
+// `wrangler dev` only, the same switch that skips Access there. In production
+// an empty table is nobody (lib/roles.mjs).
+const roleOf = (c, identity) =>
+  resolveRole(c.env.DB, identity, { bootstrap: c.env.AGORA_DEV_ADMIN === 'true' });
+
 const guarded = (capability, fn) => {
   // Called as guarded(fn) by every route that predates roles.
   if (typeof capability === 'function') { fn = capability; capability = null; }
@@ -108,7 +114,7 @@ const guarded = (capability, fn) => {
     if (denied) return denied;
 
     const identity = await adminIdentity(c);
-    const who = await resolveRole(c.env.DB, identity);
+    const who = await roleOf(c, identity);
     // Stash it: handlers need the role for parish scoping and for the audit
     // line, and resolving it twice is a second query for the same answer.
     c.who = { ...who, identity };
@@ -614,7 +620,7 @@ const signedIn = (fn) => async (c) => {
   if (denied) return denied;
   const identity = await adminIdentity(c);
   if (!identity) return json({ error: 'Unauthorized' }, 401);
-  c.who = { ...(await resolveRole(c.env.DB, identity)), identity };
+  c.who = { ...(await roleOf(c, identity)), identity };
   return fn(c);
 };
 
@@ -1001,12 +1007,12 @@ export function registerAdminRoutes(router) {
 
   router.post('/api/admin/claims', signedIn(async (c) => {
     const { env, request } = c;
-    // With nobody listed, every signed-in person is already an owner — there
-    // is no list for a claim to be approved onto, and approving one would be
-    // the first row, which locks everybody else out. Refuse rather than start
-    // that by accident.
-    if (c.who.bootstrap) {
-      return json({ error: 'This site has no People list yet, so there is nothing to claim onto. Ask the owner to add themselves under People first.' }, 409);
+    // With nobody listed there is nobody to approve a claim (in production) or
+    // everybody already is an owner (under `wrangler dev`), and approving one
+    // would be the first row, which locks everybody else out. Refuse rather
+    // than queue an ask no one can answer, or start that by accident.
+    if (c.who.empty) {
+      return json({ error: 'This site has no People list yet, so there is nothing to claim onto. Ask the owner to add themselves first.' }, 409);
     }
     const v = validateClaim(await readJson(request));
     if (!v.ok) return json({ error: v.error }, 400);

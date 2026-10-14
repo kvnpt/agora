@@ -23,18 +23,29 @@
 //
 // ── THE BOOTSTRAP RULE ──
 //
-// An empty table means EVERY authenticated user is an owner.
+// Under `wrangler dev` (AGORA_DEV_ADMIN), an empty table means the signed-in
+// user is an owner, so a fresh local database has somebody who can open
+// People and add the first row.
 //
-// That is deliberate and it is the only safe migration: the deploy that adds
-// this code must not lock the existing admin out of their own panel, and
-// before this existed every authenticated user was effectively an owner
-// anyway. So an empty table reproduces exactly today's behaviour.
+// IN PRODUCTION AN EMPTY TABLE GRANTS NOTHING. It used to mean every
+// authenticated user was an owner — right for the one deploy that introduced
+// roles, when that was already the behaviour, and wrong ever after: the Access
+// policy is "Include: Everyone" with a one-time PIN, so an emptied table (a bad
+// migration, a restore, a DELETE meant for the local database) would have made
+// everybody with an email address an owner. Now it locks everybody out
+// instead, which is recoverable with one row of SQL:
 //
-// The moment ANY row exists, absence stops meaning owner and starts meaning
-// no access. That flip is the dangerous edge — add a sub-admin to Access,
-// forget their row, and they would silently be an owner under a "missing means
-// default" rule. So the rule inverts itself the first time it is used, and the
-// panel says so loudly before the first row is written.
+//   npx wrangler d1 execute agora --remote --command \
+//     "INSERT INTO admin_roles (email, role) VALUES ('you@example.org', 'owner')"
+//
+// A table that cannot be read is treated the same way: in production, a D1
+// error answers "no role", never "owner".
+//
+// The moment ANY row exists, absence means no access, in both places. That
+// flip is the dangerous edge — add a sub-admin to Access, forget their row,
+// and they would silently be an owner under a "missing means default" rule.
+// So the rule inverts itself the first time it is used, and the panel says so
+// loudly before the first row is written.
 //
 // Elsewhere in this codebase absence deliberately means "carry on" — a missing
 // adapter_settings row must never be the thing that stops a scrape. The
@@ -89,15 +100,19 @@ export const NO_ROLE = null;
 /**
  * Resolve one person's role.
  *
- * Returns `{ role, parishIds, bootstrap }`. `bootstrap` is true when the table
- * was empty and the caller was granted owner by the rule above — the panel
+ * Returns `{ role, parishIds, bootstrap, empty }`. `empty` is true when the
+ * table has no rows or cannot be read. `bootstrap` is true when, on top of
+ * that, the caller was granted owner by the dev-only rule above — the panel
  * renders a notice for it, because a deployment silently in that state looks
  * exactly like a configured one.
  *
- * A missing table reads as empty, so the code can deploy before the schema
- * change lands rather than 500ing for the window in between.
+ * `opts.bootstrap` turns the rule on. Only `wrangler dev` passes it
+ * (AGORA_DEV_ADMIN); everywhere else an empty table is nobody.
  */
-export async function resolveRole(db, email) {
+export async function resolveRole(db, email, { bootstrap = false } = {}) {
+  const unlisted = {
+    role: bootstrap ? 'owner' : NO_ROLE, parishIds: [], bootstrap, empty: true,
+  };
   let rows = [];
   try {
     const r = await db.prepare(
@@ -105,22 +120,25 @@ export async function resolveRole(db, email) {
     ).all();
     rows = r.results || [];
   } catch {
-    return { role: 'owner', parishIds: [], bootstrap: true };
+    return unlisted;
   }
 
-  if (!rows.length) return { role: 'owner', parishIds: [], bootstrap: true };
+  if (!rows.length) return unlisted;
 
   // Case-insensitive: an identity provider may hand back a different casing
   // than whoever typed the row, and "why can't Fr John get in" is a poor
   // afternoon.
   const want = String(email || '').trim().toLowerCase();
   const row = rows.find(r => String(r.email || '').trim().toLowerCase() === want);
-  if (!row || !ROLES.includes(row.role)) return { role: NO_ROLE, parishIds: [], bootstrap: false };
+  if (!row || !ROLES.includes(row.role)) {
+    return { role: NO_ROLE, parishIds: [], bootstrap: false, empty: false };
+  }
 
   return {
     role: row.role,
     parishIds: parseParishIds(row.parish_ids),
     bootstrap: false,
+    empty: false,
   };
 }
 

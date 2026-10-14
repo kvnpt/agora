@@ -6,12 +6,26 @@ Who can get in (Cloudflare Access), what they may do once in (admin_roles), and 
 reaches `/admin`; that table decides what they may touch once inside —
 owner, editor, or a parish contact scoped to their own parishes. Routes name
 a *capability*, never a role, so a control the panel greys out and a route
-that refuses read the same map. **An empty table means every authenticated
-user is an owner**, which is exactly the behaviour before roles existed, so
-the deploy cannot lock anybody out; the first row flips it and absence then
-means no access. That is the opposite of `adapter_settings`, where absence
-must never stop a scrape, and deliberately so: a missed scrape is fixed by
-the next one, a wrongly-granted delete is not.
+that refuses read the same map. **In production an empty table is nobody**:
+every request is refused, and so is a table D1 cannot read. Under `wrangler
+dev` (`AGORA_DEV_ADMIN`) an empty table makes the signed-in user an owner, so
+a fresh local database has someone to add the first row (the bootstrap rule).
+Either way, once a row exists, absence means no access. That is the opposite
+of `adapter_settings`, where absence must never stop a scrape, and
+deliberately so: a missed scrape is fixed by the next one, a wrongly-granted
+delete is not.
+
+It used to be every authenticated user, in production too — right for the
+deploy that introduced roles, when that was already the behaviour, and wrong
+ever after. Access is "Include: Everyone" with a one-time PIN, so an emptied
+table (a bad migration, a restore, a `DELETE` aimed at the local database)
+would have made everybody with an email address an owner. Locked out is
+recoverable with one row:
+
+```bash
+npx wrangler d1 execute agora --remote --command \
+  "INSERT INTO admin_roles (email, role) VALUES ('you@example.org', 'owner')"
+```
 
 **Told, not asked.** An owner may combine across parishes without waiting on
 the parishes it touches, because a quorum of contacts who mostly do not exist
@@ -119,8 +133,9 @@ An owner sees open claims at the top of **Asks**, and they count towards the
 red dot. Approving writes `admin_roles` and **only ever grants**: no row
 becomes a parish contact for that parish, a contact gains it beside the ones
 they hold, an owner or editor is left as they are. With an empty People list
-(the bootstrap rule) a claim is refused — there is no list to approve it onto,
-and the first row would lock everybody else out.
+a claim is refused — in production there is nobody to approve it, under
+`wrangler dev` everybody already is an owner, and the first row would lock
+everybody else out.
 
 A newly approved contact sees a one-time guide on their own parish's sheet —
 details, service times, one-week changes, one-offs, a monthly bulletin — kept
@@ -186,9 +201,10 @@ contact** under **Suggest edits** on their parish), and an owner gives them a
 role under **People** or approves their claim under **Asks**. Removing one is deleting their People row.
 
 Before you switch, check **People has rows** — at least your own, as owner.
-An EMPTY table means every authenticated user is an owner (the bootstrap rule
-above), which with "Everyone" would be everybody with an email address. The
-People tab shows a loud notice while the table is empty.
+An empty table no longer means everybody is an owner in production — it means
+nobody is, so with "Everyone" an empty list locks the panel rather than opening
+it — but nobody can add the first row from the panel either. That takes the
+`INSERT` above.
 
 Two costs to know. Each person who signs in takes an Access **seat**, and the
 free plan has 50; a seat can be removed under **Zero Trust → Users**. And the
