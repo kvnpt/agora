@@ -13,6 +13,7 @@ import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
 import { isProbePath, probeResponse } from './lib/probe.mjs';
+import { adminHostRedirect } from './lib/admin-host.mjs';
 
 const router = new Router();
 registerPublicRoutes(router);
@@ -27,7 +28,9 @@ router.get('/health', async ({ env }) => {
     ).first();
     return json({ status: 'ok', parishes: row.n, timestamp: new Date().toISOString() });
   } catch (err) {
-    return json({ status: 'error', error: err.message }, 500);
+    // Public, like every 500 here: what failed goes to the log, not the reply.
+    console.error('[health]', err && err.stack || err);
+    return json({ status: 'error' }, 500);
   }
 });
 
@@ -84,6 +87,10 @@ export default {
     // /.env, /.git/config, /wp-login.php: a scanner's, answered before the
     // router or a page can spend a D1 read on it (lib/probe.mjs).
     if (isProbePath(new URL(request.url).pathname)) return probeResponse();
+    // /admin on greek.orthodoxy.au: sent to orthodoxy.au, the one host Access
+    // guards it on (lib/admin-host.mjs).
+    const toAdminHost = adminHostRedirect(request.url);
+    if (toAdminHost) return toAdminHost;
     try {
       const res = await router.handle(request, env, ctx);
       // A write that landed moves the data version, so the next /api/bundle
@@ -97,7 +104,10 @@ export default {
       }
       if (res) return res;
     } catch (err) {
-      return json({ error: 'Internal error', detail: err.message }, 500);
+      // The detail goes to the log, not the response: an uncaught error can be
+      // a D1 message naming a table or a column, and this answers anybody.
+      console.error(`[${request.method} ${new URL(request.url).pathname}]`, err && err.stack || err);
+      return json({ error: 'Internal error' }, 500);
     }
 
     // Nothing matched. An unknown /api/ path is a real 404; anything else is a

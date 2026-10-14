@@ -243,8 +243,8 @@ test('a disabled API is distinguishable from a private calendar', async () => {
 });
 
 test('the API key never reaches the message', async () => {
-  // adapter_runs is served unauthenticated at /api/adapters/status, and the key
-  // travels in the query string — so an echoed URL would publish it.
+  // adapter_runs is served unauthenticated at /api/adapters/status, so a key
+  // that Google echoed back in an error would be published there.
   const echoed = () => new Response(
     JSON.stringify({ error: { message: `Bad request to ...?key=${KEY}`, errors: [{ reason: 'badRequest' }] } }),
     { status: 400, statusText: 'Bad Request' },
@@ -252,6 +252,26 @@ test('the API key never reaches the message', async () => {
   const msg = await fetchWith(echoed);
   assert.doesNotMatch(msg, new RegExp(KEY));
   assert.match(msg, /<redacted>/);
+});
+
+test('the API key goes in a header, never the URL', async () => {
+  // A URL is what logs and traces record. The Places search already sends the
+  // key this way; the Calendar adapter sent it as ?key= until it did too.
+  const real = globalThis.fetch;
+  let seen;
+  globalThis.fetch = async (url, init) => {
+    seen = { url: String(url), key: new Headers(init && init.headers).get('X-Goog-Api-Key') };
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+  try {
+    const adapter = ADAPTERS.find(a => a.sourceType === 'google-calendar');
+    await adapter.fetchEvents({ GOOGLE_API_KEY: KEY });
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(seen.key, KEY);
+  assert.doesNotMatch(seen.url, new RegExp(KEY));
+  assert.doesNotMatch(seen.url, /[?&]key=/);
 });
 
 test('a non-JSON body still yields something to act on', async () => {

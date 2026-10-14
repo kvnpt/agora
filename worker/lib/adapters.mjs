@@ -51,8 +51,9 @@ async function googleError(res, apiKey) {
   } catch {
     detail = raw.slice(0, 200);
   }
-  // The key is in the query string, so it can appear in an echoed URL. Never
-  // let it reach adapter_runs, which /api/adapters/status serves unauthenticated.
+  // The key travels in a header, not the URL, so Google has no URL of ours to
+  // echo it in. Redacted anyway: adapter_runs is served unauthenticated at
+  // /api/adapters/status, and a key that reached it would be published.
   if (apiKey) detail = detail.split(apiKey).join('<redacted>');
   return `Google Calendar API error: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`;
 }
@@ -86,7 +87,6 @@ class GoogleCalendarAdapter {
     const url = new URL(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(this.calendarId)}/events`
     );
-    url.searchParams.set('key', apiKey);
     // Reported alongside the events, because absence only means anything
     // inside the range actually asked for. A PDF adapter reports whatever
     // month its table covers; the shape is the same.
@@ -100,7 +100,9 @@ class GoogleCalendarAdapter {
     url.searchParams.set('orderBy', 'startTime');
     url.searchParams.set('maxResults', '100');
 
-    const res = await fetch(url.toString());
+    // X-Goog-Api-Key, the way the Places search sends it, rather than ?key=.
+    // A URL is what logs, traces and error messages record; a header is not.
+    const res = await fetch(url.toString(), { headers: { 'X-Goog-Api-Key': apiKey } });
     if (!res.ok) throw new Error(await googleError(res, apiKey));
     const data = await res.json();
 
