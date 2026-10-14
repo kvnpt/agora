@@ -179,6 +179,11 @@
 
 html {
   overscroll-behavior-y: none;
+  /* iOS inflates text when the phone turns to landscape, and keeps some of it
+     after it turns back: pills a size up, a card's name wrapping where it did
+     not. The layout is already sized for the width it is given. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -579,6 +584,15 @@ input, select, textarea {
   opacity: 0.85;
 }
 .mode-bar-pill-label { font-size: 12px; }
+/* Three labelled pills now — Schedules, Services, Socials — and the account.
+   They must still fit without scrolling (see .mode-bar-row-pills): tighter on
+   a 375px phone, and without their icons on a 320px one. */
+@media (max-width: 400px) {
+  .mode-bar-row-pills .mode-bar-pill:not(.fm-account) { padding: 5px 9px; gap: 4px; }
+}
+@media (max-width: 350px) {
+  .mode-bar-row-pills .mode-bar-pill:not(.fm-account) .mode-bar-pill-icon { display: none; }
+}
 .mode-bar-pill.active {
   background: var(--text);
   color: var(--bg);
@@ -913,6 +927,28 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   cursor: pointer;
   margin-right: 2px;
 }
+/* "Clear all", at the head of the bar whenever anything is filtered. */
+.parish-clear-all {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 11px 0 9px;
+  margin-right: 2px;
+  background: var(--text);
+  color: var(--bg);
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.parish-clear-all span { font-size: 16px; line-height: 1; margin-top: -1px; }
+.parish-clear-all[hidden] { display: none; }
 .parish-multi-toggle img {
   width: 16px;
   height: 16px;
@@ -1367,6 +1403,36 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 
 /* A multi-day event's span, under its parish: "Fri 16 – Sun 18 Oct, until 4 pm". */
 .event-span-row { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+/* A later day of it: "all day", or "until 2pm" on its last. */
+.event-time-cont {
+  display: inline-block;
+  min-width: 3.4em;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding-top: 2px;
+}
+
+/* The saint or feast an occurrence keeps — "of St Luke the Evangelist" —
+   under the title, in a service book's voice. */
+.feast-line {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+.event-feast-row { margin-top: 1px; }
+.feast-of {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  font-style: italic;
+  font-size: 1.12em;
+  margin-right: 1px;
+  color: var(--text-muted);
+}
 
 .event-title-row {
   display: flex;
@@ -1633,7 +1699,57 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-.event-drawer-hero-title .edp-time { margin-right: 8px; }
+.event-drawer-hero-title { display: flex; align-items: baseline; }
+.event-drawer-hero-title .edp-time { flex: none; margin-right: 8px; }
+.event-drawer-hero-title .edp-title-wrap { flex: 1; min-width: 0; }
+.event-drawer-hero-title .edp-feast { margin-top: 4px; font-size: 14px; }
+.event-drawer-hero-title .edp-feast .feast-of { font-size: 1.15em; }
+
+/* "Participating parishes • 3" on a combined event, opening the list. */
+.event-drawer-participating {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.event-drawer-participating:active { background: var(--surface-2); }
+.event-drawer-participating .edp-part-dot { color: var(--text-muted); }
+.event-drawer-participating .edp-part-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.event-drawer-participating .edp-chev {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  opacity: 0.75;
+  filter: brightness(0) saturate(100%) invert(20%);
+}
+.participating-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+
+/* What the drawer says about it, with its poster at the right — the side the
+   collapsed card keeps it on. */
+.event-drawer-body.has-poster {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.event-drawer-text { flex: 1; min-width: 0; }
+.event-drawer-body .detail-poster {
+  flex: none;
+  width: 36%;
+  max-width: 168px;
+  margin: 2px 0 12px;
+  justify-content: flex-end;
+}
+.event-drawer-body .detail-poster img { width: 100%; }
 .event-drawer-hero-title .edp-time .t-min,
 .event-drawer-hero-title .edp-time .t-mer { font-size: 0.72em; font-weight: 700; }
 
@@ -1671,6 +1787,36 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     0 8px 12px -6px var(--accent-glow, rgba(0, 0, 0, 0.35));
 }
+/* A parish with no logo: its acronym in its jurisdiction's colour on white,
+   with a slight gradient (parishAvatarParts in app.js). The type is sized to
+   the circle, whatever circle it is, by container units. */
+.avatar-acronym.avatar-acronym {
+  background: linear-gradient(155deg, #ffffff 0%, #f1f2f5 100%);
+  color: var(--avatar-ink, #555);
+  container-type: inline-size;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--avatar-ink, #555) 22%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.ps-avatar.avatar-acronym {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--avatar-ink, #555) 22%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    0 0 0 3px rgba(255, 255, 255, 0.6),
+    0 0 14px 2px var(--parish-glow, rgba(0, 0, 0, 0.18));
+}
+.avatar-acronym-text {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  font-size: 44cqw;
+}
+.avatar-acronym-text[data-len="2"] { font-size: 38cqw; }
+.avatar-acronym-text[data-len="3"] { font-size: 31cqw; }
+.avatar-acronym-text[data-len="4"] { font-size: 25cqw; }
+.avatar-acronym-text[data-len="5"] { font-size: 21cqw; }
+
 .parish-schedule-avatar img,
 .ps-avatar img,
 .event-drawer-avatar img {
@@ -1950,6 +2096,17 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   overflow-wrap: anywhere;
 }
 .parish-schedule-head + .schedule-day { margin-top: 6px; }
+/* The timetable starts on today; the first day says so. */
+.schedule-day-today {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  vertical-align: 1px;
+  color: var(--juris-color, var(--text-secondary));
+  background: color-mix(in srgb, var(--juris-color, #888) 12%, transparent);
+}
 /* Two lines at most, then an ellipsis — a long title ("Sisterhood of Saints
    Mary and Martha (Paraklesis Service)") should not push the day below it off
    the panel. The full title is in the row's tooltip and on the event card. */
@@ -2048,39 +2205,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   box-sizing: border-box;
   width: 100%;
 }
-.schedule-edit-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-}
-.schedule-edit-grid input,
-.schedule-edit-grid select {
-  padding: 5px 7px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: inherit;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  background: var(--bg);
-  color: var(--text);
-}
-.schedule-edit-grid .sef-full {
-  grid-column: 1 / -1;
-}
-/* Below about 330px two columns stop clearing the 119px a 12-hour time input
-   asks for, and 320px is a real phone. Stack rather than clip "09:00 AM" to
-   "09:00 A" — a time input squeezed too small does not overflow, it just
-   drops characters, so nothing in the layout would have said it was wrong.
-   .schedule-add-grid needs no rule of its own: its columns are auto-fit at
-   minmax(120px, 1fr), so it drops to one column here by itself. This grid
-   keeps an explicit two-column shape instead because its rows are PAIRED —
-   day beside type, start beside end — and auto-fit would pull all four onto
-   one row as soon as the sheet was wide enough to hold them. */
-@media (max-width: 330px) {
-  .schedule-edit-grid { grid-template-columns: minmax(0, 1fr); }
-}
 .wom-checkboxes {
   display: flex;
   flex-wrap: wrap;
@@ -2108,62 +2232,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   font-size: 10px;
   font-style: italic;
 }
-/* A rule's dates. Labelled, unlike the grid above: two bare date inputs side
-   by side do not say which is the start. */
-.sef-dates {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  margin-top: 6px;
-}
-.sef-dates label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.sef-dates input {
-  padding: 5px 7px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: inherit;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  background: var(--bg);
-  color: var(--text);
-}
-.sef-dates-hint {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-style: italic;
-  margin-top: 3px;
-}
 .si-meta .schedule-item-range { font-size: 11px; color: var(--text-muted); }
-.sef-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
-}
-.sef-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
-.schedule-save-btn, .schedule-del-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.schedule-save-btn { background: var(--text); color: var(--text-inverse); border-color: transparent; }
-.schedule-del-btn { background: none; color: var(--live); border-color: var(--live); }
-
 /* ── Detail panel ── */
 .detail-panel {
   position: fixed;
@@ -2813,6 +2882,33 @@ a.filters-menu-item { text-decoration: none; }
   -webkit-user-select: none;
   transform-origin: center center;
 }
+.poster-close {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top, 0px) + 8px);
+  right: max(14px, env(safe-area-inset-right, 0px) + 8px);
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 3px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: #fff;
+  font: inherit;
+  font-size: 28px;
+  line-height: 1;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.poster-fullscreen--light .poster-close {
+  background: rgba(0,0,0,0.07);
+  border-color: rgba(0,0,0,0.18);
+  color: var(--text);
+}
 .poster-download {
   position: absolute;
   bottom: max(28px, env(safe-area-inset-bottom, 0px) + 16px);
@@ -3348,6 +3444,39 @@ body.parish-sheet-open #filters-menu #btn-multi-parish { display: none; }
 /* Parish card filter row: pinned to the right, away from the pills, because
    it does not filter — it moves the stream. */
 .ps-filter-cal { width: 28px; height: 28px; margin-left: auto; }
+/* Under a date focus it is the main feed's chip: the date, and its ×. First
+   in the row, so the row's scroll never hides where the list starts. */
+.ps-filter-cal .cal-btn-label,
+.ps-filter-cal .cal-btn-x { display: none; }
+.ps-filter-cal.active {
+  order: -1;
+  width: auto;
+  height: 30px;
+  margin-left: 0;
+  padding: 0 4px 0 11px;
+  gap: 7px;
+  border-radius: 999px;
+}
+.ps-filter-cal.active .cal-btn-label {
+  display: inline;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--bg);
+}
+.ps-filter-cal.active .cal-btn-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 22%, transparent);
+  color: var(--bg);
+  font-size: 14px;
+  line-height: 1;
+}
 /* Feed footer: beside Load more, and big enough to be a tap target next to a
    44px button. */
 .list-footer-cal { width: 44px; height: 44px; }
@@ -4179,36 +4308,6 @@ button.ps-avatar { cursor: pointer; }
   padding-top: 10px;
   border-top: 1px dashed var(--border-light);
 }
-/* A column is never narrower than the time input needs, and the row takes as
-   many as fit. Three equal columns were the bug: a native <input type="time">
-   in a 12-hour locale is "09:00 AM" plus the clock button and asks for 119px,
-   a weekday name asks for 107px, and a third of a phone is about 109px — so
-   the time input read "09:00 AI". It does not overflow when it is squeezed, it
-   clips its own fields, which is why nothing in the layout said anything was
-   wrong. 120px is that measured need, stated as the constraint rather than as
-   a column count somebody has to recompute when the padding changes: two
-   columns on a phone, one at 320px, more on a wide sheet. The event type is
-   the short control (68px for "liturgy") and carries .sef-full, so the row
-   underneath is its own rather than a third of the width the other two
-   needed. */
-.schedule-add-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 6px;
-}
-.schedule-add-grid .sef-full { grid-column: 1 / -1; }
-.schedule-add-grid input,
-.schedule-add-grid select {
-  font-size: 12px;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: inherit;
-  min-width: 0;
-  background: var(--bg);
-  color: var(--text);
-}
-.schedule-add-btn { margin-top: 8px; }
 /* "From a photo of the sign": the add-event editor's poster drop, in the
    timetable's own words, above the fields for typing a service in. */
 .sap-drop {
@@ -4570,6 +4669,142 @@ button.ps-avatar { cursor: pointer; }
 #form-body .ps-details-editing { padding-left: 0; padding-right: 0; }
 #form-body .ps-header.ps-header-editing { position: static; padding: 0 0 12px; border-bottom: 0; background: none; }
 .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+/* ── "Suggest edits", before the sign-in (public/shared/suggest-dialog.js) ──
+   Its own backdrop, over whatever page opened it: the app's parish card or
+   a lite card. Above the edit dialog's layer, which it never shares. */
+.suggest-dialog { z-index: 3200; }
+.sg-form { margin: 0; padding: 0; border-top: 0; background: none; }
+.sg-lead { margin: 0 0 14px; font-size: 14px; line-height: 1.45; color: var(--text-secondary); }
+.sg-form label span[data-sg-name-hint],
+.sg-form .edit-row > label > span { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
+.sg-form .edit-check.sg-check { display: flex; align-items: flex-start; gap: 10px; margin: 2px 0 12px; }
+.sg-form .sg-check input { flex: none; margin-top: 2px; }
+.sg-form .sg-check b { display: block; font-size: 14px; color: var(--text); }
+.sg-form .sg-check small { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 400; line-height: 1.4; color: var(--text-muted); }
+.sg-error { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--danger); }
+.sg-error[hidden], .sg-form [hidden] { display: none !important; }
+.sg-next { margin-top: 12px; }
+.sg-signin a { color: var(--accent-text, var(--accent)); font-weight: 600; }
+
+/* ── A rule's form: adding a service and editing one (ruleFieldsHTML) ──
+   The event form's rows — a label over a 16px field — so the two dialogs a
+   person moves between read as one thing. */
+.rule-form .edit-checks { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.rule-form .edit-checks .edit-check { margin: 0; }
+.rule-form .edit-row-hint.rule-dates-hint { margin: -6px 0 12px; }
+.rule-form .sef-venue { margin: 0; }
+.rule-form .rule-poster { margin: 0; }
+.rule-form .rule-poster-row { display: flex; align-items: center; gap: 12px; }
+.rule-form .poster-edit-thumb { cursor: zoom-in; }
+/* How often: three answers in the form's own size, not the 11px of a row. */
+.rule-form .cadence { margin-top: 0; }
+.rule-form .cad-modes { gap: 6px 16px; font-size: 15px; }
+.rule-form .cad-mode,
+.rule-form .wom-check { gap: 7px; font-size: 15px !important; color: var(--text); }
+.rule-form .cad-mode input,
+.rule-form .wom-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.rule-form .cad-body { gap: 8px 14px; margin-top: 10px; font-size: 14px; }
+.rule-form .cad-body .wom-label { font-size: 13px; }
+.rule-form .cad-week { padding: 8px 12px; border-radius: 10px; }
+.rule-form .cad-week-dates { font-size: 14px; }
+.detail-edit-form label.cad-mode,
+.detail-edit-form label.wom-check,
+.detail-edit-form label.cad-week {
+  display: flex; margin: 0; text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+
+/* A time: quarter-hours in a list, or typed (public/shared/time-field.js). */
+.tf { position: relative; }
+.detail-edit-form .tf .tf-text { padding-right: 40px; cursor: pointer; }
+.tf.tf-bad .tf-text { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
+.tf-btn {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 40px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tf.open .tf-btn svg { transform: rotate(180deg); }
+.tf-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow: hidden;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+.tf.tf-up .tf-list { top: auto; bottom: calc(100% + 4px); }
+.tf-list[hidden] { display: none; }
+.tf-head { flex: none; border-bottom: 1px solid var(--border-light); padding-bottom: 4px; margin-bottom: 4px; }
+.tf-slots { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.tf-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.tf-item:hover, .tf-item:focus-visible { background: var(--surface-2); outline: none; }
+.tf-item.on { background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
+.tf-item.tf-custom { font-weight: 600; color: var(--accent-text, var(--accent)); }
+.tf-item.tf-custom, .tf-item.tf-none { white-space: nowrap; }
+.tf-item.tf-none { color: var(--text-secondary); }
+.rule-form [hidden] { display: none !important; }
+
+/* A date: a field-shaped button opening the feed's own month grid. */
+.df { position: relative; }
+.df-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 38px 11px 14px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.df-btn:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.df-empty { color: var(--text-muted); }
+.df-clear {
+  position: absolute;
+  top: 50%; right: 6px;
+  transform: translateY(-50%);
+  width: 30px; height: 30px;
+  border: 0; border-radius: 50%;
+  background: none;
+  font-size: 20px; line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.df-clear[hidden] { display: none; }
+/* The month grid over a dialog when a form opened it. */
+.date-pop.date-pop-field { z-index: 3100; }
 /* Close beside Save: the same pill, outlined — it had no padding of its own. */
 .form-actions .btn-outline {
   min-height: 44px; padding: 11px 22px; border-radius: 999px;

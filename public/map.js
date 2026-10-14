@@ -13,8 +13,15 @@
 
 const PARISH_SOURCE = 'parishes';
 const USER_SOURCE = 'user-loc';
-const CLUSTER_RADIUS_PX = 38;     // tuned to match the old 1.3*diameter feel without hiding small groups
+// How hard parishes are gathered into grapes. 38px and every zoom up to
+// MapLibre's default of 14 swallowed whole suburbs a person was looking at —
+// a grape where four churches a street apart should be four dots. Now only
+// parishes whose dots would all but touch gather (24px is about two dots and
+// a gap), only five or more, and never once the map is close enough to read
+// a suburb by (zoom 12 and in, every parish is its own dot).
+const CLUSTER_RADIUS_PX = 24;
 const CLUSTER_MIN_POINTS = 5;     // matches old "≥5 members render as grape"
+const CLUSTER_MAX_ZOOM = 11;
 
 // ── How crowding is answered: 'dots' or 'grapes' ───────────────────────
 // Two ways of dealing with parishes too close together to draw separately.
@@ -327,6 +334,7 @@ function addParishSourceAndLayers() {
     cluster: markerMode() === 'grapes',
     clusterRadius: CLUSTER_RADIUS_PX,
     clusterMinPoints: CLUSTER_MIN_POINTS,
+    clusterMaxZoom: CLUSTER_MAX_ZOOM,
     // A grape stands for its parishes, so it carries their halos: it breathes
     // green if any of them has something on now, neutral if any is running
     // something on now elsewhere, and tolls if any has something still to

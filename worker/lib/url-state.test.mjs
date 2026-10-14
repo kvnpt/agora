@@ -33,6 +33,12 @@ test('app views are not parishes', () => {
   assert.deepEqual([g.jurisdiction, g.location, g.parishSlugs], ['greek', 'qld', null]);
   assert.equal(U.classifyPath('/services').services, true);
   assert.equal(U.classifyPath('/social/services').socialOnly, false, 'services wins');
+  assert.equal(U.classifyPath('/worship').worshipOnly, true, 'the feed narrowed to services');
+  assert.equal(U.classifyPath('/greek/worship').worshipOnly, true);
+  assert.equal(U.classifyPath('/worship/services').worshipOnly, false, 'services wins over worship too');
+  const both = U.classifyPath('/social/worship');
+  assert.ok(!both.socialOnly && !both.worshipOnly, 'socials and services are complements: both is neither');
+  assert.equal(U.pageKind(U.classifyPath('/worship')), null, 'the app answers it, as it does /social');
   assert.equal(U.classifyPath('/liturgy').service, 'liturgy');
   assert.equal(U.classifyPath('/next-tue', { today }).dateFocus, '2026-10-06');
   assert.deepEqual(U.classifyPath('/smg+sgr').parishSlugs, ['smg', 'sgr']);

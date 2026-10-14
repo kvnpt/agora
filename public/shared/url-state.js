@@ -59,6 +59,7 @@
     const out = {
       jurisdiction: null,
       socialOnly: false,
+      worshipOnly: false,
       services: false,
       englishOnly: false,
       englishStrict: false,
@@ -86,6 +87,10 @@
         out.jurisdiction = seg;
       } else if (seg === 'social') {
         out.socialOnly = true;
+      } else if (seg === 'worship') {
+        // The feed's Services button: liturgies, prayer services and feasts —
+        // what Socials leaves out. /services is already the timetable.
+        out.worshipOnly = true;
       } else if (seg === 'services') {
         out.services = true;
       } else if (ENGLISH.includes(seg)) {
@@ -118,8 +123,11 @@
         out.parishSlugs = [seg];
       }
     }
-    // Services and socials are exclusive, and services wins.
-    if (out.services && out.socialOnly) out.socialOnly = false;
+    // Services and socials are exclusive, and services wins. Socials and
+    // worship are each other's complement, so a path naming both names
+    // neither.
+    if (out.services) { out.socialOnly = false; out.worshipOnly = false; }
+    if (out.socialOnly && out.worshipOnly) { out.socialOnly = false; out.worshipOnly = false; }
     return out;
   }
 
@@ -150,7 +158,7 @@
    *   'timetable' — any other filter link (/greek/qld, /liturgy, /smg+sgr,
    *                 /services)
    *   null        — the home page, a link with a date and no parish, /social,
-   *                 /donate, and a path that names nothing
+   *                 /worship, /donate, and a path that names nothing
    *
    * Shared because two readers act on it: the Worker answers these with a
    * page (worker/routes/pages.mjs), and the app, when it is the one answering
@@ -158,7 +166,7 @@
    * as a sheet over the map. The two must agree on which links are pages.
    */
   function pageKind(r) {
-    if (!r || r.socialOnly || r.donate) return null;
+    if (!r || r.socialOnly || r.worshipOnly || r.donate) return null;
     // A card is one parish's, so a jurisdiction, a region or a language beside
     // one is a question the card does not answer; the app does.
     const scoped = r.jurisdiction || r.location || r.englishOnly;

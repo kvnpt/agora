@@ -1263,6 +1263,7 @@
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
   <script src="/shared/acronym-suggest.js"></script>
+  <script src="/shared/suggest-dialog.js"></script>
   <!-- Logos are shrunk before they are uploaded, by the same code the app's
        cropper uses. -->
   <script src="/shared/logo-image.js"></script>
@@ -4365,6 +4366,10 @@
       try { sessionStorage.removeItem('claim-access-retry'); } catch { /* fine */ }
       if (!res.ok) { blockPage('Something went wrong.', await adminError(res)); return; }
       const me = await res.json();
+      // What the app's dialog asked before the sign-in (suggest-dialog.js),
+      // read once and forgotten: filled in below and sent, since pressing
+      // "Confirm email and submit" there was the send.
+      const fromDialog = window.AgoraSuggest ? AgoraSuggest.takeDraft(parishId) : null;
       const parishes = await fetch('/api/parishes').then(r => r.ok ? r.json() : []).catch(() => []);
       const parish = parishes.find(p => p.id === parishId);
       const name = parish ? (parish.full_name || parish.name) : parishId;
@@ -4774,6 +4779,7 @@
       (() => {
         let v = null;
         try { v = JSON.parse(sessionStorage.getItem(SAVED) || 'null'); sessionStorage.removeItem(SAVED); } catch { /* none */ }
+        if (!v) v = fromDialog;
         if (!v) return;
         if (v.kind) f.kind.value = v.kind;
         for (const n of KEEP) if (f[n] && typeof v[n] === 'string') f[n].value = v[n];
@@ -4784,6 +4790,13 @@
           posterStatus('Your poster is still attached.', 'done');
         }
         sync();
+        // From the dialog: its button said submit, so this sends. Anything
+        // the form refuses (a request with no name) stays on screen, filled
+        // in, with the form's own words for what is missing.
+        if (v === fromDialog && v.submit) {
+          if (typeof form.requestSubmit === 'function') form.requestSubmit();
+          else submit.click();
+        }
       })();
 
       function thanks(didSuggest, didClaim) {

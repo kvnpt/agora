@@ -34,7 +34,7 @@
   const ENGLISH_ONLY_SEGMENTS = ['en-only', 'english-only', 'full-english'];
 
   // Path segments detectUrlState gives a meaning of their own.
-  const PATH_KEYWORDS = ['social', 'services', ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
+  const PATH_KEYWORDS = ['social', 'worship', 'services', ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
 
   // The second segment of a payment deep link, /<acronym>/donate. Reserved as
   // a first segment too, because /donate/donate could not be read either way.

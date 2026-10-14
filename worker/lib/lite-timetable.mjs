@@ -29,7 +29,7 @@ import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import {
-  esc, jurisLabel, timetableLabel, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
+  esc, jurisLabel, timetableLabel, avatarHTML, weekFrom, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
 } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
@@ -110,7 +110,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     const matching = own
       .filter(r => timetable.ruleMatches(r, f, { parishLanguages: p.languages }))
       .map(r => ({ ...r, _today: today }))
-      .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time)));
+      .sort(weekFrom(today));
     if (!matching.length) continue;
     parishCount++;
     const region = regionOf(p);
@@ -219,10 +219,7 @@ function parishColor(p, m) {
 
 function parishHTML({ parish: p, rules }, m, n) {
   const slug = parishSlug(p);
-  const initial = (p.name || '?').trim()[0].toUpperCase();
-  const avatar = p.logo_path
-    ? `<div class="parish-schedule-avatar"><img src="${esc(p.logo_path)}" alt=""></div>`
-    : `<div class="parish-schedule-avatar">${esc(initial)}</div>`;
+  const avatar = avatarHTML(p, 'parish-schedule-avatar', 'var(--pc)');
   return `
         <div class="parish-schedule tt-parish pc-${n}">
           <a class="parish-schedule-head" href="/${esc(slug)}">${avatar}<div class="parish-schedule-name"><span class="tt-name">${esc(p.name)}</span>${p.address ? `<span class="tt-addr">${esc(p.address)}</span>` : ''}</div></a>

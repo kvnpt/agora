@@ -69,6 +69,18 @@ so the person signs in first and what they send carries the address Access
 verified — never one typed into the form. The page is answered before the
 panel, because the person arriving usually has no role at all.
 
+**It asks before it signs in.** The button opens a dialog on the page itself
+first (`public/shared/suggest-dialog.js`, on the app's card and the lite card
+alike): what it is about, what it should say, a name, and **I'd like to edit
+this parish myself** — the claim, with its role field. Only then **Confirm
+email and submit** goes to `/admin?suggest=`, through Access; what was typed
+waits in this browser's `localStorage` for two hours and the suggest page fills
+it in and sends it the moment it loads (`takeDraft`), so the person writes once.
+Going straight to the sign-in lost most people at an email box from a company
+they had not heard of, before they had said anything. The account menu's
+**Sign in** opens the same dialog while a parish's card is open and nothing on
+it is theirs to edit, with a plain sign-in link for whoever already keeps it.
+
 The form is for what they came with: **Fix something** (optionally naming one
 of the parish's service times, then what it should say) or **Add an event** (a
 title, the parish's local date and times, a place in words, details, a link,
