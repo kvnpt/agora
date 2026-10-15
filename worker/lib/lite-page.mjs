@@ -129,8 +129,14 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     return true;
   };
   const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + LITE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const list = feed.filter(e => matches(e) && e._local.date >= start && e._local.date < endBound)
-    .slice(0, LITE_LIST_CAP);
+  // Under an event: "More at this parish" — everything else on there in the
+  // next seven days, whichever rule or none it comes from.
+  const weekEnd = new Date(Date.parse(`${start}T00:00:00Z`) + 7 * DAY_MS).toISOString().slice(0, 10);
+  const list = route.eventId
+    ? feed.filter(e => e.id !== String(route.eventId) && e._local.date >= start && e._local.date < weekEnd)
+      .slice(0, LITE_LIST_CAP)
+    : feed.filter(e => matches(e) && e._local.date >= start && e._local.date < endBound)
+      .slice(0, LITE_LIST_CAP);
 
   // The pin, by the rules the app's sheet follows (#63/#64): an id pins its
   // event; a day pins only an event ON that day; a service or weekday pins the
@@ -601,6 +607,7 @@ function parishGroupsHTML(events, m) {
 
 /** renderFutureDays + renderSubDaySections, by the parish's own calendar. */
 function listHTML(m) {
+  if (!m.list.length && m.route.eventId) return '<p class="lc-empty">Nothing else on here in the next seven days.</p>';
   if (!m.list.length) {
     return `<p class="lc-empty">Nothing on file ${m.route.dateFocus ? `from ${esc(longDate(m.start, m.start.slice(0, 4)))}` : 'in the next few weeks'}.</p>`;
   }
@@ -782,6 +789,16 @@ function appButtonHTML(m, label) {
 
 /** The middle of the page: the timetable, then a card's list — or /timetables' timetable alone. */
 function bodyHTML(m) {
+  // An event's page: the card, then what else is on at its parish this week,
+  // then the way to the parish itself.
+  if (m.route.eventId) {
+    return `
+  <section class="lc-list" aria-labelledby="ll-h">
+    <h2 class="section-header feed-header" id="ll-h" style="--juris-color:var(--juris)">More at this parish</h2>
+    <div class="ps-events-list">${listHTML(m)}</div>
+  </section>
+  <a class="lc-app" href="/${esc(m.slug)}">View ${esc(m.parish.name)} →</a>`;
+  }
   if (m.servicesMode) {
     const narrowed = isNarrowed(m.route);
     return `
@@ -963,5 +980,5 @@ details.lc-ev.past{opacity:.55}
 .tt-parish .parish-schedule-avatar:not(.avatar-acronym){background:var(--pc)}
 .tt-parish a.parish-schedule-head{color:inherit;text-decoration:none}
 .tt-addr{display:block;margin-top:1px;font-size:12px;font-weight:400;color:var(--text-secondary)}
-.tt-more{display:block;margin:16px;padding:12px 14px;border-radius:12px;background:var(--surface-2);color:var(--text) !important;font-size:14px;font-weight:600;text-decoration:none}
+.tt-no-times{margin:6px 0 2px;font-size:13px;color:var(--text-muted)}
 `;

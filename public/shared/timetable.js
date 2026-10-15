@@ -2,7 +2,7 @@
 //
 // Two places list the timetables of many parishes at once: the app's Schedules
 // view (renderServices in app.js) and the Worker's timetable page for a
-// general link — /greek/qld, /liturgy, /wed/evening, /services
+// general link — /greek/qld, /liturgy, /wed/evening, /timetables
 // (worker/lib/lite-timetable.mjs). Two filters of the same rules drift the
 // moment one learns a new segment, which is how /evening nearly meant one
 // thing in the feed and another on its headings. So the question lives here
@@ -60,11 +60,20 @@
   // What the feed calls a kind, of the seven event types (event-types.js),
   // after vespers and matins have been read as prayer.
   const DISPLAY_TYPE = { vespers: 'prayer', matins: 'prayer', festival: 'social', fundraiser: 'social' };
-  const KIND_TYPES = { services: ['liturgy', 'prayer', 'feast'], studies: ['talk'], socials: ['social', 'youth'] };
+  const KIND_TYPES = { services: ['liturgy', 'prayer', 'feast'], talks: ['talk'], socials: ['social', 'youth'] };
+  /** Is this row a Bible study, by its title? Talks' one sub-kind is read that way. */
+  const isBibleStudy = (row) => !!services && services.serviceOf(row) === 'bible-study';
   /** Is an event or a rule of the kind (and sub-kind) asked for? Any, with none asked. */
   function kindMatches(row, f) {
     if (!f || !f.kind) return true;
     const t = DISPLAY_TYPE[row && row.event_type] || (row && row.event_type) || 'other';
+    // Bible studies are Talks' sub-kind, but a type of their own they are not:
+    // a study is usually typed "talk", sometimes "other", and its title says
+    // what it is.
+    if (f.kind === 'talks') {
+      if (f.kindSub === 'bible-study') return isBibleStudy(row);
+      return t === 'talk' || isBibleStudy(row);
+    }
     if (f.kindSub) return t === f.kindSub;
     return (KIND_TYPES[f.kind] || []).includes(t);
   }

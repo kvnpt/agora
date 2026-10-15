@@ -77,7 +77,8 @@ test('which paths are lite pages', () => {
     '/donate': null, '/greek/donate': null, '/greek/sgr': null,
     '/sgr/en': null, '/sgr/english-only': null, '/sgr/donate': null, '/admin': null, '/api/bundle': null,
     '/102/timetables': null, '/102/evening': null, '/%E0%A4%A': null,
-    '/services': null, '/greek/services': null, '/sgr/services': null, '/services-liturgy': null,
+    '/services': 'timetable', '/greek/services': 'timetable', '/prayer': 'timetable', '/parishes': 'timetable',
+    '/sgr/services': null, '/talks': null, '/next-week': null, '/this-month': null, '/102/services': null,
   };
   for (const [p, want] of Object.entries(kinds)) {
     const k = liteKind(p, NOW);
@@ -172,10 +173,10 @@ test('a part of the day narrows the card to its services and pins the next one',
   assert.doesNotMatch(morning, /Vespers/);
 });
 
-test('an old /worship link is sent to /services for good, keeping the rest of the link', async () => {
+test('an old /worship, /services-liturgy or /studies link is sent to its name for good, keeping the rest', async () => {
   const { get } = fresh();
-  for (const [from, to] of [['/worship', '/services'], ['/greek/worship-liturgy?x=1', '/greek/services-liturgy?x=1'],
-    ['/sgr/worship-feast', '/sgr/services-feast'], ['/worship?app', '/services?app']]) {
+  for (const [from, to] of [['/worship', '/services'], ['/greek/worship-liturgy?x=1', '/greek/liturgy?x=1'],
+    ['/sgr/services-feast', '/sgr/feast'], ['/worship?app', '/services?app'], ['/studies', '/talks']]) {
     const { res } = await get(from);
     assert.equal(res.status, 301, from);
     assert.equal(res.headers.get('location'), to, from);
@@ -346,29 +347,32 @@ const rule = (raw, parish, dow, time, title, extra = {}) => {
 const regions = (html) => [...html.matchAll(/<section class="tt-region" aria-label="([^"]*)"/g)].map(m => m[1]);
 const names = (html) => [...html.matchAll(/<span class="tt-name">([^<]*)<\/span>/g)].map(m => m[1]);
 
-test('/timetables is every parish timetable, by state then jurisdiction, alphabetical', async () => {
+test('/timetables is every parish and its times, by state then jurisdiction, alphabetical', async () => {
   const { raw, get } = fresh();
   rule(raw, GREEK_QLD, 0, '09:00', 'Divine Liturgy');
   const { res, html } = await get('/timetables');
   assert.equal(res.headers.get('x-agora-page'), 'lite');
   assert.equal(canonical(html), 'https://orthodoxy.au/timetables');
   assert.equal(meta(html, 'name', 'robots'), 'noindex,follow', 'not indexed yet');
-  assert.match(html, /<h1>Orthodox service times<\/h1>/);
-  assert.deepEqual(regions(html), ['New South Wales', 'Queensland']);
+  assert.match(html, /<h1>Orthodox parishes and times<\/h1>/);
+  assert.deepEqual(regions(html), ['New South Wales', 'Queensland', 'Victoria'], 'a state whose parishes have no times yet too');
   const nsw = between(html, 'aria-label="New South Wales"', 'aria-label="Queensland"');
   assert.match(nsw, /<div class="jurisdiction-box tt-juris-box"[^>]*>\s*<div class="section-header jurisdiction-header">Antiochian Archdiocese<\/div>/,
     "each jurisdiction in the app's framed box, named for what it is");
+  const withTimes = names(nsw.slice(0, nsw.indexOf('<p class="tt-no-times">') < 0 ? undefined : nsw.lastIndexOf('<div class="parish-schedule', nsw.indexOf('<p class="tt-no-times">'))));
+  assert.deepEqual(withTimes, [...withTimes].sort((a, b) => a.localeCompare(b)), 'parishes alphabetical');
   const listed = names(nsw);
-  assert.deepEqual(listed, [...listed].sort((a, b) => a.localeCompare(b)), 'parishes alphabetical');
   assert.ok(listed.includes('St George Cathedral, Redfern'));
   assert.match(html, /<a class="parish-schedule-head" href="\/sgr">[\s\S]*?<span class="tt-name">St George Cathedral, Redfern<\/span>/, 'a parish links to its card');
   assert.match(between(html, 'aria-label="Queensland"'), /Sunshine Coast, Buderim[\s\S]*<div class="schedule-day">Sunday<\/div>[\s\S]*9:00<span class="ampm">AM<\/span>[\s\S]*Divine Liturgy/);
   const n = raw.prepare(`SELECT COUNT(*) n FROM parishes p WHERE id != '_unassigned'
     AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.parish_id = p.id)`).get().n;
-  assert.match(html, new RegExp(`<a class="tt-more" href="/timetables\\?app#no-times">${n} parish(es)? without service times on file →</a>`),
-    'the parishes with no times are a count, and it opens the app\'s Schedules view');
+  assert.equal(html.split('<p class="tt-no-times">').length - 1, n,
+    'the parishes with no times are listed in their own boxes, saying so');
+  const box = between(html, 'aria-label="Queensland"');
+  assert.ok(box.indexOf('Divine Liturgy') < box.indexOf('<p class="tt-no-times">'), 'under the ones with times');
+  assert.doesNotMatch(html, /class="tt-more"/);
   assert.match(html, /<a class="lc-app" href="\/\?app" rel="nofollow">View upcoming events →<\/a>/);
-  assert.ok(html.indexOf('class="tt-more"') < html.indexOf('class="lc-app"'), 'the count sits under the timetable');
   assert.match(html, /<a class="lite-hero-map" href="\/\?app" rel="nofollow">View map<\/a>/, 'every parish, so the map with no filters');
 });
 
@@ -378,13 +382,12 @@ test('a jurisdiction and a region narrow the parishes; the canonical is the app\
   const { html } = await get('/QLD/timetables/greek');
   assert.equal(canonical(html), 'https://orthodoxy.au/greek/qld', '/timetables is what the page is, not part of its name');
   assert.match(html, /<a class="lite-hero-map" href="\/greek\/qld\?app" rel="nofollow">View map<\/a>/, "the map with the page's filters");
-  assert.match(html, /<h1>Greek Orthodox service times in Queensland<\/h1>/);
+  assert.match(html, /<h1>Greek Orthodox parishes and times in Queensland<\/h1>/);
   assert.deepEqual(names(html), ['Sunshine Coast, Buderim']);
   assert.equal(html.split('class="jurisdiction-box tt-juris-box"').length - 1, 1, 'one jurisdiction, one box');
   assert.match(html, /href="\/greek\/qld\?app" rel="nofollow">View upcoming events/);
-  assert.doesNotMatch(html, /class="tt-more"/, 'every Greek parish in Queensland has times');
-  assert.match((await get('/greek')).html, /<a class="tt-more" href="\/greek\/timetables\?app#no-times">1 parish without/,
-    'the other Greek parish has none');
+  assert.doesNotMatch(html, /<p class="tt-no-times">/, 'every Greek parish in Queensland has times');
+  assert.equal((await get('/greek')).html.split('<p class="tt-no-times">').length - 1, 1, 'the other Greek parish has none');
 
   const antiochian = (await get('/antiochian/qld')).html;
   assert.match(antiochian, /No parishes on file here yet\./, 'the seed has no Antiochian parish in Queensland');
@@ -404,11 +407,24 @@ test('a service, a day and a part of the day narrow the rules', async () => {
   assert.match(lit, /href="\/sun\/liturgy\?app"/);
   // The parishes with no rules at all are not counted under a link that asks
   // something of the rules: nothing on file is not "no Liturgy".
-  for (const p of ['/sun/liturgy', '/evening', '/antiochian/liturgy', '/en', '/en-only']) {
-    assert.doesNotMatch((await get(p)).html, /class="tt-more"/, p);
+  for (const p of ['/sun/liturgy', '/evening', '/antiochian/liturgy', '/en', '/en-only', '/services']) {
+    assert.doesNotMatch((await get(p)).html, /<p class="tt-no-times">/, p);
   }
-  assert.match((await get('/antiochian')).html, /<a class="tt-more" href="\/antiochian\/timetables\?app#no-times">\d+ parish(es)? without service times on file →<\/a>/,
-    'a jurisdiction asks nothing of the rules, so it counts them');
+  assert.match((await get('/antiochian')).html, /<p class="tt-no-times">/,
+    'a jurisdiction asks nothing of the rules, so it lists them');
+});
+
+test('/services is the service times: liturgy, prayer and feast, with whatever narrows it in the heading', async () => {
+  const { raw, get } = fresh();
+  rule(raw, PARISH, 2, '19:00', 'Bible Study');
+  raw.prepare("UPDATE schedules SET event_type = 'talk' WHERE title = 'Bible Study'").run();
+  const all = (await get('/services')).html;
+  assert.match(all, /<h1>Orthodox service times<\/h1>/);
+  assert.equal(canonical(all), 'https://orthodoxy.au/services');
+  assert.match(all, /Sunday Divine Liturgy/);
+  assert.doesNotMatch(all, /Bible Study/, 'a talk is not a service');
+  assert.match((await get('/greek/services/en')).html, /<h1>Greek Orthodox service times in English<\/h1>/);
+  assert.match((await get('/prayer')).html, /<h1>Orthodox prayer services<\/h1>/);
 });
 
 test('a language narrows to the rules served in it, falling back to the parish', async () => {
@@ -441,7 +457,7 @@ test('several parishes by name, and the rules only their own card shows', async 
   rule(raw, PARISH, 2, '19:00', 'Choir practice', { parish_scoped: 1 });
   const { html } = await get('/smg+sgr');
   assert.equal(canonical(html), 'https://orthodoxy.au/smg+sgr');
-  assert.match(html, /<h1>Orthodox service times at Sts Michael &amp; Gabriel, Ryde and St George Cathedral, Redfern<\/h1>/);
+  assert.match(html, /<h1>Orthodox parishes and times at Sts Michael &amp; Gabriel, Ryde and St George Cathedral, Redfern<\/h1>/);
   assert.deepEqual(names(html).sort(), ['St George Cathedral, Redfern', 'Sts Michael & Gabriel, Ryde'].map(x => x.replace('&', '&amp;')).sort());
   assert.doesNotMatch(html, /Choir practice/, 'parish_scoped stays on its own card');
   assert.match((await get('/sgr')).html, /Choir practice/);
@@ -508,7 +524,7 @@ test('an event and a rule held at another parish, or a place, say where on the c
   assert.ok(pin.includes(`@ ${venue.name}`) || card.includes(`<span class="event-venue"> @ ${venue.name}`),
     'the card does not say which parish it is at');
   assert.ok(card.includes(`${venue.name} — ${venue.address}`), 'the details give the parish\'s own address, not the host\'s');
-  assert.ok(timesOf(card).includes(`At ${venue.name}`), 'the rule held at another parish does not say so');
+  assert.ok(timesOf((await get('/sgr')).html).includes(`At ${venue.name}`), 'the rule held at another parish does not say so');
 
   const place = (await get(`/${away}`)).html;
   assert.ok(place.includes('<span class="event-venue"> @ Antiochian Village</span>'), 'a place is not named by its first words');
@@ -529,4 +545,19 @@ test('a timetable reads from today round the week, and a parish with no logo sho
   assert.match(a, /data-len="3">SMG</);
   assert.match(avatarHTML({ logo_path: '/logos/x.png', acronym: 'SMG' }, 'ps-avatar', 'x'), /<img src="\/logos\/x\.png"/);
   assert.equal(timetableLabel('russian'), 'Russian Archdiocese');
+});
+
+test('an event\'s page: the card, then "More at this parish" for the next seven days, then the parish', async () => {
+  const { raw, get } = fresh();
+  rule(raw, PARISH, 3, '18:00', 'Vespers');
+  const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Parish picnic', '2026-10-03T01:00:00Z', 'social', 'approved', 'headless') RETURNING id`).get(PARISH).id;
+  const { html } = await get(`/${id}`);
+  assert.match(html, /<h2 class="lc-pin-title">Parish picnic<\/h2>/);
+  const from = html.slice(html.indexOf('<section class="lc-list"'));
+  const more = from.slice(0, from.indexOf('</section>'));
+  assert.match(more, />More at this parish</);
+  assert.match(more, /Vespers/, 'another rule\'s date this week');
+  assert.doesNotMatch(more, /Parish picnic/, 'not the event itself again');
+  assert.match(html, /<a class="lc-app" href="\/sgr">View St George Cathedral, Redfern →<\/a>/);
 });

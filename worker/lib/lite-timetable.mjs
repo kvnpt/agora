@@ -27,12 +27,14 @@ import locations from '../../public/shared/locations.js';
 import timetable from '../../public/shared/timetable.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
+import eventTypes from '../../public/shared/event-types.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import {
   esc, jurisLabel, timetableLabel, avatarHTML, weekFrom, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
 } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
+const EVENT_TYPE_LABEL = (id) => eventTypes.eventTypeLabel(id);
 /** The accent when the page is not one jurisdiction's: the app's own blue. */
 const NEUTRAL = '#1565c0';
 
@@ -86,6 +88,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   const f = {
     jurisdiction: route.jurisdiction, location: route.location,
     service: route.service, day: route.day, part: route.part,
+    kind: route.kind, kindSub: route.kindSub,
     lang: route.lang, langStrict: route.langStrict,
     parishIds: named ? new Set(named.map(p => p.id)) : null,
   };
@@ -98,6 +101,12 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     rulesOf.get(r.parish_id).push(r);
   }
 
+  // A link that asks nothing of the rules (/timetables, /greek, /qld) is a
+  // list of the parishes and their times: a parish with no times on file is
+  // listed too, in its own jurisdiction's box under the ones that have them.
+  // A link that does narrow the rules (/services, /liturgy, /en) lists only
+  // the parishes it found an answer at.
+  const listsAll = !timetable.narrowsRules(f);
   let withoutTimes = 0;
   let parishCount = 0;
   const regions = new Map();
@@ -106,13 +115,14 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     // starts later stays on, marked "from" — as on the parish card.
     const today = localDateOf(p.timezone || DEFAULT_ZONE, now);
     const own = (rulesOf.get(p.id) || []).filter(r => !r.effective_to || r.effective_to >= today);
-    if (!own.length) { withoutTimes++; continue; }
+    if (!own.length) withoutTimes++;
+    if (!own.length && !listsAll) continue;
     const matching = own
       .filter(r => timetable.ruleMatches(r, f, { parishLanguages: p.languages }))
       .map(r => ({ ...r, _today: today }))
       .sort(weekFrom(today));
-    if (!matching.length) continue;
-    parishCount++;
+    if (!matching.length && !listsAll) continue;
+    if (matching.length) parishCount++;
     const region = regionOf(p);
     if (!regions.has(region.key)) regions.set(region.key, { ...region, juris: new Map() });
     const jmap = regions.get(region.key).juris;
@@ -124,7 +134,9 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...r,
     juris: [...r.juris.values()].sort(byLabel).map(j => ({
       ...j,
-      parishes: j.parishes.sort((a, b) => String(a.parish.name).localeCompare(String(b.parish.name))),
+      // Those with times first, then those without; each alphabetical.
+      parishes: j.parishes.sort((a, b) => (!a.rules.length - !b.rules.length)
+        || String(a.parish.name).localeCompare(String(b.parish.name))),
     })),
   }));
 
@@ -138,6 +150,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...(route.day != null ? [services.daySlug(route.day)] : []),
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
+    ...(route.kind ? [urlState.kindSegment(route.kind, route.kindSub)] : []),
     ...(named ? [named.map(parishSlug).join('+')] : []),
     ...(route.lang ? [urlState.englishSegment(route)] : []),
   ];
@@ -150,15 +163,12 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
 
   return {
     route, named, loc, groups, parishCount, withoutTimes, scopeCount: scope.length, now, origin, venues,
-    // Still counted when it is not shown: "none of these parishes has its
-    // service times on file" is the truer empty page under /macedonian/liturgy.
-    countsNoTimes: !timetable.narrowsRules(f),
+    listsAll,
     canonical: `${origin}${canonicalPath}`,
     // The dated feed for the same link, and the Schedules view, where the
     // parishes with no times are listed by name. ?app is the Worker's cue to
     // serve the app rather than this page again.
     eventsHref: `${segs.length ? pathOf(segs) : '/'}?app`,
-    servicesHref: `${pathOf([...segs, 'timetables'])}?app#no-times`,
     overrides,
     color: route.jurisdiction ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
   };
@@ -167,9 +177,10 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
 // ── words ────────────────────────────────────────────────────────────────
 
 /**
- * "Greek Orthodox service times in Queensland", "Orthodox evening Vespers on
- * Wednesdays", "Antiochian Orthodox Liturgies in English", "Orthodox
- * fully-English services".
+ * "Greek Orthodox parishes and times in Queensland" (/greek/qld, /timetables),
+ * "Orthodox service times in English" (/services/en), "Orthodox evening
+ * Vespers on Wednesdays", "Antiochian Orthodox Liturgies in English",
+ * "Orthodox fully-English services".
  *
  * Two languages, two names: /en is English services — English, or English
  * beside another language — and /en-only is fully-English services, English
@@ -181,7 +192,10 @@ export function timetableHeading(m) {
   const svc = r.service ? services.servicePlural(r.service) : null;
   // English keeps its words ("fully-English"); another language is "Greek-only".
   const full = r.lang && r.langStrict ? (/^english$/i.test(r.lang) ? 'fully-English' : `${r.lang}-only`) : '';
-  const noun = svc || (isNarrowed(r) || r.lang ? 'services' : 'service times');
+  const sub = r.kind === 'services' && r.kindSub
+    ? `${EVENT_TYPE_LABEL(r.kindSub).toLowerCase()} services` : null;
+  const noun = svc || sub || (r.kind === 'services' ? (isNarrowed(r) ? 'services' : 'service times')
+    : isNarrowed(r) || r.lang ? 'services' : 'parishes and times');
   const day = r.day != null ? ` on ${services.dayName(r.day)}s` : '';
   const lang = r.lang && !full ? ` in ${r.lang}` : '';
   let where = m.loc ? ` in ${m.loc.label}` : '';
@@ -202,7 +216,7 @@ export function timetableMeta(m) {
     title: heading,
     description: listed.length
       ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
-      : 'No service times on file for this yet.',
+      : 'Nothing on file for this yet.',
   };
 }
 
@@ -224,7 +238,7 @@ function parishHTML({ parish: p, rules }, m, n) {
   return `
         <div class="parish-schedule tt-parish pc-${n}">
           <a class="parish-schedule-head" href="/${esc(slug)}">${avatar}<div class="parish-schedule-name"><span class="tt-name">${esc(p.name)}</span>${p.address ? `<span class="tt-addr">${esc(p.address)}</span>` : ''}</div></a>
-          ${scheduleRowsHTML(rules, slug, m.now, m.venues)}
+          ${rules.length ? scheduleRowsHTML(rules, slug, m.now, m.venues) : '<p class="tt-no-times">No times on file yet.</p>'}
         </div>`;
 }
 
@@ -289,7 +303,6 @@ export function renderTimetablePage(m) {
     ${sub ? `<p>${esc(sub)}</p>` : ''}
   </section>
   ${groups}
-  ${m.withoutTimes && m.countsNoTimes ? `<a class="tt-more" href="${esc(m.servicesHref)}">${esc(plural(m.withoutTimes, 'parish', 'parishes'))} without service times on file →</a>` : ''}
   <a class="lc-app" href="${esc(m.eventsHref)}" rel="nofollow">View upcoming events →</a>`,
   });
 }

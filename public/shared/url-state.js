@@ -59,37 +59,67 @@
   }
 
   // The feed's kind filter: Any event, then Services (liturgy, prayer, feast),
-  // Studies (talks), Socials (social and youth), each segment its kind and, for
-  // two of them, one sub-kind. /social is older than the rest and stays.
+  // Talks (and Bible studies), Socials (social and youth), each a segment and,
+  // for each sub-kind, a segment of its own. /social is older than the rest
+  // and stays.
   //
-  // Services were /worship while /services was the timetable. The timetable
-  // is /timetables now — it lists more than services — and /services is
-  // what the word says. An old /worship link is answered with a redirect
-  // (renamedPath, below) and still reads the same here.
+  // A sub-kind is named by its own word: /liturgy, /prayer, /feast,
+  // /bible-study. Three of those four were already services (services.js)
+  // and are read as one here — the app turns a feed-wide /liturgy into the
+  // Services filter with Liturgy chosen (kindOfService) — so only /prayer
+  // needs a row of its own below.
   const KIND_SEGMENTS = {
     services: ['services', null],
-    'services-liturgy': ['services', 'liturgy'],
-    'services-prayer': ['services', 'prayer'],
-    'services-feast': ['services', 'feast'],
-    studies: ['studies', null],
+    prayer: ['services', 'prayer'],
+    talks: ['talks', null],
     social: ['socials', null],
     'social-gatherings': ['socials', 'social'],
     'social-youth': ['socials', 'youth'],
   };
-  // The old spellings: read, never written.
+  // The sub-kinds that are services.js's services too, and what they choose.
+  const SERVICE_KINDS = {
+    liturgy: ['services', 'liturgy'],
+    feast: ['services', 'feast'],
+    'bible-study': ['talks', 'bible-study'],
+  };
+  /** The [kind, sub-kind] a service slug stands for in the feed, or null. */
+  function kindOfService(slug) {
+    return SERVICE_KINDS[String(slug || '')] || null;
+  }
+  /** The segment for a kind filter, or null for any event. */
+  function kindSegment(kind, sub) {
+    if (!kind) return null;
+    for (const [seg, [k, s]] of Object.entries(SERVICE_KINDS)) {
+      if (k === kind && s === (sub || null)) return seg;
+    }
+    for (const [seg, [k, s]] of Object.entries(KIND_SEGMENTS)) {
+      if (k === kind && (s || null) === (sub || null)) return seg;
+    }
+    return null;
+  }
+
+  // Spellings the site has stopped writing. Services were /worship while
+  // /services was the timetable, then /services-liturgy…; Talks were
+  // /studies. The Worker answers one with a 301 to its name now (renamedPath),
+  // and nothing reads them otherwise.
   const RENAMED_SEGMENTS = {
     worship: 'services',
-    'worship-liturgy': 'services-liturgy',
-    'worship-prayer': 'services-prayer',
-    'worship-feast': 'services-feast',
+    'worship-liturgy': 'liturgy',
+    'worship-prayer': 'prayer',
+    'worship-feast': 'feast',
+    'services-liturgy': 'liturgy',
+    'services-prayer': 'prayer',
+    'services-feast': 'feast',
+    studies: 'talks',
   };
 
-  // The timetable's segment. The singular is read too, as people type it.
-  const TIMETABLE_SEGMENTS = ['timetables', 'timetable'];
+  // The timetable's segment. /timetable is read too, as people type it, and
+  // /parishes, which is what the page lists.
+  const TIMETABLE_SEGMENTS = ['timetables', 'timetable', 'parishes'];
 
   /**
    * The path an old link should be sent to, or null when it is current:
-   * /worship → /services, /sgr/worship-liturgy → /sgr/services-liturgy.
+   * /worship → /services, /sgr/services-liturgy → /sgr/liturgy.
    * Segments are matched whole and case-blind; the rest is left as written.
    */
   function renamedPath(pathname) {
@@ -103,13 +133,26 @@
     });
     return changed ? out.join('/') : null;
   }
-  /** The segment for a kind filter, or null for any event. */
-  function kindSegment(kind, sub) {
-    if (!kind) return null;
-    for (const [seg, [k, s]] of Object.entries(KIND_SEGMENTS)) {
-      if (k === kind && (s || null) === (sub || null)) return seg;
-    }
+
+  // A week either side of this one: /next-week, /in-3-weeks, /last-week,
+  // /2-weeks-ago. This week is /this-week, and the next month /this-month.
+  /** The week a segment names, as weeks from this one, or null. */
+  function weekOffsetOf(seg) {
+    if (seg === 'this-week') return 0;
+    if (seg === 'next-week') return 1;
+    if (seg === 'last-week') return -1;
+    let m = /^in-(\d{1,2})-weeks?$/.exec(seg);
+    if (m) return Number(m[1]);
+    m = /^(\d{1,2})-weeks?-ago$/.exec(seg);
+    if (m) return -Number(m[1]);
     return null;
+  }
+  /** The segment for a week `n` weeks from this one. */
+  function weekSegment(n) {
+    if (!n) return 'this-week';
+    if (n === 1) return 'next-week';
+    if (n === -1) return 'last-week';
+    return n > 0 ? `in-${n}-weeks` : `${-n}-weeks-ago`;
   }
 
   /** A stored event's id (`102`) or a projected occurrence's (`42:2026-10-04`). */
@@ -139,6 +182,8 @@
       englishOnly: false,
       englishStrict: false,
       week: false,
+      weekOffset: 0,
+      month: false,
       donate: false,
       eventId: null,
       dateFocus: null,
@@ -161,14 +206,20 @@
       let d, loc, svc, part;
       if (JURISDICTION_KEYS.includes(seg)) {
         out.jurisdiction = seg;
-      } else if (KIND_SEGMENTS[seg] || KIND_SEGMENTS[RENAMED_SEGMENTS[seg]]) {
-        // The feed's kind (/services, /services-liturgy…), perhaps with one
-        // sub-kind; an old /worship… reads as its new name.
-        [out.kind, out.kindSub] = KIND_SEGMENTS[seg] || KIND_SEGMENTS[RENAMED_SEGMENTS[seg]];
+      } else if (KIND_SEGMENTS[seg]) {
+        // The feed's kind (/services, /prayer, /talks…), perhaps with one
+        // sub-kind.
+        [out.kind, out.kindSub] = KIND_SEGMENTS[seg];
       } else if (TIMETABLE_SEGMENTS.includes(seg)) {
         out.timetable = true;
-      } else if (seg === 'this-week') {
+      } else if (weekOffsetOf(seg) !== null) {
+        // Before the dates: /next-week is a week, not "from seven days out".
         out.week = true;
+        out.weekOffset = weekOffsetOf(seg);
+        out.month = false;
+      } else if (seg === 'this-month') {
+        out.month = true;
+        out.week = false;
       } else if (ENGLISH.includes(seg)) {
         out.lang = 'English';
         out.langStrict = false;
@@ -239,9 +290,9 @@
    *                 /sgr/next-tue, /sgr/timetables)
    *   'event'     — one event by id (/102, /42:2026-10-04)
    *   'timetable' — any other filter link (/greek/qld, /liturgy, /smg+sgr,
-   *                 /timetables)
+   *                 /timetables, /services)
    *   null        — the home page, a link with a date and no parish, /social,
-   *                 /services, /donate, and a path that names nothing
+   *                 /talks, a week, /donate, and a path that names nothing
    *
    * Shared because two readers act on it: the Worker answers these with a
    * page (worker/routes/pages.mjs), and the app, when it is the one answering
@@ -249,26 +300,29 @@
    * as a sheet over the map. The two must agree on which links are pages.
    */
   function pageKind(r) {
-    if (!r || r.kind || r.week || r.donate) return null;
+    // /services, /prayer: the timetable of services, when no parish is named.
+    const servicesOnly = r && r.kind === 'services' && !(r.parishSlugs && r.parishSlugs.length === 1);
+    if (!r || (r.kind && !servicesOnly) || r.week || r.month || r.donate) return null;
     // A card is one parish's, so a jurisdiction, a region or a language beside
     // one is a question the card does not answer; the app does.
     const scoped = r.jurisdiction || r.location || r.lang;
     if (r.parishSlugs && r.parishSlugs.length === 1) return scoped ? null : 'parish';
     if (r.eventId) {
       const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
-        && !r.part && !r.timetable;
+        && !r.part && !r.timetable && !r.kind;
       return bare ? 'event' : null;
     }
     // "What is on next Sunday" is a list of dates across parishes, which the
     // app answers. A path that names nothing is the home page, or a segment
     // nobody recognises.
     if (r.dateFocus) return null;
-    const names = scoped || r.timetable || r.service || r.day != null || r.part
+    const names = scoped || r.timetable || servicesOnly || r.service || r.day != null || r.part
       || (r.parishSlugs && r.parishSlugs.length > 1);
     return names ? 'timetable' : null;
   }
 
-  const api = { JURISDICTION_KEYS, KIND_SEGMENTS, TIMETABLE_SEGMENTS, renamedPath, isEventId, classifyPath, firstEventOnDay, pageKind,
+  const api = { JURISDICTION_KEYS, KIND_SEGMENTS, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, renamedPath,
+    weekOffsetOf, weekSegment, isEventId, classifyPath, firstEventOnDay, pageKind,
     englishSegment, kindSegment, langSlug, langFromSlug };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraUrlState = api;

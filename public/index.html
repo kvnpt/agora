@@ -249,7 +249,7 @@
   <div class="parish-filter-row-wrap" id="parish-filter-row-wrap">
     <!-- Favourites: the parishes this browser starred, newest first, as a
          column of their own dropping down from here (toggleFavouritesList). -->
-    <button class="parish-fav-fab" id="btn-favourites" type="button"
+    <button class="parish-fav-fab" id="btn-favourites" type="button" hidden
             aria-haspopup="true" aria-expanded="false" aria-label="Favourite parishes" title="Favourite parishes">
       <img src="https://api.iconify.design/ph:star.svg" alt="">
     </button>
@@ -289,16 +289,13 @@
     <div id="filter-chip-list" class="filter-chip-list"></div>
   </div>
 
-  <!-- Save Filter (it was Share View) and, beside it, the filters saved so
-       far (the monocle). Bottom-left over the map; the pair follows the
+  <!-- Save list (it was Share View): the lists kept so far, and the offer
+       to keep or share this one. Bottom-left over the map; it follows the
        sheet as the old fab did. -->
   <div class="save-fabs" id="mode-url">
-    <button class="map-fab share-fab" id="btn-save-filter" type="button" aria-label="Save filter">
-      <img class="share-pill-icon" src="https://api.iconify.design/ph:floppy-disk-back.svg" alt="">
-      <span class="share-pill-label">Save filter</span>
-    </button>
-    <button class="map-fab saved-filters-fab" id="btn-saved-filters" type="button" aria-label="Saved filters" title="Saved filters" hidden>
-      <img src="https://api.iconify.design/hugeicons:monocle.svg" alt="">
+    <button class="map-fab share-fab" id="btn-save-filter" type="button" aria-label="Save list">
+      <img class="share-pill-icon" src="https://api.iconify.design/hugeicons:left-to-right-list-star.svg" alt="">
+      <span class="share-pill-label">Save list</span>
     </button>
   </div>
 
@@ -333,8 +330,8 @@
       <!-- Three rows, each filter rendered by the same builders as the parish
            card's (filterControlsHTML in app.js):
              1. the language (with its picker) and what is on;     Clear all
-             2. the kind of event, and bookmarks;                   Save filter
-             3. the timetable, and when;                     the link, building -->
+             2. the kind of event, and bookmarks;     the link, Save list
+             3. the timetable, and when, centred -->
       <div class="mode-bar-row mode-bar-row-top">
         <div class="filter-slot" data-filter-slot="lang" data-filter-scope="main"></div>
         <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Scroll sheet">
@@ -348,23 +345,27 @@
       <div class="mode-bar-row mode-bar-row-pills" id="mode-bar-row-pills">
         <div class="filter-slot" data-filter-slot="kind" data-filter-scope="main"></div>
         <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="main"></div>
-        <!-- Save filter, where the account button was: the link to exactly this
-             view, kept and shown to copy or share (openSavedFilterDialog). It
+        <!-- This view's link, building as the filters change: tap to copy, as
+             the parish card's is. Then Save list, the lists kept so far and
+             the offer to keep or share this one (openSavedFilterDialog). It
              pulses whenever a filter changes. -->
+        <button class="mode-url ps-url" id="mode-url-btn" type="button" aria-label="Copy this view's link">
+          <span class="mode-url-text ps-url-text" id="mode-url-text"></span>
+          <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+        </button>
         <button class="mode-bar-save" id="btn-save-filter-bar" type="button"
-                aria-label="Save this filter" title="Save this filter">
-          <img src="https://api.iconify.design/ph:floppy-disk-back.svg" alt="">
+                aria-label="Save list" title="Save list">
+          <img src="https://api.iconify.design/hugeicons:left-to-right-list-star.svg" alt="">
         </button>
       </div>
       <div class="mode-bar-row mode-bar-row-when">
-        <!-- The timetable: a list icon until it is on, then its name. -->
+        <!-- The timetable: a boxed list until it is on, then its name. -->
         <button class="mode-bar-pill mode-bar-schedules" id="btn-services" type="button" role="checkbox" aria-checked="false"
-                aria-label="Schedules" title="Schedules">
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:list-bullets.svg" alt="">
-          <span class="mode-bar-pill-label">Schedules</span>
+                aria-label="Timetables" title="Timetables">
+          <img class="mode-bar-pill-icon" src="https://api.iconify.design/mdi:list-box-outline.svg" alt="">
+          <span class="mode-bar-pill-label">Timetables</span>
         </button>
         <div class="filter-slot" data-filter-slot="when" data-filter-scope="main"></div>
-        <span class="mode-url-text" id="mode-url-text" aria-label="This view's link"></span>
       </div>
 
     </div>

@@ -40,7 +40,9 @@ test('app views are not parishes', () => {
   assert.equal(U.classifyPath('/services/timetables').worshipOnly, false, 'the timetable wins over services too');
   const both = U.classifyPath('/social/services');
   assert.deepEqual([both.kind, both.socialOnly, both.worshipOnly], ['services', false, true], 'one kind at a time: the later wins');
-  assert.equal(U.pageKind(U.classifyPath('/services')), null, 'the app answers it, as it does /social');
+  assert.equal(U.pageKind(U.classifyPath('/services')), 'timetable', 'the timetable of services');
+  assert.equal(U.pageKind(U.classifyPath('/sgr/services')), null, 'at a parish, the app answers it');
+  assert.equal(U.classifyPath('/parishes').timetable, true, '/parishes is the timetable too');
   assert.equal(U.classifyPath('/liturgy').service, 'liturgy');
   assert.equal(U.classifyPath('/next-tue', { today }).dateFocus, '2026-10-06');
   assert.deepEqual(U.classifyPath('/smg+sgr').parishSlugs, ['smg', 'sgr']);
@@ -101,25 +103,35 @@ test('a day focus pins only an event on that day', () => {
   assert.equal(U.firstEventOnDay([{ ...events[0], is_tombstone: 1 }], '2026-10-06', 'day', local), null);
 });
 
-test('the kind filter: Services and its three, Studies, Socials and its two', () => {
-  const k = (p) => { const r = U.classifyPath(p); return [r.kind, r.kindSub]; };
-  assert.deepEqual(k('/services'), ['services', null]);
-  assert.deepEqual(k('/services-liturgy'), ['services', 'liturgy']);
-  assert.deepEqual(k('/greek/services-prayer'), ['services', 'prayer']);
-  assert.deepEqual(k('/services-feast'), ['services', 'feast']);
-  assert.deepEqual(k('/worship-liturgy'), ['services', 'liturgy'], 'the old name still reads');
-  assert.deepEqual(k('/studies'), ['studies', null]);
-  assert.deepEqual(k('/social'), ['socials', null]);
-  assert.deepEqual(k('/social-gatherings'), ['socials', 'social']);
-  assert.deepEqual(k('/social-youth'), ['socials', 'youth']);
-  assert.deepEqual(k('/'), [null, null]);
-  assert.deepEqual(k('/studies/timetables'), [null, null], 'the timetable wins');
+test('the kind filter: Services and its three, Talks and Bible studies, Socials and its two', () => {
+  const k = (p) => { const r = U.classifyPath(p); return [r.kind, r.kindSub, r.service]; };
+  assert.deepEqual(k('/services'), ['services', null, null]);
+  assert.deepEqual(k('/greek/prayer'), ['services', 'prayer', null]);
+  // /liturgy, /feast and /bible-study are services (services.js) first; the
+  // app reads a feed-wide one as its kind (kindOfService).
+  assert.deepEqual(k('/liturgy'), [null, null, 'liturgy']);
+  assert.deepEqual(k('/bible-study'), [null, null, 'bible-study']);
+  assert.deepEqual(U.kindOfService('liturgy'), ['services', 'liturgy']);
+  assert.deepEqual(U.kindOfService('feast'), ['services', 'feast']);
+  assert.deepEqual(U.kindOfService('bible-study'), ['talks', 'bible-study']);
+  assert.equal(U.kindOfService('vespers'), null);
+  assert.deepEqual(k('/talks'), ['talks', null, null]);
+  assert.deepEqual(k('/social'), ['socials', null, null]);
+  assert.deepEqual(k('/social-gatherings'), ['socials', 'social', null]);
+  assert.deepEqual(k('/social-youth'), ['socials', 'youth', null]);
+  assert.deepEqual(k('/'), [null, null, null]);
+  assert.deepEqual(k('/talks/timetables'), [null, null, null], 'the timetable wins');
+  for (const old of ['/worship', '/services-liturgy', '/studies']) {
+    assert.equal(U.classifyPath(old).kind, null, `${old} is gone (the Worker redirects it)`);
+  }
   for (const [seg, [kind, sub]] of Object.entries(U.KIND_SEGMENTS)) {
     assert.equal(U.kindSegment(kind, sub), seg, 'every segment round-trips');
   }
   assert.equal(U.kindSegment(null), null);
-  assert.equal(U.kindSegment('services', 'feast'), 'services-feast', 'the new name is the one written');
-  for (const p of ['/studies', '/social-youth', '/this-week']) assert.equal(U.pageKind(U.classifyPath(p)), null, `${p} is the app's`);
+  assert.equal(U.kindSegment('services', 'liturgy'), 'liturgy', 'a sub-kind is its own word');
+  assert.equal(U.kindSegment('services', 'feast'), 'feast');
+  assert.equal(U.kindSegment('talks', 'bible-study'), 'bible-study');
+  for (const p of ['/talks', '/social-youth', '/this-week']) assert.equal(U.pageKind(U.classifyPath(p)), null, `${p} is the app's`);
 });
 
 test('a language filter is any language: English keeps its spellings, the rest are /in-<language>', () => {
@@ -139,13 +151,27 @@ test('a language filter is any language: English keeps its spellings, the rest a
 test('/this-week is the feed for the next seven days', () => {
   assert.equal(U.classifyPath('/this-week').week, true);
   assert.equal(U.classifyPath('/greek/this-week').jurisdiction, 'greek');
-  assert.equal(U.classifyPath('/next-week', { today: '2026-10-14' }).week, false, 'next-week is still a date');
+  assert.equal(U.classifyPath('/this-week').weekOffset, 0);
 });
 
-test('an old /worship link is sent to its /services name; a current one is left alone', () => {
+test('a week either side, and the month: /next-week, /in-3-weeks, /last-week, /2-weeks-ago, /this-month', () => {
+  const w = (p) => { const r = U.classifyPath(p, { today: '2026-10-14' }); return [r.week, r.weekOffset, r.dateFocus]; };
+  assert.deepEqual(w('/next-week'), [true, 1, null], 'a week, not "from seven days out"');
+  assert.deepEqual(w('/in-3-weeks'), [true, 3, null]);
+  assert.deepEqual(w('/last-week'), [true, -1, null]);
+  assert.deepEqual(w('/2-weeks-ago'), [true, -2, null]);
+  assert.equal(U.classifyPath('/this-month').month, true);
+  for (const n of [-3, -1, 0, 1, 2, 5]) assert.equal(U.weekOffsetOf(U.weekSegment(n)), n, `week ${n} round-trips`);
+  for (const p of ['/next-week', '/this-month', '/last-week']) assert.equal(U.pageKind(U.classifyPath(p)), null, `${p} is the app's`);
+});
+
+test('an old /worship, /services-liturgy or /studies link is sent to its name now; a current one is left alone', () => {
   assert.equal(U.renamedPath('/worship'), '/services');
-  assert.equal(U.renamedPath('/greek/Worship-Liturgy'), '/greek/services-liturgy');
-  assert.equal(U.renamedPath('/sgr/worship-feast/next-sun'), '/sgr/services-feast/next-sun');
+  assert.equal(U.renamedPath('/greek/Worship-Liturgy'), '/greek/liturgy');
+  assert.equal(U.renamedPath('/sgr/worship-feast/next-sun'), '/sgr/feast/next-sun');
+  assert.equal(U.renamedPath('/services-prayer'), '/prayer');
+  assert.equal(U.renamedPath('/studies/en'), '/talks/en');
+  assert.equal(U.renamedPath('/liturgy'), null);
   assert.equal(U.renamedPath('/services'), null);
   assert.equal(U.renamedPath('/timetables'), null);
   assert.equal(U.renamedPath('/worshipful'), null, 'whole segments only');

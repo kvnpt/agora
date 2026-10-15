@@ -79,26 +79,33 @@ disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` 
 a parish, the acronym resolves last, and reserving it would not raise a clash but
 silently take that parish's link away.
 
-**`/this-week` is the next seven days**, from today. It is the middle of the
-toolbar's When control — Today, This week, then a date from its calendar, which
-takes This week's place — and, like a date, it is shared by the feed and the
-parish card. A date segment and `/this-week` do not stand together: picking a
-date ends the week.
+**`/this-week` is the next seven days**, from today, and `/this-month` the
+month from today. The toolbar's When control cycles Today → This week → This
+month → Today; a week wears chevrons either side, to `/next-week`,
+`/in-3-weeks`, `/last-week`, `/2-weeks-ago` (`weekSegment` / `weekOffsetOf`).
+A date from its calendar takes the period's place, and like a date a period is
+shared by the feed and the parish card. A date segment and a period do not
+stand together: picking a date ends the week. Under Today the feed is endless —
+reaching its foot loads the next stretch; a week ends in a "Next week" button.
 
 **What kind of event, and in what language, are segments too.** `/services` is
-Services (liturgy, prayer, feast), with one of them as `/services-liturgy`,
-`/services-prayer` or `/services-feast`. They were `/worship…` while `/services`
-was the timetable; the timetable is `/timetables` now, because it lists more
-than services, and the Worker answers an old `/worship…` link with a 301 to its
-new name (`renamedPath`);
-`/studies` is talks; `/social` is socials and youth, `/social-gatherings` or
-`/social-youth` one of the two. One kind at a time: a later kind segment
-replaces an earlier one, and the timetable wins over all of them. A language is
+Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
+or `/feast`; `/talks` is talks, with Bible studies as `/bible-study`;
+`/social` is socials and youth, `/social-gatherings` or `/social-youth` one of
+the two. `/liturgy`, `/feast` and `/bible-study` are service slugs as well
+(services.js): beside a parish they focus its timetable, and across the feed
+the app reads them as the kind (`kindOfService`). The timetable is
+`/timetables` (or `/parishes`), because it lists more than services; a lone
+`/services` is the timetable page of services for a crawler. The old
+`/worship…`, `/services-liturgy…` and `/studies` links get a 301 to their name
+now (`renamedPath`). One kind at a time: a later kind segment replaces an
+earlier one, and the timetable wins over all of them. A language is
 `/in-greek`, or `/in-greek-only` for nothing but Greek; English keeps `/en` and
-`/en-only`. An acronym cannot start `in-` (`reservedSlugReason`). The kind and
-the language narrow the timetable too — `kindMatches` and `langsMatch` in
-`public/shared/timetable.js`, read by the app and the timetable pages alike.
-`KIND_SEGMENTS` in `url-state.js` is the table.
+`/en-only`. An acronym cannot start `in-` or name a week
+(`reservedSlugReason`). The kind and the language narrow the timetable too —
+`kindMatches` and `langsMatch` in `public/shared/timetable.js`, read by the app
+and the timetable pages alike. `KIND_SEGMENTS` and `SERVICE_KINDS` in
+`url-state.js` are the table.
 
 **One set of controls for both toolbars.** The main sheet's toolbar and the
 parish card's are painted by the same builders (`renderFilterSlots` in
