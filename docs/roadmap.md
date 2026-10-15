@@ -141,6 +141,14 @@ cache per URL and per hour, which a crawler visiting each URL once defeats, and
 > - *build timetable pages from the cached `/api/bundle` body instead of D1;*
 > - *if a single bot is the cause, a WAF rule or Bot Fight Mode first — no code.*
 
+**Done (15 October 2026), before any second spike:** the lite pages' links to
+dated ids, timetable rows and `?app` are `nofollow`; `robots.txt` disallows
+`/*:*` and `/*?app`; and the `/:slug/:link` and `/:slug/<pay kind>` routes
+return before D1 when either segment is one `reservedSlugReason` refuses — a
+filter, which no acronym or link slug can spell (`worker/lib/crawl.test.mjs`).
+Still open: the indexed normalised acronym (a schema change) and timetable
+pages built from the cached bundle.
+
 ## Probes for /.env, /.git/config, /wp-login.php
 
 Cloudflare's AI crawler reports showed requests for `antiochian.orthodoxy.au/.env`
