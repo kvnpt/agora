@@ -290,6 +290,6 @@ export function renderTimetablePage(m) {
   </section>
   ${groups}
   ${m.withoutTimes && m.countsNoTimes ? `<a class="tt-more" href="${esc(m.servicesHref)}">${esc(plural(m.withoutTimes, 'parish', 'parishes'))} without service times on file →</a>` : ''}
-  <a class="lc-app" href="${esc(m.eventsHref)}">View upcoming events →</a>`,
+  <a class="lc-app" href="${esc(m.eventsHref)}" rel="nofollow">View upcoming events →</a>`,
   });
 }

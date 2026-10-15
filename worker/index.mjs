@@ -14,6 +14,7 @@ import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
 import { isProbePath, probeResponse } from './lib/probe.mjs';
 import { adminHostRedirect } from './lib/admin-host.mjs';
+import slugs from '../public/shared/slugs.js';
 
 const router = new Router();
 registerPublicRoutes(router);
@@ -52,6 +53,7 @@ for (const [kind, column] of Object.entries(PAY_LINK_COLUMNS)) {
   router.get(`/:slug/${kind}`, async ({ env, params }) => {
     const slug = (params.slug || '').toLowerCase().replace(/\s+/g, '');
     if (kind === 'donate' && DONATE_JURISDICTIONS.has(slug)) return null; // SPA handles it
+    if (slugs.reservedSlugReason(slug)) return null; // /greek/raffle: no parish can be called that
     const row = await env.DB.prepare(
       `SELECT ${column} AS url FROM parishes
        WHERE id != '_unassigned' AND lower(replace(acronym, ' ', '')) = ?`
@@ -75,6 +77,10 @@ router.get('/:slug/:link', async ({ env, params }) => {
   const slug = (params.slug || '').toLowerCase().replace(/\s+/g, '');
   const link = (params.link || '').toLowerCase().replace(/\s+/g, '');
   if (!slug || !link) return null;
+  // /greek/qld, /sgr/evening, /liturgy/sun: a filter, which no acronym or link
+  // slug can spell (both are refused at save time), so D1 has nothing to find.
+  // Without this every two-segment path a crawler walks costs a parish scan.
+  if (slugs.reservedSlugReason(slug) || slugs.reservedSlugReason(link)) return null;
   const row = await env.DB.prepare(
     `SELECT l.url FROM parish_links l JOIN parishes p ON p.id = l.parish_id
      WHERE p.id != '_unassigned' AND lower(replace(p.acronym, ' ', '')) = ? AND l.slug = ?`

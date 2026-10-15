@@ -107,11 +107,11 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   const hero = between(html, '<header class="lite-hero">', '</header>');
   assert.match(hero, /<a class="lite-hero-brand" href="\/"[^>]*>orthodoxy\.au<\/a>/);
   assert.doesNotMatch(hero, /<svg/, 'no cross beside the name');
-  assert.match(hero, /<a class="lite-hero-map" href="\/sgr\?app">View map<\/a>/);
+  assert.match(hero, /<a class="lite-hero-map" href="\/sgr\?app" rel="nofollow">View map<\/a>/);
   assert.doesNotMatch(html, /lite-bar/, 'the old bar is gone');
   assert.doesNotMatch(html, /Back to App/);
   assert.match(html, /<link rel="stylesheet" href="\/app\.css">/, "the app's own stylesheet");
-  assert.match(html, /<a class="lc-app" href="\/sgr\?app">/, 'the way into the app with this card open');
+  assert.match(html, /<a class="lc-app" href="\/sgr\?app" rel="nofollow">/, 'the way into the app with this card open');
   assert.match(html, /<details class="lc-ev/, 'the occurrences open without JavaScript');
   // The timetable's box is the timetable; the list under it is what it projects.
   assert.match(html, /<h2 class="section-header jurisdiction-header" id="lt-h">Timetable<\/h2>/);
@@ -183,16 +183,16 @@ test('/services is the timetable, narrowed by the link, then the way to the upco
   assert.match(times, /Sunday Divine Liturgy/);
   assert.match(times, /Vespers/);
   assert.ok(all.indexOf('<section class="lc-times') < all.indexOf('class="lc-app"'), 'the button is under the timetable');
-  assert.match(all, /<a class="lc-app" href="\/sgr\?app">View upcoming events →<\/a>/,
+  assert.match(all, /<a class="lc-app" href="\/sgr\?app" rel="nofollow">View upcoming events →<\/a>/,
     'the app, with every filter but /services');
-  assert.match(all, /<a class="lite-hero-map" href="\/sgr\?app">View map<\/a>/, 'and so is the map');
+  assert.match(all, /<a class="lite-hero-map" href="\/sgr\?app" rel="nofollow">View map<\/a>/, 'and so is the map');
 
   const eve = (await get('/services/sgr/evening')).html;
   assert.equal(canonical(eve), 'https://orthodoxy.au/sgr/evening/services');
   assert.match(eve, /<title>Evening services at St George Cathedral, Redfern — service times/);
   assert.match(eve, /<h2 class="ps-focus-banner-text" id="ll-h">Showing Evening services<\/h2>/);
   assert.doesNotMatch(timesOf(eve), /Divine Liturgy/);
-  assert.match(eve, /<a class="lc-app" href="\/sgr\/evening\?app">View upcoming events →<\/a>/);
+  assert.match(eve, /<a class="lc-app" href="\/sgr\/evening\?app" rel="nofollow">View upcoming events →<\/a>/);
 
   const none = (await get('/sgr/wed/services')).html;
   assert.match(none, /No service on the timetable matches\./, 'an empty timetable says so');
@@ -209,7 +209,7 @@ test('the way into the app is a button directly above the list', async () => {
     assert.ok(btn > html.indexOf('class="lc-info"'), `${p}: under the parish's links`);
     assert.doesNotMatch(between(html, 'class="lc-foot"'), /\?app/, `${p}: not in the small print`);
   }
-  assert.match((await get('/sgr/next-sun')).html, /<a class="lc-app" href="\/sgr\/2026-10-04\?app">Open in the app →<\/a>/);
+  assert.match((await get('/sgr/next-sun')).html, /<a class="lc-app" href="\/sgr\/2026-10-04\?app" rel="nofollow">Open in the app →<\/a>/);
 });
 
 test('an event link — projected or stored — pins that event on its parish card', async () => {
@@ -219,7 +219,7 @@ test('an event link — projected or stored — pins that event on its parish ca
   assert.match(proj, /<title>Sunday Divine Liturgy — Sunday 4 October, 10am/);
   assert.equal(meta(proj, 'name', 'robots'), 'noindex,follow');
   assert.equal(canonical(proj), `https://orthodoxy.au/${sid}:2026-10-04`);
-  assert.match(proj, new RegExp(`<a class="lite-hero-map" href="/${sid}:2026-10-04\\?app">View map</a>`),
+  assert.match(proj, new RegExp(`<a class="lite-hero-map" href="/${sid}:2026-10-04\\?app" rel="nofollow">View map</a>`),
     'VIEW MAP opens the event on its parish');
 
   const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc,
@@ -356,9 +356,9 @@ test('/services is every parish timetable, by state then jurisdiction, alphabeti
     AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.parish_id = p.id)`).get().n;
   assert.match(html, new RegExp(`<a class="tt-more" href="/services\\?app#no-times">${n} parish(es)? without service times on file →</a>`),
     'the parishes with no times are a count, and it opens the app\'s Schedules view');
-  assert.match(html, /<a class="lc-app" href="\/\?app">View upcoming events →<\/a>/);
+  assert.match(html, /<a class="lc-app" href="\/\?app" rel="nofollow">View upcoming events →<\/a>/);
   assert.ok(html.indexOf('class="tt-more"') < html.indexOf('class="lc-app"'), 'the count sits under the timetable');
-  assert.match(html, /<a class="lite-hero-map" href="\/\?app">View map<\/a>/, 'every parish, so the map with no filters');
+  assert.match(html, /<a class="lite-hero-map" href="\/\?app" rel="nofollow">View map<\/a>/, 'every parish, so the map with no filters');
 });
 
 test('a jurisdiction and a region narrow the parishes; the canonical is the app\'s order', async () => {
@@ -366,11 +366,11 @@ test('a jurisdiction and a region narrow the parishes; the canonical is the app\
   rule(raw, GREEK_QLD, 0, '09:00', 'Divine Liturgy');
   const { html } = await get('/QLD/services/greek');
   assert.equal(canonical(html), 'https://orthodoxy.au/greek/qld', '/services is what the page is, not part of its name');
-  assert.match(html, /<a class="lite-hero-map" href="\/greek\/qld\?app">View map<\/a>/, "the map with the page's filters");
+  assert.match(html, /<a class="lite-hero-map" href="\/greek\/qld\?app" rel="nofollow">View map<\/a>/, "the map with the page's filters");
   assert.match(html, /<h1>Greek Orthodox service times in Queensland<\/h1>/);
   assert.deepEqual(names(html), ['Sunshine Coast, Buderim']);
   assert.equal(html.split('class="jurisdiction-box tt-juris-box"').length - 1, 1, 'one jurisdiction, one box');
-  assert.match(html, /href="\/greek\/qld\?app">View upcoming events/);
+  assert.match(html, /href="\/greek\/qld\?app" rel="nofollow">View upcoming events/);
   assert.doesNotMatch(html, /class="tt-more"/, 'every Greek parish in Queensland has times');
   assert.match((await get('/greek')).html, /<a class="tt-more" href="\/greek\/services\?app#no-times">1 parish without/,
     'the other Greek parish has none');

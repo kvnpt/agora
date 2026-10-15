@@ -1,10 +1,16 @@
 # orthodoxy.au
 #
 # Parish pages (/<acronym>) are for indexing; the sitemap lists them. Event
-# pages and date/service views are reachable but carry `noindex` themselves.
+# pages and date/service views are reachable but carry `noindex` themselves,
+# and the lite pages mark their links to them `nofollow`.
 User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /admin
+# A service's dated id (/102:2026-10-18) and the way into the app (?app) are
+# for people who were sent the link. The dates roll forward, so a crawler
+# following them never runs out (docs/roadmap.md, "If D1 reads spike again").
+Disallow: /*:*
+Disallow: /*?app
 
 Sitemap: https://orthodoxy.au/sitemap.xml

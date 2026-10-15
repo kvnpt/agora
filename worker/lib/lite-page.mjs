@@ -546,7 +546,7 @@ function eventCardHTML(e, m, { open = false, cls = '' } = {}) {
           ${e.break_note ? `<div class="event-break-row">${esc(e.break_note)}</div>` : ''}
         </summary>
         <div class="lc-ev-body">${eventDetailsHTML(e, m)}
-          <a class="lc-ev-link" href="/${esc(e.id)}">Link to this service</a>
+          <a class="lc-ev-link" href="/${esc(e.id)}" rel="nofollow">Link to this service</a>
         </div>
       </details>`;
 }
@@ -671,7 +671,7 @@ export function scheduleRowsHTML(rules, slug, now, venues = {}) {
     ].join('');
     // The languages on the title's line, as the app has them.
     const lang = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
-    html += `<a class="schedule-item lt-row" href="${esc(href)}">
+    html += `<a class="schedule-item lt-row" href="${esc(href)}" rel="nofollow">
           <div class="si-main"><span class="schedule-item-time">${ruleTimeHTML(r.start_time)}</span><span class="si-title"><span class="schedule-item-title" title="${esc(r.title)}">${esc(r.title)}</span>${lang}<img class="si-chev" src="${icon('ph:caret-right-bold')}" alt=""></span></div>
           ${meta ? `<div class="si-meta">${meta}</div>` : ''}
           ${whereRowHTML(r, venues)}
@@ -777,7 +777,7 @@ function listHeading(m) {
  * list it continues.
  */
 function appButtonHTML(m, label) {
-  return `<a class="lc-app" href="${esc(m.appHref)}">${esc(label)}</a>`;
+  return `<a class="lc-app" href="${esc(m.appHref)}" rel="nofollow">${esc(label)}</a>`;
 }
 
 /** The middle of the page: the timetable, then a card's list — or /services' timetable alone. */
@@ -899,7 +899,7 @@ ${heroHTML(mapHref)}
 export function heroHTML(mapHref) {
   return `<header class="lite-hero">
   <a class="lite-hero-brand" href="/" aria-label="orthodoxy.au — to the map">orthodoxy.au</a>
-  <a class="lite-hero-map" href="${esc(mapHref)}">View map</a>
+  <a class="lite-hero-map" href="${esc(mapHref)}" rel="nofollow">View map</a>
 </header>`;
 }
 
