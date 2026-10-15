@@ -40,7 +40,7 @@ parish or one event (`/sgr`, `/sgr/next-tue`, `/102`, `/42:2026-10-04`) gets
 a **lite card** — server-rendered by `worker/routes/pages.mjs` +
 `worker/lib/lite-page.mjs`, with its own title, preview image, canonical and
 JSON-LD — instead of the app booting behind a loading screen. Every other
-filter link (`/greek/qld`, `/liturgy`, `/services`) gets a **timetable page**
+filter link (`/greek/qld`, `/liturgy`, `/timetables`) gets a **timetable page**
 (`worker/lib/lite-timetable.mjs`): the matching parishes' rules by state and
 jurisdiction, filtered by `public/shared/timetable.js` as the app's Schedules
 view is. The home page is still the app. It uses the
@@ -85,9 +85,12 @@ takes This week's place — and, like a date, it is shared by the feed and the
 parish card. A date segment and `/this-week` do not stand together: picking a
 date ends the week.
 
-**What kind of event, and in what language, are segments too.** `/worship` is
-Services (liturgy, prayer, feast — `/services` was already the timetable), with
-one of them as `/worship-liturgy`, `/worship-prayer` or `/worship-feast`;
+**What kind of event, and in what language, are segments too.** `/services` is
+Services (liturgy, prayer, feast), with one of them as `/services-liturgy`,
+`/services-prayer` or `/services-feast`. They were `/worship…` while `/services`
+was the timetable; the timetable is `/timetables` now, because it lists more
+than services, and the Worker answers an old `/worship…` link with a 301 to its
+new name (`renamedPath`);
 `/studies` is talks; `/social` is socials and youth, `/social-gatherings` or
 `/social-youth` one of the two. One kind at a time: a later kind segment
 replaces an earlier one, and the timetable wins over all of them. A language is
