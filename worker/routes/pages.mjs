@@ -3,13 +3,13 @@
 // Every path now reaches the Worker (run_worker_first in wrangler.toml), and
 // this decides which of them it answers itself:
 //   - a link to ONE parish, with or without a focus (/sgr, /sgr/next-tue,
-//     /sgr/wed/evening/liturgy), and its timetable (/sgr/services) — the lite
-//     card (lib/lite-page.mjs);
+//     /sgr/wed/evening/liturgy), and its timetable (/sgr/timetables) — the
+//     lite card (lib/lite-page.mjs);
 //   - a link to one event (/102, /42:2026-10-04) — the same card, pinned;
 //   - every other filter link (/greek/qld, /liturgy, /wed/evening, /en,
-//     /smg+sgr, /services) — the timetable page (lib/lite-timetable.mjs).
+//     /smg+sgr, /timetables) — the timetable page (lib/lite-timetable.mjs).
 // Everything else — the home page, a link with a date and no parish, /social,
-// /donate, unknown slugs — returns null and the caller hands it to the app
+// /services, /donate, unknown slugs — returns null and the caller hands it to the app
 // exactly as before.
 //
 // It FAILS OPEN. Any error while building a page returns null, and the app
@@ -196,6 +196,16 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
         ).all();
         return sitemapXml(r.results || [], url.origin);
       },
+    });
+  }
+
+  // Services were /worship while /services was the timetable; the timetable
+  // is /timetables now. An old link is sent to its new name, for good.
+  const renamed = urlState.renamedPath(url.pathname);
+  if (renamed) {
+    return new Response(null, {
+      status: 301,
+      headers: { location: `${renamed}${url.search}`, 'cache-control': 'public, max-age=86400' },
     });
   }
 

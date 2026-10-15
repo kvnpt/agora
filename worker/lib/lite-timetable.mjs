@@ -1,6 +1,6 @@
 // The timetable page: a general link, answered by the Worker.
 //
-// /greek/qld, /liturgy, /wed/evening, /en, /smg+sgr, /services — a link that
+// /greek/qld, /liturgy, /wed/evening, /en, /smg+sgr, /timetables — a link that
 // names no single parish used to boot the whole app, map first, to show what is
 // really a list: which parishes hold which services when. This is that list,
 // in the HTML itself: the rules of every parish the link covers, grouped by
@@ -128,7 +128,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     })),
   }));
 
-  // The link's own filters, in the order the app writes them. /services is
+  // The link's own filters, in the order the app writes them. /timetables is
   // not one of them: this page IS the timetable, so the canonical drops it —
   // except on its own, where nothing else would be left to name the page.
   const loc = route.location ? locations.resolveLocation(route.location) : null;
@@ -141,7 +141,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...(named ? [named.map(parishSlug).join('+')] : []),
     ...(route.lang ? [urlState.englishSegment(route)] : []),
   ];
-  const canonicalPath = segs.length ? pathOf(segs) : '/services';
+  const canonicalPath = segs.length ? pathOf(segs) : '/timetables';
 
   // The parishes a rule meets at, when it meets at another (venueLite).
   const venueIds = new Set(rules.map(r => r.location_parish_id).filter(Boolean));
@@ -158,7 +158,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     // parishes with no times are listed by name. ?app is the Worker's cue to
     // serve the app rather than this page again.
     eventsHref: `${segs.length ? pathOf(segs) : '/'}?app`,
-    servicesHref: `${pathOf([...segs, 'services'])}?app#no-times`,
+    servicesHref: `${pathOf([...segs, 'timetables'])}?app#no-times`,
     overrides,
     color: route.jurisdiction ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
   };

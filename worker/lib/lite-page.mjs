@@ -1,7 +1,7 @@
 // The lite card: a shared parish or event link, answered by the Worker.
 //
 // A link somebody sends — /sgr, /sgr/next-tue, /sgr/liturgy, /sgr/evening,
-// /sgr/services, /102, /42:2026-10-04 — used to boot the whole app before
+// /sgr/timetables, /102, /42:2026-10-04 — used to boot the whole app before
 // showing anything: the map library, the full bundle for every parish, the
 // tiles, behind a loading screen. And a chat app or a search engine fetching
 // the same link got an app shell with a fixed title and nothing in it. This
@@ -98,10 +98,10 @@ const endTimeOf = (e, zone) => {
 export function liteModel({ parish, rows, events = [], cross = [], links = [], route, pinnedEvent = null, now, origin, overrides = {}, venues = {} }) {
   const zone = parish.timezone || DEFAULT_ZONE;
   const slug = parishSlug(parish);
-  // /sgr/services is the parish's timetable — the rules, not the dates they
-  // produce — as /services is in the app. It lists no occurrences and pins
+  // /sgr/timetables is the parish's timetable — the rules, not the dates they
+  // produce — as /timetables is in the app. It lists no occurrences and pins
   // none; its way on is the upcoming events, in the app.
-  const servicesMode = !!route.services && !route.eventId;
+  const servicesMode = !!route.timetable && !route.eventId;
   const start = liteStartDate(route, zone, now);
   const { fromUtc, toUtc } = liteWindow(start);
 
@@ -166,12 +166,12 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   const dateSegs = route.dateFocus ? [dates.dateSlugFor(route.dateFocus, route.precision)] : [];
   const pathOf = (segs) => `/${segs.map(s => encodeURI(String(s))).join('/')}`;
   const canonicalPath = route.eventId ? pathOf([route.eventId])
-    : pathOf([slug, ...kindSegs, ...(servicesMode ? ['services'] : []), ...dateSegs]);
+    : pathOf([slug, ...kindSegs, ...(servicesMode ? ['timetables'] : []), ...dateSegs]);
   const canonical = `${origin}${canonicalPath}`;
   // The way into the app. ?app is the Worker's cue to serve the app rather
   // than this card again (routes/pages.mjs). From a card it is the same link;
   // from the timetable it is the upcoming events — every filter the page
-  // carries except /services, which is the one thing that page is.
+  // carries except /timetables, which is the one thing that page is.
   const appHref = `${servicesMode ? pathOf([slug, ...kindSegs, ...dateSegs]) : canonicalPath}?app`;
 
   // A rule that has ended is not on the timetable; one that starts later is,
@@ -181,7 +181,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     .filter(r => r.parish_id === parish.id && (!r.effective_to || r.effective_to >= today))
     .map(r => ({ ...r, _today: today }))
     .sort(weekFrom(today));
-  // The timetable /services shows: the rules the link's filters name. A card
+  // The timetable /timetables shows: the rules the link's filters name. A card
   // keeps the whole timetable under its list, as it always has — there it is
   // the parish's times, not the answer to the link.
   const timetable = !servicesMode ? rules : rules.filter(r =>
@@ -780,7 +780,7 @@ function appButtonHTML(m, label) {
   return `<a class="lc-app" href="${esc(m.appHref)}" rel="nofollow">${esc(label)}</a>`;
 }
 
-/** The middle of the page: the timetable, then a card's list — or /services' timetable alone. */
+/** The middle of the page: the timetable, then a card's list — or /timetables' timetable alone. */
 function bodyHTML(m) {
   if (m.servicesMode) {
     const narrowed = isNarrowed(m.route);

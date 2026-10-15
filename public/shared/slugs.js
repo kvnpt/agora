@@ -2,7 +2,7 @@
 //
 // An acronym is a URL segment: /sjfc opens that parish. So is a jurisdiction
 // (/greek), a region (/qld), a service (/liturgy), a part of the day
-// (/evening), a mode (/services) and an event id (/42). They
+// (/evening), a mode (/timetables) and an event id (/42). They
 // share one namespace and detectUrlState resolves them in a fixed order, with
 // the parish slug last — so an acronym that spells an earlier one is not a
 // clash the router notices, it is a parish that has quietly become
@@ -34,8 +34,9 @@
   const ENGLISH_ONLY_SEGMENTS = ['en-only', 'english-only', 'full-english'];
 
   // Path segments detectUrlState gives a meaning of their own.
-  const PATH_KEYWORDS = ['social', 'social-gatherings', 'social-youth', 'worship', 'worship-liturgy',
-    'worship-prayer', 'worship-feast', 'studies', 'this-week', 'services',
+  const PATH_KEYWORDS = ['social', 'social-gatherings', 'social-youth', 'services', 'services-liturgy',
+    'services-prayer', 'services-feast', 'worship', 'worship-liturgy', 'worship-prayer', 'worship-feast',
+    'studies', 'this-week', 'timetables', 'timetable',
     ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
 
   // The second segment of a payment deep link, /<acronym>/donate. Reserved as

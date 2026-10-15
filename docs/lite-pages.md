@@ -1,7 +1,7 @@
 # Lite pages: shared links answered by the Worker
 
 A link somebody sends — `/sgr`, `/sgr/next-tue`, `/sgr/wed/liturgy`, `/sgr/evening`,
-`/sgr/services`, `/102`, `/42:2026-10-04` — is answered with a **lite card**: that parish, and the event the
+`/sgr/timetables`, `/102`, `/42:2026-10-04` — is answered with a **lite card**: that parish, and the event the
 link names, server-rendered by the Worker. It paints at once with no map, reads with
 JavaScript off, and carries its own title, description, preview image, canonical URL
 and structured data. A chat app previewing the link and a search engine indexing it
@@ -23,7 +23,7 @@ empty shell.
 3. `servePage` (`worker/routes/pages.mjs`) classifies the path with
    `public/shared/url-state.js` — **the same grammar the app parses with** — and answers
    three shapes: one parish (with any day / part of the day / service / date focus, and
-   `/services` for its timetable), a bare event id, and **every other filter link** —
+   `/timetables` for its timetable), a bare event id, and **every other filter link** —
    the timetable page below. Everything else — the home page, a link with a date and no
    parish, `/social`, `/donate` — returns null and the app loads as it always did.
 4. **It fails open.** A render that throws returns null and the app answers the link.
@@ -54,9 +54,9 @@ for the map app. A timetable page has nothing to edit, so admins get it like any
   event, a day pins only an event ON that day, a service, weekday or part of the day
   (`/sgr/evening`, split at 2pm on the parish's clock) pins the next of its kind; a
   synthetic id lists the other dates of the same rule;
-- `/sgr/services` is the timetable instead — the rules the link's day, part and service
+- `/sgr/timetables` is the timetable instead — the rules the link's day, part and service
   name, no dates and no pin — and under it **View upcoming events →**, which opens the
-  app on the same link minus `/services` (`/sgr/evening/services` → `/sgr/evening?app`);
+  app on the same link minus `/timetables` (`/sgr/evening/timetables` → `/sgr/evening?app`);
 - the way into the app is a button in the parish's colour directly above the list
   (**Open in the app →**, the same link with `?app`). It used to be a line of small
   print in the footer;
@@ -101,7 +101,7 @@ onto the card (`placePageChrome`).
 
 | | Goes to | |
 |---|---|---|
-| **VIEW MAP** on the hero | this page's link in the app, `?app` | a parish or event opens its sheet over the map, flown to its pin (`appHref`); a timetable page opens the map with its filters, without `/services` (`eventsHref`) |
+| **VIEW MAP** on the hero | this page's link in the app, `?app` | a parish or event opens its sheet over the map, flown to its pin (`appHref`); a timetable page opens the map with its filters, without `/timetables` (`eventsHref`) |
 | the ✕, the hero's name, anywhere else on the hero | `/` | the app as it opens with no link: no filters |
 | **Open in the app →**, **View upcoming events →**, the no-times count | their `?app` links | as before |
 
@@ -132,7 +132,7 @@ cached page cannot choose at render time, so it carries both as custom propertie
 
 ## Timetable pages: a link that names no single parish
 
-`/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/services` — the
+`/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/timetables` — the
 aggregated schedules, which are the way into everything else Agora does. Before these
 pages every such link booted the app, map first, to show what is really a list.
 
@@ -171,8 +171,8 @@ pages every such link booted the app, map first, to show what is really a list.
   parishes in view did the same. A list phase now releases whatever a real move
   marked.
 - **View upcoming events →** opens the app's dated feed with the same filters.
-- The canonical is the link's filters in the app's order, without `/services` — the
-  page *is* the timetable — except bare `/services`, which keeps it.
+- The canonical is the link's filters in the app's order, without `/timetables` — the
+  page *is* the timetable — except bare `/timetables`, which keeps it.
 - **Two languages, many spellings.** `/en`, `/english`, `/bilingual`, `/half-english`,
   `/english-half` and `/some-english` are *English services* — any service with English
   in it, alone or beside another language. `/en-only`, `/english-only` and

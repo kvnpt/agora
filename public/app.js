@@ -883,7 +883,7 @@ function detectUrlState() {
   const U = window.AgoraUrlState.classifyPath(window.location.pathname, { today: todayIso() });
   if (U.jurisdiction) state.filters.jurisdiction = U.jurisdiction;
   if (U.kind) { state.filters.kind = U.kind; state.filters.kindSub = U.kindSub || null; }
-  if (U.services) state._startMode = 'services';
+  if (U.timetable) state._startMode = 'services';
   if (U.lang) {
     state.filters.lang = U.lang;
     state.filters.langStrict = !!U.langStrict;
@@ -1227,7 +1227,7 @@ function buildPathSegs(opts = {}) {
   // Day, then part, then service: /wed/evening/vespers reads as it is said.
   if (state.filters.part && !state.parishScheduleFocus) segs.push(state.filters.part);
   if (state.filters.service && !state.parishScheduleFocus) segs.push(state.filters.service);
-  if (state.mode === 'services' && !state.parishSheetFocus) segs.push('services');
+  if (state.mode === 'services' && !state.parishSheetFocus) segs.push('timetables');
   else if (state.filters.kind) {
     const k = window.AgoraUrlState.kindSegment(state.filters.kind, state.filters.kindSub);
     if (k) segs.push(k);
@@ -2318,11 +2318,12 @@ function renderParishPills() {
     return true;
   });
 
-  // Distance origin: always use the visible-centre at SNAP_HALF (sheet at 50%
-  // of screen height) — pills sort as if the user is in the standard browsing
-  // position regardless of where they've dragged the sheet.
+  // Sort origin: the person, when their location is on, so the row reads
+  // nearest-first by the distances it shows. Otherwise the visible-centre at
+  // SNAP_HALF (sheet at 50% of screen height) — pills sort as if the user is
+  // in the standard browsing position regardless of where they've dragged it.
   let originLat = null, originLng = null;
-  const vc = window.agoraMap ? (() => {
+  const vc = state.locationActive ? null : window.agoraMap ? (() => {
     const m = window.agoraMap;
     const w = m.getContainer().clientWidth;
     return m.unproject([w / 2, (window.innerHeight * 0.5) / 2]);
@@ -2368,32 +2369,32 @@ function renderParishPills() {
   let html = '';
 
   for (const p of relevant) {
-    const acronym = p.acronym || p.name.split(',')[0].replace(/^(Sts?|Holy) /, '').substring(0, 8);
-    const distLabel = (p._dist != null && isFinite(p._dist)) ? `·${Math.round(p._dist)}km` : '';
-    // A favourite wears a small star before its name, as its marker does.
-    const star = isFavourite(p.id) ? '<span class="pill-fav" aria-label="Favourite">★</span>' : '';
-    const labelHtml = star + (distLabel
-      ? `${esc(acronym)}<span class="pill-dist">${esc(distLabel)}</span>`
-      : esc(acronym));
     const isSelected = state.filters.parishIds && state.filters.parishIds.has(p.id);
     const color = getParishDisplayColor(p.color || '#000');
-    let style;
-    if (allActive) {
-      const inView = !vp || vp.has(p.id);
-      style = inView
-        ? `color:${color};border-color:${color};background:var(--fab-bg);`
-        : `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);`;
-    } else if (isSelected) {
-      style = `background:${color};color:#fff;border-color:transparent;`;
-    } else {
-      style = `color:var(--text-secondary);border-color:var(--border);background:var(--fab-bg);`;
+    // The pill is the parish's logo (its acronym avatar when it has none),
+    // ringed in its colour. In view and unfiltered: a thin ring. Selected:
+    // a thick one. Out of view or not chosen: faded, a grey ring.
+    let tone;
+    if (allActive) tone = (!vp || vp.has(p.id)) ? 'on' : 'off';
+    else tone = isSelected ? 'selected' : 'off';
+    const a = parishAvatarParts(p);
+    // A favourite wears a small star, as its marker does.
+    const star = isFavourite(p.id) ? '<span class="pill-fav" aria-hidden="true">★</span>' : '';
+    // Distance only from where the person is, and only when they have said
+    // so — tiered in the same blues as every other current-location distance.
+    let dist = '';
+    let distLabel = '';
+    if (state.locationActive && state.userLat != null && p.lat != null && p.lng != null) {
+      const km = haversineKm(state.userLat, state.userLng, p.lat, p.lng);
+      const cls = km <= 5 ? 'distance-near' : km <= 15 ? 'distance-mid' : 'distance-far';
+      distLabel = km < 10 ? km.toFixed(1) : String(Math.round(km));
+      dist = `<span class="pill-dist ${cls}">${esc(distLabel)}km</span>`;
     }
-    const activeClass = (allActive || isSelected) ? 'active' : '';
-    // No × on a selected pill. It was a second, smaller target inside a
-    // target that already deselects — tapping the pill is the way off it,
-    // both here and in the picker — and the glyph cost the acronym the room
-    // it needed on the one row where every pill is an abbreviation already.
-    html += `<button class="parish-pill ${activeClass}" data-parish="${esc(p.id)}" data-color="${color}" style="${style}">${labelHtml}</button>`;
+    const label = (p.name || p.acronym || '') + (distLabel ? `, ${distLabel} km away` : '');
+    const activeClass = (allActive || isSelected) ? ' active' : '';
+    html += `<button class="parish-pill pill-${tone}${activeClass}${dist ? ' has-dist' : ''}" type="button" data-parish="${esc(p.id)}" data-color="${color}"
+        style="--pill-ring:${color};" aria-label="${esc(label)}" aria-pressed="${isSelected ? 'true' : 'false'}" title="${esc(p.name || '')}">
+        <span class="pill-logo${a.cls}"${a.style ? ` style="${a.style}"` : ''}>${a.inner}</span>${star}${dist}</button>`;
   }
   list.innerHTML = html;
   if (row) row.classList.toggle('multi-parish', !!state.filters.multiParish);

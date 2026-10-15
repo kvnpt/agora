@@ -838,7 +838,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   display: none;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 3px 12px 0;
   padding-left: max(12px, env(safe-area-inset-left));
   padding-right: max(12px, env(safe-area-inset-right));
   background: transparent;
@@ -919,18 +919,18 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   .parish-counter.active img { filter: brightness(0); }
   .parish-fav-fab:not(.has-favs) img { filter: brightness(0) invert(1); }
 }
-/* A favourite's star, before its acronym. */
-.pill-fav { color: #e0a315; font-size: 10px; margin-right: 3px; line-height: 1; }
-.parish-pill.active .pill-fav { color: inherit; }
 
 /* Inner pill container — flex row so pills sit horizontally next to the
    sticky toggle, scroll independently when overflowing. */
 .parish-pills-list {
   flex: 1;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   min-width: 0;
+  /* Room for the star above and the distance pill below each logo, which
+     the scrolling row would otherwise clip. */
+  padding: 5px 4px 8px;
 }
 
 /* ── Archdiocese events banner ── */
@@ -963,29 +963,76 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   opacity: 0.5;
 }
 
-/* Parish pill — FAB vocabulary: same translucent surface as the
-   location/filters FABs so the row reads as a peer band of FABs.
-   Compact padding/size kept tight so the row fits more on-screen. */
+/* Parish pill — the parish's logo (or its acronym avatar), a round FAB
+   ringed in the parish's colour. A favourite's star sits on its shoulder;
+   the distance from the person, when their location is on, is a small
+   pill tucked under its chin. */
 .parish-pill {
+  position: relative;
   flex: none;
-  padding: 3px 9px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  padding: 0;
   background: var(--fab-bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+  border: 2px solid var(--pill-ring, var(--border));
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
   cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s, opacity 0.15s, box-shadow 0.15s;
 }
-.parish-pill:hover { color: var(--text-secondary); border-color: var(--border); }
-.pill-dist { opacity: 0.45; font-weight: 500; margin-left: 2px; }
-.parish-pill.active {
-  color: var(--bg);
-  border-color: transparent;
+.parish-pill:focus { outline: none; }
+.parish-pill:focus-visible { box-shadow: 0 0 0 2px var(--fab-bg), 0 0 0 4px var(--pill-ring); }
+.parish-pill .pill-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.parish-pill .pill-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.parish-pill .pill-logo.avatar-acronym { box-shadow: none; }
+/* Selected: a heavier ring and a halo in the parish's colour. */
+.parish-pill.pill-selected {
+  border-width: 3px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pill-ring) 30%, transparent), 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+/* Out of view, or not one of the chosen: faded and grey-ringed. */
+.parish-pill.pill-off { border-color: var(--border); }
+.parish-pill.pill-off .pill-logo { opacity: 0.5; filter: grayscale(0.7); }
+/* A favourite's star, on the logo's top-right shoulder. */
+.parish-pill .pill-fav {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1;
+  color: #e0a315;
+  text-shadow: 0 0 2px var(--fab-bg), 0 0 2px var(--fab-bg);
+  pointer-events: none;
+}
+/* Distance from the person: a little pill snug against the logo's bottom
+   edge. Text takes the .distance-near/-mid/-far blue. */
+.parish-pill .pill-dist {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%);
+  padding: 1px 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 10px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: var(--bg-card, #fff);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
 }
 
 /* ── Content views ── */

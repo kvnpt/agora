@@ -17,7 +17,7 @@ const PROBES = [
 
 const SITE = [
   '/', '/sgr', '/SGR', '/sgr/next-tue', '/sgr/donate', '/smg/festival', '/42', '/42:2026-10-04',
-  '/greek', '/greek/queensland', '/services', '/wed/liturgy', '/sitemap.xml', '/robots.txt',
+  '/greek', '/greek/queensland', '/timetables', '/services', '/worship', '/wed/liturgy', '/sitemap.xml', '/robots.txt',
   '/posters/abc123.jpg', '/logos/antiochian-stgeorge-redfern.png', '/tiles/oceania.pmtiles',
   '/api/bundle', '/api/admin/events/12', '/health', '/.well-known/security.txt',
 ];
