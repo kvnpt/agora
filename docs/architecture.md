@@ -88,6 +88,15 @@ shared by the feed and the parish card. A date segment and a period do not
 stand together: picking a date ends the week. Under Today the feed is endless —
 reaching its foot loads the next stretch; a week ends in a "Next week" button.
 
+**Where is the map, but only once it is asked.** The feed and the timetable
+start at any location: the map's view narrows nothing. A pan or a zoom by the
+person (a gesture, not a fit or a fly-to: map.js checks `originalEvent`) turns
+on area search — the toolbar's "Searching this area" pill — and the lists are
+then the parishes in view (`areaIds()`); the pill's ×, Clear all, or the empty
+feed's "Search any location" turn it off. It is not in the URL. A week's list
+runs on past its week: ‹ › scroll to the week before or after within it, and
+the label follows the week at the top as the list scrolls.
+
 **What kind of event, and in what language, are segments too.** `/services` is
 Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
 or `/feast`; `/talks` is talks, with Bible studies as `/bible-study`;

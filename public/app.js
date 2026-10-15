@@ -1,4 +1,14 @@
 const TZ = 'Australia/Sydney';
+// One formatter per locale and options, made once: building an
+// Intl.DateTimeFormat is the slow part of formatting a date, and the feed
+// formats several per card.
+const _dtfCache = new Map();
+function dtf(locale, opts) {
+  const key = `${locale}|${JSON.stringify(opts || {})}`;
+  let f = _dtfCache.get(key);
+  if (!f) { f = new Intl.DateTimeFormat(locale, opts); _dtfCache.set(key, f); }
+  return f;
+}
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const LITURGICAL_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
 // What an event or a rule may BE, in the order every picker offers it. Written
@@ -114,6 +124,9 @@ const state = {
   // one is "this rule at this parish", the other is "this kind of service".
   parishScheduleFocus: null,
   viewportParishIds: null,  // Set of parish IDs inside current map bounds; null until first moveend
+  // Area search: off (Any location) until the person pans or zooms the map,
+  // then the feed and the timetable are the parishes in view (areaIds).
+  areaSearch: false,
   // Where the stream starts, when the user has wound it forward. One focus, not
   // one per surface: the main feed and a parish card are two views of the same
   // date lens, and /smg/2026-07 has to mean the same thing whichever is open.
@@ -126,7 +139,7 @@ window.agoraStateRef = state;
 
 // Convert a UTC event timestamp to a Sydney-local ISO date string (YYYY-MM-DD)
 const isoDateSyd = (utcStr) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(utcStr));
+  dtf('en-CA', { timeZone: TZ }).format(new Date(utcStr));
 
 // Today, in the zone the feed's day headers are written in.
 const todayIso = () => isoDateSyd(new Date().toISOString());
@@ -204,7 +217,7 @@ window.setDateFocus = async function (dateStr, opts = {}) {
   state._dateFocusPrecision = month ? 'month' : 'day';
   // A date takes This week's place in the When control (whenControlHTML).
   state._week = false;
-  state._weekOffset = 0;
+  state._weekOffset = 0; state._weekAnchor = 0;
   state._month = false;
   const refetched = await ensureHorizonReaches(dateStr);
   renderDateFocus({ rerender: !refetched });
@@ -892,7 +905,7 @@ function detectUrlState() {
     state.filters.lang = U.lang;
     state.filters.langStrict = !!U.langStrict;
   }
-  if (U.week) { state._week = true; state._weekOffset = U.weekOffset || 0; }
+  if (U.week) { state._week = true; state._weekOffset = U.weekOffset || 0; state._weekAnchor = state._weekOffset; }
   if (U.month) state._month = true;
   // /donate, /<juris>/donate, or /<acronym>/donate that fell through the server
   // redirect (parish has no link on file) → open the picker dialog.
@@ -1345,7 +1358,7 @@ async function reconcileStateFromUrl() {
     state.filters.multiParish = loadMultiParishPref();
     Object.assign(state.filters, blankFilterFlags(), { bookmarked: state.filters.bookmarked });
     state._week = false;
-    state._weekOffset = 0;
+    state._weekOffset = 0; state._weekAnchor = 0;
     state._month = false;
     state.filters.showAllParishes = null;
     state.parishFocus = null;
@@ -1548,6 +1561,48 @@ function recomputeViewportSet() {
   state.viewportParishIds = ids;
 }
 
+/**
+ * The parishes the feed and the timetable are narrowed to by the map: those
+ * in view while area search is on, else null (any location). Area search
+ * comes on when the person moves the map themselves (map.js, movestart with
+ * an originalEvent) and goes off from its pill or the empty feed's offer.
+ */
+function areaIds() {
+  return state.areaSearch && state.viewportParishIds instanceof Set ? state.viewportParishIds : null;
+}
+function setAreaSearch(on) {
+  on = !!on;
+  if (state.areaSearch === on) return;
+  state.areaSearch = on;
+  state._lastViewportSig = null;
+  renderAreaPill();
+  // Coming on, it is mid-gesture: the move's own list phase renders the area.
+  if (on) return;
+  if (state.mode === 'services') renderServices();
+  else scheduleRenderEvents(0);
+  if (typeof updateMap === 'function') updateMap(state);
+  if (typeof renderInViewChip === 'function') renderInViewChip();
+  if (typeof syncResetFab === 'function') syncResetFab();
+}
+window.agoraSetAreaSearch = setAreaSearch;
+/** The toolbar's area pill: Any location, or Searching this area (tap: any location). */
+function renderAreaPill() {
+  const b = document.getElementById('area-pill');
+  if (!b) return;
+  const on = !!state.areaSearch;
+  b.classList.toggle('active', on);
+  b.setAttribute('aria-pressed', String(on));
+  b.setAttribute('aria-label', on ? 'Searching this area — tap for any location' : 'Any location — move the map to search an area');
+  b.title = on ? 'Searching the area on the map. Tap to search any location.' : 'Move the map to search an area';
+  b.innerHTML = `<img class="mode-bar-pill-icon" src="https://api.iconify.design/${on ? 'ph:magnifying-glass-bold' : 'ph:globe-hemisphere-east'}.svg" alt="">`
+    + `<span class="mode-bar-pill-label">${on ? 'Searching this area' : 'Any location'}</span>`
+    + (on ? '<span class="area-pill-x" aria-hidden="true">&times;</span>' : '');
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#area-pill')) return;
+  if (state.areaSearch) setAreaSearch(false);
+});
+
 // Map-phase: cheap-ish work that should track the map closely — viewport
 // recompute, marker redraw (cluster), in-view chip, pill re-sort. Runs
 // 200ms after gesture-end via map.js's debounce.
@@ -1587,7 +1642,8 @@ function onViewportListPhase() {
   }
   // If the parish set didn't actually change, skip the heavy re-render
   // but still release pending so the list unfades.
-  const sig = state.viewportParishIds
+  // With area search off the map narrows nothing, so a move re-renders nothing.
+  const sig = areaIds()
     ? [...state.viewportParishIds].sort((a, b) => a - b).join(',')
     : '';
   if (sig === state._lastViewportSig) {
@@ -1595,6 +1651,9 @@ function onViewportListPhase() {
     return;
   }
   state._lastViewportSig = sig;
+  // A new area is a new list: from its first step again, not every card the
+  // last one had scrolled through.
+  state._eventsShowCount = SHOW_COUNT_STEP;
   // renderServices is synchronous and releases nothing itself, so release the
   // pending the move put on the list here — scheduleRenderEvents' commit does
   // the same for the feed.
@@ -1659,6 +1718,7 @@ function findNearestParishWhere(predicate) {
 // (matching) parish and the origin; the moveend hook will re-compute the
 // viewport set and the list will repopulate.
 function handleEmptyStateCta(action) {
+  if (action === 'any-location') { setAreaSearch(false); return; }
   const matchingPred = p => state.events.some(e =>
     (e.parish_id === p.id || (e.extra_parishes && e.extra_parishes.includes(p.id)))
   );
@@ -1694,13 +1754,13 @@ window.agoraEmptyStateCta = handleEmptyStateCta;
 //   → static ornament only, no CTA
 function renderEmptyStateHTML() {
   const explicitParish = !!state.filters.parishIds;
-  const viewportVisible = state.viewportParishIds instanceof Set;
+  const viewportVisible = !!areaIds();
   const viewportEmpty = viewportVisible && state.viewportParishIds.size === 0 && !explicitParish;
 
   let filtersExcluding = false;
   if (!viewportEmpty && viewportVisible && !explicitParish
       && (state.filters.kind || state.filters.lang)) {
-    const vp = state.viewportParishIds;
+    const vp = areaIds();
     const eventsInViewport = state.events.filter(e =>
       vp.has(e.parish_id) || (e.extra_parishes && e.extra_parishes.some(pid => vp.has(pid)))
     );
@@ -1720,6 +1780,10 @@ function renderEmptyStateHTML() {
       : f.langStrict ? `${f.lang}-only ${kind}` : `${kind} in ${f.lang}`;
     headline = `No ${label} in this area`;
     cta = `<button class="empty-state-cta" data-cta="find-matching-parish" type="button">Find nearest match</button>`;
+  }
+  // Searching an area that holds nothing: the way out is to search anywhere.
+  if (state.areaSearch && !explicitParish) {
+    cta = `<button class="empty-state-cta" data-cta="any-location" type="button">Search any location</button>` + cta;
   }
   return `<div class="empty-state"><span class="empty-ornament">✦</span><h3>${esc(headline)}</h3>${cta}</div>`;
 }
@@ -1783,7 +1847,7 @@ async function fetchEvents(opts = {}) {
   // `to` to the end of a UTC day so the URL is stable within the day and the
   // browser cache can hit on repeat loads.
   // A week gone by is asked for from its first day; otherwise from today.
-  const period = periodRange();
+  const period = listRange();
   const fromIso = period && period.from < todayIso() ? period.from : todayIso();
   params.set('from', fromIso === todayIso() ? startOfTodayUtcIso() : new Date(isoStartMs(fromIso)).toISOString());
   // A plain fetch — a filter change, a mode toggle — starts the list at the top
@@ -2709,8 +2773,9 @@ function updateInViewChevron() {
 }
 
 function renderInViewChip() {
+  renderAreaPill();
   const countEl = document.getElementById('in-view-count');
-  if (!countEl) return;
+  if (!countEl) { renderParishCounter(); return; }
   // "3 events": what is on in the period the When control names — what is
   // left of today, the next seven days, or the date the stream starts from —
   // among the events the feed would show here. The parishes in view are the
@@ -2765,10 +2830,20 @@ function periodRange() {
 /** Sydney midnight at the start of an ISO date, in ms. */
 function isoStartMs(iso) { return Date.parse(localInputToUtc(`${iso}T00:00`)); }
 /** Events that overlap the period; all of them under Today or a date. */
+/**
+ * Where the list runs: the month, both ends; a week, from the first week the
+ * list was anchored at and on, endless — the weeks after it load below it,
+ * and ‹ › scroll to them (scrollToWeek); null under Any time or a date.
+ */
+function listRange() {
+  if (state._dateFocus) return null;
+  if (state._week) return { from: addDaysIso(todayIso(), 7 * (state._weekAnchor ?? state._weekOffset ?? 0)), to: null };
+  return periodRange();
+}
 function filterToPeriod(events) {
-  const r = periodRange();
+  const r = listRange();
   if (!r) return events;
-  const from = isoStartMs(r.from), to = isoStartMs(r.to);
+  const from = isoStartMs(r.from), to = r.to ? isoStartMs(r.to) : Infinity;
   return events.filter(e => {
     const start = Date.parse(e.start_utc);
     const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
@@ -2787,16 +2862,23 @@ function weekLabel(n) {
  * when the window has gone past what is loaded, either side.
  */
 async function setPeriod(kind, offset = 0) {
+  // A week on from the week the list is anchored at is already below it:
+  // scroll down to it rather than hiding the weeks before.
+  if (kind === 'week' && state._week && !state._dateFocus && offset >= (state._weekAnchor ?? 0)) {
+    return scrollToWeek(offset);
+  }
   if (state._dateFocus) { state._dateFocus = null; state._dateFocusPrecision = 'day'; }
   state._week = kind === 'week';
   state._weekOffset = kind === 'week' ? offset : 0;
+  state._weekAnchor = kind === 'week' ? offset : 0;
   state._month = kind === 'month';
+  state._eventsShowCount = SHOW_COUNT_STEP;
   renderFilterSlots();
   syncURL();
   pulseSaveFilter();
-  const r = periodRange();
+  const r = listRange();
   const needFrom = r && r.from < todayIso() && r.from < (state._loadedFrom || todayIso());
-  const needTo = r && daysUntil(r.to) > (state._loadedHorizonDays || 0);
+  const needTo = r && r.to && daysUntil(r.to) > (state._loadedHorizonDays || 0);
   if (needFrom || needTo) {
     if (needTo) state._horizonDays = Math.max(eventsHorizonDays(), daysUntil(r.to) + 1);
     await fetchEvents({ keepCount: true });
@@ -2807,6 +2889,72 @@ async function setPeriod(kind, offset = 0) {
   if (scroll && !window.agoraParishSheetVisible) scroll.scrollTop = 0;
 }
 window.agoraSetPeriod = setPeriod;
+
+/**
+ * Week `n`, already in the list below the anchor: shows enough of the list to
+ * reach it (fetching past the horizon if it has to), then scrolls its first
+ * day to the top. The label follows (onFeedScroll).
+ */
+async function scrollToWeek(n) {
+  const start = addDaysIso(todayIso(), 7 * n);
+  const end = addDaysIso(start, 7);
+  if (daysUntil(end) > (state._loadedHorizonDays || 0)) {
+    state._horizonDays = Math.max(eventsHorizonDays(), daysUntil(end) + HORIZON_STEP_DAYS);
+    await fetchEvents({ keepCount: true });
+  }
+  // Show every card up to the week's end, and a step more to scroll into.
+  const upTo = isoStartMs(end);
+  const before = filterToPeriod(applyFilters(state.events || [])).filter(e => Date.parse(e.start_utc) < upTo).length;
+  state._eventsShowCount = Math.max(state._eventsShowCount || SHOW_COUNT_STEP, before + SHOW_COUNT_STEP);
+  renderEvents();
+  setWeekInView(n);
+  const list = document.getElementById('events-list');
+  const day = list && [...list.querySelectorAll('[data-date]')].find(d => d.dataset.date >= start);
+  if (!day) return;
+  // Straight there, and again once the days on the way have laid out: the
+  // ones skipped (content-visibility) only guessed their height.
+  _weekScrollAt = Date.now();
+  day.scrollIntoView({ block: 'start' });
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    day.scrollIntoView({ block: 'start' });
+    _weekScrollAt = Date.now();
+  }));
+}
+let _weekScrollAt = 0;
+/** The week the When control names, as the list scrolls through them. */
+function setWeekInView(n) {
+  if (!state._week || state._weekOffset === n) return;
+  state._weekOffset = n;
+  renderFilterSlots();
+  syncURL({ replace: true });
+}
+// Scrolling a week's list names the week at the top of it.
+let _feedScrollRaf = 0;
+function onFeedScroll() {
+  if (_feedScrollRaf || !state._week || state._dateFocus || state.mode === 'services') return;
+  // A scroll ‹ › made has already named its week.
+  if (Date.now() - _weekScrollAt < 400) return;
+  _feedScrollRaf = requestAnimationFrame(() => {
+    _feedScrollRaf = 0;
+    const scroll = document.getElementById('sheet-scroll');
+    const list = document.getElementById('events-list');
+    if (!scroll || !list) return;
+    const edge = scroll.getBoundingClientRect().top + 40;
+    let date = null;
+    for (const d of list.querySelectorAll('[data-date]')) {
+      if (d.getBoundingClientRect().bottom > edge) { date = d.dataset.date; break; }
+    }
+    if (!date) return;
+    const days = Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${todayIso()}T12:00:00Z`)) / 86400000);
+    setWeekInView(Math.floor(days / 7));
+  });
+}
+function watchFeedScroll() {
+  const scroll = document.getElementById('sheet-scroll');
+  if (scroll) scroll.addEventListener('scroll', onFeedScroll, { passive: true });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchFeedScroll);
+else watchFeedScroll();
 
 /** How many events the feed shows in the When control's period. */
 function eventsInPeriodCount() {
@@ -3331,11 +3479,11 @@ function kindControlHTML(f) {
     </div>`;
 }
 
-/** "Today", "This week", "Next week", "This month", or the date the stream starts from. */
+/** "Any time", "This week", "Next week", "This month", or the date the stream starts from. */
 function whenLabel() {
   if (state._dateFocus) return dateFocusLabel();
   if (state._month) return 'This month';
-  return state._week ? weekLabel(state._weekOffset || 0) : 'Today';
+  return state._week ? weekLabel(state._weekOffset || 0) : 'Any time';
 }
 function whenControlHTML() {
   const on = !!(state._week || state._month || state._dateFocus);
@@ -3346,7 +3494,7 @@ function whenControlHTML() {
         aria-label="${esc(weekLabel(n + dir))}" title="${esc(weekLabel(n + dir))}">
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${dir < 0 ? 'M10 3 5 8l5 5' : 'M6 3l5 5-5 5'}"/></svg>
       </button>`;
-  const next = state._dateFocus ? 'today' : state._month ? 'today' : state._week ? 'this month' : 'this week';
+  const next = state._dateFocus ? 'any time' : state._month ? 'any time' : state._week ? 'this month' : 'this week';
   return `<div class="when-filter${week ? ' when-week' : ''}">${week ? chev(-1) : ''}
       <button class="mode-bar-pill when-btn${on ? ' active' : ''}" type="button" data-when-cycle
         aria-label="${esc(`${state._dateFocus ? `From ${whenLabel()}` : whenLabel()} — tap for ${next}`)}">
@@ -3705,7 +3853,8 @@ function anyFilterToClear() {
   const picked = f.parishIds && f.parishIds.size
     && !(state.parishFocus && f.parishIds.size === 1 && f.parishIds.has(state.parishFocus));
   return !!(f.jurisdiction || f.location || f.service || f.day != null || f.part || picked
-    || f.kind || f.lang || f.bookmarked || state._dateFocus || state._week || state._month || state.mode === 'services');
+    || f.kind || f.lang || f.bookmarked || state._dateFocus || state._week || state._month || state.mode === 'services'
+    || state.areaSearch);
 }
 function syncClearFilters() {
   const btn = document.getElementById('btn-clear-filters');
@@ -3748,9 +3897,11 @@ function clearAllFilters() {
   state.filters.showAllParishes = null;
   Object.assign(state.filters, blankFilterFlags());
   state._week = false;
-  state._weekOffset = 0;
+  state._weekOffset = 0; state._weekAnchor = 0;
   state._month = false;
   state.parishFocus = null;
+  state.areaSearch = false;
+  renderAreaPill();
   // "Clear all" means the whole feed from today. Leaving the stream wound on to
   // March while every chip said the filters were gone would read as a bug.
   state._dateFocus = null;
@@ -4157,8 +4308,8 @@ function applyFilters(events) {
   // Viewport axis — only applies when the user has NOT made an explicit parish
   // pick. Keeps pill taps / URL-scoped views visible even when off-screen.
   // Bookmarks are shown wherever they are: the map is not a filter on them.
-  if (!state.filters.parishIds && state.viewportParishIds && !state.filters.bookmarked) {
-    const vp = state.viewportParishIds;
+  if (!state.filters.parishIds && areaIds() && !state.filters.bookmarked) {
+    const vp = areaIds();
     filtered = filtered.filter(e =>
       vp.has(e.parish_id) || (e.extra_parishes && e.extra_parishes.some(pid => vp.has(pid)))
     );
@@ -5498,7 +5649,7 @@ function eventLocalDow(e) {
   const local = e.start_local
     ? String(e.start_local).slice(0, 10)
     : (e.start_utc
-      ? new Intl.DateTimeFormat('en-CA', { timeZone: e.timezone || TZ }).format(new Date(e.start_utc))
+      ? dtf('en-CA', { timeZone: e.timezone || TZ }).format(new Date(e.start_utc))
       : null);
   if (!local) return null;
   return new Date(local + 'T00:00:00Z').getUTCDay();
@@ -6413,14 +6564,14 @@ function updateLiveBadgesInPlace() {
   if (!state.events) return;
   if (state.mode === 'services') return;
   const now = Date.now();
-  const TODAY = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const TODAY = dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   document.querySelectorAll('.event-card[data-id]').forEach(cardEl => {
     const id = cardEl.dataset.id;
     const evt = state.events.find(e => e.id === id);
     if (!evt || !evt.parish_live_url || evt.hide_live) return;
     const evtStart = new Date(evt.start_utc).getTime();
     const evtEnd = evt.end_utc ? new Date(evt.end_utc).getTime() : evtStart + 3600000;
-    const sameDay = TODAY === new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(evt.start_utc));
+    const sameDay = TODAY === dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(evt.start_utc));
     let cls, label, hasDot;
     if (sameDay && now >= evtStart - 900000 && now <= evtEnd + 3600000) {
       cls = 'badge-live'; label = 'LIVE'; hasDot = true;
@@ -6784,14 +6935,13 @@ function renderParishGroupsHTML(events, reserveHost) {
 function renderSubDaySections(events, html, reserveHost, opts = {}) {
   const { groupByParish = false } = opts;
   const { morning, evening } = splitMorningEvening(events);
+  // Morning goes unsaid: it is where a day starts. Evening is named.
   if (morning.length) {
     if (groupByParish) {
       html += `<div class="time-card time-card-morning">`;
-      html += `<div class="time-card-head"><svg class="tc-icon" width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="1.8" fill="currentColor" stroke="none"/><line x1="5" y1="0.5" x2="5" y2="1.9"/><line x1="5" y1="8.1" x2="5" y2="9.5"/><line x1="0.5" y1="5" x2="1.9" y2="5"/><line x1="8.1" y1="5" x2="9.5" y2="5"/><line x1="1.5" y1="1.5" x2="2.4" y2="2.4"/><line x1="7.6" y1="7.6" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="7.6" y2="2.4"/><line x1="2.4" y1="7.6" x2="1.5" y2="8.5"/></svg><span class="tc-label">Morning</span></div>`;
       html += renderParishGroupsHTML(sortEvents(morning), reserveHost);
       html += `</div>`;
     } else {
-      html += `<div class="sub-day-header">Morning</div>`;
       html += reserveHost(sortEvents(morning));
     }
   }
@@ -6909,13 +7059,14 @@ function renderStream(container, events, opts = {}) {
   // The focus is shared, so the parish card winds forward with the main feed.
   // A week or the month starts where it starts, as a date does, and shows
   // today as a day like the rest — the Today box is Today's alone.
-  const period = periodRange();
+  const period = listRange();
   const dateFocus = state._dateFocus || (period ? period.from : null);
-  const showCount = period ? Infinity : (opts.showCount || SHOW_COUNT_STEP);
+  // Progressive: a step of cards, and the next as the foot comes into view.
+  const showCount = opts.showCount || SHOW_COUNT_STEP;
   const now = new Date();
   const TZ_LOCAL = TZ;
-  const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-  const dayKey = (iso) => new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+  const todayKey = dtf('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const dayKey = (iso) => dtf('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
 
   const happeningNow = [], laterToday = [], earlierToday = [], future = [];
   for (const e of multiDayContinuations(events)) {
@@ -6970,9 +7121,10 @@ function renderStream(container, events, opts = {}) {
   // Today, boxed: what is left of it (and what is on now), framed apart from
   // the days after it, which drop away below. Today's alone — a week or a
   // date starts the stream elsewhere.
-  const todayBox = !dateFocus && !parishMode;
+  // Only round something: an empty feed is the empty state, not an empty box.
+  const todayBox = !dateFocus && !parishMode && !!(happeningNow.length || laterToday.length || earlierToday.length || visibleFuture.length);
   if (todayBox) {
-    const label = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'short' }).format(now);
+    const label = dtf('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'short' }).format(now);
     html += `<section class="today-box" aria-label="Today"><div class="today-box-hdr"><span class="today-box-title">Today</span><span class="today-box-date">${esc(label)}</span></div>`;
   }
   // Earlier-today chip — collapsed by default; expands inline on tap.
@@ -6993,12 +7145,13 @@ function renderStream(container, events, opts = {}) {
     html += `</div>`;
   }
   if (laterToday.length) {
+    // Inside the Today box the box is its heading; elsewhere, Later today.
     if (opts.groupByParish) {
       html += `<div class="day-section">`;
-      html += `<div class="day-hdr">Later today</div>`;
+      if (!todayBox) html += `<div class="day-hdr">Later today</div>`;
     } else {
       html += `<div class="day-box">`;
-      html += `<div class="section-header">Later today</div>`;
+      if (!todayBox) html += `<div class="section-header">Later today</div>`;
     }
     html = renderSubDaySections(laterToday, html, reserveHost, opts);
     html += `</div>`;
@@ -7013,21 +7166,19 @@ function renderStream(container, events, opts = {}) {
   // later async updates slot into a stable position (no scroll jump).
   if (visibleFuture.length) {
     html += renderFutureDays(visibleFuture, reserveHost, opts);
-  } else if (!hasToday && !todayBox) {
+  } else if (!hasToday) {
     html += renderEmptyStateHTML();
   }
 
-  // The end of the list. Today and a date have no end: reaching the bottom
-  // loads the next stretch on its own (the sentinel, watched below). A week
-  // ends at its seventh day, with the next week one tap on; the month ends.
-  if (state._week && !state._dateFocus) {
-    const next = (state._weekOffset || 0) + 1;
-    html += `<div class="list-footer"><div class="list-footer-actions">
-        <button class="list-footer-btn" type="button" data-period-week="${next}">${esc(weekLabel(next))} →</button>
-      </div></div>`;
-  } else if (state._month && !state._dateFocus) {
+  // The end of the list. Any time, a date and a week have no end: reaching
+  // the bottom loads the next stretch on its own (the sentinel, watched
+  // below), the weeks running on one after another. The month ends, once
+  // all of it is shown.
+  if (state._month && !state._dateFocus && !deferredCount) {
     html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
-  } else {
+  } else if (visibleFuture.length || hasToday || !state.areaSearch) {
+    // An area with nothing in it is not looked for further out: the way on
+    // is the empty state's Search any location.
     html += `<div class="feed-sentinel" data-feed-sentinel="${parishMode ? 'parish' : 'main'}" aria-hidden="true"><span class="feed-sentinel-dots">· · ·</span></div>`;
   }
 
@@ -7064,12 +7215,13 @@ function renderFutureDays(events, reserveHost, opts = {}) {
 
   let html = '';
   let inMonthBlock = false;
-  let prevMonthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
+  let prevMonthKey = dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(now);
   for (const [, evts] of groups) {
     const d = parseLocalDate(evts[0].start_utc);
     const weekdayStyle = d < sevenDaysOut ? 'long' : 'short';
-    const dayFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: weekdayStyle, day: 'numeric', month: 'short' }).format(d);
-    const dayOfWeek = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
+    // The day and its date; the month is the sticky header's.
+    const dayFmt = dtf('en-AU', { timeZone: TZ, weekday: weekdayStyle, day: 'numeric' }).format(d);
+    const dayOfWeek = dtf('en-AU', { timeZone: TZ, weekday: 'long' }).format(d);
     const isSunday = dayOfWeek === 'Sunday';
     const dateStr = isoDateSyd(evts[0].start_utc);
     const isFocused = showDateNav && state._dateFocus === dateStr;
@@ -7077,10 +7229,10 @@ function renderFutureDays(events, reserveHost, opts = {}) {
     // Each month after this one is a block of its own, its header sticking
     // while its days scroll under it and giving way to the next month's. The
     // current month has no header: it is the one the feed opens on.
-    const monthKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
+    const monthKey = dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit' }).format(d);
     if (monthKey !== prevMonthKey) {
-      const month = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, month: 'long' }).format(d);
-      const year = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric' }).format(d);
+      const month = dtf('en-AU', { timeZone: TZ, month: 'long' }).format(d);
+      const year = dtf('en-AU', { timeZone: TZ, year: 'numeric' }).format(d);
       if (inMonthBlock) html += `</div>`;
       html += `<div class="month-block"><div class="month-header"><span class="month-name">${month}</span><span class="month-year">${year}</span>`
         + (showDateNav ? headerLinkBtn(`${dateStr.slice(0, 7)}-01`, 'month', `${month} ${year}`) : '')
@@ -7145,7 +7297,7 @@ document.addEventListener('click', async (e) => {
 });
 
 function formatEventTime(date) {
-  const parts = new Intl.DateTimeFormat('en-AU', {
+  const parts = dtf('en-AU', {
     timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true
   }).formatToParts(date);
   let hour = '', minute = '', mer = '';
@@ -7276,7 +7428,7 @@ function isMultiDay(evt) {
   if (!evt || !evt.end_utc) return false;
   const s = Date.parse(evt.start_utc), e = Date.parse(evt.end_utc);
   const zone = evt.timezone || TZ;
-  const day = (t) => new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(new Date(t));
+  const day = (t) => dtf('en-CA', { timeZone: zone }).format(new Date(t));
   return e - s >= 12 * 3600000 && day(e) > day(s);
 }
 
@@ -7284,9 +7436,9 @@ function isMultiDay(evt) {
 function multiDaySpan(evt) {
   const zone = evt.timezone || TZ;
   const s = new Date(evt.start_utc), e = new Date(evt.end_utc);
-  const wd = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: zone, weekday: 'short', day: 'numeric' }).format(d);
-  const mon = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: zone, month: 'short' }).format(d);
-  const until = new Intl.DateTimeFormat('en-AU', { timeZone: zone, hour: 'numeric', minute: '2-digit' })
+  const wd = (d) => dtf('en-AU', { timeZone: zone, weekday: 'short', day: 'numeric' }).format(d);
+  const mon = (d) => dtf('en-AU', { timeZone: zone, month: 'short' }).format(d);
+  const until = dtf('en-AU', { timeZone: zone, hour: 'numeric', minute: '2-digit' })
     .format(e).replace(':00', '').replace(/\s/g, ' ');
   const first = mon(s) === mon(e) ? wd(s) : `${wd(s)} ${mon(s)}`;
   return `${first} – ${wd(e)} ${mon(e)}, until ${until}`;
@@ -7312,7 +7464,7 @@ function feastLineHTML(feast, cls) {
  */
 function multiDayContinuations(events) {
   const out = [];
-  const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ });
+  const dayFmt = dtf('en-CA', { timeZone: TZ });
   const today = dayFmt.format(new Date());
   for (const e of events) {
     out.push(e);
@@ -7327,7 +7479,7 @@ function multiDayContinuations(events) {
       days.push(d);
     }
     const total = days.length + 1;
-    const until = new Intl.DateTimeFormat('en-AU', { timeZone: e.timezone || TZ, hour: 'numeric', minute: '2-digit' })
+    const until = dtf('en-AU', { timeZone: e.timezone || TZ, hour: 'numeric', minute: '2-digit' })
       .format(new Date(e.end_utc)).replace(':00', '').replace(/\s/g, '');
     days.forEach((d, i) => {
       if (d <= today) return;
@@ -7367,8 +7519,8 @@ function renderEventCard(evt) {
     const now = Date.now();
     const evtStart = new Date(evt.start_utc).getTime();
     const evtEnd = evt.end_utc ? new Date(evt.end_utc).getTime() : evtStart + 3600000;
-    const sameDay = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) ===
-                    new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(evt.start_utc));
+    const sameDay = dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) ===
+                    dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(evt.start_utc));
     if (sameDay && now >= evtStart - 900000 && now <= evtEnd + 3600000) {
       liveBadge = `<span class="event-badge badge-live"><span class="live-dot"></span>LIVE</span>`;
     } else if (sameDay && now < evtStart - 900000) {
@@ -7729,7 +7881,7 @@ function dateFieldHTML(attr, name, value, empty) {
 
 /** "Sun 1 Nov 2026". */
 function dateFieldLabel(iso) {
-  return new Intl.DateTimeFormat('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return dtf('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
     .format(new Date(iso + 'T00:00:00Z'));
 }
 
@@ -7885,7 +8037,7 @@ document.addEventListener('click', async (e) => {
  */
 function ruleRangeLabel(rule) {
   const today = parishToday(rule.timezone || rule.p_timezone);
-  const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+  const fmt = (d) => dtf('en-AU', { day: 'numeric', month: 'short' })
     .format(new Date(d + 'T00:00:00Z'));
   const from = rule.effective_from && rule.effective_from > today ? rule.effective_from : null;
   const to = rule.effective_to || null;
@@ -7929,7 +8081,7 @@ function scheduleBreakNow(rule) {
 /** 'YYYY-MM-DD' where this parish is now. */
 function parishToday(zone) {
   try {
-    return new Intl.DateTimeFormat('en-CA', {
+    return dtf('en-CA', {
       timeZone: zone || TZ, year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date());
   } catch {
@@ -7939,7 +8091,7 @@ function parishToday(zone) {
 
 /** "On a break until 6 Jan — back Sunday 10 Jan. Christmas break" */
 function scheduleBreakLine(rule, brk) {
-  const fmt = (d) => new Intl.DateTimeFormat('en-AU',
+  const fmt = (d) => dtf('en-AU',
     { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(d + 'T00:00:00Z'));
   const resume = nextRunAfterBreaks(rule);
   const back = resume ? `back ${fmt(resume)}` : 'no return date set';
@@ -8024,7 +8176,7 @@ function naturalFirstDate(iso) {
   const days = Math.round((Date.parse(iso + 'T00:00:00Z')
     - Date.parse(localTodayIso() + 'T00:00:00Z')) / 86400000);
   const date = new Date(iso + 'T00:00:00Z');
-  const short = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date);
+  const short = dtf('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date);
   const day = DAYS[date.getUTCDay()];
   if (days === 0) return `Today, ${short}`;
   if (days === 1) return `Tomorrow, ${short}`;
@@ -8037,7 +8189,7 @@ function naturalFirstDate(iso) {
 function fortnightPreview(dow, parity) {
   const dates = fortnightDates(dow, parity);
   if (!dates.length) return '';
-  const rest = dates.slice(1).map(d => new Intl.DateTimeFormat('en-AU',
+  const rest = dates.slice(1).map(d => dtf('en-AU',
     { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(d + 'T00:00:00Z')));
   return naturalFirstDate(dates[0]) + (rest.length ? ` · then ${rest.join(', ')}` : '');
 }
@@ -8423,8 +8575,8 @@ function renderServices() {
     && (!state.filters.location || parishIdPassesLocation(s.parish_id)));
   if (state.filters.parishIds) {
     schedules = schedules.filter(s => state.filters.parishIds.has(s.parish_id));
-  } else if (state.viewportParishIds) {
-    schedules = schedules.filter(s => state.viewportParishIds.has(s.parish_id));
+  } else if (areaIds()) {
+    schedules = schedules.filter(s => areaIds().has(s.parish_id));
   }
 
   // The parishes in scope with no times on file go in their jurisdiction's
@@ -8560,7 +8712,7 @@ function parishesWithoutTimes() {
   const T = window.AgoraTimetable;
   if (T.narrowsRules(state.filters)) return [];
   const withTimes = new Set((state.schedules || []).map(s => s.parish_id));
-  const vp = state.viewportParishIds;
+  const vp = areaIds();
   return (state.parishes || [])
     .filter(p => p.id !== '_unassigned' && T.parishInScope(p, state.filters)
       && (state.filters.parishIds ? state.filters.parishIds.has(p.id) : (!vp || vp.has(p.id)))
@@ -8792,10 +8944,10 @@ function renderEventDrawerHTML(evt, opts = {}) {
   // the meta adds is how long it runs — or, past eight hours (a vigil through
   // the night), the clock it ends on, and over several days where it starts
   // and where it ends.
-  const clock = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(d);
+  const clock = (d) => dtf('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(d);
   const lines = [];
   if (isMultiDay(evt)) {
-    const at = (d) => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).format(d);
+    const at = (d) => dtf('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).format(d);
     lines.push(`From ${at(start)}`, `Until ${at(new Date(evt.end_utc))}`);
   } else if (evt.end_utc) {
     const ms = Date.parse(evt.end_utc) - start.getTime();
@@ -9112,7 +9264,7 @@ function readEventWhen(id) {
 
 /** The line under the dialog's title: what, when, where. */
 function eventEditSub(evt) {
-  const when = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+  const when = dtf('en-AU', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
     .format(new Date(evt.start_utc));
   return [evt.title, when, evt.parish_name].filter(Boolean).join(' · ');
 }
@@ -9715,7 +9867,7 @@ function seriesOf(id) {
   const rule = ruleById(m[1]);
   if (!rule) return null;
   const day = DAYS[rule.day_of_week];
-  const dateLabel = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
+  const dateLabel = dtf('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
     .format(new Date(m[2] + 'T00:00:00Z'));
   return { rule, date: m[2], day, dateLabel };
 }
@@ -9730,7 +9882,7 @@ async function postFollowing(id, body) {
   if (res.status === 409) {
     const q = await res.clone().json().catch(() => null);
     if (q && q.needs_choice) {
-      const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+      const fmt = (d) => dtf('en-AU', { day: 'numeric', month: 'short' })
         .format(new Date(d + 'T00:00:00Z'));
       const items = [
         ...q.movable.map(o => `<li>${esc(fmt(o.date))} — ${esc(o.what)}</li>`),
@@ -9970,7 +10122,7 @@ if (window.AgoraSuggest) {
 function endedServicesHTML(pid) {
   const ended = (state.endedRules && state.endedRules.pid === pid) ? state.endedRules.rows : [];
   if (!ended.length) return '';
-  const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fmt = (d) => dtf('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
     .format(new Date(d + 'T00:00:00Z'));
   return `
     <details class="ps-ended">
@@ -11125,7 +11277,7 @@ function _renderExistingBreaks() {
       ? String(b.schedule_id) === String(_breakDraft.scheduleId)
       : b.parish_id === _breakDraft.parishId);
   if (!rows.length) { host.innerHTML = ''; return; }
-  const fmt = (d) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fmt = (d) => dtf('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
     .format(new Date(d + 'T00:00:00Z'));
   host.innerHTML = `
     <div class="break-existing-head">Already on file</div>
@@ -11469,7 +11621,7 @@ function _renderPubEscalateEventList() {
     evtList.innerHTML = '<div class="escalate-empty">No events at selected parishes on this date</div>';
     return;
   }
-  const fmt = dt => new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
+  const fmt = dt => dtf('en-AU', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(dt));
   evtList.innerHTML = visible.map(e => {
     const pre = _escalatePubCurrentReplacedIds.has(e.id);
     const label = document.createElement('label');
@@ -11485,7 +11637,7 @@ window.openPublicEscalateModal = function(id) {
   _escalatePubEventId = id;
   _escalatePubCandidates = [];
   _escalatePubCurrentReplacedIds = new Set();
-  const date = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc));
+  const date = dtf('en-CA', { timeZone: TZ }).format(new Date(evt.start_utc));
 
   document.getElementById('escalate-pub-sub').textContent = `"${evt.title}" — ${date}`;
 
@@ -12327,7 +12479,7 @@ function groupByDay(events) {
   const groups = new Map();
   for (const evt of events) {
     const d = new Date(evt.start_utc);
-    const key = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    const key = dtf('en-AU', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(evt);
   }
@@ -12556,7 +12708,7 @@ function womDisplayLabel(rule, dayName) {
   if (rule && rule.week_parity) {
     const next = fortnightDates(rule.day_of_week, String(rule.week_parity).toLowerCase(), 1)[0];
     const when = next
-      ? ` · next ${new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+      ? ` · next ${dtf('en-AU', { day: 'numeric', month: 'short' })
           .format(new Date(next + 'T00:00:00Z'))}`
       : '';
     // The date matters more than the word: "fortnightly" alone leaves a reader

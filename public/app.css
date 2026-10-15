@@ -975,9 +975,11 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   height: 32px;
   padding: 0;
   background: var(--fab-bg);
-  border: 2px solid var(--pill-ring, var(--border));
+  /* Unchosen, the logo as it is everywhere else (.avatar-acronym): a
+     hairline of its colour and a soft lift. Chosen, the full ring. */
+  border: 1px solid color-mix(in srgb, var(--pill-ring, var(--border)) 30%, transparent);
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: border-color 0.15s, opacity 0.15s, box-shadow 0.15s;
@@ -997,7 +999,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
 .parish-pill .pill-logo.avatar-acronym { box-shadow: none; }
 /* Selected: a heavier ring and a halo in the parish's colour. */
 .parish-pill.pill-selected {
-  border-width: 3px;
+  border: 2.5px solid var(--pill-ring);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pill-ring) 30%, transparent), 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 /* Out of view, or not one of the chosen: faded and grey-ringed. */
@@ -1071,6 +1073,13 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   overflow: hidden;
 }
 .day-box .event-card { background: transparent; }
+/* A long feed lays out only the days near the screen: the rest keep their
+   last height and skip layout and paint until scrolled to. */
+#services-list .parish-schedule,
+#events-list .day-box, #events-list .day-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
 
 /* Today, boxed: what is left of it, framed apart from the days that drop
    away below. The days inside it lose their own frame. */
@@ -1080,7 +1089,6 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   border-bottom-width: 4px;
   border-radius: 10px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--accent-bg) 35%, var(--surface));
 }
 .today-box-hdr {
   display: flex;
@@ -5734,28 +5742,32 @@ body:not(.page-mode) .pm-hero { display: none; }
    Built once for both toolbars (filterControlsHTML in app.js): the main
    sheet's three rows, and the parish card's two lines (.ps-filter-line). */
 
-/* "3 events": only as wide as its count, between the language and Clear all. */
-.mode-bar-row-top .in-view-chip { flex: 0 1 auto; margin: 0 auto; padding: 5px 12px; }
+/* Where: Any location, until the map is moved; then Searching this area,
+   filled like any filter that is on, its × going back to any location. */
+.area-pill { flex: none; gap: 5px; padding: 5px 11px 5px 9px; }
+.area-pill .mode-bar-pill-icon { width: 14px; height: 14px; }
+.area-pill-x { margin-left: 2px; font-size: 15px; line-height: 1; opacity: 0.8; }
+.area-pill:not(.active) { color: var(--text-secondary); }
 
-/* Clear all, at the end of the first row whenever anything narrows the feed. */
+/* Clear all, a plain × at the end of the first row whenever anything
+   narrows the feed. */
 .mode-bar-clear {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 10px 0 8px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0 0 2px;
   background: var(--text);
   color: var(--bg);
   border: 1px solid var(--text);
-  border-radius: 999px;
+  border-radius: 50%;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+  font-size: 19px;
+  line-height: 1;
   cursor: pointer;
 }
-.mode-bar-clear span { font-size: 15px; line-height: 1; margin-top: -1px; }
 .mode-bar-clear[hidden] { display: none; }
 
 /* The language: "Any language"; on, the language with an up-and-down
@@ -5916,7 +5928,7 @@ body:not(.page-mode) .pm-hero { display: none; }
   padding: 4px 2px 4px 6px;
 }
 .mode-url .ps-url-text { font-size: 11px; }
-.mode-bar-row-pills .mode-bar-save { margin-left: 0; }
+.mode-bar-row-pills .mode-bar-save { margin-left: auto; }
 .mode-url-host, .ps-url-host { opacity: 0.55; font-weight: 500; }
 
 /* A tight phone: the pills give up some padding before anything wraps. */
@@ -6100,5 +6112,3 @@ body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mode-bar-row-top .in-view-chip { min-width: 0; overflow: hidden; }
-.mode-bar-row-top .in-view-count { overflow: hidden; text-overflow: ellipsis; }
