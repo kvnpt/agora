@@ -173,6 +173,8 @@ function daysUntil(date) {
  */
 function eventsHorizonDays() {
   const base = state._horizonDays || HORIZON_START_DAYS;
+  const r = periodRange();
+  if (r) return Math.max(base, daysUntil(r.to) + 1);
   if (!state._dateFocus) return base;
   return Math.max(base, daysUntil(state._dateFocus) + HORIZON_STEP_DAYS);
 }
@@ -202,6 +204,8 @@ window.setDateFocus = async function (dateStr, opts = {}) {
   state._dateFocusPrecision = month ? 'month' : 'day';
   // A date takes This week's place in the When control (whenControlHTML).
   state._week = false;
+  state._weekOffset = 0;
+  state._month = false;
   const refetched = await ensureHorizonReaches(dateStr);
   renderDateFocus({ rerender: !refetched });
   if (opts.silent !== true) syncURL();
@@ -888,7 +892,8 @@ function detectUrlState() {
     state.filters.lang = U.lang;
     state.filters.langStrict = !!U.langStrict;
   }
-  if (U.week) state._week = true;
+  if (U.week) { state._week = true; state._weekOffset = U.weekOffset || 0; }
+  if (U.month) state._month = true;
   // /donate, /<juris>/donate, or /<acronym>/donate that fell through the server
   // redirect (parish has no link on file) → open the picker dialog.
   if (U.donate) state._donateIntent = true;
@@ -923,7 +928,11 @@ function detectUrlState() {
       state._pendingDayFocus = state._daySlug != null ? state._daySlug : null;
       state._pendingPartFocus = state._partSlug || null;
     } else {
-      if (state._serviceSlug) state.filters.service = state._serviceSlug;
+      // /liturgy, /feast and /bible-study across the feed are the kind filter
+      // with that sub-kind chosen: the toolbar's roundel, which writes them.
+      const asKind = state._serviceSlug && window.AgoraUrlState.kindOfService(state._serviceSlug);
+      if (asKind && !state._startMode) [state.filters.kind, state.filters.kindSub] = asKind;
+      else if (state._serviceSlug) state.filters.service = state._serviceSlug;
       if (state._daySlug != null) state.filters.day = state._daySlug;
       if (state._partSlug) state.filters.part = state._partSlug;
     }
@@ -1228,8 +1237,11 @@ function buildPathSegs(opts = {}) {
   if (state.filters.part && !state.parishScheduleFocus) segs.push(state.filters.part);
   if (state.filters.service && !state.parishScheduleFocus) segs.push(state.filters.service);
   if (state.mode === 'services' && !state.parishSheetFocus) segs.push('timetables');
-  else if (state.filters.kind) {
-    const k = window.AgoraUrlState.kindSegment(state.filters.kind, state.filters.kindSub);
+  // An open card writes its own toolbar's kind and language: the chip on it
+  // is the link to what it shows.
+  const ff = state.parishSheetFocus && state.parishFilters ? state.parishFilters : state.filters;
+  if (!(state.mode === 'services' && !state.parishSheetFocus) && ff.kind) {
+    const k = window.AgoraUrlState.kindSegment(ff.kind, ff.kindSub);
     if (k) segs.push(k);
   }
   const psfId = state.parishSheetFocus;
@@ -1267,10 +1279,12 @@ function buildPathSegs(opts = {}) {
   if (state._dateFocus) {
     const dateSeg = dateSlugFor(state._dateFocus, state._dateFocusPrecision);
     if (dateSeg) segs.push(dateSeg);
+  } else if (state._month) {
+    segs.push('this-month');
   } else if (state._week) {
-    segs.push('this-week');
+    segs.push(window.AgoraUrlState.weekSegment(state._weekOffset || 0));
   }
-  const langSeg = window.AgoraUrlState.englishSegment(state.filters);
+  const langSeg = window.AgoraUrlState.englishSegment(ff);
   if (langSeg) segs.push(langSeg);
   // The focused occurrence is already named by the parish + service pair, and
   // appending its id as well would make the shared link point at one date
@@ -1301,11 +1315,14 @@ function syncURL(opts = {}) {
   const target = path + window.location.search + window.location.hash;
   // Dedupe — skip writes when URL already matches (avoids redundant history entries
   // when callers chain mutators that converge on the same URL).
-  if (target === window.location.pathname + window.location.search + window.location.hash) return;
-  try {
-    if (opts.replace) history.replaceState({}, '', target);
-    else history.pushState({ url: target }, '', target);
-  } catch {}
+  // The chips are painted either way: a view can come to match the address
+  // it was opened at, and the chip must still say so.
+  if (target !== window.location.pathname + window.location.search + window.location.hash) {
+    try {
+      if (opts.replace) history.replaceState({}, '', target);
+      else history.pushState({ url: target }, '', target);
+    } catch {}
+  }
   if (typeof updateModeUrl === 'function') updateModeUrl();
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
 }
@@ -1328,6 +1345,8 @@ async function reconcileStateFromUrl() {
     state.filters.multiParish = loadMultiParishPref();
     Object.assign(state.filters, blankFilterFlags(), { bookmarked: state.filters.bookmarked });
     state._week = false;
+    state._weekOffset = 0;
+    state._month = false;
     state.filters.showAllParishes = null;
     state.parishFocus = null;
     state._dateFocus = null;
@@ -1763,7 +1782,10 @@ async function fetchEvents(opts = {}) {
   // From the start of today (Sydney local) out to the current horizon. Round
   // `to` to the end of a UTC day so the URL is stable within the day and the
   // browser cache can hit on repeat loads.
-  params.set('from', startOfTodayUtcIso());
+  // A week gone by is asked for from its first day; otherwise from today.
+  const period = periodRange();
+  const fromIso = period && period.from < todayIso() ? period.from : todayIso();
+  params.set('from', fromIso === todayIso() ? startOfTodayUtcIso() : new Date(isoStartMs(fromIso)).toISOString());
   // A plain fetch — a filter change, a mode toggle — starts the list at the top
   // again. It does NOT pull the horizon back in: what has been loaded stays
   // loaded, so toggling English does not undo a Load more.
@@ -1793,6 +1815,7 @@ async function fetchEvents(opts = {}) {
     // Only once it landed. A failed fetch that claimed the window would stop
     // the next date focus from retrying it.
     state._loadedHorizonDays = windowDays;
+    state._loadedFrom = fromIso;
   } catch {
     state.events = [];
   }
@@ -1800,6 +1823,9 @@ async function fetchEvents(opts = {}) {
   if (window.lsProgress) window.lsProgress(0.75);
 
   // Initial load: nothing in the window at all → fall through to Services mode.
+  // Not for a link that asked for a kind of event (/feast, /talks): it asked
+  // for the feed, and the feed goes on looking further out as it scrolls.
+  if (state._initialLoad && state.filters.kind) state._initialLoad = false;
   if (state._initialLoad) {
     const filteredNow = applyFilters(state.events).filter(e => {
       const end = e.end_utc ? new Date(e.end_utc) : new Date(new Date(e.start_utc).getTime() + 3600000);
@@ -1856,6 +1882,39 @@ async function loadMore({ parishMode = false }) {
 }
 
 window.loadMoreEvents = () => loadMore({ parishMode: false });
+
+// Endless: the feed's foot is watched, and coming into view loads the next
+// stretch — a render of what is in hand, or a fetch past the horizon.
+let _sentinelObserver = null;
+function watchFeedSentinel(container) {
+  const el = container && container.querySelector('[data-feed-sentinel]');
+  if (!el || typeof IntersectionObserver !== 'function') return;
+  if (!_sentinelObserver) {
+    _sentinelObserver = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const parishMode = en.target.dataset.feedSentinel === 'parish';
+        // A sentinel on a hidden list (the feed under an open parish card)
+        // has nothing to load.
+        if (!en.target.offsetParent) continue;
+        _sentinelObserver.unobserve(en.target);
+        // Two years out with nothing more in hand is far enough to stop
+        // asking on its own; a filter that matches nothing would otherwise
+        // fetch forever.
+        const deferred = parishMode ? _parishDeferredCount : _mainDeferredCount;
+        if (!deferred && eventsHorizonDays() >= 730) continue;
+        loadMore({ parishMode });
+      }
+    }, { rootMargin: '0px 0px 600px 0px' });
+  }
+  _sentinelObserver.observe(el);
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-period-week]');
+  if (!b) return;
+  e.preventDefault();
+  setPeriod('week', Number(b.dataset.periodWeek) || 0);
+});
 window.loadMoreParishEvents = () => loadMore({ parishMode: true });
 
 async function fetchSchedules(opts = {}) {
@@ -2305,6 +2364,8 @@ function initParishFilter() {
 }
 
 function renderParishPills() {
+  // The star beside the pills shows once a favourite is among the parishes.
+  if (typeof renderFavouritesList === 'function') renderFavouritesList();
   const row = document.getElementById('parish-filter-row');
   // Pill list is now an inner container so the leading multi-toggle FAB
   // doesn't get wiped on re-render. Fall back to the row itself for
@@ -2658,7 +2719,8 @@ function renderInViewChip() {
   countEl.textContent = `${n} ${n === 1 ? 'event' : 'events'}`;
   const chip = document.getElementById('in-view-chip');
   if (chip) {
-    const when = state._dateFocus ? `on ${dateFocusLabel()}` : state._week ? 'this week' : 'today';
+    const when = state._dateFocus ? `on ${dateFocusLabel()}` : state._month ? 'this month'
+      : state._week ? weekLabel(state._weekOffset).toLowerCase() : 'today';
     chip.title = `${n} ${n === 1 ? 'event' : 'events'} ${when}`;
   }
   updateInViewChevron();
@@ -2676,6 +2738,76 @@ function sydneyMidnightMs(daysFromToday) {
 /** Where This week ends: the start of the eighth day. */
 function weekEndMs() { return sydneyMidnightMs(7); }
 
+// ── The period: Today, a week, or the month ──
+//
+// The When control is Today (the feed from now on, endless), This week (the
+// seven days from today), a week either side of it (‹ ›: Next week, In 2
+// weeks… Last week, 2 weeks ago…), or This month (to the same date next
+// month). A week or the month is a window with two ends; Today has no end.
+
+/** The period's [from, to) as 'YYYY-MM-DD's, or null for Today and a date. */
+function periodRange() {
+  if (state._dateFocus) return null;
+  const today = todayIso();
+  if (state._month) {
+    const [y, m, d] = today.split('-').map(Number);
+    const next = new Date(Date.UTC(y, m, 1));                  // the 1st of next month
+    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); // its length
+    const to = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+    return { from: today, to };
+  }
+  if (state._week) {
+    const from = addDaysIso(today, 7 * (state._weekOffset || 0));
+    return { from, to: addDaysIso(from, 7) };
+  }
+  return null;
+}
+/** Sydney midnight at the start of an ISO date, in ms. */
+function isoStartMs(iso) { return Date.parse(localInputToUtc(`${iso}T00:00`)); }
+/** Events that overlap the period; all of them under Today or a date. */
+function filterToPeriod(events) {
+  const r = periodRange();
+  if (!r) return events;
+  const from = isoStartMs(r.from), to = isoStartMs(r.to);
+  return events.filter(e => {
+    const start = Date.parse(e.start_utc);
+    const end = e.end_utc ? Date.parse(e.end_utc) : start + 3600000;
+    return start < to && end > from;
+  });
+}
+/** "This week", "Next week", "In 3 weeks", "Last week", "2 weeks ago". */
+function weekLabel(n) {
+  if (!n) return 'This week';
+  if (n === 1) return 'Next week';
+  if (n === -1) return 'Last week';
+  return n > 0 ? `In ${n} weeks` : `${-n} weeks ago`;
+}
+/**
+ * Move the When control: 'today', 'week' (with `offset`), 'month'. Fetches
+ * when the window has gone past what is loaded, either side.
+ */
+async function setPeriod(kind, offset = 0) {
+  if (state._dateFocus) { state._dateFocus = null; state._dateFocusPrecision = 'day'; }
+  state._week = kind === 'week';
+  state._weekOffset = kind === 'week' ? offset : 0;
+  state._month = kind === 'month';
+  renderFilterSlots();
+  syncURL();
+  pulseSaveFilter();
+  const r = periodRange();
+  const needFrom = r && r.from < todayIso() && r.from < (state._loadedFrom || todayIso());
+  const needTo = r && daysUntil(r.to) > (state._loadedHorizonDays || 0);
+  if (needFrom || needTo) {
+    if (needTo) state._horizonDays = Math.max(eventsHorizonDays(), daysUntil(r.to) + 1);
+    await fetchEvents({ keepCount: true });
+  }
+  renderDateFocus();
+  if (typeof updateMap === 'function') updateMap(state);
+  const scroll = document.getElementById(window.agoraParishSheetVisible ? 'parish-sheet-scroll' : 'sheet-scroll');
+  if (scroll && !window.agoraParishSheetVisible) scroll.scrollTop = 0;
+}
+window.agoraSetPeriod = setPeriod;
+
 /** How many events the feed shows in the When control's period. */
 function eventsInPeriodCount() {
   const now = Date.now();
@@ -2690,7 +2822,15 @@ function eventsInPeriodCount() {
       to = Date.parse(localInputToUtc(`${addDaysIso(d, 1)}T00:00`));
     }
   } else {
-    to = state._week ? weekEndMs() : sydneyMidnightMs(1);
+    // A window still to come or running counts from now; one already over,
+    // from its start.
+    const r = periodRange();
+    if (r) {
+      to = isoStartMs(r.to);
+      from = to <= now ? isoStartMs(r.from) : Math.max(isoStartMs(r.from), now);
+    } else {
+      to = sydneyMidnightMs(1);
+    }
   }
   let n = 0;
   for (const e of applyFilters(state.events || [])) {
@@ -2817,9 +2957,12 @@ document.addEventListener('click', (e) => {
 
 /** The star fab's column: the favourites as fabs, logo and name, newest first. */
 function renderFavouritesList() {
+  const favs = favourites();
+  // The star is hidden until there is a favourite to keep there.
+  const btn = document.getElementById('btn-favourites');
+  if (btn) { btn.classList.toggle('has-favs', favs.length > 0); btn.hidden = !favs.length; }
   const list = document.getElementById('fav-list');
   if (!list) return;
-  const favs = favourites();
   const byId = new Map((state.parishes || []).map(p => [p.id, p]));
   list.innerHTML = favs.length
     ? favs.map(f => {
@@ -2828,8 +2971,7 @@ function renderFavouritesList() {
             ${parishAvatarHTML(p, 'fav-item-avatar', 'span')}<span class="fav-item-name">${esc(p.name)}</span></button>`;
       }).join('')
     : '<div class="fav-empty">Tap the star on a parish’s card and it is kept here.</div>';
-  const btn = document.getElementById('btn-favourites');
-  if (btn) btn.classList.toggle('has-favs', favs.length > 0);
+  if (!favs.length) list.classList.add('hidden');
 }
 function toggleFavouritesList(open) {
   let list = document.getElementById('fav-list');
@@ -2865,7 +3007,24 @@ function toggleFavouritesList(open) {
 // Bookmarks: [{ id, kind: 'event' | 'rule', at }] — an event (a stored one,
 // or one occurrence of a rule by its "<rule>:<date>" id), or a whole rule.
 function bookmarks() { return readStore(STORE.bm); }
-function bookmarkCount() { return bookmarks().length; }
+/** The bookmarks still to come: a date that has passed, or a service that no
+ *  longer runs, keeps its bookmark but is not counted — the button is hidden
+ *  until there is something ahead to show. Before the feed loads, all count. */
+function liveBookmarks() {
+  const list = bookmarks();
+  const evs = state.events;
+  if (!list.length || !evs || !evs.length) return list;
+  const now = Date.now();
+  const ids = new Set(), rules = new Set();
+  for (const e of evs) {
+    if (Date.parse(e.end_utc || e.start_utc) < now) continue;
+    ids.add(String(e.id));
+    const sid = e.schedule_id != null ? e.schedule_id : ruleIdOf(e.id);
+    if (sid != null) rules.add(String(sid));
+  }
+  return list.filter(b => (b.kind === 'rule' ? rules : ids).has(String(b.id)));
+}
+function bookmarkCount() { return liveBookmarks().length; }
 function isBookmarkedEvent(id) { return bookmarks().some(b => b.kind === 'event' && String(b.id) === String(id)); }
 function isBookmarkedRule(sid) { return sid != null && bookmarks().some(b => b.kind === 'rule' && String(b.id) === String(sid)); }
 /** Is this event bookmarked, itself or as one of its rule's? */
@@ -2932,8 +3091,8 @@ document.addEventListener('click', (e) => {
   }
 }, true);   // capture: an expanded card's own handlers stop the click bubbling
 
-// Saved filters: [{ url, path, at }], newest first — the views this browser
-// came back to, as links (Save Filter, and the monocle beside it).
+// Saved lists: [{ url, path, at }], newest first — the views this browser
+// came back to, as links. One dialog holds them: Save list.
 function savedFilters() { return [...readStore(STORE.saved)].sort((a, b) => b.at - a.at); }
 function currentFilterLink() {
   const path = '/' + buildPathSegs().join('/');
@@ -2942,49 +3101,43 @@ function currentFilterLink() {
 function saveCurrentFilter() {
   const { path, url } = currentFilterLink();
   writeStore(STORE.saved, [{ url, path, at: Date.now() }, ...readStore(STORE.saved).filter(x => x.path !== path)]);
-  syncSavedFiltersFab();
   return { path, url };
 }
-function syncSavedFiltersFab() {
-  const b = document.getElementById('btn-saved-filters');
-  if (b) b.hidden = !savedFilters().length;
-}
-/** "Saved": in the middle of the screen, the link to copy, and Share. */
+/**
+ * Save list: at the top, this view — its link to copy, to keep, to share —
+ * and under it every list kept so far, each a tap to open or an × to forget.
+ */
 function openSavedFilterDialog() {
-  const { url } = saveCurrentFilter();
+  const { url, path } = currentFilterLink();
+  const kept = savedFilters();
+  const isKept = kept.some(x => x.path === path);
+  const host = location.host.replace(/^www\./, '');
   const sentence = feedFilterSentence && feedFilterSentence();
-  const body = openFormDialog({
+  const rows = kept.map(x => `
+        <div class="saved-row${x.path === path ? ' current' : ''}">
+          <a class="saved-row-link" href="${esc(x.path)}" data-open-saved="${esc(x.path)}">${esc(host)}<b>${esc(x.path === '/' ? '' : x.path)}</b></a>
+          <button type="button" class="saved-row-del" data-forget-saved="${esc(x.path)}" aria-label="Forget this list">&times;</button>
+        </div>`).join('');
+  return openFormDialog({
     kind: 'saved',
-    title: 'Saved',
-    sub: sentence || 'This view, as a link — kept under the monocle beside Save filter.',
+    title: 'Save list',
+    sub: sentence || 'This view, as a link.',
     html: `<div class="saved-filter">
         <button type="button" class="saved-url" data-copy-url="${esc(url)}" title="Copy">
           <span class="saved-url-text">${esc(url.replace(/^https?:\/\//, ''))}</span>
           <img class="saved-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
         </button>
-        <div class="form-actions">
-          <button type="button" class="btn-save" data-share-saved="${esc(url)}">
-            <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share this filter
+        <div class="saved-actions">
+          <button type="button" class="btn-save" data-keep-saved ${isKept ? 'disabled' : ''}>
+            <img class="btn-action-icon" src="https://api.iconify.design/${isKept ? 'ph:check-bold' : 'ph:plus-bold'}.svg" alt="">${isKept ? 'Saved' : 'Save this list'}
           </button>
-          <button type="button" class="btn-outline" onclick="closeFormDialog()">Done</button>
+          <button type="button" class="btn-outline" data-share-saved="${esc(url)}">
+            <img class="btn-action-icon" src="https://api.iconify.design/ph:paper-plane-tilt.svg" alt="">Share
+          </button>
         </div>
+        <div class="saved-list-hdr">${kept.length ? 'Your lists' : 'Lists you save are kept here.'}</div>
+        ${kept.length ? `<div class="saved-list">${rows}</div>` : ''}
       </div>`,
-  });
-  return body;
-}
-/** The monocle: every saved filter, to open or to forget. */
-function openSavedFiltersList() {
-  const list = savedFilters();
-  const host = location.host.replace(/^www\./, '');
-  openFormDialog({
-    kind: 'saved-list',
-    title: 'Saved filters',
-    sub: list.length ? 'Tap one to open it.' : 'Nothing saved yet.',
-    html: `<div class="saved-list">${list.map(x => `
-        <div class="saved-row">
-          <a class="saved-row-link" href="${esc(x.path)}" data-open-saved="${esc(x.path)}">${esc(host)}<b>${esc(x.path === '/' ? '' : x.path)}</b></a>
-          <button type="button" class="saved-row-del" data-forget-saved="${esc(x.path)}" aria-label="Forget this filter">&times;</button>
-        </div>`).join('')}</div>`,
   });
 }
 document.addEventListener('click', async (e) => {
@@ -3008,8 +3161,11 @@ document.addEventListener('click', async (e) => {
   } else if (forget) {
     e.preventDefault();
     writeStore(STORE.saved, readStore(STORE.saved).filter(x => x.path !== forget.dataset.forgetSaved));
-    syncSavedFiltersFab();
-    openSavedFiltersList();
+    openSavedFilterDialog();
+  } else if (e.target.closest('[data-keep-saved]')) {
+    e.preventDefault();
+    saveCurrentFilter();
+    openSavedFilterDialog();
   }
 });
 
@@ -3071,9 +3227,6 @@ function initTopBar() {
   if (saveFab) saveFab.addEventListener('click', () => openSavedFilterDialog());
   const saveBar = document.getElementById('btn-save-filter-bar');
   if (saveBar) saveBar.addEventListener('click', () => openSavedFilterDialog());
-  const savedFab = document.getElementById('btn-saved-filters');
-  if (savedFab) savedFab.addEventListener('click', () => openSavedFiltersList());
-  syncSavedFiltersFab();
   renderFavouritesList();
   renderParishCounter();
 }
@@ -3088,16 +3241,20 @@ function initTopBar() {
 //
 //   Language  "Any language", then a language with an up-and-down segment
 //             that opens our own list of the languages on file, and "only".
-//   Kind      a cycle — Any event, Services, Studies, Socials — where
+//   Kind      a cycle — Any event, Services, Talks, Socials — where
 //             Services spawns three roundels (L, P, F) and Socials two (S, Y);
 //             one roundel at a time narrows it, and spells its name out.
 //   When      Today, then This week (the next seven days) with a calendar
 //             beside it, and any date from that calendar in its place.
 //   Bookmarks the events this browser bookmarked, once there are any.
 
-const KIND_CYCLE = [null, 'services', 'studies', 'socials'];
-const KIND_NAMES = { services: 'Services', studies: 'Studies', socials: 'Socials' };
-const KIND_SUBS = { services: ['liturgy', 'prayer', 'feast'], socials: ['social', 'youth'] };
+const KIND_CYCLE = [null, 'services', 'talks', 'socials'];
+const KIND_NAMES = { services: 'Services', talks: 'Talks', socials: 'Socials' };
+const KIND_SUBS = { services: ['liturgy', 'prayer', 'feast'], talks: ['bible-study'], socials: ['social', 'youth'] };
+/** A sub-kind's name. Bible studies are Talks' one, and a title, not a type. */
+function kindSubLabel(id) {
+  return id === 'bible-study' ? 'Bible Studies' : window.AgoraEventTypes.eventTypeLabel(id);
+}
 
 /** The filter set a toolbar edits. */
 function filterSetFor(scope) {
@@ -3154,7 +3311,7 @@ function langControlHTML(f) {
 
 /** A roundel's colours: the kind's own, from public/shared/event-types.js. */
 function kindRoundelStyle(id) {
-  const c = window.AgoraEventTypes.kindColors(id, matchMedia('(prefers-color-scheme: dark)').matches);
+  const c = window.AgoraEventTypes.kindColors(id === 'bible-study' ? 'talk' : id, matchMedia('(prefers-color-scheme: dark)').matches);
   return `--k-bg:${c.bg};--k-fg:${c.fg}`;
 }
 
@@ -3162,7 +3319,7 @@ function kindControlHTML(f) {
   const kind = f.kind || null;
   const subs = (KIND_SUBS[kind] || []).map(id => {
     const on = f.kindSub === id;
-    const label = window.AgoraEventTypes.eventTypeLabel(id);
+    const label = kindSubLabel(id);
     return `<button class="kind-sub${on ? ' on' : ''}" type="button" data-kind-sub="${id}" style="${kindRoundelStyle(id)}"
         aria-pressed="${on}" aria-label="${esc(label)}" title="${esc(label)}">${on ? esc(label) : esc(label[0])}</button>`;
   }).join('');
@@ -3174,18 +3331,27 @@ function kindControlHTML(f) {
     </div>`;
 }
 
-/** "Today", "This week", or the date the stream starts from. */
+/** "Today", "This week", "Next week", "This month", or the date the stream starts from. */
 function whenLabel() {
   if (state._dateFocus) return dateFocusLabel();
-  return state._week ? 'This week' : 'Today';
+  if (state._month) return 'This month';
+  return state._week ? weekLabel(state._weekOffset || 0) : 'Today';
 }
 function whenControlHTML() {
-  const on = !!(state._week || state._dateFocus);
-  return `<div class="when-filter">
+  const on = !!(state._week || state._month || state._dateFocus);
+  const week = state._week && !state._dateFocus;
+  const n = state._weekOffset || 0;
+  // A week wears its chevrons: ‹ a week back, › a week on, the label between.
+  const chev = (dir) => `<button class="when-chev when-chev-${dir < 0 ? 'prev' : 'next'}" type="button" data-when-step="${dir}"
+        aria-label="${esc(weekLabel(n + dir))}" title="${esc(weekLabel(n + dir))}">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${dir < 0 ? 'M10 3 5 8l5 5' : 'M6 3l5 5-5 5'}"/></svg>
+      </button>`;
+  const next = state._dateFocus ? 'today' : state._month ? 'today' : state._week ? 'this month' : 'this week';
+  return `<div class="when-filter${week ? ' when-week' : ''}">${week ? chev(-1) : ''}
       <button class="mode-bar-pill when-btn${on ? ' active' : ''}" type="button" data-when-cycle
-        aria-label="${esc(state._dateFocus ? `From ${whenLabel()} — tap for today` : state._week ? 'This week — tap for today' : 'Today — tap for this week')}">
+        aria-label="${esc(`${state._dateFocus ? `From ${whenLabel()}` : whenLabel()} — tap for ${next}`)}">
         <span class="mode-bar-pill-label">${esc(whenLabel())}</span>
-      </button>${on ? `
+      </button>${week ? chev(1) : ''}${on ? `
       <button class="agora-cal-btn when-cal${state._dateFocus ? ' active' : ''}" type="button" data-when-cal
         aria-haspopup="dialog" aria-label="Choose a date" title="Choose a date">
         <img src="https://api.iconify.design/ph:calendar-blank.svg" alt="">
@@ -3230,25 +3396,13 @@ function onFiltersChanged(scope) {
   renderFilterSlots();
   if (scope === 'parish') {
     if (state.parishSheetFocus) refreshParishContentPortion(state.parishSheetFocus);
+    syncURL({ replace: true });
     return;
   }
   if (state._openEventId && !state.eventSheetId) closeDetailDOM();
   renderCurrentView();
   syncFiltersButton();
   if (typeof renderInViewChip === 'function') renderInViewChip();
-  syncURL();
-  pulseSaveFilter();
-}
-
-/** This week, on or off — shared by the feed and the card, as the date is. */
-function setWeek(on) {
-  state._week = !!on;
-  if (on && state._dateFocus) {
-    state._dateFocus = null;
-    state._dateFocusPrecision = 'day';
-  }
-  renderFilterSlots();
-  renderDateFocus();
   syncURL();
   pulseSaveFilter();
 }
@@ -3278,11 +3432,19 @@ function initFilterControls() {
       f.kindSub = f.kindSub === id ? null : id;
       onFiltersChanged(scope);
     } else if (hit('[data-when-cycle]')) {
+      // Today → This week → This month → Today. A date goes back to Today.
       if (state._dateFocus) window.clearDateFocus();
-      else setWeek(!state._week);
+      else if (state._month) setPeriod('today');
+      else if (state._week) setPeriod('month');
+      else setPeriod('week', 0);
+    } else if (hit('[data-when-step]')) {
+      setPeriod('week', (state._weekOffset || 0) + Number(hit('[data-when-step]').dataset.whenStep));
     } else if (hit('[data-when-cal]')) {
       openDatePicker(hit('[data-when-cal]'));
     } else if (hit('[data-bookmarks]')) {
+      // The feed's bookmarks are all of them: every other filter goes, so
+      // nothing hides one (the map's view included — applyFilters).
+      if (scope === 'main' && !f.bookmarked) clearAllFilters();
       f.bookmarked = !f.bookmarked;
       onFiltersChanged(scope);
     }
@@ -3543,7 +3705,7 @@ function anyFilterToClear() {
   const picked = f.parishIds && f.parishIds.size
     && !(state.parishFocus && f.parishIds.size === 1 && f.parishIds.has(state.parishFocus));
   return !!(f.jurisdiction || f.location || f.service || f.day != null || f.part || picked
-    || f.kind || f.lang || f.bookmarked || state._dateFocus || state._week || state.mode === 'services');
+    || f.kind || f.lang || f.bookmarked || state._dateFocus || state._week || state._month || state.mode === 'services');
 }
 function syncClearFilters() {
   const btn = document.getElementById('btn-clear-filters');
@@ -3586,6 +3748,8 @@ function clearAllFilters() {
   state.filters.showAllParishes = null;
   Object.assign(state.filters, blankFilterFlags());
   state._week = false;
+  state._weekOffset = 0;
+  state._month = false;
   state.parishFocus = null;
   // "Clear all" means the whole feed from today. Leaving the stream wound on to
   // March while every chip said the filters were gone would read as a bug.
@@ -3777,7 +3941,7 @@ function syncFilterActiveStack() {
   if (state.filters.service) chips.push({ kind: 'service', label: serviceLabelFor(state.filters.service) });
   if (state.filters.kind) {
     chips.push({ kind: 'eventkind', label: state.filters.kindSub
-      ? window.AgoraEventTypes.eventTypeLabel(state.filters.kindSub) : KIND_NAMES[state.filters.kind] });
+      ? kindSubLabel(state.filters.kindSub) : KIND_NAMES[state.filters.kind] });
   }
   if (state.filters.bookmarked) chips.push({ kind: 'bookmarks', label: 'Bookmarked' });
   if (state.filters.lang) {
@@ -3785,7 +3949,7 @@ function syncFilterActiveStack() {
     // its "only" is on.
     chips.push({ kind: 'english', label: state.filters.langStrict ? `${state.filters.lang} only` : state.filters.lang });
   }
-  if (state.mode === 'services') chips.push({ kind: 'schedules', label: 'Schedules' });
+  if (state.mode === 'services') chips.push({ kind: 'schedules', label: 'Timetables' });
   const parishCount = state.filters.parishIds ? state.filters.parishIds.size : 0;
   if (parishCount > 0) chips.push({ kind: 'parishes', label: `${parishCount} parish${parishCount === 1 ? '' : 'es'}` });
 
@@ -3985,18 +4149,15 @@ function applyNonViewportFilters(events) {
   // The toolbar's kind, language and bookmarks (eventPassesFlags), and This
   // week: the next seven days and no further.
   filtered = filtered.filter(e => eventPassesFlags(e, state.filters));
-  if (state._week) {
-    const end = weekEndMs();
-    filtered = filtered.filter(e => Date.parse(e.start_utc) < end);
-  }
-  return filtered;
+  return filterToPeriod(filtered);
 }
 
 function applyFilters(events) {
   let filtered = applyNonViewportFilters(events);
   // Viewport axis — only applies when the user has NOT made an explicit parish
   // pick. Keeps pill taps / URL-scoped views visible even when off-screen.
-  if (!state.filters.parishIds && state.viewportParishIds) {
+  // Bookmarks are shown wherever they are: the map is not a filter on them.
+  if (!state.filters.parishIds && state.viewportParishIds && !state.filters.bookmarked) {
     const vp = state.viewportParishIds;
     filtered = filtered.filter(e =>
       vp.has(e.parish_id) || (e.extra_parishes && e.extra_parishes.some(pid => vp.has(pid)))
@@ -4034,11 +4195,7 @@ function filterParishEventsBySession(events) {
     });
   }
   out = out.filter(e => eventPassesFlags(e, f));
-  if (state._week) {
-    const end = weekEndMs();
-    out = out.filter(e => Date.parse(e.start_utc) < end);
-  }
-  return out;
+  return filterToPeriod(out);
 }
 
 // The card's timetable answers the card's toolbar too: its kind and its
@@ -5746,6 +5903,11 @@ function paintParishSheetContent(parishId, opts = {}) {
   // with their own pencil (parishTimetableHTML): editing a phone number and
   // editing a timetable are different jobs, usually by different people.
   let parishAdminHtml = '';
+  // Edit details, in line with the parish's other buttons.
+  const editDetailsBtn = state.isAdmin && adminMay('parish.edit', parishId)
+    ? `<button class="ps-btn ps-btn-ghost ps-edit-details" type="button" aria-pressed="false"
+          onclick="setParishEditMode('${esc(parishId)}', true)">${glyph('ph:pencil-simple')}Edit details</button>`
+    : '';
   if (state.isAdmin && adminMay('parish.edit', parishId)) {
     const pid = esc(parishId);
     parishAdminHtml = `
@@ -5831,8 +5993,7 @@ function paintParishSheetContent(parishId, opts = {}) {
       ${webCopyHtml}
       ${srcHtml}
       ${contributeButtonHTML(parish)}
-      <div class="ps-actions" style="--parish-color:${esc(color)}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}</div>
-      ${parishAdminHtml}
+      <div class="ps-actions" style="--parish-color:${esc(color)}">${dirBtn}${webBtn}${phoneBtn}${watchBtn}${donateBtn}${customLinkBtns}${shareParishBtn}${editDetailsBtn}</div>
     </div>`}
     <div class="ps-now"></div>
     <!-- The card's toolbar: the main sheet's controls, built by the same
@@ -6416,9 +6577,20 @@ async function shareUrl(url, title = '', feedbackEl = null) {
 }
 
 function initModeUrl() {
-  // The link under the toolbar's Save button, building as the filters change.
-  const el = document.getElementById('mode-url-text');
-  if (el) el.addEventListener('click', () => openSavedFilterDialog());
+  // The link beside Save list, building as the filters change: a tap copies
+  // it, as the parish card's chip does.
+  const btn = document.getElementById('mode-url-btn');
+  if (btn) btn.addEventListener('click', async () => {
+    const url = currentFilterLink().url;
+    try { await navigator.clipboard.writeText(url); }
+    catch {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      document.body.removeChild(ta);
+    }
+    showCopiedFeedback(btn);
+  });
   updateModeUrl();
 }
 
@@ -6733,9 +6905,13 @@ function setCombinedContext() {
 
 function renderStream(container, events, opts = {}) {
   setCombinedContext();
-  const { parishMode = false, showCount = SHOW_COUNT_STEP } = opts;
+  const { parishMode = false } = opts;
   // The focus is shared, so the parish card winds forward with the main feed.
-  const dateFocus = state._dateFocus || null;
+  // A week or the month starts where it starts, as a date does, and shows
+  // today as a day like the rest — the Today box is Today's alone.
+  const period = periodRange();
+  const dateFocus = state._dateFocus || (period ? period.from : null);
+  const showCount = period ? Infinity : (opts.showCount || SHOW_COUNT_STEP);
   const now = new Date();
   const TZ_LOCAL = TZ;
   const todayKey = new Intl.DateTimeFormat('en-AU', { timeZone: TZ_LOCAL, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -6791,6 +6967,14 @@ function renderStream(container, events, opts = {}) {
     return `<div data-card-host="${id}"></div>`;
   }
 
+  // Today, boxed: what is left of it (and what is on now), framed apart from
+  // the days after it, which drop away below. Today's alone — a week or a
+  // date starts the stream elsewhere.
+  const todayBox = !dateFocus && !parishMode;
+  if (todayBox) {
+    const label = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'short' }).format(now);
+    html += `<section class="today-box" aria-label="Today"><div class="today-box-hdr"><span class="today-box-title">Today</span><span class="today-box-date">${esc(label)}</span></div>`;
+  }
   // Earlier-today chip — collapsed by default; expands inline on tap.
   if (earlierToday.length) {
     html += `<button class="earlier-today-chip" id="earlier-today-chip" type="button" aria-expanded="false">`;
@@ -6819,36 +7003,36 @@ function renderStream(container, events, opts = {}) {
     html = renderSubDaySections(laterToday, html, reserveHost, opts);
     html += `</div>`;
   }
+  if (todayBox) {
+    if (!hasToday) html += `<p class="today-box-empty">Nothing more on today${visibleFuture.length ? ' — the next days are below.' : '.'}</p>`;
+    html += `</section>`;
+    if (visibleFuture.length) html += `<div class="today-box-dropoff" aria-hidden="true">Coming up</div>`;
+  }
 
   // Month seam + day groups. Always emit the seam when future events exist so
   // later async updates slot into a stable position (no scroll jump).
   if (visibleFuture.length) {
     html += renderFutureDays(visibleFuture, reserveHost, opts);
-  } else if (!hasToday) {
+  } else if (!hasToday && !todayBox) {
     html += renderEmptyStateHTML();
   }
 
-  // How far the window currently reaches, which is a different claim from how
-  // far the parish has published: the note says what has been LOADED, and Load
-  // more is right beside it saying that is not the end.
-  const lastEvt = events.length ? events[events.length - 1] : null;
-  const horizonNote = lastEvt
-    ? `<div class="list-footer-note">Loaded to ${new Date(lastEvt.start_utc).toLocaleDateString('en-AU', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' })}</div>`
-    : '';
-
-  // The footer never runs out of button. Load more either reveals or fetches
-  // (see loadMore), and the calendar beside it skips straight to a date rather
-  // than pressing forward one window at a time.
-  html += `<div class="list-footer">
-      <div class="list-footer-actions">
-        <button class="list-footer-btn" type="button" onclick="${parishMode ? 'loadMoreParishEvents()' : 'loadMoreEvents()'}">Load more</button>
-        ${calendarButtonHTML('list-footer-cal')}
-      </div>
-      ${horizonNote}
-      <div class="list-footer-ornament">· · ·</div>
-    </div>`;
+  // The end of the list. Today and a date have no end: reaching the bottom
+  // loads the next stretch on its own (the sentinel, watched below). A week
+  // ends at its seventh day, with the next week one tap on; the month ends.
+  if (state._week && !state._dateFocus) {
+    const next = (state._weekOffset || 0) + 1;
+    html += `<div class="list-footer"><div class="list-footer-actions">
+        <button class="list-footer-btn" type="button" data-period-week="${next}">${esc(weekLabel(next))} →</button>
+      </div></div>`;
+  } else if (state._month && !state._dateFocus) {
+    html += `<div class="list-footer"><div class="list-footer-ornament">· · ·</div></div>`;
+  } else {
+    html += `<div class="feed-sentinel" data-feed-sentinel="${parishMode ? 'parish' : 'main'}" aria-hidden="true"><span class="feed-sentinel-dots">· · ·</span></div>`;
+  }
 
   container.innerHTML = html;
+  watchFeedSentinel(container);
 
   // Populate hosts with pooled card nodes. Cards that already lived in
   // a previous host get moved (no reflow of their subtree); cards new
@@ -6905,10 +7089,12 @@ function renderFutureDays(events, reserveHost, opts = {}) {
       prevMonthKey = monthKey;
     }
 
+    // The toolbar's When chooses a date; a header only copies its own link
+    // (and, on the day focused, goes back to the stream).
     const dateNavBtn = showDateNav
       ? (isFocused
           ? `<button class="day-date-clear" type="button" onclick="clearDateFocus()" title="Back to stream">&times;</button>`
-          : `<button class="day-date-pick" type="button" onclick="openDatePicker(this)" title="Jump to date"><img src="https://api.iconify.design/ph:calendar.svg" alt=""></button>`)
+          : '')
         + headerLinkBtn(dateStr, 'day', dayFmt)
       : '';
 
@@ -6933,15 +7119,16 @@ function renderFutureDays(events, reserveHost, opts = {}) {
 function headerLinkBtn(date, precision, label) {
   return `<button class="hdr-link" type="button" data-copy-date="${date}" data-precision="${precision}"
       aria-label="Copy the link to ${esc(label)}" title="Copy the link from ${esc(label)}">
-      <img src="https://api.iconify.design/ph:link-simple.svg" alt=""></button>`;
+      <img src="https://api.iconify.design/ph:copy.svg" alt=""></button>`;
 }
 function linkFromDate(date, precision) {
-  const keep = [state._dateFocus, state._dateFocusPrecision, state._week];
+  const keep = [state._dateFocus, state._dateFocusPrecision, state._week, state._month];
   state._dateFocus = date;
   state._dateFocusPrecision = precision;
   state._week = false;
+  state._month = false;
   try { return `${location.origin}/${buildPathSegs().join('/')}`; }
-  finally { [state._dateFocus, state._dateFocusPrecision, state._week] = keep; }
+  finally { [state._dateFocus, state._dateFocusPrecision, state._week, state._month] = keep; }
 }
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-copy-date]');
@@ -7344,7 +7531,6 @@ function renderScheduleDaysHTML(items) {
       const langLabel = langs.length ? `<span class="schedule-item-lang">${esc(langs.join(', '))}</span>` : '';
       const womLabel = womDisplayLabel(s, DAYS[day]);
       const editable = canEdit(s);
-      const scopeLabel = s.parish_scoped ? `<span class="schedule-item-scope">parish only</span>` : '';
       // The row focuses that rule's next occurrence at that parish, for
       // everybody. Whoever may change the rule also gets a pencil at the
       // row's right edge, always there: it opens the rule's form in the edit
@@ -7371,7 +7557,7 @@ function renderScheduleDaysHTML(items) {
       // the line underneath they cost every bilingual parish a row per service.
       html += `<div class="si-main"><span class="schedule-item-time">${t}</span><span class="si-title"><span class="schedule-item-title" title="${esc(s.title)}">${esc(s.title)}</span>${langLabel}<img class="si-chev" src="https://api.iconify.design/ph:caret-right-bold.svg" alt=""></span>${pencil}</div>`;
       const rangeLabel = ruleRangeLabel(s);
-      const meta = `${womLabel}${rangeLabel}${scopeLabel}${posterChip}${breakChip}`;
+      const meta = `${womLabel}${rangeLabel}${posterChip}${breakChip}`;
       if (meta) html += `<div class="si-meta">${meta}</div>`;
       // While a rule is on a break the timetable still shows its time — the
       // rule has not changed — but the honest reading of the row is "not this
@@ -8241,8 +8427,11 @@ function renderServices() {
     schedules = schedules.filter(s => state.viewportParishIds.has(s.parish_id));
   }
 
+  // The parishes in scope with no times on file go in their jurisdiction's
+  // box too, after those with times (parishesWithoutTimes).
+  const none = parishesWithoutTimes();
   let html = '';
-  if (!schedules.length) {
+  if (!schedules.length && !none.length) {
     html = renderEmptyStateHTML();
   }
 
@@ -8250,6 +8439,9 @@ function renderServices() {
   for (const s of schedules) {
     if (!byParish.has(s.parish_id)) byParish.set(s.parish_id, { info: s, items: [] });
     byParish.get(s.parish_id).items.push(s);
+  }
+  for (const p of none) {
+    if (!byParish.has(p.id)) byParish.set(p.id, { info: { parish_name: p.name, jurisdiction: p.jurisdiction }, items: [], address: p.address });
   }
 
   // Sort parish groups: distance when Nearby sort active, else alpha by name.
@@ -8261,10 +8453,11 @@ function renderServices() {
       : Infinity;
     return { pid, grp, dist, name: grp.info.parish_name || '' };
   });
+  const bare = (pg) => (pg.grp.items.length ? 0 : 1);
   if (nearby) {
-    parishGroups.sort((a, b) => a.dist - b.dist);
+    parishGroups.sort((a, b) => bare(a) - bare(b) || a.dist - b.dist);
   } else {
-    parishGroups.sort((a, b) => a.name.localeCompare(b.name));
+    parishGroups.sort((a, b) => bare(a) - bare(b) || a.name.localeCompare(b.name));
   }
 
   // Group parish schedules into jurisdiction boxes so each jurisdiction
@@ -8282,8 +8475,9 @@ function renderServices() {
     const jLabel = timetableLabel(juris);
     html += `<div class="jurisdiction-box" style="--juris-color:${esc(jColor)}">`;
     html += `<div class="section-header jurisdiction-header">${esc(jLabel)}</div>`;
-    for (const { pid, grp: { info, items } } of pgs) {
+    for (const { pid, grp: { info, items, address } } of pgs) {
       const parish = state.parishes.find(p => p.id === pid);
+      const firstBare = !items.length && !html.includes('id="no-times"');
       // Distance chip: same intensity tiers as event list (near ≤5, mid ≤15, far).
       let distHtml = '';
       if (state.locationActive && parish && parish.lat && parish.lng) {
@@ -8291,19 +8485,18 @@ function renderServices() {
         const cls = km <= 5 ? 'distance-near' : km <= 15 ? 'distance-mid' : 'distance-far';
         distHtml = `<span class="parish-schedule-dist ${cls}">${km.toFixed(1)} km</span>`;
       }
-      html += `<div class="parish-schedule" data-parish-id="${esc(pid)}">`;
+      html += `<div class="parish-schedule${items.length ? '' : ' parish-schedule-bare'}" data-parish-id="${esc(pid)}"${firstBare ? ' id="no-times"' : ''}>`;
       html += `<div class="parish-schedule-head">`;
       html += parishAvatarHTML(parish || { name: info.parish_name, jurisdiction: juris }, 'parish-schedule-avatar');
-      html += `<div class="parish-schedule-name">${esc(info.parish_name)}</div>`;
+      html += `<div class="parish-schedule-name">${esc(info.parish_name)}`
+        + (!items.length && address ? `<span class="no-times-addr">${esc(address)}</span>` : '') + `</div>`;
       html += distHtml;
       html += `</div>`;
-      html += renderScheduleDaysHTML(items);
+      if (items.length) html += renderScheduleDaysHTML(items);
       html += '</div>';
     }
     html += '</div>';
   }
-
-  html += noTimesHTML();
 
   const singleParishId = state.filters.parishIds && state.filters.parishIds.size === 1
     ? [...state.filters.parishIds][0] : null;
@@ -8337,7 +8530,7 @@ function renderServices() {
   // The timetable page's "N parishes without service times on file" lands
   // here with #no-times. Once: the fragment is spent as soon as it is used, so
   // the next render (a map move) does not pull the list back up.
-  // Under a filter that lists none (noTimesHTML) there is nothing to land on —
+  // Under a filter that lists none (parishesWithoutTimes) there is nothing to land on —
   // an older page's link — so it is spent too, or clearing the filter later
   // would pull the list up.
   if (location.hash === '#no-times') {
@@ -8353,38 +8546,25 @@ function renderServices() {
 }
 
 // The parishes in view that have no times on file at all — most of them, for
-// now (253 of 293 in October 2026). Listed by name under the timetables so the
-// view is the whole of the parishes it covers, not only the ones with times;
-// each opens its parish sheet, where "Suggest edits" asks for them.
+// now (253 of 293 in October 2026). The timetable lists them in their
+// jurisdiction's box under the ones with times, so the view is the whole of
+// the parishes it covers; each opens its parish sheet, where "Suggest edits"
+// asks for them.
 //
 // No rules at all, not "none matching": a parish whose only rule is Vespers
-// has times, it just has no Liturgy. Same scope as the rules above — the
-// link's jurisdiction, region and parishes, then the viewport — and the same
-// count the timetable page links here with. Not under a filter that asks
-// something of the rules (a service, a day, a part, a language): nothing on
-// file is not "no Bible study", so it would stand alone under one.
-function noTimesHTML() {
+// has times, it just has no Liturgy. Same scope as the rules — the link's
+// jurisdiction, region and parishes, then the viewport. Not under a filter
+// that asks something of the rules (a service, a day, a part, a language):
+// nothing on file is not "no Bible study".
+function parishesWithoutTimes() {
   const T = window.AgoraTimetable;
-  if (T.narrowsRules(state.filters)) return '';
+  if (T.narrowsRules(state.filters)) return [];
   const withTimes = new Set((state.schedules || []).map(s => s.parish_id));
   const vp = state.viewportParishIds;
-  const none = (state.parishes || [])
-    .filter(p => T.parishInScope(p, state.filters)
-      && (state.filters.parishIds || !vp || vp.has(p.id))
-      && !withTimes.has(p.id))
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  if (!none.length) return '';
-  let html = `<div class="jurisdiction-box no-times-box" id="no-times">`;
-  html += `<div class="section-header jurisdiction-header">No times on file yet · ${none.length}</div>`;
-  for (const p of none) {
-    html += `<div class="parish-schedule" data-parish-id="${esc(p.id)}">`;
-    html += `<div class="parish-schedule-head">`;
-    html += parishAvatarHTML(p, 'parish-schedule-avatar');
-    html += `<div class="parish-schedule-name">${esc(p.name)}`;
-    if (p.address) html += `<span class="no-times-addr">${esc(p.address)}</span>`;
-    html += `</div></div></div>`;
-  }
-  return html + '</div>';
+  return (state.parishes || [])
+    .filter(p => p.id !== '_unassigned' && T.parishInScope(p, state.filters)
+      && (state.filters.parishIds ? state.filters.parishIds.has(p.id) : (!vp || vp.has(p.id)))
+      && !withTimes.has(p.id));
 }
 
 // ── Event detail ──
@@ -9651,7 +9831,7 @@ function parishMapsHref(parish) {
  * edit pencil): an extra class, an inline style, and what goes inside.
  */
 function parishAvatarParts(parish) {
-  if (parish && parish.logo_path) return { cls: '', style: '', inner: `<img src="${esc(parish.logo_path)}" alt="">` };
+  if (parish && parish.logo_path) return { cls: ' avatar-logo', style: '', inner: `<img src="${esc(parish.logo_path)}" alt="">` };
   const ink = getParishDisplayColor((parish && parish.color) || rawJurisColor(parish && parish.jurisdiction));
   const text = String((parish && parish.acronym) || ((parish && parish.name) || '?')[0]).toUpperCase();
   return {
@@ -9990,16 +10170,38 @@ function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
   const mapsQuery = `${parish.full_name || parish.name || ''} ${suburb}`.trim();
   return `
     <div class="ps-section ps-details-editing" id="ps-edit-form-${pid}">
-      <label class="ps-field ps-edit-in" style="--i:2"><span>Address</span>
-        <input id="pse-address-${pid}" value="${esc(parish.address || '')}" oninput="parishAddressTyped('${pid}')" placeholder="Where the service is — the door somebody walks through">
-      </label>
-      <div class="pin-actions ps-edit-in" style="--i:3">
-        <button class="ps-btn ps-btn-admin" type="button" id="pse-locate-${pid}"
-                onclick="geolocateParishPin('${pid}')">${glyph('ph:map-pin')}Locate pin</button>
-        <button class="ps-btn ps-btn-admin" type="button"
-                onclick="openParishPinMover('${pid}')">${glyph('ph:crosshair-simple')}Move pin</button>
+      <!-- Where: the address, its pin, and the Google Maps place the
+           Directions button opens — one group, because they are one answer. -->
+      <div class="ps-where ps-edit-in" style="--i:2">
+        <label class="ps-field"><span>Address</span>
+          <input id="pse-address-${pid}" value="${esc(parish.address || '')}" oninput="parishAddressTyped('${pid}')" placeholder="Where the service is — the door somebody walks through">
+        </label>
+        <div class="pin-actions">
+          <button class="ps-btn ps-btn-admin" type="button" id="pse-locate-${pid}"
+                  onclick="geolocateParishPin('${pid}')">${glyph('ph:map-pin')}Locate pin</button>
+          <button class="ps-btn ps-btn-admin" type="button"
+                  onclick="openParishPinMover('${pid}')">${glyph('ph:crosshair-simple')}Move pin</button>
+        </div>
+        <div class="pin-status" id="pse-pin-status-${pid}">${pinStatusHTML(parish.id)}</div>
+        <div class="ps-where-maps">
+          <div class="ps-field"><span>Google Maps — what Directions opens</span>
+            <div class="maps-current" id="pse-maps-current-${pid}">${parish.maps_url
+              ? 'A place is chosen — the button opens it.'
+              : 'None chosen — the button opens the pin from the address.'}</div>
+          </div>
+          <div class="maps-search">
+            <input id="pse-maps-q-${pid}" value="${esc(mapsQuery)}" aria-label="Search Google Maps"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();searchParishPlaces('${pid}')}">
+            <button class="ps-btn ps-btn-admin" type="button" onclick="searchParishPlaces('${pid}')">${glyph('ph:magnifying-glass')}Find</button>
+          </div>
+          <div class="maps-results" id="pse-maps-results-${pid}"></div>
+          <label class="ps-field"><span>Or paste its Google Maps link</span>
+            <input id="pse-maps-${pid}" value="${esc(parish.maps_url || '')}" placeholder="https://maps.app.goo.gl/…"
+                   oninput="document.getElementById('pse-maps-current-${pid}').textContent = this.value ? 'This link is chosen.' : 'None chosen — the button opens the pin from the address.'">
+          </label>
+          <button class="ps-btn ps-btn-ghost" type="button" onclick="clearParishMaps('${pid}')">Use the pin instead</button>
+        </div>
       </div>
-      <div class="pin-status" id="pse-pin-status-${pid}">${pinStatusHTML(parish.id)}</div>
       <label class="ps-field ps-edit-in" style="--i:4"><span>Website</span>
         <input type="url" id="pse-website-${pid}" value="${esc(parish.website || '')}" placeholder="https://">
       </label>
@@ -10016,7 +10218,6 @@ function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
       <div class="ps-edit-in" style="--i:6">${srcHtml}</div>
       ${readFromFieldHTML(parish)}
       <div class="ps-actions ps-edit-in" style="--i:7;--parish-color:${esc(getJurisdictionColor(parish.jurisdiction))}">
-        ${linkBtn('maps', 'Google Maps', true)}
         ${linkBtn('website', 'Website', !!parish.website)}
         ${linkBtn('phone', parish.phone ? 'Call' : 'Add phone', !!parish.phone)}
         ${linkBtn('live', parish.live_url ? 'Watch Live' : 'Add live stream', !!parish.live_url)}
@@ -10032,24 +10233,6 @@ function parishDetailsEditHTML(parish, { srcHtml, parishAdminHtml }) {
           <label class="ps-field"><span>Live stream — what Watch Live opens</span>
             <input type="url" id="pse-live-${pid}" value="${esc(parish.live_url || '')}" placeholder="https://youtube.com/…">
           </label>
-        </div>
-        <div class="ps-link-field" data-link-field="maps" hidden>
-          <div class="ps-field"><span>Google Maps entry</span>
-            <div class="maps-current" id="pse-maps-current-${pid}">${parish.maps_url
-              ? 'A place is chosen — the button opens it.'
-              : 'None chosen — the button opens the pin from the address.'}</div>
-          </div>
-          <div class="maps-search">
-            <input id="pse-maps-q-${pid}" value="${esc(mapsQuery)}" aria-label="Search Google Maps"
-                   onkeydown="if(event.key==='Enter'){event.preventDefault();searchParishPlaces('${pid}')}">
-            <button class="ps-btn ps-btn-admin" type="button" onclick="searchParishPlaces('${pid}')">${glyph('ph:magnifying-glass')}Find</button>
-          </div>
-          <div class="maps-results" id="pse-maps-results-${pid}"></div>
-          <label class="ps-field"><span>Or paste its Google Maps link</span>
-            <input id="pse-maps-${pid}" value="${esc(parish.maps_url || '')}" placeholder="https://maps.app.goo.gl/…"
-                   oninput="document.getElementById('pse-maps-current-${pid}').textContent = this.value ? 'This link is chosen.' : 'None chosen — the button opens the pin from the address.'">
-          </label>
-          <button class="ps-btn ps-btn-ghost" type="button" onclick="clearParishMaps('${pid}')">Use the pin instead</button>
         </div>
       </div>
       ${parishAdminHtml}
@@ -10076,8 +10259,8 @@ function wireParishDetailsEdit(contentEl, parishId) {
       btn.classList.toggle('open', opening);
       if (opening) {
         const first = field.querySelector('input');
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
         if (first) first.focus({ preventScroll: true });
-        field.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     });
   });
@@ -11459,6 +11642,37 @@ function openFormDialog({ title, sub = '', html = '', onClose = null, kind = '' 
   return body;
 }
 window.openFormDialog = openFormDialog;
+
+// The keyboard. A phone's keyboard covers the bottom of the layout viewport
+// without resizing it, so a fixed dialog sat half under it. The visual
+// viewport is the part still showing: the dialogs' backdrop is fitted to it
+// (--vv-top / --vv-h in app.css), and the field being typed in is brought
+// into the middle of what shows — after the keyboard has finished rising,
+// and again whenever the showing part changes size.
+(function fitDialogsToKeyboard() {
+  const vv = window.visualViewport;
+  const root = document.documentElement;
+  const fit = () => {
+    if (!vv) return;
+    root.style.setProperty('--vv-top', `${Math.max(0, vv.offsetTop)}px`);
+    root.style.setProperty('--vv-h', `${vv.height}px`);
+  };
+  const centreFocused = () => {
+    const el = document.activeElement;
+    if (!el || !el.matches || !el.matches('input, textarea, select, [contenteditable="true"]')) return;
+    if (!el.closest('.escalate-backdrop.open')) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  if (vv) {
+    fit();
+    vv.addEventListener('resize', () => { fit(); centreFocused(); });
+    vv.addEventListener('scroll', fit);
+  }
+  document.addEventListener('focusin', (e) => {
+    if (!e.target.closest || !e.target.closest('.escalate-backdrop.open')) return;
+    setTimeout(centreFocused, 320);
+  });
+})();
 
 /** Close it. `onClose` runs first, so a node moved in can be moved back out. */
 function closeFormDialog() {

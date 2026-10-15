@@ -400,13 +400,13 @@ input, select, textarea {
 }
 /* ── The toolbar's three rows ──
    1. the language, what is on;                          Clear all
-   2. the kind of event, bookmarks;                      Save filter
-   3. the timetable, and when;                    the link, building
+   2. the kind of event, bookmarks;            the link, Save list
+   3. the timetable, and when, centred
    No row scrolls sideways: a horizontal scroller inside a vertical sheet
    steals the drag that closes the sheet. The filter slots are boxes the JS
    paints into, and lay their contents straight into the row. */
 .mode-bar-row-pills { gap: 6px; flex-wrap: nowrap; }
-.mode-bar-row-when { gap: 6px; min-height: 28px; }
+.mode-bar-row-when { gap: 6px; min-height: 28px; justify-content: center; }
 .filter-slot { display: contents; }
 .mode-bar-en {
   flex: none;
@@ -892,6 +892,7 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 .parish-fav-fab { width: 28px; border-radius: 50%; }
+.parish-fav-fab[hidden] { display: none; }
 .parish-fav-fab img { width: 15px; height: 15px; opacity: 0.8; }
 .parish-fav-fab.has-favs img {
   /* gold, from the black glyph */
@@ -1070,6 +1071,43 @@ body.has-filters .share-fab { padding: 0 14px 0 12px; min-width: 0; }
   overflow: hidden;
 }
 .day-box .event-card { background: transparent; }
+
+/* Today, boxed: what is left of it, framed apart from the days that drop
+   away below. The days inside it lose their own frame. */
+.today-box {
+  margin: 10px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-bottom-width: 4px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent-bg) 35%, var(--surface));
+}
+.today-box-hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 14px 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border-light));
+}
+.today-box-title { font-size: 15px; font-weight: 700; color: var(--accent-text); }
+.today-box-date { font-size: 12px; color: var(--text-secondary); }
+.today-box .day-box { margin: 0; border: none; border-radius: 0; }
+.today-box .event-card { background: transparent; }
+.today-box-empty { margin: 0; padding: 14px; font-size: 13px; color: var(--text-secondary); text-align: center; }
+.today-box-dropoff {
+  margin: 4px 24px 0;
+  padding-top: 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 18%, transparent), transparent) top center / 1px 10px no-repeat;
+}
+/* The feed's foot: coming into view loads the next stretch. */
+.feed-sentinel { padding: 18px 0 40px; text-align: center; color: var(--text-muted); letter-spacing: 0.3em; }
 
 /* Day header flourish — hairlines flanking the centered label so each day
    feels like the opening of a small manuscript section. */
@@ -1884,6 +1922,15 @@ details.lc-ev.event-card.lc-away {
     inset 0 0 0 1px color-mix(in srgb, var(--avatar-ink, #555) 22%, transparent),
     0 1px 3px rgba(0, 0, 0, 0.1);
 }
+/* A logo keeps the lift an acronym's circle has. */
+.avatar-logo { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16); }
+.ps-avatar.avatar-logo {
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.14),
+    0 0 0 3px rgba(255, 255, 255, 0.6),
+    0 0 14px 2px var(--parish-glow, rgba(0, 0, 0, 0.18));
+}
+.parish-pill .pill-logo.avatar-logo { box-shadow: none; }
 .ps-avatar.avatar-acronym {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--avatar-ink, #555) 22%, transparent),
@@ -2064,10 +2111,9 @@ details.lc-ev.event-card.lc-away {
   font-weight: 600;
   color: var(--text);
 }
-/* "No times on file yet" — the parishes in view with no rules, under the
-   timetables (noTimesHTML). Neutral, because it spans jurisdictions. */
-.no-times-box { --juris-color: var(--border); }
-.no-times-box .section-header.jurisdiction-header { color: var(--text-secondary); }
+/* A parish with no times on file, in its jurisdiction's box under those
+   with times (parishesWithoutTimes): its name, and where it is. */
+.parish-schedule-bare .parish-schedule-name { font-weight: 500; color: var(--text-secondary); }
 .no-times-addr {
   display: block;
   margin-top: 1px;
@@ -4430,6 +4476,10 @@ button.ps-avatar { cursor: pointer; }
 /* ── Escalate modal (admin-only) ── */
 .escalate-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
 .escalate-backdrop.open { display: flex; }
+/* With the keyboard up, a dialog fits the part of the screen still showing
+   (--vv-top / --vv-h, from visualViewport in app.js), not the part under it. */
+.escalate-backdrop { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-h, 100%); }
+.escalate-modal { scroll-padding: 16px 0 72px; }
 .escalate-modal { background: var(--bg); border-radius: 8px; padding: 20px; max-width: 480px; width: 100%; max-height: 80dvh; overflow-y: auto; }
 .escalate-modal h2 { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
 .escalate-modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
@@ -4685,7 +4735,20 @@ button.ps-avatar { cursor: pointer; }
    cards, so the dialog widens to make room for both. */
 /* The edit dialog (openFormDialog): a parish's details, a rule, a new rule,
    an event. As wide as the add-event dialog, and its forms take the width. */
-.form-modal { position: relative; max-width: 560px; max-height: 88dvh; }
+.form-modal { position: relative; max-width: 560px; max-height: min(88dvh, calc(var(--vv-h, 100dvh) - 32px)); }
+/* Save and its neighbours stay in sight however long the form: the form's
+   own row of actions sticks to the dialog's foot while it scrolls. */
+/* (A sticky row needs every box between it and the dialog to let it out.) */
+#form-body > * { overflow: visible; }
+#form-body > * > .form-actions {
+  position: sticky;
+  bottom: -20px;
+  z-index: 2;
+  margin: 14px -20px -20px;
+  padding: 10px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+  border-top: 1px solid var(--border-light);
+}
 .form-modal h2 { padding-right: 36px; }
 #form-body .schedule-edit-form,
 #form-body .schedule-add { margin: 0; padding: 0; border: 0; background: none; }
@@ -4859,7 +4922,7 @@ button.ps-avatar { cursor: pointer; }
 /* No bottom padding: the editor's sticky action bar carries its own. With the
    dialog's 20px under it, the bar stuck 20px above the edge and the cards
    scrolled past in the gap below it. */
-.new-event-modal { position: relative; max-width: 560px; max-height: 88dvh; padding-bottom: 0; }
+.new-event-modal { position: relative; max-width: 560px; max-height: min(88dvh, calc(var(--vv-h, 100dvh) - 32px)); padding-bottom: 0; }
 @media (min-width: 900px) {
   .new-event-modal:has(.ee.has-poster) { max-width: 940px; }
 }
@@ -5374,6 +5437,17 @@ button.ps-avatar { cursor: pointer; }
   gap: 0 10px;
 }
 .ps-details-editing .pin-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 4px; }
+/* Where: the address, its pin and its Google Maps place, as one group. */
+.ps-where {
+  margin: 0 0 14px;
+  padding: 12px 12px 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.ps-where .pin-status { margin-bottom: 10px; }
+.ps-where-maps { padding-top: 10px; border-top: 1px dashed var(--border); }
+.ps-where-maps > .ps-btn-ghost { margin-bottom: 10px; }
 .ps-details-editing .pin-status { margin-bottom: 10px; }
 .ps-details-editing .ps-actions { margin-top: 2px; }
 /* A pill that edits its link: the pencil rides on the pill itself. */
@@ -5737,7 +5811,7 @@ body:not(.page-mode) .pm-hero { display: none; }
 .lang-item.on { background: var(--text); color: var(--bg); font-weight: 600; }
 .lang-item:first-child { color: var(--text-secondary); }
 
-/* The kind: a cycle — Any event, Services, Studies, Socials — and, for
+/* The kind: a cycle — Any event, Services, Talks, Socials — and, for
    Services and Socials, their roundels. One roundel at a time narrows it and
    spells its name out in its own colours. */
 .kind-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; min-width: 0; }
@@ -5769,6 +5843,27 @@ body:not(.page-mode) .pm-hero { display: none; }
 /* When: Today, This week (with the calendar), or the date chosen. */
 .when-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; }
 .when-cal { width: 28px; height: 28px; animation: en-only-in 0.18s ease-out; }
+/* A week wears chevrons either side of its name: a week back, a week on. */
+.when-week { gap: 0; }
+.when-week .when-btn { border-radius: 0; border-left-width: 0; border-right-width: 0; }
+.when-chev {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  align-self: stretch;
+  padding: 0;
+  background: var(--text);
+  color: var(--bg);
+  border: 1px solid var(--text);
+  cursor: pointer;
+  animation: en-only-in 0.18s ease-out;
+}
+/* A hairline between each chevron and the name: three segments of one pill. */
+.when-chev-prev { border-radius: 999px 0 0 999px; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--bg) 35%, transparent); }
+.when-chev-next { border-radius: 0 999px 999px 0; box-shadow: inset 1px 0 0 color-mix(in srgb, var(--bg) 35%, transparent); }
+.when-week .when-cal { margin-left: 5px; }
 
 /* The timetable: a list icon until it is on, then its name too. */
 .mode-bar-schedules { padding: 5px 8px; }
@@ -5777,6 +5872,13 @@ body:not(.page-mode) .pm-hero { display: none; }
 /* Bookmarks: once there are any, the count, to show only them. */
 .bookmarks-btn { gap: 4px; padding: 5px 10px 5px 8px; font-variant-numeric: tabular-nums; }
 .bookmarks-btn .mode-bar-pill-icon { width: 14px; height: 14px; }
+/* On, it is a slate blue: the feed is only them. */
+.mode-bar-pill.bookmarks-btn.active,
+.mode-bar-pill.bookmarks-btn.active:hover { background: #5f7891; border-color: #5f7891; color: #fff; }
+.mode-bar-pill.bookmarks-btn.active .mode-bar-pill-icon { filter: brightness(0) invert(1); opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  .mode-bar-pill.bookmarks-btn.active, .mode-bar-pill.bookmarks-btn.active:hover { background: #6d88a3; border-color: #6d88a3; }
+}
 
 /* Save filter, at the end of the second row: it pulses whenever a filter
    changes, and the link it saves builds under it, in the third. */
@@ -5803,29 +5905,24 @@ body:not(.page-mode) .pm-hero { display: none; }
   100% { box-shadow: 0 0 0 12px rgba(21, 101, 192, 0); transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) { .mode-bar-save.pulse { animation: none; } }
-.mode-bar-row-when .mode-url-text {
+/* This view's link, beside Save list: the parish card's chip, in the row.
+   Two tones — the host faint, the path in full — and a copy mark. */
+.mode-url.ps-url {
+  position: static;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 58%;
+  max-width: none;
   margin-left: auto;
-  display: block;
-  overflow-x: auto;
-  scrollbar-width: none;
-  white-space: nowrap;
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-align: right;
-  cursor: pointer;
+  padding: 4px 2px 4px 6px;
 }
-.mode-bar-row-when .mode-url-text::-webkit-scrollbar { display: none; }
-.mode-url-host { opacity: 0.8; }
+.mode-url .ps-url-text { font-size: 11px; }
+.mode-bar-row-pills .mode-bar-save { margin-left: 0; }
+.mode-url-host, .ps-url-host { opacity: 0.55; font-weight: 500; }
 
 /* A tight phone: the pills give up some padding before anything wraps. */
 @media (max-width: 390px) {
   .mode-bar .mode-bar-pill { padding: 5px 9px; }
   .kind-cycle { min-width: 0; }
-  .mode-bar-row-when .mode-url-text { max-width: 46%; }
 }
 
 /* The parish card's toolbar: two lines, the main toolbar's controls. */
@@ -5848,26 +5945,19 @@ body:not(.page-mode) .pm-hero { display: none; }
 body.map-expanded .save-fabs { display: inline-flex; }
 .save-fabs.fading { opacity: 0; pointer-events: none; }
 .save-fabs .share-fab { position: static; display: inline-flex; }
-.saved-filters-fab {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--fab-bg);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-}
-.saved-filters-fab[hidden] { display: none; }
-.saved-filters-fab img { width: 19px; height: 19px; opacity: 0.85; }
-@media (prefers-color-scheme: dark) { .saved-filters-fab img { filter: brightness(0) invert(1); } }
 body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
 
-/* "Saved": the link, to copy, and Share this filter. */
+/* Save list: this view's link, to copy, keep or share; then the lists kept. */
 .saved-filter { display: flex; flex-direction: column; gap: 14px; }
+.saved-actions { display: flex; gap: 8px; }
+.saved-actions > button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.saved-actions .btn-save[disabled] { opacity: 0.6; cursor: default; }
+.saved-actions .btn-action-icon { width: 16px; height: 16px; flex: none; }
+.saved-actions .btn-save .btn-action-icon { filter: brightness(0) invert(1); }
+@media (prefers-color-scheme: dark) { .saved-actions .btn-outline .btn-action-icon { filter: brightness(0) invert(1); } }
+.saved-list-hdr { margin-top: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.saved-row.current .saved-row-link { border-color: var(--accent); }
+.saved-row-link { min-height: 44px; display: flex; align-items: center; }
 .saved-url {
   display: flex;
   align-items: center;
@@ -5981,7 +6071,10 @@ body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
 .ps-fav-btn:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
 .ps-fav-btn { padding: 7px 10px; }
 .ps-fav-btn.on,
-.ps-fav-btn.on:hover { border-color: #e0a315; }
+.ps-fav-btn.on:hover { border-color: #e0a315; background: #fdf1cf; }
+@media (prefers-color-scheme: dark) {
+  .ps-fav-btn.on, .ps-fav-btn.on:hover { background: rgba(224, 163, 21, 0.22); }
+}
 .ps-fav-btn .ps-btn-icon {
   width: 16px;
   height: 16px;

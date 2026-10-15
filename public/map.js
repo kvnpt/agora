@@ -1372,7 +1372,8 @@ function updateMap(state, opts = {}) {
   // every parish is) even while a content filter is active. Only the English
   // filter still hard-prunes parishes off the map (a non-English parish
   // genuinely has no relevant content for the English-filter view).
-  const hardFilterOnEvents = !!state.filters.lang;
+  // Bookmarks likewise: the map shows the parishes that hold them.
+  const hardFilterOnEvents = !!state.filters.lang || !!state.filters.bookmarked;
 
   const locFilter = (state.filters.location && window.AgoraLocations)
     ? window.AgoraLocations.resolveLocation(state.filters.location)
