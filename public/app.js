@@ -2798,8 +2798,9 @@ function toggleFavourite(pid) {
 }
 function favouriteButtonHTML(pid) {
   const on = isFavourite(pid);
-  return `<button class="ps-btn ps-fav-btn${on ? ' on' : ''}" type="button" data-fav-parish="${esc(pid)}" aria-pressed="${on}">
-      <img class="ps-btn-icon" src="https://api.iconify.design/ph:star${on ? '-fill' : ''}.svg" alt=""><span>${on ? 'Favourite' : 'Favourite'}</span></button>`;
+  return `<button class="ps-btn ps-fav-btn${on ? ' on' : ''}" type="button" data-fav-parish="${esc(pid)}" aria-pressed="${on}"
+      aria-label="Favourite" title="Favourite">
+      <img class="ps-btn-icon" src="https://api.iconify.design/ph:star${on ? '-fill' : ''}.svg" alt=""></button>`;
 }
 function paintFavouriteButton(btn, pid) {
   const on = isFavourite(pid);
@@ -5840,10 +5841,10 @@ function paintParishSheetContent(parishId, opts = {}) {
     <div class="ps-filter-row" id="ps-filter-row">
       <div class="ps-filter-line">
         <div class="filter-slot" data-filter-slot="lang" data-filter-scope="parish"></div>
-        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="parish"></div>
       </div>
       <div class="ps-filter-line">
         <div class="filter-slot" data-filter-slot="kind" data-filter-scope="parish"></div>
+        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="parish"></div>
         <div class="filter-slot" data-filter-slot="when" data-filter-scope="parish"></div>
       </div>
     </div>
@@ -6714,7 +6715,9 @@ function setCombinedContext() {
   // from another parish stands apart from this parish's own. Not where it is
   // held: at its venue it is simply on.
   const at = (scope, pid) => `${scope} .event-card:not([data-host="${q(pid)}"]) .event-at{display:inline}\n`
-    + `${scope} .event-card-combined:not([data-host="${q(pid)}"]):not([data-venue="${q(pid)}"]){box-shadow:inset 0 0 0 1.5px var(--combined-fg);border-radius:12px;background:color-mix(in srgb,var(--combined-bg) 40%,transparent);padding-left:10px;margin:4px 0}`;
+    + `${scope} .event-card-combined:not([data-host="${q(pid)}"]):not([data-venue="${q(pid)}"]){box-shadow:inset 0 0 0 1.5px var(--combined-fg);border-radius:12px;background:color-mix(in srgb,var(--combined-bg) 40%,transparent);padding-left:10px;margin:4px 0}\n`
+    // …and the host's line under the frame takes the same colour.
+    + `${scope} .parish-group:has(.event-card-combined:not([data-host="${q(pid)}"]):not([data-venue="${q(pid)}"])) .parish-group-footer>*{color:var(--combined-fg)!important}`;
   const rules = [];
   if (state.parishSheetFocus) {
     rules.push(at('#parish-sheet-content', state.parishSheetFocus));
