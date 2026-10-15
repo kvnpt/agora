@@ -294,7 +294,7 @@
        sheet as the old fab did. -->
   <div class="save-fabs" id="mode-url">
     <button class="map-fab share-fab" id="btn-save-filter" type="button" aria-label="Save list">
-      <img class="share-pill-icon" src="https://api.iconify.design/hugeicons:left-to-right-list-star.svg" alt="">
+      <img class="share-pill-icon" src="https://api.iconify.design/ph:list-star.svg" alt="">
       <span class="share-pill-label">Save list</span>
     </button>
   </div>
@@ -329,33 +329,35 @@
     <div class="mode-bar" id="mode-bar">
       <!-- Three rows, each filter rendered by the same builders as the parish
            card's (filterControlsHTML in app.js):
-             1. the language (with its picker) and what is on;     Clear all
-             2. the kind of event, and bookmarks;     the link, Save list
+             1. where — Any location / Searching this area;   the link, ×
+             2. the language, the kind of event, bookmarks;   Save list
              3. the timetable, and when, centred -->
       <div class="mode-bar-row mode-bar-row-top">
-        <div class="filter-slot" data-filter-slot="lang" data-filter-scope="main"></div>
-        <button class="in-view-chip" id="in-view-chip" type="button" aria-label="Scroll sheet">
-          <span class="in-view-count" id="in-view-count">Loading…</span>
-          <span class="in-view-chevron" aria-hidden="true"></span>
+        <!-- Area search (renderAreaPill): on once the map is moved, a tap
+             goes back to any location. -->
+        <button class="mode-bar-pill area-pill" id="area-pill" type="button" aria-pressed="false">
+          <img class="mode-bar-pill-icon" src="https://api.iconify.design/ph:globe-hemisphere-east.svg" alt="">
+          <span class="mode-bar-pill-label">Any location</span>
         </button>
-        <button class="mode-bar-clear" id="btn-clear-filters" type="button" hidden>
-          <span aria-hidden="true">&times;</span>Clear all
-        </button>
-      </div>
-      <div class="mode-bar-row mode-bar-row-pills" id="mode-bar-row-pills">
-        <div class="filter-slot" data-filter-slot="kind" data-filter-scope="main"></div>
-        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="main"></div>
         <!-- This view's link, building as the filters change: tap to copy, as
-             the parish card's is. Then Save list, the lists kept so far and
-             the offer to keep or share this one (openSavedFilterDialog). It
-             pulses whenever a filter changes. -->
+             the parish card's is. -->
         <button class="mode-url ps-url" id="mode-url-btn" type="button" aria-label="Copy this view's link">
           <span class="mode-url-text ps-url-text" id="mode-url-text"></span>
           <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
         </button>
+        <button class="mode-bar-clear" id="btn-clear-filters" type="button" hidden
+                aria-label="Clear all filters" title="Clear all">&times;</button>
+      </div>
+      <div class="mode-bar-row mode-bar-row-pills" id="mode-bar-row-pills">
+        <div class="filter-slot" data-filter-slot="lang" data-filter-scope="main"></div>
+        <div class="filter-slot" data-filter-slot="kind" data-filter-scope="main"></div>
+        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="main"></div>
+        <!-- Save list: the lists kept so far, and the offer to keep or share
+             this one (openSavedFilterDialog). It pulses whenever a filter
+             changes. -->
         <button class="mode-bar-save" id="btn-save-filter-bar" type="button"
                 aria-label="Save list" title="Save list">
-          <img src="https://api.iconify.design/hugeicons:left-to-right-list-star.svg" alt="">
+          <img src="https://api.iconify.design/ph:list-star.svg" alt="">
         </button>
       </div>
       <div class="mode-bar-row mode-bar-row-when">

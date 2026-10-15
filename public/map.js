@@ -750,6 +750,13 @@ function haloEvents(state) {
  * "Today" is the parish's own day, in its own zone — the service is where the
  * parish is. A tombstone is not on.
  */
+const _dayFmts = new Map();
+/** A zone's 'YYYY-MM-DD' formatter, made once (making one is the slow part). */
+function dayFmtIn(zone) {
+  let f = _dayFmts.get(zone);
+  if (!f) { f = new Intl.DateTimeFormat('en-CA', { timeZone: zone }); _dayFmts.set(zone, f); }
+  return f;
+}
 function eventTiming(e, now) {
   if (e.is_tombstone || (e.status && e.status !== 'approved')) return null;
   const start = Date.parse(e.start_utc);
@@ -759,7 +766,7 @@ function eventTiming(e, now) {
   if (start <= now || start - now >= 86400000) return null;
   const zone = e.timezone || (parishesById.get(e.parish_id) || {}).timezone;
   const dayIn = (ms) => {
-    try { return new Intl.DateTimeFormat('en-CA', { timeZone: zone || 'Australia/Sydney' }).format(new Date(ms)); }
+    try { return dayFmtIn(zone || 'Australia/Sydney').format(new Date(ms)); }
     catch { return new Date(ms).toISOString().slice(0, 10); }
   };
   return dayIn(start) === dayIn(now) ? 'today' : null;
@@ -1630,9 +1637,14 @@ function onParishClick(id) {
 // ── Viewport phases (moveend → debounced rerenders) ────────────────────
 function setupViewportPhases() {
   let mapPhase = null, listPhase = null;
-  map.on('movestart', () => {
+  map.on('movestart', (e) => {
     clearTimeout(mapPhase);
     clearTimeout(listPhase);
+    // A pan or a zoom by the person (a gesture carries its originalEvent; a
+    // fit, a fly-to or a resize does not) starts searching the area in view.
+    if (e && e.originalEvent && window.agoraSetAreaSearch) window.agoraSetAreaSearch(true);
+    // With no area searched, the map narrows nothing and the list stays lit.
+    if (!(window.agoraState && window.agoraState.areaSearch)) return;
     // Skip the pending mark when the move is sheet-driven (sheet's own
     // map.resize fires moveend). Sheet snaps don't change the parish
     // set under our stable cutoff. Check both the live flag and the
