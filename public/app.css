@@ -2135,7 +2135,8 @@ details.lc-ev.event-card.lc-away {
   overflow-wrap: anywhere;
 }
 .parish-schedule-head + .schedule-day { margin-top: 6px; }
-/* Where a day's services turn to evening — the feed's moon, on a hairline. */
+/* Where a day's services turn to evening — the feed's moon, no line, as
+   faint as the day's name above it. */
 .schedule-evening {
   display: flex;
   align-items: center;
@@ -2145,9 +2146,8 @@ details.lc-ev.event-card.lc-away {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--evening);
+  color: var(--text-muted);
 }
-.schedule-evening::after { content: ''; flex: 1; height: 1px; background: var(--border-light); }
 .schedule-evening .tc-icon { width: 10px; height: 10px; flex: none; }
 /* The timetable starts on today; the first day says so. */
 .schedule-day-today {
@@ -5704,9 +5704,9 @@ body:not(.page-mode) .pm-hero { display: none; }
   min-width: 24px;
   height: 24px;
   padding: 0;
-  background: var(--k-bg);
+  background: var(--surface);
   color: var(--k-fg);
-  border: 1px solid color-mix(in srgb, var(--k-fg) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--k-fg) 35%, transparent);
   border-radius: 999px;
   font: inherit;
   font-size: 11px;
@@ -5715,7 +5715,8 @@ body:not(.page-mode) .pm-hero { display: none; }
   cursor: pointer;
   transition: padding 0.18s ease, opacity 0.18s ease;
 }
-.kind-sub.on { padding: 0 10px; border-color: var(--k-fg); }
+/* Only the one chosen is filled in its colour. */
+.kind-sub.on { padding: 0 10px; background: var(--k-bg); border-color: var(--k-fg); }
 .kind-subs:has(.kind-sub.on) .kind-sub:not(.on) { opacity: 0.45; }
 
 /* When: Today, This week (with the calendar), or the date chosen. */
@@ -5926,13 +5927,20 @@ body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
   color: var(--text-secondary);
 }
 
-/* The parish card's star. */
-.ps-fav-btn.on { border-color: #e0a315; color: #9a6b00; }
-.ps-fav-btn.on .ps-btn-icon {
+/* The parish card's star: just the star, yellow outline or filled, and
+   never the parish colour (not even on hover, which sticks after a tap on
+   a phone). */
+.ps-fav-btn,
+.ps-fav-btn:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
+.ps-fav-btn { padding: 7px 10px; }
+.ps-fav-btn.on,
+.ps-fav-btn.on:hover { border-color: #e0a315; }
+.ps-fav-btn .ps-btn-icon {
+  width: 16px;
+  height: 16px;
   filter: brightness(0) saturate(100%) invert(72%) sepia(62%) saturate(1300%) hue-rotate(358deg) brightness(101%);
   opacity: 1;
 }
-@media (prefers-color-scheme: dark) { .ps-fav-btn.on { color: #f2c04e; } }
 
 /* An event's bookmark, and — for one date of a weekly service — the cycle
    arrows that keep every date of it. */
