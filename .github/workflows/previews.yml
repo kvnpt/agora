@@ -70,7 +70,11 @@ jobs:
             echo "::notice::CLOUDFLARE_API_KEY / CLOUDFLARE_ACCOUNT_ID not set — nothing deleted."
             exit 0
           fi
-          if npx wrangler preview delete --name "$BRANCH" --skip-confirmation; then
+          # Workers Builds names the Preview after the branch, lowercased with
+          # anything outside [a-z0-9] turned into "-": claude/worker-previews
+          # became claude-worker-previews (PR #105).
+          NAME=$(printf '%s' "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          if npx wrangler preview delete --name "$NAME" --skip-confirmation; then
             echo "Deleted the Preview for $BRANCH." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::notice::No Preview deleted for $BRANCH (none built, or already gone)."
