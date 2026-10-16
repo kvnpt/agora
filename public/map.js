@@ -689,11 +689,11 @@ let haloAny = false;             // is anything flagged — no flags, no loop
 let haloRaf = 0, haloLastFrame = 0, haloTimer = 0;
 
 // The ring's grey, a step lighter than slate-500 so it reads as a ring rather
-// than as an outline; a thin white ring sits just inside it.
+// than as an outline. One crisp line and nothing else: the white ring that sat
+// just inside it doubled every edge and made a crowded map look blurred.
 function haloTollColor() {
   return isDark() ? '#cbd5e1' : '#7d8899';
 }
-const HALO_INNER = '#ffffff';
 
 function addHaloLayers() {
   for (const size of ['dot', 'big']) {
@@ -710,29 +710,28 @@ function addHaloLayers() {
 }
 
 /**
- * One halo as the toll draws it: a ring in its colour over the faintest fill,
- * and a thin white ring just inside it, as a layer of its own on top. The
- * breath (green, or the neutral "on elsewhere") is the same ring, swelling and
- * fading a little; the toll spreads out of the dot. `before` places both.
+ * One halo as the toll draws it: a thin ring in its colour over the faintest
+ * fill. The breath (green, or the neutral "on elsewhere") is the same ring,
+ * swelling and fading a little; the toll spreads out of the dot. `before`
+ * places it.
  */
 function addRingLayers(id, source, filter, size, color, before) {
   map.addLayer({ id, type: 'circle', source, filter, paint: ringPaint(size, color) }, before);
-  map.addLayer({ id: `${id}-inner`, type: 'circle', source, filter, paint: ringPaint(size, HALO_INNER, true) }, before);
 }
 
 // No transitions: every frame sets these, and MapLibre's default 300ms ease
 // between paint values is what made the toll visibly shrink back into the dot
 // before each ring.
 const NO_EASE = { duration: 0, delay: 0 };
-function ringPaint(size, color, inner = false) {
+function ringPaint(size, color) {
   return {
-    'circle-radius': HALO_EDGE[size] + 6,
+    'circle-radius': HALO_EDGE[size] + 4,
     'circle-radius-transition': NO_EASE,
     'circle-color': color,
     'circle-opacity': 0,
     'circle-opacity-transition': NO_EASE,
     'circle-stroke-color': color,
-    'circle-stroke-width': inner ? 1 : 1.5,
+    'circle-stroke-width': 1.25,
     'circle-stroke-opacity': 0,
     'circle-stroke-opacity-transition': NO_EASE
   };
@@ -869,17 +868,19 @@ function haloFrame(t) {
   haloRaf = requestAnimationFrame(haloFrame);
 }
 
-// Every halo layer, by the marker it sits under and how it moves. Each has a
-// white `-inner` ring painted with it (addRingLayers).
+// Every halo layer, by the marker it sits under and how it moves. `ring` is
+// how far past the marker's edge the toll travels. It was 18–22px, which on a
+// grape made a ring 80px across; overlapping, they crowded the city. Now a
+// ring stays close enough to read as belonging to its marker.
 const HALO_LAYERS = [
   { id: 'parish-halo-now-dot', edge: HALO_EDGE.dot, move: 'breath' },
   { id: 'parish-halo-away-dot', edge: HALO_EDGE.dot, move: 'breath' },
-  { id: 'parish-halo-toll-dot', edge: HALO_EDGE.dot, move: 'toll', ring: 18 },
+  { id: 'parish-halo-toll-dot', edge: HALO_EDGE.dot, move: 'toll', ring: 9 },
   { id: 'parish-halo-now-big', edge: HALO_EDGE.big, move: 'breath' },
   { id: 'parish-halo-away-big', edge: HALO_EDGE.big, move: 'breath' },
-  { id: 'parish-halo-toll-big', edge: HALO_EDGE.big, move: 'toll', ring: 22 },
+  { id: 'parish-halo-toll-big', edge: HALO_EDGE.big, move: 'toll', ring: 10 },
   { id: 'venue-halo-now', edge: HALO_EDGE.venue, move: 'breath' },
-  { id: 'venue-halo-toll', edge: HALO_EDGE.venue, move: 'toll', ring: 18 },
+  { id: 'venue-halo-toll', edge: HALO_EDGE.venue, move: 'toll', ring: 9 },
 ];
 
 /** One frame of every halo at time `t`; null paints them still. */
@@ -897,24 +898,19 @@ function paintHalos(t) {
     if (!map.getLayer(h.id)) continue;
     let r, fill, ring;
     if (h.move === 'breath') {
-      r = h.edge + 5 + 2.5 * breath;
-      fill = 0.1 + 0.12 * breath;
-      ring = 0.55 + 0.35 * breath;
+      // A tight ring hugging the marker; the fill only tints, so a cluster
+      // of green parishes does not wash the map.
+      r = h.edge + 3 + 1.5 * breath;
+      fill = 0.05 + 0.07 * breath;
+      ring = 0.6 + 0.35 * breath;
     } else {
       r = h.edge + 2 + h.ring * spread;
-      fill = 0.12 * fade;
-      ring = 0.85 * fade;
+      fill = 0.05 * fade;
+      ring = 0.7 * fade;
     }
     map.setPaintProperty(h.id, 'circle-radius', r);
     map.setPaintProperty(h.id, 'circle-opacity', fill);
     map.setPaintProperty(h.id, 'circle-stroke-opacity', ring);
-    const inner = `${h.id}-inner`;
-    if (map.getLayer(inner)) {
-      // Just inside the coloured ring: its stroke straddles r, and so does
-      // this one's, a ring's width further in.
-      map.setPaintProperty(inner, 'circle-radius', Math.max(0, r - 1.5));
-      map.setPaintProperty(inner, 'circle-stroke-opacity', ring * 0.9);
-    }
   }
 }
 

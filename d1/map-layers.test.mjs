@@ -246,21 +246,23 @@ test('the halos paint under the dots, their shadow included', () => {
   }
 });
 
-test('every halo is the toll\'s ring, with a thin white ring inside it, and nothing eases between frames', () => {
+test('every halo is one thin ring, sized to its marker, and nothing eases between frames', () => {
+  // The white inner ring doubled every edge, and rings 80px across overlapped
+  // until a city was a mesh of circles. One crisp line, close to the marker.
+  assert.deepEqual(ALL_HALOS.filter((l) => l.id.endsWith('-inner')).map((l) => l.id), [],
+    'a second ring inside the halo is back');
   for (const l of HALOS) {
-    const inner = byId[`${l.id}-inner`];
-    assert.ok(inner, `${l.id} has no white inner ring`);
-    assert.ok(order.indexOf(inner.id) > order.indexOf(l.id), `${l.id}'s inner ring paints under it`);
-    assert.equal(inner.paint['circle-stroke-color'], '#ffffff');
-    assert.ok(inner.paint['circle-stroke-width'] < l.paint['circle-stroke-width'], 'the inner ring is the thinner');
     assert.ok(l.paint['circle-stroke-width'] > 0, `${l.id} is not a ring`);
-    for (const x of [l, inner]) {
-      for (const prop of ['circle-radius', 'circle-opacity', 'circle-stroke-opacity']) {
-        assert.deepEqual(x.paint[`${prop}-transition`], { duration: 0, delay: 0 },
-          `${x.id} eases ${prop}, which is how the toll shrank back into the dot before each ring`);
-      }
+    assert.ok(l.paint['circle-stroke-width'] <= 1.5, `${l.id} is a heavy ring`);
+    for (const prop of ['circle-radius', 'circle-opacity', 'circle-stroke-opacity']) {
+      assert.deepEqual(l.paint[`${prop}-transition`], { duration: 0, delay: 0 },
+        `${l.id} eases ${prop}, which is how the toll shrank back into the dot before each ring`);
     }
   }
+  PAINTED.length = 0;
+  vm.runInContext('for (let t = 0; t < 3800; t += 100) paintHalos(t);', CTX);
+  const widest = Math.max(...PAINTED.filter((p) => p.prop === 'circle-radius').map((p) => p.value));
+  assert.ok(widest <= 30, `a halo reaches ${widest}px out from its marker's centre`);
 });
 
 test('what the halos animate is a constant, never an expression', () => {
