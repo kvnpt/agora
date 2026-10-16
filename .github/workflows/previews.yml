@@ -126,7 +126,10 @@ jobs:
         run: cat d1/schema.sql d1/seed-parishes.sql > fill.sql
 
       # D1 has no "replace database", so the copy is emptied table by table
-      # first. Foreign keys are deferred so the drop order does not matter.
+      # first, newest table first. D1 does not honour defer_foreign_keys across
+      # the DROPs, so dropping parishes before its children fails the whole
+      # file with a FOREIGN KEY error; a table only references tables created
+      # before it, so reverse creation order drops children first.
       - name: Empty the preview database
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
@@ -134,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler d1 execute "$PREVIEW_DB" --remote --json --command \
-            "SELECT type, name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'" \
+            "SELECT type, name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY rowid DESC" \
             > objects.json
           {
             echo 'PRAGMA defer_foreign_keys = on;'
