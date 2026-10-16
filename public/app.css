@@ -5754,8 +5754,7 @@ body:not(.page-mode) .pm-hero { display: none; }
 
 /* Where: Any location, until the map is moved; then Searching this area,
    filled like any filter that is on, its × going back to any location. */
-.area-pill { flex: none; gap: 5px; padding: 5px 11px 5px 9px; }
-.area-pill .mode-bar-pill-icon { width: 14px; height: 14px; }
+.area-pill { flex: none; gap: 5px; padding: 5px 11px; }
 .area-pill-x { margin-left: 2px; font-size: 15px; line-height: 1; opacity: 0.8; }
 .area-pill:not(.active) { color: var(--text-secondary); }
 

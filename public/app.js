@@ -1594,8 +1594,7 @@ function renderAreaPill() {
   b.setAttribute('aria-pressed', String(on));
   b.setAttribute('aria-label', on ? 'Searching this area — tap for any location' : 'Any location — move the map to search an area');
   b.title = on ? 'Searching the area on the map. Tap to search any location.' : 'Move the map to search an area';
-  b.innerHTML = `<img class="mode-bar-pill-icon" src="https://api.iconify.design/${on ? 'ph:magnifying-glass-bold' : 'ph:globe-hemisphere-east'}.svg" alt="">`
-    + `<span class="mode-bar-pill-label">${on ? 'Searching this area' : 'Any location'}</span>`
+  b.innerHTML = `<span class="mode-bar-pill-label">${on ? 'Searching this area' : 'Any location'}</span>`
     + (on ? '<span class="area-pill-x" aria-hidden="true">&times;</span>' : '');
 }
 document.addEventListener('click', (e) => {
