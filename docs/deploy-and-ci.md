@@ -74,3 +74,48 @@ A secret reaches `env` as a **string** (a Worker secret) or as an **object with
 `.get()`** (a Secrets Store binding). `readSecret()` in `worker/lib/secrets.mjs`
 takes either. Do not compare a binding for truthiness and call it configured —
 an object always passes, and the value then renders as `[object Object]`.
+
+## Previews
+
+Every pull request gets a **Worker Preview**: Workers Builds builds the branch
+with `npx wrangler preview` and comments the link on the PR —
+`<branch>-agora.<subdomain>.workers.dev`. It is the way to see a change to the
+four files CI never runs, from a phone, before merging.
+
+A Preview binds **only** what `wrangler.toml`'s `[previews]` block declares —
+Cloudflare inherits no binding, var or secret from the top level — and that
+block is the whole safety story:
+
+- **Data:** `agora-preview` (D1) and `agora-preview` (R2), a copy. Nothing a
+  Preview writes reaches production, the data version included (it lives in the
+  bucket).
+- **No secrets.** No `ACCESS_*`, so the admin API refuses everyone and a Preview
+  needs no Access policy; no Anthropic, Google or GitHub key, so those features
+  degrade the way they are built to. A public link with no key on it is safe to
+  leave public. Adding a secret to `[previews]` ends that, so don't.
+- **No cron**, by Cloudflare's design, so no scrape runs against the copy. Email
+  is not declared either.
+- **No indexing:** Cloudflare sends `noindex` on workers.dev Preview URLs.
+
+`preview_urls = true` is what gives a Preview a URL. It also brings back the
+version-preview workers.dev hostnames `workers_dev = false` was set to remove;
+those run production's bindings, but the admin page there is the same door the
+top of `wrangler.toml` describes, with the admin API still refusing behind it.
+
+`.github/workflows/previews.yml` looks after the rest:
+
+- **Closing a PR deletes its Preview.** Cloudflare keeps one until it is deleted
+  or evicted at the cap (100 per Worker on Free, 500 on paid), so without this a
+  PR open for an hour leaves a link that works for months.
+- **"Run workflow" refreshes the copy** — from production (`d1 export`, then the
+  bucket synced server-side) or from the dev seed — and bumps its data version.
+  It reads production and writes only the names it checks are not production's.
+  A migration reaches production before its merge (docs/database.md), so a
+  production refresh already has it; a seed refresh builds from the branch's
+  baseline.
+
+Both need repository secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit, D1:
+Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the bucket copy uses the `R2_*` keys the
+basemap workflow has, which must reach `agora-preview` too. That is a Cloudflare
+credential in GitHub after all — not for deploying, which stays with Workers
+Builds alone, so nothing races.

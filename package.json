@@ -16,6 +16,6 @@
   "devDependencies": {
     "@js-temporal/polyfill": "^0.5.1",
     "better-sqlite3": "^11.8.1",
-    "wrangler": "^4.129.0"
+    "wrangler": "^4.151.0"
   }
 }
