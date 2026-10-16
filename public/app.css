@@ -6121,3 +6121,11 @@ body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
   text-overflow: ellipsis;
 }
 
+
+/* Experiment: the area pill naming the parishes the feed is narrowed to,
+   their logos overlapped in front (renderAreaPill). */
+.area-pill-parishes { max-width: min(70vw, 340px); padding-left: 4px; }
+.area-pill-parishes .mode-bar-pill-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.area-pill-logo { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--bg); }
+.area-pill-logo + .area-pill-logo { margin-left: -6px; }
+.area-pill-x { padding: 0 2px; cursor: pointer; }

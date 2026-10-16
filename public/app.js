@@ -46,6 +46,9 @@ const HORIZON_STEP_DAYS = 60;
 // Events revealed per Load more press, before the day the cap lands on is
 // completed. Distinct from the horizon: a quiet week costs no presses.
 const SHOW_COUNT_STEP = 30;
+// Experiment: a tapped parish filters the feed rather than opening its card
+// (filterFeedToParish).
+const PARISH_TAP_FILTERS = true;
 
 const state = {
   events: [],
@@ -579,7 +582,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch { /* no storage: the card opens as any link's would */ }
   if (editPid && (state.parishes || []).some(p => p.id === editPid) && adminMay('parish.edit', editPid)) {
     setTimeout(() => {
-      if (state.parishSheetFocus !== editPid) openParishSheet(editPid, { replaceUrl: true });
+      if (state.parishSheetFocus !== editPid) openParishSheet(editPid, { replaceUrl: true, card: true });
       window.setParishEditMode(editPid, true);
     }, 300);
   }
@@ -1589,6 +1592,25 @@ window.agoraSetAreaSearch = setAreaSearch;
 function renderAreaPill() {
   const b = document.getElementById('area-pill');
   if (!b) return;
+  const picked = feedParishes();
+  b.classList.toggle('area-pill-parishes', picked.length > 0);
+  if (picked.length) {
+    // The parishes the feed is narrowed to: one by its name, two or three by
+    // their acronyms, more by a count; their logos overlapped in front, as a
+    // combined event's participating parishes are.
+    const label = picked.length === 1 ? (picked[0].name || picked[0].acronym || 'This parish')
+      : picked.length <= 3 ? picked.map(p => p.acronym || (p.name || '').split(/[ ,]/)[0]).join(', ')
+      : `${picked.length} parishes`;
+    const names = picked.map(p => p.name || p.acronym).join(', ');
+    b.classList.add('active');
+    b.setAttribute('aria-pressed', 'true');
+    b.setAttribute('aria-label', `Showing ${names} — tap × for any location`);
+    b.title = picked.length === 1 ? `${names}. Tap the name for the parish card, × for any location.` : `${names}. Tap × for any location.`;
+    b.innerHTML = `<span class="edp-part-logos area-pill-logos" aria-hidden="true">${picked.slice(0, 3).map(p => parishAvatarHTML(p, 'edp-part-logo area-pill-logo', 'span')).join('')}</span>`
+      + `<span class="mode-bar-pill-label">${esc(label)}</span>`
+      + '<span class="area-pill-x" data-area-clear aria-hidden="true">&times;</span>';
+    return;
+  }
   const on = !!state.areaSearch;
   b.classList.toggle('active', on);
   b.setAttribute('aria-pressed', String(on));
@@ -1597,8 +1619,24 @@ function renderAreaPill() {
   b.innerHTML = `<span class="mode-bar-pill-label">${on ? 'Searching this area' : 'Any location'}</span>`
     + (on ? '<span class="area-pill-x" aria-hidden="true">&times;</span>' : '');
 }
+/** The parishes the main feed is narrowed to, as parishes; [] for none. */
+function feedParishes() {
+  const ids = state.filters.parishIds;
+  if (!ids || !ids.size) return [];
+  return [...ids].map(id => (state.parishes || []).find(p => p.id === id)).filter(Boolean);
+}
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#area-pill')) return;
+  const picked = feedParishes();
+  if (picked.length) {
+    // One parish: its name opens its card, the × goes back to any location.
+    if (picked.length === 1 && !e.target.closest('[data-area-clear]')) {
+      openParishSheet(picked[0].id, { card: true });
+      return;
+    }
+    setFeedParishes(null);
+    return;
+  }
   if (state.areaSearch) setAreaSearch(false);
 });
 
@@ -2436,6 +2474,8 @@ function initParishFilter() {
 }
 
 function renderParishPills() {
+  // The area pill names the parishes the pills pick.
+  renderAreaPill();
   // The star beside the pills shows once a favourite is among the parishes.
   if (typeof renderFavouritesList === 'function') renderFavouritesList();
   const row = document.getElementById('parish-filter-row');
@@ -5771,6 +5811,9 @@ function eventLocalDow(e) {
 
 
 function openParishSheet(parishId, opts = {}) {
+  // Experiment: a parish tapped anywhere narrows the main feed instead of
+  // opening its card. Only { card: true } still opens the card.
+  if (PARISH_TAP_FILTERS && !opts.card) { filterFeedToParish(parishId); return; }
   if (_parishSheetAPI) _parishSheetAPI.open(parishId, opts);
   // Opening a parish while a service filter is on narrows to that parish's
   // own rule of that kind. Otherwise the URL and the view disagree: the path
@@ -5851,10 +5894,11 @@ function closeParishSheet() {
   // selection that opening it set. Multi-parish picker mode keeps its
   // set intact (user is curating, not browsing one parish).
   if (!state.filters.multiParish) {
-    if (state.filters.parishIds && state.filters.parishIds.size === 1) {
+    // Under the experiment the parish filter outlives its card.
+    if (!PARISH_TAP_FILTERS && state.filters.parishIds && state.filters.parishIds.size === 1) {
       state.filters.parishIds = null;
     }
-    state.parishFocus = null;
+    if (!PARISH_TAP_FILTERS) state.parishFocus = null;
     if (typeof renderParishPills === 'function') renderParishPills();
     if (typeof syncFilterActiveStack === 'function') syncFilterActiveStack();
     if (typeof syncResetFab === 'function') syncResetFab();
@@ -5863,6 +5907,34 @@ function closeParishSheet() {
 }
 window.openParishSheet = openParishSheet;
 window.closeParishSheet = closeParishSheet;
+
+// Experiment (parish tap filters): no card from a tap. The parish joins the
+// main feed's parish filter, and the area pill names it. Tapping a parish
+// already in the filter takes it out; the pill's × takes them all out.
+function filterFeedToParish(parishId) {
+  if (!parishId || !(state.parishes || []).some(p => p.id === parishId)) return;
+  const cur = state.filters.parishIds;
+  // The URL naming this parish reconciles back through here: already the
+  // filter, nothing to do.
+  if (cur && cur.size === 1 && cur.has(parishId) && state.parishFocus === parishId) return;
+  if (state.parishSheetFocus) closeParishSheet();
+  let next;
+  if (!cur) next = new Set([parishId]);
+  else if (cur.has(parishId)) { next = new Set(cur); next.delete(parishId); }
+  else next = new Set([...cur, parishId]);
+  setFeedParishes(next.size ? next : null);
+}
+function setFeedParishes(ids) {
+  state.filters.parishIds = ids;
+  state.parishFocus = ids && ids.size === 1 ? [...ids][0] : null;
+  state._eventsShowCount = SHOW_COUNT_STEP;
+  renderParishPills();
+  renderAreaPill();
+  renderCurrentView({ fit: false });
+  if (typeof syncFilterActiveStack === 'function') syncFilterActiveStack();
+  if (typeof syncResetFab === 'function') syncResetFab();
+  syncURL();
+}
 
 // Partial refresh for parish-sheet content: re-renders only the events
 // list and the schedule card (the bits that filter changes / async
