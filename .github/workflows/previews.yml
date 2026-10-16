@@ -176,8 +176,13 @@ jobs:
             echo "::error::R2_* secrets not set — database refreshed, bucket not copied."
             exit 1
           fi
+          # --copy-props metadata-directive: a file over the multipart
+          # threshold (the tile archive) is copied in parts, and by default the
+          # CLI then asks for the source's tags, which R2 answers with
+          # NotImplemented. This keeps the content type and skips the tags.
           aws s3 sync "s3://$PROD_BUCKET" "s3://$PREVIEW_BUCKET" \
-            --endpoint-url "$ENDPOINT" --no-progress --only-show-errors
+            --endpoint-url "$ENDPOINT" --no-progress --only-show-errors \
+            --copy-props metadata-directive
           aws s3 ls "s3://$PREVIEW_BUCKET/" --endpoint-url "$ENDPOINT"
 
       # The copy changed under the Worker, so bump its data version
