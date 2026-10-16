@@ -641,7 +641,9 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 // announcing it. One whose own event is on right now SOMEWHERE ELSE breathes
 // too, in the toll's neutral colour: the parish is running something, and the
 // green is where the people are. All three sit UNDER the dot, so its
-// jurisdiction colour reads exactly as it did; no colour means anything else.
+// jurisdiction colour reads exactly as it did. The toll and the breath that is
+// not green wear the colour of the kind of event (public/shared/event-types.js)
+// that lit them; a grape, which stands for several, stays neutral.
 //
 // An event held at another parish lights that parish as well (worker/lib/
 // venues.mjs is what "held at" means): both toll on the day, and once it starts
@@ -695,15 +697,29 @@ function haloTollColor() {
   return isDark() ? '#cbd5e1' : '#7d8899';
 }
 
+// The toll's colour as a paint value: the kind's text colour (the dark one on
+// a light map, the light one on a dark), by the feature's `halo_kind`, and the
+// grey where there is none (a grape). A constant expression, set once with the
+// layer: only radius and opacity move per frame.
+function haloKindColor() {
+  const types = window.AgoraEventTypes;
+  if (!types) return haloTollColor();
+  const dark = isDark();
+  const expr = ['match', ['coalesce', ['get', 'halo_kind'], '']];
+  for (const id of types.EVENT_TYPES) expr.push(id, types.kindColors(id, dark).fg);
+  expr.push(haloTollColor());
+  return expr;
+}
+
 function addHaloLayers() {
   for (const size of ['dot', 'big']) {
     const isBig = size === 'big' ? HALO_BIG : ['!', HALO_BIG];
     addRingLayers(`parish-halo-now-${size}`, PARISH_SOURCE, ['all', HALO_IS_NOW, isBig], size, HALO_NOW);
     // On elsewhere: the breath, in the toll's colour.
     addRingLayers(`parish-halo-away-${size}`, PARISH_SOURCE,
-      ['all', ['!', HALO_IS_NOW], HALO_IS_AWAY, isBig], size, haloTollColor());
+      ['all', ['!', HALO_IS_NOW], HALO_IS_AWAY, isBig], size, haloKindColor());
     addRingLayers(`parish-halo-toll-${size}`, PARISH_SOURCE,
-      ['all', ['!', HALO_IS_NOW], ['!', HALO_IS_AWAY], HALO_IS_TODAY, isBig], size, haloTollColor());
+      ['all', ['!', HALO_IS_NOW], ['!', HALO_IS_AWAY], HALO_IS_TODAY, isBig], size, haloKindColor());
   }
   // The loop is started by updateMap, which follows every (re)build of these.
   haloLastFrame = 0;
@@ -787,7 +803,9 @@ const FLAG_RANK = { now: 3, away: 2, today: 1 };
 
 /**
  * Each parish's halo: 'now' (on here, now), 'away' (its own event, on now
- * somewhere else) or 'today' (still to come today, here or elsewhere).
+ * somewhere else) or 'today' (still to come today, here or elsewhere), as
+ * { flag, kind }: `kind` is the event_type of the event that lit it — of the
+ * soonest, where several light it alike.
  *
  * An event at another parish lights both: the host and the venue toll on the
  * day; once it is on, the venue is 'now' and the host 'away'. A combined
@@ -795,13 +813,19 @@ const FLAG_RANK = { now: 3, away: 2, today: 1 };
  */
 function parishTimeFlags(state) {
   const flags = new Map();
-  const raise = (pid, flag) => {
-    if (pid && (FLAG_RANK[flag] || 0) > (FLAG_RANK[flags.get(pid)] || 0)) flags.set(pid, flag);
-  };
   const now = Date.now();
   for (const e of haloEvents(state)) {
     const timing = eventTiming(e, now);
     if (!timing) continue;
+    const start = Date.parse(e.start_utc);
+    const raise = (pid, flag) => {
+      if (!pid) return;
+      const had = flags.get(pid);
+      const rank = FLAG_RANK[flag], hadRank = had ? FLAG_RANK[had.flag] : 0;
+      if (rank > hadRank || (rank === hadRank && start < had.start)) {
+        flags.set(pid, { flag, kind: e.event_type || 'other', start });
+      }
+    };
     const at = heldAt(e);
     if (timing === 'today') {
       raise(e.parish_id, 'today');
@@ -840,10 +864,12 @@ function refreshHaloFlags() {
   const flags = parishTimeFlags(haloState);
   let changed = false;
   for (const f of trueFeatures) {
-    const flag = flags.get(f.properties.parish_id);
+    const { flag, kind } = flags.get(f.properties.parish_id) || {};
     const now = flag === 'now', away = flag === 'away', today = flag === 'today';
-    if (f.properties.now !== now || f.properties.away !== away || f.properties.today !== today) {
-      f.properties = { ...f.properties, now, away, today };
+    const halo_kind = kind || '';
+    if (f.properties.now !== now || f.properties.away !== away || f.properties.today !== today
+      || f.properties.halo_kind !== halo_kind) {
+      f.properties = { ...f.properties, now, away, today, halo_kind };
       changed = true;
     }
   }
@@ -871,7 +897,9 @@ function haloFrame(t) {
 // Every halo layer, by the marker it sits under and how it moves. `ring` is
 // how far past the marker's edge the toll travels. It was 18–22px, which on a
 // grape made a ring 80px across; overlapping, they crowded the city. Now a
-// ring stays close enough to read as belonging to its marker.
+// ring stays close enough to read as belonging to its marker. The toll grows
+// from nothing at the marker's centre, under it, so it comes out of the dot
+// rather than appearing already around it.
 const HALO_LAYERS = [
   { id: 'parish-halo-now-dot', edge: HALO_EDGE.dot, move: 'breath' },
   { id: 'parish-halo-away-dot', edge: HALO_EDGE.dot, move: 'breath' },
@@ -904,7 +932,7 @@ function paintHalos(t) {
       fill = 0.05 + 0.07 * breath;
       ring = 0.6 + 0.35 * breath;
     } else {
-      r = h.edge + 2 + h.ring * spread;
+      r = (h.edge + 2 + h.ring) * spread;
       fill = 0.05 * fade;
       ring = 0.7 * fade;
     }
@@ -940,7 +968,7 @@ function addVenueSourceAndLayers() {
   // under the parishes' — a parish's name wins a collision with a place's.
   addRingLayers('venue-halo-now', VENUE_SOURCE, ['==', ['get', 'now'], true], 'venue', HALO_NOW, 'parish-circle-shadow');
   addRingLayers('venue-halo-toll', VENUE_SOURCE,
-    ['all', ['!=', ['get', 'now'], true], ['==', ['get', 'today'], true]], 'venue', haloTollColor(), 'parish-circle-shadow');
+    ['all', ['!=', ['get', 'now'], true], ['==', ['get', 'today'], true]], 'venue', haloKindColor(), 'parish-circle-shadow');
   map.addLayer({
     id: 'venue-square',
     type: 'symbol',
@@ -1067,11 +1095,14 @@ function venueFeatures(state) {
     const [lng, lat] = at.place;
     const key = `${e.parish_id}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
     let g = groups.get(key);
-    if (!g) groups.set(key, (g = { e, start, at: at.place, p, now: false, today: false }));
+    if (!g) groups.set(key, (g = { e, start, at: at.place, p, now: false, today: false, kind: '' }));
     else if (start < g.start) { g.e = e; g.start = start; }
     const timing = eventTiming(e, now);
     if (timing === 'now') g.now = true;
-    else if (timing === 'today') g.today = true;
+    else if (timing === 'today') {
+      if (!g.today || start < g.todayStart) { g.kind = e.event_type || 'other'; g.todayStart = start; }
+      g.today = true;
+    }
   }
   return [...groups.values()].map((g) => {
     const base = window.rawJurisColor ? window.rawJurisColor(g.p.jurisdiction) : (g.p.color || '#000');
@@ -1084,7 +1115,8 @@ function venueFeatures(state) {
         label: g.e.title || '',
         color: isDark() ? liftParishColor(base) : base,
         now: g.now,
-        today: g.today && !g.now
+        today: g.today && !g.now,
+        halo_kind: g.kind
       }
     };
   });
@@ -1429,9 +1461,10 @@ function updateMap(state, opts = {}) {
       focused: p.id === focusId,
       selected: selectedSet ? selectedSet.has(p.id) : false,
       active: activeSet.has(p.id),
-      now: timeFlags.get(p.id) === 'now',
-      away: timeFlags.get(p.id) === 'away',
-      today: timeFlags.get(p.id) === 'today',
+      now: (timeFlags.get(p.id) || {}).flag === 'now',
+      away: (timeFlags.get(p.id) || {}).flag === 'away',
+      today: (timeFlags.get(p.id) || {}).flag === 'today',
+      halo_kind: (timeFlags.get(p.id) || {}).kind || '',
       fav: !!(window.agoraIsFavourite && window.agoraIsFavourite(p.id))
     };
     if (logoRegistered.has(p.id)) props.focus_icon_id = `focus_${p.id}`;

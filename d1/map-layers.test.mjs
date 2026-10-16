@@ -310,7 +310,7 @@ test('one halo per marker: green, then the neutral breath, then the toll', () =>
   }
   // The neutral breath is the toll's ring in the toll's colour, breathing.
   const away = byId['parish-halo-away-dot'].paint, toll = byId['parish-halo-toll-dot'].paint;
-  assert.equal(away['circle-color'], toll['circle-color'], 'the neutral breath is not the toll\'s colour');
+  assert.deepEqual(away['circle-color'], toll['circle-color'], 'the neutral breath is not the toll\'s colour');
   assert.equal(away['circle-stroke-width'], toll['circle-stroke-width'], 'the breath is not the toll\'s ring');
 });
 
@@ -331,10 +331,41 @@ test('on now, later today in the parish\'s own zone, and nothing else', () => {
   const flags = vm.runInContext(`(() => {
     const real = Date.now;
     Date.now = () => ${NOW};
-    try { return Object.fromEntries(parishTimeFlags({ events: __events })); }
+    try { return Object.fromEntries([...parishTimeFlags({ events: __events })].map(([k, v]) => [k, v.flag])); }
     finally { Date.now = real; }
   })()`, CTX);
   assert.deepEqual({ ...flags }, { on: 'now', later: 'today', nz: 'today' });
+});
+
+test('a halo carries the kind of the event that lit it, the soonest where several do', () => {
+  const NOW = Date.parse('2026-10-11T00:30:00Z');          // 11:30 in Sydney
+  CTX.__events = [
+    { parish_id: 'p', event_type: 'talk', start_utc: '2026-10-11T08:00:00Z' },
+    { parish_id: 'p', event_type: 'prayer', start_utc: '2026-10-11T07:00:00Z' },
+    { parish_id: 'q', event_type: 'prayer', start_utc: '2026-10-11T07:00:00Z' },
+    { parish_id: 'q', event_type: 'liturgy', start_utc: '2026-10-11T00:00:00Z', end_utc: '2026-10-11T01:30:00Z' },
+    { parish_id: 'r', start_utc: '2026-10-11T07:00:00Z' },
+  ];
+  const kinds = vm.runInContext(`(() => {
+    const real = Date.now;
+    Date.now = () => ${NOW};
+    try { return Object.fromEntries([...parishTimeFlags({ events: __events })].map(([k, v]) => [k, v.kind])); }
+    finally { Date.now = real; }
+  })()`, CTX);
+  assert.deepEqual({ ...kinds }, { p: 'prayer', q: 'liturgy', r: 'other' });
+});
+
+test('the toll\'s ring grows from the marker\'s centre', () => {
+  const painted = [];
+  CTX.__painted = painted;
+  vm.runInContext(`(() => {
+    const real = map.setPaintProperty;
+    map.setPaintProperty = (id, prop, value) => __painted.push({ id, prop, value });
+    try { paintHalos(0); } finally { map.setPaintProperty = real; }
+  })()`, CTX);
+  const r = painted.find((x) => x.id === 'parish-halo-toll-dot' && x.prop === 'circle-radius');
+  assert.ok(r, 'the toll was not painted');
+  assert.equal(r.value, 0, 'the toll starts with a radius, so it snaps into view');
 });
 
 // ── Held elsewhere ───────────────────────────────────────────────────────
@@ -368,7 +399,7 @@ test('an event elsewhere lights where it is, and its host breathes neutral', () 
     // Naming itself as the venue is at home.
     { parish_id: 'self', location_parish_id: 'self', ...on },
   ];
-  const flags = withClock('Object.fromEntries(parishTimeFlags({ events: __events }))');
+  const flags = withClock('Object.fromEntries([...parishTimeFlags({ events: __events })].map(([k, v]) => [k, v.flag]))');
   assert.deepEqual({ ...flags }, {
     host: 'away', venue: 'now',
     host2: 'today', venue2: 'today',
