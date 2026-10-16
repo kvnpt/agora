@@ -348,27 +348,9 @@
         <button class="mode-bar-clear" id="btn-clear-filters" type="button" hidden
                 aria-label="Clear all filters" title="Clear all">&times;</button>
       </div>
-      <div class="mode-bar-row mode-bar-row-pills" id="mode-bar-row-pills">
-        <div class="filter-slot" data-filter-slot="lang" data-filter-scope="main"></div>
-        <div class="filter-slot" data-filter-slot="kind" data-filter-scope="main"></div>
-        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="main"></div>
-        <!-- Save list: the lists kept so far, and the offer to keep or share
-             this one (openSavedFilterDialog). It pulses whenever a filter
-             changes. -->
-        <button class="mode-bar-save" id="btn-save-filter-bar" type="button"
-                aria-label="Save list" title="Save list">
-          <img src="https://api.iconify.design/ph:list-star.svg" alt="">
-        </button>
-      </div>
-      <div class="mode-bar-row mode-bar-row-when">
-        <!-- The timetable: a boxed list until it is on, then its name. -->
-        <button class="mode-bar-pill mode-bar-schedules" id="btn-services" type="button" role="checkbox" aria-checked="false"
-                aria-label="Timetables" title="Timetables">
-          <img class="mode-bar-pill-icon" src="https://api.iconify.design/mdi:list-box-outline.svg" alt="">
-          <span class="mode-bar-pill-label">Timetables</span>
-        </button>
-        <div class="filter-slot" data-filter-slot="when" data-filter-scope="main"></div>
-      </div>
+      <!-- Rows 2 and 3, laid out by /shared/toolbar.js as the parish card's
+           are, with Save list and the timetable added (mountMainToolbar). -->
+      <div data-toolbar-rows="main" hidden></div>
 
     </div>
 
@@ -485,6 +467,7 @@
   <!-- Which parishes and rules a link means, for a list of many timetables.
        After the two it reads; the Worker's timetable page asks it too. -->
   <script src="/shared/timetable.js"></script>
+  <script src="/shared/toolbar.js"></script>
   <!-- Where the stream starts (/2026-07, /next-thursday, /march). After
        services.js, whose weekday aliases it builds "next-<day>" from. -->
   <script src="/shared/dates.js"></script>

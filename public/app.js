@@ -1719,6 +1719,7 @@ function findNearestParishWhere(predicate) {
 // viewport set and the list will repopulate.
 function handleEmptyStateCta(action) {
   if (action === 'any-location') { setAreaSearch(false); return; }
+  if (action === 'parish-clear') { clearParishFilters(); return; }
   const matchingPred = p => state.events.some(e =>
     (e.parish_id === p.id || (e.extra_parishes && e.extra_parishes.includes(p.id)))
   );
@@ -1786,6 +1787,14 @@ function renderEmptyStateHTML() {
     cta = `<button class="empty-state-cta" data-cta="any-location" type="button">Search any location</button>` + cta;
   }
   return `<div class="empty-state"><span class="empty-ornament">✦</span><h3>${esc(headline)}</h3>${cta}</div>`;
+}
+
+/** The card's empty feed: nothing at this parish, or nothing its filters let through. */
+function parishEmptyStateHTML() {
+  const narrowed = anyParishFilterToClear();
+  const cta = narrowed
+    ? `<button class="empty-state-cta" data-cta="parish-clear" type="button">Clear filters</button>` : '';
+  return `<div class="empty-state"><span class="empty-ornament">✦</span><h3>${narrowed ? 'Nothing matching here' : 'Nothing upcoming'}</h3>${cta}</div>`;
 }
 
 // Delegate empty-state CTA clicks — fires on either services-list or events
@@ -2887,6 +2896,12 @@ async function setPeriod(kind, offset = 0) {
   if (typeof updateMap === 'function') updateMap(state);
   const scroll = document.getElementById(window.agoraParishSheetVisible ? 'parish-sheet-scroll' : 'sheet-scroll');
   if (scroll && !window.agoraParishSheetVisible) scroll.scrollTop = 0;
+  // The card keeps its header and timetable above the feed: a reader already
+  // down in the feed goes to where the new period starts, as the feed does.
+  if (scroll && window.agoraParishSheetVisible) {
+    const first = scroll.querySelector('.ps-events-list [data-date], .ps-events-list .today-box');
+    if (first && first.getBoundingClientRect().top < scroll.getBoundingClientRect().top + cardCoveredPx()) scrollCardTo(first);
+  }
 }
 window.agoraSetPeriod = setPeriod;
 
@@ -2895,7 +2910,21 @@ window.agoraSetPeriod = setPeriod;
  * reach it (fetching past the horizon if it has to), then scrolls its first
  * day to the top. The label follows (onFeedScroll).
  */
+/** How much of the parish card's scroller its sticky header and toolbar cover. */
+function cardCoveredPx() {
+  const sheet = document.getElementById('parish-sheet');
+  return sheet ? parseFloat(getComputedStyle(sheet).getPropertyValue('--ps-stack-h')) || 0 : 0;
+}
+/** Scroll the parish card so `el` starts just under its sticky header and toolbar. */
+function scrollCardTo(el) {
+  const scroller = document.getElementById('parish-sheet-scroll');
+  if (!scroller || !el) return;
+  scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - cardCoveredPx();
+}
+
 async function scrollToWeek(n) {
+  // The open parish card's list, or the feed's: the same weeks either way.
+  const pid = window.agoraParishSheetVisible ? state.parishSheetFocus : null;
   const start = addDaysIso(todayIso(), 7 * n);
   const end = addDaysIso(start, 7);
   if (daysUntil(end) > (state._loadedHorizonDays || 0)) {
@@ -2904,21 +2933,46 @@ async function scrollToWeek(n) {
   }
   // Show every card up to the week's end, and a step more to scroll into.
   const upTo = isoStartMs(end);
-  const before = filterToPeriod(applyFilters(state.events || [])).filter(e => Date.parse(e.start_utc) < upTo).length;
-  state._eventsShowCount = Math.max(state._eventsShowCount || SHOW_COUNT_STEP, before + SHOW_COUNT_STEP);
-  renderEvents();
+  const inList = pid ? parishFeedEvents(pid) : filterToPeriod(applyFilters(state.events || []));
+  const before = inList.filter(e => Date.parse(e.start_utc) < upTo).length;
+  const key = pid ? '_parishEventsShowCount' : '_eventsShowCount';
+  state[key] = Math.max(state[key] || SHOW_COUNT_STEP, before + SHOW_COUNT_STEP);
+  if (pid) refreshParishContentPortion(pid, { leaveScroll: true });
+  else renderEvents();
   setWeekInView(n);
-  const list = document.getElementById('events-list');
+  const list = pid ? document.querySelector('#parish-sheet-content .ps-events-list')
+    : document.getElementById('events-list');
   const day = list && [...list.querySelectorAll('[data-date]')].find(d => d.dataset.date >= start);
   if (!day) return;
   // Straight there, and again once the days on the way have laid out: the
   // ones skipped (content-visibility) only guessed their height.
+  // The card is placed by hand, under its sticky header and toolbar.
+  const scroller = pid ? document.getElementById('parish-sheet-scroll') : null;
+  let placedAt = 0;
+  const place = () => {
+    if (!scroller) { day.scrollIntoView({ block: 'start' }); return; }
+    scrollCardTo(day);
+    placedAt = scroller.scrollTop;
+  };
   _weekScrollAt = Date.now();
-  day.scrollIntoView({ block: 'start' });
+  place();
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    day.scrollIntoView({ block: 'start' });
+    if (!day.isConnected) return;
+    place();
     _weekScrollAt = Date.now();
   }));
+  // The card's list can still be short of the week when it is placed — its
+  // cards lay out a moment later — which clamps the scroll short of it: place
+  // it again as the list grows, for a moment, unless somebody scrolls first.
+  if (scroller && typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => {
+      if (!day.isConnected || Math.abs(scroller.scrollTop - placedAt) > 2) { ro.disconnect(); return; }
+      place();
+      _weekScrollAt = Date.now();
+    });
+    ro.observe(list);
+    setTimeout(() => ro.disconnect(), 1200);
+  }
 }
 let _weekScrollAt = 0;
 /** The week the When control names, as the list scrolls through them. */
@@ -2928,18 +2982,23 @@ function setWeekInView(n) {
   renderFilterSlots();
   syncURL({ replace: true });
 }
-// Scrolling a week's list names the week at the top of it.
+// Scrolling a week's list names the week at the top of it — the feed's, or
+// the parish card's.
 let _feedScrollRaf = 0;
-function onFeedScroll() {
-  if (_feedScrollRaf || !state._week || state._dateFocus || state.mode === 'services') return;
+function onFeedScroll(e) {
+  if (_feedScrollRaf || !state._week || state._dateFocus) return;
+  const scroll = e && e.currentTarget;
+  const inCard = !!scroll && scroll.id === 'parish-sheet-scroll';
+  if (!inCard && (state.mode === 'services' || window.agoraParishSheetVisible)) return;
   // A scroll ‹ › made has already named its week.
   if (Date.now() - _weekScrollAt < 400) return;
   _feedScrollRaf = requestAnimationFrame(() => {
     _feedScrollRaf = 0;
-    const scroll = document.getElementById('sheet-scroll');
-    const list = document.getElementById('events-list');
+    const list = inCard ? scroll.querySelector('.ps-events-list') : document.getElementById('events-list');
     if (!scroll || !list) return;
-    const edge = scroll.getBoundingClientRect().top + 40;
+    // Under the card's sticky header and toolbar, not under its top edge.
+    const covered = inCard ? cardCoveredPx() : 0;
+    const edge = scroll.getBoundingClientRect().top + covered + 40;
     let date = null;
     for (const d of list.querySelectorAll('[data-date]')) {
       if (d.getBoundingClientRect().bottom > edge) { date = d.dataset.date; break; }
@@ -2950,8 +3009,10 @@ function onFeedScroll() {
   });
 }
 function watchFeedScroll() {
-  const scroll = document.getElementById('sheet-scroll');
-  if (scroll) scroll.addEventListener('scroll', onFeedScroll, { passive: true });
+  for (const id of ['sheet-scroll', 'parish-sheet-scroll']) {
+    const scroll = document.getElementById(id);
+    if (scroll) scroll.addEventListener('scroll', onFeedScroll, { passive: true });
+  }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchFeedScroll);
 else watchFeedScroll();
@@ -3517,6 +3578,59 @@ function bookmarksControlHTML(f) {
     </button>`;
 }
 
+/**
+ * The main sheet's rows 2 and 3, from the same layout as the parish card's
+ * (public/shared/toolbar.js), with what only the feed has: Save list at the
+ * end of the pills, and the timetable before When. Run as app.js loads, so
+ * #btn-services and #btn-save-filter-bar are there before anything binds them.
+ */
+function mountMainToolbar() {
+  const mount = document.querySelector('[data-toolbar-rows="main"]');
+  if (!mount) return;
+  // Save list: the lists kept so far, and the offer to keep or share this
+  // one (openSavedFilterDialog). It pulses whenever a filter changes.
+  const save = `<button class="mode-bar-save" id="btn-save-filter-bar" type="button"
+      aria-label="Save list" title="Save list">
+      <img src="https://api.iconify.design/ph:list-star.svg" alt="">
+    </button>`;
+  // The timetable: a boxed list until it is on, then its name.
+  const services = `<button class="mode-bar-pill mode-bar-schedules" id="btn-services" type="button" role="checkbox" aria-checked="false"
+      aria-label="Timetables" title="Timetables">
+      <img class="mode-bar-pill-icon" src="https://api.iconify.design/mdi:list-box-outline.svg" alt="">
+      <span class="mode-bar-pill-label">Timetables</span>
+    </button>`;
+  mount.outerHTML = window.AgoraToolbar.rowsHTML('main',
+    { pillsId: 'mode-bar-row-pills', pillsEnd: save, whenStart: services });
+}
+mountMainToolbar();
+
+/**
+ * The parish card's toolbar: the feed's rows 2 and 3, over the card's own
+ * filter set. The card has no Save list (its Share and star are its keeping),
+ * and no timetable toggle, because its timetable is always shown.
+ */
+function parishToolbarHTML() {
+  return `<div class="ps-filter-row" id="ps-filter-row">${window.AgoraToolbar.rowsHTML('parish')}</div>`;
+}
+
+/** Is anything narrowing the parish card: its kind, language, bookmarks, or the shared When? */
+function anyParishFilterToClear() {
+  const f = state.parishFilters || {};
+  return !!(f.kind || f.lang || f.bookmarked || state._dateFocus || state._week || state._month);
+}
+/** The card's ×, beside its link as the feed's is beside the feed's. */
+function syncParishClear() {
+  const btn = document.getElementById('ps-clear-filters');
+  if (btn) btn.hidden = !anyParishFilterToClear();
+}
+/** Back to everything at this parish, from today: the card's filters and the When it shares. */
+async function clearParishFilters() {
+  state.parishFilters = blankFilterFlags();
+  if (state._dateFocus || state._week || state._month) await setPeriod('today');
+  onFiltersChanged('parish');
+  if (typeof renderCurrentView === 'function') renderCurrentView();
+}
+
 /** Paint every filter control on the page from the state. */
 function renderFilterSlots(root = document) {
   root.querySelectorAll('[data-filter-slot]').forEach(slot => {
@@ -3533,6 +3647,7 @@ function renderFilterSlots(root = document) {
     sched.classList.toggle('active', state.mode === 'services');
     sched.setAttribute('aria-checked', String(state.mode === 'services'));
   }
+  syncParishClear();
 }
 // The names the rest of the app already calls them by.
 function syncEnglishButton() { renderFilterSlots(); }
@@ -5756,6 +5871,31 @@ window.closeParishSheet = closeParishSheet;
 // pinned focused event, and ps-filter-row intact — so toggling a pill
 // doesn't blow away the user's expanded card or scroll position, and
 // async events/schedules fetch completions don't flash.
+/**
+ * The card's events, as its feed shows them: this parish's (and the ones
+ * combined into it), through the card's toolbar and the shared period. The
+ * caller's freshly fetched list when it has one; state.events otherwise, so
+ * the card paints at once.
+ */
+function parishFeedEvents(parishId, opts = {}) {
+  const all = opts.parishEvents || (state.events || [])
+    .filter(e => e.parish_id === parishId || (e.extra_parishes && e.extra_parishes.includes(parishId)))
+    .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
+  return filterParishEventsBySession(all);
+}
+
+/**
+ * The card's feed: the main feed's stream (renderStream, parishMode) with its
+ * Today box, day headers and their links, and the empty state when nothing is
+ * left — and Happening now at the card's top instead of in the stream.
+ */
+function renderParishFeed(contentEl, events) {
+  const streamEl = contentEl && contentEl.querySelector('.ps-events-list');
+  if (!streamEl) return;
+  renderStream(streamEl, events, { parishMode: true, groupByParish: true, omitNow: true, showCount: state._parishEventsShowCount || SHOW_COUNT_STEP });
+  renderParishNow(contentEl, events);
+}
+
 function refreshParishContentPortion(parishId, opts = {}) {
   const contentEl = document.getElementById('parish-sheet-content');
   if (!contentEl) return;
@@ -5781,24 +5921,9 @@ function refreshParishContentPortion(parishId, opts = {}) {
   const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
 
   // Events list refresh
-  let parishEvents;
-  if (opts.parishEvents) {
-    parishEvents = opts.parishEvents;
-  } else {
-    parishEvents = (state.events || [])
-      .filter(e => e.parish_id === parishId || (e.extra_parishes && e.extra_parishes.includes(parishId)))
-      .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
-  }
-  parishEvents = filterParishEventsBySession(parishEvents);
+  const parishEvents = parishFeedEvents(parishId, opts);
   const streamEl = contentEl.querySelector('.ps-events-list');
-  if (streamEl) {
-    if (parishEvents.length) {
-      renderStream(streamEl, parishEvents, { parishMode: true, groupByParish: true, omitNow: true, showCount: state._parishEventsShowCount || 30 });
-      renderParishNow(contentEl, parishEvents);
-    } else {
-      streamEl.replaceChildren();
-    }
-  }
+  renderParishFeed(contentEl, parishEvents);
 
   // Schedule card refresh — recompute scheds + EN filter, replace inner.
   // Mount the section if it didn't exist. Always present, even with no rules:
@@ -5829,7 +5954,8 @@ function refreshParishContentPortion(parishId, opts = {}) {
   // set from the mode bar, a deep link, or the back button.
   syncParishDateBanner();
 
-  if (scrollEl) {
+  // Unless the caller is about to scroll the card itself (scrollToWeek).
+  if (scrollEl && !opts.leaveScroll) {
     requestAnimationFrame(() => { scrollEl.scrollTop = savedScroll; });
   }
 
@@ -6094,15 +6220,7 @@ function paintParishSheetContent(parishId, opts = {}) {
   // async-fetched list when available; otherwise fall back to state.events
   // so the sheet paints instantly. No start-after-now filter here — that
   // would drop "happening now" events (start < now, end > now).
-  let parishEvents;
-  if (opts.parishEvents) {
-    parishEvents = opts.parishEvents;
-  } else {
-    parishEvents = (state.events || [])
-      .filter(e => e.parish_id === parishId || (e.extra_parishes && e.extra_parishes.includes(parishId)))
-      .sort((a, b) => new Date(a.start_utc) - new Date(b.start_utc));
-  }
-  parishEvents = filterParishEventsBySession(parishEvents);
+  const parishEvents = parishFeedEvents(parishId, opts);
   const archUrl = ARCHDIOCESE_EVENTS[parish.jurisdiction];
   const archBtnHtml = archUrl
     ? `<a class="ps-btn ps-arch-btn" href="${esc(archUrl)}" target="_blank" rel="noopener">${esc(capitalize(parish.jurisdiction))} Archdiocese Events</a>`
@@ -6131,10 +6249,15 @@ function paintParishSheetContent(parishId, opts = {}) {
         <div class="ps-name">${esc(displayName)}</div>
         <div class="ps-meta">${esc(juris)} Orthodox${distHtml}</div>
       </div>
-      <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
-        <span class="ps-url-text" id="ps-url-text"></span>
-        <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
-      </button>`}
+      <!-- The link and ×, as the feed's first row ends. -->
+      <div class="ps-link-row">
+        <button class="ps-url" id="ps-url" type="button" aria-label="Copy page URL">
+          <span class="ps-url-text" id="ps-url-text"></span>
+          <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+        </button>
+        <button class="mode-bar-clear" id="ps-clear-filters" type="button"${anyParishFilterToClear() ? '' : ' hidden'}
+                aria-label="Clear this card's filters" title="Clear all">&times;</button>
+      </div>`}
     </div>
     ${contactGuideHTML(parish)}
     ${focusedEvent ? '<div class="ps-pinned-event" id="ps-pinned-event"></div>' : ''}
@@ -6151,16 +6274,7 @@ function paintParishSheetContent(parishId, opts = {}) {
          builders (filterControlsHTML), over the card's own filter set
          (state.parishFilters). Above the service times, because the kind and
          the language narrow the timetable too; the When control is shared. -->
-    <div class="ps-filter-row" id="ps-filter-row">
-      <div class="ps-filter-line">
-        <div class="filter-slot" data-filter-slot="lang" data-filter-scope="parish"></div>
-      </div>
-      <div class="ps-filter-line">
-        <div class="filter-slot" data-filter-slot="kind" data-filter-scope="parish"></div>
-        <div class="filter-slot" data-filter-slot="bookmarks" data-filter-scope="parish"></div>
-        <div class="filter-slot" data-filter-slot="when" data-filter-scope="parish"></div>
-      </div>
-    </div>
+    ${parishToolbarHTML()}
     ${schedSectionHtml}
     ${feedHeaderHTML(parish)}
     ${scheduleFocusBannerHtml(parish)}
@@ -6322,6 +6436,8 @@ function paintParishSheetContent(parishId, opts = {}) {
     }
   }
   if (typeof updateParishSheetUrl === 'function') updateParishSheetUrl();
+  const clearBtn = contentEl.querySelector('#ps-clear-filters');
+  if (clearBtn) clearBtn.addEventListener('click', e => { e.stopPropagation(); clearParishFilters(); });
 
   contentEl.querySelectorAll('.ps-share-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -6360,15 +6476,7 @@ function paintParishSheetContent(parishId, opts = {}) {
   // parish "holds" its events.
   const streamEl = contentEl.querySelector('.ps-events-list');
   if (streamEl) {
-    if (streamEvents.length) {
-      // Use the same day-grouping structure as the main list (day-section/
-      // day-hdr) so visuals stay aligned. parishMode kept just for the
-      // show-more pagination handler swap.
-      renderStream(streamEl, streamEvents, { parishMode: true, groupByParish: true, omitNow: true, showCount: state._parishEventsShowCount || 30 });
-      renderParishNow(contentEl, streamEvents);
-    } else {
-      streamEl.replaceChildren();
-    }
+    renderParishFeed(contentEl, streamEvents);
     // Parish now "holds" its events — tapping a card expands inline within
     // the parish sheet (toggle if tapping the already-open card).
     // Delegated so pooled card reuse across renders doesn't double-bind.
@@ -6441,7 +6549,10 @@ function paintParishSheetContent(parishId, opts = {}) {
   // start-of-today-Sydney (matches fetchEvents) so currently-underway events
   // still come back. Skip if the caller already provided parishEvents.
   if (!opts.parishEvents) {
-    const from = startOfTodayUtcIso();
+    // From the period's start when that is before today (Last week), as the
+    // feed's fetch is, or the card would lose those days on this repaint.
+    const r = listRange();
+    const from = r && r.from < todayIso() ? new Date(isoStartMs(r.from)).toISOString() : startOfTodayUtcIso();
     const to = new Date(Date.now() + eventsHorizonDays() * 86400000).toISOString();
     window.agoraBundle.load({ from, to })
       .then(() => window.agoraBundle.feed(from, to))
@@ -7122,7 +7233,7 @@ function renderStream(container, events, opts = {}) {
   // the days after it, which drop away below. Today's alone — a week or a
   // date starts the stream elsewhere.
   // Only round something: an empty feed is the empty state, not an empty box.
-  const todayBox = !dateFocus && !parishMode && !!(happeningNow.length || laterToday.length || earlierToday.length || visibleFuture.length);
+  const todayBox = !dateFocus && !!(happeningNow.length || laterToday.length || earlierToday.length || visibleFuture.length);
   if (todayBox) {
     const label = dtf('en-AU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'short' }).format(now);
     html += `<section class="today-box" aria-label="Today"><div class="today-box-hdr"><span class="today-box-title">Today</span><span class="today-box-date">${esc(label)}</span></div>`;
@@ -7167,7 +7278,7 @@ function renderStream(container, events, opts = {}) {
   if (visibleFuture.length) {
     html += renderFutureDays(visibleFuture, reserveHost, opts);
   } else if (!hasToday) {
-    html += renderEmptyStateHTML();
+    html += parishMode ? parishEmptyStateHTML() : renderEmptyStateHTML();
   }
 
   // The end of the list. Any time, a date and a week have no end: reaching
@@ -7207,8 +7318,9 @@ function renderStream(container, events, opts = {}) {
 
 // Day-grouped render for future events (tomorrow → end of window).
 function renderFutureDays(events, reserveHost, opts = {}) {
-  const { groupByParish = false, parishMode = false } = opts;
-  const showDateNav = !parishMode;
+  const { groupByParish = false } = opts;
+  // The card's headers copy their links too: /smg/2026-11 is the card's own.
+  const showDateNav = true;
   const groups = groupByDay(events);
   const now = new Date();
   const sevenDaysOut = new Date(now.getTime() + 7 * 86400000);

@@ -97,6 +97,12 @@ feed's "Search any location" turn it off. It is not in the URL. A week's list
 runs on past its week: ‹ › scroll to the week before or after within it, and
 the label follows the week at the top as the list scrolls.
 
+**The parish card's feed is the feed's.** Its toolbar is the feed's rows 2 and
+3 from the same layout (`public/shared/toolbar.js`) over `state.parishFilters`,
+with the link and × in its header where the feed's first row has them. Its
+list is `renderStream` in `parishMode`: the same Today box, day headers with
+their links, empty state, and weeks that ‹ › scroll within the card.
+
 **What kind of event, and in what language, are segments too.** `/services` is
 Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
 or `/feast`; `/talks` is talks, with Bible studies as `/bible-study`;
