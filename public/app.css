@@ -3940,11 +3940,21 @@ button.ps-avatar { cursor: pointer; }
    transition rather than the mode-bar's clip-path animation (which needs
    dynamic inset calculation we don't need on the sticky header). */
 
-.ps-url {
+/* The card's link and its ×, at the header's foot as the feed's first row
+   ends with them. */
+.ps-link-row {
   position: absolute;
   right: 8px;
   bottom: 6px;
   max-width: calc(100% - 130px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ps-link-row .mode-bar-clear { width: 24px; height: 24px; font-size: 17px; }
+.ps-url {
+  position: relative;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -5740,7 +5750,7 @@ body:not(.page-mode) .pm-hero { display: none; }
 
 /* ── The toolbar's controls ──────────────────────────────────────────────
    Built once for both toolbars (filterControlsHTML in app.js): the main
-   sheet's three rows, and the parish card's two lines (.ps-filter-line). */
+   sheet's three rows, and the parish card's last two of them. */
 
 /* Where: Any location, until the map is moved; then Searching this area,
    filled like any filter that is on, its × going back to any location. */
@@ -5933,14 +5943,13 @@ body:not(.page-mode) .pm-hero { display: none; }
 
 /* A tight phone: the pills give up some padding before anything wraps. */
 @media (max-width: 390px) {
-  .mode-bar .mode-bar-pill { padding: 5px 9px; }
+  .mode-bar .mode-bar-pill, .ps-filter-row .mode-bar-pill { padding: 5px 9px; }
   .kind-cycle { min-width: 0; }
 }
 
-/* The parish card's toolbar: two lines, the main toolbar's controls. */
-.ps-filter-row { flex-direction: column; gap: 6px; overflow: visible; }
-.ps-filter-line { display: flex; align-items: center; gap: 6px; min-height: 28px; }
-.ps-filter-line .when-filter { margin-left: auto; }
+/* The parish card's toolbar: the main toolbar's rows 2 and 3, laid out by
+   the same markup (public/shared/toolbar.js), so they read as one thing. */
+.ps-filter-row { flex-direction: column; gap: 6px; overflow: visible; padding: 8px 12px; }
 
 /* ── Save filter, and the filters saved (bottom-left, over the map) ── */
 .save-fabs {
@@ -6112,3 +6121,4 @@ body[data-layout="desktop"] #mode-url.save-fabs { position: fixed; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
