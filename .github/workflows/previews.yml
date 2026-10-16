@@ -14,8 +14,9 @@ name: Previews
 #            only the copy; the names are fixed below and checked before any
 #            write.
 #
-# Needs repository secrets CLOUDFLARE_API_TOKEN (Workers Scripts: Edit, D1:
-# Edit) and CLOUDFLARE_ACCOUNT_ID; the bucket copy also uses the R2_* keys the
+# Needs repository secrets CLOUDFLARE_API_KEY (an API token with Workers
+# Scripts: Edit and D1: Edit, despite the name) and CLOUDFLARE_ACCOUNT_ID; the
+# bucket copy also uses the R2_* keys the
 # basemap workflow already has. Without them each job says so and stops.
 
 on:
@@ -61,12 +62,12 @@ jobs:
       # off, or a fork — has nothing to delete, and that is not a failure.
       - name: Delete this branch's Preview
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set — nothing deleted."
+            echo "::notice::CLOUDFLARE_API_KEY / CLOUDFLARE_ACCOUNT_ID not set — nothing deleted."
             exit 0
           fi
           if npx wrangler preview delete --name "$BRANCH" --skip-confirmation; then
@@ -89,11 +90,11 @@ jobs:
 
       - name: Check the credentials and the target
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           missing=
-          [ -n "$CLOUDFLARE_API_TOKEN" ]  || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_API_TOKEN" ]  || missing="$missing CLOUDFLARE_API_KEY"
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository secrets:$missing"
@@ -109,7 +110,7 @@ jobs:
       - name: Read production
         if: inputs.from == 'production'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
@@ -124,7 +125,7 @@ jobs:
       # first. Foreign keys are deferred so the drop order does not matter.
       - name: Empty the preview database
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
@@ -142,7 +143,7 @@ jobs:
 
       - name: Fill the preview database
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail

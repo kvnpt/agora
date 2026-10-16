@@ -114,8 +114,8 @@ top of `wrangler.toml` describes, with the admin API still refusing behind it.
   production refresh already has it; a seed refresh builds from the branch's
   baseline.
 
-Both need repository secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit, D1:
-Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the bucket copy uses the `R2_*` keys the
+Both need repository secrets `CLOUDFLARE_API_KEY` (an API token, not the
+Global API Key: Workers Scripts: Edit, D1: Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the bucket copy uses the `R2_*` keys the
 basemap workflow has, which must reach `agora-preview` too. That is a Cloudflare
 credential in GitHub after all — not for deploying, which stays with Workers
 Builds alone, so nothing races.
