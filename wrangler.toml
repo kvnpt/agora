@@ -75,7 +75,7 @@ bucket_name = "agora-assets"
 [[previews.d1_databases]]
 binding = "DB"
 database_name = "agora-preview"
-database_id = "PREVIEW_DATABASE_ID"
+database_id = "455f17a5-9a26-4234-b7ac-4eee7d0bcc02"
 
 [[previews.r2_buckets]]
 binding = "ASSETS_BUCKET"
