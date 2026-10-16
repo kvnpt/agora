@@ -1,0 +1,207 @@
+name: Previews
+
+# Two jobs for Worker Previews (docs/deploy-and-ci.md, "Previews"). Workers
+# Builds makes the Previews themselves, one per branch; this file only looks
+# after what they leave behind and what they read.
+#
+#   cleanup  A Preview outlives its pull request — Cloudflare keeps it until it
+#            is deleted or evicted at the per-Worker cap — so closing a PR
+#            deletes the Preview its branch made.
+#
+#   data     Run by hand ("Run workflow"). Rebuilds agora-preview, the database
+#            and bucket every Preview binds (wrangler.toml [previews]), from
+#            production or from the dev seed. It READS production and WRITES
+#            only the copy; the names are fixed below and checked before any
+#            write.
+#
+# Needs repository secrets CLOUDFLARE_API_KEY (an API token with Workers
+# Scripts: Edit and D1: Edit, despite the name) and CLOUDFLARE_ACCOUNT_ID; the
+# bucket copy also uses the R2_* keys the
+# basemap workflow already has. Without them each job says so and stops.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Fill the preview copy from
+        type: choice
+        options: [production, seed]
+        default: production
+      copy_bucket:
+        description: Also copy agora-assets (tiles, logos, posters) into agora-preview
+        type: boolean
+        default: true
+
+concurrency:
+  group: previews-${{ github.event_name }}-${{ github.event.pull_request.number || 'data' }}
+  cancel-in-progress: false
+
+env:
+  PROD_DB: agora
+  PREVIEW_DB: agora-preview
+  PROD_BUCKET: agora-assets
+  PREVIEW_BUCKET: agora-preview
+
+jobs:
+  cleanup:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The Preview is named after the branch (wrangler preview's default, and
+      # what Workers Builds runs). A PR whose branch never built one — previews
+      # off, or a fork — has nothing to delete, and that is not a failure.
+      - name: Delete this branch's Preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_API_KEY / CLOUDFLARE_ACCOUNT_ID not set — nothing deleted."
+            exit 0
+          fi
+          # Workers Builds names the Preview after the branch, lowercased with
+          # anything outside [a-z0-9] turned into "-": claude/worker-previews
+          # became claude-worker-previews (PR #105).
+          NAME=$(printf '%s' "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          if npx wrangler preview delete --name "$NAME" --skip-confirmation; then
+            echo "Deleted the Preview for $BRANCH." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::No Preview deleted for $BRANCH (none built, or already gone)."
+          fi
+
+  data:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Check the credentials and the target
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=
+          [ -n "$CLOUDFLARE_API_TOKEN" ]  || missing="$missing CLOUDFLARE_API_KEY"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+          # Every write below goes to $PREVIEW_DB / $PREVIEW_BUCKET. Refuse to
+          # run at all if either has been edited to name production.
+          if [ "$PREVIEW_DB" = "$PROD_DB" ] || [ "$PREVIEW_BUCKET" = "$PROD_BUCKET" ]; then
+            echo "::error::The preview target names production. Not running."
+            exit 1
+          fi
+
+      - name: Read production
+        if: inputs.from == 'production'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler d1 export "$PROD_DB" --remote --output fill.sql
+          ls -l fill.sql
+
+      - name: Read the seed
+        if: inputs.from == 'seed'
+        run: cat d1/schema.sql d1/seed-parishes.sql > fill.sql
+
+      # D1 has no "replace database", so the copy is emptied table by table
+      # first. Foreign keys are deferred so the drop order does not matter.
+      - name: Empty the preview database
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$PREVIEW_DB" --remote --json --command \
+            "SELECT type, name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'" \
+            > objects.json
+          {
+            echo 'PRAGMA defer_foreign_keys = on;'
+            jq -r '.[0].results[] | "DROP \(.type | ascii_upcase) IF EXISTS \"\(.name)\";"' objects.json
+          } > empty.sql
+          cat empty.sql
+          if [ "$(wc -l < empty.sql)" -gt 1 ]; then
+            npx wrangler d1 execute "$PREVIEW_DB" --remote --yes --file empty.sql
+          fi
+
+      - name: Fill the preview database
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$PREVIEW_DB" --remote --yes --file fill.sql
+          npx wrangler d1 execute "$PREVIEW_DB" --remote --command \
+            "SELECT (SELECT COUNT(*) FROM parishes) AS parishes, (SELECT COUNT(*) FROM schedules) AS schedules, (SELECT COUNT(*) FROM events) AS events"
+
+      # Server-side copies within R2, so the tile archive never comes through
+      # the runner. --delete is left off: a poster a Preview uploaded stays.
+      - name: Copy the bucket
+        if: inputs.copy_bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "::error::R2_* secrets not set — database refreshed, bucket not copied."
+            exit 1
+          fi
+          aws s3 sync "s3://$PROD_BUCKET" "s3://$PREVIEW_BUCKET" \
+            --endpoint-url "$ENDPOINT" --no-progress --only-show-errors
+          aws s3 ls "s3://$PREVIEW_BUCKET/" --endpoint-url "$ENDPOINT"
+
+      # The copy changed under the Worker, so bump its data version
+      # (worker/lib/data-version.mjs) or Previews serve the old bundle until
+      # BODY_TTL runs out. Last, because the bucket copy carries production's.
+      - name: Bump the preview data version
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "::notice::R2_* secrets not set — Previews pick up the new data within 10 minutes."
+            exit 0
+          fi
+          printf 'refresh-%s' "$(date -u +%s)" > version.txt
+          aws s3 cp version.txt "s3://$PREVIEW_BUCKET/meta/data-version" \
+            --endpoint-url "$ENDPOINT" --content-type text/plain --cache-control no-store
+
+      - name: Summary
+        run: |
+          {
+            echo "Preview data refreshed from **${{ inputs.from }}**."
+            echo "Bucket copied: ${{ inputs.copy_bucket }}."
+          } >> "$GITHUB_STEP_SUMMARY"
