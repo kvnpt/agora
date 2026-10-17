@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1013" media="(prefers-color-scheme: dark)">
+  <meta name="robots" content="noindex">
+  <title>orthodoxy.au · next</title>
+  <!-- A prototype of the next version: a page around a map rather than a map
+       under a sheet. It reads the same /api/bundle through the same bundle.js
+       and /shared/ projection as the app, and writes nothing but this
+       browser's lists. -->
+  <link rel="stylesheet" href="/lib/maplibre-gl.css">
+  <link rel="stylesheet" href="/next/next.css">
+</head>
+<body>
+  <header class="top">
+    <button class="place" type="button" id="place" aria-label="Use my location">
+      <span class="place-name" id="place-name">Australia</span>
+      <span class="place-sub" id="place-sub">orthodoxy.au</span>
+    </button>
+    <div class="top-actions">
+      <button class="round-btn" type="button" id="btn-locate" aria-label="Near me" title="Near me">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
+      </button>
+      <button class="round-btn" type="button" id="btn-layers" aria-label="Filters" title="Filters">
+        <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3 2.5 8 12 13l9.5-5L12 3z"/><path d="m2.5 12.5 9.5 5 9.5-5" stroke-linecap="round"/><path d="m2.5 16.5 9.5 5 9.5-5" stroke-linecap="round" opacity=".55"/></svg>
+        <span class="badge" id="layers-badge" hidden></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="page">
+    <!-- Jurisdictions, above the viewport: the app's own thing, kept. -->
+    <nav class="juris-row" id="juris-row" aria-label="Jurisdictions"></nav>
+
+    <!-- NextThere's viewport: a map inside the page, nothing on it but full screen. -->
+    <section class="viewport-card" id="viewport-card">
+      <div class="viewport" id="viewport">
+        <div id="map"></div>
+        <button class="map-fs" type="button" id="btn-fullscreen" aria-label="Full screen" title="Full screen">
+          <svg class="fs-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
+          <svg class="fs-close" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>
+        </button>
+      </div>
+      <!-- What the viewport holds: a count and up to seven logos. Panning changes it. -->
+      <button class="inview" type="button" id="inview" aria-label="Parishes in view"></button>
+    </section>
+
+    <div class="active-filters" id="active-filters" hidden></div>
+
+    <!-- Today, before anything else. -->
+    <section class="today card" id="today" aria-label="Today"></section>
+
+    <!-- Curated: the slices of the data, as collections of parishes. -->
+    <section class="shelf" id="shelf-lists"></section>
+    <section class="shelf" id="shelf-collections"></section>
+
+    <!-- App Store's feed: what's on, poster first. -->
+    <section class="shelf" id="shelf-whatson"></section>
+
+    <section class="shelf" id="shelf-languages"></section>
+    <section class="shelf" id="shelf-jurisdictions"></section>
+
+    <!-- And always waiting underneath, like reviews at the bottom of a place:
+         every service and event, day after day, for as long as you scroll. -->
+    <section class="stream" id="stream" aria-label="Every service and event">
+      <header class="stream-head">
+        <h2>Every service &amp; event</h2>
+        <p id="stream-sub">In view, day by day. Keep scrolling.</p>
+      </header>
+      <div id="stream-days"></div>
+      <div class="stream-more" id="stream-more">Loading…</div>
+    </section>
+
+    <footer class="foot">
+      <a href="/">Open the current app</a> · prototype, reading live data
+    </footer>
+  </main>
+
+  <!-- Sheets: a collection, a parish, an event, the layers screen, lists. -->
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="sheet-host" id="sheets"></div>
+
+  <script src="/shared/jurisdiction-colors.js"></script>
+  <script src="/shared/event-types.js"></script>
+  <script src="/lib/maplibre-gl.js"></script>
+  <script src="/lib/pmtiles.js"></script>
+  <script src="/lib/protomaps-themes-base.js"></script>
+  <script src="/bundle.js"></script>
+  <script src="/next/next.js"></script>
+</body>
+</html>
