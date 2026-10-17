@@ -33,17 +33,17 @@
   </header>
 
   <main id="page">
-    <!-- Jurisdictions, above the viewport: the app's own thing, kept. -->
     <!-- Search: a field you can see, opening a sheet that answers as you type. -->
     <button class="search-pill" type="button" id="search-pill">
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
       <span>Parishes, suburbs, services…</span>
     </button>
 
-    <nav class="juris-row" id="juris-row" aria-label="Jurisdictions"></nav>
-
-    <!-- NextThere's viewport: a map inside the page, nothing on it but full screen. -->
+    <!-- NextThere's viewport: a map inside the page, nothing on it but full
+         screen. The tabs above it and the parish row under it are the app's
+         own (filters.js, renderParishPills), and the map is map.js itself. -->
     <section class="viewport-card" id="viewport-card">
+      <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
       <div class="viewport" id="viewport">
         <div id="map"></div>
         <button class="map-fs" type="button" id="btn-fullscreen" aria-label="Full screen" title="Full screen">
@@ -51,8 +51,18 @@
           <svg class="fs-close" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>
         </button>
       </div>
-      <!-- What the viewport holds: a count and up to seven logos. Panning changes it. -->
-      <button class="inview" type="button" id="inview" aria-label="Parishes in view"></button>
+      <!-- What the viewport holds: a count and the parishes' logos, in view
+           first. Panning changes it. -->
+      <div class="parish-row" id="parish-row">
+        <button class="parish-fav-fab" id="btn-favourites" type="button" hidden aria-label="Favourite parishes" title="Favourite parishes">
+          <svg viewBox="0 0 256 256" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="m234.29 114.85l-45 38.83L203 211.75a16.4 16.4 0 0 1-24.5 17.82L128 198.49l-50.53 31.08A16.4 16.4 0 0 1 53 211.75l13.76-58.07l-45-38.83A16.46 16.46 0 0 1 31.08 86l59-4.76l22.76-55.08a16.36 16.36 0 0 1 30.27 0l22.75 55.08l59 4.76a16.46 16.46 0 0 1 9.37 28.86Z"/></svg>
+        </button>
+        <button class="parish-counter" id="inview" type="button" aria-label="Parishes in view">
+          <svg viewBox="0 0 256 256" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M228.12 145.14L192 123.47V104a8 8 0 0 0-4-7l-52-29.64V48h16a8 8 0 0 0 0-16h-16V16a8 8 0 0 0-16 0v16h-16a8 8 0 0 0 0 16h16v19.36L68 97.05a8 8 0 0 0-4 7v19.47l-36.12 21.62A8 8 0 0 0 24 152v64a8 8 0 0 0 8 8h80a8 8 0 0 0 8-8v-48a8 8 0 0 1 16 0v48a8 8 0 0 0 8 8h80a8 8 0 0 0 8-8v-64a8 8 0 0 0-3.88-6.86M40 156.53l24-14.4V208H40ZM128 144a24 24 0 0 0-24 24v40H80v-99.36l48-27.43l48 27.43V208h-24v-40a24 24 0 0 0-24-24m88 64h-24v-65.87l24 14.4Z"/></svg>
+          <span id="inview-n">0</span>
+        </button>
+        <div class="parish-pills" id="parish-pills"></div>
+      </div>
     </section>
 
     <div class="active-filters" id="active-filters" hidden></div>
@@ -91,10 +101,12 @@
   <div class="sheet-host" id="sheets"></div>
 
   <script src="/shared/jurisdiction-colors.js"></script>
+  <script src="/shared/declutter.js"></script>
   <script src="/shared/event-types.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
+  <script src="/map.js"></script>
   <script src="/bundle.js"></script>
   <script src="/next/next.js"></script>
 </body>

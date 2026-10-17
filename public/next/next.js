@@ -214,6 +214,8 @@
     writeLS(FAV, isFav(pid) ? l.filter(f => f.id !== pid) : [{ id: pid, at: Date.now() }, ...l]);
     toast(isFav(pid) ? 'Added to Favourites' : 'Removed from Favourites');
     renderLists();
+    renderInView();
+    syncMap();
   }
   const userLists = () => readLS(LISTS);
   function allLists() {
@@ -333,101 +335,75 @@
     check: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   };
 
-  // ── The map: a viewport, not the page ─────────────────────────────────
+  // ── The map: the app's own, in a viewport ─────────────────────────────
+  //
+  // map.js, unchanged: the same basemap, dots, grapes, labels, halos, squares
+  // and favourite stars as the map at /. This page hands it a state shaped
+  // like app.js's — the parishes that pass this page's filters (a filter
+  // prunes the map, as a jurisdiction or a language does there), the events of
+  // today and tomorrow for the halos, the parish whose card is open as the
+  // focus, and where the person is — and answers the few things it asks of
+  // the page around it.
 
   let map = null;
-  let mapReady = false;
-  async function baseStyle() {
-    let layers;
-    if (dark()) {
-      try { layers = await (await fetch('/protomaps-dark.json')).json(); } catch { layers = null; }
-      if (!Array.isArray(layers)) layers = protomaps_themes_base.default('protomaps', 'dark');
-    } else {
-      layers = protomaps_themes_base.default('protomaps', 'light');
-    }
-    return {
-      version: 8,
-      glyphs: '/glyphs/{fontstack}/{range}.pbf',
-      sprite: location.origin + '/sprites/protomaps',
-      sources: { protomaps: { type: 'vector', url: 'pmtiles:///tiles/oceania.pmtiles' } },
-      layers,
-    };
-  }
-  window.agoraNextBaseStyle = baseStyle; // a browser check drops the tiles through this
+  const mapState = {
+    parishes: [],
+    events: [],
+    schedules: [],
+    mode: 'events',
+    filters: { jurisdiction: null, parishIds: null, lang: null, bookmarked: null, location: null },
+    parishSheetFocus: null,
+    selectionMode: false,
+    locationActive: false,
+    userLat: null,
+    userLng: null,
+    // This page frames the start itself (startMap), so the first load must
+    // not fit the whole of Oceania over it.
+    cameraOwned: true,
+  };
+  window.agoraStateRef = mapState;
+  window.openParishSheet = (id) => openParish(id);
+  window.agoraOpenEventSheet = (id) => openEvent(id);
+  window.agoraClearParishFocus = () => {};
+  window.agoraIsFavourite = (id) => isFav(id);
+  window.rawJurisColor = (j) => jColor(j);
+  // No sheet covers this map, so a fit or a grape's fly-in centres on the
+  // whole viewport.
+  window.agoraIsDesktop = () => false;
+  window.agoraSheetY = () => window.innerHeight;
+  // What lights a halo, and which parishes are "active": this page's filters,
+  // never the viewport (map.js's own rule).
+  window.applyFilters = window.applyNonViewportFilters = (evs) => evs.filter(e => eventPasses(e, { scoped: false }));
+  window.agoraOnViewportMapPhase = () => onView();
 
-  function parishGeoJSON() {
+  function syncMap() {
+    if (!map) return;
     const dim = S.juris || S.focus || filtersOn();
-    return {
-      type: 'FeatureCollection',
-      features: S.parishes.filter(p => isFinite(p.lat) && isFinite(p.lng) && p.lat != null).map(p => {
-        const on = !dim || parishPasses(p);
-        return {
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-          properties: { id: p.id, color: jColor(p.jurisdiction), on: on ? 1 : 0, label: p.acronym || '', times: rulesOf(p.id).some(liveRule) ? 1 : 0 },
-        };
-      }),
-    };
+    mapState.parishes = dim ? S.parishes.filter(parishPasses) : S.parishes;
+    mapState.events = feedFor(2);
+    mapState.locationActive = !!S.loc;
+    mapState.userLat = S.loc ? S.loc.lat : null;
+    mapState.userLng = S.loc ? S.loc.lng : null;
+    window.updateMap(mapState);
   }
-  function paintMap() {
-    if (!mapReady) return;
-    const src = map.getSource('parishes');
-    if (src) src.setData(parishGeoJSON());
+  /** The open parish card's parish wears its logo on the map, as at /. */
+  function setMapFocus(pid) {
+    if (mapState.parishSheetFocus === (pid || null)) return;
+    mapState.parishSheetFocus = pid || null;
+    syncMap();
   }
-  async function initMap() {
-    try {
-      const proto = new pmtiles.Protocol();
-      maplibregl.addProtocol('pmtiles', proto.tile);
-    } catch { /* already */ }
-    const style = await (window.agoraNextBaseStyle || baseStyle)();
-    map = new maplibregl.Map({
-      container: 'map', style,
-      bounds: S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
-        : [[150.6, -34.15], [151.35, -33.6]], // Sydney, where most of the parishes are
-      attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, boxZoom: false,
-      cooperativeGestures: false,
-    });
-    map.touchZoomRotate.disableRotation();
-    map.on('load', () => { addLayers(); onView(); });
-    map.on('click', 'p-dot', (ev) => { const f = ev.features && ev.features[0]; if (f) openParish(f.properties.id); });
-    map.on('mouseenter', 'p-dot', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'p-dot', () => { map.getCanvas().style.cursor = ''; });
-    map.on('moveend', onView);
-    map.on('error', (e) => { if (!/pmtiles|tiles/i.test(String(e && e.error && e.error.message))) console.warn(e && e.error); });
-  }
-  /** Our layers over the base style — on load, and again after a scheme change. */
-  function addLayers() {
-    map.addSource('parishes', { type: 'geojson', data: parishGeoJSON() });
-    map.addLayer({
-      id: 'p-dot', type: 'circle', source: 'parishes',
-      paint: {
-        'circle-color': ['get', 'color'],
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, ['case', ['==', ['get', 'times'], 1], 3.5, 2.5], 10, ['case', ['==', ['get', 'times'], 1], 7, 5], 14, 10],
-        'circle-stroke-color': dark() ? '#0f1013' : '#ffffff',
-        'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 4, 1, 12, 2],
-        'circle-opacity': ['case', ['==', ['get', 'on'], 1], 1, 0.18],
-        'circle-stroke-opacity': ['case', ['==', ['get', 'on'], 1], 1, 0.2],
-      },
-    });
-    map.addLayer({
-      id: 'p-label', type: 'symbol', source: 'parishes', minzoom: 11.5,
-      filter: ['==', ['get', 'on'], 1],
-      layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Medium'], 'text-size': 11, 'text-offset': [0, 1.25], 'text-anchor': 'top', 'text-optional': true },
-      paint: { 'text-color': dark() ? '#e8e8ea' : '#2a2a2e', 'text-halo-color': dark() ? '#0f1013' : '#ffffff', 'text-halo-width': 1.4 },
-    });
-    mapReady = true;
-    if (S.loc) addMe();
-  }
-  function addMe() {
-    if (!mapReady || !S.loc) return;
-    const data = { type: 'Feature', geometry: { type: 'Point', coordinates: [S.loc.lng, S.loc.lat] } };
-    if (map.getSource('me')) { map.getSource('me').setData(data); return; }
-    map.addSource('me', { type: 'geojson', data });
-    map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 16, 'circle-color': '#0a84ff', 'circle-opacity': 0.16 } });
-    map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 6.5, 'circle-color': '#0a84ff', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
+  /** The map starts while the bundle is still on its way; it needs nothing from it. */
+  async function startMap() {
+    mapState.locationActive = !!S.loc;
+    mapState.userLat = S.loc ? S.loc.lat : null;
+    mapState.userLng = S.loc ? S.loc.lng : null;
+    await window.initMap(mapState);
+    map = window.agoraMap;
+    // Where the person is; else Sydney, where most of the parishes are.
+    map.fitBounds(S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
+      : [[150.6, -34.15], [151.35, -33.6]], { animate: false, padding: 0 });
   }
 
-  let viewTimer = null;
   function onView() {
     if (!map) return;
     S.bounds = map.getBounds();
@@ -436,9 +412,7 @@
     $('#place-name').textContent = S.loc && km(S.loc, { lat: c.lat, lng: c.lng }) < 15 ? 'Near you' : placeName(c.lat, c.lng, map.getZoom());
     $('#place-sub').textContent = S.loc && km(S.loc, { lat: c.lat, lng: c.lng }) < 15 ? placeName(c.lat, c.lng, 10) : 'orthodoxy.au';
     renderInView();
-    renderJurisChips();
-    clearTimeout(viewTimer);
-    viewTimer = setTimeout(renderFeeds, 60);
+    renderFeeds();
   }
   function fitTo(ids) {
     const ps = [...ids].map(id => S.byId.get(id)).filter(p => p && isFinite(p.lat) && p.lat != null);
@@ -459,39 +433,61 @@
     setTimeout(() => map && map.resize(), 320);
   }
 
-  // ── Jurisdiction chips (above the viewport) ───────────────────────────
+  // ── Jurisdiction tabs (above the viewport) ────────────────────────────
+  //
+  // The app's banner (filters.js): each name in its own colour, underlined
+  // while none is chosen; the chosen one filled, the others dimmed.
 
+  const TAB_ORDER = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
+  /** A colour as it is drawn: lifted on the dark scheme, as app.js does. */
+  const shown = (hex) => (dark() && window.agoraLiftForDark ? window.agoraLiftForDark(hex) : hex);
   function renderJurisChips() {
     const row = $('#juris-row');
-    const counts = {};
-    for (const p of S.parishes) if (!S.inView || S.inView.has(p.id)) counts[p.jurisdiction] = (counts[p.jurisdiction] || 0) + 1;
-    row.innerHTML = JURIS_ORDER.map(j => {
+    row.classList.toggle('has-active', !!S.juris);
+    row.innerHTML = TAB_ORDER.map(j => {
       const on = S.juris === j;
-      const n = counts[j] || 0;
-      return `<button class="jchip${on ? ' on' : ''}${n ? '' : ' none'}" type="button" data-juris="${j}" style="--j:${jColor(j)}" aria-pressed="${on}">
-          <span class="jdot"></span>${esc(JURIS[j].short)}<span class="jn">${n}</span></button>`;
+      return `<button class="jurisdiction-chip${on ? ' active' : ''}" type="button" data-juris="${j}" style="--j:${shown(jColor(j))}" aria-pressed="${on}">${esc(JURIS[j].short)}</button>`;
     }).join('');
   }
 
-  // ── The in-view chip: a count and up to seven logos ───────────────────
+  // ── The parish row: what the viewport holds ───────────────────────────
+  //
+  // The app's row (renderParishPills): each parish its logo, or its acronym
+  // in its colour on white, ringed in that colour. Those in view first,
+  // nearest first; those out of view faded and grey-ringed. With the person's
+  // location on, a small distance under each. The count at its head is the
+  // parishes in view, and opens them as a collection.
 
   function viewParishes() {
     return S.parishes.filter(p => (!S.inView || S.inView.has(p.id)) && parishPasses(p));
   }
+  function pillLogo(p) {
+    if (p.logo_path) return `<span class="pill-logo avatar-logo"><img src="${esc(p.logo_path)}" alt="" loading="lazy"></span>`;
+    const text = String(p.acronym || (p.name || '?')[0]).toUpperCase();
+    return `<span class="pill-logo avatar-acronym" style="--avatar-ink:${shown(jColor(p.jurisdiction))}"><span class="avatar-acronym-text" data-len="${Math.min(text.length, 5)}">${esc(text)}</span></span>`;
+  }
   function renderInView() {
-    const ps = viewParishes();
-    const o = sortOrigin();
-    // Logos first, then parishes with times, then the nearest.
-    const ranked = ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
-      || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
-      || (o ? km(o, a) - km(o, b) : 0));
-    const logos = ranked.slice(0, 7).map(p => avatar(p, 'stack')).join('');
-    const withTimes = ps.filter(p => rulesOf(p.id).some(liveRule)).length;
-    $('#inview').innerHTML = ps.length
-      ? `<span class="stackrow">${logos}</span>
-         <span class="inview-text"><span><b>${ps.length} ${ps.length === 1 ? 'parish' : 'parishes'}</b> in view</span><small>${withTimes} with service times</small></span>
-         <span class="inview-go">${I.chev}</span>`
-      : `<span class="inview-text"><b>No parishes here</b><small>Pan or zoom out</small></span>`;
+    const o = S.loc || (map ? map.getCenter() : null);
+    const vp = S.inView;
+    let ps = S.parishes.filter(p => p.id !== '_unassigned' && parishPasses(p));
+    ps = o ? ps.map(p => ({ p, d: isFinite(p.lat) && p.lat != null ? km(o, p) : Infinity })).sort((a, b) => a.d - b.d).map(x => x.p)
+      : ps.sort((a, b) => String(a.acronym || a.name).localeCompare(String(b.acronym || b.name)));
+    if (vp) ps = [...ps.filter(p => vp.has(p.id)), ...ps.filter(p => !vp.has(p.id))];
+    $('#inview-n').textContent = viewParishes().length;
+    $('#btn-favourites').hidden = !favIds().length;
+    $('#parish-pills').innerHTML = ps.map(p => {
+      const tone = !vp || vp.has(p.id) ? 'on' : 'off';
+      const star = isFav(p.id) ? '<span class="pill-fav" aria-hidden="true">★</span>' : '';
+      let dist = '';
+      if (S.loc && isFinite(p.lat) && p.lat != null) {
+        const k = km(S.loc, p);
+        const cls = k <= 5 ? 'distance-near' : k <= 15 ? 'distance-mid' : 'distance-far';
+        dist = `<span class="pill-dist ${cls}">${esc(k < 10 ? k.toFixed(1) : String(Math.round(k)))}km</span>`;
+      }
+      return `<button class="parish-pill pill-${tone}" type="button" data-parish="${esc(p.id)}" style="--pill-ring:${shown(jColor(p.jurisdiction))}" title="${esc(p.name || '')}" aria-label="${esc(p.name || p.acronym || '')}">${pillLogo(p)}${star}${dist}</button>`;
+    }).join('');
+    const list = $('#parish-pills');
+    if (list.scrollLeft) list.scrollLeft = 0;
   }
 
   // ── Active filters, said once under the map ───────────────────────────
@@ -513,7 +509,8 @@
   }
 
   function refilter() {
-    paintMap();
+    syncMap();
+    renderJurisChips();
     renderInView();
     renderActive();
     renderFeeds();
@@ -752,6 +749,8 @@
     el.classList.remove('open');
     setTimeout(() => el.remove(), 320);
     if (!stack.length) { $('#scrim').hidden = true; document.body.classList.remove('sheet-open'); }
+    const under = stack.filter(s => s.classList.contains('parish')).pop();
+    setMapFocus(under ? under.dataset.pid : null);
   }
   function closeAll() { while (stack.length) popSheet(); }
 
@@ -894,6 +893,7 @@
     const el = pushSheet(html, 'parish');
     el.dataset.pid = pid;
     el.style.setProperty('--j', jColor(p.jurisdiction));
+    setMapFocus(pid);
     // Bring it into the viewport without zooming the page's scope away.
     if (map && isFinite(p.lat) && !map.getBounds().contains([p.lng, p.lat])) map.easeTo({ center: [p.lng, p.lat], duration: 500 });
   }
@@ -1310,7 +1310,8 @@
       S.loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       try { localStorage.setItem('agora_location', JSON.stringify(S.loc)); } catch { /* fine */ }
       document.body.classList.add('located');
-      addMe();
+      syncMap();
+      renderInView();
       if (map) map.flyTo({ center: [S.loc.lng, S.loc.lat], zoom: 11.5, duration: 900 });
     }, () => toast('Couldn’t get your location'), { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
   }
@@ -1358,6 +1359,7 @@
       refilter();
       return;
     }
+    if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
     if (t.closest('#inview')) {
       const ids = viewParishes().map(p => p.id);
       openCollection({ id: 'inview', title: `In view`, kicker: $('#place-name').textContent, blurb: 'Every parish the map is showing, nearest and best-documented first.', art: 'linear-gradient(135deg,#334155,#0f172a)', ids });
@@ -1456,6 +1458,7 @@
   // ── Boot ──────────────────────────────────────────────────────────────
 
   async function boot() {
+    const mapStarted = startMap().catch(err => console.warn('map', err));
     const t = todayKey();
     await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(addDays(t, 60) + 'T14:00:00Z')).toISOString() });
     S.parishes = window.agoraBundle.parishes();
@@ -1472,7 +1475,8 @@
     renderActive();
     renderCollections();
     renderFeeds();
-    initMap();
+    await mapStarted;
+    syncMap();
     // A link straight to a parish: /next#sgr
     const h = decodeURIComponent(location.hash.slice(1)).toLowerCase();
     if (h) { const p = S.parishes.find(x => (x.acronym || '').toLowerCase() === h || x.id === h); if (p) setTimeout(() => openParish(p.id), 300); }
@@ -1481,10 +1485,10 @@
     console.error(err);
     $('#today').innerHTML = `<div class="tempty">Couldn’t load the parishes. ${esc(err.message)}</div>`;
   });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
-    if (!map) return;
-    mapReady = false;
-    map.setStyle(await (window.agoraNextBaseStyle || baseStyle)(), { diff: false });
-    map.once('style.load', () => { addLayers(); paintMap(); });
+  // map.js rebuilds its own style on a scheme change; the colours this page
+  // stamps inline are lifted for the dark scheme, so they are stamped again.
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    renderJurisChips();
+    renderInView();
   });
 })();

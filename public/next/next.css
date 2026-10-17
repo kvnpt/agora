@@ -10,8 +10,17 @@
   --text-2: #6b6b73;
   --text-3: #a0a0a8;
   --line: rgba(60, 60, 67, 0.14);
-  --accent: #0a7aff;
+  --accent: #2c6cb4;
   --live: #2fb350;
+  /* Hairlines, and the app's own tokens for the pieces taken from it. */
+  --hair: rgba(0, 0, 0, 0.12);
+  --border: #d0d0d0;
+  --fab-bg: rgba(255, 255, 255, 0.92);
+  /* The map's, read by map.js (app.css). */
+  --halo: #ffffff;
+  --map-fade: #ffffff;
+  --map-fade-opacity: 0.35;
+  --map-shadow: rgba(15, 23, 42, 0.30);
   --glass: rgba(255, 255, 255, 0.72);
   --glass-solid: rgba(250, 250, 252, 0.97);
   --glass-line: rgba(255, 255, 255, 0.6);
@@ -30,8 +39,15 @@
     --text-2: #a1a1aa;
     --text-3: #6f6f78;
     --line: rgba(255, 255, 255, 0.10);
-    --accent: #3d9bff;
+    --accent: #5b8fd6;
     --live: #38c75c;
+    --hair: rgba(255, 255, 255, 0.12);
+    --border: #6e7280;
+    --fab-bg: rgba(40, 42, 50, 0.92);
+    --halo: #0b0b0d;
+    --map-fade: #0b0b0d;
+    --map-fade-opacity: 0;
+    --map-shadow: rgba(0, 0, 0, 0.38);
     --glass: rgba(36, 36, 42, 0.62);
     --glass-solid: rgba(30, 30, 35, 0.97);
     --glass-line: rgba(255, 255, 255, 0.10);
@@ -87,76 +103,148 @@ body.located #btn-locate { color: var(--accent); }
   display: grid; place-items: center;
 }
 
-/* ── Jurisdiction chips ──────────────────────────────────────────────── */
-
-.juris-row {
-  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
-  padding: 6px var(--pad) 10px;
-}
-.juris-row::-webkit-scrollbar { display: none; }
-.jchip {
-  flex: none; display: inline-flex; align-items: center; gap: 7px;
-  height: 38px; padding: 0 14px 0 12px; border-radius: 19px;
-  background: var(--card); box-shadow: var(--shadow);
-  font-size: 15px; font-weight: 600;
-  transition: background .15s, color .15s, opacity .15s;
-}
-.jchip .jn { font-weight: 500; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
-.jchip.none { opacity: .45; }
-.jchip.on { background: var(--j); color: #fff; }
-.jchip.on .jn { color: rgba(255, 255, 255, .8); }
-.jchip.on .jdot { background: #fff; }
-.jdot { width: 10px; height: 10px; border-radius: 50%; background: var(--j); flex: none; display: inline-block; }
-
-/* ── The viewport card ───────────────────────────────────────────────── */
+/* ── The viewport: tabs, map, parish row ─────────────────────────────────
+   The app's own pieces (app.css), framed in hairlines rather than lifted on
+   a shadow: the jurisdiction tabs above the map, the parish row under it. */
 
 .viewport-card {
-  margin: 0 var(--pad);
-  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
-  overflow: hidden;
+  margin: 4px 0 0;
+  background: var(--card);
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
 }
-.viewport { position: relative; height: min(46vh, 380px); margin: 10px 10px 0; border-radius: 16px; overflow: hidden; background: var(--card-2); }
-#map { position: absolute; inset: 0; }
+@media (min-width: 600px) {
+  .viewport-card { border: 1px solid var(--hair); border-radius: 2px; overflow: hidden; }
+}
+
+/* The jurisdiction tabs (app.css .jurisdiction-banner): each in its own
+   colour and underlined while none is chosen; the chosen one filled, the
+   others dimmed. --j is the tab's colour, lifted on the dark scheme. */
+.jurisdiction-banner {
+  display: flex; overflow-x: auto; scrollbar-width: none;
+  background: var(--card);
+  border-bottom: 1px solid var(--hair);
+}
+.jurisdiction-banner::-webkit-scrollbar { display: none; }
+.jurisdiction-chip {
+  flex: none;
+  padding: 0 14px;
+  height: 40px;
+  font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--j);
+  border-bottom: 2px solid var(--j);
+  transition: color .15s, border-color .15s, background .15s, opacity .15s;
+}
+.jurisdiction-banner.has-active .jurisdiction-chip { color: var(--text-3); border-bottom-color: transparent; opacity: .6; }
+.jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-bottom-color: transparent; opacity: 1; }
+
+.viewport { position: relative; height: min(46vh, 380px); background: var(--card-2); }
+#map { position: absolute; inset: 0; touch-action: none; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
   display: grid; place-items: center;
   background: var(--glass); color: var(--text);
   -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
-  border: 1px solid var(--glass-line); box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
 }
 .map-fs .fs-close { display: none; }
 body.map-full .map-fs .fs-open { display: none; }
 body.map-full .map-fs .fs-close { display: block; }
 .maplibregl-ctrl-attrib { display: none; }
 
-/* Full screen: the viewport takes the screen; the chips and the in-view chip float over it. */
-body.map-full { overflow: hidden; }
-body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border-radius: 0; z-index: 30; background: transparent; box-shadow: none; }
-body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0; border-radius: 0; }
-body.map-full .map-fs { top: calc(64px + env(safe-area-inset-top)); }
-body.map-full .juris-row { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 31; padding-top: 12px; }
-body.map-full .inview {
-  position: fixed; left: var(--pad); right: var(--pad); bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 31;
-  max-width: 568px; margin: 0 auto;
-  background: var(--glass); border-radius: 20px; box-shadow: var(--shadow-lift);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8); backdrop-filter: blur(20px) saturate(1.8);
-  border: 1px solid var(--glass-line);
+/* The parish row (app.css .parish-filter-row-wrap): the count, then every
+   parish as its logo ringed in its colour, in view first. */
+.parish-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 0 0 12px;
+  border-top: 1px solid var(--hair);
 }
+.parish-fav-fab,
+.parish-counter {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 30px;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+  color: var(--text);
+}
+.parish-fav-fab { width: 30px; border-radius: 50%; color: #e0a315; border-color: #e0a315; }
+.parish-fav-fab[hidden] { display: none; }
+.parish-counter {
+  gap: 4px; padding: 0 10px 0 8px; border-radius: 999px;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.parish-pills {
+  flex: 1; min-width: 0;
+  display: flex; gap: 8px; align-items: center;
+  overflow-x: auto; scrollbar-width: none;
+  /* Room for the star above and the distance under each logo. */
+  padding: 8px 12px 11px 4px;
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+}
+.parish-pills::-webkit-scrollbar { display: none; }
+.parish-pill {
+  position: relative; flex: none;
+  width: 36px; height: 36px; padding: 0;
+  background: var(--fab-bg);
+  border: 1px solid color-mix(in srgb, var(--pill-ring, var(--border)) 30%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  -webkit-tap-highlight-color: transparent;
+}
+.parish-pill .pill-logo {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
+}
+.parish-pill .pill-logo img { width: 100%; height: 100%; object-fit: cover; display: block; background: #fff; }
+.parish-pill.pill-off { border-color: var(--border); }
+.parish-pill.pill-off .pill-logo { opacity: 0.5; filter: grayscale(0.7); }
+.parish-pill .pill-fav {
+  position: absolute; top: -5px; right: -5px;
+  font-size: 10px; line-height: 1; color: #e0a315;
+  text-shadow: 0 0 2px var(--fab-bg), 0 0 2px var(--fab-bg);
+  pointer-events: none;
+}
+.parish-pill .pill-dist {
+  position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  padding: 1px 4px;
+  font-size: 8.5px; font-weight: 700; line-height: 10px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.distance-near { color: #1565c0; }
+.distance-mid { color: #42a5f5; }
+.distance-far { color: #90caf9; }
+/* A parish with no logo: its acronym in its colour on white (app.css). */
+.avatar-acronym {
+  background: linear-gradient(155deg, #ffffff 0%, #f1f2f5 100%);
+  color: var(--avatar-ink, #555);
+  container-type: inline-size;
+}
+.avatar-acronym-text { font-weight: 800; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; font-size: 44cqw; }
+.avatar-acronym-text[data-len="2"] { font-size: 38cqw; }
+.avatar-acronym-text[data-len="3"] { font-size: 31cqw; }
+.avatar-acronym-text[data-len="4"] { font-size: 25cqw; }
+.avatar-acronym-text[data-len="5"] { font-size: 21cqw; }
 
-.inview {
-  display: flex; align-items: center; gap: 12px; width: 100%;
-  min-height: 64px; padding: 10px 14px 12px 16px;
-}
-.stackrow { display: flex; flex: none; }
-.stackrow .av { margin-left: -9px; box-shadow: 0 0 0 2px var(--card); }
-.stackrow .av:first-child { margin-left: 0; }
-.inview-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; white-space: nowrap; }
-.inview-text b, .inview-text small { overflow: hidden; text-overflow: ellipsis; }
-.inview-text small { color: var(--text-2); font-size: 13px; }
-.inview-go { color: var(--text-3); }
+/* Full screen: the app's own layout. The tabs across the top on the page's
+   colour, the parish row floating over the map under them. */
+body.map-full { overflow: hidden; }
+body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border: 0; border-radius: 0; z-index: 30; background: transparent; }
+body.map-full .viewport { position: absolute; inset: 0; height: auto; }
+body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
+body.map-full .parish-row { position: fixed; top: calc(41px + env(safe-area-inset-top)); left: 0; right: 0; z-index: 31; border-top: 0; background: transparent; }
+body.map-full .map-fs { top: auto; bottom: calc(18px + env(safe-area-inset-bottom)); }
 
 /* ── Avatars ─────────────────────────────────────────────────────────── */
+
+.jdot { width: 10px; height: 10px; border-radius: 50%; background: var(--j); flex: none; display: inline-block; }
 
 .av {
   --s: 34px;
