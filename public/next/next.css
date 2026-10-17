@@ -103,9 +103,10 @@ body.located #btn-locate { color: var(--accent); }
   display: grid; place-items: center;
 }
 
-/* ── The viewport: tabs, map, parish row ─────────────────────────────────
+/* ── The viewport: tabs, map, in-view chip ───────────────────────────────
    The app's own pieces (app.css), framed in hairlines rather than lifted on
-   a shadow: the jurisdiction tabs above the map, the parish row under it. */
+   a shadow: the jurisdiction tabs above the map, the in-view chip under it,
+   and in full screen the parish row along the foot of the map. */
 
 .viewport-card {
   margin: 4px 0 0;
@@ -139,7 +140,13 @@ body.located #btn-locate { color: var(--accent); }
 .jurisdiction-banner.has-active .jurisdiction-chip { color: var(--text-3); border-bottom-color: transparent; opacity: .6; }
 .jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-bottom-color: transparent; opacity: 1; }
 
-.viewport { position: relative; height: min(46vh, 380px); background: var(--card-2); }
+.viewport {
+  position: relative; height: min(46vh, 380px);
+  margin: 10px 12px 0; border-radius: 14px; overflow: hidden;
+  background: var(--card-2);
+  /* Safari clips a WebGL canvas to the radius only on its own layer. */
+  isolation: isolate;
+}
 #map { position: absolute; inset: 0; touch-action: none; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
@@ -154,12 +161,26 @@ body.map-full .map-fs .fs-open { display: none; }
 body.map-full .map-fs .fs-close { display: block; }
 .maplibregl-ctrl-attrib { display: none; }
 
-/* The parish row (app.css .parish-filter-row-wrap): the count, then every
-   parish as its logo ringed in its colour, in view first. */
+/* Under the small map, what it holds in words: a stack of logos, the count
+   and how many have times. Tapping opens them as a collection. */
+.inview {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 64px; padding: 10px 14px 12px 16px;
+  text-align: left;
+}
+.stackrow { display: flex; flex: none; }
+.stackrow .av { margin-left: -9px; box-shadow: 0 0 0 2px var(--card); }
+.stackrow .av:first-child { margin-left: 0; }
+.inview-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; white-space: nowrap; }
+.inview-text b, .inview-text small { overflow: hidden; text-overflow: ellipsis; }
+.inview-text small { color: var(--text-2); font-size: 13px; }
+.inview-go { color: var(--text-3); }
+
+/* The parish row (app.css .parish-filter-row-wrap), full screen only: the
+   count, then every parish as its logo ringed in its colour, in view first. */
 .parish-row {
-  display: flex; align-items: center; gap: 6px;
+  display: none; align-items: center; gap: 6px;
   padding: 2px 0 0 12px;
-  border-top: 1px solid var(--hair);
 }
 .parish-fav-fab,
 .parish-counter {
@@ -233,14 +254,19 @@ body.map-full .map-fs .fs-close { display: block; }
 .avatar-acronym-text[data-len="4"] { font-size: 25cqw; }
 .avatar-acronym-text[data-len="5"] { font-size: 21cqw; }
 
-/* Full screen: the app's own layout. The tabs across the top on the page's
-   colour, the parish row floating over the map under them. */
+/* Full screen: the tabs across the top, the close button at the top right
+   under them, and the parish row floating along the foot of the map. */
 body.map-full { overflow: hidden; }
 body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border: 0; border-radius: 0; z-index: 30; background: transparent; }
-body.map-full .viewport { position: absolute; inset: 0; height: auto; }
+body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0; border-radius: 0; }
 body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
-body.map-full .parish-row { position: fixed; top: calc(41px + env(safe-area-inset-top)); left: 0; right: 0; z-index: 31; border-top: 0; background: transparent; }
-body.map-full .map-fs { top: auto; bottom: calc(18px + env(safe-area-inset-bottom)); }
+body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
+body.map-full .inview { display: none; }
+body.map-full .parish-row {
+  display: flex;
+  position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
+  background: transparent;
+}
 
 /* ── Avatars ─────────────────────────────────────────────────────────── */
 

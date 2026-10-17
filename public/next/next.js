@@ -450,13 +450,19 @@
     }).join('');
   }
 
-  // ── The parish row: what the viewport holds ───────────────────────────
+  // ── What the viewport holds ───────────────────────────────────────────
   //
-  // The app's row (renderParishPills): each parish its logo, or its acronym
-  // in its colour on white, ringed in that colour. Those in view first,
-  // nearest first; those out of view faded and grey-ringed. With the person's
-  // location on, a small distance under each. The count at its head is the
-  // parishes in view, and opens them as a collection.
+  // Under the small map, a chip that says it in words: how many parishes are
+  // in view, how many with service times, and up to seven of their logos.
+  //
+  // Full screen, the app's row instead (renderParishPills), at the foot of the
+  // map: each parish its logo, or its acronym in its colour on white, ringed
+  // in that colour. Those in view first, nearest first; those out of view
+  // faded and grey-ringed. With the person's location on, a small distance
+  // under each.
+  //
+  // The chip, and the count at the row's head, open the parishes in view as a
+  // collection.
 
   function viewParishes() {
     return S.parishes.filter(p => (!S.inView || S.inView.has(p.id)) && parishPasses(p));
@@ -467,6 +473,25 @@
     return `<span class="pill-logo avatar-acronym" style="--avatar-ink:${shown(jColor(p.jurisdiction))}"><span class="avatar-acronym-text" data-len="${Math.min(text.length, 5)}">${esc(text)}</span></span>`;
   }
   function renderInView() {
+    renderInViewChip();
+    renderParishRow();
+  }
+  function renderInViewChip() {
+    const ps = viewParishes();
+    const o = sortOrigin();
+    // Logos first, then parishes with times, then the nearest.
+    const ranked = ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
+      || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
+      || (o ? km(o, a) - km(o, b) : 0));
+    const logos = ranked.slice(0, 7).map(p => avatar(p, 'stack')).join('');
+    const withTimes = ps.filter(p => rulesOf(p.id).some(liveRule)).length;
+    $('#inview').innerHTML = ps.length
+      ? `<span class="stackrow">${logos}</span>
+         <span class="inview-text"><span><b>${ps.length} ${ps.length === 1 ? 'parish' : 'parishes'}</b> in view</span><small>${withTimes} with service times</small></span>
+         <span class="inview-go">${I.chev}</span>`
+      : `<span class="inview-text"><b>No parishes here</b><small>Pan or zoom out</small></span>`;
+  }
+  function renderParishRow() {
     const o = S.loc || (map ? map.getCenter() : null);
     const vp = S.inView;
     let ps = S.parishes.filter(p => p.id !== '_unassigned' && parishPasses(p));
@@ -1360,7 +1385,7 @@
       return;
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
-    if (t.closest('#inview')) {
+    if (t.closest('#inview, [data-inview]')) {
       const ids = viewParishes().map(p => p.id);
       openCollection({ id: 'inview', title: `In view`, kicker: $('#place-name').textContent, blurb: 'Every parish the map is showing, nearest and best-documented first.', art: 'linear-gradient(135deg,#334155,#0f172a)', ids });
       return;
