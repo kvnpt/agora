@@ -327,6 +327,9 @@
     map: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg>',
     chev: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>',
     cross: '<svg viewBox="0 0 40 64" aria-hidden="true" fill="currentColor"><rect x="17" y="0" width="6" height="64" rx="1"/><rect x="9" y="9" width="22" height="5" rx="1"/><rect x="2" y="21" width="36" height="6" rx="1"/><rect x="9" y="44" width="22" height="5" rx="1" transform="rotate(-22 20 46.5)"/></svg>',
+    search: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     check: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   };
 
@@ -1048,6 +1051,245 @@
     el.dataset.pid = pid;
   }
 
+  // ── Search ────────────────────────────────────────────────────────────
+  //
+  // One field, answered as you type, in four kinds of result: parishes, places
+  // (a suburb, a postcode, a city — the map goes there), services and events,
+  // and collections. A few words are read as intent rather than text, so
+  // "english liturgy sunday" or "vespers tonight" ask the timetable a question
+  // instead of looking for those words in titles.
+
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[’'`.]/g, '').replace(/\bsaints?\b|\bsts?\b/g, 'st')
+    .replace(/[^a-z0-9Ͱ-ϿЀ-ӿ؀-ۿ]+/g, ' ').trim();
+  const hasWord = (hay, tok) => (' ' + hay).includes(' ' + tok);
+
+  const DAY_WORDS = { sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6 };
+  const KIND_WORDS = {
+    liturgy: 'liturgy', liturgies: 'liturgy', mass: 'liturgy', eucharist: 'liturgy',
+    talk: 'talk', talks: 'talk', bible: 'talk', study: 'talk', catechism: 'talk', class: 'talk', classes: 'talk', lecture: 'talk',
+    youth: 'youth', young: 'youth', kids: 'youth', children: 'youth',
+    social: 'social', socials: 'social', festival: 'social', fete: 'social', dinner: 'social', picnic: 'social', fundraiser: 'social',
+    feast: 'feast', feasts: 'feast',
+  };
+  // Prayer services are asked for by name; these stay as text, and also mean "a service".
+  const PRAYER_WORDS = ['vespers', 'vigil', 'matins', 'orthros', 'paraklesis', 'akathist', 'akatist', 'compline', 'confession', 'supplication', 'prayer', 'prayers'];
+  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Slavonic', slavonic: 'Slavonic', romanian: 'Romanian', macedonian: 'Macedonian' };
+  const FILLER = new Set(['the', 'a', 'an', 'in', 'at', 'on', 'of', 'for', 'this', 'next', 'service', 'services', 'church', 'parish', 'parishes', 'orthodox', 'and', 'with', 'times', 'time', 'whats', 'what', 'is', 'near', 'me', 'nearby', 'around', 'week']);
+
+  function parseQuery(q) {
+    const toks = norm(q).split(' ').filter(Boolean);
+    const out = { text: [], days: null, tonight: false, kind: null, prayer: false, lang: null, nearMe: /\bnear me\b|\bnearby\b|\baround me\b/.test(norm(q)), raw: toks };
+    const t = todayKey();
+    const addDay = (k) => { out.days = out.days || new Set(); out.days.add(k); };
+    for (let i = 0; i < toks.length; i++) {
+      const w = toks[i];
+      if (w === 'today') { addDay(t); continue; }
+      if (w === 'tonight') { addDay(t); out.tonight = true; continue; }
+      if (w === 'tomorrow') { addDay(addDays(t, 1)); continue; }
+      if (w === 'weekend') { for (let d = 0; d < 7; d++) { const k = addDays(t, d); const wd = new Date(k + 'T00:00:00Z').getUTCDay(); if (wd === 0 || wd === 6) addDay(k); } continue; }
+      if (w in DAY_WORDS) { for (let d = 0; d < 14; d++) { const k = addDays(t, d); if (new Date(k + 'T00:00:00Z').getUTCDay() === DAY_WORDS[w]) addDay(k); } continue; }
+      if (w in KIND_WORDS) { out.kind = KIND_WORDS[w]; if (w !== 'bible' && w !== 'study') continue; }
+      if (w in LANG_WORDS) { out.lang = LANG_WORDS[w]; }
+      if (PRAYER_WORDS.includes(w)) out.prayer = true;
+      if (FILLER.has(w)) continue;
+      out.text.push(w);
+    }
+    // A language word is both: "greek" is a language for services and a
+    // jurisdiction (and a word in names) for parishes. Keep it as text too.
+    return out;
+  }
+
+  let parishHay = null;
+  function hayOf(p) {
+    if (!parishHay) {
+      parishHay = new Map(S.parishes.map(x => [x.id, {
+        name: norm(`${x.name} ${x.full_name || ''}`),
+        acr: norm(x.acronym || ''),
+        addr: norm(x.address || ''),
+        rest: norm(`${JURIS[x.jurisdiction]?.long || ''} ${(parseLangs(x.languages) || []).join(' ')}`),
+      }]));
+    }
+    return parishHay.get(p.id);
+  }
+
+  function searchParishes(Q) {
+    const o = sortOrigin();
+    // Language words are read as intent (hasLang), never matched as text: every
+    // parish lists English, so the text match would hand back all of them.
+    const toks = Q.text.filter(w => !(w in LANG_WORDS));
+    const res = [];
+    for (const p of S.parishes) {
+      const h = hayOf(p);
+      let score = 0;
+      if (toks.length) {
+        const all = `${h.name} ${h.acr} ${h.addr} ${h.rest}`;
+        if (!toks.every(w => hasWord(all, w))) continue;
+        if (Q.lang && !hasLang(p, Q.lang)) continue;
+        const q = toks.join(' ');
+        if (h.acr === q) score += 100;
+        if (h.name.startsWith(q)) score += 50;
+        score += toks.filter(w => hasWord(h.name, w)).length * 12;
+        score += toks.filter(w => hasWord(h.addr, w)).length * 6;
+      } else if (Q.kind || Q.prayer || Q.lang || Q.days) {
+        // A pure question ("english liturgy sunday"): parishes whose timetable answers it.
+        const ok = rulesOf(p.id).some(r => liveRule(r)
+          && (!Q.kind || r.event_type === Q.kind)
+          && (!Q.prayer || r.event_type === 'prayer')
+          && (!Q.days || [...Q.days].some(k => new Date(k + 'T00:00:00Z').getUTCDay() === r.day_of_week))
+          && (!Q.lang || (r.languages ? (parseLangs(r.languages) || []).includes(Q.lang) : hasLang(p, Q.lang))));
+        if (!ok && !(Q.lang && !Q.kind && !Q.prayer && !Q.days && hasLang(p, Q.lang))) continue;
+        score = 10;
+      } else if (Q.nearMe) {
+        score = 1;
+      } else continue;
+      if (rulesOf(p.id).some(liveRule)) score += 3;
+      res.push({ p, score, d: o ? km(o, p) : 0 });
+    }
+    return res.sort((a, b) => b.score - a.score || a.d - b.d).map(x => x.p);
+  }
+
+  function searchPlaces(Q) {
+    const q = Q.text.join(' ');
+    if (!q) return [];
+    const out = [];
+    for (const [n, la, lo] of CITIES) {
+      if (norm(n).startsWith(q)) out.push({ label: n, sub: 'City', lat: la, lng: lo, zoom: 10.5 });
+    }
+    // A suburb or a postcode: the parishes whose ADDRESS holds it (not their name).
+    const ids = S.parishes.filter(p => Q.text.every(w => hasWord(hayOf(p).addr, w))).map(p => p.id);
+    if (ids.length && !out.some(c => norm(c.label) === q)) {
+      const label = /^\d{4}$/.test(q) ? `Postcode ${q}` : q.replace(/\b\w/g, c => c.toUpperCase());
+      out.push({ label, sub: `${ids.length} ${ids.length === 1 ? 'parish' : 'parishes'}`, ids });
+    }
+    return out.slice(0, 4);
+  }
+
+  function searchEvents(Q) {
+    const intent = Q.kind || Q.prayer || Q.lang || Q.days;
+    if (!Q.text.length && !intent) return [];
+    const now = Date.now();
+    const pids = Q.text.length ? new Set(searchParishes({ ...Q, kind: null, prayer: false, days: null })
+      .filter(p => { const h = hayOf(p); return Q.text.every(w => hasWord(`${h.name} ${h.acr} ${h.addr}`, w)); }).map(p => p.id)) : null;
+    const res = feedFor(Math.max(S.streamDays, 42)).filter(e => {
+      if (!visible(e) || e.parish_scoped || endMs(e) < now) return false;
+      const l = local(e);
+      if (Q.days && !Q.days.has(l.date)) return false;
+      if (Q.tonight && l.hm < '16:00') return false;
+      if (Q.kind && e.event_type !== Q.kind && !(Q.kind === 'social' && e.event_type === 'youth')) return false;
+      if (Q.lang) {
+        const ls = parseLangs(e.languages) || parseLangs(e.parish_languages) || [];
+        if (!ls.includes(Q.lang) || (Q.lang === 'English' && !parseLangs(e.languages) && ls[0] !== 'English')) return false;
+      }
+      const words = Q.text.filter(w => !(w in LANG_WORDS));
+      if (!words.length) return !Q.prayer || e.event_type === 'prayer';
+      const hay = norm(`${e.title} ${e.feast || ''} ${e.description || ''}`);
+      if (words.every(w => hasWord(hay, w))) return true;
+      // Or the words name the parish (or its suburb): its services.
+      return pids && eventParishIds(e).some(id => pids.has(id)) && (!Q.prayer || e.event_type === 'prayer');
+    });
+    // By day; within a day, what is near you first (when we know where you
+    // are), then by time. A Liturgy in Perth at 8 should not sit between two
+    // in Sydney at 8 and 9.
+    const o = S.loc;
+    const far = (e) => { if (!o) return 0; const at = e.lat != null ? e : S.byId.get(e.parish_id); return at && km(o, at) > 40 ? 1 : 0; };
+    return res.map(e => ({ e, day: local(e).date, far: far(e), t: Date.parse(e.start_utc) }))
+      .sort((a, b) => a.day.localeCompare(b.day) || a.far - b.far || a.t - b.t).map(x => x.e);
+  }
+
+  function searchCollections(Q) {
+    const q = Q.raw.filter(w => !FILLER.has(w));
+    if (!q.length) return [];
+    return [...COLL.values()].filter(c => c.id !== 'inview' && q.every(w => hasWord(norm(`${c.title} ${c.kicker || ''} ${c.lang || ''}`), w)
+      || (w === 'english' && c.id === 'english') || (w in DAY_WORDS && c.id === (DAY_WORDS[w] === 0 ? 'sunday' : DAY_WORDS[w] === 6 ? 'vespers' : '')))).slice(0, 4);
+  }
+
+  const RECENT = 'agora-next-recent';
+  function rememberQuery(q) {
+    q = q.trim();
+    if (!q) return;
+    writeLS(RECENT, [q, ...readLS(RECENT).filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 6));
+  }
+
+  function parishResult(p) {
+    const d = distOf(p);
+    const nx = nextOf(p.id);
+    return `<button class="sr-row" type="button" data-parish="${esc(p.id)}">
+        ${avatar(p, 'sm')}
+        <span class="sr-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}${nx ? ` · Next: ${esc(nx.title)} ${esc(whenShort(nx))}` : ' · No times on file'}</small></span>
+      </button>`;
+  }
+  function placeResult(pl, i) {
+    return `<button class="sr-row" type="button" data-place="${i}">
+        <span class="sr-ic">${I.pin}</span>
+        <span class="sr-t"><b>${esc(pl.label)}</b><small>${esc(pl.sub)} · Show on the map</small></span>
+      </button>`;
+  }
+
+  let lastPlaces = [];
+  function searchResultsHTML(q) {
+    if (!q.trim()) {
+      const recent = readLS(RECENT);
+      const sugg = ['Liturgy this Sunday', 'Vespers tonight', 'English liturgy', 'Talks', 'Youth', 'Near me'];
+      return `<h3 class="sr-sec">Try</h3><div class="sr-chips">${sugg.map(s => `<button class="sr-chip" type="button" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+        ${recent.length ? `<h3 class="sr-sec">Recent</h3><div class="sr-group">${recent.map(s => `<button class="sr-row" type="button" data-q="${esc(s)}"><span class="sr-ic">${I.clock}</span><span class="sr-t"><b>${esc(s)}</b></span></button>`).join('')}</div>` : ''}
+        <h3 class="sr-sec">Collections</h3><div class="sr-group">${[...COLL.values()].filter(c => !c.listId && c.id !== 'inview').slice(0, 7).map(collResult).join('')}</div>`;
+    }
+    const Q = parseQuery(q);
+    const ps = searchParishes(Q);
+    lastPlaces = searchPlaces(Q);
+    const es = searchEvents(Q);
+    const cs = searchCollections(Q);
+    const intent = Q.kind || Q.prayer || Q.days || (Q.lang && !Q.text.some(w => !(w in LANG_WORDS)));
+    const sections = [];
+    const evSec = es.length ? `<h3 class="sr-sec">${intent ? 'Services & events' : 'Services & events'}<span>${es.length > 60 ? '60+' : es.length}</span></h3>
+      <div class="sr-group">${es.slice(0, intent ? 8 : 5).map(e => eventRow(e, { showDay: true })).join('')}</div>
+      ${es.length > (intent ? 8 : 5) ? `<button class="sr-more" type="button" data-more-events>Show ${Math.min(es.length, 60) - (intent ? 8 : 5)} more</button>` : ''}` : '';
+    const parSec = ps.length ? `<h3 class="sr-sec">Parishes<span>${ps.length}</span></h3><div class="sr-group">${ps.slice(0, 6).map(parishResult).join('')}</div>
+      ${ps.length > 6 ? `<button class="sr-more" type="button" data-act="search-coll">See all ${ps.length} as a collection</button>` : ''}` : '';
+    const placeSec = lastPlaces.length ? `<h3 class="sr-sec">Places</h3><div class="sr-group">${lastPlaces.map(placeResult).join('')}</div>` : '';
+    const collSec = cs.length ? `<h3 class="sr-sec">Collections</h3><div class="sr-group">${cs.map(collResult).join('')}</div>` : '';
+    // A question about the timetable answers with services first; a name, with parishes.
+    if (intent) sections.push(evSec, parSec, collSec, placeSec);
+    else sections.push(placeSec, parSec, collSec, evSec);
+    const body = sections.join('');
+    searchState = { q, Q, es, ps };
+    return body || `<div class="sr-empty"><b>Nothing for “${esc(q)}”</b><p>Try a suburb, a parish’s name or initials, or a service like “vespers tonight”.</p></div>`;
+  }
+  function collResult(c) {
+    const art = c.glyph ? `<span class="sr-art" style="background:${c.art}">${esc(c.glyph)}</span>` : `<span class="sr-art" style="background:${c.art}">${c.kind ? esc(kindLabel(c.kind)[0]) : '☦'}</span>`;
+    return `<button class="sr-row" type="button" data-coll="${esc(c.id)}">${art}<span class="sr-t"><b>${esc(c.title)}</b><small>${esc(c.kicker || '')} · ${c.ids.length} places</small></span></button>`;
+  }
+  let searchState = null;
+
+  function openSearch(initial = '') {
+    const el = pushSheet(`<div class="sr-head">
+        <label class="sr-field">${I.search}<input type="search" id="sr-input" placeholder="Parishes, suburbs, services…" autocomplete="off" enterkeyhint="search" value="${esc(initial)}"></label>
+        <button class="sr-cancel" type="button" data-act="close">Cancel</button>
+      </div>
+      <div class="sheet-scroll"><div class="sr-results" id="sr-results">${searchResultsHTML(initial)}</div></div>`, 'search');
+    const input = el.querySelector('#sr-input');
+    let t = null;
+    input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { el.querySelector('#sr-results').innerHTML = searchResultsHTML(input.value); }, 70); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      clearTimeout(t);
+      el.querySelector('#sr-results').innerHTML = searchResultsHTML(input.value);
+      const first = el.querySelector('#sr-results [data-parish], #sr-results [data-place], #sr-results [data-event], #sr-results [data-coll]');
+      if (first) first.click();
+      input.blur();
+    });
+    setTimeout(() => input.focus(), 60);
+  }
+  function setSearch(q) {
+    const el = stack[stack.length - 1];
+    const input = el && el.querySelector('#sr-input');
+    if (!input) return;
+    input.value = q;
+    el.querySelector('#sr-results').innerHTML = searchResultsHTML(q);
+  }
+
   // ── Toast ─────────────────────────────────────────────────────────────
 
   let toastT = null;
@@ -1079,6 +1321,30 @@
     const t = ev.target;
     const top = stack[stack.length - 1];
     let b;
+
+    // Search: a tap on any result remembers what was typed.
+    if (top && top.classList.contains('search') && t.closest('[data-parish],[data-event],[data-coll],[data-place]')) {
+      rememberQuery(top.querySelector('#sr-input').value);
+    }
+    if (t.closest('#search-pill')) { openSearch(); return; }
+    if ((b = t.closest('[data-q]'))) {
+      setSearch(b.dataset.q);
+      if (/near me/i.test(b.dataset.q) && !S.loc) locate();
+      return;
+    }
+    if ((b = t.closest('[data-place]'))) {
+      const pl = lastPlaces[+b.dataset.place];
+      if (!pl) return;
+      closeAll();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (pl.ids) fitTo(pl.ids); else if (map) map.flyTo({ center: [pl.lng, pl.lat], zoom: pl.zoom, duration: 800 });
+      return;
+    }
+    if ((b = t.closest('[data-more-events]')) && searchState) {
+      b.previousElementSibling.innerHTML = searchState.es.slice(0, 60).map(e => eventRow(e, { showDay: true })).join('');
+      b.remove();
+      return;
+    }
 
     if ((b = t.closest('[data-juris]'))) {
       S.juris = S.juris === b.dataset.juris ? null : b.dataset.juris;
@@ -1124,6 +1390,10 @@
     if ((b = t.closest('[data-act]'))) {
       const a = b.dataset.act;
       if (a === 'close') return popSheet();
+      if (a === 'search-coll' && searchState) {
+        rememberQuery(searchState.q);
+        return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, art: 'linear-gradient(135deg,#475569,#1e293b)', ids: searchState.ps.map(p => p.id) });
+      }
       if (a === 'reset') { S.f = { group: null, lang: null, timesOnly: false, list: null }; refilter(); repaintLayers(); return; }
       if (a === 'share') {
         if (top && top.dataset.pid) { const p = S.byId.get(top.dataset.pid); return share(p.name, '/' + (p.acronym || '').toLowerCase()); }
@@ -1174,6 +1444,10 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (stack.length) popSheet(); else if (document.body.classList.contains('map-full')) setFullscreen(false); } });
   $('#btn-fullscreen').addEventListener('click', () => setFullscreen(!document.body.classList.contains('map-full')));
   $('#btn-layers').addEventListener('click', openLayers);
+  document.addEventListener('keydown', (e) => {
+    // "/" opens search on a keyboard, as most sites do.
+    if (e.key === '/' && !stack.length && !/input|textarea/i.test(document.activeElement?.tagName || '')) { e.preventDefault(); openSearch(); }
+  });
   $('#btn-locate').addEventListener('click', locate);
   $('#place').addEventListener('click', locate);
 
