@@ -205,6 +205,14 @@ async function buildBaseStyle() {
   };
 }
 
+// Has something already aimed the camera, so the first load must not fit to
+// every parish? A deep link to a parish or an event does; so does a page that
+// frames its own start (/next, which sets `cameraOwned` and moves the map
+// itself before the style loads).
+function cameraOwnedBy(state) {
+  return !!(state.cameraOwned || state.parishSheetFocus || state.parishFocus || state._openEventId);
+}
+
 // ── initMap ────────────────────────────────────────────────────────────
 async function initMap(state) {
   if (map || initStarted) return;
@@ -264,7 +272,7 @@ async function initMap(state) {
     // style.load finished its sprite/logo await — don't yank it back to
     // Australia. Same applies to a single-parish URL whose openParishSheet
     // is fired on a 150 ms setTimeout from init.
-    const cameraOwned = state.parishSheetFocus || state.parishFocus || state._openEventId;
+    const cameraOwned = cameraOwnedBy(state);
 
     // Fresh session (no cached location): fit to all parishes — now, or when
     // they arrive.
@@ -278,7 +286,7 @@ async function initMap(state) {
     if (pendingUpdate) {
       const { state: st, opts } = pendingUpdate;
       pendingUpdate = null;
-      const drainOpts = (st.parishSheetFocus || st.parishFocus || st._openEventId)
+      const drainOpts = cameraOwnedBy(st)
         ? { ...opts, fit: false }
         : opts;
       updateMap(st, drainOpts);
@@ -1383,7 +1391,7 @@ function updateMap(state, opts = {}) {
   // that arrived in the meantime owns the camera, and wins.
   if (initialFitPending && state.parishes && state.parishes.length) {
     initialFitPending = false;
-    const cameraOwned = state.parishSheetFocus || state.parishFocus || state._openEventId;
+    const cameraOwned = cameraOwnedBy(state);
     if (!state.locationActive && !cameraOwned && !opts.fit) fitToAllParishes(state);
   }
 
