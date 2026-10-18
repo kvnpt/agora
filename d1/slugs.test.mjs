@@ -45,6 +45,10 @@ test('path keywords, payment kinds and site paths are reserved', () => {
   }
 });
 
+test('the spans of the week are reserved in every spelling', () => {
+  for (const s of ['weeknights', 'weeknight', 'weekends', 'weekend', 'WEEKENDS']) assert.ok(S.reservedSlugReason(s), s);
+});
+
 test('shapes the router would read as something else are refused', () => {
   assert.match(S.reservedSlugReason('42'), /event id/);
   assert.match(S.reservedSlugReason('42:2026-09-06'), /instance id/);

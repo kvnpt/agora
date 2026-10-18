@@ -162,6 +162,50 @@
     return h < EVENING_FROM_HOUR ? 'morning' : 'evening';
   }
 
+  // ── Weeknights and weekends ──────────────────────────────────────────
+  //
+  // Two spans of the week, each one segment. /weeknights is Monday to Friday
+  // in the Evening above, because a weeknight is an evening by its name and a
+  // Wednesday-morning liturgy is not what anybody means by it. /weekends is
+  // Saturday and Sunday, all day.
+  const DAY_GROUPS = [
+    { slug: 'weeknights', label: 'Weeknights', days: [1, 2, 3, 4, 5], part: 'evening', aliases: ['weeknight'] },
+    { slug: 'weekends', label: 'Weekends', days: [0, 6], part: null, aliases: ['weekend'] },
+  ];
+  const BY_GROUP_SLUG = new Map();
+  for (const g of DAY_GROUPS) {
+    BY_GROUP_SLUG.set(g.slug, g);
+    for (const a of g.aliases) BY_GROUP_SLUG.set(a, g);
+  }
+
+  /** Every spelling of a span of the week. Reserved against parish acronyms. */
+  const DAY_GROUP_SLUGS = new Set(BY_GROUP_SLUG.keys());
+
+  /** 'weekend' → 'weekends'. Anything else → null. */
+  function resolveDayGroup(slug) {
+    const key = String(slug == null ? '' : slug).trim().toLowerCase().replace(/\s+/g, '');
+    const g = BY_GROUP_SLUG.get(key);
+    return g ? g.slug : null;
+  }
+
+  /** 'weekends' → 'Weekends'. */
+  function dayGroupLabel(slug) {
+    const g = BY_GROUP_SLUG.get(String(slug || ''));
+    return g ? g.label : '';
+  }
+
+  /**
+   * Is a row in the span: on one of its days and, for weeknights, in the
+   * evening? `dow` is the row's weekday — a rule's day_of_week, or the day an
+   * event falls on where it is held, which only the caller knows.
+   */
+  function dayGroupMatches(slug, dow, row, fallbackZone) {
+    const g = BY_GROUP_SLUG.get(String(slug || ''));
+    if (!g) return true;
+    if (!g.days.includes(dow)) return false;
+    return !g.part || partOfDayOf(row, fallbackZone) === g.part;
+  }
+
   const BY_SLUG = new Map();
   for (const svc of SERVICES) {
     BY_SLUG.set(svc.slug, svc);
@@ -223,7 +267,8 @@
 
   const api = { SERVICES, SERVICE_SLUGS, resolveService, serviceOf, serviceMatches, serviceLabel, servicePlural,
     DAY_SLUGS, DAY_NAMES, resolveDay, daySlug, dayName,
-    EVENING_FROM_HOUR, PARTS_OF_DAY, PART_SLUGS, resolvePartOfDay, partOfDayLabel, localHourOf, partOfDayOf };
+    EVENING_FROM_HOUR, PARTS_OF_DAY, PART_SLUGS, resolvePartOfDay, partOfDayLabel, localHourOf, partOfDayOf,
+    DAY_GROUPS, DAY_GROUP_SLUGS, resolveDayGroup, dayGroupLabel, dayGroupMatches };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraServices = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

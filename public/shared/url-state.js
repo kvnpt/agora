@@ -189,6 +189,7 @@
       dateFocus: null,
       precision: null,
       day: null,
+      dayGroup: null,
       part: null,
       service: null,
       location: null,
@@ -203,7 +204,7 @@
     }
 
     for (const seg of parts) {
-      let d, loc, svc, part;
+      let d, loc, svc, part, grp;
       if (JURISDICTION_KEYS.includes(seg)) {
         out.jurisdiction = seg;
       } else if (KIND_SEGMENTS[seg]) {
@@ -240,6 +241,9 @@
         out.precision = d.precision;
       } else if (services && services.resolveDay(seg) !== null && services.resolveDay(seg) !== undefined) {
         out.day = services.resolveDay(seg);
+      } else if (services && services.resolveDayGroup && (grp = services.resolveDayGroup(seg))) {
+        // /weeknights, /weekends: a span of the week, as a weekday is one day of it.
+        out.dayGroup = grp;
       } else if (services && (part = services.resolvePartOfDay(seg))) {
         out.part = part;
       } else if (services && (svc = services.resolveService(seg))) {
@@ -308,7 +312,7 @@
     const scoped = r.jurisdiction || r.location || r.lang;
     if (r.parishSlugs && r.parishSlugs.length === 1) return scoped ? null : 'parish';
     if (r.eventId) {
-      const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
+      const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.dayGroup && !r.service
         && !r.part && !r.timetable && !r.kind;
       return bare ? 'event' : null;
     }
@@ -316,7 +320,7 @@
     // app answers. A path that names nothing is the home page, or a segment
     // nobody recognises.
     if (r.dateFocus) return null;
-    const names = scoped || r.timetable || servicesOnly || r.service || r.day != null || r.part
+    const names = scoped || r.timetable || servicesOnly || r.service || r.day != null || r.dayGroup || r.part
       || (r.parishSlugs && r.parishSlugs.length > 1);
     return names ? 'timetable' : null;
   }

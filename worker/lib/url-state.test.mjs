@@ -89,6 +89,17 @@ test('a part of the day combines with everything a feed filter does', () => {
   assert.equal(U.classifyPath('/liturgy').part, null);
 });
 
+test('/weeknights and /weekends are spans of the week, and a timetable page', () => {
+  const w = U.classifyPath('/greek/weeknights/services');
+  assert.deepEqual([w.jurisdiction, w.dayGroup, w.kind, w.day, w.parishSlugs], ['greek', 'weeknights', 'services', null, null]);
+  assert.equal(U.classifyPath('/weekend').dayGroup, 'weekends', 'one spelling for both');
+  assert.equal(U.classifyPath('/weeknight/vespers').dayGroup, 'weeknights');
+  assert.equal(U.pageKind(U.classifyPath('/weekends')), 'timetable');
+  assert.equal(U.pageKind(U.classifyPath('/weeknights/liturgy')), 'timetable');
+  const p = U.classifyPath('/sgr/weekends');
+  assert.deepEqual([p.parishSlugs, p.dayGroup, U.pageKind(p)], [['sgr'], 'weekends', 'parish']);
+});
+
 test('a path that will not decode means nothing, and does not throw', () => {
   assert.equal(U.classifyPath('/%E0%A4%A').parishSlugs, null);
 });

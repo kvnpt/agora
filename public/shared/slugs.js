@@ -82,6 +82,7 @@
     }
     if (services && services.DAY_SLUGS) for (const slug of services.DAY_SLUGS) add(slug);
     if (services && services.PART_SLUGS) for (const slug of services.PART_SLUGS) add(slug);
+    if (services && services.DAY_GROUP_SLUGS) for (const slug of services.DAY_GROUP_SLUGS) add(slug);
     if (dates && dates.DATE_SLUGS) {
       // Both spellings again: /nextthursday resolves in the router, so an
       // acronym spelling it would be shadowed just as surely as the hyphenated

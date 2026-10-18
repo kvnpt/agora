@@ -125,6 +125,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
     if (route.service && !services.serviceMatches(route.service, e)) return false;
     if (route.day != null && e._local.dow !== route.day) return false;
+    if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
     if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
     return true;
   };
@@ -151,7 +152,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
       ? { ...pinnedEvent, id: String(pinnedEvent.id), _local: localOf(pinnedEvent, zone),
         is_tombstone: pinnedEvent.is_tombstone || TOMB_STATUSES.has(pinnedEvent.status) ? 1 : 0 }
       : null;
-  } else if (route.service || route.day != null || route.part) {
+  } else if (isNarrowed(route)) {
     const pool = list.filter(e => !e.is_tombstone);
     pinned = route.dateFocus && route.precision === 'day'
       ? urlState.firstEventOnDay(pool, route.dateFocus, 'day', e => e._local.date)
@@ -160,12 +161,12 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     pinned = urlState.firstEventOnDay(list, route.dateFocus, route.precision, e => e._local.date);
   }
 
-  const indexable = !route.eventId && !route.dateFocus && route.day == null && !route.service
-    && !route.part && !servicesMode;
+  const indexable = !route.eventId && !route.dateFocus && !isNarrowed(route) && !servicesMode;
   // Day, part, service — the order the app writes them in, and the order they
   // are said: /sgr/wed/evening/vespers.
   const kindSegs = [
     ...(route.day != null ? [services.daySlug(route.day)] : []),
+    ...(route.dayGroup ? [route.dayGroup] : []),
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
   ];
@@ -193,6 +194,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   const timetable = !servicesMode ? rules : rules.filter(r =>
     (!route.service || services.serviceMatches(route.service, r))
     && (route.day == null || r.day_of_week === route.day)
+    && (!route.dayGroup || services.dayGroupMatches(route.dayGroup, r.day_of_week, r, zone))
     && (!route.part || services.partOfDayOf(r, zone) === route.part));
 
   return {
@@ -299,7 +301,7 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 const langsOf = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
 
-export const isNarrowed = (r) => !!(r.service || r.day != null || r.part);
+export const isNarrowed = (r) => !!(r.service || r.day != null || r.dayGroup || r.part);
 
 /**
  * What a link narrows to, as a heading: "Vespers on Wednesdays", "Evening
@@ -308,7 +310,8 @@ export const isNarrowed = (r) => !!(r.service || r.day != null || r.part);
 export function kindLabel(r) {
   const plural = r.service ? services.servicePlural(r.service) : null;
   const what = r.part ? `${services.partOfDayLabel(r.part)} ${plural || 'services'}` : (plural || 'Services');
-  return what + (r.day != null ? ` on ${services.dayName(r.day)}s` : '');
+  return what + (r.day != null ? ` on ${services.dayName(r.day)}s`
+    : r.dayGroup ? ` on ${services.dayGroupLabel(r.dayGroup).toLowerCase()}` : '');
 }
 
 /** "Sun 10am Divine Liturgy · Sat 6pm Vespers" — what runs now, for a preview. */

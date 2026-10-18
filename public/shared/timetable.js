@@ -9,7 +9,8 @@
 // and both ask it.
 //
 // `f` is the filter set as the app keeps it in state.filters — jurisdiction,
-// location (a slug), service, day, part, lang and langStrict (the older
+// location (a slug), service, day, dayGroup (/weeknights, /weekends), part,
+// lang and langStrict (the older
 // englishOnly / englishStrict pair still means English), kind and kindSub,
 // and parishIds (a Set) — and as the Worker builds it from the URL.
 //
@@ -110,6 +111,7 @@
     }
     if (f.service && services && !services.serviceMatches(f.service, rule)) return false;
     if (f.day != null && rule.day_of_week !== f.day) return false;
+    if (f.dayGroup && services && !services.dayGroupMatches(f.dayGroup, rule.day_of_week, rule)) return false;
     if (f.part && services && services.partOfDayOf(rule) !== f.part) return false;
     if (!kindMatches(rule, f)) return false;
     const lf = langFilterOf(f);
@@ -130,7 +132,7 @@
    * fell out at ruleMatches. A jurisdiction or region page still counts them.
    */
   function narrowsRules(f) {
-    return !!(f.service || f.day != null || f.part || langFilterOf(f) || f.kind);
+    return !!(f.service || f.day != null || f.dayGroup || f.part || langFilterOf(f) || f.kind);
   }
 
   const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, parishInScope, ruleMatches, narrowsRules };

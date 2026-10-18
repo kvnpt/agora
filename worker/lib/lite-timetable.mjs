@@ -87,7 +87,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   }
   const f = {
     jurisdiction: route.jurisdiction, location: route.location,
-    service: route.service, day: route.day, part: route.part,
+    service: route.service, day: route.day, dayGroup: route.dayGroup, part: route.part,
     kind: route.kind, kindSub: route.kindSub,
     lang: route.lang, langStrict: route.langStrict,
     parishIds: named ? new Set(named.map(p => p.id)) : null,
@@ -148,6 +148,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...(route.jurisdiction ? [route.jurisdiction] : []),
     ...(loc ? [loc.slug] : []),
     ...(route.day != null ? [services.daySlug(route.day)] : []),
+    ...(route.dayGroup ? [route.dayGroup] : []),
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
     ...(route.kind ? [urlState.kindSegment(route.kind, route.kindSub)] : []),
@@ -196,7 +197,8 @@ export function timetableHeading(m) {
     ? `${EVENT_TYPE_LABEL(r.kindSub).toLowerCase()} services` : null;
   const noun = svc || sub || (r.kind === 'services' ? (isNarrowed(r) ? 'services' : 'service times')
     : isNarrowed(r) || r.lang ? 'services' : 'parishes and times');
-  const day = r.day != null ? ` on ${services.dayName(r.day)}s` : '';
+  const day = r.day != null ? ` on ${services.dayName(r.day)}s`
+    : r.dayGroup ? ` on ${services.dayGroupLabel(r.dayGroup).toLowerCase()}` : '';
   const lang = r.lang && !full ? ` in ${r.lang}` : '';
   let where = m.loc ? ` in ${m.loc.label}` : '';
   if (m.named) {
