@@ -80,6 +80,9 @@
     f: null,                 // the filters, in the app's shape (blankFilters)
     focus: null,             // { title, ids:Set } — a collection no link can name, on the map
     streamDays: 14,          // how far the stream has grown
+    from: null,              // the date the stream starts from, when one is picked
+    loadedTo: null,          // the last day the bundle holds
+    loads: 0,                // bumped as the bundle widens
     streamBusy: false,
     panel: null,             // the filters open under their button: { pushed }
   };
@@ -131,6 +134,13 @@
     const ap = h >= 12 ? 'pm' : 'am';
     h = h % 12 || 12;
     return m ? `${h}:${String(m).padStart(2, '0')}${ap}` : `${h}${ap}`;
+  }
+  /** The app's time (formatEventTime in app.js): "9", a small ":30", a small "AM". No serif. */
+  function timeHTML(hm) {
+    if (!hm) return '';
+    const [h, m] = hm.split(':').map(Number);
+    const mm = m ? `<span class="t-min">:${String(m).padStart(2, '0')}</span>` : '';
+    return `<span class="t-time">${h % 12 || 12}${mm}<span class="t-mer">${h >= 12 ? 'pm' : 'am'}</span></span>`;
   }
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const WD_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -368,8 +378,9 @@
       || S.parishes.find(p => p.id.toLowerCase() === k) || null;
   }
   /** The path segments for a set of filters, or for one parish or one event. */
-  function segsFor({ juris = null, f = blankFilters(), parish = null, eventId = null } = {}) {
-    if (parish) return [acronymOf(parish)];
+  function segsFor({ juris = null, f = blankFilters(), parish = null, eventId = null, from = null } = {}) {
+    // A date is where a list of days starts, never one day (/sgr/2026-10-25).
+    if (parish) return from ? [acronymOf(parish), from] : [acronymOf(parish)];
     if (eventId) return [String(eventId)];
     const U = window.AgoraUrlState, SV = window.AgoraServices;
     const segs = [];
@@ -385,12 +396,13 @@
       const acrs = [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(acronymOf);
       if (acrs.length) segs.push(acrs.join('+'));
     }
+    if (from) segs.push(from);
     const lang = U.englishSegment(f);
     if (lang) segs.push(lang);
     return segs;
   }
   const pathOf = (segs) => BASE + (segs && segs.length ? '/' + segs.join('/') : '');
-  const pageSegs = () => segsFor({ juris: S.juris, f: S.f });
+  const pageSegs = () => segsFor({ juris: S.juris, f: S.f, from: S.from });
 
   /** What an address asks for: { juris, f, parish, eventId }. Needs the parishes. */
   function readPath(pathname) {
@@ -417,7 +429,9 @@
       if (r.dayGroup) f.dayGroup = r.dayGroup;
       if (r.part) f.part = r.part;
     }
-    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null };
+    // A date already past starts the list today, which is the list with no date.
+    const from = r.dateFocus && r.dateFocus > todayKey() ? r.dateFocus : null;
+    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null, from };
   }
 
   // The history. Every card is one entry; a filter changed with no card open
@@ -478,10 +492,14 @@
     S.juris = route.juris;
     S.f = route.f;
     S.focus = null;
+    // A date beside a parish is that card's; across the page, the stream's.
+    S.from = route.parish ? null : route.from;
+    S.streamDays = 14;
     refilter({ url: 'none' });
+    if (S.from) ensureLoaded(addDays(S.from, S.streamDays)).then(() => renderStream());
     if (route.f.location) frameRegion(route.f.location, animate);
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
-    if (route.parish) openParish(route.parish, { entry });
+    if (route.parish) openParish(route.parish, { entry, from: route.from });
     else if (route.eventId) openEvent(route.eventId, { entry });
   }
   /** A region's parishes fill the small map; its whole box (Queensland reaches Torres Strait) would leave it empty. */
@@ -535,6 +553,20 @@
     }
     lastLink = key;
     fitLinks(btn.parentNode);
+  }
+  /** A day's link to the clipboard, and a tick where its icon was. */
+  async function copyDay(btn) {
+    const url = location.origin + btn.dataset.copyDay;
+    try { await navigator.clipboard.writeText(url); } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
+      ta.remove();
+    }
+    btn.classList.add('copied');
+    btn.innerHTML = CHECK;
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_ICON; }, 1200);
   }
   async function copyLink(btn) {
     const url = location.origin + btn.dataset.copy;
@@ -827,16 +859,19 @@
 
   // ── Today ─────────────────────────────────────────────────────────────
 
-  function eventRow(e, { showDay = false, now = false } = {}) {
+  function eventRow(e, { showDay = false, now = false, here = null } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
     const title = e.feast ? `${e.title}` : e.title;
+    // On a parish's own card its name is the card's; another parish's is said.
+    const sub = here && e.parish_id === here ? ''
+      : `<span class="esub">${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
     return `<button class="erow${now ? ' now' : ''}" type="button" data-event="${esc(e.id)}">
-        <span class="etime">${now ? '<i class="live"></i>Now' : esc(hm12(l.hm))}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
+        <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
         <span class="ebody"><span class="etitle">${esc(title)}</span>
-          <span class="esub">${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>
+          ${sub}
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}</span>
         ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       </button>`;
@@ -993,26 +1028,79 @@
     shelf(el, "What's on", far ? 'Nothing with a poster in view, so from further afield' : 'Festivals, talks and gatherings, in view', cards);
   }
 
-  // ── The stream: every service and event, for as long as you scroll ────
+  // ── Days: the stream's, and a parish's Coming up ───────────────────────
+  //
+  // The app's dated list: a quiet header for each day with its own link, the
+  // morning's services and events, then the evening's under the moon. A date
+  // picked from the calendar is where the list starts — a FROM, as every date
+  // in a link is — and it goes in the link: /next/2026-10-25, /next/sgr/2026-10-25.
 
-  function renderStream() {
+  /** The bundle holds every day to `end`, asking for more when it does not. */
+  async function ensureLoaded(end) {
+    if (S.loadedTo && end <= S.loadedTo) return;
+    await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(end + 'T14:00:00Z')).toISOString() });
+    if (!S.loadedTo || end > S.loadedTo) S.loadedTo = end;
+    S.loads++;
+  }
+  /** Every service and event on a day in [start, start + days), each by its own day. */
+  let rangeCache = { key: '', list: [] };
+  function feedRange(start, days) {
+    // Wide enough for New Zealand's morning and Perth's night; each event's own day decides.
+    const from = new Date(Date.parse(start + 'T00:00:00Z') - 14 * 3600000).toISOString();
+    const to = new Date(Date.parse(addDays(start, days) + 'T12:00:00Z')).toISOString();
+    const key = `${from}|${to}|${S.loads}`;
+    if (rangeCache.key !== key) {
+      const list = window.agoraBundle.feed(from, to).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+      rangeCache = { key, list };
+    }
+    const end = addDays(start, days);
+    return rangeCache.list.filter(e => { const k = local(e).date; return k >= start && k < end; });
+  }
+  const shortDate = (k) => { const d = new Date(k + 'T00:00:00Z'); return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+  const CHECK = '<svg viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32"/></svg>';
+  const CAL = '<svg viewBox="0 0 256 256" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M208 32h-24v-8a8 8 0 0 0-16 0v8H88v-8a8 8 0 0 0-16 0v8H48a16 16 0 0 0-16 16v160a16 16 0 0 0 16 16h160a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16M72 48v8a8 8 0 0 0 16 0v-8h80v8a8 8 0 0 0 16 0v-8h24v32H48V48Zm136 160H48V96h160z"/></svg>';
+  /** Where a list of days starts: today, or a date picked from the calendar. */
+  function datePickHTML(scope, from) {
     const t = todayKey();
-    const list = feedFor(S.streamDays).filter(e => eventPasses(e) && inViewEvent(e) && endMs(e) > Date.now());
+    return `<div class="date-pick">
+        <button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Pick a date'}</span></button>
+        ${from ? `<button class="fpill" type="button" data-date-clear="${scope}">Today</button>` : ''}
+        <input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date">
+      </div>`;
+  }
+  /** A day's own link, copied with a tap, as the app's day headers have. */
+  const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
+  function daysHTML(list, { start, days, linkFor, empty = false, row = {} }) {
     const byDay = new Map();
     for (const e of list) {
       const k = local(e).date;
-      if (k < t) continue;
       if (!byDay.has(k)) byDay.set(k, []);
       byDay.get(k).push(e);
     }
     const out = [];
-    for (let i = 0; i < S.streamDays; i++) {
-      const k = addDays(t, i);
+    for (let i = 0; i < days; i++) {
+      const k = addDays(start, i);
       const es = byDay.get(k) || [];
-      if (!es.length) { out.push(`<div class="sday empty"><h3>${esc(dayLabel(k, true))}</h3><p>Nothing in view</p></div>`); continue; }
-      out.push(`<div class="sday"><h3>${esc(dayLabel(k, true))}<span>${es.length}</span></h3>${es.map(e => eventRow(e)).join('')}</div>`);
+      if (!es.length && !empty) continue;
+      const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${dayLink(k, linkFor(k))}</h3>`;
+      if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>Nothing in view</p></section>`); continue; }
+      const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
+      out.push(`<section class="sday" data-date="${k}">${head}${morning.map(e => eventRow(e, row)).join('')}${evening.length ? EVENING + evening.map(e => eventRow(e, row)).join('') : ''}</section>`);
     }
-    $('#stream-days').innerHTML = out.join('');
+    return out.join('');
+  }
+
+  // ── The stream: every service and event, for as long as you scroll ────
+
+  function renderStream() {
+    const start = S.from || todayKey();
+    const now = Date.now();
+    const list = feedRange(start, S.streamDays).filter(e => eventPasses(e) && inViewEvent(e) && endMs(e) > now);
+    $('#stream-days').innerHTML = daysHTML(list, {
+      start, days: S.streamDays, empty: true,
+      linkFor: (k) => pathOf(segsFor({ juris: S.juris, f: S.f, from: k })),
+    });
+    $('#stream-when').innerHTML = datePickHTML('page', S.from);
     const n = S.inView ? viewParishes().length : S.parishes.length;
     $('#stream-sub').textContent = `${n} parishes in view, day by day. Keep scrolling.`;
   }
@@ -1021,13 +1109,20 @@
     S.streamBusy = true;
     const next = S.streamDays + 14;
     try {
-      const to = new Date(Date.parse(addDays(todayKey(), next) + 'T14:00:00Z')).toISOString();
-      await window.agoraBundle.load({ from: new Date().toISOString(), to });
+      await ensureLoaded(addDays(S.from || todayKey(), next));
       S.streamDays = next;
       renderStream();
     } catch (err) { console.warn(err); }
     S.streamBusy = false;
     if (S.streamDays >= 365) $('#stream-more').textContent = 'That’s a year. Come back closer to the time.';
+  }
+  /** The stream from a date, or from today again; a step back undoes it. */
+  async function setPageDate(k) {
+    S.from = k && k > todayKey() ? k : null;
+    S.streamDays = 14;
+    if (S.from) await ensureLoaded(addDays(S.from, S.streamDays)).catch(err => console.warn(err));
+    refilter();
+    $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function renderFeeds() {
@@ -1114,7 +1209,10 @@
   //
   // Mon, Wed and Fri Vespers is ONE line with three days on it, not three
   // copies of Vespers. Rules that share a title, kind and time merge; what
-  // differs between them (the days) is what the line lists.
+  // differs between them (the days) is what the line lists. Set in the app's
+  // timetable type: the days as quiet as its day names, the time with a small
+  // AM, the morning's services before the evening's under the app's moon, and
+  // the whole block on a rule in the parish's colour.
 
   const ORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
   function qualifier(r) {
@@ -1138,40 +1236,38 @@
     }
     return out.join(', ');
   }
+  /** The app's Evening divider: its moon and the word, as faint as a day's name. */
+  const MOON = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg>';
+  const EVENING = `<div class="eve">${MOON}<span>Evening</span></div>`;
+  const isEvening = (row) => window.AgoraServices.partOfDayOf(row) === 'evening';
+  /** A parish's colour where it marks the parish: its jurisdiction's, lifted in the dark. */
+  const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
+
   function timetable(pid, { compact = false } = {}) {
     const rs = rulesOf(pid).filter(liveRule);
     const lines = new Map();
     for (const r of rs) {
-      const key = [r.title, r.event_type, r.start_time, r.end_time || '', qualifier(r), r.languages || ''].join('|');
+      const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || ''].join('|');
       if (!lines.has(key)) lines.set(key, { r, days: [] });
       lines.get(key).days.push(r.day_of_week);
     }
-    const byGroup = new Map();
-    for (const l of lines.values()) {
-      const g = groupOf(l.r.event_type);
-      if (!byGroup.has(g)) byGroup.set(g, []);
-      byGroup.get(g).push(l);
-    }
-    const firstDay = (l) => Math.min(...l.days.map(d => (d + 6) % 7));
-    const out = [];
-    for (const g of GROUPS) {
-      const ls = byGroup.get(g.id);
-      if (!ls) continue;
-      ls.sort((a, b) => firstDay(a) - firstDay(b) || String(a.r.start_time).localeCompare(String(b.r.start_time)));
-      const kinds = [...new Set(ls.map(l => l.r.event_type))];
-      out.push(`<div class="tt-group${compact ? ' compact' : ''}">
-          <div class="tt-gh"><span>${esc(g.label)}</span><span class="tt-rs">${kinds.map(k => roundel(k)).join('')}</span></div>
-          ${ls.map(l => {
-            const q = qualifier(l.r);
-            const langs = parseLangs(l.r.languages);
-            return `<div class="tt-line">${roundel(l.r.event_type)}
-              <span class="tt-what"><b>${esc(l.r.title)}</b>${!compact && langs && langs.length ? `<small>${esc(langs.join(' · '))}</small>` : ''}</span>
-              <span class="tt-when"><b>${esc(hm12(l.r.start_time))}${!compact && l.r.end_time ? `–${esc(hm12(l.r.end_time))}` : ''}</b><small>${esc((q ? q + ' ' : '') + dayList(l.days))}</small></span>
-            </div>`;
-          }).join('')}
-        </div>`);
-    }
-    return out.join('');
+    // One week, as the app's timetable reads: the morning's services, then
+    // the evening's under the moon, each from Sunday; the roundels say which kind.
+    const firstDay = (l) => Math.min(...l.days);
+    const ls = [...lines.values()].sort((a, b) => isEvening(a.r) - isEvening(b.r) || firstDay(a) - firstDay(b)
+      || String(a.r.start_time).localeCompare(String(b.r.start_time)));
+    const eve = ls.findIndex(l => isEvening(l.r));
+    const line = (l) => {
+      const q = qualifier(l.r);
+      const langs = !compact && parseLangs(l.r.languages);
+      return `<div class="tt-line">
+          <span class="tt-days">${esc((q ? q + ' ' : '') + dayList(l.days))}</span>
+          ${timeHTML(l.r.start_time)}
+          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}</span></span>
+        </div>`;
+    };
+    const out = ls.map((l, i) => (i === eve ? EVENING : '') + line(l));
+    return `<div class="tt${compact ? ' compact' : ''}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
   }
   function nextOf(pid, pred = () => true) {
     const now = Date.now();
@@ -1180,14 +1276,43 @@
 
   // ── The parish card ───────────────────────────────────────────────────
 
-  function openParish(pid, { entry = true } = {}) {
+  // Coming up: this parish's days, from today or from a date picked, a
+  // fortnight at a time. The date is in the card's link.
+  const CU_DAYS = 14;
+  function comingUpHTML(pid, from, days) {
+    const p = S.byId.get(pid);
+    const start = from || todayKey();
+    const now = Date.now();
+    const list = feedRange(start, days).filter(e => visible(e) && eventParishIds(e).includes(pid) && endMs(e) > now);
+    const body = daysHTML(list, { start, days, row: { here: pid }, linkFor: (k) => pathOf(segsFor({ parish: p, from: k })) });
+    return `${datePickHTML('card', from)}
+      ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+  }
+  async function refreshComingUp(el) {
+    const box = el.querySelector('.cu');
+    if (!box) return;
+    try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
+    box.innerHTML = comingUpHTML(el.dataset.pid, el._from, el._days);
+  }
+  /** The card's days from a date, or from today again. The card's link says which. */
+  function setCardDate(el, k) {
+    el._from = k && k > todayKey() ? k : null;
+    el._days = CU_DAYS;
+    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), from: el._from });
+    const link = el.querySelector('.sheet-link');
+    if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
+    syncURL();
+    refreshComingUp(el);
+  }
+
+  function openParish(pid, { entry = true, from = null } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
-    const segs = segsFor({ parish: p });
+    const segs = segsFor({ parish: p, from });
     const d = distOf(p);
     const nextLit = nextOf(pid, e => e.event_type === 'liturgy') || nextOf(pid);
     const langs = parishLangs(p);
-    const ones = upcomingOneOffs(pid).slice(0, 8);
     const hasTimes = rulesOf(pid).some(liveRule);
     const summary = [
       `<div class="sum"><small>${nextLit ? `Next ${esc(kindLabel(nextLit.event_type))}` : 'Next'}</small><b class="${nextLit ? 'ok' : ''}">${nextLit ? summaryWhen(nextLit) : '—'}</b></div>`,
@@ -1209,12 +1334,8 @@
           ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}
         </div>
         <div class="summary">${summary}</div>
-        ${ones.length ? `<h2 class="sec">Coming up</h2><div class="shelf-row tight">${ones.map(e => `
-          <button class="mini-poster" type="button" data-event="${esc(e.id)}">
-            ${e.poster_path ? `<img src="${esc(e.poster_path)}" alt="" loading="lazy">` : `<span class="mp-ph">${roundel(e.event_type, true)}</span>`}
-            <span><small>${esc(whenShort(e))}</small><b>${esc(e.title)}</b></span></button>`).join('')}</div>` : ''}
         <h2 class="sec">Service times</h2>
-        ${hasTimes ? `<div class="tt">${timetable(pid)}</div>` : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+        ${hasTimes ? timetable(pid) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
         <h2 class="sec">Details</h2>
         <div class="details">
           ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a></div>` : ''}
@@ -1223,6 +1344,8 @@
           ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
           ${p.feast_day ? `<div class="drow"><small>Feast day</small><span>${esc(p.feast_day)}</span></div>` : ''}
         </div>
+        <h2 class="sec">Coming up</h2>
+        <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS)}</div>
         <a class="wide-btn" href="/${esc((p.acronym || '').toLowerCase() || '')}" target="_blank" rel="noopener">Suggest an edit or claim this parish</a>
         <div class="toolbar-space"></div>
       </div>
@@ -1233,6 +1356,10 @@
       </div>`;
     const el = pushSheet(html, 'parish', { segs, entry });
     el.dataset.pid = pid;
+    el._from = from;
+    el._days = CU_DAYS;
+    // A date further out than the bundle holds fills in once it has it.
+    if (from) refreshComingUp(el);
     el.style.setProperty('--j', jColor(p.jurisdiction));
     setMapFocus(pid);
     // Bring it into the viewport without zooming the page's scope away.
@@ -1257,7 +1384,7 @@
               ${nx ? `<span class="citem-next">${roundel(nx.event_type)} Next: ${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : ''}</span>
           </button>
           <button class="cadd" type="button" data-quickadd="${esc(p.id)}" aria-label="Add to a list">${I.plus}</button>
-          ${times ? `<div class="tt">${timetable(p.id, { compact: true })}</div>` : `<div class="tt-none sm">No service times on file yet.</div>`}
+          ${times ? timetable(p.id, { compact: true }) : `<div class="tt-none sm">No service times on file yet.</div>`}
         </article>`;
     };
     const html = `${glassBar(c.title, `${ps.length} places`)}
@@ -1765,6 +1892,19 @@
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) { $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
 
+    // Days: a date to start from, a day's own link, more days.
+    if ((b = t.closest('[data-pick-date]'))) {
+      const input = b.parentNode.querySelector('.date-input');
+      try { input.showPicker(); } catch { input.focus(); input.click(); }
+      return;
+    }
+    if ((b = t.closest('[data-date-clear]'))) {
+      if (b.dataset.dateClear === 'page') setPageDate(null); else if (top) setCardDate(top, null);
+      return;
+    }
+    if ((b = t.closest('[data-copy-day]'))) { copyDay(b); return; }
+    if ((b = t.closest('[data-more-days]')) && top) { top._days = Math.min(365, top._days + CU_DAYS); refreshComingUp(top); return; }
+
     // The filters apply as you tap; the map is above them.
     if (t.closest('#btn-filters')) { setPanel(!panelOpen()); return; }
     if ((b = t.closest('[data-set]'))) { setFilter(b.dataset.set, b.dataset.val); return; }
@@ -1831,6 +1971,12 @@
       if (a === 'more-items') { top.querySelector('.clist').insertAdjacentHTML('beforeend', top._rest()); b.remove(); return; }
     }
   });
+  document.addEventListener('change', (e) => {
+    const input = e.target.closest && e.target.closest('[data-date-input]');
+    if (!input || !input.value) return;
+    if (input.dataset.dateInput === 'page') setPageDate(input.value);
+    else { const top = stack[stack.length - 1]; if (top) setCardDate(top, input.value); }
+  });
   $('#scrim').addEventListener('click', () => popSheet());
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
@@ -1869,6 +2015,7 @@
     if (h && !route.parish) { const p = parishBySlug(h); if (p) route.parish = p.id; }
     S.juris = route.juris;
     S.f = route.f;
+    S.from = route.parish ? null : route.from;
     renderJurisChips();
     renderInView();
     renderActive();
