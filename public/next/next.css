@@ -265,7 +265,6 @@ body.map-full .parish-row {
 
 /* ── Avatars ─────────────────────────────────────────────────────────── */
 
-.jdot { width: 10px; height: 10px; border-radius: 50%; background: var(--j); flex: none; display: inline-block; }
 
 .av {
   --s: 34px;
@@ -595,6 +594,8 @@ body.map-full .parish-row {
 .ph { display: flex; gap: 14px; align-items: center; padding: 6px 18px 4px; }
 .ph-text h1 { font-size: 22px; line-height: 1.2; font-weight: 750; letter-spacing: -.015em; }
 .ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
+/* How far, beside where (app.css .distance-blue). */
+.ph-dist { margin-left: 3px; color: #2196f3; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .actions { display: flex; gap: 10px; padding: 16px 18px 4px; }
 .abtn {
   flex: 1; min-width: 0; min-height: 64px; border-radius: 16px;
@@ -610,7 +611,6 @@ body.map-full .parish-row {
 .sum small { color: var(--text-2); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sum b { font-size: 15px; font-weight: 650; display: block; line-height: 1.2; overflow-wrap: break-word; }
 .sum b.ok { color: var(--live); }
-.sum b .jdot { margin-right: 5px; vertical-align: 1px; }
 .sec { font-size: 20px; font-weight: 750; letter-spacing: -.015em; padding: 24px 18px 10px; }
 
 /* Service times: one line per service, the days it runs listed on it, in the
@@ -637,6 +637,10 @@ body.map-full .parish-row {
 .tt.compact .tt-title { font-size: 13.5px; }
 .tt.compact .t-time { font-size: 13px; }
 /* Coming up: this parish's days on the same rule, from today or a date. */
+/* Coming up on white, lifted off the grey the timetable sits on: the one
+   changes week to week, the other is the parish's for good. */
+.cu-band { margin-top: 26px; padding-bottom: 18px; background: var(--card); border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.cu-band .sec { padding-top: 18px; }
 .cu { margin: 0 18px; }
 .cu .date-pick { margin: 0 0 4px; }
 .cu .sday { position: relative; background: none; border: 0; padding-left: 13px; }

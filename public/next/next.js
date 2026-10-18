@@ -1317,19 +1317,19 @@
     const summary = [
       `<div class="sum"><small>${nextLit ? `Next ${esc(kindLabel(nextLit.event_type))}` : 'Next'}</small><b class="${nextLit ? 'ok' : ''}">${nextLit ? summaryWhen(nextLit) : '—'}</b></div>`,
       `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>`,
-      d != null ? `<div class="sum"><small>Distance</small><b>${esc(fmtKm(d))}</b></div>` : '',
-      `<div class="sum"><small>Jurisdiction</small><b><span class="jdot" style="--j:${jColor(p.jurisdiction)}"></span>${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}</b></div>`,
+      // The jurisdiction says itself in its colour, as its tab does.
+      `<div class="sum"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}</b></div>`,
     ].join('');
     const dirs = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
       <div class="sheet-scroll">
         <div class="ph">
           ${avatar(p, 'xl')}
-          <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}</p></div>
+          <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist">${esc(fmtKm(d))}</span>` : ''}</p></div>
         </div>
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">
-          <a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>${d != null ? esc(fmtKm(d)) : 'Directions'}</span></a>
+          <a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>
           ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
           ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}
         </div>
@@ -1344,8 +1344,11 @@
           ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
           ${p.feast_day ? `<div class="drow"><small>Feast day</small><span>${esc(p.feast_day)}</span></div>` : ''}
         </div>
-        <h2 class="sec">Coming up</h2>
-        <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS)}</div>
+        <!-- What is coming up changes; the timetable above is the parish's for good. -->
+        <section class="cu-band">
+          <h2 class="sec">Coming up</h2>
+          <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS)}</div>
+        </section>
         <a class="wide-btn" href="/${esc((p.acronym || '').toLowerCase() || '')}" target="_blank" rel="noopener">Suggest an edit or claim this parish</a>
         <div class="toolbar-space"></div>
       </div>
