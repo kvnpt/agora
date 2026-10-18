@@ -6,7 +6,8 @@
 //   Apple Maps  the parish card (glass toolbar, a summary line, a floating
 //               + ☆ … bar) and Guides: rows of collections that open as cards.
 //   App Store   the What's on shelf, poster first.
-//   Google Maps the layers button: every filter on one screen, away from the map.
+//   The app     its filter pills, behind a button beside the chips, opening
+//               under it with the map still in sight.
 //
 // Order of the page is the answer to "how do I get into the feed": Today first,
 // then the curated shelves, and underneath them, always, every service and
@@ -80,6 +81,7 @@
     focus: null,             // { title, ids:Set } — a collection no link can name, on the map
     streamDays: 14,          // how far the stream has grown
     streamBusy: false,
+    panel: null,             // the filters open under their button: { pushed }
   };
 
   /**
@@ -89,7 +91,7 @@
    * `timesOnly` is this page's own, which no link carries.
    */
   const blankFilters = () => ({
-    kind: null, kindSub: null, lang: null, langStrict: false, day: null, part: null, service: null,
+    kind: null, kindSub: null, lang: null, langStrict: false, day: null, dayGroup: null, part: null, service: null,
     location: null, parishIds: null, listId: null, timesOnly: false,
   });
   S.f = blankFilters();
@@ -286,11 +288,13 @@
   function whatMatches(row, f, isRule) {
     if (!window.AgoraTimetable.kindMatches(row, f)) return false;
     if (f.service && !window.AgoraServices.serviceMatches(f.service, row)) return false;
-    if (f.day != null && (isRule ? row.day_of_week : weekdayOf(local(row).date)) !== f.day) return false;
+    const dow = isRule ? row.day_of_week : weekdayOf(local(row).date);
+    if (f.day != null && dow !== f.day) return false;
+    if (f.dayGroup && !window.AgoraServices.dayGroupMatches(f.dayGroup, dow, row)) return false;
     if (f.part && window.AgoraServices.partOfDayOf(row) !== f.part) return false;
     return true;
   }
-  const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.part);
+  const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.dayGroup || f.part);
   const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Slavonic' && /slavonic|russian/i.test(l));
   /** English only, Greek only: a service in that language and no other. */
   const onlyIn = (langs, want) => !!langs && langs.length > 0 && langs.every(l => langIs(l, want));
@@ -342,7 +346,7 @@
     if (isFinite(e.lat) && isFinite(e.lng) && e.lat != null) return S.bounds.contains([e.lng, e.lat]);
     return eventParishIds(e).some(id => S.inView && S.inView.has(id));
   }
-  const filterCount = () => { const f = S.f; return [f.kind, f.lang, f.day != null, f.part, f.service, f.location, f.parishIds, f.timesOnly].filter(Boolean).length; };
+  const filterCount = () => { const f = S.f; return [f.kind, f.lang, f.day != null, f.dayGroup, f.part, f.service, f.location, f.parishIds, f.timesOnly].filter(Boolean).length; };
   const filtersOn = () => filterCount() > 0;
 
   // ── Links ─────────────────────────────────────────────────────────────
@@ -372,6 +376,7 @@
     if (juris) segs.push(juris);
     if (f.location) segs.push(f.location);
     if (f.day != null) segs.push(SV.daySlug(f.day));
+    if (f.dayGroup) segs.push(f.dayGroup);
     if (f.part) segs.push(f.part);
     if (f.service) segs.push(f.service);
     const k = f.kind ? U.kindSegment(f.kind, f.kindSub) : null;
@@ -409,6 +414,7 @@
       if (asKind && !r.kind) [f.kind, f.kindSub] = asKind;
       else if (r.service) f.service = r.service;
       if (r.day != null) f.day = r.day;
+      if (r.dayGroup) f.dayGroup = r.dayGroup;
       if (r.part) f.part = r.part;
     }
     return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null };
@@ -777,32 +783,32 @@
     if (list.scrollLeft) list.scrollLeft = 0;
   }
 
-  // ── Active filters, said once under the map ───────────────────────────
+  // ── Active filters, said once beside their button ────────────────────
 
   function renderActive() {
     const f = S.f, SV = window.AgoraServices;
-    const chip = (k, label) => `<button class="afchip" data-clear="${k}">${esc(label)} ${I.x}</button>`;
+    const chip = (k, label) => `<button class="afchip" type="button" data-clear="${k}" aria-label="${esc(`Remove ${label}`)}">${esc(label)}${I.x}</button>`;
     const bits = [];
     if (S.focus) bits.push(chip('focus', S.focus.title));
     const loc = regionOf(f);
     if (loc) bits.push(chip('location', loc.label));
     if (f.day != null) bits.push(chip('day', SV.dayName(f.day)));
+    if (f.dayGroup) bits.push(chip('dayGroup', SV.dayGroupLabel(f.dayGroup)));
     if (f.part) bits.push(chip('part', SV.partOfDayLabel(f.part)));
     if (f.service) bits.push(chip('service', SV.serviceLabel(f.service)));
-    if (f.kind) bits.push(chip('kind', f.kindSub ? (f.kindSub === 'bible-study' ? SV.serviceLabel(f.kindSub) : kindLabel(f.kindSub)) : (GROUPS.find(g => g.id === f.kind) || { label: f.kind }).label));
+    if (f.kind) bits.push(chip('kind', f.kindSub ? kindSubLabel(f.kindSub) : KIND_NAMES[f.kind] || f.kind));
     if (f.lang) bits.push(chip('lang', f.langStrict ? `${f.lang} only` : f.lang));
     if (f.timesOnly) bits.push(chip('timesOnly', 'With service times'));
     if (f.parishIds) {
       const l = f.listId && listById(f.listId);
       bits.push(chip('parishIds', l ? l.name : [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(p => p.acronym || p.name).join(' + ')));
     }
-    const el = $('#active-filters');
-    el.hidden = !bits.length;
-    el.innerHTML = bits.join('');
+    $('#active-filters').innerHTML = bits.join('');
     const n = filterCount();
-    const badge = $('#layers-badge');
-    badge.hidden = !n;
-    badge.textContent = n;
+    const count = $('#filter-count');
+    count.hidden = !n;
+    count.textContent = n;
+    renderPanel();
   }
 
   /** Repaint everything the filters touch. `url`: push a step, replace this one, or leave it. */
@@ -812,8 +818,11 @@
     renderInView();
     renderActive();
     renderFeeds();
-    if (url === 'none') renderLink();
-    else syncURL({ push: url === 'push' && !stack.length });
+    if (url === 'none') return renderLink();
+    // With the filters open, only their first change is a step of its own.
+    const push = url === 'push' && !stack.length && !(S.panel && S.panel.pushed);
+    if (S.panel && push) S.panel.pushed = true;
+    syncURL({ push });
   }
 
   // ── Today ─────────────────────────────────────────────────────────────
@@ -860,7 +869,7 @@
   /**
    * A collection that filters can say is those filters: its parishes are the
    * ones that pass them, and its link is theirs (/sun/liturgy). The rest
-   * (weeknights, monasteries, what is in view) have no link yet.
+   * (monasteries, what is in view) have no link yet.
    */
   function byFilters(c) {
     if (!c.f && !c.juris) return c;
@@ -870,8 +879,6 @@
   /** Curated slices — preset filters that open as a card of parishes. */
   function curated() {
     const P = S.parishes;
-    const rules = (p) => rulesOf(p.id).filter(liveRule);
-    const has = (p, pred) => rules(p).some(pred);
     return [
       { id: 'english', title: 'English services', kicker: 'For inquirers', blurb: 'Parishes that hold services in English, or put English first.',
         art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En', f: { lang: 'English' } },
@@ -880,7 +887,7 @@
       { id: 'vespers', title: 'Saturday Vespers', kicker: 'Saturday evening', blurb: 'Vespers and Vigils on Saturday evenings.',
         art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer', f: { day: 6, part: 'evening', kind: 'services', kindSub: 'prayer' } },
       { id: 'weeknights', title: 'Weeknight services', kicker: 'After work', blurb: 'Services Monday to Friday, from late afternoon.',
-        art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer', ids: P.filter(p => has(p, r => ['liturgy', 'prayer'].includes(r.event_type) && r.day_of_week >= 1 && r.day_of_week <= 5 && (r.start_time || '') >= '16:00')).map(p => p.id) },
+        art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer', f: { dayGroup: 'weeknights', kind: 'services' } },
       { id: 'talks', title: 'Talks & Bible studies', kicker: 'Learn', blurb: 'Catechism, Bible study and talks — the easiest way in.',
         art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk', f: { kind: 'talks' } },
       { id: 'socials', title: 'Youth & socials', kicker: 'Meet people', blurb: 'Youth groups, festivals, meals and fundraisers.',
@@ -948,6 +955,8 @@
     remember(ls);
     shelf($('#shelf-lists'), 'Your lists', null,
       ls.map(c => collCard(c, 'sm')).join('') + `<button class="ccard sm new" type="button" data-newlist><span class="cart">${I.plus}</span><span class="ctext"><span class="ctitle">New list</span><span class="csub">Collect parishes</span></span></button>`);
+
+    renderPanel();
   }
 
   // ── What's on: the App Store's poster shelf ───────────────────────────
@@ -1311,50 +1320,90 @@
     el._event = e;
   }
 
-  // ── The layers screen: every filter, in one place, away from the map ───
+  // ── Filters: the app's pills, behind a button beside the chips ─────────
+  //
+  // The app's toolbar pills (app.css .mode-bar-pill), laid out in rows that
+  // open under the button rather than on a screen of their own: the map and
+  // the chips stay in sight, and every tap applies. Tapping a pill that is on
+  // turns it off, so no row needs an "Any". Kinds wear the app's roundels
+  // once one is chosen, and a language its "only".
 
-  function tile(attr, val, on, art, label) {
-    return `<button class="tile${on ? ' on' : ''}" type="button" ${attr}="${esc(val)}" aria-pressed="${on}"><span class="tart">${art}</span><span class="tlabel">${esc(label)}</span></button>`;
+  const KIND_NAMES = { services: 'Services', talks: 'Talks', socials: 'Socials' };
+  const KIND_SUBS = { services: ['liturgy', 'prayer', 'feast'], talks: ['bible-study'], socials: ['social', 'youth'] };
+  /** A sub-kind's name. Bible studies are Talks' one, and a title, not a type. */
+  const kindSubLabel = (id) => (id === 'bible-study' ? 'Bible Studies' : kindLabel(id));
+  // The services a link can name that are not a kind's own (those are roundels).
+  const PANEL_SERVICES = ['vespers', 'matins', 'paraklesis', 'compline', 'confession'];
+  const REGIONS = ['nsw', 'vic', 'qld', 'wa', 'sa', 'tas', 'act', 'nt', 'nz'];
+  const regionShort = (slug) => (REGIONS.includes(slug) ? slug.toUpperCase() : window.AgoraLocations.resolveLocation(slug)?.label || slug);
+
+  const fpill = (set, val, on, label, cls = '') =>
+    `<button class="fpill${cls}${on ? ' on' : ''}" type="button" data-set="${set}" data-val="${esc(val)}" aria-pressed="${on}">${label}</button>`;
+  function kindSub(id, on) {
+    const c = window.AgoraEventTypes.kindColors(id === 'bible-study' ? 'talk' : id, dark());
+    const l = kindSubLabel(id);
+    return `<button class="kind-sub${on ? ' on' : ''}" type="button" data-set="kindSub" data-val="${id}" style="--k-bg:${c.bg};--k-fg:${c.fg}" aria-pressed="${on}" aria-label="${esc(l)}" title="${esc(l)}">${esc(on ? l : l[0])}</button>`;
   }
-  function layersHTML() {
+  function panelHTML() {
+    const f = S.f, SV = window.AgoraServices;
+    // A group of pills per question, as the app's toolbar has, with no label:
+    // what, which language, when, where, which parishes. A break starts a line.
+    const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
+    const kinds = Object.entries(KIND_NAMES).map(([k, l]) => fpill('kind', k, f.kind === k, esc(l))
+      + (f.kind === k ? `<span class="kind-subs">${KIND_SUBS[k].map(id => kindSub(id, f.kindSub === id)).join('')}</span>` : '')).join('');
+    const services = PANEL_SERVICES.map(sv => fpill('service', sv, f.service === sv, esc(SV.serviceLabel(sv)))).join('');
+    const langs = ['English', ...LANGS.map(([l]) => l)].map(l => fpill('lang', l, f.lang === l, esc(l))
+      + (f.lang === l ? fpill('langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('');
+    const days = `<span class="fdays">${WD.map((d, i) => fpill('day', i, f.day === i, d)).join('')}</span>`;
+    const spans = SV.DAY_GROUPS.map(g => fpill('dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
+    const parts = SV.PARTS_OF_DAY.map(pt => fpill('part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
+    const regions = [...REGIONS, ...(f.location && !REGIONS.includes(f.location) ? [f.location] : [])]
+      .map(r => fpill('location', r, f.location === r, esc(regionShort(r)))).join('');
+    const lists = allLists().filter(l => l.ids.length);
+    const parishes = fpill('timesOnly', '1', f.timesOnly, 'With service times')
+      + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
+    return group('What', kinds, services) + group('Language', langs) + group('When', days, spans, parts)
+      + group('Where', regions) + group('Parishes', parishes)
+      + `<div class="fpanel-foot">${filterCount() ? '<button class="fpill fpill-ghost" type="button" data-act="clear-filters">Clear all</button>' : '<span></span>'}
+          <button class="fpill on" type="button" data-act="filters-done">Done</button></div>`;
+  }
+  // Open, the panel is one step: the first change in it is a step back, the
+  // rest are written onto it, so back undoes a whole go at the filters.
+  const panelOpen = () => !!S.panel;
+  function setPanel(open) {
+    const el = $('#filter-panel');
+    S.panel = open ? { pushed: false } : null;
+    el.hidden = !open;
+    $('#btn-filters').setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('filters-open', open);
+    if (open) renderPanel();
+    else el.innerHTML = '';
+  }
+  function renderPanel() {
+    if (panelOpen()) $('#filter-panel').innerHTML = panelHTML();
+  }
+  /** One pill tapped: on if it was off, off if it was on. */
+  function setFilter(k, v) {
     const f = S.f;
-    const kinds = [
-      [null, 'Everything', `<span class="tstack">${roundel('liturgy')}${roundel('talk')}${roundel('social')}</span>`],
-      ['services', 'Services', `<span class="tstack">${roundel('liturgy')}${roundel('prayer')}${roundel('feast')}</span>`],
-      ['talks', 'Talks', roundel('talk', true)],
-      ['socials', 'Socials', `<span class="tstack">${roundel('social')}${roundel('youth')}</span>`],
-    ];
-    const langs = [[null, 'Any', '<span class="tglyph">∗</span>'], ['English', 'English', '<span class="tglyph">En</span>'], ...LANGS.map(([l, g]) => [l, l, `<span class="tglyph">${esc(g)}</span>`])];
-    const lists = allLists();
-    return `<div class="lay-head"><h2>Filters</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
-      <div class="sheet-scroll">
-        <h3 class="lay-sec">Show</h3>
-        <div class="tiles">${kinds.map(([v, l, a]) => tile('data-f-group', v || '', f.kind === v, a, l)).join('')}</div>
-        <h3 class="lay-sec">Language</h3>
-        <div class="tiles">${langs.map(([v, l, a]) => tile('data-f-lang', v || '', f.lang === v, a, l)).join('')}</div>
-        <h3 class="lay-sec">Parishes</h3>
-        <div class="tiles">
-          ${tile('data-f-times', '0', !f.timesOnly, '<span class="tglyph">◎</span>', 'All parishes')}
-          ${tile('data-f-times', '1', f.timesOnly, roundel('liturgy', true), 'With service times')}
-        </div>
-        <h3 class="lay-sec">Your lists</h3>
-        <div class="tiles">
-          ${tile('data-f-list', '', !f.parishIds, '<span class="tglyph">∗</span>', 'Any parish')}
-          ${lists.map(l => tile('data-f-list', l.id, f.listId === l.id, `<span class="tglyph">${l.fav ? '★' : '☰'}</span>`, `${l.name} (${l.ids.length})`)).join('')}
-        </div>
-        <div class="lay-foot">
-          <button class="wide-btn ghost" type="button" data-act="reset">Reset</button>
-          <button class="wide-btn solid" type="button" data-act="close">Show ${viewParishes().length} parishes</button>
-        </div>
-      </div>`;
-  }
-  function openLayers() { pushSheet(layersHTML(), 'layers'); }
-  function repaintLayers() {
-    const el = stack[stack.length - 1];
-    if (!el || !el.classList.contains('layers')) return;
-    const sc = el.querySelector('.sheet-scroll').scrollTop;
-    el.innerHTML = layersHTML();
-    el.querySelector('.sheet-scroll').scrollTop = sc;
+    const flip = (key, val) => { f[key] = f[key] === val ? null : val; };
+    if (k === 'kind') { flip('kind', v); f.kindSub = null; }
+    else if (k === 'kindSub') flip('kindSub', v);
+    else if (k === 'lang') { flip('lang', v); f.langStrict = false; }
+    else if (k === 'langStrict') f.langStrict = !f.langStrict;
+    // A day and a span of the week are one question, asked one way at a time.
+    else if (k === 'day') { f.day = f.day === +v ? null : +v; f.dayGroup = null; }
+    else if (k === 'dayGroup') { flip('dayGroup', v); f.day = null; }
+    else if (k === 'part' || k === 'service' || k === 'location') flip(k, v);
+    else if (k === 'timesOnly') f.timesOnly = !f.timesOnly;
+    else if (k === 'list') {
+      const l = f.listId === v ? null : listById(v);
+      f.parishIds = l && l.ids.length ? new Set(l.ids) : null;
+      f.listId = f.parishIds ? l.id : null;
+    }
+    refilter();
+    // A region or a list chosen is shown, as a link to one is.
+    if (k === 'location' && f.location) frameRegion(f.location, true);
+    if (k === 'list' && f.parishIds) fitTo([...f.parishIds]);
   }
 
   // ── Add to a list ─────────────────────────────────────────────────────
@@ -1716,16 +1765,9 @@
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) { $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
 
-    // The layers screen applies as you tap; the map is behind it.
-    if ((b = t.closest('[data-f-group]'))) { S.f.kind = b.dataset.fGroup || null; S.f.kindSub = null; refilter(); repaintLayers(); return; }
-    if ((b = t.closest('[data-f-lang]'))) { S.f.lang = b.dataset.fLang || null; S.f.langStrict = false; refilter(); repaintLayers(); return; }
-    if ((b = t.closest('[data-f-times]'))) { S.f.timesOnly = b.dataset.fTimes === '1'; refilter(); repaintLayers(); return; }
-    if ((b = t.closest('[data-f-list]'))) {
-      const l = b.dataset.fList && listById(b.dataset.fList);
-      S.f.parishIds = l && l.ids.length ? new Set(l.ids) : null;
-      S.f.listId = S.f.parishIds ? l.id : null;
-      refilter(); repaintLayers(); return;
-    }
+    // The filters apply as you tap; the map is above them.
+    if (t.closest('#btn-filters')) { setPanel(!panelOpen()); return; }
+    if ((b = t.closest('[data-set]'))) { setFilter(b.dataset.set, b.dataset.val); return; }
 
     if ((b = t.closest('[data-inlist]'))) {
       const pid = top.dataset.pid;
@@ -1741,7 +1783,8 @@
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, art: 'linear-gradient(135deg,#475569,#1e293b)', ids: searchState.ps.map(p => p.id) });
       }
-      if (a === 'reset') { S.f = blankFilters(); refilter(); repaintLayers(); return; }
+      if (a === 'clear-filters') { S.f = blankFilters(); S.focus = null; refilter(); return; }
+      if (a === 'filters-done') { setPanel(false); return; }
       if (a === 'share') {
         if (top && top._segs) return share(top._coll ? top._coll.title : top._event ? top._event.title : S.byId.get(top.dataset.pid)?.name || '', pathOf(top._segs));
         if (top && top._coll) return share(top._coll.title, pathOf(pageSegs()));
@@ -1789,9 +1832,13 @@
     }
   });
   $('#scrim').addEventListener('click', () => popSheet());
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (stack.length) popSheet(); else if (document.body.classList.contains('map-full')) setFullscreen(false); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (stack.length) popSheet();
+    else if (document.body.classList.contains('map-full')) setFullscreen(false);
+    else if (panelOpen()) setPanel(false);
+  });
   $('#btn-fullscreen').addEventListener('click', () => setFullscreen(!document.body.classList.contains('map-full')));
-  $('#btn-layers').addEventListener('click', openLayers);
   document.addEventListener('keydown', (e) => {
     // "/" opens search on a keyboard, as most sites do.
     if (e.key === '/' && !stack.length && !/input|textarea/i.test(document.activeElement?.tagName || '')) { e.preventDefault(); openSearch(); }

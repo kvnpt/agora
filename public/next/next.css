@@ -95,13 +95,6 @@ main { padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
   background: var(--card); box-shadow: var(--shadow);
 }
 body.located #btn-locate { color: var(--accent); }
-.badge[hidden] { display: none; }
-.badge {
-  position: absolute; top: -3px; right: -3px;
-  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
-  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
-  display: grid; place-items: center;
-}
 
 /* ── The viewport: tabs, map, in-view chip ───────────────────────────────
    The app's own pieces (app.css), framed in hairlines rather than lifted on
@@ -334,13 +327,76 @@ body.map-full .parish-row {
 @keyframes url-copied { 0% { opacity: 0; } 25% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .url-text.flash, .url-copied { animation: none; } }
 
-.active-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px var(--pad) 0; }
-.afchip {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 34px; padding: 0 10px 0 14px; border-radius: 17px;
-  background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+/* ── The filters ──────────────────────────────────────────────────────────
+   The app's pills (app.css .mode-bar-pill, .kind-sub, .mode-bar-en-only):
+   a button with the chips it made beside it, and under it, when open, a
+   group of pills per question, framed in a hairline. A pill that is on is filled
+   with the text colour, as the app's are. Nothing scrolls sideways. */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px var(--pad) 0; }
+.active-filters { display: contents; }
+.fpill {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 5px 12px;
+  background: var(--fab-bg); border: 1px solid var(--border); border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2;
+  color: var(--text-2); white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
-.afchip svg { width: 14px; height: 14px; }
+.fpill:hover { color: var(--text); }
+.fpill.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.fbtn { color: var(--text); padding-left: 10px; }
+.fbtn[aria-expanded="true"] { border-color: var(--text); }
+.fcount[hidden] { display: none; }
+.fcount {
+  min-width: 18px; height: 18px; margin: 0 -4px 0 1px; padding: 0 5px; border-radius: 9px;
+  display: inline-grid; place-items: center;
+  background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.afchip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px;
+  min-height: 30px; padding: 5px 8px 5px 12px; border-radius: 999px;
+  background: var(--text); color: var(--bg); border: 1px solid var(--text);
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2; white-space: nowrap;
+  max-width: 100%;
+}
+.afchip svg { width: 12px; height: 12px; flex: none; opacity: .75; }
+
+.filter-panel {
+  margin: 8px var(--pad) 0; padding: 2px 12px 10px;
+  background: var(--card); border: 1px solid var(--hair); border-radius: 14px;
+  animation: fpanel-in .16s ease-out;
+}
+.filter-panel[hidden] { display: none; }
+@keyframes fpanel-in { from { opacity: 0; transform: translateY(-4px); } }
+.frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; }
+.frow + .frow { border-top: 1px solid var(--line); }
+.fbreak { flex-basis: 100%; height: 0; }
+/* The days are one row of seven, whatever the width. */
+.fdays { flex-basis: 100%; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.fdays .fpill { justify-content: center; padding: 5px 0; }
+.fstar { color: #e0a100; font-size: 11px; margin-right: -2px; }
+.fpill.on .fstar { color: inherit; }
+/* "only" arrives beside its language, and a kind's roundels beside it. */
+.fpill-only, .kind-subs { animation: f-in .18s ease-out; }
+@keyframes f-in { from { opacity: 0; transform: scale(.85); } }
+.kind-subs { display: inline-flex; align-items: center; gap: 4px; }
+.kind-sub {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 28px; padding: 0;
+  background: var(--card); color: var(--k-fg);
+  border: 1px solid color-mix(in srgb, var(--k-fg) 35%, transparent); border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  transition: padding .18s ease, opacity .18s ease;
+}
+/* Only the one chosen is filled in its colour, and spells its name out. */
+.kind-sub.on { padding: 0 11px; background: var(--k-bg); border-color: var(--k-fg); }
+.kind-subs:has(.kind-sub.on) .kind-sub:not(.on) { opacity: .45; }
+.fpanel-foot { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
+.fpill-ghost { background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .filter-panel, .fpill-only, .kind-subs { animation: none; }
+  .kind-sub { transition: none; }
+}
 
 /* ── Cards, Today ────────────────────────────────────────────────────── */
 
@@ -621,27 +677,11 @@ body.map-full .parish-row {
 .ev-desc { margin: 16px 18px 0; padding: 14px 16px; background: var(--card); border-radius: 16px; font-size: 15px; line-height: 1.45; box-shadow: var(--shadow); }
 .event .details { margin-top: 14px; }
 
-/* The layers screen. */
+/* A small sheet's head. */
 .lay-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 18px 6px; }
 .lay-head h2 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
-.layers .sheet-scroll, .mini .sheet-scroll { padding-top: 0; }
-.lay-sec { padding: 18px 18px 10px; font-size: 17px; font-weight: 700; }
+.mini .sheet-scroll { padding-top: 0; }
 .lay-note { margin: 4px 18px 10px; color: var(--text-2); font-size: 14.5px; }
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 10px; padding: 0 18px; }
-.tile { display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 13.5px; text-align: center; }
-.tart {
-  width: 100%; aspect-ratio: 1; border-radius: 18px; display: grid; place-items: center;
-  background: var(--card); box-shadow: var(--shadow); border: 2.5px solid transparent;
-}
-.tile.on .tart { border-color: var(--accent); }
-.tile.on .tlabel { color: var(--accent); font-weight: 650; }
-.tglyph { font-size: 24px; font-weight: 800; color: var(--text-2); }
-.tile.on .tglyph { color: var(--accent); }
-.tstack { display: flex; }
-.tstack .roundel { margin-left: -5px; box-shadow: 0 0 0 2px var(--card); }
-.tstack .roundel:first-child { margin-left: 0; }
-.lay-foot { display: flex; gap: 10px; padding: 26px 18px 6px; }
-.lay-foot .wide-btn { margin: 0; flex: 1; width: auto; }
 
 .lists { margin: 6px 18px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
 .lrow { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; min-height: 58px; color: var(--text); }

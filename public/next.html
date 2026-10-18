@@ -25,10 +25,6 @@
       <button class="round-btn" type="button" id="btn-locate" aria-label="Near me" title="Near me">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
       </button>
-      <button class="round-btn" type="button" id="btn-layers" aria-label="Filters" title="Filters">
-        <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3 2.5 8 12 13l9.5-5L12 3z"/><path d="m2.5 12.5 9.5 5 9.5-5" stroke-linecap="round"/><path d="m2.5 16.5 9.5 5 9.5-5" stroke-linecap="round" opacity=".55"/></svg>
-        <span class="badge" id="layers-badge" hidden></span>
-      </button>
     </div>
   </header>
 
@@ -68,13 +64,22 @@
       </div>
     </section>
 
+    <!-- The filters: a button beside the chips they make, opening the app's
+         pills under it. -->
+    <div class="filter-bar">
+      <button class="fpill fbtn" type="button" id="btn-filters" aria-expanded="false" aria-controls="filter-panel">
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        <span>Filters</span><span class="fcount" id="filter-count" hidden></span>
+      </button>
+      <div class="active-filters" id="active-filters"></div>
+    </div>
+    <div class="filter-panel" id="filter-panel" role="group" aria-label="Filters" hidden></div>
+
     <!-- This view's link, building as the filters change, as the app's does:
          tap to copy. -->
     <div class="page-link">
       <button class="url-chip" type="button" id="page-link" data-copy="/next" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
     </div>
-
-    <div class="active-filters" id="active-filters" hidden></div>
 
     <!-- Today, before anything else. -->
     <section class="today card" id="today" aria-label="Today"></section>
@@ -105,7 +110,7 @@
     </footer>
   </main>
 
-  <!-- Sheets: a collection, a parish, an event, the layers screen, lists. -->
+  <!-- Sheets: a collection, a parish, an event, lists. -->
   <div class="scrim" id="scrim" hidden></div>
   <div class="sheet-host" id="sheets"></div>
 
