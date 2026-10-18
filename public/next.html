@@ -68,6 +68,12 @@
       </div>
     </section>
 
+    <!-- This view's link, building as the filters change, as the app's does:
+         tap to copy. -->
+    <div class="page-link">
+      <button class="url-chip" type="button" id="page-link" data-copy="/next" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
+    </div>
+
     <div class="active-filters" id="active-filters" hidden></div>
 
     <!-- Today, before anything else. -->
@@ -106,6 +112,13 @@
   <script src="/shared/jurisdiction-colors.js"></script>
   <script src="/shared/declutter.js"></script>
   <script src="/shared/event-types.js"></script>
+  <!-- The app's link grammar and the readers it rests on, in the app's order. -->
+  <script src="/shared/locations.js"></script>
+  <script src="/shared/services.js"></script>
+  <script src="/shared/timetable.js"></script>
+  <script src="/shared/dates.js"></script>
+  <script src="/shared/slugs.js"></script>
+  <script src="/shared/url-state.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>

@@ -48,6 +48,8 @@
     'api', 'health', 'admin', 'logos', 'tiles', 'posters', 'shared', 'lib',
     'glyphs', 'sprites', 'eucalyptus', 'cdn-cgi', 'assets', 'static',
     'favicon.ico', 'robots.txt', 'sitemap.xml', 'index.html', 'manifest.json',
+    // The next version, while it is a prototype: /next and every path under it.
+    'next',
   ];
 
   /** The comparison form: what the router matches a path segment against. */

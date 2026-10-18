@@ -16,6 +16,10 @@
 // Data is the app's: /api/bundle through bundle.js and the /shared/ projection.
 // Nothing here writes to the server. Lists live in this browser, and
 // Favourites is the same store the current app's star writes.
+//
+// Links are the app's too: the filters are url-state.js's, read and written
+// in the same grammar (/greek/en, /sun/liturgy, /sgr+snb, /sgr, /102), under
+// /next while this is the prototype. The link shows on the page as it builds.
 
 (function () {
   'use strict';
@@ -71,12 +75,24 @@
     loc: null,               // { lat, lng } once the person says where they are
     inView: null,            // Set of parish ids the viewport holds (null before the map)
     bounds: null,
-    juris: null,             // a jurisdiction chip
-    f: { group: null, lang: null, timesOnly: false, list: null }, // the layers screen
-    focus: null,             // { title, ids:Set } — a collection shown on the map
+    juris: null,             // a jurisdiction tab
+    f: null,                 // the filters, in the app's shape (blankFilters)
+    focus: null,             // { title, ids:Set } — a collection no link can name, on the map
     streamDays: 14,          // how far the stream has grown
     streamBusy: false,
   };
+
+  /**
+   * The filters as the app keeps them (state.filters), so the shared readers
+   * of a link (url-state.js) and of a timetable (timetable.js) take them as
+   * they are. `listId` names the saved list a set of parishes came from, and
+   * `timesOnly` is this page's own, which no link carries.
+   */
+  const blankFilters = () => ({
+    kind: null, kindSub: null, lang: null, langStrict: false, day: null, part: null, service: null,
+    location: null, parishIds: null, listId: null, timesOnly: false,
+  });
+  S.f = blankFilters();
 
   try {
     const l = JSON.parse(localStorage.getItem('agora_location') || 'null');
@@ -216,6 +232,7 @@
     renderLists();
     renderInView();
     syncMap();
+    followList();
   }
   const userLists = () => readLS(LISTS);
   function allLists() {
@@ -234,6 +251,20 @@
     writeLS(LISTS, ls);
     toast(had ? `Removed from ${l.name}` : `Added to ${l.name}`);
     renderLists();
+    followList();
+  }
+  /** A list switched on as a filter follows the list as it changes, and so does the link. */
+  function followList() {
+    if (!S.f.listId) return;
+    const l = listById(S.f.listId);
+    S.f.parishIds = l && l.ids.length ? new Set(l.ids) : null;
+    if (!S.f.parishIds) S.f.listId = null;
+    refilter({ url: 'replace' });
+  }
+  /** The saved list holding exactly these parishes, for a link like /sgr+snb to wear its name. */
+  function listMatching(ids) {
+    const l = allLists().find(x => x.ids.length === ids.size && x.ids.every(id => ids.has(id)));
+    return l ? l.id : null;
   }
   function newList(name, firstPid) {
     const ls = userLists();
@@ -244,17 +275,43 @@
   }
 
   // ── Filters ───────────────────────────────────────────────────────────
+  //
+  // The app's own readers, where it has them: timetable.js decides a kind,
+  // services.js a service and a part of the day, locations.js a region. What
+  // is this page's own is the language test (English is on every parish's
+  // list, so English first or on a service is the signal) and "with times".
 
-  function parishPasses(p) {
-    if (S.juris && p.jurisdiction !== S.juris) return false;
-    if (S.focus && !S.focus.ids.has(p.id)) return false;
-    const f = S.f;
-    if (f.lang && !hasLang(p, f.lang)) return false;
-    if (f.timesOnly && !rulesOf(p.id).some(liveRule)) return false;
-    if (f.list) { const l = listById(f.list); if (!l || !l.ids.includes(p.id)) return false; }
-    if (f.group && !rulesOf(p.id).some(r => liveRule(r) && groupOf(r.event_type) === f.group)
-      && !upcomingOneOffs(p.id).some(e => groupOf(e.event_type) === f.group)) return false;
+  const weekdayOf = (key) => new Date(key + 'T00:00:00Z').getUTCDay();
+  /** Does a rule or an event answer what the filters ask: its kind, service, day and part of the day? */
+  function whatMatches(row, f, isRule) {
+    if (!window.AgoraTimetable.kindMatches(row, f)) return false;
+    if (f.service && !window.AgoraServices.serviceMatches(f.service, row)) return false;
+    if (f.day != null && (isRule ? row.day_of_week : weekdayOf(local(row).date)) !== f.day) return false;
+    if (f.part && window.AgoraServices.partOfDayOf(row) !== f.part) return false;
     return true;
+  }
+  const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.part);
+  const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Slavonic' && /slavonic|russian/i.test(l));
+  /** English only, Greek only: a service in that language and no other. */
+  const onlyIn = (langs, want) => !!langs && langs.length > 0 && langs.every(l => langIs(l, want));
+  const regionOf = (f) => (f.location && window.AgoraLocations ? window.AgoraLocations.resolveLocation(f.location) : null);
+
+  /** Does a parish answer these filters? Collections ask it of their own filters. */
+  function parishMatches(p, f, juris) {
+    if (juris && p.jurisdiction !== juris) return false;
+    const loc = regionOf(f);
+    if (loc && !window.AgoraLocations.locationMatchesParish(loc, p)) return false;
+    if (f.parishIds && !f.parishIds.has(p.id)) return false;
+    if (f.lang && !hasLang(p, f.lang)) return false;
+    if (f.lang && f.langStrict && !rulesOf(p.id).some(r => liveRule(r) && onlyIn(parseLangs(r.languages), f.lang))) return false;
+    if (f.timesOnly && !rulesOf(p.id).some(liveRule)) return false;
+    if (asksWhat(f) && !rulesOf(p.id).some(r => liveRule(r) && !r.parish_scoped && whatMatches(r, f, true))
+      && !upcomingOneOffs(p.id).some(e => whatMatches(e, f, false))) return false;
+    return true;
+  }
+  function parishPasses(p) {
+    if (S.focus && !S.focus.ids.has(p.id)) return false;
+    return parishMatches(p, S.f, S.juris);
   }
   const visible = (e) => !e.is_tombstone && (!e.status || e.status === 'approved') && !e.break_from && !e.combined_into_event_id;
   function eventParishIds(e) { return [e.parish_id, ...(e.extra_parishes || []).map(x => x.id || x.parish_id || x)].filter(Boolean); }
@@ -266,14 +323,18 @@
     if (S.juris && !ps.some(p => p.jurisdiction === S.juris)) return false;
     if (S.focus && !pids.some(id => S.focus.ids.has(id))) return false;
     const f = S.f;
-    if (f.group && groupOf(e.event_type) !== f.group) return false;
+    const loc = regionOf(f);
+    if (loc && !ps.some(p => window.AgoraLocations.locationMatchesParish(loc, p))) return false;
+    if (f.parishIds && !pids.some(id => f.parishIds.has(id))) return false;
+    if (!whatMatches(e, f, false)) return false;
     if (f.lang) {
-      const ls = parseLangs(e.languages) || parseLangs(e.parish_languages) || [];
-      const ok = f.lang === 'English' ? (ls.includes('English') && (parseLangs(e.languages) || ls[0] === 'English'))
-        : ls.some(l => l === f.lang || (f.lang === 'Slavonic' && /slavonic|russian/i.test(l)));
+      const own = parseLangs(e.languages);
+      const ls = own || parseLangs(e.parish_languages) || [];
+      const ok = f.langStrict ? onlyIn(own, f.lang)
+        : f.lang === 'English' ? (ls.includes('English') && (own || ls[0] === 'English'))
+        : ls.some(l => langIs(l, f.lang));
       if (!ok) return false;
     }
-    if (f.list) { const l = listById(f.list); if (!l || !pids.some(id => l.ids.includes(id))) return false; }
     return true;
   }
   function inViewEvent(e) {
@@ -281,7 +342,208 @@
     if (isFinite(e.lat) && isFinite(e.lng) && e.lat != null) return S.bounds.contains([e.lng, e.lat]);
     return eventParishIds(e).some(id => S.inView && S.inView.has(id));
   }
-  const filtersOn = () => !!(S.f.group || S.f.lang || S.f.timesOnly || S.f.list);
+  const filterCount = () => { const f = S.f; return [f.kind, f.lang, f.day != null, f.part, f.service, f.location, f.parishIds, f.timesOnly].filter(Boolean).length; };
+  const filtersOn = () => filterCount() > 0;
+
+  // ── Links ─────────────────────────────────────────────────────────────
+  //
+  // The app's grammar (url-state.js), written in the order the app writes it
+  // (buildPathSegs in app.js): jurisdiction, region, day, part of the day,
+  // service, kind, the parishes, language. /greek/en, /sun/liturgy, /sgr+snb.
+  // A card with a link of its own takes the address while it is open, /sgr or
+  // /102, and every card is a step the back button undoes. Under /next while
+  // this is the prototype: BASE goes when it replaces /.
+
+  const BASE = '/next';
+  const acronymOf = (p) => String(p.acronym || p.id).toLowerCase().replace(/\s+/g, '');
+  /** A parish by its acronym, or by its id for one without — as the app reads a link. */
+  function parishBySlug(slug) {
+    const k = String(slug || '').toLowerCase().replace(/\s+/g, '');
+    if (!k) return null;
+    return S.parishes.find(p => p.acronym && acronymOf(p) === k)
+      || S.parishes.find(p => p.id.toLowerCase() === k) || null;
+  }
+  /** The path segments for a set of filters, or for one parish or one event. */
+  function segsFor({ juris = null, f = blankFilters(), parish = null, eventId = null } = {}) {
+    if (parish) return [acronymOf(parish)];
+    if (eventId) return [String(eventId)];
+    const U = window.AgoraUrlState, SV = window.AgoraServices;
+    const segs = [];
+    if (juris) segs.push(juris);
+    if (f.location) segs.push(f.location);
+    if (f.day != null) segs.push(SV.daySlug(f.day));
+    if (f.part) segs.push(f.part);
+    if (f.service) segs.push(f.service);
+    const k = f.kind ? U.kindSegment(f.kind, f.kindSub) : null;
+    if (k) segs.push(k);
+    if (f.parishIds && f.parishIds.size) {
+      const acrs = [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(acronymOf);
+      if (acrs.length) segs.push(acrs.join('+'));
+    }
+    const lang = U.englishSegment(f);
+    if (lang) segs.push(lang);
+    return segs;
+  }
+  const pathOf = (segs) => BASE + (segs && segs.length ? '/' + segs.join('/') : '');
+  const pageSegs = () => segsFor({ juris: S.juris, f: S.f });
+
+  /** What an address asks for: { juris, f, parish, eventId }. Needs the parishes. */
+  function readPath(pathname) {
+    const rest = pathname === BASE || pathname.startsWith(BASE + '/') ? pathname.slice(BASE.length) : pathname;
+    const r = window.AgoraUrlState.classifyPath(rest, { today: todayKey() });
+    const f = blankFilters();
+    if (r.kind) { f.kind = r.kind; f.kindSub = r.kindSub || null; }
+    if (r.lang) { f.lang = r.lang; f.langStrict = !!r.langStrict; }
+    if (r.location) f.location = r.location;
+    const named = (r.parishSlugs || []).map(parishBySlug).filter(Boolean);
+    const parish = r.parishSlugs && r.parishSlugs.length === 1 ? named[0] || null : null;
+    if (!parish && named.length) {
+      f.parishIds = new Set(named.map(p => p.id));
+      f.listId = listMatching(f.parishIds);
+    }
+    // A day, a part of the day or a service beside one parish is that card's,
+    // as at /. Across the page, /liturgy is the kind filter with Liturgy
+    // chosen, and /vespers a service of its own.
+    if (!parish) {
+      const asKind = r.service && window.AgoraUrlState.kindOfService(r.service);
+      if (asKind && !r.kind) [f.kind, f.kindSub] = asKind;
+      else if (r.service) f.service = r.service;
+      if (r.day != null) f.day = r.day;
+      if (r.part) f.part = r.part;
+    }
+    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null };
+  }
+
+  // The history. Every card is one entry; a filter changed with no card open
+  // is one more, as at /. Closing a card is a step back, which lands later
+  // (popstate), so anything that would write the address meanwhile waits for
+  // it, or it would be written onto the entry being left.
+  let ignorePops = 0, popTimer = null;
+  const afterPop = [];
+  const whenSettled = (fn) => { if (ignorePops) afterPop.push(fn); else fn(); };
+  function settle() {
+    ignorePops = 0;
+    clearTimeout(popTimer);
+    // What waited is written now: a step of its own (Show on map) leaves the
+    // entry landed on as it was. With nothing waiting, that entry takes what
+    // changed under the card (the filters screen), as the page is now.
+    const waiting = afterPop.splice(0);
+    if (waiting.length) waiting.forEach(fn => fn());
+    else writeURL();
+  }
+  function goBack(n) {
+    ignorePops++;
+    try { history.go(-n); } catch { settle(); return; }
+    // A step that never lands (nothing to go back to) must not hold the address forever.
+    clearTimeout(popTimer);
+    popTimer = setTimeout(() => { if (ignorePops) settle(); }, 700);
+  }
+  /** The address as things stand: the top card with a link of its own, else the page's filters. */
+  function urlNow() {
+    const top = [...stack].reverse().find(el => el._segs);
+    return pathOf(top ? top._segs : pageSegs());
+  }
+  function writeURL({ push = false, step = false } = {}) {
+    const target = urlNow();
+    const st = { depth: stack.length };
+    // A card is a step even where its address is the page's; a filter only when it changes the link.
+    if (target !== location.pathname || step) {
+      try { if (push) history.pushState(st, '', target); else history.replaceState(st, '', target); } catch { /* sandboxed */ }
+    }
+    renderLink();
+  }
+  const syncURL = (opts) => whenSettled(() => writeURL(opts));
+  window.addEventListener('popstate', () => {
+    if (ignorePops) { if (--ignorePops === 0) settle(); return; }
+    // The back button with a card open closes it.
+    const depth = (history.state && history.state.depth) || 0;
+    if (depth < stack.length) {
+      while (stack.length > depth) dropSheet();
+      writeURL();
+      return;
+    }
+    // Back or forward through filters, or forward onto a card: read the address.
+    while (stack.length) dropSheet();
+    applyRoute(readPath(location.pathname), { entry: false });
+  });
+
+  /** Make the page what an address asks for. */
+  function applyRoute(route, { entry = true, animate = true } = {}) {
+    S.juris = route.juris;
+    S.f = route.f;
+    S.focus = null;
+    refilter({ url: 'none' });
+    if (route.f.location) frameRegion(route.f.location, animate);
+    else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
+    if (route.parish) openParish(route.parish, { entry });
+    else if (route.eventId) openEvent(route.eventId, { entry });
+  }
+  /** A region's parishes fill the small map; its whole box (Queensland reaches Torres Strait) would leave it empty. */
+  function frameRegion(slug, animate) {
+    const loc = window.AgoraLocations.resolveLocation(slug);
+    if (!loc || !map) return;
+    const ids = S.parishes.filter(p => window.AgoraLocations.locationMatchesParish(loc, p)).map(p => p.id);
+    if (ids.length) return fitTo(ids, animate);
+    const b = window.AgoraLocations.locationBbox(loc);
+    // Fiji's box crosses the antimeridian, and MapLibre wants west < east.
+    if (b && b[0] < b[2]) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 20, duration: animate ? 600 : 0 });
+  }
+
+  // The link, as it builds: the host faint, each segment in full, a parish in
+  // its colour. Tap to copy. The same chip as the app's (updateModeUrl).
+  const COPY_ICON = '<svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg>';
+  function linkText(segs) {
+    const host = location.host.replace(/^www\./, '');
+    const piece = (x) => {
+      const p = parishBySlug(x);
+      return p ? `<span class="url-seg url-parish" style="color:${shown(jColor(p.jurisdiction))}">${esc(x)}</span>` : `<span class="url-seg">${esc(x)}</span>`;
+    };
+    let h = `<span class="url-host">${esc(host)}${BASE ? `<span class="url-sep">/</span>${esc(BASE.slice(1))}` : ''}</span>`;
+    for (const seg of segs) h += `<span class="url-sep">/</span>${seg.split('+').map(piece).join('<span class="url-sep">+</span>')}`;
+    return h;
+  }
+  function linkChip(segs, id = '') {
+    return `<button class="url-chip" type="button" ${id ? `id="${id}"` : ''} data-copy="${esc(pathOf(segs))}" aria-label="Copy this link"><span class="url-text">${linkText(segs)}</span>${COPY_ICON}</button>`;
+  }
+  /** Long links scroll to their end, faded where they hide something. */
+  function fitLinks(root = document) {
+    requestAnimationFrame(() => $$('.url-text', root).forEach(el => {
+      el.scrollLeft = el.scrollWidth;
+      el.classList.toggle('fade-left', el.scrollWidth > el.clientWidth + 1);
+    }));
+  }
+  let lastLink = null;
+  function renderLink() {
+    const btn = $('#page-link');
+    if (!btn || btn._copied) return;
+    const segs = pageSegs();
+    const key = segs.join('/');
+    btn.dataset.copy = pathOf(segs);
+    const el = btn.querySelector('.url-text');
+    el.innerHTML = linkText(segs);
+    // The whole link glows when it changes, in the colour of its parish if it names one.
+    if (lastLink !== null && key !== lastLink) {
+      const p = segs.map(x => x.split('+').map(parishBySlug).find(Boolean)).filter(Boolean).pop();
+      el.style.setProperty('--glow', p ? shown(jColor(p.jurisdiction)) : 'var(--accent)');
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    }
+    lastLink = key;
+    fitLinks(btn.parentNode);
+  }
+  async function copyLink(btn) {
+    const url = location.origin + btn.dataset.copy;
+    try { await navigator.clipboard.writeText(url); } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
+      ta.remove();
+    }
+    const el = btn.querySelector('.url-text');
+    const was = el.innerHTML;
+    btn._copied = true;
+    el.innerHTML = '<span class="url-copied">COPIED</span>';
+    setTimeout(() => { btn._copied = false; el.innerHTML = was; if (btn.id === 'page-link') renderLink(); else fitLinks(btn.parentNode); }, 900);
+  }
 
   // ── The feed, from the bundle ─────────────────────────────────────────
 
@@ -414,14 +676,14 @@
     renderInView();
     renderFeeds();
   }
-  function fitTo(ids) {
+  function fitTo(ids, animate = true) {
     const ps = [...ids].map(id => S.byId.get(id)).filter(p => p && isFinite(p.lat) && p.lat != null);
     if (!ps.length || !map) return;
     const near = S.loc ? ps.filter(p => km(S.loc, p) < 60) : [];
     const use = near.length >= 3 ? near : ps;
     const b = new maplibregl.LngLatBounds();
     use.forEach(p => b.extend([p.lng, p.lat]));
-    map.fitBounds(b, { padding: 40, maxZoom: 13, duration: 600 });
+    map.fitBounds(b, { padding: 40, maxZoom: 13, duration: animate ? 600 : 0 });
   }
 
   // ── Full screen ───────────────────────────────────────────────────────
@@ -518,27 +780,40 @@
   // ── Active filters, said once under the map ───────────────────────────
 
   function renderActive() {
+    const f = S.f, SV = window.AgoraServices;
+    const chip = (k, label) => `<button class="afchip" data-clear="${k}">${esc(label)} ${I.x}</button>`;
     const bits = [];
-    if (S.focus) bits.push(`<button class="afchip" data-clear="focus">${esc(S.focus.title)} ${I.x}</button>`);
-    if (S.f.group) bits.push(`<button class="afchip" data-clear="group">${esc(GROUPS.find(g => g.id === S.f.group).label)} ${I.x}</button>`);
-    if (S.f.lang) bits.push(`<button class="afchip" data-clear="lang">${esc(S.f.lang)} ${I.x}</button>`);
-    if (S.f.timesOnly) bits.push(`<button class="afchip" data-clear="timesOnly">With service times ${I.x}</button>`);
-    if (S.f.list) { const l = listById(S.f.list); bits.push(`<button class="afchip" data-clear="list">${esc(l ? l.name : 'List')} ${I.x}</button>`); }
+    if (S.focus) bits.push(chip('focus', S.focus.title));
+    const loc = regionOf(f);
+    if (loc) bits.push(chip('location', loc.label));
+    if (f.day != null) bits.push(chip('day', SV.dayName(f.day)));
+    if (f.part) bits.push(chip('part', SV.partOfDayLabel(f.part)));
+    if (f.service) bits.push(chip('service', SV.serviceLabel(f.service)));
+    if (f.kind) bits.push(chip('kind', f.kindSub ? (f.kindSub === 'bible-study' ? SV.serviceLabel(f.kindSub) : kindLabel(f.kindSub)) : (GROUPS.find(g => g.id === f.kind) || { label: f.kind }).label));
+    if (f.lang) bits.push(chip('lang', f.langStrict ? `${f.lang} only` : f.lang));
+    if (f.timesOnly) bits.push(chip('timesOnly', 'With service times'));
+    if (f.parishIds) {
+      const l = f.listId && listById(f.listId);
+      bits.push(chip('parishIds', l ? l.name : [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(p => p.acronym || p.name).join(' + ')));
+    }
     const el = $('#active-filters');
     el.hidden = !bits.length;
     el.innerHTML = bits.join('');
-    const n = (S.f.group ? 1 : 0) + (S.f.lang ? 1 : 0) + (S.f.timesOnly ? 1 : 0) + (S.f.list ? 1 : 0);
+    const n = filterCount();
     const badge = $('#layers-badge');
     badge.hidden = !n;
     badge.textContent = n;
   }
 
-  function refilter() {
+  /** Repaint everything the filters touch. `url`: push a step, replace this one, or leave it. */
+  function refilter({ url = 'push' } = {}) {
     syncMap();
     renderJurisChips();
     renderInView();
     renderActive();
     renderFeeds();
+    if (url === 'none') renderLink();
+    else syncURL({ push: url === 'push' && !stack.length });
   }
 
   // ── Today ─────────────────────────────────────────────────────────────
@@ -582,6 +857,16 @@
 
   // ── Shelves: collections of parishes ──────────────────────────────────
 
+  /**
+   * A collection that filters can say is those filters: its parishes are the
+   * ones that pass them, and its link is theirs (/sun/liturgy). The rest
+   * (weeknights, monasteries, what is in view) have no link yet.
+   */
+  function byFilters(c) {
+    if (!c.f && !c.juris) return c;
+    const f = { ...blankFilters(), ...(c.f || {}) };
+    return { ...c, f, ids: c.ids || S.parishes.filter(p => parishMatches(p, f, c.juris || null)).map(p => p.id), segs: segsFor({ juris: c.juris || null, f }) };
+  }
   /** Curated slices — preset filters that open as a card of parishes. */
   function curated() {
     const P = S.parishes;
@@ -589,20 +874,20 @@
     const has = (p, pred) => rules(p).some(pred);
     return [
       { id: 'english', title: 'English services', kicker: 'For inquirers', blurb: 'Parishes that hold services in English, or put English first.',
-        art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En', ids: P.filter(speaksEnglish).map(p => p.id) },
+        art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En', f: { lang: 'English' } },
       { id: 'sunday', title: 'Sunday Liturgy', kicker: 'This Sunday', blurb: 'Every parish with a Sunday Liturgy on its timetable.',
-        art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy', ids: P.filter(p => has(p, r => r.event_type === 'liturgy' && r.day_of_week === 0)).map(p => p.id) },
+        art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy', f: { day: 0, kind: 'services', kindSub: 'liturgy' } },
       { id: 'vespers', title: 'Saturday Vespers', kicker: 'Saturday evening', blurb: 'Vespers and Vigils on Saturday evenings.',
-        art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer', ids: P.filter(p => has(p, r => r.event_type === 'prayer' && r.day_of_week === 6 && (r.start_time || '') >= '15:00')).map(p => p.id) },
+        art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer', f: { day: 6, part: 'evening', kind: 'services', kindSub: 'prayer' } },
       { id: 'weeknights', title: 'Weeknight services', kicker: 'After work', blurb: 'Services Monday to Friday, from late afternoon.',
         art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer', ids: P.filter(p => has(p, r => ['liturgy', 'prayer'].includes(r.event_type) && r.day_of_week >= 1 && r.day_of_week <= 5 && (r.start_time || '') >= '16:00')).map(p => p.id) },
       { id: 'talks', title: 'Talks & Bible studies', kicker: 'Learn', blurb: 'Catechism, Bible study and talks — the easiest way in.',
-        art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk', ids: P.filter(p => has(p, r => r.event_type === 'talk') || upcomingOneOffs(p.id).some(e => e.event_type === 'talk')).map(p => p.id) },
+        art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk', f: { kind: 'talks' } },
       { id: 'socials', title: 'Youth & socials', kicker: 'Meet people', blurb: 'Youth groups, festivals, meals and fundraisers.',
-        art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social', ids: P.filter(p => has(p, r => ['social', 'youth'].includes(r.event_type)) || upcomingOneOffs(p.id).some(e => ['social', 'youth'].includes(e.event_type))).map(p => p.id) },
+        art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social', f: { kind: 'socials' } },
       { id: 'monasteries', title: 'Monasteries', kicker: 'Pilgrimage', blurb: 'Monasteries and sketes, often a drive away and worth it.',
         art: 'linear-gradient(135deg,#3f3f46,#a8a29e)', glyph: '☦', ids: P.filter(p => /monaster|skete|convent/i.test(`${p.name} ${p.full_name || ''}`)).map(p => p.id) },
-    ].filter(c => c.ids.length);
+    ].map(byFilters).filter(c => c.ids.length);
   }
   const LANGS = [
     ['Greek', 'Ελ', '#0061fe'], ['Arabic', 'عر', '#7c3bc1'], ['Serbian', 'Ср', '#cc2234'], ['Slavonic', 'Сл', '#d38301'],
@@ -611,16 +896,14 @@
   function languageCollections() {
     return LANGS.map(([lang, glyph, color]) => ({
       id: 'lang-' + lang, title: lang, kicker: 'Language', lang, glyph, art: `linear-gradient(160deg,${color},${shade(color, -0.35)})`,
-      blurb: `Parishes that pray in ${lang}.`,
-      ids: S.parishes.filter(p => hasLang(p, lang)).map(p => p.id),
-    })).filter(c => c.ids.length);
+      blurb: `Parishes that pray in ${lang}.`, f: { lang },
+    })).map(byFilters).filter(c => c.ids.length);
   }
   function jurisCollections() {
     return JURIS_ORDER.map(j => ({
       id: 'j-' + j, title: JURIS[j].long, kicker: 'Jurisdiction', juris: j, blurb: JURIS[j].blurb,
       art: `radial-gradient(120% 90% at 85% 10%, ${shade(jColor(j), 0.35)}, ${jColor(j)} 55%, ${shade(jColor(j), -0.4)})`,
-      ids: S.parishes.filter(p => p.jurisdiction === j).map(p => p.id),
-    }));
+    })).map(byFilters);
   }
   function shade(hex, amt) {
     const n = parseInt(hex.slice(1), 16);
@@ -659,6 +942,8 @@
       id: 'list-' + l.id, listId: l.id, title: l.name, kicker: l.fav ? 'Your list' : 'Your list',
       art: l.fav ? 'linear-gradient(160deg,#fde68a,#f59e0b)' : 'linear-gradient(160deg,#cbd5e1,#64748b)',
       glyph: l.fav ? '★' : '☰', ids: l.ids, blurb: l.fav ? 'Parishes you starred.' : 'A list you made.',
+      // A list of parishes is a link: /sgr+snb.
+      ...(l.ids.length ? byFilters({ ids: l.ids, f: { parishIds: new Set(l.ids), listId: l.id } }) : {}),
     }));
     remember(ls);
     shelf($('#shelf-lists'), 'Your lists', null,
@@ -753,12 +1038,18 @@
   // ── Sheets ────────────────────────────────────────────────────────────
 
   const stack = [];
-  function pushSheet(html, cls = '') {
+  /**
+   * A card over the page. `segs` is its own link (/sgr, /102, /sun/liturgy),
+   * which the address takes while it is open; `entry: false` when the history
+   * already holds its step (forward onto it).
+   */
+  function pushSheet(html, cls = '', { segs = null, entry = true } = {}) {
     const host = $('#sheets');
     const el = document.createElement('section');
     el.className = `sheet ${cls}`;
     el.setAttribute('role', 'dialog');
     el.innerHTML = html;
+    el._segs = segs;
     host.appendChild(el);
     stack.push(el);
     $('#scrim').hidden = false;
@@ -766,9 +1057,13 @@
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
     const scroller = el.querySelector('.sheet-scroll');
     if (scroller) scroller.addEventListener('scroll', () => el.classList.toggle('scrolled', scroller.scrollTop > 40), { passive: true });
+    if (entry) syncURL({ push: true, step: true });
+    else writeURL();
+    fitLinks(el);
     return el;
   }
-  function popSheet() {
+  /** Take the top card away, without touching the history. */
+  function dropSheet() {
     const el = stack.pop();
     if (!el) return;
     el.classList.remove('open');
@@ -777,7 +1072,17 @@
     const under = stack.filter(s => s.classList.contains('parish')).pop();
     setMapFocus(under ? under.dataset.pid : null);
   }
-  function closeAll() { while (stack.length) popSheet(); }
+  /** Close the top card: a step back. */
+  function popSheet() {
+    if (!stack.length) return;
+    dropSheet();
+    goBack(1);
+  }
+  function closeAll() {
+    const n = stack.length;
+    while (stack.length) dropSheet();
+    if (n) goBack(n);
+  }
 
   function glassBar(title, sub, { share = true } = {}) {
     return `<div class="glassbar">
@@ -866,9 +1171,10 @@
 
   // ── The parish card ───────────────────────────────────────────────────
 
-  function openParish(pid) {
+  function openParish(pid, { entry = true } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
+    const segs = segsFor({ parish: p });
     const d = distOf(p);
     const nextLit = nextOf(pid, e => e.event_type === 'liturgy') || nextOf(pid);
     const langs = parishLangs(p);
@@ -887,6 +1193,7 @@
           ${avatar(p, 'xl')}
           <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}</p></div>
         </div>
+        <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">
           <a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>${d != null ? esc(fmtKm(d)) : 'Directions'}</span></a>
           ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
@@ -915,7 +1222,7 @@
         <button type="button" data-act="fav" class="${isFav(pid) ? 'on' : ''}" aria-label="Favourite" aria-pressed="${isFav(pid)}">${isFav(pid) ? I.starOn : I.star}</button>
         <button type="button" data-act="more" aria-label="More">${I.more}</button>
       </div>`;
-    const el = pushSheet(html, 'parish');
+    const el = pushSheet(html, 'parish', { segs, entry });
     el.dataset.pid = pid;
     el.style.setProperty('--j', jColor(p.jurisdiction));
     setMapFocus(pid);
@@ -925,7 +1232,7 @@
 
   // ── A collection's card: a bunch of parishes, with their timetables ───
 
-  function openCollection(c) {
+  function openCollection(c, { entry = true } = {}) {
     const o = sortOrigin();
     const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
       .sort((a, b) => (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule)) || (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
@@ -956,10 +1263,11 @@
           </div>
           <p>${esc(c.blurb || '')}</p>
         </div>
+        ${c.segs ? `<div class="sheet-link">${linkChip(c.segs)}</div>` : ''}
         <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
         ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
       </div>`;
-    const el = pushSheet(html, 'collection');
+    const el = pushSheet(html, 'collection', { segs: c.segs || null, entry });
     el._coll = c;
     el._rest = () => ps.slice(LIMIT).map(item).join('');
   }
@@ -972,9 +1280,10 @@
       || (window.agoraBundle.raw?.events || []).find(e => String(e.id) === s)
       || window.agoraBundle.resolveEvent(s);
   }
-  function openEvent(id) {
+  function openEvent(id, { entry = true } = {}) {
     const e = findEvent(id);
     if (!e) return;
+    const segs = segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const end = e.end_local ? e.end_local.slice(11, 16) : (e.end_utc ? partsIn(e.timezone || TZ, Date.parse(e.end_utc)).hm : null);
@@ -988,6 +1297,7 @@
           <h1>${esc(e.title)}</h1>
           <p class="ev-when">${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}</p>
         </div>
+        <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">
           <a class="abtn primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
@@ -997,7 +1307,7 @@
         ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
         <div class="toolbar-space sm"></div>
       </div>`;
-    const el = pushSheet(html, 'event');
+    const el = pushSheet(html, 'event', { segs, entry });
     el._event = e;
   }
 
@@ -1019,7 +1329,7 @@
     return `<div class="lay-head"><h2>Filters</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
       <div class="sheet-scroll">
         <h3 class="lay-sec">Show</h3>
-        <div class="tiles">${kinds.map(([v, l, a]) => tile('data-f-group', v || '', f.group === v, a, l)).join('')}</div>
+        <div class="tiles">${kinds.map(([v, l, a]) => tile('data-f-group', v || '', f.kind === v, a, l)).join('')}</div>
         <h3 class="lay-sec">Language</h3>
         <div class="tiles">${langs.map(([v, l, a]) => tile('data-f-lang', v || '', f.lang === v, a, l)).join('')}</div>
         <h3 class="lay-sec">Parishes</h3>
@@ -1029,8 +1339,8 @@
         </div>
         <h3 class="lay-sec">Your lists</h3>
         <div class="tiles">
-          ${tile('data-f-list', '', !f.list, '<span class="tglyph">∗</span>', 'Any parish')}
-          ${lists.map(l => tile('data-f-list', l.id, f.list === l.id, `<span class="tglyph">${l.fav ? '★' : '☰'}</span>`, `${l.name} (${l.ids.length})`)).join('')}
+          ${tile('data-f-list', '', !f.parishIds, '<span class="tglyph">∗</span>', 'Any parish')}
+          ${lists.map(l => tile('data-f-list', l.id, f.listId === l.id, `<span class="tglyph">${l.fav ? '★' : '☰'}</span>`, `${l.name} (${l.ids.length})`)).join('')}
         </div>
         <div class="lay-foot">
           <button class="wide-btn ghost" type="button" data-act="reset">Reset</button>
@@ -1352,6 +1662,7 @@
     if (top && top.classList.contains('search') && t.closest('[data-parish],[data-event],[data-coll],[data-place]')) {
       rememberQuery(top.querySelector('#sr-input').value);
     }
+    if ((b = t.closest('[data-copy]'))) { copyLink(b); return; }
     if (t.closest('#search-pill')) { openSearch(); return; }
     if ((b = t.closest('[data-q]'))) {
       setSearch(b.dataset.q);
@@ -1380,7 +1691,11 @@
     }
     if ((b = t.closest('[data-clear]'))) {
       const k = b.dataset.clear;
-      if (k === 'focus') S.focus = null; else S.f[k] = k === 'timesOnly' ? false : null;
+      if (k === 'focus') S.focus = null;
+      else if (k === 'kind') { S.f.kind = null; S.f.kindSub = null; }
+      else if (k === 'lang') { S.f.lang = null; S.f.langStrict = false; }
+      else if (k === 'parishIds') { S.f.parishIds = null; S.f.listId = null; }
+      else S.f[k] = k === 'timesOnly' ? false : null;
       refilter();
       return;
     }
@@ -1402,10 +1717,15 @@
     if ((b = t.closest('[data-jump]'))) { $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
 
     // The layers screen applies as you tap; the map is behind it.
-    if ((b = t.closest('[data-f-group]'))) { S.f.group = b.dataset.fGroup || null; refilter(); repaintLayers(); return; }
-    if ((b = t.closest('[data-f-lang]'))) { S.f.lang = b.dataset.fLang || null; refilter(); repaintLayers(); return; }
+    if ((b = t.closest('[data-f-group]'))) { S.f.kind = b.dataset.fGroup || null; S.f.kindSub = null; refilter(); repaintLayers(); return; }
+    if ((b = t.closest('[data-f-lang]'))) { S.f.lang = b.dataset.fLang || null; S.f.langStrict = false; refilter(); repaintLayers(); return; }
     if ((b = t.closest('[data-f-times]'))) { S.f.timesOnly = b.dataset.fTimes === '1'; refilter(); repaintLayers(); return; }
-    if ((b = t.closest('[data-f-list]'))) { S.f.list = b.dataset.fList || null; refilter(); repaintLayers(); return; }
+    if ((b = t.closest('[data-f-list]'))) {
+      const l = b.dataset.fList && listById(b.dataset.fList);
+      S.f.parishIds = l && l.ids.length ? new Set(l.ids) : null;
+      S.f.listId = S.f.parishIds ? l.id : null;
+      refilter(); repaintLayers(); return;
+    }
 
     if ((b = t.closest('[data-inlist]'))) {
       const pid = top.dataset.pid;
@@ -1421,14 +1741,13 @@
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, art: 'linear-gradient(135deg,#475569,#1e293b)', ids: searchState.ps.map(p => p.id) });
       }
-      if (a === 'reset') { S.f = { group: null, lang: null, timesOnly: false, list: null }; refilter(); repaintLayers(); return; }
+      if (a === 'reset') { S.f = blankFilters(); refilter(); repaintLayers(); return; }
       if (a === 'share') {
-        if (top && top.dataset.pid) { const p = S.byId.get(top.dataset.pid); return share(p.name, '/' + (p.acronym || '').toLowerCase()); }
-        if (top && top._event) return share(top._event.title, '/' + top._event.id);
-        if (top && top._coll) return share(top._coll.title, '/next');
+        if (top && top._segs) return share(top._coll ? top._coll.title : top._event ? top._event.title : S.byId.get(top.dataset.pid)?.name || '', pathOf(top._segs));
+        if (top && top._coll) return share(top._coll.title, pathOf(pageSegs()));
         return;
       }
-      if (a === 'share-parish') { const p = S.byId.get(top.dataset.pid); return share(p.name, '/' + (p.acronym || '').toLowerCase()); }
+      if (a === 'share-parish') { const p = S.byId.get(top.dataset.pid); return share(p.name, pathOf(segsFor({ parish: p }))); }
       if (a === 'fav') {
         const pid = top.dataset.pid;
         toggleFav(pid);
@@ -1449,7 +1768,9 @@
       }
       if (a === 'showmap') {
         const c = top._coll;
-        S.focus = { title: c.title, ids: new Set(c.ids) };
+        // One with a link is its filters, and the page takes them; one without is its parishes.
+        if (c.segs) { S.juris = c.juris || null; S.f = { ...c.f }; S.focus = null; }
+        else S.focus = { title: c.title, ids: new Set(c.ids) };
         closeAll();
         refilter();
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1495,16 +1816,23 @@
       S.rulesByParish.get(r.parish_id).push(r);
     }
     if (S.loc) document.body.classList.add('located');
+    // What the address asks for. The older /next#sgr is /next/sgr.
+    const route = readPath(location.pathname);
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h && !route.parish) { const p = parishBySlug(h); if (p) route.parish = p.id; }
+    S.juris = route.juris;
+    S.f = route.f;
     renderJurisChips();
     renderInView();
     renderActive();
     renderCollections();
     renderFeeds();
+    // The page's own address first, so a card opened from a link is one step
+    // back from the page rather than from wherever the person came from.
+    try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + location.search); } catch { /* sandboxed */ }
+    renderLink();
     await mapStarted;
-    syncMap();
-    // A link straight to a parish: /next#sgr
-    const h = decodeURIComponent(location.hash.slice(1)).toLowerCase();
-    if (h) { const p = S.parishes.find(x => (x.acronym || '').toLowerCase() === h || x.id === h); if (p) setTimeout(() => openParish(p.id), 300); }
+    applyRoute(route, { animate: false });
   }
   boot().catch(err => {
     console.error(err);

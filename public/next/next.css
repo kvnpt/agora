@@ -299,6 +299,41 @@ body.map-full .parish-row {
 
 /* ── Active filters ──────────────────────────────────────────────────── */
 
+/* ── The link ────────────────────────────────────────────────────────────
+   This view's address as it builds (app.css .mode-url, .ps-url): the host
+   faint, each segment in full, a parish bold in its colour, a glow when it
+   changes. Tap to copy. On the page under the map, and on each card. */
+.page-link { display: flex; padding: 8px var(--pad) 0; }
+.sheet-link { display: flex; padding: 8px 18px 0; }
+.url-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-width: 0; max-width: 100%; padding: 4px 0;
+  color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  -webkit-tap-highlight-color: transparent;
+}
+.url-text {
+  min-width: 0; overflow-x: auto; overflow-y: hidden; white-space: nowrap;
+  font-variant-numeric: tabular-nums; scrollbar-width: none;
+}
+.url-text::-webkit-scrollbar { display: none; }
+.url-text.fade-left {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px);
+  mask-image: linear-gradient(to right, transparent 0, #000 24px);
+}
+.url-host { opacity: .55; font-weight: 500; }
+.url-sep { opacity: .45; margin: 0 1px; font-weight: 500; }
+.url-parish { font-weight: 800; letter-spacing: .02em; }
+.url-copy { flex: none; color: var(--text-2); }
+.url-text.flash { animation: url-flash 900ms ease-out; }
+@keyframes url-flash {
+  0% { text-shadow: 0 0 10px color-mix(in srgb, var(--glow) 55%, transparent), 0 0 3px color-mix(in srgb, var(--glow) 55%, transparent); }
+  60% { text-shadow: 0 0 3px color-mix(in srgb, var(--glow) 25%, transparent); }
+  100% { text-shadow: none; }
+}
+.url-copied { display: inline-block; color: var(--live); font-weight: 700; letter-spacing: .08em; animation: url-copied 900ms ease-out; }
+@keyframes url-copied { 0% { opacity: 0; } 25% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .url-text.flash, .url-copied { animation: none; } }
+
 .active-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px var(--pad) 0; }
 .afchip {
   display: inline-flex; align-items: center; gap: 6px;

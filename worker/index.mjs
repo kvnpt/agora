@@ -88,6 +88,14 @@ router.get('/:slug/:link', async ({ env, params }) => {
   return row && row.url ? Response.redirect(row.url, 302) : null;
 });
 
+/** The request for /next itself when a path is under it, else null. */
+export function nextPrototype(request) {
+  const url = new URL(request.url);
+  if (url.pathname !== '/next' && !url.pathname.startsWith('/next/')) return null;
+  if (request.method !== 'GET' && request.method !== 'HEAD') return null;
+  return new Request(new URL('/next', url), request);
+}
+
 export default {
   async fetch(request, env, ctx) {
     // /.env, /.git/config, /wp-login.php: a scanner's, answered before the
@@ -97,6 +105,10 @@ export default {
     // guards it on (lib/admin-host.mjs).
     const toAdminHost = adminHostRedirect(request.url);
     if (toAdminHost) return toAdminHost;
+    // /next, the next version while it is a prototype: every path under it is
+    // the one page, which reads its own address (/next/greek/en, /next/sgr).
+    const nextPage = nextPrototype(request);
+    if (nextPage) return env.ASSETS.fetch(nextPage);
     try {
       const res = await router.handle(request, env, ctx);
       // A write that landed moves the data version, so the next /api/bundle
