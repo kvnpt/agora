@@ -199,7 +199,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     && (!route.part || services.partOfDayOf(r, zone) === route.part));
 
   return {
-    parish, zone, slug, start, endBound, list, pinned, rules, timetable, links, venues,
+    parish, zone, slug, start, endBound, list, feed, pinned, rules, timetable, links, venues,
     route, servicesMode, indexable, canonical, appHref, origin, now,
     missingEvent: !!route.eventId && !pinned,
     ...pageColors(parish, overrides),

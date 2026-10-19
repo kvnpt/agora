@@ -120,46 +120,58 @@ export async function cachedHtml({ request, env, ctx, name, build, type = 'text/
   return cachedBody({ request, env, ctx, name, cache, type, build });
 }
 
-async function cachedBody({ request, env, ctx, name, build, type, cache }) {
+/**
+ * The text `build` makes, kept under the data version like a body is, for a
+ * caller that answers with something more than it: the page around a link
+ * (routes/pages.mjs) keeps what D1 says about the link here and wraps it in
+ * the page as deployed on every request, so a deploy never waits on the
+ * cache. Null when `build` says the path is nothing.
+ */
+export async function cachedText({ request, env, ctx, name, build, cache = edgeCache() }) {
   const origin = new URL(request.url).origin;
   const version = await currentVersion(env, origin, cache);
   const key = bodyKey(origin, version, name);
-
-  let body = null, etag = null;
   const hit = cache ? await cache.match(key).catch(() => null) : null;
-  if (hit) {
-    etag = hit.headers.get('etag');
-    body = await hit.text();
-  } else {
-    body = await build();
-    if (body == null) return null;
-    etag = await hashEtag(body);
-    if (cache) {
-      const put = cache.put(key, new Response(body, {
-        headers: {
-          'content-type': type,
-          etag,
-          'cache-control': `public, max-age=${BODY_TTL}`,
-        },
-      })).catch(() => {});
-      if (ctx && ctx.waitUntil) ctx.waitUntil(put); else await put;
-    }
+  if (hit) return { text: await hit.text(), etag: hit.headers.get('etag'), version };
+  const text = await build();
+  if (text == null) return null;
+  const etag = await hashEtag(text);
+  if (cache) {
+    const put = cache.put(key, new Response(text, {
+      headers: { etag, 'cache-control': `public, max-age=${BODY_TTL}` },
+    })).catch(() => {});
+    if (ctx && ctx.waitUntil) ctx.waitUntil(put); else await put;
   }
+  return { text, etag, version };
+}
 
+/**
+ * A finished body's answer: a 304 when the browser holds this exact one, and
+ * never a reuse without asking first. `etag` is the body's hash (hashEtag).
+ */
+export function revalidated(request, { body, etag, version, type, status = 200, headers: extra = {} }) {
   const headers = {
     etag,
     // Revalidate on every use. What makes that cheap is the 304 below, not a
     // lifetime during which the browser answers for us.
     'cache-control': 'no-cache',
-    'x-data-version': version,
+    ...(version ? { 'x-data-version': version } : {}),
+    ...extra,
   };
-  if (etagMatches(request.headers.get('if-none-match'), etag)) {
+  if (status === 200 && etagMatches(request.headers.get('if-none-match'), etag)) {
     return new Response(null, { status: 304, headers });
   }
   return new Response(request.method === 'HEAD' ? null : body, {
-    status: 200,
-    headers: { 'content-type': type, ...headers },
+    status, headers: { 'content-type': type, ...headers },
   });
+}
+
+export { hashEtag };
+
+async function cachedBody({ request, env, ctx, name, build, type, cache }) {
+  const kept = await cachedText({ request, env, ctx, name, build, cache });
+  if (!kept) return null;
+  return revalidated(request, { body: kept.text, etag: kept.etag, version: kept.version, type });
 }
 
 /**

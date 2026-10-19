@@ -6,22 +6,25 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f1013" media="(prefers-color-scheme: dark)">
-  <meta name="robots" content="noindex">
-  <title>orthodoxy.au · next</title>
-  <!-- The preview a chat app shows. A link that means a collection (/next/en,
-       /next/greek) gets its own, written in by the Worker
-       (worker/lib/next-page.mjs), which rewrites these tags in place. -->
-  <meta name="description" content="Service times and events at Orthodox parishes across Australia and New Zealand, on one map.">
+  <!-- What this link is, for a reader that runs no JavaScript: a chat app's
+       preview, a search engine. The Worker writes each link's own between
+       the marks (worker/lib/page-head.mjs): a parish's name and Church data,
+       a collection's heading and card. What is here is what a link gets when
+       it could not: the home page's words, kept out of the index. -->
+  <!--page:head-->
+  <title>Orthodox Services &amp; Events — orthodoxy.au</title>
+  <meta name="description" content="Service times and events at Orthodox parishes across Australia and New Zealand — Greek, Antiochian, Serbian, Russian, Romanian and Macedonian — on one map.">
+  <meta name="robots" content="noindex,follow">
   <meta property="og:site_name" content="orthodoxy.au">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Orthodox Services &amp; Events">
-  <meta property="og:description" content="Service times and events at Orthodox parishes across Australia and New Zealand, on one map.">
+  <meta property="og:description" content="Service times and events at Orthodox parishes across Australia and New Zealand — Greek, Antiochian, Serbian, Russian, Romanian and Macedonian — on one map.">
   <meta property="og:image" content="https://orthodoxy.au/og/default.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <!-- A prototype of the next version: a page around a map rather than a map
-       under a sheet. It reads the same /api/bundle through the same bundle.js
-       and /shared/ projection as the app. Somebody signed in edits through
-       the same /api/admin routes the app does. -->
+  <!--/page:head-->
+  <!-- v3: a page around a map rather than a map under a sheet. It reads
+       /api/bundle through bundle.js and the /shared/ projection, and somebody
+       signed in edits through the /api/admin routes /admin uses. -->
   <link rel="stylesheet" href="/lib/maplibre-gl.css">
   <link rel="stylesheet" href="/shared/event-editor.css">
   <link rel="stylesheet" href="/next/next.css">
@@ -103,7 +106,7 @@
     <!-- This view's link, building as the filters change, as the app's does:
          tap to copy. -->
     <div class="page-link">
-      <button class="url-chip" type="button" id="page-link" data-copy="/next" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
+      <button class="url-chip" type="button" id="page-link" data-copy="/" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
     </div>
 
     <!-- Today, before anything else. -->
@@ -125,21 +128,19 @@
       <header class="stream-head">
         <h2>Every service &amp; event</h2>
         <p id="stream-sub">In view, day by day. Keep scrolling.</p>
-        <!-- From today, or from a date picked: /next/2026-10-25. -->
+        <!-- From today, or from a date picked: /2026-10-25. -->
         <div id="stream-when"></div>
       </header>
       <div id="stream-days"></div>
       <div class="stream-more" id="stream-more">Loading…</div>
     </section>
-
-    <footer class="foot">
-      <a href="/">Open the current app</a> · prototype, reading live data
-    </footer>
   </main>
 
-  <!-- Sheets: a collection, a parish, an event, lists. -->
+  <!-- Sheets: a collection, a parish, an event, lists. A link that opens one
+       has it painted here by the Worker (worker/lib/page-card.mjs), until
+       next.js opens its own in its place. -->
   <div class="scrim" id="scrim" hidden></div>
-  <div class="sheet-host" id="sheets"></div>
+  <div class="sheet-host" id="sheets"><!--page:card--></div>
 
   <script src="/shared/jurisdiction-colors.js"></script>
   <script src="/shared/declutter.js"></script>
@@ -148,6 +149,7 @@
   <script src="/shared/locations.js"></script>
   <script src="/shared/services.js"></script>
   <script src="/shared/timetable.js"></script>
+  <script src="/shared/timetable-lines.js"></script>
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
   <script src="/shared/url-state.js"></script>

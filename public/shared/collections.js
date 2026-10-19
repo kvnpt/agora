@@ -63,6 +63,45 @@
 
   const COLLECTIONS = [...CURATED, ...LANGUAGES, ...JURISDICTIONS];
 
+  // How each is drawn on its card: the art behind it and what is on it. The
+  // page's shelves and cards draw it, and so does the Worker's first paint of a
+  // collection's card, so the two cannot differ.
+  const LOOK = {
+    english: { art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En' },
+    sunday: { art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy' },
+    vespers: { art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer' },
+    weeknights: { art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer' },
+    talks: { art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk' },
+    socials: { art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social' },
+    monasteries: { art: 'linear-gradient(135deg,#3f3f46,#a8a29e)', glyph: '☦' },
+  };
+  // A language's: its first letters in its own script, and a colour.
+  const LANGUAGE_LOOK = {
+    Greek: ['Ελ', '#0061fe'], Arabic: ['عر', '#7c3bc1'], Serbian: ['Ср', '#cc2234'], Slavonic: ['Сл', '#d38301'],
+    Romanian: ['Ro', '#4e7a27'], Macedonian: ['Мк', '#b92d5d'],
+  };
+  /** A colour lighter (amt > 0) or darker (amt < 0), as a fraction of the way. */
+  function shade(hex, amt) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => Math.round(amt > 0 ? v + (255 - v) * amt : v * (1 + amt)));
+    return '#' + ch.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+  }
+  /**
+   * A collection's look: { art, glyph?, icon?, kind? }. A jurisdiction's is
+   * its colour, which /admin may have changed: `colorOf(jurisdiction)`.
+   */
+  function lookOf(c, colorOf) {
+    if (c.group === 'jurisdiction') {
+      const j = colorOf ? colorOf(c.jurisdiction) : '#64748b';
+      return { art: `radial-gradient(120% 90% at 85% 10%, ${shade(j, 0.35)}, ${j} 55%, ${shade(j, -0.4)})` };
+    }
+    if (c.group === 'language') {
+      const [glyph, color] = LANGUAGE_LOOK[c.lang] || [c.title.slice(0, 2), '#64748b'];
+      return { glyph, art: `linear-gradient(160deg,${color},${shade(color, -0.35)})` };
+    }
+    return LOOK[c.id] || {};
+  }
+
   /**
    * What a classified link means, as one string to compare, or null when it is
    * not the kind of link a collection can be: one that names parishes, an
@@ -94,7 +133,7 @@
 
   const byId = (id) => COLLECTIONS.find(c => c.id === id) || null;
 
-  const api = { COLLECTIONS, CURATED, LANGUAGES, JURISDICTIONS, JURISDICTION_NAMES, meaningOf, collectionFor, byId };
+  const api = { COLLECTIONS, CURATED, LANGUAGES, JURISDICTIONS, JURISDICTION_NAMES, LANGUAGE_LOOK, meaningOf, collectionFor, byId, lookOf, shade };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraCollections = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

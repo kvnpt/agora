@@ -564,7 +564,6 @@ body.map-full .parish-row {
 .date-pick .fpill svg { flex: none; }
 .date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
 .stream-more { padding: 26px; text-align: center; color: var(--text-3); font-size: 14px; }
-.foot { padding: 10px var(--pad) 0; text-align: center; color: var(--text-3); font-size: 13px; }
 
 /* ── Sheets ──────────────────────────────────────────────────────────── */
 
@@ -582,6 +581,13 @@ body.map-full .parish-row {
   isolation: isolate;
 }
 .sheet.open { transform: none; }
+/* A card the Worker painted (.ssr), up before the page's script is: the scrim
+   under it, and the page under that still. The card next.js opens takes its
+   place with no slide (.instant). */
+body:has(#sheets > .ssr) { overflow: hidden; }
+body:has(#sheets > .ssr) #scrim { display: block; }
+.sheet.instant { transition: none; }
+.sheet a.gbtn, .sheet a.erow, .sheet a.citem-head { color: inherit; }
 .sheet + .sheet { height: calc(100% - 60px - env(safe-area-inset-top)); }
 .sheet.mini { height: auto; max-height: 75%; }
 .sheet-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }

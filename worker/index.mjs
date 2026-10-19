@@ -2,8 +2,8 @@
 //
 // Replaces server.js. The frontend ships with this Worker as static assets
 // (see [assets] in wrangler.toml) and is served without invoking it; what runs
-// here is the API, the payment redirects, the R2 asset proxy, and the lite
-// pages that answer a shared parish or event link (routes/pages.mjs).
+// here is the API, the payment redirects, the R2 asset proxy, and the page at
+// every link, with that link's head (routes/pages.mjs).
 
 import { Router, json } from './lib/router.mjs';
 import { registerPublicRoutes } from './routes/public.mjs';
@@ -14,9 +14,6 @@ import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
 import { isProbePath, probeResponse } from './lib/probe.mjs';
 import { adminHostRedirect } from './lib/admin-host.mjs';
-import { nextCollection, nextMeta, withHead } from './lib/next-page.mjs';
-import { jurisdictionLogos } from './lib/juris-logos.mjs';
-import { localDateOf } from '../public/shared/tz.mjs';
 import slugs from '../public/shared/slugs.js';
 
 const router = new Router();
@@ -91,39 +88,22 @@ router.get('/:slug/:link', async ({ env, params }) => {
   return row && row.url ? Response.redirect(row.url, 302) : null;
 });
 
-/** The request for /next itself when a path is under it, else null. */
-export function nextPrototype(request) {
+/**
+ * /next was the next version while it was a prototype, and is now the page at
+ * every address: /next/sgr is /sgr, for good. A file under it (/next/next.js)
+ * is the page's own and never reaches here (run_worker_first), and is never
+ * moved if it does.
+ */
+export function nextRedirect(request) {
   const url = new URL(request.url);
   if (url.pathname !== '/next' && !url.pathname.startsWith('/next/')) return null;
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
-  return new Request(new URL('/next', url), request);
-}
-
-/**
- * /next for this request: the page, with a collection's title, description
- * and picture in its head when the link means one (lib/next-page.mjs). Fails
- * open to the page as it is.
- */
-export async function serveNext(request, env) {
-  const url = new URL(request.url);
-  const found = nextCollection(url.pathname, { today: localDateOf('Australia/Sydney', Date.now()) });
-  if (!found) return env.ASSETS.fetch(nextPrototype(request));
-  try {
-    // Unconditional: the page's own ETag is the same for every link under it,
-    // and this answer is not.
-    const [asset, logos] = await Promise.all([
-      env.ASSETS.fetch(new Request(new URL('/next', url))),
-      found.collection.jurisdiction ? jurisdictionLogos(env.DB) : {},
-    ]);
-    if (!asset.ok) return asset;
-    const html = withHead(await asset.text(), nextMeta(found, { origin: url.origin, logos }));
-    return new Response(request.method === 'HEAD' ? null : html, {
-      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' },
-    });
-  } catch (err) {
-    console.error(`[next] ${url.pathname}: ${err && err.message}`);
-    return env.ASSETS.fetch(nextPrototype(request));
-  }
+  if (/\.[a-z0-9]+$/i.test(url.pathname)) return null;
+  const rest = url.pathname.slice('/next'.length).replace(/^\/+/, '');
+  return new Response(null, {
+    status: 301,
+    headers: { location: `/${rest}${url.search}`, 'cache-control': 'public, max-age=86400' },
+  });
 }
 
 export default {
@@ -135,9 +115,9 @@ export default {
     // guards it on (lib/admin-host.mjs).
     const toAdminHost = adminHostRedirect(request.url);
     if (toAdminHost) return toAdminHost;
-    // /next, the next version while it is a prototype: every path under it is
-    // the one page, which reads its own address (/next/greek/en, /next/sgr).
-    if (nextPrototype(request)) return serveNext(request, env);
+    // /next/greek/en, from when v3 was a prototype under /next: /greek/en.
+    const fromNext = nextRedirect(request);
+    if (fromNext) return fromNext;
     try {
       const res = await router.handle(request, env, ctx);
       // A write that landed moves the data version, so the next /api/bundle
@@ -158,15 +138,15 @@ export default {
     }
 
     // Nothing matched. An unknown /api/ path is a real 404; anything else is a
-    // client route — a deep link like /102:2026-09-06 or /smg — and belongs to
-    // the SPA. The asset layer's not_found_handling does not apply once the
-    // Worker has been invoked, so hand it back explicitly.
+    // page — a deep link like /102:2026-09-06 or /smg — or a file. The asset
+    // layer's not_found_handling does not apply once the Worker has been
+    // invoked, so a file is handed back explicitly.
     const path = new URL(request.url).pathname;
     if (path.startsWith('/api/') || path === '/health') {
       return json({ error: 'Not found' }, 404);
     }
-    // A shared parish or event link gets its lite card; anything else, and any
-    // failure building one, gets the app. routes/pages.mjs.
+    // A page is v3 with this link's head (routes/pages.mjs); a file, and any
+    // failure, is the asset layer's.
     const page = await servePage(request, env, ctx).catch(() => null);
     if (page) return page;
     return env.ASSETS.fetch(request);

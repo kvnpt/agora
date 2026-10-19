@@ -1,4 +1,4 @@
-// orthodoxy.au — the next version, as a prototype.
+// orthodoxy.au — v3.
 //
 // A page around a map rather than a map under a sheet. Borrowed, piece by piece:
 //   NextThere   the viewport card: nothing on the map but full screen, and a
@@ -15,12 +15,13 @@
 // bottom of a place in Google Maps.
 //
 // Data is the app's: /api/bundle through bundle.js and the /shared/ projection.
-// Nothing here writes to the server. Lists live in this browser, and
-// Favourites is the same store the current app's star writes.
+// Lists live in this browser, and Favourites is the same store the old app's
+// star wrote. Somebody who may edit does it here (next/editing.js).
 //
 // Links are the app's too: the filters are url-state.js's, read and written
-// in the same grammar (/greek/en, /sun/liturgy, /sgr+snb, /sgr, /102), under
-// /next while this is the prototype. The link shows on the page as it builds.
+// in the same grammar (/greek/en, /sun/liturgy, /sgr+snb, /sgr, /102). The
+// Worker answers every one with this page, its head saying what the link is
+// (worker/routes/pages.mjs). The link shows on the page as it builds.
 
 (function () {
   'use strict';
@@ -374,10 +375,8 @@
   // (buildPathSegs in app.js): jurisdiction, region, day, part of the day,
   // service, kind, the parishes, language. /greek/en, /sun/liturgy, /sgr+snb.
   // A card with a link of its own takes the address while it is open, /sgr or
-  // /102, and every card is a step the back button undoes. Under /next while
-  // this is the prototype: BASE goes when it replaces /.
+  // /102, and every card is a step the back button undoes.
 
-  const BASE = '/next';
   const acronymOf = (p) => String(p.acronym || p.id).toLowerCase().replace(/\s+/g, '');
   /** A parish by its acronym, or by its id for one without — as the app reads a link. */
   function parishBySlug(slug) {
@@ -411,13 +410,12 @@
     if (lang) segs.push(lang);
     return segs;
   }
-  const pathOf = (segs) => BASE + (segs && segs.length ? '/' + segs.join('/') : '');
+  const pathOf = (segs) => '/' + (segs && segs.length ? segs.join('/') : '');
   const pageSegs = () => segsFor({ juris: S.juris, f: S.f, from: S.from });
 
   /** What an address asks for: { juris, f, parish, eventId }. Needs the parishes. */
   function readPath(pathname) {
-    const rest = pathname === BASE || pathname.startsWith(BASE + '/') ? pathname.slice(BASE.length) : pathname;
-    const r = window.AgoraUrlState.classifyPath(rest, { today: todayKey() });
+    const r = window.AgoraUrlState.classifyPath(pathname, { today: todayKey() });
     const f = blankFilters();
     if (r.kind) { f.kind = r.kind; f.kindSub = r.kindSub || null; }
     if (r.lang) { f.lang = r.lang; f.langStrict = !!r.langStrict; }
@@ -533,7 +531,7 @@
       const p = parishBySlug(x);
       return p ? `<span class="url-seg url-parish" style="color:${shown(jColor(p.jurisdiction))}">${esc(x)}</span>` : `<span class="url-seg">${esc(x)}</span>`;
     };
-    let h = `<span class="url-host">${esc(host)}${BASE ? `<span class="url-sep">/</span>${esc(BASE.slice(1))}` : ''}</span>`;
+    let h = `<span class="url-host">${esc(host)}</span>`;
     for (const seg of segs) h += `<span class="url-sep">/</span>${seg.split('+').map(piece).join('<span class="url-sep">+</span>')}`;
     return h;
   }
@@ -937,46 +935,26 @@
   }
   /** A shared collection with this page's look, and its filters from its link. */
   function fromShared(c, look) {
-    const route = readPath(BASE + c.path);
+    const route = readPath(c.path);
     return byFilters({ ...c, ...look, juris: route.juris, f: route.f });
   }
-  // The look of each, which is this page's business: the art behind its card
-  // and what is drawn on it.
-  const LOOK = {
-    english: { art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En' },
-    sunday: { art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy' },
-    vespers: { art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer' },
-    weeknights: { art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer' },
-    talks: { art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk' },
-    socials: { art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social' },
-    monasteries: { art: 'linear-gradient(135deg,#3f3f46,#a8a29e)', glyph: '☦' },
-  };
+  // The look of each, the art behind its card and what is drawn on it, is
+  // collections.js's, which the Worker's first paint of a card reads too.
+  const lookOf = (c) => window.AgoraCollections.lookOf(c, jColor);
   /** The curated slices: preset filters that open as a card of parishes. */
   function curated() {
-    return window.AgoraCollections.CURATED.map(c => fromShared(c, LOOK[c.id])).filter(c => c.ids.length);
+    return window.AgoraCollections.CURATED.map(c => fromShared(c, lookOf(c))).filter(c => c.ids.length);
   }
-  const LANGS = [
-    ['Greek', 'Ελ', '#0061fe'], ['Arabic', 'عر', '#7c3bc1'], ['Serbian', 'Ср', '#cc2234'], ['Slavonic', 'Сл', '#d38301'],
-    ['Romanian', 'Ro', '#4e7a27'], ['Macedonian', 'Мк', '#b92d5d'],
-  ];
+  const LANGS = Object.keys(window.AgoraCollections.LANGUAGE_LOOK).map(l => [l]);
   function languageCollections() {
-    return window.AgoraCollections.LANGUAGES.map(c => {
-      const [, glyph, color] = LANGS.find(([l]) => l === c.lang) || [c.lang, c.title.slice(0, 2), '#64748b'];
-      return fromShared(c, { glyph, art: `linear-gradient(160deg,${color},${shade(color, -0.35)})` });
-    }).filter(c => c.ids.length);
+    return window.AgoraCollections.LANGUAGES.map(c => fromShared(c, lookOf(c))).filter(c => c.ids.length);
   }
   /** A jurisdiction's logo, once /admin has one: the picture on its card. */
   const jurisLogo = (j) => ((window.agoraBundle && window.agoraBundle.raw && window.agoraBundle.raw.jurisdiction_logos) || {})[j] || null;
   function jurisCollections() {
     return JURIS_ORDER.map(j => window.AgoraCollections.byId('j-' + j)).filter(Boolean).map(c => fromShared(c, {
-      logo: jurisLogo(c.jurisdiction),
-      art: `radial-gradient(120% 90% at 85% 10%, ${shade(jColor(c.jurisdiction), 0.35)}, ${jColor(c.jurisdiction)} 55%, ${shade(jColor(c.jurisdiction), -0.4)})`,
+      logo: jurisLogo(c.jurisdiction), ...lookOf(c),
     }));
-  }
-  function shade(hex, amt) {
-    const n = parseInt(hex.slice(1), 16);
-    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => Math.round(amt > 0 ? v + (255 - v) * amt : v * (1 + amt)));
-    return '#' + ch.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
   }
   let COLL = new Map();
   function remember(cs) { cs.forEach(c => COLL.set(c.id, c)); return cs; }
@@ -1060,7 +1038,7 @@
   // The app's dated list: a quiet header for each day with its own link, the
   // morning's services and events, then the evening's under the moon. A date
   // picked from the calendar is where the list starts — a FROM, as every date
-  // in a link is — and it goes in the link: /next/2026-10-25, /next/sgr/2026-10-25.
+  // in a link is — and it goes in the link: /2026-10-25, /sgr/2026-10-25.
 
   /** The bundle holds every day to `end`, asking for more when it does not. */
   async function ensureLoaded(end) {
@@ -1185,7 +1163,16 @@
     stack.push(el);
     $('#scrim').hidden = false;
     document.body.classList.add('sheet-open');
-    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
+    // The card the Worker painted for this link (worker/lib/page-card.mjs)
+    // gives way to this one where it stands, with no slide.
+    const painted = $$(':scope > .ssr', host);
+    if (painted.length) {
+      el.classList.add('open', 'instant');
+      painted.forEach(x => x.remove());
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('instant')));
+    } else {
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
+    }
     const scroller = el.querySelector('.sheet-scroll');
     if (scroller) scroller.addEventListener('scroll', () => el.classList.toggle('scrolled', scroller.scrollTop > 40), { passive: true });
     if (entry) syncURL({ push: true, step: true });
@@ -1241,25 +1228,10 @@
   // AM, the morning's services before the evening's under the app's moon, and
   // the whole block on a rule in the parish's colour.
 
-  const ORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
-  function qualifier(r) {
-    const bits = [];
-    if (r.week_of_month) bits.push(r.week_of_month.split(',').map(w => ORD[w.trim()] || w).join(' & '));
-    if (r.week_parity) bits.push('fortnightly');
-    return bits.join(' ');
-  }
-  /**
-   * "until 24 Oct", "from 25 Oct": a rule that ends, or has not started yet,
-   * says so (app.js ruleRangeLabel). A service changed from a date on is two
-   * rules, and without it the timetable read as both running.
-   */
-  function ruleRange(r) {
-    const t = todayKey();
-    const from = r.effective_from && r.effective_from > t ? r.effective_from : null;
-    const to = r.effective_to || null;
-    const d = (k) => { const x = new Date(k + 'T00:00:00Z'); return `${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
-    return from && to ? `${d(from)} – ${d(to)}` : from ? `from ${d(from)}` : to ? `until ${d(to)}` : '';
-  }
+  // Which rules make a line, how its days and dates are said, and the order:
+  // public/shared/timetable-lines.js, which the Worker's first paint of this
+  // card reads too.
+  const TL = window.AgoraTimetableLines;
   /**
    * "on a break, back Sun 10 Jan · Christmas break": a rule on a break today
    * says when it runs again (app.js scheduleBreakLine), from the projection's
@@ -1273,50 +1245,24 @@
     const back = window.agoraBundle.nextOccurrenceAfterBreak(r, t);
     return `on a break, ${back ? `back ${shortDate(back)}` : 'no return date set'}${b.note ? ` · ${b.note}` : ''}`;
   }
-  function dayList(days) {
-    const ds = [...new Set(days)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)); // Monday first, Sunday last
-    if (ds.length === 7) return 'Every day';
-    // Runs of three or more become a range: Mon–Fri.
-    const idx = ds.map(d => (d + 6) % 7);
-    const out = [];
-    for (let i = 0; i < idx.length;) {
-      let j = i;
-      while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++;
-      if (j - i >= 2) out.push(`${WD[(idx[i] + 1) % 7]}–${WD[(idx[j] + 1) % 7]}`);
-      else for (let k = i; k <= j; k++) out.push(WD[(idx[k] + 1) % 7]);
-      i = j + 1;
-    }
-    return out.join(', ');
-  }
   /** The app's Evening divider: its moon and the word, as faint as a day's name. */
   const MOON = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg>';
   const EVENING = `<div class="eve">${MOON}<span>Evening</span></div>`;
-  const isEvening = (row) => window.AgoraServices.partOfDayOf(row) === 'evening';
+  const isEvening = (row) => TL.isEvening(row);
   /** A parish's colour where it marks the parish: its jurisdiction's, lifted in the dark. */
   const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
 
   /** `edit`: whoever may change the timetable gets a pencil on each line. */
   function timetable(pid, { compact = false, edit = false } = {}) {
-    const rs = rulesOf(pid).filter(liveRule);
-    const lines = new Map();
-    for (const r of rs) {
-      const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || '', ruleRange(r), ruleBreak(r)].join('|');
-      if (!lines.has(key)) lines.set(key, { r, days: [], ids: [] });
-      lines.get(key).days.push(r.day_of_week);
-      lines.get(key).ids.push(r.id);
-    }
     // One week, as the app's timetable reads: the morning's services, then
     // the evening's under the moon, each from Sunday; the roundels say which kind.
-    const firstDay = (l) => Math.min(...l.days);
-    const ls = [...lines.values()].sort((a, b) => isEvening(a.r) - isEvening(b.r) || firstDay(a) - firstDay(b)
-      || String(a.r.start_time).localeCompare(String(b.r.start_time)));
-    const eve = ls.findIndex(l => isEvening(l.r));
+    const ls = TL.linesOf(rulesOf(pid).filter(liveRule), { today: todayKey(), offOf: ruleBreak });
+    const eve = ls.findIndex(l => l.evening);
     const line = (l) => {
-      const q = qualifier(l.r);
+      const { q, range, off } = l;
       const langs = !compact && parseLangs(l.r.languages);
-      const range = ruleRange(l.r), off = ruleBreak(l.r);
       return `<div class="tt-line">
-          <span class="tt-days">${esc((q ? q + ' ' : '') + dayList(l.days))}</span>
+          <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
           <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
           ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
@@ -1356,13 +1302,6 @@
       parishNotices: who.parishNotices || 0,
       suggestions: who.suggestions || 0,
     } : NOBODY;
-    // The cookie the Worker reads to answer a parish link with the app rather
-    // than its lite card (worker/routes/pages.mjs). It grants nothing.
-    try {
-      document.cookie = S.who.role
-        ? 'agora_admin=1; path=/; max-age=2592000; samesite=lax; secure'
-        : 'agora_admin=; path=/; max-age=0; samesite=lax; secure';
-    } catch { /* refused cookies only mean the lite card */ }
     syncAccount();
     // A card drawn before the answer came was drawn for a visitor.
     if (S.who.signedIn) repaintSheets();
@@ -2353,7 +2292,7 @@
     adopt();
     step(`✓ ${S.parishes.length} parishes, ${S.rules.length} service times`, 0.6);
     if (S.loc) document.body.classList.add('located');
-    // What the address asks for. The older /next#sgr is /next/sgr.
+    // What the address asks for. The older /#sgr is /sgr.
     const route = readPath(location.pathname);
     const h = decodeURIComponent(location.hash.slice(1));
     if (h && !route.parish) { const p = parishBySlug(h); if (p) route.parish = p.id; }
@@ -2367,11 +2306,23 @@
     renderFeeds();
     // The page's own address first, so a card opened from a link is one step
     // back from the page rather than from wherever the person came from.
-    try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + location.search); } catch { /* sandboxed */ }
+    // ?app was the old lite card's way into the app, and means nothing now.
+    const q = new URLSearchParams(location.search);
+    q.delete('app');
+    try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + (q.toString() ? `?${q}` : '')); } catch { /* sandboxed */ }
     renderLink();
     step('✓ page drawn', 0.7);
     await mapStarted;
     applyRoute(route, { animate: false });
+    // A collection's link opens its card, over the page its filters make, as
+    // the shelf's card does: a step back is that page.
+    if (!route.parish && !route.eventId) {
+      const meant = window.AgoraCollections.collectionFor(window.AgoraUrlState.classifyPath(location.pathname, { today: todayKey() }));
+      const c = meant && COLL.get(meant.id);
+      if (c) openCollection(c);
+    }
+    // A card painted for a link this page did not open (a parish since gone).
+    $$('#sheets > .ssr').forEach(x => x.remove());
     // A map that settled before the parishes came counted none in view: count again.
     onView();
     // The loader is the map's: it goes when the map has drawn, its tiles in
