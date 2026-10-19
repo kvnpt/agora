@@ -748,7 +748,9 @@
         <div class="ev-tools">
           ${state ? `<span class="ev-state ${esc(e.status)}">${esc(state)}</span>` : ''}
           <button class="rf-btn" type="button" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel' : 'Cancel'}</button>
+          ${series && host.may('override.edit', series.rule.parish_id) ? `<button class="rf-btn" type="button" data-ev-break>${e.status === 'break' ? 'Edit the break' : 'Break…'}</button>` : ''}
           ${series ? `<button class="rf-btn" type="button" data-ev-status="${hidden ? 'approved' : 'hidden'}">${hidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
+          ${series ? '' : '<button class="rf-btn" type="button" data-ev-combine>Include other parishes…</button>'}
           ${headless ? '<button class="rf-btn danger" type="button" data-ev-delete>Delete</button>' : ''}
         </div>
         ${eventFieldsHTML(e, { series, parish, start, end, multi, parishes })}
@@ -795,6 +797,10 @@
     form.querySelector('.ev-tools').addEventListener('click', async (ev) => {
       const b = ev.target.closest('button');
       if (!b) return;
+      // Each its own dialog, in place of this one: what it changes is the
+      // card's, which is drawn again when it is done.
+      if (b.matches('[data-ev-break]')) { f.close(); return editBreak(e.id); }
+      if (b.matches('[data-ev-combine]')) { f.close(); return combine(e.id); }
       if (b.matches('[data-ev-delete]')) {
         const go = await askChoice({
           title: `Delete ${e.title}?`,
@@ -921,8 +927,267 @@
     if (first) first.focus({ preventScroll: true });
   }
 
+  // ── A break ───────────────────────────────────────────────────────────
+  //
+  // A stretch of dates a service is not on: shut between Christmas and
+  // Theophany, the priest away. The third answer beside Cancel and Suppress,
+  // and like neither: a range that still renders, each date a BREAK tombstone
+  // with its reason (app.js openBreakEditor). One rule, or everything at the
+  // parish. Gated on `override.edit`, as its route is.
+
+  const dayAfter = (iso) => new Date(Date.parse(iso + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  /** The breaks that speak for a rule: its own, and its parish's. */
+  const breaksOf = (rule) => ((root.agoraBundle && root.agoraBundle.breaks()) || [])
+    .filter(b => (b.schedule_id != null ? String(b.schedule_id) === String(rule.id) : b.parish_id === rule.parish_id));
+
+  function editBreak(id) {
+    const series = seriesOf(id);
+    if (!series || !host.may('override.edit', series.rule.parish_id)) return;
+    const { rule, date } = series;
+    const parish = host.parish(rule.parish_id);
+    const DF = RF().dateFieldHTML;
+    const f = frame({ title: 'Break', sub: [rule.title, parish && parish.name].filter(Boolean).join(' · '), cls: 'break-backdrop' });
+    f.body.innerHTML = `<div class="detail-edit-form bk-form">
+        <p class="bk-lead">Dates it is not on, for a while. Each one still shows, struck through, with the reason, and the timetable says when it is back.</p>
+        <div data-bk-existing></div>
+        <div class="edit-row"><label>For</label>
+          <div class="cad-modes">
+            <label class="cad-mode"><input type="radio" name="bk-scope" value="rule" checked> Just ${esc(rule.title)}</label>
+            <label class="cad-mode"><input type="radio" name="bk-scope" value="parish"> Everything at ${esc(parish ? parish.name : 'the parish')}</label>
+          </div>
+        </div>
+        <div class="edit-row edit-pair">
+          <div><label>From</label>${DF('from', date, 'Pick a date', { attr: 'data-bk', required: true })}</div>
+          <div><label>To</label>${DF('to', date, 'Pick a date', { attr: 'data-bk', required: true })}</div>
+        </div>
+        <div class="edit-row"><label>Why</label><input data-bk="note" placeholder="Christmas break" maxlength="120" autocomplete="off"></div>
+        <div class="edit-row-hint" data-bk-hint></div>
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-bk-save>Set break</button>
+          <button class="btn-outline" type="button" data-frame-close>Close</button>
+        </div>
+      </div>`;
+    const form = f.body.firstElementChild;
+    const q = (k) => form.querySelector(`[data-bk="${k}"]`);
+    const scope = () => (form.querySelector('input[name="bk-scope"]:checked') || {}).value || 'rule';
+    const err = form.querySelector('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
+    RF().wireDates(form, host.today());
+
+    // What the window does, in this service's own dates rather than in days.
+    const hint = () => {
+      const el = form.querySelector('[data-bk-hint]');
+      const from = q('from').value, to = q('to').value;
+      const also = scope() === 'parish' ? ` Every other service at ${parish ? parish.name : 'the parish'} in those days is on the break too.` : '';
+      if (!from || !to) { el.textContent = ''; return; }
+      if (to < from) { el.textContent = 'It ends before it starts.'; return; }
+      let n = 0;
+      for (let d = from, i = 0; d <= to && i < 400; d = dayAfter(d), i++) {
+        if (root.agoraBundle.resolveEvent(`${rule.id}:${d}`)) n++;
+      }
+      el.textContent = (n ? `${n === 1 ? 'One date' : `${n} dates`} of ${rule.title} will show as a break.` : `${rule.title} has no date in those days.`) + also;
+    };
+    form.addEventListener('change', hint);
+    hint();
+
+    // What is on file already, each liftable.
+    const paintExisting = () => {
+      const box = form.querySelector('[data-bk-existing]');
+      const rows = breaksOf(rule);
+      box.innerHTML = rows.length ? `<div class="bk-head">On file</div>${rows.map(b => `
+          <div class="bk-row">
+            <div><b>${esc(longDate(b.from_date))} – ${esc(longDate(b.to_date))}</b>
+              <span>${b.schedule_id == null ? 'Everything at the parish' : esc(rule.title)}</span>
+              ${b.note ? `<small>${esc(b.note)}</small>` : ''}</div>
+            <button class="rf-btn" type="button" data-lift="${esc(b.id)}">Lift</button>
+          </div>`).join('')}` : '';
+    };
+    paintExisting();
+    form.querySelector('[data-bk-existing]').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-lift]');
+      if (!b) return;
+      const go = await askChoice({
+        title: 'Lift this break?',
+        body: '<p>The dates it covers run again as the timetable says.</p>',
+        choices: [{ value: 'lift', label: 'Lift it' }],
+      });
+      if (go !== 'lift') return;
+      const res = await fetch(`/api/admin/breaks/${encodeURIComponent(b.dataset.lift)}`, { method: 'DELETE' }).catch(() => null);
+      if (!res || !res.ok) return fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+      await host.reload();
+      paintExisting();
+      hint();
+      host.toast('Break lifted');
+    });
+
+    const save = form.querySelector('[data-bk-save]');
+    save.addEventListener('click', async () => {
+      if (save.disabled) return;
+      fail('');
+      const from = q('from').value, to = q('to').value, note = q('note').value.trim();
+      if (!from || !to) return fail('A break needs a first and a last day.');
+      if (to < from) return fail('It ends before it starts.');
+      // The note is all a visitor is told in place of the service.
+      if (!note) return fail('Say why. It is what each date shows in place of the service.');
+      save.disabled = true;
+      try {
+        const res = await fetch('/api/admin/breaks', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ schedule_id: scope() === 'parish' ? null : rule.id, parish_id: rule.parish_id, from_date: from, to_date: to, note }),
+        }).catch(() => null);
+        if (!res || !res.ok) return fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        f.close();
+        await host.reload({ through: to });
+        host.toast('Break set');
+      } finally { save.disabled = false; }
+    });
+    q('note').focus({ preventScroll: true });
+  }
+
+  // ── Include other parishes ────────────────────────────────────────────
+  //
+  // One event at several parishes, and in place of their own services that
+  // day: the combine (docs/editing.md), as the add-event editor offers it on
+  // every card, with its parish list (nearest first, by jurisdiction) and its
+  // "needs an owner". A tick that is not this person's to make becomes an
+  // ask: their own part goes ahead, and an owner is asked for the rest.
+
+  async function combine(id) {
+    const e = host.event(id);
+    const EE = root.AgoraEventEditor;
+    if (!e || seriesOf(id) || !EE || !host.may('event.edit', e.parish_id)) return;
+    const parish = host.parish(e.parish_id) || { id: e.parish_id, name: e.parish_name };
+    const zone = e.timezone || parish.timezone || 'Australia/Sydney';
+    const date = (await tz()).localPartsOf(zone, Date.parse(e.start_utc)).date;
+    const f = frame({ title: 'Include other parishes', sub: `${e.title} · ${longDate(date)}`, cls: 'combine-backdrop' });
+    f.body.innerHTML = `<div class="detail-edit-form cb-form">
+        <div class="ee-section-title">Also appears at</div>
+        <input type="search" class="cb-find" placeholder="Find a parish" autocomplete="off" aria-label="Find a parish">
+        <div class="ee-list" data-list="also"></div>
+        <div class="ee-section-title">In place of their own services that day</div>
+        <div class="ee-list" data-list="replaces"><div class="ee-empty">Loading…</div></div>
+        <div class="edit-row-hint">Whatever is ticked here stops being its own card and shows as a tombstone pointing at this event: nothing disappears.</div>
+        <div class="cb-ask" hidden>
+          <p>Some of what is ticked is not yours. Yours goes ahead now, and an owner is asked for the rest.</p>
+          <input data-cb-reason placeholder="Why: the owner reads this" autocomplete="off">
+        </div>
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-cb-save>Save</button>
+          <button class="btn-outline" type="button" data-frame-close>Close</button>
+        </div>
+      </div>`;
+    const form = f.body.firstElementChild;
+    const err = form.querySelector('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
+    const alsoBox = form.querySelector('[data-list="also"]');
+    const replBox = form.querySelector('[data-list="replaces"]');
+    const askBox = form.querySelector('.cb-ask');
+    const find = form.querySelector('.cb-find');
+
+    const also = new Set();
+    const replaces = new Set();
+    let candidates = null;
+    let refused = false;
+    const rows = EE.orderParishRows(parish, host.parishes(), host.may);
+    const zoneOf = (pid) => (host.parish(pid) || {}).timezone || zone;
+
+    const paintAlso = () => {
+      const needle = find.value.trim().toLowerCase();
+      let lastJuris = null;
+      alsoBox.innerHTML = rows.filter(p => p._isOwn || also.has(p.id) || !needle || String(p.name).toLowerCase().includes(needle)).map(p => {
+        let head = '';
+        if (!p._isOwn && p.jurisdiction !== lastJuris) {
+          lastJuris = p.jurisdiction;
+          const j = String(p.jurisdiction || 'Other');
+          head = `<div class="ee-group">${esc(j.charAt(0).toUpperCase() + j.slice(1))} Orthodox</div>`;
+        }
+        const tag = p._isOwn ? '<em class="ee-tag">own</em>' : p._needsAsk ? '<em class="ee-tag ee-tag-ask">needs an owner</em>' : '';
+        const sub = p._isOwn ? '' : EE.kmLabel(p._km);
+        return `${head}<label class="ee-item"><input type="checkbox" value="${esc(p.id)}"${p._isOwn ? ' checked disabled' : also.has(p.id) ? ' checked' : ''}>`
+          + `<span>${esc(p.name)}${tag}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label>`;
+      }).join('');
+    };
+    const paintReplaces = () => {
+      if (candidates == null) return;
+      const at = new Set([parish.id, ...also]);
+      const shown = candidates.filter(c => at.has(c.parish_id));
+      // A tick this list no longer shows goes: hidden, it would still combine.
+      for (const rid of [...replaces]) if (!shown.some(c => String(c.id) === rid)) replaces.delete(rid);
+      replBox.innerHTML = shown.length ? shown.map(c => {
+        const when = new Intl.DateTimeFormat('en-AU', { timeZone: zoneOf(c.parish_id), hour: 'numeric', minute: '2-digit' }).format(new Date(c.start_utc));
+        const tag = host.may('event.edit', c.parish_id) ? '' : '<em class="ee-tag ee-tag-ask">needs an owner</em>';
+        return `<label class="ee-item"><input type="checkbox" value="${esc(String(c.id))}"${replaces.has(String(c.id)) ? ' checked' : ''}>`
+          + `<span>${esc(c.title)}${tag}<small>${esc(when)} · ${esc(c.parish_name || '')}</small></span></label>`;
+      }).join('') : '<div class="ee-empty">Nothing on file at the ticked parishes that day</div>';
+    };
+    const needsAsk = () => refused || EE.askNeeded({ also_at: [...also], replaces: [...replaces] }, host.may,
+      (rid) => ((candidates || []).find(c => String(c.id) === String(rid)) || {}).parish_id ?? null);
+    const paintAsk = () => { askBox.hidden = !needsAsk(); };
+
+    alsoBox.addEventListener('change', (ev) => {
+      const cb = ev.target;
+      if (cb.checked) also.add(cb.value); else also.delete(cb.value);
+      paintReplaces();
+      paintAsk();
+    });
+    replBox.addEventListener('change', (ev) => {
+      const cb = ev.target;
+      if (cb.checked) replaces.add(cb.value); else replaces.delete(cb.value);
+      paintAsk();
+    });
+    find.addEventListener('input', paintAlso);
+
+    // What it is combined with now, and what that day holds.
+    const get = (url) => fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    const [cands, current] = await Promise.all([
+      get(`/api/admin/events/candidates?date=${encodeURIComponent(date)}&tz=${encodeURIComponent(zone)}&exclude_id=${encodeURIComponent(e.id)}`),
+      get(`/api/admin/events/${encodeURIComponent(e.id)}/escalation`),
+    ]);
+    if (!form.isConnected) return;
+    if (!cands || !current) { replBox.innerHTML = '<div class="ee-empty">Could not load that day. Close and try again.</div>'; return; }
+    for (const pid of current.additive_parish_ids || []) also.add(pid);
+    const ids = new Set(cands.map(c => String(c.id)));
+    candidates = [...cands, ...(current.replaced_events || []).filter(c => !ids.has(String(c.id)))];
+    for (const c of current.replaced_events || []) replaces.add(String(c.id));
+    paintAlso();
+    paintReplaces();
+    paintAsk();
+
+    const save = form.querySelector('[data-cb-save]');
+    save.addEventListener('click', async () => {
+      if (save.disabled) return;
+      fail('');
+      const asking = needsAsk();
+      const reason = form.querySelector('[data-cb-reason]').value.trim();
+      save.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/events/${encodeURIComponent(e.id)}/escalate`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ additive_parish_ids: [...also], replaced_event_ids: [...replaces], ...(asking ? { propose: reason || true } : {}) }),
+        }).catch(() => null);
+        if (res && res.status === 403) {
+          const body = await res.clone().json().catch(() => null);
+          // Somewhere to go: the same request, as an ask.
+          if (body && body.proposable) {
+            refused = true;
+            paintAsk();
+            return fail(`${body.error} Save again to ask an owner.`);
+          }
+        }
+        if (!res || !res.ok) return fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        const out = await res.json().catch(() => ({}));
+        f.close();
+        await host.reload();
+        host.toast(out.proposal_id ? 'Yours is done; an owner is asked for the rest' : 'Saved');
+        if (out.proposal_id) host.recheck();
+      } finally { save.disabled = false; }
+    });
+  }
+
   root.NextEdit = {
     init(h) { host = h; },
-    askChoice, keepByHand, errorText, frame, addEvent, addService, editService, editLine, editEvent,
+    askChoice, keepByHand, errorText, frame, addEvent, addService, editService, editLine, editEvent, editBreak, combine,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

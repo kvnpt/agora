@@ -1260,6 +1260,19 @@
     const d = (k) => { const x = new Date(k + 'T00:00:00Z'); return `${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
     return from && to ? `${d(from)} – ${d(to)}` : from ? `from ${d(from)}` : to ? `until ${d(to)}` : '';
   }
+  /**
+   * "on a break, back Sun 10 Jan · Christmas break": a rule on a break today
+   * says when it runs again (app.js scheduleBreakLine), from the projection's
+   * own arithmetic, so the timetable never promises a service that is off.
+   */
+  function ruleBreak(r) {
+    const t = todayKey();
+    const b = window.agoraBundle.breaks().find(x => (x.schedule_id != null ? String(x.schedule_id) === String(r.id) : x.parish_id === r.parish_id)
+      && t >= x.from_date && t <= x.to_date);
+    if (!b) return '';
+    const back = window.agoraBundle.nextOccurrenceAfterBreak(r, t);
+    return `on a break, ${back ? `back ${shortDate(back)}` : 'no return date set'}${b.note ? ` · ${b.note}` : ''}`;
+  }
   function dayList(days) {
     const ds = [...new Set(days)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)); // Monday first, Sunday last
     if (ds.length === 7) return 'Every day';
@@ -1287,7 +1300,7 @@
     const rs = rulesOf(pid).filter(liveRule);
     const lines = new Map();
     for (const r of rs) {
-      const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || '', ruleRange(r)].join('|');
+      const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || '', ruleRange(r), ruleBreak(r)].join('|');
       if (!lines.has(key)) lines.set(key, { r, days: [], ids: [] });
       lines.get(key).days.push(r.day_of_week);
       lines.get(key).ids.push(r.id);
@@ -1301,11 +1314,11 @@
     const line = (l) => {
       const q = qualifier(l.r);
       const langs = !compact && parseLangs(l.r.languages);
-      const range = ruleRange(l.r);
+      const range = ruleRange(l.r), off = ruleBreak(l.r);
       return `<div class="tt-line">
           <span class="tt-days">${esc((q ? q + ' ' : '') + dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
-          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}</span></span>
+          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
           ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };
@@ -1483,10 +1496,23 @@
       </div>
       ${detailsSource(p)}`;
   }
+  /** Next, languages, jurisdiction: the line under a parish's buttons. */
+  function summaryHTML(p) {
+    const nextLit = nextOf(p.id, e => e.event_type === 'liturgy') || nextOf(p.id);
+    const langs = parishLangs(p);
+    return [
+      `<div class="sum"><small>${nextLit ? `Next ${esc(kindLabel(nextLit.event_type))}` : 'Next'}</small><b class="${nextLit ? 'ok' : ''}">${nextLit ? summaryWhen(nextLit) : '—'}</b></div>`,
+      `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>`,
+      // The jurisdiction says itself in its colour, as its tab does.
+      `<div class="sum"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}</b></div>`,
+    ].join('');
+  }
   /** An open card again, from the bundle as it now is, where it was scrolled to. */
   function repaintParish(el) {
     const p = S.byId.get(el.dataset.pid);
     if (!p) return;
+    const sum = el.querySelector('.summary');
+    if (sum) sum.innerHTML = summaryHTML(p);
     const times = el.querySelector('.p-times'), details = el.querySelector('.p-details');
     if (times) times.innerHTML = timesHTML(p);
     if (details) details.innerHTML = detailsHTML(p);
@@ -1500,14 +1526,6 @@
     if (!p) return;
     const segs = segsFor({ parish: p, from });
     const d = distOf(p);
-    const nextLit = nextOf(pid, e => e.event_type === 'liturgy') || nextOf(pid);
-    const langs = parishLangs(p);
-    const summary = [
-      `<div class="sum"><small>${nextLit ? `Next ${esc(kindLabel(nextLit.event_type))}` : 'Next'}</small><b class="${nextLit ? 'ok' : ''}">${nextLit ? summaryWhen(nextLit) : '—'}</b></div>`,
-      `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>`,
-      // The jurisdiction says itself in its colour, as its tab does.
-      `<div class="sum"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}</b></div>`,
-    ].join('');
     const dirs = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
       <div class="sheet-scroll">
@@ -1521,7 +1539,7 @@
           ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
           ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}
         </div>
-        <div class="summary">${summary}</div>
+        <div class="summary">${summaryHTML(p)}</div>
         <h2 class="sec">Service times</h2>
         <div class="p-times">${timesHTML(p)}</div>
         <h2 class="sec">Details</h2>
@@ -1614,6 +1632,8 @@
     const rule = e.schedule_id != null ? S.rules.find(r => String(r.id) === String(e.schedule_id)) : null;
     // What the date is, when it is not on: in its kicker, and the title struck through.
     const off = tombOf(e) || (e.status === 'hidden' ? 'Suppressed' : null);
+    // A date combined into another event points at it.
+    const into = e.status === 'combined' && e.combined_into_event_id ? findEvent(e.combined_into_event_id) : null;
     const edits = p && may('event.edit', p.id);
     return `${e.poster_path ? `<div class="ev-poster"><img src="${esc(e.poster_path)}" alt=""></div>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
@@ -1621,6 +1641,7 @@
           <h1>${esc(e.title)}</h1>
           <p class="ev-when">${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}</p>
           ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
+          ${into ? `<p class="ev-note">In its place: <button class="ev-link" type="button" data-event="${esc(into.id)}">${esc(into.title)}</button></p>` : ''}
         </div>
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">

@@ -192,6 +192,12 @@ as `patch_feast`), and its card follows the date onto the new rule after
 "this and every following". A cancelled, combined or on-break date stays on its
 parish's Coming up, struck through with its word, as on the app's parish page;
 the open feeds leave all three out for now, where the app's shows a break.
+**Break…** (a date of a service) and **Include other parishes…** (a one-off)
+open their own dialogs in place of the form. The combine is the add-event
+editor's lists (nearest first, "needs an owner"), so a tick that is not the
+person's own becomes an ask, as it does there. A timetable line on a break
+today says when it is back, and a combined date's card names what is in its
+place.
 
 The parish sheet's **add-an-event button** is the one control outside that
 mode, and deliberately: the mode exists so a signed-in person reads the sheet a
