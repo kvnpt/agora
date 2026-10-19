@@ -79,6 +79,7 @@
     rulesByParish: new Map(),
     loc: null,               // { lat, lng } once the person says where they are
     inView: null,            // Set of parish ids the viewport holds (null before the map)
+    fetched: new Map(),      // stored events read on their own, outside the bundle (fetchEvent)
     bounds: null,
     juris: null,             // a jurisdiction tab
     f: null,                 // the filters, in the app's shape (blankFilters)
@@ -587,7 +588,7 @@
     if (route.f.location) frameRegion(route.f.location, animate);
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
     if (route.parish) openParish(route.parish, { entry, from: route.from });
-    else if (route.eventId) openEvent(route.eventId, { entry });
+    else if (route.eventId) return openEvent(route.eventId, { entry });
     else if (route.donate) openDonate(route.donate === 'all' ? null : route.donate, { entry });
   }
   /** A region's parishes fill the small map; its whole box (Queensland reaches Torres Strait) would leave it empty. */
@@ -1748,7 +1749,21 @@
     const s = String(id);
     return feedFor(S.streamDays).find(e => String(e.id) === s)
       || (window.agoraBundle.raw?.events || []).find(e => String(e.id) === s)
-      || window.agoraBundle.resolveEvent(s);
+      || window.agoraBundle.resolveEvent(s)
+      || S.fetched.get(s);
+  }
+  /**
+   * A stored event the bundle does not hold — one already over, which is what
+   * a link shared last week is — read on its own, as the Worker painted it.
+   * A date of a service needs no read: resolveEvent projects it.
+   */
+  async function fetchEvent(id) {
+    if (!/^\d+$/.test(String(id))) return null;
+    const r = await fetch(`/api/events/${encodeURIComponent(id)}`).catch(() => null);
+    const e = r && r.ok ? await r.json().catch(() => null) : null;
+    if (!e || e.status === 'hidden' || e.status === 'rejected') return null;
+    S.fetched.set(String(e.id), e);
+    return e;
   }
   /** An event's card, inside its bar: drawn when it opens, and again after a write. */
   function eventBodyHTML(e) {
@@ -1793,7 +1808,10 @@
   }
   function openEvent(id, { entry = true } = {}) {
     const e = findEvent(id);
-    if (!e) return;
+    if (!e) {
+      if (S.fetched.has(String(id))) return null;
+      return fetchEvent(id).then(x => (x ? openEvent(id, { entry }) : null));
+    }
     const p = S.byId.get(e.parish_id);
     // Its bookmark floats, as a parish's star does.
     const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e)}</div>
@@ -2600,15 +2618,16 @@
     renderLink();
     step('✓ page drawn', 0.7);
     await mapStarted;
-    applyRoute(route, { animate: false });
+    const opening = applyRoute(route, { animate: false });
     // A collection's link opens its card, over the page its filters make, as
     // the shelf's card does: a step back is that page.
     if (!route.parish && !route.eventId && !route.donate) {
       const c = collectionAt(location.pathname);
       if (c) openCollection(c);
     }
-    // A card painted for a link this page did not open (a parish since gone).
-    $$('#sheets > .ssr').forEach(x => x.remove());
+    // A card painted for a link this page did not open (a parish since gone),
+    // once an event the bundle did not hold has been read.
+    Promise.resolve(opening).catch(() => {}).then(() => $$('#sheets > .ssr').forEach(x => x.remove()));
     // /admin's New parish asks only what the row needs, then sends its maker
     // here to finish it: the logo, the buttons, the links, the Maps place.
     let made = null;
