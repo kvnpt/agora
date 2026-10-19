@@ -146,8 +146,8 @@ path + UTC hour. An admin write moves the version, so an edit shows on the next 
 the hour bounds how long "today" can be stale. Repeat fetches by crawlers and chat apps
 never reach D1. The page around them is read from the assets on every request, so a
 deploy is live at once; the finished page carries an ETag and `no-cache`. A head or
-card whose markup a deploy changed can stay the old one until the hour turns or the
-data moves. `/sitemap.xml` is `cachedHtml`, the same way.
+card whose markup a deploy changed can stay the old one for up to ten minutes (the
+edge copy's life, `BODY_TTL`), or until the data moves. `/sitemap.xml` is `cachedHtml`, the same way.
 
 ## Previews
 
