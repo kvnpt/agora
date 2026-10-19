@@ -163,7 +163,7 @@ twice — once against the estimate, once against the built file. R2's free tier
 ## Step 5 — Domain
 
 Agora serves the whole zone: `orthodoxy.au` plus every jurisdiction subdomain.
-`public/app.js` reads the hostname before it reads the path, so
+The page (`public/next/next.js`) reads the hostname before it reads the path, so
 `greek.orthodoxy.au` opens pre-filtered to Greek parishes — a feature that only
 works if those hostnames reach the Worker.
 

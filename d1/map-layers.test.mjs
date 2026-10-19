@@ -200,12 +200,12 @@ test('both schemes get a shadow colour, from CSS rather than from here', () => {
   const src = fs.readFileSync('public/map.js', 'utf8');
   assert.ok(src.includes("getPropertyValue('--map-shadow')"),
     'map.js no longer reads the shadow colour from CSS');
-  const css = fs.readFileSync('public/app.css', 'utf8');
+  const css = fs.readFileSync('public/next/next.css', 'utf8');
   const dark = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'));
   assert.ok(/--map-shadow:/.test(css.slice(0, css.indexOf('@media'))),
-    'app.css has no light-mode --map-shadow');
+    'next.css has no light-mode --map-shadow');
   assert.ok(/--map-shadow:/.test(dark),
-    'app.css has no dark-mode --map-shadow, so the light one is used on both');
+    'next.css has no dark-mode --map-shadow, so the light one is used on both');
 });
 
 test('the stack a visitor gets is the clustered one', () => {
@@ -224,10 +224,11 @@ test('the stack a visitor gets is the clustered one', () => {
 
 test('grapes gather only dots that would touch, and never close in', () => {
   // A grape where four churches a street apart should be four dots was the
-  // complaint: 38px and clustering up to MapLibre's default zoom 14.
-  assert.ok(SOURCES.parishes.clusterRadius <= 33, 'the radius gathers only parishes close to touching');
-  assert.ok(SOURCES.parishes.clusterMaxZoom != null && SOURCES.parishes.clusterMaxZoom <= 11,
-    'grapes form at suburb zoom again (no clusterMaxZoom means 14)');
+  // complaint: 38px and clustering up to MapLibre's default zoom 14. Then
+  // 33px, still dots a person could tell apart ("only when very close").
+  assert.ok(SOURCES.parishes.clusterRadius <= 12, 'the radius gathers only parishes whose dots would sit on each other');
+  assert.ok(SOURCES.parishes.clusterMaxZoom != null && SOURCES.parishes.clusterMaxZoom <= 10,
+    'grapes form at a city\'s zoom again (no clusterMaxZoom means 14)');
 });
 
 // ── Halos ────────────────────────────────────────────────────────────────

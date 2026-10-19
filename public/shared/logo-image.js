@@ -41,9 +41,13 @@
     }
   }
 
-  /** A canvas as WebP if the browser can write it; else JPEG, or PNG if it needs alpha. */
-  async function encodeCanvas(canvas) {
-    const webp = await toBlob(canvas, 'image/webp', WEBP_QUALITY);
+  /**
+   * A canvas as WebP if the browser can write it; else JPEG, or PNG if it
+   * needs alpha. `webp: false` skips straight to those two, for a picture that
+   * is also a link preview (a jurisdiction's logo): not every chat app shows WebP.
+   */
+  async function encodeCanvas(canvas, { webp: allowWebp = true } = {}) {
+    const webp = allowWebp ? await toBlob(canvas, 'image/webp', WEBP_QUALITY) : null;
     // A browser that cannot encode WebP does not fail — it quietly returns a
     // PNG. Check what came back rather than what was asked for.
     if (webp && webp.type === 'image/webp') return webp;
@@ -67,7 +71,7 @@
    * centre-cropped to cover. An SVG is returned untouched: it is already the
    * right size at every size, and rasterising it would only make it worse.
    */
-  async function shrinkToSquare(source, size = LOGO_SIZE) {
+  async function shrinkToSquare(source, size = LOGO_SIZE, { webp = true } = {}) {
     if (source && source.type === 'image/svg+xml') return source;
     let img = source, url = null;
     if (typeof source === 'string') img = await loadImage(source);
@@ -81,7 +85,7 @@
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, out, out);
-      return encodeCanvas(canvas);
+      return encodeCanvas(canvas, { webp });
     } finally {
       if (url) URL.revokeObjectURL(url);
     }

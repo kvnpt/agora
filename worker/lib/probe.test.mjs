@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../index.mjs';
 import { isProbePath } from './probe.mjs';
-import { liteKind } from '../routes/pages.mjs';
+import { pageOf } from '../routes/pages.mjs';
 
 const PROBES = [
   '/.env', '/.env.production', '/config/.env', '/.git/config', '/.git/HEAD', '/.aws/credentials',
@@ -44,7 +44,7 @@ test('a probe is a 404 with no D1 read and no asset fetch', async () => {
 });
 
 test('a dotted single segment is a file, not a parish to look up', () => {
-  assert.equal(liteKind('/apple-touch-icon.png'), null);
-  assert.equal(liteKind('/favicon-32x32.png'), null);
-  assert.equal(liteKind('/sgr').kind, 'parish', 'a real parish slug stopped being one');
+  assert.equal(pageOf('/apple-touch-icon.png'), null);
+  assert.equal(pageOf('/favicon-32x32.png'), null);
+  assert.equal(pageOf('/sgr').kind, 'parish', 'a real parish slug stopped being one');
 });

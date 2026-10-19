@@ -1,15 +1,23 @@
-# Lite pages: shared links answered by the Worker
+# Shared links: the page, with its head and card
 
 A link somebody sends — `/sgr`, `/sgr/next-tue`, `/sgr/wed/liturgy`, `/sgr/evening`,
-`/sgr/timetables`, `/102`, `/42:2026-10-04` — is answered with a **lite card**: that parish, and the event the
-link names, server-rendered by the Worker. It paints at once with no map, reads with
-JavaScript off, and carries its own title, description, preview image, canonical URL
-and structured data. A chat app previewing the link and a search engine indexing it
-get the same HTML a person does.
+`/sgr/timetables`, `/102`, `/42:2026-10-04`, `/en`, `/greek/qld` — is answered with the
+page: v3, one page that reads its own address (`public/index.html`,
+`public/next/next.js`). A chat app previewing the link and a search engine reading it run
+no JavaScript, so the Worker writes what the link is into the page before it leaves —
+its title, description, preview image, canonical URL, robots line and structured data —
+and paints the card the link opens (the parish's, the event's, the collection's) into it.
+A person sees that card at once, before the bundle has arrived; next.js takes its place
+the moment it opens its own.
 
-Before this, every such link booted the whole app — MapLibre, the full bundle for 293
-parishes, tiles — behind a loading screen, and a preview got a fixed title and an
-empty shell.
+Until October 2026 these links were answered with **lite pages**: a separate
+server-rendered card over a hero picture (`public/og/hero.jpg`), wearing the old app's
+`/app.css`, with `?app` and an `agora_admin` cookie as ways past it into the app, and
+**page mode** for an admin, the app laying its sheet out as that page so the editors
+were there. v3 replaced both the app and the lite pages: every link gets the one page,
+which edits in place for whoever may, so there is nothing to step past and no cookie to
+read. The lite pages' models stayed (`lite-page.mjs`, `lite-timetable.mjs`); their
+markup went.
 
 ## How a request finds it
 
@@ -18,161 +26,109 @@ empty shell.
    part: `*` matches across `/` and negative rules are tested first, so they must name
    directories and **text** extensions only. An image extension (`!/*.png`) would send
    `/posters/x.png` to the asset router, which has no posters.
-2. The API, the R2 proxy (`/tiles`, `/logos`, `/posters`) and the payment links match
-   first, as before.
+2. The API, the R2 proxy (`/tiles`, `/logos`, `/posters`) and the payment links
+   (`/smg/donate`) match first. `/next/…`, where v3 was built, is sent to the same path
+   without it, for good (`nextRedirect` in `worker/index.mjs`); so are the old service
+   names (`renamedPath` in `url-state.js`).
 3. `servePage` (`worker/routes/pages.mjs`) classifies the path with
-   `public/shared/url-state.js` — **the same grammar the app parses with** — and answers
-   three shapes: one parish (with any day / part of the day / service / date focus, and
-   `/timetables` for its timetable), a bare event id, and **every other filter link** —
-   the timetable page below. Everything else — the home page, a link with a date and no
-   parish, `/social`, `/donate` — returns null and the app loads as it always did.
-4. **It fails open.** A render that throws returns null and the app answers the link.
+   `public/shared/url-state.js` — **the same grammar the page parses with** — in
+   `pageOf`: one parish (with any day / part of the day / service / date focus, and
+   `/timetables`), a bare event id, a collection or any other filter link (a
+   timetable), the home page, and anything else (`/2026-10-25`, `/donate`). A site path
+   or a file is not a page and goes to the assets.
+4. It fetches the page as deployed (`SHELL`, `/`, from `ASSETS`) and fills its marks: `<!--page:head-->…<!--/page:head-->` with the link's head
+   (`worker/lib/page-head.mjs`), and `<!--page:card-->` inside `#sheets` with its card
+   (`worker/lib/page-card.mjs`). `withPage` does both.
+5. **It fails open.** A read that throws serves the page as deployed, whose own head is
+   the home page's, noindex and with no canonical, so a failure never tells a search
+   engine that one link is another. A parish or an event that is not there is a 404
+   with the home page's words.
 
-Two ways past it: `?app` (VIEW MAP on the hero, and the card's "Open in the app" button) and the `agora_admin`
-cookie, which the app sets while somebody holds a role. The cookie grants nothing — the
-API checks the Access token on every request — and it only matters at a parish or an
-event link: an admin there gets the app, because the editors live in the app.
+## What the head says
 
-**Page mode.** So that an admin sees the page a visitor sees, with the controls on it,
-the app lays that card out AS the page when it is the one answering a parish or event
-link (`decidePageMode` in `app.js`, deciding by url-state's `pageKind`, the Worker's own
-rule): the parish sheet full-screen and still, the map put away behind it, the same hero
-on top and the same card under it with its ✕ (`placePageChrome` moves the sheet's ✕ into
-the scroll, onto the card). Every in-place editor works there as it does on the sheet. The ✕ puts the card away and the map comes forward. VIEW MAP puts the page away
-and opens the card again as the sheet, at half over the map with its pin centred above;
-the rest of the hero reloads the app at `/`, as on a visitor's page. Only on arriving at such
-a link — a parish opened from the map is still the sheet over the map, and `?app` asks
-for the map app. A timetable page has nothing to edit, so admins get it like anyone.
+- **A parish** (`/sgr` and every focus on it): its name, its address and its next
+  services as the description, its logo as the preview, its Church structured data
+  (`churchJsonLd`). Indexable at its plain link alone; `/greek/sgr` and `/sgr/en` open
+  the same card under the same canonical, and are not offered to a search engine.
+- **An event** (`/102`, `/42:2026-10-04`): its title, when and where, its poster as the
+  preview. Never indexed (below).
+- **A filter link**: the timetable's heading (`timetableHeading`, whose words are
+  `public/shared/link-words.js`, which the page's parishes in view read too), a collection
+  indexable once its page lists somebody, every other mix noindex.
+- **The home page**: the site's own words. **Anything else**: the home page's words,
+  noindex.
 
-## What it shows
+The words come from the models: `liteMeta` for a parish or an event, `timetableMeta`
+for a filter link. `page-head.mjs` writes them.
 
-`worker/lib/lite-page.mjs`, pure (rows in, HTML out; covered by `node --test`):
+## The card painted in
+
+`worker/lib/page-card.mjs`, pure (models in, markup out; covered by `node --test`).
+The same sheet next.js draws, in the same class names (`public/next/next.css`), with
+what a first paint needs: a parish's names and address, its buttons (Google Maps,
+Website, the stream, Donate, its own links), its service times, what is coming up and
+its details; an event's when and where, its poster and its description with its links
+as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing
+on it is a control that needs the page's script, except Close, which is a link home.
+While it is up the page's scrim shows under it (`.ssr` in `next.css`), and next.js
+replaces it with its own sheet (`pushSheet`) with no slide.
+
+What the two cards read is shared: the timetable's lines are
+`public/shared/timetable-lines.js`, the source lines `source-line.js`, a collection's
+look `collections.js`. The markup is written twice, in `page-card.mjs` and `next.js`;
+keep them saying the same thing.
+
+**What a parish's or an event's card holds** is `worker/lib/lite-page.mjs`
+(`liteModel`), pure:
 
 - the occurrences come from `expandFrom` + `buildFeed`, the same functions `bundle.js`
   runs in the browser, over one parish's rows (`fetchWindowRows({ parishId })`);
-- the pin follows the app's rules (`firstEventOnDay` in `url-state.js`): an id pins its
+- the pin follows the page's rules (`firstEventOnDay` in `url-state.js`): an id pins its
   event, a day pins only an event ON that day, a service, weekday or part of the day
   (`/sgr/evening`, split at 2pm on the parish's clock) pins the next of its kind; a
   synthetic id lists the other dates of the same rule;
-- `/sgr/timetables` is the timetable instead — the rules the link's day, part and service
-  name, no dates and no pin — and under it **View upcoming events →**, which opens the
-  app on the same link minus `/timetables` (`/sgr/evening/timetables` → `/sgr/evening?app`);
-- the way into the app is a button in the parish's colour directly above the list
-  (**Open in the app →**, the same link with `?app`). It used to be a line of small
-  print in the footer;
-- the box above is headed **"Antiochian timetable"** — what it is, not whose church —
-  and the list under it **"Coming up"**, in the same shape: the rule, then what it
-  projects. A focus banner ("Showing Vespers") heads the list instead when the link
-  narrows it, in the app's sheet as here;
-- times in the parish's zone; nothing "now"-relative is baked in — `public/lite.js`
-  marks "Now" and fades past services on the viewer's clock, settles relative dates in
-  the address bar (`/next-tue` → `/2026-10-06`), and puts up the app's loading screen
-  when somebody asks for the app (below). It fetches nothing of the app until then.
+- times in the parish's zone. An event over more than one day reads as its span ("Fri 13
+  Nov 6pm – Sun 15 Nov 4pm"); one that only runs past midnight keeps its day ("Saturday
+  14 Nov · 11pm–3am").
 
-**It wears the app's design.** The page links `/app.css` and writes the app's own class
-names — `ps-header`, the `jurisdiction-box` timetable above the events, `day-section` /
-`time-card` / `event-card`, the Schedules view's boxes on a timetable page — so a
-visitor's page and an admin's page-mode card look the same. Each markup function in
-`lite-page.mjs` names the app function it mirrors; it is copied, not shared, until roadmap
-phase 3 moves the renderers into `public/shared/`. `LITE_CSS` holds only what a page
-needs that a sheet does not: the card and its ✕ (to the app, where "← Back to App" was),
-the column, `<details>` so an event opens with no JavaScript, and the colours.
+**Its colours are the page's.** `/admin`'s overrides (`jurisdiction_colors`) over the
+shared table — the jurisdiction's, since a parish has no colour of its own — and the
+OKLab dark-mode lift in `public/shared/jurisdiction-colors.js` (`liftForDark`).
 
-**A hero over every page, and the page is a card over it.** The app opens on its map and
-the parish sheet slides up over it; a shared link opens on a page, so something has to
-stand where the map would. That is `public/og/hero.jpg`: the site's navy and every parish
-on file as a point of light at its own latitude and longitude, on a faint outline of
-Australia and New Zealand — Sydney and Melbourne glow where they are dense, Perth and
-Auckland sit out on their own. `scripts/build-hero.mjs` draws it from the live
-`/api/parishes` (re-run it after an import) and Natural Earth's land. Over it, as the
-page's own text (`heroHTML`): "orthodoxy.au", small in the lower-left corner on the card's
-left edge (it had a cross beside it, centred on the left, until October 2026), and
-**VIEW MAP** in the middle — see the way into the app, below. It is
-shown at its full height and centred, never cropped to a band — its edges are the
-background's navy, so a wide screen gets plain navy either side. The content is a card
-that overlaps its foot (`--hero-overlap`), rounded at the top, and behaves as the app's
-parish card does: its header (the parish's, or a timetable page's title) sticks to the top
-as the page scrolls, and the ✕ — sticky itself — stays on its corner. `lite.js` measures
-the header into `--ps-stack-h`, as the app does, so the day headers stop under it. The
-styles are app.css's `.lite-hero`, which page mode wears too, with the sheet's ✕ moved
-onto the card (`placePageChrome`).
-
-**The way into the app.** Three doors, and the app is fetched only once one is used:
-
-| | Goes to | |
-|---|---|---|
-| **VIEW MAP** on the hero | this page's link in the app, `?app` | a parish or event opens its sheet over the map, flown to its pin (`appHref`); a timetable page opens the map with its filters, without `/timetables` (`eventsHref`) |
-| the ✕, the hero's name, anywhere else on the hero | `/` | the app as it opens with no link: no filters |
-| **Open in the app →**, **View upcoming events →**, the no-times count | their `?app` links | as before |
-
-`lite.js` catches the click (a plain one: a modified or middle click is left to the
-browser, for a new tab), puts up the app's own loading screen over the page at once —
-`#loading-screen`, which `/app.css` already styles, with the eucalyptus index.html last
-drew (`ls-tree-svg` in localStorage; with none kept it fetches one and keeps it, so the
-app most likely draws the same) — then navigates in the same tab two frames later.
-index.html paints the same screen first thing, so the screen carries on across the load.
-A page restored by Back (`pageshow` with `persisted`) takes the screen down. Without
-JavaScript the ✕, the name and VIEW MAP are plain links; the rest of the hero does nothing.
-
-The page used to prefetch `app.js`, `app.css` and MapLibre on idle, so the way back was
-quick. It no longer does: most people sent a link read it and leave, and `app.js` and MapLibre
-are 1.3 MB (some 360 KB compressed) they would never use.
-
-VIEW MAP is glass where the browser has `backdrop-filter` — the lights come through it
-blurred, brightened and more saturated, under a lit top edge and a sheen — and a plain
-see-through pill where it has not, or where the viewer asks for reduced transparency.
-The styles are app.css's `.lite-hero-map`.
-
-**Its colours are the app's.** `/admin`'s overrides (`jurisdiction_colors`) over the
-shared table — the jurisdiction's, for the parish and its timetable box alike, since a
-parish has no colour of its own — and the app's OKLab dark-mode lift — now in
-`public/shared/jurisdiction-colors.js` (`liftForDark`) so the Worker can compute it. A
-cached page cannot choose at render time, so it carries both as custom properties and a
-`prefers-color-scheme` query picks.
-
-## Timetable pages: a link that names no single parish
+## Timetables: a link that names no single parish
 
 `/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/timetables` — the
-aggregated schedules, which are the way into everything else Agora does. Before these
-pages every such link booted the app, map first, to show what is really a list.
+aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, the list
+in `public/shared/collections.js`) opens its card, painted from the model
+(`collectionCardHTML`): the parishes, those with times first, each with its times,
+folded to the first few lines until Show timetables (a checkbox in its label, so it
+opens with no script); the page adds a Today box of theirs above the timetables and
+what is coming up at them underneath. Any
+other mix of filters is the page itself, filtered, and gets only its head.
 
-`worker/lib/lite-timetable.mjs`, pure like the card:
+`worker/lib/lite-timetable.mjs` (`timetableModel`), pure like the card's:
 
 - **Rules, not occurrences.** What each parish does week by week, so there is no
   projection and 293 parishes cost two D1 reads (parishes, active rules). A link with a
-  date ("what is on next Sunday") is a list of dates, and goes to the app for now.
+  date ("what is on next Sunday") is a list of dates, and is left to the page.
 - **Which parishes and rules a link means is `public/shared/timetable.js`** — the same
-  module the app's Schedules view (`renderServices`) filters with, so the page and the
-  app cannot list different services for one link. A `parish_scoped` rule stays on its
-  own card (docs/editing.md); an ended rule is off, one that starts later is marked
-  "from".
+  module the page's collections ask, so the painted card and the page cannot list
+  different services for one link. A `parish_scoped` rule stays on its own card
+  (docs/editing.md); an ended rule is off, one that starts later is marked "from".
 - **Grouped by state, then jurisdiction, alphabetical all the way down.** Australian
-  states first (by address — `locations.js` says why), then other countries by pin. A
-  page already narrowed to one jurisdiction drops the jurisdiction headings.
-- **Parishes with no times are a count under the timetable** (253 of 293 in October
-  2026). It opens the app's Schedules view with the same filters and `#no-times`, where
-  `noTimesHTML` lists them by name and the app scrolls to them once. "No times" means
-  no rules at all, not none matching: under `/liturgy` a parish with only Vespers has
-  times.
-- **Not under a link that asks something of the rules** — a service, a day, a part
-  of the day, a language (`narrowsRules` in `timetable.js`): neither the count here
-  nor the app's list. Nothing on file is not "no Bible study". It was counted until
-  October 2026, and `/antiochian/bible-study` read "4 parishes with times … 1 parish
-  without service times on file": Howick's mission in Auckland, the one Antiochian
-  parish with no rules, while the 19 with rules but no Bible study fell out at
-  `ruleMatches` uncounted. The model still counts them, for the empty page's "None of
-  these parishes has its service times on file yet."
-- **Landing there must not leave the list dim.** The Schedules view fades its list
-  while the map moves (`markEventsPending` on `movestart`) and releases it in the
-  move's list phase (`onViewportListPhase`). The link lands mid-fit, and `#no-times`
-  snaps the sheet to full; the list phase skips a snap's moves, and it used to skip
-  the fit's too, so the view sat at a third of its brightness until the next move.
-  It also never released after `renderServices`, so any pan that changed the
-  parishes in view did the same. A list phase now releases whatever a real move
-  marked.
-- **View upcoming events →** opens the app's dated feed with the same filters.
-- The canonical is the link's filters in the app's order, without `/timetables` — the
-  page *is* the timetable — except bare `/timetables`, which keeps it.
+  states first (by address — `locations.js` says why), then other countries by pin.
+- **A link that asks nothing of the rules lists every parish** (`/timetables`, `/greek`,
+  `/qld`): one with no times on file is listed too, after those with times, as "No
+  service times on file yet." "No times" means no rules at all, not none matching.
+- **A link that asks something of the rules lists only those it found an answer at** —
+  a service, a day, a part of the day, a language (`narrowsRules` in `timetable.js`).
+  Nothing on file is not "no Bible study": until October 2026 `/antiochian/bible-study`
+  read "4 parishes with times … 1 parish without service times on file", Howick's
+  mission in Auckland, while the 19 with rules but no Bible study fell out uncounted.
+  The model still counts them (`withoutTimes`), for the empty page's words.
+- The canonical is the link's filters in the page's order, without `/timetables`,
+  except bare `/timetables`, which keeps it; a collection's is its own link, however
+  this one spelt it (`/liturgy/sun` is `/sun/liturgy`).
 - **Two languages, many spellings.** `/en`, `/english`, `/bilingual`, `/half-english`,
   `/english-half` and `/some-english` are *English services* — any service with English
   in it, alone or beside another language. `/en-only`, `/english-only` and
@@ -180,15 +136,22 @@ pages every such link booted the app, map first, to show what is really a list.
   spellings live in `public/shared/slugs.js` (an acronym may not take one); a link
   writes, and a canonical names, only `/en` and `/en-only`. Any other language is
   `/in-greek`, or `/in-greek-only` for nothing but Greek, and its heading says
-  "Greek-only". In the app the button reads "Any language", then the language, with
-  an up-and-down segment that opens the languages on file and an "only" beside it.
+  "Greek-only". The server and the page do not yet count `/en` alike: for a rule
+  that names no language the server takes English anywhere in the parish's languages,
+  the page only English first there or on a rule (`speaksEnglish` in `next.js`, since
+  English is on nearly every parish's list). So `/en` paints more parishes than the
+  page then draws (8 and 4 locally, October 2026); one of the two should give way.
 
 ## Caching
 
-`cachedHtml` (beside `cachedJson` in `worker/lib/data-version.mjs`): the edge copy is
-keyed by data version + path + UTC hour, with an ETag and `no-cache`. An admin write
-moves the version, so an edit shows on the next load; the hour bounds how long "today"
-can be stale. Repeat fetches by crawlers and chat apps never reach D1.
+`cachedText` (beside `cachedJson` in `worker/lib/data-version.mjs`) keeps what D1 said
+about a link — its head and its card, as JSON — at the edge, keyed by data version +
+path + UTC hour. An admin write moves the version, so an edit shows on the next load;
+the hour bounds how long "today" can be stale. Repeat fetches by crawlers and chat apps
+never reach D1. The page around them is read from the assets on every request, so a
+deploy is live at once; the finished page carries an ETag and `no-cache`. A head or
+card whose markup a deploy changed can stay the old one for up to ten minutes (the
+edge copy's life, `BODY_TTL`), or until the data moves. `/sitemap.xml` is `cachedHtml`, the same way.
 
 ## Previews
 
@@ -202,14 +165,22 @@ Not done yet, pending a real WhatsApp send: a small JPEG preview variant for pos
 
 ## Search
 
-Only the parish pages are for indexing: `index,follow` + self-canonical on
-`/<acronym>`, and `/sitemap.xml` lists them. Everything else — event pages, date, day
-and service variants, and every timetable page — is `noindex,follow`; the variants are
-an infinite URL space. The timetable pages are the likeliest to rank ("Greek Orthodox
-service times Queensland"), and the next step is to index jurisdiction and
-jurisdiction × state pages that have enough parishes with times, and list them in the
-sitemap — once Search Console shows more than the home page, and not while
-`/macedonian` would be an empty page.
+The parish pages and the collections are for indexing: `index,follow` + self-canonical
+on `/<acronym>`, and on each collection's own link — `/en`, `/sun/liturgy`,
+`/greek`, `/in-arabic`, `/monasteries`, the list in `public/shared/collections.js` —
+once its page lists somebody. `/sitemap.xml` lists both. A collection is what a link
+*means*, so `/liturgy/sunday` is `/sun/liturgy` and canonicalises to it. Everything
+else — event pages, date, day and service variants, a list picked by hand
+(`/smg+sgr`), every other mix of filters (`/greek/qld`) — is `noindex,follow`; the
+variants are an infinite URL space, and the collections are the ones somebody chose.
+That was the owner's ruling for v3 (October 2026); before it, only the parish pages
+were indexed, and the timetable pages waited on Search Console.
+
+**Each collection previews with its own card**, `public/og/c-<id>.jpg`, drawn by
+`scripts/build-og-images.mjs c-` in the colour of its card on the page's shelves. A
+jurisdiction's is its card (`/og/greek.jpg`) until `/admin` has a logo for it
+(Colours → Jurisdiction logos; table `jurisdiction_logos`, migration 027), and then
+the logo, as a parish previews with its own — except an SVG, which no chat app draws.
 `public/robots.txt` points at the sitemap. The owner verifies orthodoxy.au in Google
 Search Console and submits the sitemap.
 

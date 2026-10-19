@@ -29,6 +29,23 @@
   // anybody links to.
   const JURISDICTION_KEYS = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
 
+  // Several jurisdictions at once: /antiochian+greek, or /antiochian/greek.
+  // Held as the key while it is one, which is what most links mean, and as a
+  // list in the order above once it is more: null, 'greek', or
+  // ['antiochian', 'greek']. services.js holds several weekdays the same way.
+
+  /** null → [], 'greek' → ['greek'], a list → itself. */
+  const jurisdictionsOf = (j) => (j == null || j === '' ? [] : [].concat(j));
+  /** A list as a jurisdiction filter holds it: [] → null, ['greek'] → 'greek', more → a list in order. */
+  function jurisdictionValue(list) {
+    const js = JURISDICTION_KEYS.filter(k => jurisdictionsOf(list).includes(k));
+    return js.length ? (js.length === 1 ? js[0] : js) : null;
+  }
+  /** Is a parish's jurisdiction one the filter asks for? No filter asks for every one. */
+  const jurisdictionMatches = (j, parishJurisdiction) => j == null || jurisdictionsOf(j).includes(parishJurisdiction);
+  /** The segment for a jurisdiction filter: 'greek', 'antiochian+greek', or null. */
+  const jurisdictionSegment = (j) => jurisdictionsOf(jurisdictionValue(j)).join('+') || null;
+
   // /en, /english, /bilingual, /some-english… mean any service with English
   // in it; /en-only, /english-only, /full-english mean English and nothing
   // else. slugs.js keeps the spellings, because an acronym may not take one.
@@ -117,6 +134,10 @@
   // /parishes, which is what the page lists.
   const TIMETABLE_SEGMENTS = ['timetables', 'timetable', 'parishes'];
 
+  // The monasteries, convents and sketes (timetable.isMonastery): a kind of
+  // place, as a region is a where. /monasteries, /greek/monasteries.
+  const MONASTERY_SEGMENTS = ['monasteries', 'monastery'];
+
   /**
    * The path an old link should be sent to, or null when it is current:
    * /worship → /services, /sgr/services-liturgy → /sgr/liturgy.
@@ -189,9 +210,11 @@
       dateFocus: null,
       precision: null,
       day: null,
+      dayGroup: null,
       part: null,
       service: null,
       location: null,
+      monasteries: false,
       parishSlugs: null,
     };
     let parts;
@@ -202,16 +225,27 @@
       return out;
     }
 
+    // A jurisdiction or a weekday adds to those before it: /greek/antiochian
+    // is both, as /greek+antiochian is.
+    const juris = [], days = [];
+    const plus = (seg) => (seg.includes('+') ? seg.split('+').map(s => s.trim()).filter(Boolean) : null);
+    const allDays = (xs) => xs && xs.length && services && xs.every(x => services.resolveDay(x) !== null);
     for (const seg of parts) {
-      let d, loc, svc, part;
+      let d, loc, svc, part, grp, xs;
       if (JURISDICTION_KEYS.includes(seg)) {
-        out.jurisdiction = seg;
+        juris.push(seg);
+      } else if ((xs = plus(seg)) && xs.length && xs.every(x => JURISDICTION_KEYS.includes(x))) {
+        juris.push(...xs);
+      } else if ((xs = plus(seg)) && allDays(xs)) {
+        days.push(...xs.map(x => services.resolveDay(x)));
       } else if (KIND_SEGMENTS[seg]) {
         // The feed's kind (/services, /prayer, /talks…), perhaps with one
         // sub-kind.
         [out.kind, out.kindSub] = KIND_SEGMENTS[seg];
       } else if (TIMETABLE_SEGMENTS.includes(seg)) {
         out.timetable = true;
+      } else if (MONASTERY_SEGMENTS.includes(seg)) {
+        out.monasteries = true;
       } else if (weekOffsetOf(seg) !== null) {
         // Before the dates: /next-week is a week, not "from seven days out".
         out.week = true;
@@ -239,7 +273,10 @@
         out.dateFocus = d.date;
         out.precision = d.precision;
       } else if (services && services.resolveDay(seg) !== null && services.resolveDay(seg) !== undefined) {
-        out.day = services.resolveDay(seg);
+        days.push(services.resolveDay(seg));
+      } else if (services && services.resolveDayGroup && (grp = services.resolveDayGroup(seg))) {
+        // /weeknights, /weekends: a span of the week, as a weekday is one day of it.
+        out.dayGroup = grp;
       } else if (services && (part = services.resolvePartOfDay(seg))) {
         out.part = part;
       } else if (services && (svc = services.resolveService(seg))) {
@@ -254,6 +291,8 @@
         out.parishSlugs = [seg];
       }
     }
+    out.jurisdiction = jurisdictionValue(juris);
+    if (days.length) out.day = services.dayValue ? services.dayValue(days) : days[days.length - 1];
     // The timetable (/timetables) and a kind of event are exclusive, and the
     // timetable wins. A later kind segment replaced an earlier one above.
     if (out.timetable) { out.kind = null; out.kindSub = null; }
@@ -290,7 +329,7 @@
    *                 /sgr/next-tue, /sgr/timetables)
    *   'event'     — one event by id (/102, /42:2026-10-04)
    *   'timetable' — any other filter link (/greek/qld, /liturgy, /smg+sgr,
-   *                 /timetables, /services)
+   *                 /timetables, /services, /monasteries)
    *   null        — the home page, a link with a date and no parish, /social,
    *                 /talks, a week, /donate, and a path that names nothing
    *
@@ -305,10 +344,10 @@
     if (!r || (r.kind && !servicesOnly) || r.week || r.month || r.donate) return null;
     // A card is one parish's, so a jurisdiction, a region or a language beside
     // one is a question the card does not answer; the app does.
-    const scoped = r.jurisdiction || r.location || r.lang;
+    const scoped = r.jurisdiction || r.location || r.lang || r.monasteries;
     if (r.parishSlugs && r.parishSlugs.length === 1) return scoped ? null : 'parish';
     if (r.eventId) {
-      const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.service
+      const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.dayGroup && !r.service
         && !r.part && !r.timetable && !r.kind;
       return bare ? 'event' : null;
     }
@@ -316,12 +355,13 @@
     // app answers. A path that names nothing is the home page, or a segment
     // nobody recognises.
     if (r.dateFocus) return null;
-    const names = scoped || r.timetable || servicesOnly || r.service || r.day != null || r.part
+    const names = scoped || r.timetable || servicesOnly || r.service || r.day != null || r.dayGroup || r.part
       || (r.parishSlugs && r.parishSlugs.length > 1);
     return names ? 'timetable' : null;
   }
 
-  const api = { JURISDICTION_KEYS, KIND_SEGMENTS, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, renamedPath,
+  const api = { JURISDICTION_KEYS, jurisdictionsOf, jurisdictionValue, jurisdictionMatches, jurisdictionSegment, KIND_SEGMENTS, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, MONASTERY_SEGMENTS,
+    renamedPath,
     weekOffsetOf, weekSegment, isEventId, classifyPath, firstEventOnDay, pageKind,
     englishSegment, kindSegment, langSlug, langFromSlug };
   if (isCjs) module.exports = api;

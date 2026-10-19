@@ -56,10 +56,10 @@ deliberately absent from `wrangler.toml` so it cannot ship by accident.
 
 **"Suggest edits" is the way in.** Coverage is the bottleneck — far more
 parishes than timetables — and the person who notices a wrong time is most
-likely to be reading the page. The parish sheet and the lite card both carry a
-**Suggest edits** button under the parish's source line — where the page says
-where its details came from and how old they are, so the natural place to offer
-to put them right. It began as "Is this your parish?" under the timetable, where
+likely to be reading the page. The parish card carries a **Suggest an edit**
+button under the parish's source line — where the page says where its details
+came from and how old they are, so the natural place to offer to put them right —
+and an event card and the card's More menu carry one too. It began as "Is this your parish?" under the timetable, where
 it read as a note about the service times alone, and then became "Become a
 contributor", which asked for a role before anybody could say what was wrong:
 most people who spot a mistake want it fixed, not a login to fix it. It is
@@ -70,9 +70,12 @@ verified — never one typed into the form. The page is answered before the
 panel, because the person arriving usually has no role at all.
 
 **It asks before it signs in.** The button opens a dialog on the page itself
-first (`public/shared/suggest-dialog.js`, on the app's card and the lite card
-alike): what it is about, what it should say, a name, and **I'd like to edit
-this parish myself** — the claim, with its role field. Only then **Confirm
+first (`public/shared/suggest-dialog.js`; a card's dotted **Add +** boxes open
+it with its topic chosen, except for somebody who may make the change, whose box
+makes it): what it
+is about, the details, a name, and **Add me as a permanent editor** — the
+claim, with its role field. Its fields name themselves as placeholders, with
+no lead or labels. Only then **Confirm
 email and submit** goes to `/admin?suggest=`, through Access; what was typed
 waits in this browser's `localStorage` for two hours and the suggest page fills
 it in and sends it the moment it loads (`takeDraft`), so the person writes once.

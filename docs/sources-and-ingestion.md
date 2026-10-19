@@ -16,8 +16,8 @@ office.
 details and a parish's service times are the same kind of claim — something a
 source published, which nothing in the row expires — so both carry
 name/ref/checked_at (`info_source_*`/`info_checked_at`, `source_*`) and both
-render through one function as "Updated 3 months ago · Antiochian Archdiocese".
-No date renders no date. `info_verified_at` looks like the same field and is
+render through one function as "Updated 3 months ago · Antiochian Archdiocese"
+(`public/shared/source-line.js`, for the page and the card the Worker paints). No date renders no date. `info_verified_at` looks like the same field and is
 not: it means a *person* confirmed the row against the place itself, nothing
 renders it, and it is what stops a re-import moving a pin somebody checked. A
 scrape stamps the first and never the second — a guard on the checked date
@@ -42,10 +42,10 @@ default would be untrue of it); an adapter refuses to run against a `hand`
 parish.
 
 The first hand edit at a parish that is still read from a source asks, once:
-**keep it by hand from now on, or keep reading it?** (`ensureKeptByHand` in
-`app.js`; in /admin the delete dialog offers the same, ticked). "Keep reading"
+**keep it by hand from now on, or keep reading it?** (`keepByHand` in
+`public/next/editing.js`; in /admin the delete dialog offers the same, ticked). "Keep reading"
 is remembered per browser. A contact may switch the setting for their own
-parish in its details edit mode; /admin's parish card has it too.
+parish in its details (the Details pencil); /admin's parish card has it too.
 
 **What this replaced, and why.** Until October 2026 sources were refereed fact
 by fact: a five-rung ladder (`source-tiers.js`: admin > the parish's site >

@@ -37,6 +37,7 @@
   const PATH_KEYWORDS = ['social', 'social-gatherings', 'social-youth', 'services', 'prayer', 'talks',
     'worship', 'worship-liturgy', 'worship-prayer', 'worship-feast', 'services-liturgy', 'services-prayer',
     'services-feast', 'studies', 'this-week', 'last-week', 'this-month', 'timetables', 'timetable', 'parishes',
+    'monasteries', 'monastery',
     ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
 
   // The second segment of a payment deep link, /<acronym>/donate. Reserved as
@@ -48,6 +49,8 @@
     'api', 'health', 'admin', 'logos', 'tiles', 'posters', 'shared', 'lib',
     'glyphs', 'sprites', 'eucalyptus', 'cdn-cgi', 'assets', 'static',
     'favicon.ico', 'robots.txt', 'sitemap.xml', 'index.html', 'manifest.json',
+    // The next version, while it is a prototype: /next and every path under it.
+    'next',
   ];
 
   /** The comparison form: what the router matches a path segment against. */
@@ -80,6 +83,7 @@
     }
     if (services && services.DAY_SLUGS) for (const slug of services.DAY_SLUGS) add(slug);
     if (services && services.PART_SLUGS) for (const slug of services.PART_SLUGS) add(slug);
+    if (services && services.DAY_GROUP_SLUGS) for (const slug of services.DAY_GROUP_SLUGS) add(slug);
     if (dates && dates.DATE_SLUGS) {
       // Both spellings again: /nextthursday resolves in the router, so an
       // acronym spelling it would be shadowed just as surely as the hyphenated

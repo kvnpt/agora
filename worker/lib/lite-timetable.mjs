@@ -1,40 +1,34 @@
-// The timetable page: a general link, answered by the Worker.
+// A filter link's timetable: which parishes and rules it means, and its words.
 //
 // /greek/qld, /liturgy, /wed/evening, /en, /smg+sgr, /timetables — a link that
-// names no single parish used to boot the whole app, map first, to show what is
-// really a list: which parishes hold which services when. This is that list,
-// in the HTML itself: the rules of every parish the link covers, grouped by
-// state and then jurisdiction, alphabetical all the way down, with the way on
-// into the app's dated feed under it.
+// names no single parish. The page answers it (routes/pages.mjs): its head
+// says what the link is, from the words here (timetableMeta, timetableImage,
+// timetableIndexable), and a collection's card is painted from the model
+// (lib/page-card.mjs collectionCardHTML), so a reader with no JavaScript, a
+// chat preview and a search engine get the parishes and their times. The
+// sitemap lists the collections that list somebody (seo.mjs).
 //
 // Rules, not occurrences. A timetable is what a parish does week by week, and
 // it needs no projection — which is also what makes it cheap for 293 parishes.
 // "What is on next Sunday" is a list of dates, so a link with a date in it is
-// left to the app (routes/pages.mjs).
+// left to the page's own stream.
 //
-// Most parishes have no times on file yet — 253 of 293 in October 2026 — so
-// the page says how many, and that count opens the app's Schedules view, which
-// lists them by name. Not under a link that asks something of the rules
-// (timetable.narrowsRules): a parish with nothing on file is not one without
-// a Bible study.
-//
-// PURE, like lite-page.mjs: rows in, a model out, markup out of the model.
-// Which parishes and rules a link means is public/shared/timetable.js, the
-// same question the app's Schedules view asks.
+// PURE: rows in, a model out, words out of the model. Which parishes and
+// rules a link means is public/shared/timetable.js, the same question the
+// page's collections ask.
 
 import services from '../../public/shared/services.js';
 import locations from '../../public/shared/locations.js';
 import timetable from '../../public/shared/timetable.js';
+import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
-import eventTypes from '../../public/shared/event-types.js';
+import linkWords from '../../public/shared/link-words.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
-import {
-  esc, jurisLabel, timetableLabel, avatarHTML, weekFrom, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
-} from './lite-page.mjs';
+import { previewLogo } from './juris-logos.mjs';
+import { jurisLabel, weekFrom, parishSlug, isNarrowed } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
-const EVENT_TYPE_LABEL = (id) => eventTypes.eventTypeLabel(id);
 /** The accent when the page is not one jurisdiction's: the app's own blue. */
 const NEUTRAL = '#1565c0';
 
@@ -69,10 +63,11 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
  *
  * `route` is url-state's classification of the path. `parishes` is every
  * parish (the scope is decided here, not in SQL, because a region is a
- * question for locations.js); `rules` every active rule. Null when the link
- * names parishes and none of them exists — the app answers that one.
+ * question for locations.js); `rules` every active rule. `logos` is /admin's
+ * jurisdiction logos, { greek: '/logos/…' }. Null when the link names
+ * parishes and none of them exists — the app answers that one.
  */
-export function timetableModel({ parishes, rules, route, now, origin, overrides = {} }) {
+export function timetableModel({ parishes, rules, route, now, origin, overrides = {}, logos = {} }) {
   // Several parishes by name: /smg+sgr. Acronym first, the id as the fallback,
   // in the order the link gives them — the same reading the app makes.
   let named = null;
@@ -86,8 +81,8 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     if (!named.length) return null;
   }
   const f = {
-    jurisdiction: route.jurisdiction, location: route.location,
-    service: route.service, day: route.day, part: route.part,
+    jurisdiction: route.jurisdiction, location: route.location, monasteries: route.monasteries,
+    service: route.service, day: route.day, dayGroup: route.dayGroup, part: route.part,
     kind: route.kind, kindSub: route.kindSub,
     lang: route.lang, langStrict: route.langStrict,
     parishIds: named ? new Set(named.map(p => p.id)) : null,
@@ -145,16 +140,21 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   // except on its own, where nothing else would be left to name the page.
   const loc = route.location ? locations.resolveLocation(route.location) : null;
   const segs = [
-    ...(route.jurisdiction ? [route.jurisdiction] : []),
+    ...(route.jurisdiction ? [urlState.jurisdictionSegment(route.jurisdiction)] : []),
     ...(loc ? [loc.slug] : []),
-    ...(route.day != null ? [services.daySlug(route.day)] : []),
+    ...(route.monasteries ? ['monasteries'] : []),
+    ...(route.day != null ? [services.daySegment(route.day)] : []),
+    ...(route.dayGroup ? [route.dayGroup] : []),
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
     ...(route.kind ? [urlState.kindSegment(route.kind, route.kindSub)] : []),
     ...(named ? [named.map(parishSlug).join('+')] : []),
     ...(route.lang ? [urlState.englishSegment(route)] : []),
   ];
-  const canonicalPath = segs.length ? pathOf(segs) : '/timetables';
+  // A collection (shared/collections.js) is named by its own link, however
+  // this one spelt it: /liturgy/sun is /sun/liturgy.
+  const collection = named ? null : collections.collectionFor(route);
+  const canonicalPath = collection ? collection.path : segs.length ? pathOf(segs) : '/timetables';
 
   // The parishes a rule meets at, when it meets at another (venueLite).
   const venueIds = new Set(rules.map(r => r.location_parish_id).filter(Boolean));
@@ -163,47 +163,23 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
 
   return {
     route, named, loc, groups, parishCount, withoutTimes, scopeCount: scope.length, now, origin, venues,
-    listsAll,
+    listsAll, collection, logos,
     canonical: `${origin}${canonicalPath}`,
-    // The dated feed for the same link, and the Schedules view, where the
-    // parishes with no times are listed by name. ?app is the Worker's cue to
-    // serve the app rather than this page again.
-    eventsHref: `${segs.length ? pathOf(segs) : '/'}?app`,
     overrides,
-    color: route.jurisdiction ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
+    // One jurisdiction's page is its colour; several are the site's.
+    color: typeof route.jurisdiction === 'string' ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
   };
 }
 
 // ── words ────────────────────────────────────────────────────────────────
 
 /**
- * "Greek Orthodox parishes and times in Queensland" (/greek/qld, /timetables),
- * "Orthodox service times in English" (/services/en), "Orthodox evening
- * Vespers on Wednesdays", "Antiochian Orthodox Liturgies in English",
- * "Orthodox fully-English services".
- *
- * Two languages, two names: /en is English services — English, or English
- * beside another language — and /en-only is fully-English services, English
- * and nothing else.
+ * "Greek Orthodox parishes and times in Queensland" (/greek/qld), "Antiochian
+ * Orthodox Liturgies in English": public/shared/link-words.js, whose words the
+ * page uses too for what its map is showing.
  */
 export function timetableHeading(m) {
-  const r = m.route;
-  const who = r.jurisdiction ? jurisLabel(r.jurisdiction) : 'Orthodox';
-  const svc = r.service ? services.servicePlural(r.service) : null;
-  // English keeps its words ("fully-English"); another language is "Greek-only".
-  const full = r.lang && r.langStrict ? (/^english$/i.test(r.lang) ? 'fully-English' : `${r.lang}-only`) : '';
-  const sub = r.kind === 'services' && r.kindSub
-    ? `${EVENT_TYPE_LABEL(r.kindSub).toLowerCase()} services` : null;
-  const noun = svc || sub || (r.kind === 'services' ? (isNarrowed(r) ? 'services' : 'service times')
-    : isNarrowed(r) || r.lang ? 'services' : 'parishes and times');
-  const day = r.day != null ? ` on ${services.dayName(r.day)}s` : '';
-  const lang = r.lang && !full ? ` in ${r.lang}` : '';
-  let where = m.loc ? ` in ${m.loc.label}` : '';
-  if (m.named) {
-    const names = m.named.map(p => p.name);
-    where = ` at ${names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ')}`;
-  }
-  return [who, full, r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
+  return linkWords.headingOf(m.route, { loc: m.loc, named: m.named });
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -212,97 +188,35 @@ export function timetableMeta(m) {
   const heading = timetableHeading(m);
   const listed = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes));
   const names = listed.slice(0, 4).map(x => x.parish.name).join(', ');
+  const which = listed.length
+    ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
+    : 'Nothing on file for this yet.';
   return {
     title: heading,
-    description: listed.length
-      ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
-      : 'Nothing on file for this yet.',
+    // A collection says what it holds first, then what it holds now.
+    description: m.collection ? `${m.collection.blurb} ${which}` : which,
   };
 }
 
-// ── markup ───────────────────────────────────────────────────────────────
-//
-// The app's Schedules view (renderServices in app.js), in its own class names
-// so /app.css styles it: a framed jurisdiction-box per jurisdiction, a
-// parish-schedule block per parish, renderScheduleDaysHTML's rows. The state
-// headings over them are the page's own — the app's view has no states.
-
-/** A parish's colour, as the app picks it: its jurisdiction's. */
-function parishColor(p, m) {
-  return jurisColors.jurisdictionColorFrom(m.overrides, p.jurisdiction);
+/**
+ * Is this page for a search engine? A collection's is, once it lists
+ * somebody: the owner's ruling of October 2026, which replaced "only the parish
+ * pages" (docs/lite-pages.md). Every other link stays noindex: a list picked
+ * by hand is its maker's, and the other mixes of filters are an endless space
+ * of near-copies of these.
+ */
+export function timetableIndexable(m) {
+  return !!m.collection && !m.named && m.groups.length > 0;
 }
 
-function parishHTML({ parish: p, rules }, m, n) {
-  const slug = parishSlug(p);
-  const avatar = avatarHTML(p, 'parish-schedule-avatar', 'var(--pc)');
-  return `
-        <div class="parish-schedule tt-parish pc-${n}">
-          <a class="parish-schedule-head" href="/${esc(slug)}">${avatar}<div class="parish-schedule-name"><span class="tt-name">${esc(p.name)}</span>${p.address ? `<span class="tt-addr">${esc(p.address)}</span>` : ''}</div></a>
-          ${rules.length ? scheduleRowsHTML(rules, slug, m.now, m.venues) : '<p class="tt-no-times">No times on file yet.</p>'}
-        </div>`;
-}
-
-function groupsHTML(m, vars) {
-  if (!m.groups.length) {
-    const msg = !m.scopeCount ? 'No parishes on file here yet.'
-      : m.withoutTimes === m.scopeCount ? 'None of these parishes has its service times on file yet.'
-        : 'No service on the timetable matches.';
-    return `<p class="lc-empty">${esc(msg)}</p>`;
-  }
-  let n = 0;
-  return m.groups.map(g => `
-  <section class="tt-region" aria-label="${esc(g.label)}">
-    <div class="month-header">${esc(g.label)}</div>
-    ${g.juris.map(j => {
-      vars[`j-${j.key}`] = jurisColors.jurisdictionColorFrom(m.overrides, j.key);
-      vars[`j-${j.key}Dark`] = jurisColors.liftForDark(vars[`j-${j.key}`]);
-      return `
-    <div class="jurisdiction-box tt-juris-box" style="--juris-color:var(--j-${esc(j.key)})">
-      <div class="section-header jurisdiction-header">${esc(timetableLabel(j.key))}</div>
-      ${j.parishes.map(x => {
-        n++;
-        const c = parishColor(x.parish, m);
-        vars[`pc${n}`] = c;
-        vars[`pc${n}Dark`] = jurisColors.liftForDark(c);
-        return parishHTML(x, m, n);
-      }).join('')}
-    </div>`;
-    }).join('')}
-  </section>`).join('');
-}
-
-export function renderTimetablePage(m) {
-  const meta = timetableMeta(m);
-  const sub = m.parishCount ? `${plural(m.parishCount, 'parish', 'parishes')} with times` : '';
-  // The jurisdiction's card, as a parish without a logo previews.
-  const image = `${m.origin}/og/${OG_CARDS.has(m.route.jurisdiction) ? m.route.jurisdiction : 'default'}.jpg`;
-  // The page's colours, collected while the groups render: one custom property
-  // per jurisdiction and per parish, each with the app's dark lift.
-  const vars = { parish: m.color, parishDark: jurisColors.liftForDark(m.color) };
-  const groups = groupsHTML(m, vars);
-  const parishVars = Object.keys(vars).filter(k => /^pc\d+$/.test(k))
-    .map(k => `.${k.replace('pc', 'pc-')}{--pc:var(--${k})}`).join('');
-  return liteDocument({
-    title: meta.title,
-    description: meta.description,
-    canonical: m.canonical,
-    // Not yet: Search Console has indexed nothing but the home page, and a
-    // mostly empty /macedonian is thin content. docs/lite-pages.md.
-    indexable: false,
-    ogType: 'website',
-    image,
-    color: m.color,
-    vars,
-    // The map with this page's filters: the dated feed's link, which is the
-    // app's map and list together.
-    mapHref: m.eventsHref,
-    main: `
-  <style>${parishVars}</style>
-  <section class="lc-head tt-head">
-    <h1>${esc(timetableHeading(m))}</h1>
-    ${sub ? `<p>${esc(sub)}</p>` : ''}
-  </section>
-  ${groups}
-  <a class="lc-app" href="${esc(m.eventsHref)}" rel="nofollow">View upcoming events →</a>`,
-  });
+/**
+ * The preview's picture: a jurisdiction's logo once /admin has one, as a
+ * parish previews with its own; else the collection's card, else the
+ * jurisdiction's, else the site's.
+ */
+export function timetableImage(m) {
+  const j = m.route.jurisdiction;
+  const logo = m.collection && previewLogo(m.logos, m.collection.jurisdiction);
+  const path = logo || (m.collection && m.collection.image) || `/og/${OG_CARDS.has(j) ? j : 'default'}.jpg`;
+  return /^https?:/.test(path) ? path : `${m.origin}${path}`;
 }

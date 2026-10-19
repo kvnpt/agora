@@ -37,3 +37,24 @@ the three reviewable passes, the traps in the order they cost time, and the one
 rule about sources — **a jurisdiction's own site is where its parish information
 comes from.** Aggregators are for finding that site and nothing else, because
 `info_source_type='website'` asserts the parish told us and that should be true.
+
+## v3 replaced the app and the lite pages (October 2026)
+
+Until then `/` was the app (`public/index.html`, `app.js`, `app.css`,
+`filters.js`): a map under a sheet. A link to one parish or event, or any filter
+link, was answered by the Worker with a separate **lite page** instead — its own
+card over a hero picture of every parish as a point of light (`public/og/hero.jpg`,
+drawn by `scripts/build-hero.mjs`), wearing `/app.css`, with `public/lite.js` for the
+clock and the way into the app (`?app`). An admin at such a link got the app instead
+(an `agora_admin` cookie), laying its sheet out as that page so the editors were
+there (**page mode**).
+
+v3 was built beside it at `/next` (`public/next.html`), then took `/` with no soft
+launch, as the owner decided: one page for every link, with the Worker writing the
+link's head and painting its card into it (docs/lite-pages.md), editing in place for
+whoever may (`public/next/editing.js`). The old app, the lite pages' markup, the hero
+and page mode went; the lite pages' models (`lite-page.mjs`, `lite-timetable.mjs`)
+stayed and feed the head and the card. `/next/…` links get a 301 to the same path
+without it. Favourites, bookmarks and saved filters are the stores the old app wrote,
+read as they are. Comments in `public/shared/` that name `app.js` say where a piece
+came from; git history has it.

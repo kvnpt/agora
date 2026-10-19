@@ -548,6 +548,25 @@ CREATE TABLE jurisdiction_colors (
   updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- jurisdiction_logos — a jurisdiction's logo, as /admin uploaded it
+--
+-- The picture on a jurisdiction's collection card (/greek, /serbian…) and its
+-- link preview, as a parish's logo_path is on its own. The image is in R2 at
+-- logos/jurisdiction-<j>.<ext>, served by the same /logos/ route as a
+-- parish's (no parish id starts "jurisdiction-"), and `logo_path` is that path
+-- with its ?v= cache buster. No row is the normal state: the card keeps its
+-- cross, and the preview the jurisdiction's card from public/og/.
+--
+-- The six that have a collection; 'other' has none. Migration 027.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE jurisdiction_logos (
+  jurisdiction TEXT PRIMARY KEY CHECK(jurisdiction IN
+                 ('antiochian','greek','serbian','russian','romanian','macedonian')),
+  logo_path    TEXT NOT NULL,
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
 -- Per-adapter scrape control.
 --
 -- Cloudflare's Cron Trigger is fixed at deploy time and cannot be changed by

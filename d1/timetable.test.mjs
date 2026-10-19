@@ -36,6 +36,17 @@ test('a rule answers the service, day, part of the day and language asked for', 
     { parishLanguages: '["Arabic"]' }), 'a rule in English is English whatever the parish speaks');
 });
 
+test('weeknights are Monday to Friday evenings; weekends are Saturday and Sunday, all day', () => {
+  const rule = (day_of_week, start_time) => ({ parish_id: 'sgr', day_of_week, start_time, title: 'Vespers', event_type: 'prayer' });
+  assert.ok(T.ruleMatches(rule(3, '18:00'), { dayGroup: 'weeknights' }));
+  assert.ok(!T.ruleMatches(rule(3, '09:00'), { dayGroup: 'weeknights' }), 'a weekday morning is not a weeknight');
+  assert.ok(!T.ruleMatches(rule(6, '18:00'), { dayGroup: 'weeknights' }), 'Saturday evening is the weekend');
+  assert.ok(T.ruleMatches(rule(6, '18:00'), { dayGroup: 'weekends' }));
+  assert.ok(T.ruleMatches(rule(0, '08:30'), { dayGroup: 'weekends' }));
+  assert.ok(!T.ruleMatches(rule(5, '19:00'), { dayGroup: 'weekends' }), 'Friday night is a weeknight');
+  assert.ok(T.narrowsRules({ dayGroup: 'weekends' }));
+});
+
 test('a service, a day, a part of the day or a language asks something of the rules; a place does not', () => {
   for (const f of [{ service: 'bible-study' }, { day: 0 }, { day: 3 }, { part: 'evening' }, { englishOnly: true }]) {
     assert.ok(T.narrowsRules(f), JSON.stringify(f));
@@ -58,4 +69,18 @@ test('a languages column reads as an array or as nothing', () => {
   assert.equal(T.langsOf('[]'), null);
   assert.equal(T.langsOf('not json'), null);
   assert.equal(T.langsOf(null), null);
+});
+
+test('a monastery is one by its name: monastery, convent, skete', () => {
+  const named = (name, full_name) => ({ id: 'x', jurisdiction: 'russian', name, full_name });
+  for (const [name, full] of [
+    ['Holy Transfiguration Monastery, Gunningrah'], ['Our Lady of Kazan Convent, Kentlyn'],
+    ['St. John the Baptist Skete, Kentlyn'], ['Nativity Skete, Inglewood'], ['St George, Yellow Rock', 'Holy Monastery of St. George'],
+  ]) assert.ok(T.isMonastery(named(name, full)), name);
+  for (const name of ['St George Cathedral, Redfern', 'Monastery Road Parish'.replace('Monastery ', 'Monasterio ')]) {
+    assert.ok(!T.isMonastery(named(name)), name);
+  }
+  assert.ok(T.parishInScope(named('St Sava Monastery, Elaine'), { monasteries: true }));
+  assert.ok(!T.parishInScope(redfern, { monasteries: true }));
+  assert.ok(T.parishInScope(redfern, { monasteries: false }));
 });

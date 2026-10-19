@@ -70,8 +70,8 @@ it is. An object is deleted only once no event, no override and no draft names i
 taking a bulletin off one Sunday leaves the others; `DELETE …/poster?everywhere`
 takes it off the whole parish.
 
-**Combine is three mechanisms** — "Include other parishes…" on an event, in the
-app — routed by the shape of the target id
+**Combine is three mechanisms** — "Include other parishes…" on an event's
+pencil — routed by the shape of the target id
 (`POST /api/admin/events/:id/escalate`, and `POST /api/admin/events`, which
 takes the same two lists so a one-off entered *because* it replaces something
 never exists for a round trip beside the thing it replaces):
@@ -86,8 +86,9 @@ never exists for a round trip beside the thing it replaces):
 redundant: it is the only path for combining against a stored one-off.
 
 **Shown at a parish that is only taking part**, a combined event is framed in the
-Combined badge's colour (`--combined-fg` / `--combined-bg`), on the app's card and
-the lite card alike, so it does not read as that parish's own. At its venue — the
+Combined badge's colour (`--combined-fg` / `--combined-bg`) in the app v3
+replaced, so it does not read as that parish's own; in v3 its row there names the
+host, with its logo (`eventRow`), as any other parish's event does. At its venue — the
 parish whose church it is in, the host's own when it is held at home — it is not.
 Its participating parishes are a button of their logos ("+ ◯◯◯", up to eight, then
 an ellipsis), and the list it opens names the venue as such.
@@ -103,28 +104,34 @@ state, because `writeCombine` is a target state and removes what it is not
 told; a payload holding only the refused half would strip the applied half on
 approval.
 
-**Signed in is not the same as editing.** `state.parishEditMode` is the
-parish's DETAILS: **Edit details** opens them in the **edit dialog**
-(`openFormDialog` in `app.js`, the same frame as Add event) — the logo, the
-name and every field the sheet shows, with Save, Cancel and Delete parish —
-and the sheet underneath stays as a visitor reads it. The TIMETABLE has no
-mode: for whoever may change it (`mayEditTimetable`, the capability per
-parish), its head carries a green **+** that opens **Add schedule** — every
-field a rule has, the poster included (`ruleFieldsHTML`, the same form the
-pencil opens; times from quarter-hours or typed, `public/shared/time-field.js`,
-and dates from the feed's own month grid, never the system pickers) — and each
-rule's row a small pencil at its right edge, always there, that opens that
-rule's form — on the sheet and on the main services panel alike. The row
-itself still focuses the rule, for an admin as for anybody. It had a mode,
-entered from a pencil in the head, and the owner found the step in the way:
-nobody opens a parish's timetable meaning to read it as an admin. No form is
-in the DOM behind `display:none` either way: a rule's form is built when its
-pencil is pressed.
+**Signed in is not the same as editing.** A card reads as a visitor's for
+everybody; what may be changed opens behind its own control, for whoever has the
+capability at that parish, and a form is built when its control is pressed — never
+in the DOM behind `display:none` (`public/next/editing.js`). The parish's DETAILS
+open from a pencil on the card's **Details** heading (`editDetails`, for
+`parish.edit`): the logo (with the app's cropper), the names and jurisdiction, then
+each line of Details as its field (phone, website, email, address), the pin
+(Locate, or Move on a map of its own, which every venue's "Move the pin" uses too),
+the Google Maps place its Google Maps button opens, languages, the short link, the live
+stream, the links (their own dialog), and where the parish is read from. The short
+link is an owner's (`parish.acronym`); anybody else sees it with **Ask an owner to
+change it**, which files the same ask /admin's does. Delete parish is at the foot of
+the form, for `parish.delete`.
 
-**A new parish is finished in that dialog.** /admin's **New parish** asks only
+The TIMETABLE has no mode: for whoever may change it, each line carries a small
+pencil at its right edge, always there, that opens its rule's form (`editLine`; a
+line that is two rules asks which), and the dotted **Add +** under it opens **Add
+schedule** (`addService`, for `schedule.create`) — every field a rule has, the
+poster included (times from quarter-hours or typed, `public/shared/time-field.js`,
+and dates from a month grid, never the system pickers). The line itself still
+focuses the rule, for an admin as for anybody. The app v3 replaced had a mode,
+entered from a pencil in the head, and the owner found the step in the way: nobody
+opens a parish's timetable meaning to read it as an admin.
+
+**A new parish is finished on its card.** /admin's **New parish** asks only
 what the row needs to exist — the names, the short link, the jurisdiction, the
-time zone, the pin — and on Add goes to the parish in the app with its edit
-dialog open (`agora-edit-parish` in `sessionStorage`, read once on load), where
+time zone, the pin — and on Add goes to the parish's card with its details
+open (`agora-edit-parish` in `sessionStorage`, read once on load), where
 the logo, the buttons, the links and the Maps place are. The short link is
 suggested from the names as they are typed (`POST
 /api/admin/acronym-suggestion`, `worker/lib/acronym-suggest.mjs`: Claude Haiku
@@ -138,23 +145,16 @@ hand (docs/sources-and-ingestion.md).
 **Forms open over the page, never inside it.** Every edit — a parish's details,
 a rule, a new rule, an event — is a dialog, because a form spread through the
 timetable or under a card pushed what it was editing off the screen on a phone,
-and the save landed somewhere the person could no longer see. The dialog is
-one element (`#form-backdrop`) and holds one form at a time; the dialogs it
-opens in turn (Combine, Break, "which dates", the logo editor) come later in
-the document and stack above it. Saving closes it and the page repaints under
-it. A drag inside any dialog scrolls the dialog: the pull-to-refresh guard asks
-which element is under the finger and blocks the drag only when nothing there
-can scroll up (`scrollerUnder`), where it used to fall back to the feed and
-pin every dialog to its top whenever the feed was at its own.
+and the save landed somewhere the person could no longer see. Each is a dialog
+over the page (`frame` in `public/next/editing.js`), and the dialogs a form
+opens in turn (Combine, Break, "which dates", the logo editor) stack above it.
+Saving closes it, the page re-reads the bundle fresh and repaints what is open.
 
-The sheet's first button is **Google Maps**, and it opens the place, not a
-route: `parishes.maps_url` when somebody picked the parish's Maps entry (a
-Places search through `POST /api/admin/places`, or a pasted link), the pin
-otherwise. `state.eventEditMode` is the same thing for the event drawer: one
-pencil, which opens the edit dialog with Cancel, Break, Suppress, Delete,
-Combine and the form; closing it leaves the mode. `hideAdminControls` is **gone** — it was a remembered
-preference for making tools go away, which is what a mode does by default, and
-two modes now cover everything it did.
+**Google Maps** opens the parish's place there — `parishes.maps_url` when
+somebody picked its Maps entry (a Places search through `POST
+/api/admin/places`, or a pasted link) — and its pin otherwise: the place,
+never a route to it (October 2026, the owner's ruling; it was Directions to
+`/maps/dir/` before). An event's opens its own pin, or its venue's.
 
 **Three different things are called "hide", and only one of them hides an
 event.** Worth knowing before reaching for one:
@@ -184,21 +184,34 @@ somebody who would have turned up sees it is off; a suppression takes the
 service off the site with no notice at all. Reaching for the wrong one sends
 somebody to a locked church, so each says which it is before it does it.
 
-The parish sheet's **add-an-event button** is the one control outside that
-mode, and deliberately: the mode exists so a signed-in person reads the sheet a
-visitor reads, and this alters nothing the sheet is showing — it makes a
-one-off that is not on the sheet at all yet, from a circle floating clear of
-the content rather than a pencil sitting in it. What it *is* gated on is the
-capability, per parish, which is why `state.adminWho` now keeps the whole
-`/api/admin/ping` answer and not just "signed in": `adminMay('event.edit', pid)`
-asks the two questions the Worker asks, in the order it asks them, so a button
-that is absent and a route that refuses cannot disagree. An owner and an editor
-see it on every sheet; a parish contact sees it on their own parishes only.
+An event card's pencil (**Edit this date**, **Edit this event**,
+where a visitor's card has Suggest an edit) opens the same toolkit and fields
+(`editEvent`, `public/next/editing.js`), and Suppress and Delete each offer
+Cancel instead. A date of a service also takes its **Commemoration** (the saint,
+as `patch_feast`), and its card follows the date onto the new rule after
+"this and every following". A cancelled, combined or on-break date stays on its
+parish's Coming up, struck through with its word; the open feeds leave all three
+out for now, where the app v3 replaced showed a break.
+**Break…** (a date of a service) and **Include other parishes…** (a one-off)
+open their own dialogs in place of the form. The combine is the add-event
+editor's lists (nearest first, "needs an owner"), so a tick that is not the
+person's own becomes an ask, as it does there. A timetable line on a break
+today says when it is back, and a combined date's card names what is in its
+place.
+
+The dotted **Add +** under a card's Coming up alters nothing the card is
+showing — it makes a one-off that is not there yet — and what it is gated on is
+the capability, per parish: `may('event.edit', pid)` in `next.js` asks the two
+questions the Worker asks, in the order it asks them, from the whole
+`/api/admin/ping` answer, so a button that is there and a route that refuses
+cannot disagree. An owner and an editor get the editor on every card; a parish
+contact on their own parishes only; anybody else gets **Suggest**, the same box.
 
 **Adding an event is a draft until Publish.** The add-event editor
-(`public/shared/event-editor.js`) is one component with two hosts — the parish
-sheet's + in the app, and **Events** in /admin — because the old dialog lived
-only in app.js and /admin had none, and two forms would drift. It saves every
+(`public/shared/event-editor.js`) is one component with two hosts — **Events** in
+/admin, and the dotted **Add +** under a card's Coming up for whoever may add one
+there (`public/next/editing.js`) — because the app's old dialog was its own and
+/admin had none, and two forms would drift. It saves every
 card a moment after the typing stops into `drafts` / `draft_events`
 (`worker/lib/drafts.mjs`), so closing it loses nothing and **Save draft** is
 just closing it. A draft is made by the first thing typed or by a dropped
@@ -206,7 +219,7 @@ poster, never by opening the editor. It is the parish's, not the person's:
 anybody who may edit that parish can continue or discard it.
 
 Why tables of their own, and not a status on `events`: that CHECK would need a
-rebuild, and every reader of `events` — the bundle, the lite pages, the
+rebuild, and every reader of `events` — the bundle, the painted cards, the
 candidates list, reconcile — would have to learn to skip a row that is not real
 yet. A table nothing public reads cannot leak a half-typed event. Not an
 `admin_proposals` row either: that is an ask an owner decides. Draft writes do
@@ -327,9 +340,11 @@ timetable can still mark it checked. Details fill an empty field or, where they
 differ, offer **Use the sign's**; an address is changed in the parish's details,
 where the pin moves with it.
 
-The timetable has its own way in: **Add schedule** (the timetable's green +)
-opens a dialog with **From a photo of the sign** above the fields for typing a
-service. It
+The timetable has its own way in: **Add schedule** (the dotted **Add +**
+under the service times) opens a dialog with **From a photo of the sign** above
+the fields for typing a service. The fields are `public/shared/rule-form.js`,
+and the pencil is on each line of the grouped timetable: a line that is several rules ("Tue, Wed 6pm
+Vespers") asks which one first, since each is edited on its own. It
 is the same editor and the same read, opened expecting a timetable (`intent:
 'timetable'`): its empty event card stays out of the way and the dialog says
 "Add to the timetable". A photo that turns out not to be a sign is **caught**
@@ -366,21 +381,20 @@ that day (`draft_events.end_date`, migration 022; `localSpanToUtc` takes it).
 Without the tick an end earlier than the start is still "after midnight". The
 reader gives `end_date` for one event over several days — a festival Friday to
 Sunday is ONE entry — and never matches one to a Sunday's service. Published
-it is only a later `end_utc`; the app calls an event multi-day when it ends on a
-later day of the parish's calendar and lasts at least twelve hours
-(`isMultiDay`), says its span on the card ("Fri 13 – Sun 15 Nov, until 4 pm"),
+it is only a later `end_utc`; the page calls an event multi-day when it ends on a
+later day of the parish's calendar and lasts at least twelve hours, says its span
+on the card ("Fri 13 Nov 6pm – Sun 15 Nov 4pm", painted and drawn alike),
 and keeps it in the feed after its first day: the bundle and the projection
-take a one-off whose `end_utc` reaches into the window, and the stream puts one
-that began earlier and is still running under **Happening now**. It shows
-under every later day it covers too, as a card of its own (`multiDayContinuations`:
-"all day", or "until 2pm" on its last, opening the same event). The edit
-dialog has the same Date / Starts / Ends / Multi-day / Last day.
+take a one-off whose `end_utc` reaches into the window, and Today puts one
+that began earlier and is still running under **Happening now**. The app v3
+replaced also listed it under every later day it covers (`multiDayContinuations`);
+v3 does not yet. The edit dialog has the same Date / Starts / Ends / Multi-day /
+Last day.
 
 **A combined event says where it is.** At a parish other than its host — that
-parish's sheet, the feed filtered to it, its lite card — the title reads
-"Deanery Vespers @ St George, Redfern". The card is pooled between the feed and
-the sheet, so the label is in every combined card and a style rule written per
-surface (`setCombinedContext`) shows it where the surface is another parish.
+parish's card, the page filtered to it — its row names the host, with its logo
+(`eventRow`), and its card says where it is held. The app v3 replaced wrote it
+into the title instead ("Deanery Vespers @ St George, Redfern", `setCombinedContext`).
 
 **Somewhere else is one of two places, picked, not typed.** A one-off, a rule
 and one date of a rule each have a **Where** control (`public/shared/venue-picker.js`,
@@ -410,7 +424,7 @@ in the venue's sheet and its filters, and in `combined_parishes` only if a
 combine put it there — the COMBINED badge and "@ host" read that one. Cards say
 "@ St Nicholas, Bankstown" or "@ Antiochian Village" (the place's first words)
 everywhere but the venue's own sheet; the drawer gives the name and address and
-sends Directions to the venue's pin; a timetable row says "At St Nicholas,
+sends Google Maps to the venue's pin; a timetable row says "At St Nicholas,
 Bankstown". On the map a place of its own is a **square** — see
 [architecture.md](architecture.md).
 
@@ -425,7 +439,7 @@ hand (`POST /api/admin/schedules`, `PATCH …/schedules/:id`,
 asks whether to keep it by hand, as every hand edit does. They name their
 source: **"Church signage"**, with the photo's `/posters/` path as the ref, and
 since a timetable has one source line, that is the line — "Updated today ·
-Church signage ↗", linking to the photo in the app and on the lite page. The
+Church signage ↗", linking to the photo. The
 sign's draft is then closed with **Done**; the photo stays, because
 `releaseUnused` counts a rule's or a parish's source ref as using it.
 

@@ -68,12 +68,13 @@ const CAPABILITIES = {
     'schedule.edit', 'schedule.create', 'schedule.delete',
     'override.edit', 'event.edit',
     'adapter.run', 'adapter.pace', 'adapter.source',
-    'colors.edit', 'links.edit', 'logo.edit',
+    'colors.edit', 'jurisdiction.logo', 'links.edit', 'logo.edit',
     'people.manage',
   ]),
   // Everything the day-to-day work needs, minus the three that are hard to
   // undo or reach beyond one parish: a delete, an acronym (a URL namespace
-  // change), and the jurisdiction colours (site-wide, and they repaint cards).
+  // change), and the jurisdiction colours (site-wide, and they repaint cards)
+  // — and their logos, for the same reason.
   editor: new Set([
     'parish.edit', 'parish.create',
     'schedule.edit', 'schedule.create', 'schedule.delete',
@@ -192,6 +193,7 @@ const CAPABILITY_WORDS = {
   'parish.create': 'add a parish',
   'parish.acronym': "change a parish's acronym, because that changes its public link",
   'colors.edit': 'change the jurisdiction colours, because they apply site-wide',
+  'jurisdiction.logo': "change a jurisdiction's logo, because it shows site-wide",
   'people.manage': 'manage who has access',
   'adapter.pace': 'change how often a scraper runs',
   'adapter.run': 'run a scraper',

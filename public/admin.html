@@ -540,6 +540,11 @@
     .color-cell input[type=text].invalid { border-color: var(--danger); }
     .color-cell-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 16px; }
     .color-cell-state { font-size: 11px; color: var(--muted); }
+    .juris-logo-head { margin-top: 26px; }
+    .juris-logo-pic { width: 72px; height: 72px; border-radius: 14px; border: 1px solid var(--border-light); background: #fff; object-fit: contain; align-self: center; }
+    .juris-logo-none { width: 72px; height: 72px; border-radius: 14px; border: 1px dashed var(--border); align-self: center; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); }
+    .juris-logo-pick { position: relative; overflow: hidden; text-align: center; }
+    .juris-logo-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
     .color-cell-reset { font-size: 11px; background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font-weight: 600; }
     .color-actions { position: sticky; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border-light); border-radius: var(--radius); box-shadow: var(--shadow-md); }
 
@@ -940,12 +945,26 @@
 
       <div id="color-grid" class="color-grid"></div>
 
+
       <div class="color-actions">
         <div class="btn-row" style="margin:0;">
           <button type="button" class="btn btn-outline" id="color-revert">Discard</button>
           <button type="button" class="btn btn-primary" id="color-save">Save colours</button>
         </div>
       </div>
+
+      <!-- A jurisdiction's logo: the picture on its collection card (/greek)
+           and its link preview. Saved as it is picked, not by Save colours
+           above: a picture has no draft to compare. -->
+      <div class="section-head juris-logo-head" id="juris-logo-head" hidden>
+        <h2>Jurisdiction logos</h2>
+        <p class="section-lead">
+          The picture on each jurisdiction's card and in its link preview, as a parish's logo is on
+          its own. Without one, the card shows the cross. Square works best; anything else is cropped
+          to its middle.
+        </p>
+      </div>
+      <div id="juris-logo-grid" class="color-grid"></div>
     </section>
 
     <!-- Who may sign in, and what they may touch.
@@ -1717,7 +1736,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(),
+      await Promise.all([loadParishes(), loadSchedules(), loadAdapters(), loadJurisColors(), loadJurisLogos(),
         loadParishLinks(), loadPeople(), loadOverrides(), loadProposals(), loadDrafts(),
         loadJurisdictions(),
         // Awaited with the rest so the fortnight radios render with their
@@ -1741,6 +1760,7 @@
       renderWorkflowStatus();
       renderInferSelect();
       renderColors();
+      renderJurisLogos();
       renderOverrides();
       renderDrafts();
       renderProposals();
@@ -2063,6 +2083,68 @@
         btn.disabled = false; btn.textContent = label;
       }
     });
+
+    // ── Jurisdiction logos ──
+    //
+    // One per jurisdiction that has a collection ('other' has none), saved the
+    // moment a file is picked. Bigger than a parish's (512px rather than
+    // 192): it is also the jurisdiction's link preview. And never WebP, which
+    // not every chat app previews; logo-image.js picks JPEG, or PNG for a
+    // crest with a transparent ground.
+
+    const LOGO_JURISDICTIONS = JURISDICTIONS.filter(j => j !== 'other');
+    let jurisLogos = {};       // jurisdiction -> /logos/… path, where one is uploaded
+
+    async function loadJurisLogos() {
+      jurisLogos = await fetch('/api/jurisdiction-logos')
+        .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+    }
+
+    function renderJurisLogos() {
+      const grid = document.getElementById('juris-logo-grid');
+      const head = document.getElementById('juris-logo-head');
+      if (!grid || !head) return;
+      const can = may('jurisdiction.logo');
+      head.hidden = !can;
+      if (!can) { grid.innerHTML = ''; return; }
+      grid.innerHTML = LOGO_JURISDICTIONS.map(j => {
+        const path = jurisLogos[j];
+        return `
+        <div class="color-cell">
+          <div class="color-cell-head"><span class="color-cell-name">${esc(j)}</span></div>
+          ${path ? `<img class="juris-logo-pic" src="${esc(path)}" alt="">` : '<span class="juris-logo-none">No logo</span>'}
+          <label class="btn btn-outline juris-logo-pick">${path ? 'Replace' : 'Upload'}
+            <input type="file" accept="image/*" onchange="uploadJurisLogo('${j}', this)"></label>
+          <div class="color-cell-foot">
+            <span class="color-cell-state">${path ? 'on its card' : 'shows the cross'}</span>
+            ${path ? `<button type="button" class="color-cell-reset" onclick="removeJurisLogo('${j}')">Remove</button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    window.uploadJurisLogo = async function (j, input) {
+      const file = input.files[0]; if (!file) return;
+      let body = file;
+      try {
+        if (window.AgoraLogo) body = await window.AgoraLogo.shrinkToSquare(file, 512, { webp: false });
+      } catch (err) { toast(err.message || 'Could not read that image', 'error'); return; }
+      const res = await fetch(`/api/admin/jurisdictions/${encodeURIComponent(j)}/logo`,
+        { method: 'POST', headers: { 'Content-Type': body.type || file.type }, body });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      jurisLogos = await res.json();
+      renderJurisLogos();
+      toast(`Logo saved — ${j}`);
+    };
+
+    window.removeJurisLogo = async function (j) {
+      if (!confirm(`Remove the ${j} logo? Its card goes back to the cross.`)) return;
+      const res = await fetch(`/api/admin/jurisdictions/${encodeURIComponent(j)}/logo`, { method: 'DELETE', headers });
+      if (!res.ok) { toast(await adminError(res), 'error'); return; }
+      jurisLogos = await res.json();
+      renderJurisLogos();
+      toast(`Logo removed — ${j}`);
+    };
 
     // ── inferred rules ──
 
@@ -2696,9 +2778,9 @@
       const made = await res.json().catch(() => null);
       toast('Parish added');
       f.reset(); closeModal('add-parish-backdrop');
-      // On to its editor in the app — the one with the logo, the buttons, the
-      // links and the Google Maps place, none of which this form asks. The app
-      // reads the key once it has loaded and opens the editor on that parish.
+      // On to its details on the page — the logo, the buttons, the links and
+      // the Google Maps place, none of which this form asks. The page reads the
+      // key once it has loaded and opens the details pencil on that parish.
       if (made && made.id) {
         try { sessionStorage.setItem('agora-edit-parish', made.id); } catch { /* the card still opens */ }
         location.href = appParishUrl(made);
@@ -3946,7 +4028,7 @@
       const when = (x) => [x.date ? draftDate(x.date) : '',
         [x.start_time, x.end_time].filter(Boolean).join('\u2013'), x.place || ''].filter(Boolean).join(' \u00b7 ');
       el.innerHTML = [...open, ...recent].map(x => {
-        const parishLink = `/${encodeURIComponent(String(x.parish_acronym || x.parish_id).toLowerCase())}?app`;
+        const parishLink = `/${encodeURIComponent(String(x.parish_acronym || x.parish_id).toLowerCase())}`;
         const decided = x.status !== 'open';
         return `
         <div class="ask"${decided ? ' style="opacity:.7;border-left-color:var(--border-light);"' : ' style="border-left-color:var(--accent);"'}>
@@ -4373,7 +4455,7 @@
       const parishes = await fetch('/api/parishes').then(r => r.ok ? r.json() : []).catch(() => []);
       const parish = parishes.find(p => p.id === parishId);
       const name = parish ? (parish.full_name || parish.name) : parishId;
-      const link = parish ? `/${encodeURIComponent((parish.acronym || parish.id).toLowerCase())}?app` : '/';
+      const link = parish ? `/${encodeURIComponent((parish.acronym || parish.id).toLowerCase())}` : '/';
       const claim = (me.claims || []).find(k => k.parish_id === parishId && k.status === 'open');
       const sent = (me.suggestions || []).filter(s => s.parish_id === parishId && s.status !== 'withdrawn');
       const covers = me.role === 'owner' || me.role === 'editor'

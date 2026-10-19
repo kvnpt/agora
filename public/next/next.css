@@ -1,0 +1,1402 @@
+/* orthodoxy.au — v3: a page around a map, with big targets, in the app's
+   white and its hairlines: a card is framed in a hairline, not lifted on a
+   shadow, and colour is a jurisdiction's or a quiet tint. Tokens first;
+   every colour below reads one. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --card: #ffffff;
+  --card-2: #f5f5f7;
+  --text: #0b0b0d;
+  --text-2: #6b6b73;
+  --text-3: #a0a0a8;
+  --line: rgba(60, 60, 67, 0.14);
+  /* Today's rows, a hairline you can see. */
+  --line-strong: rgba(60, 60, 67, 0.26);
+  --accent: #2c6cb4;
+  /* A distance from you, as the app's are. */
+  --dist: #2196f3;
+  --live: #2fb350;
+  --evening: #2c3d72;
+  /* Hairlines, and the app's own tokens for the pieces taken from it. */
+  --hair: rgba(0, 0, 0, 0.12);
+  --border: #d0d0d0;
+  --fab-bg: rgba(255, 255, 255, 0.92);
+  /* The map's, read by map.js (app.css). */
+  --halo: #ffffff;
+  --map-fade: #ffffff;
+  --map-fade-opacity: 0.35;
+  --map-shadow: rgba(15, 23, 42, 0.30);
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-solid: rgba(250, 250, 252, 0.97);
+  --glass-line: rgba(255, 255, 255, 0.6);
+  /* A card's edge: a hairline, as the app's are. Only what floats (a sheet,
+     the toolbar on it, a dialog) is lifted. */
+  --shadow: 0 0 0 1px var(--hair);
+  --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.18);
+  --success: #16a34a;
+  --danger: #dc3545;
+  /* The gum-tree loader's (app.css). */
+  --loading-bg: rgba(252, 250, 243, 0.82);
+  --tree-fill: #4f6e41;
+  --tree-outline: #dfe4d8;
+  --tree-text: #2a2a2a;
+  --radius: 12px;
+  --pad: 16px;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* The app's charcoal (app.css), not OLED black. */
+    --bg: #20232a;
+    --card: #272a32;
+    --card-2: #30333b;
+    --text: #f4f4f6;
+    --text-2: #a1a1aa;
+    --text-3: #6f6f78;
+    --line: rgba(255, 255, 255, 0.10);
+    --line-strong: rgba(255, 255, 255, 0.20);
+    --accent: #5b8fd6;
+    --dist: #4aa8f7;
+    --live: #38c75c;
+    --evening: #8ba3d4;
+    --hair: rgba(255, 255, 255, 0.12);
+    --border: #6e7280;
+    --fab-bg: rgba(40, 42, 50, 0.92);
+    --halo: #0b0b0d;
+    --map-fade: #0b0b0d;
+    --map-fade-opacity: 0;
+    --map-shadow: rgba(0, 0, 0, 0.38);
+    --glass: rgba(36, 36, 42, 0.62);
+    --glass-solid: rgba(30, 30, 35, 0.97);
+    --glass-line: rgba(255, 255, 255, 0.10);
+    --shadow: 0 0 0 1px var(--hair);
+    --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
+    --success: #4ade80;
+    --danger: #f4677a;
+    --loading-bg: rgba(15, 15, 18, 0.92);
+    --tree-fill: #6a8a5c;
+    --tree-outline: #2a3526;
+    --tree-text: #d8d8d8;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.35 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+body.sheet-open { overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+a { color: var(--accent); text-decoration: none; }
+h1, h2, h3 { margin: 0; }
+
+main, .top { max-width: 600px; margin: 0 auto; }
+main { padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.top {
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: calc(8px + env(safe-area-inset-top)) var(--pad) 6px;
+}
+.top-actions { display: flex; gap: 10px; }
+.round-btn {
+  position: relative;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--card); box-shadow: var(--shadow);
+}
+.round-btn.sm { width: 36px; height: 36px; flex: none; }
+[data-account] { color: var(--text-2); }
+[data-account].signed-in { color: var(--accent); }
+/* Something is waiting for this person (app.css .account-dot). */
+.account-dot {
+  position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--danger); box-shadow: 0 0 0 2px var(--card); pointer-events: none;
+}
+.account-dot[hidden] { display: none; }
+
+/* ── The dock ────────────────────────────────────────────────────────────
+   Scrolled past the parish chip and the filters, they ride along at the top
+   (next.js syncDock): the chip, the filters' button, search, the account,
+   and the filters' chips under them. The panel opened from it opens under
+   it, scrolling on its own. --dock-h is its height, for what sticks under it. */
+.dock {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 25;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.8) blur(18px); backdrop-filter: saturate(1.8) blur(18px);
+  border-bottom: 1px solid var(--hair);
+  transform: translateY(-100%); visibility: hidden;
+  transition: transform .22s ease, visibility .22s;
+}
+body.docked .dock { transform: none; visibility: visible; }
+.dock-head { max-width: 600px; margin: 0 auto; padding: calc(6px + env(safe-area-inset-top)) var(--pad) 6px; }
+.dock-row { display: flex; align-items: center; gap: 8px; }
+.dock-chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.dock-chip .stackrow .av { --s: 26px; margin-left: -8px; }
+.dock-chip .stackrow .av:first-child { margin-left: 0; }
+.dock-chip-t { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.dock-chip-t b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-chip-t small { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-row .fbtn { min-height: 34px; }
+.dock-active { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+.dock-active:empty { display: none; }
+.dock .filter-panel {
+  max-width: calc(600px - 2 * var(--pad)); margin: 0 auto 10px; width: calc(100% - 2 * var(--pad));
+  max-height: calc(100dvh - var(--dock-h, 60px) - 16px); overflow-y: auto; overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
+
+/* ── The viewport: tabs, map, in-view chip ───────────────────────────────
+   The app's own pieces (app.css), framed in hairlines rather than lifted on
+   a shadow: the jurisdiction tabs above the map, the in-view chip under it,
+   and in full screen the parish row along the foot of the map. */
+
+.viewport-card {
+  margin: 4px 0 0;
+  background: var(--card);
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+}
+@media (min-width: 600px) {
+  .viewport-card { border: 1px solid var(--hair); border-radius: 2px; overflow: hidden; }
+}
+
+/* The jurisdiction tabs (app.css .jurisdiction-banner): each in its own
+   colour and underlined while none is chosen; the chosen one filled, the
+   others dimmed. --j is the tab's colour, lifted on the dark scheme. */
+.jurisdiction-banner {
+  display: flex; overflow-x: auto; scrollbar-width: none;
+  background: var(--card);
+  border-bottom: 1px solid var(--hair);
+}
+.jurisdiction-banner::-webkit-scrollbar { display: none; }
+.jurisdiction-chip {
+  flex: none;
+  padding: 0 14px;
+  height: 40px;
+  font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--j);
+  border-bottom: 2px solid var(--j);
+  transition: color .15s, border-color .15s, background .15s, opacity .15s;
+}
+.jurisdiction-banner.has-active .jurisdiction-chip { color: var(--text-3); border-bottom-color: transparent; opacity: .6; }
+.jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-bottom-color: transparent; opacity: 1; }
+
+.viewport {
+  position: relative; height: min(46vh, 380px);
+  margin: 10px 12px 0; border-radius: 14px; overflow: hidden;
+  background: var(--card-2);
+  /* Safari clips a WebGL canvas to the radius only on its own layer. */
+  isolation: isolate;
+}
+#map { position: absolute; inset: 0; touch-action: none; }
+.map-fs {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+}
+.map-fs .fs-close { display: none; }
+/* Where you are, in the map's bottom-right corner; full screen, above the parish row. */
+.map-locate {
+  position: absolute; right: 10px; bottom: 10px; z-index: 2;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+}
+body.located .map-locate { color: var(--accent); }
+body.map-full .map-locate { bottom: calc(78px + env(safe-area-inset-bottom)); }
+body.map-full .map-fs .fs-open { display: none; }
+body.map-full .map-fs .fs-close { display: block; }
+.maplibregl-ctrl-attrib { display: none; }
+
+/* Under the small map, what it holds in words: a stack of logos, the count
+   and how many have times. Tapping opens them as a collection. */
+.inview {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 64px; padding: 10px 14px 12px 16px;
+  text-align: left;
+}
+.stackrow { display: flex; flex: none; }
+.stackrow .av { margin-left: -9px; box-shadow: var(--av-ring), 0 0 0 2px var(--card); }
+.stackrow .av:first-child { margin-left: 0; }
+.inview-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; white-space: nowrap; }
+.inview-text b, .inview-text small { overflow: hidden; text-overflow: ellipsis; }
+.inview-text small { color: var(--text-2); font-size: 13px; }
+.inview-go { color: var(--text-3); }
+/* One parish in view is that parish, by its full name, on up to two lines. */
+.inview.one .inview-text { white-space: normal; }
+.inview.one .inview-text b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
+
+/* The parish row (app.css .parish-filter-row-wrap), full screen only: the
+   count, then every parish as its logo ringed in its colour, in view first. */
+.parish-row {
+  display: none; align-items: center; gap: 6px;
+  padding: 2px 0 0 12px;
+}
+.parish-fav-fab,
+.parish-counter {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 30px;
+  background: var(--fab-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+  color: var(--text);
+}
+.parish-fav-fab { width: 30px; border-radius: 50%; color: #e0a315; border-color: #e0a315; }
+.parish-fav-fab[hidden] { display: none; }
+.parish-counter {
+  gap: 4px; padding: 0 10px 0 8px; border-radius: 999px;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.parish-pills {
+  flex: 1; min-width: 0;
+  display: flex; gap: 8px; align-items: center;
+  overflow-x: auto; scrollbar-width: none;
+  /* Room for the star above and the distance under each logo. */
+  padding: 8px 12px 11px 4px;
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+}
+.parish-pills::-webkit-scrollbar { display: none; }
+.parish-pill {
+  position: relative; flex: none;
+  width: 36px; height: 36px; padding: 0;
+  background: var(--fab-bg);
+  border: 1px solid color-mix(in srgb, var(--pill-ring, var(--border)) 30%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  -webkit-tap-highlight-color: transparent;
+}
+.parish-pill .pill-logo {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
+}
+.parish-pill .pill-logo img { width: 100%; height: 100%; object-fit: cover; display: block; background: #fff; }
+.parish-pill.pill-off { border-color: var(--border); }
+.parish-pill.pill-off .pill-logo { opacity: 0.5; filter: grayscale(0.7); }
+.parish-pill .pill-fav {
+  position: absolute; top: -5px; right: -5px;
+  font-size: 10px; line-height: 1; color: #e0a315;
+  text-shadow: 0 0 2px var(--fab-bg), 0 0 2px var(--fab-bg);
+  pointer-events: none;
+}
+.parish-pill .pill-dist {
+  position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  padding: 1px 4px;
+  font-size: 8.5px; font-weight: 700; line-height: 10px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.distance-near { color: #1565c0; }
+.distance-mid { color: #42a5f5; }
+.distance-far { color: #90caf9; }
+/* A parish with no logo: its acronym in its colour on white (app.css). */
+.avatar-acronym {
+  background: linear-gradient(155deg, #ffffff 0%, #f1f2f5 100%);
+  color: var(--avatar-ink, #555);
+  container-type: inline-size;
+}
+.avatar-acronym-text { font-weight: 800; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; font-size: 44cqw; }
+.avatar-acronym-text[data-len="2"] { font-size: 38cqw; }
+.avatar-acronym-text[data-len="3"] { font-size: 31cqw; }
+.avatar-acronym-text[data-len="4"] { font-size: 25cqw; }
+.avatar-acronym-text[data-len="5"] { font-size: 21cqw; }
+
+/* Full screen: the tabs across the top, the close button at the top right
+   under them, and the parish row floating along the foot of the map. */
+body.map-full { overflow: hidden; }
+body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border: 0; border-radius: 0; z-index: 30; background: transparent; }
+body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0; border-radius: 0; }
+body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
+body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
+body.map-full .inview { display: none; }
+body.map-full .parish-row {
+  display: flex;
+  position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
+  background: transparent;
+}
+
+/* ── Avatars ───────────────────────────────────────────────────────────
+   A parish's logo; a parish with none, its letters in its colour on white,
+   ringed in a hairline of the colour — on the dark scheme too, as a logo is
+   on white there. A logo covers the ring. */
+
+.av {
+  --s: 34px;
+  --av-ring: inset 0 0 0 1px var(--j, #888);
+  position: relative; flex: none;
+  width: var(--s); height: var(--s); border-radius: 50%;
+  background: #fff; color: var(--j, #888); box-shadow: var(--av-ring);
+  display: inline-grid; place-items: center; overflow: hidden;
+  font-size: calc(var(--s) * .3); font-weight: 750; letter-spacing: -.02em;
+}
+.av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.av.xs { --s: 20px; font-size: 7px; }
+.av.sm { --s: 30px; }
+.av.stack { --s: 32px; }
+.av.md { --s: 46px; }
+.av.xl { --s: 72px; --av-ring: inset 0 0 0 1.5px var(--j, #888); font-size: 20px; }
+
+/* ── Roundels (the kinds) ────────────────────────────────────────────── */
+
+.roundel {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: inline-grid; place-items: center;
+  background: var(--k-bg); color: var(--k-fg);
+  font-size: 11.5px; font-weight: 800;
+}
+.roundel.big { width: 44px; height: 44px; font-size: 20px; }
+
+/* ── Active filters ──────────────────────────────────────────────────── */
+
+/* ── The link ────────────────────────────────────────────────────────────
+   This view's address as it builds (app.css .mode-url, .ps-url): the host
+   faint, each segment in full, a parish bold in its colour, a glow when it
+   changes. Tap to copy. On the page under the map, and on each card. */
+.page-link { display: flex; padding: 8px var(--pad) 0; }
+.sheet-link { display: flex; padding: 8px 18px 0; }
+.url-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-width: 0; max-width: 100%; padding: 4px 0;
+  color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  -webkit-tap-highlight-color: transparent;
+}
+.url-text {
+  min-width: 0; overflow-x: auto; overflow-y: hidden; white-space: nowrap;
+  font-variant-numeric: tabular-nums; scrollbar-width: none;
+}
+.url-text::-webkit-scrollbar { display: none; }
+.url-text.fade-left {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px);
+  mask-image: linear-gradient(to right, transparent 0, #000 24px);
+}
+.url-host { opacity: .55; font-weight: 500; }
+.url-sep { opacity: .45; margin: 0 1px; font-weight: 500; }
+.url-parish { font-weight: 800; letter-spacing: .02em; }
+.url-copy { flex: none; color: var(--text-2); }
+.url-text.flash { animation: url-flash 900ms ease-out; }
+@keyframes url-flash {
+  0% { text-shadow: 0 0 10px color-mix(in srgb, var(--glow) 55%, transparent), 0 0 3px color-mix(in srgb, var(--glow) 55%, transparent); }
+  60% { text-shadow: 0 0 3px color-mix(in srgb, var(--glow) 25%, transparent); }
+  100% { text-shadow: none; }
+}
+.url-copied { display: inline-block; color: var(--live); font-weight: 700; letter-spacing: .08em; animation: url-copied 900ms ease-out; }
+@keyframes url-copied { 0% { opacity: 0; } 25% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .url-text.flash, .url-copied { animation: none; } }
+
+/* ── The filters ──────────────────────────────────────────────────────────
+   The app's pills (app.css .mode-bar-pill, .kind-sub, .mode-bar-en-only):
+   a button with the chips it made beside it, and under it, when open, a
+   group of pills per question, framed in a hairline. A pill that is on is filled
+   with the text colour, as the app's are. Nothing scrolls sideways. */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px var(--pad) 0; }
+.active-filters { display: contents; }
+.fpill {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 5px 12px;
+  background: var(--fab-bg); border: 1px solid var(--border); border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2;
+  color: var(--text-2); white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.fpill:hover { color: var(--text); }
+.fpill.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.fbtn { color: var(--text); padding-left: 10px; }
+.fbtn[aria-expanded="true"] { border-color: var(--text); }
+.fcount[hidden] { display: none; }
+.fcount {
+  min-width: 18px; height: 18px; margin: 0 -4px 0 1px; padding: 0 5px; border-radius: 9px;
+  display: inline-grid; place-items: center;
+  background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.afchip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px;
+  min-height: 30px; padding: 5px 8px 5px 12px; border-radius: 999px;
+  background: var(--text); color: var(--bg); border: 1px solid var(--text);
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2; white-space: nowrap;
+  max-width: 100%;
+}
+.afchip svg { width: 12px; height: 12px; flex: none; opacity: .75; }
+/* A jurisdiction's chip is its colour, as its tab is when chosen. */
+.afchip.afj { background: var(--j); border-color: var(--j); color: #fff; }
+
+.filter-panel {
+  margin: 8px var(--pad) 0; padding: 2px 12px 10px;
+  background: var(--card); border: 1px solid var(--hair); border-radius: 14px;
+  animation: fpanel-in .16s ease-out;
+}
+.filter-panel[hidden] { display: none; }
+@keyframes fpanel-in { from { opacity: 0; transform: translateY(-4px); } }
+.frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; }
+.frow + .frow { border-top: 1px solid var(--line); }
+.fbreak { flex-basis: 100%; height: 0; }
+/* The days are one row of seven, whatever the width. */
+.fdays { flex-basis: 100%; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.fdays .fpill { justify-content: center; padding: 5px 0; }
+.fstar { color: #e0a100; font-size: 11px; margin-right: -2px; }
+.fpill-j { color: var(--j); }
+.fpill-j.on { background: var(--j); border-color: var(--j); color: #fff; }
+.fpill.on .fstar { color: inherit; }
+/* "only" arrives beside its language, and a kind's roundels beside it. */
+.fpill-only, .kind-subs { animation: f-in .18s ease-out; }
+@keyframes f-in { from { opacity: 0; transform: scale(.85); } }
+.kind-subs { display: inline-flex; align-items: center; gap: 4px; }
+.kind-sub {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 28px; padding: 0;
+  background: var(--card); color: var(--k-fg);
+  border: 1px solid color-mix(in srgb, var(--k-fg) 35%, transparent); border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  transition: padding .18s ease, opacity .18s ease;
+}
+/* Only the one chosen is filled in its colour, and spells its name out. */
+.kind-sub.on { padding: 0 11px; background: var(--k-bg); border-color: var(--k-fg); }
+.kind-subs:has(.kind-sub.on) .kind-sub:not(.on) { opacity: .45; }
+.fpanel-foot { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
+.fpill-ghost { background: transparent; }
+.fpanel-end { display: flex; align-items: center; gap: 8px; }
+.fpill-saved { color: var(--accent); border-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .filter-panel, .fpill-only, .kind-subs { animation: none; }
+  .kind-sub { transition: none; }
+}
+
+/* ── Cards, Today ────────────────────────────────────────────────────── */
+
+.card { margin: 16px var(--pad) 0; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.card-head { padding: 14px 18px 4px; }
+.card-head h2 { font-size: 21px; font-weight: 700; letter-spacing: -.015em; }
+.card-head p { margin: 2px 0 0; color: var(--text-2); font-size: 14px; }
+.livetxt { color: var(--live); font-weight: 600; }
+.tsub { padding: 12px 18px 2px; font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.tempty { padding: 14px 18px 4px; color: var(--text-2); }
+.see-all {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin-top: 6px; padding: 16px 18px; border-top: 1px solid var(--line);
+  color: var(--accent); font-weight: 600; font-size: 15.5px;
+}
+
+.erow {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 11px 18px; min-height: 60px;
+}
+.erow + .erow { border-top: 1px solid var(--line); }
+.today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
+/* A collection's own Today, above its timetables. */
+.ctoday { margin: 14px 18px 0; }
+.sheet .cu .sday, .sheet .cu-band { scroll-margin-top: 72px; }
+.etime { width: 58px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
+.etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
+.erow.now .etime { color: var(--live); flex-direction: row; align-items: center; gap: 6px; }
+.live { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 var(--live); animation: pulse 1.8s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 60%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.ebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.etitle { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
+.esub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* With your location on, how far: in blue, as on a parish's card. */
+.esub em { font-style: normal; margin-left: auto; padding-left: 6px; flex: none; color: var(--dist); font-weight: 600; font-variant-numeric: tabular-nums; }
+.efeast { font-size: 12.5px; color: var(--text-2); font-style: italic; }
+
+/* The app's time (app.css .event-time): sans, tabular, then a small ":30"
+   and a small AM. No serif. */
+.t-time { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
+.t-min, .t-mer { font-size: .72em; font-weight: 600; color: var(--text-2); letter-spacing: .04em; }
+.t-mer { text-transform: uppercase; margin-left: 1px; }
+.erow.now .t-mer, .erow.now .t-min { color: inherit; }
+/* The app's evening: its moon and the word, small and spaced. */
+.eve {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--evening);
+}
+.eve .moon { flex: none; }
+.ethumb { width: 44px; height: 56px; border-radius: 8px; object-fit: cover; flex: none; }
+
+/* ── Under Today: Favourites, lists, collections ───────────────────────
+   Quiet, as the app is: rows in a hairline frame; one shelf of collections,
+   each a tint and its sign; one of posters, the title under the art; the
+   languages and the jurisdictions as links in a row. */
+
+.favs { margin-top: 26px; }
+.shelf { margin-top: 26px; }
+.shelf:empty { display: none; }
+.shelf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 var(--pad) 8px; }
+.shelf-head h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+.shelf-act { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--accent); font-size: 14px; font-weight: 600; }
+.shelf-act svg { width: 14px; height: 14px; }
+.shelf-sub { margin: -4px var(--pad) 8px; color: var(--text-2); font-size: 13.5px; }
+.shelf-empty { margin: 0 var(--pad); color: var(--text-3); font-size: 14px; line-height: 1.4; }
+.shelf-row {
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  padding: 2px var(--pad) 6px; scroll-padding: 0 var(--pad);
+}
+.shelf-row::-webkit-scrollbar { display: none; }
+.shelf-row > * { scroll-snap-align: start; }
+
+/* Rows: a starred parish and what is next there; a list, bookmarks, a view. */
+.hlist { margin: 0 var(--pad); background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.hrow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 9px 12px; }
+.hrow + .hrow { border-top: 1px solid var(--line); }
+.ht { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ht b { font-size: 15.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ht small { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: 13px; }
+.ht small span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ht small .roundel { width: 16px; height: 16px; font-size: 8.5px; }
+.hrow em { flex: none; font-style: normal; color: var(--dist); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.hrow > svg { flex: none; color: var(--text-3); }
+.hic { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--card-2); color: var(--accent); font-size: 15px; font-weight: 700; }
+.hic svg { width: 16px; height: 16px; }
+.hrow.new { color: var(--accent); min-height: 48px; }
+
+/* A collection: its tint and its sign, its name and how many. */
+.ccard {
+  flex: none; width: 42%; max-width: 180px; display: flex; flex-direction: column;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.cart {
+  position: relative; display: grid; place-items: center;
+  aspect-ratio: 4 / 3; color: #fff;
+  background: var(--card-2);
+}
+.cglyph { font-size: 32px; font-weight: 800; letter-spacing: -.03em; }
+.cglyph svg { display: block; width: 32px; height: 32px; }
+.ccross { width: 26px; height: 42px; opacity: .92; }
+.ccross svg { width: 100%; height: 100%; }
+/* A jurisdiction's logo, from /admin: on a white tile, so a crest drawn on
+   white or on nothing reads the same against its colour. */
+.clogo { width: 64px; height: 64px; padding: 7px; box-sizing: border-box; border-radius: 14px; background: #fff; box-shadow: var(--shadow); }
+.clogo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.cart .roundel.big { width: 44px; height: 44px; font-size: 20px; }
+.clogos { position: absolute; left: 8px; bottom: 8px; display: flex; }
+.clogos .av { --s: 22px; margin-left: -6px; box-shadow: var(--av-ring), 0 0 0 2px var(--card); }
+.clogos .av:first-child { margin-left: 0; }
+.ctext { display: flex; flex-direction: column; padding: 8px 10px 10px; gap: 1px; }
+.ckicker { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.ctitle { font-size: 14.5px; font-weight: 650; line-height: 1.2; }
+.csub { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* A poster whole, and what it is under it, where the poster's own words are not. */
+.poster {
+  flex: none; width: 54%; max-width: 230px; display: flex; flex-direction: column;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.pimg { position: relative; aspect-ratio: 4 / 5; background: var(--card-2); overflow: hidden; }
+.pimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pimg.noimg img { display: none; }
+.ptext { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px 11px; min-width: 0; }
+.pkicker { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.ptitle {
+  font-size: 15px; font-weight: 650; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.pfrom { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; color: var(--text-2); font-size: 12.5px; }
+.pfrom span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Languages: a chip each, its letters in its own script on its tint. */
+.lang-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 var(--pad); }
+.lchip {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px 0 4px;
+  background: var(--card); border-radius: 999px; box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 600;
+}
+.lglyph { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card-2); font-size: 11.5px; font-weight: 800; }
+.lchip small { color: var(--text-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Jurisdictions: two to a line, each its name in its colour, as its tab is. */
+.juris-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 var(--pad); }
+.jrow {
+  display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 8px 10px;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.jmark { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; overflow: hidden; background: var(--j); color: #fff; }
+.jmark svg { width: 12px; height: 19px; }
+.jmark img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.jt { min-width: 0; display: flex; flex-direction: column; }
+.jt b { font-size: 15px; font-weight: 650; color: var(--j); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jt small { font-size: 12.5px; color: var(--text-2); }
+
+/* ── The stream ──────────────────────────────────────────────────────── */
+
+.stream { margin-top: 30px; scroll-margin-top: var(--dock-h, 0px); }
+.stream-head { padding: 0 var(--pad) 6px; }
+.stream-head h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+.stream-head p { margin: 3px 0 0; color: var(--text-2); font-size: 14px; }
+/* A day: the app's header (app.css .day-hdr) with its link, then its rows;
+   framed in hairlines, not lifted on a shadow. */
+#stream-days { border-bottom: 1px solid var(--hair); }
+.sday { background: var(--card); border-top: 1px solid var(--hair); scroll-margin-top: var(--dock-h, 0px); }
+/* A day's header sticks under the dock, which is there whenever one does. */
+.dh {
+  position: sticky; top: var(--dock-h, 0px); z-index: 2;
+  display: flex; align-items: center; gap: 2px;
+  padding: 14px var(--pad) 6px; background: var(--card);
+  font-size: 13px; font-weight: 700; letter-spacing: .01em;
+}
+.dh.sun { font-weight: 800; }
+.day-link { display: inline-grid; place-items: center; width: 26px; height: 22px; color: var(--text); opacity: .3; }
+.day-link:hover, .dh:hover .day-link { opacity: .75; }
+.day-link.copied { opacity: 1; color: var(--live); }
+.day-link svg { width: 13px; height: 13px; }
+.sday .eve { padding: 10px var(--pad) 2px; }
+.sday .erow + .eve { border-top: 1px solid var(--line); }
+.sday.empty { display: flex; justify-content: space-between; align-items: center; padding-right: var(--pad); }
+.sday.empty .dh { position: static; padding-top: 10px; padding-bottom: 10px; color: var(--text-2); font-weight: 600; }
+.sday.empty p { margin: 0; color: var(--text-3); font-size: 13px; }
+/* From today, or from a date: the filter pill, opening the calendar. */
+.date-pick { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.date-pick .fpill svg { flex: none; }
+.date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+.stream-more { padding: 26px; text-align: center; color: var(--text-3); font-size: 14px; }
+
+/* ── Sheets ──────────────────────────────────────────────────────────── */
+
+.scrim { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .28); }
+.sheet-host { position: fixed; inset: 0; z-index: 41; pointer-events: none; }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; margin: 0 auto;
+  max-width: 600px; height: calc(100% - 44px - env(safe-area-inset-top));
+  background: var(--bg); border-radius: 26px 26px 0 0; box-shadow: var(--shadow-lift);
+  transform: translateY(105%); transition: transform .32s cubic-bezier(.2, .8, .2, 1);
+  pointer-events: auto; overflow: hidden;
+  display: flex; flex-direction: column;
+  /* Each card its own layer, so the one under it can't show its floating
+     toolbar through the one on top (an open card has no transform to do it). */
+  isolation: isolate;
+}
+.sheet.open { transform: none; }
+/* Following the finger down (next.js swipeToClose); let go, it slides on. */
+.sheet.dragging { transition: none; }
+/* A card the Worker painted (.ssr), up before the page's script is: the scrim
+   under it, and the page under that still. The card next.js opens takes its
+   place with no slide (.instant). */
+body:has(#sheets > .ssr) { overflow: hidden; }
+body:has(#sheets > .ssr) #scrim { display: block; }
+.sheet.instant { transition: none; }
+.sheet a.gbtn, .sheet a.erow, .sheet a.citem-head { color: inherit; }
+.sheet + .sheet { height: calc(100% - 60px - env(safe-area-inset-top)); }
+.sheet.mini { height: auto; max-height: 75%; }
+.sheet-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+.sheet::before {
+  content: ''; position: absolute; top: 6px; left: 50%; z-index: 3;
+  width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: var(--text-3); opacity: .5;
+}
+
+/* Apple's toolbar: share, title, X — in glass where the browser can. */
+.glassbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 14px 10px;
+  background: var(--glass-solid);
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s;
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glassbar {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8);
+  }
+}
+.sheet.scrolled .glassbar { border-bottom-color: var(--line); }
+.gbtn {
+  flex: none; width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); border: 1px solid var(--glass-line); box-shadow: 0 1px 6px rgba(0, 0, 0, .08);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+.gbtn-sp { width: 44px; flex: none; }
+.gtitle { flex: 1; min-width: 0; text-align: center; display: flex; flex-direction: column; }
+.gtitle b { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtitle small { color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet .sheet-scroll { padding-top: 74px; }
+
+/* The parish card. */
+.ph { display: flex; gap: 14px; align-items: center; padding: 6px 18px 4px; }
+.ph-text h1 { font-size: 22px; line-height: 1.2; font-weight: 750; letter-spacing: -.015em; }
+.ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
+/* How far, beside where (app.css .distance-blue). */
+.ph-dist { margin-left: 3px; color: var(--dist); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* As many as fit at a readable width; more scroll sideways, as Maps' do.
+   The padding under them is room for their shadow, which a scroller clips. */
+.actions {
+  display: flex; gap: 10px; padding: 16px 18px 22px; margin-bottom: -18px;
+  overflow-x: auto; scrollbar-width: none; scroll-padding: 0 18px;
+}
+.actions::-webkit-scrollbar { display: none; }
+.abtn {
+  flex: 1 0 0; min-width: 96px; padding: 0 8px; min-height: 64px; border-radius: 16px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: var(--card); color: var(--accent); font-weight: 650; font-size: 15px; box-shadow: var(--shadow);
+}
+.abtn.primary { min-width: 124px; background: var(--accent); color: #fff; }
+.abtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.summary { display: flex; margin: 14px 18px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.sum { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 0 8px; }
+.sum + .sum { border-left: 1px solid var(--line); }
+.sum:first-child { padding-left: 0; }
+.sum small { color: var(--text-2); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum b { font-size: 15px; font-weight: 650; display: block; line-height: 1.2; overflow-wrap: break-word; }
+.sum b.ok { color: var(--live); }
+/* The jurisdiction, which opens its collection. */
+.sum-link { color: var(--text); text-align: left; }
+.sum-link b { display: flex; align-items: center; gap: 1px; }
+.sum-link b svg { width: 13px; height: 13px; flex: none; opacity: .65; }
+.sec { font-size: 20px; font-weight: 750; letter-spacing: -.015em; padding: 24px 18px 10px; }
+
+/* Service times: one line per service, the days it runs listed on it, in the
+   app's timetable type (app.css .schedule-*): the days as quiet as its day
+   names, the time with a small AM, the morning before the evening under the
+   moon, and a rule in the parish's colour down the left. */
+.tt { position: relative; margin: 0 18px; padding: 0 0 0 13px; }
+.tt::before {
+  content: ''; position: absolute; left: 0; top: 5px; bottom: 5px;
+  width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
+}
+.tt-line { display: grid; grid-template-columns: 68px 60px minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 5px 0; }
+.tt-days { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
+.tt-line .t-time { font-size: 14px; }
+.tt-what { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.tt-what .roundel { width: 16px; height: 16px; font-size: 8.5px; margin-top: 1px; }
+.tt-title { min-width: 0; font-size: 14.5px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+.tt-lang {
+  display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 3px; vertical-align: 1px;
+  background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600;
+}
+.tt-range { display: inline-block; margin-left: 6px; color: var(--text-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tt-range.tt-break { display: block; margin: 1px 0 0; color: #8a5a10; white-space: normal; }
+@media (prefers-color-scheme: dark) { .tt-range.tt-break { color: #e3b86a; } }
+.tt .eve { margin: 9px 0 3px; color: var(--text-3); }
+.tt.compact .tt-line { grid-template-columns: 64px 54px minmax(0, 1fr); padding: 3px 0; }
+/* For whoever may change it, each line's pencil (next/editing.js). */
+.tt.editing .tt-line { grid-template-columns: 68px 60px minmax(0, 1fr) 32px; }
+.tt-edit { align-self: center; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -6px 0; border-radius: 50%; color: var(--text-2); }
+.tt-edit svg { width: 17px; height: 17px; }
+.tt-edit:hover { color: var(--text); background: var(--card-2); }
+.tt.compact .tt-title { font-size: 13.5px; }
+.tt.compact .t-time { font-size: 13px; }
+/* Coming up: this parish's days on the same rule, from today or a date. */
+/* Coming up on white, lifted off the grey the timetable sits on: the one
+   changes week to week, the other is the parish's for good. */
+.cu-band { margin-top: 26px; padding-bottom: 18px; background: var(--card); border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.cu-band .sec { padding-top: 18px; }
+.cu { margin: 0 18px; }
+.cu .date-pick { margin: 0 0 4px; }
+.cu .sday { position: relative; background: none; border: 0; padding-left: 13px; }
+.cu .sday::before {
+  content: ''; position: absolute; left: 0; top: 14px; bottom: 6px;
+  width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
+}
+.cu .dh { position: static; padding: 14px 0 2px; background: none; }
+.cu .erow { padding: 8px 0; min-height: 0; }
+.cu .erow + .erow { border-top: 0; }
+.cu .sday .eve, .cu .sday .erow + .eve { padding: 8px 0 0; border: 0; }
+.more-days { margin: 12px 0 0 13px; color: var(--accent); font-size: 14px; font-weight: 600; }
+.tt-none { margin: 0 18px; padding: 16px; border-radius: 16px; background: var(--card); color: var(--text-2); font-size: 14.5px; }
+.tt-none.sm { margin: 0; padding: 4px 0 0; background: none; font-size: 13.5px; }
+.details { margin: 0 18px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); }
+.drow { display: flex; justify-content: space-between; gap: 18px; padding: 13px 16px; font-size: 15px; }
+.drow + .drow { border-top: 1px solid var(--line); }
+.drow small { color: var(--text-2); font-size: 15px; flex: none; }
+.drow > :last-child { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.wide-btn {
+  display: block; width: calc(100% - 36px); margin: 18px auto 0; padding: 15px; border-radius: 16px;
+  background: var(--card); color: var(--accent); font-weight: 650; text-align: center; box-shadow: var(--shadow);
+}
+.wide-btn.solid { background: var(--accent); color: #fff; }
+.wide-btn.ghost { background: transparent; box-shadow: none; }
+.toolbar-space { height: 90px; }
+.toolbar-space.sm { height: 20px; }
+
+/* Apple's little floating toolbar: + ☆ … */
+.floatbar {
+  position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 3;
+  transform: translateX(-50%);
+  display: flex; gap: 6px; padding: 6px 10px; border-radius: 30px;
+  background: var(--glass-solid); border: 1px solid var(--glass-line); box-shadow: var(--shadow-lift);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .floatbar { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+}
+.floatbar button { width: 58px; height: 46px; border-radius: 23px; display: grid; place-items: center; }
+.floatbar button:active { background: var(--line); }
+.floatbar button.on { color: #f5a400; }
+.floatbar button.bm.on { color: var(--accent); }
+
+/* A collection's card. */
+.collection .sheet-scroll { padding-top: 0; }
+.chero { padding: 84px 20px 22px; color: #fff; }
+.chero .ckicker { color: rgba(255, 255, 255, .85); }
+.chero h1 { font-size: 32px; font-weight: 800; letter-spacing: -.025em; line-height: 1.08; margin-top: 4px; }
+.chero p { margin: 16px 0 0; font-size: 15.5px; opacity: .92; }
+.chero-acts { display: flex; gap: 10px; margin-top: 18px; }
+.hbtn {
+  flex: 1; min-height: 66px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: rgba(255, 255, 255, .18); font-weight: 650; font-size: 14.5px;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+/* Every head but a jurisdiction's is its tint (.soft): the words in the
+   page's ink, the kicker and the buttons in the tint's. */
+.chero.soft h1 { color: var(--text); }
+.chero.soft p { color: var(--text-2); opacity: 1; }
+.chero.soft .ckicker { color: var(--ink); }
+.chero.soft .hbtn { background: var(--card); box-shadow: var(--shadow); color: var(--ink); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.clist { padding: 6px 0 0; }
+/* A collection's timetables, folded to the first few lines of the first
+   under a fade until Show timetables: a checkbox in its label, so the
+   Worker's first paint opens the same way with no script. */
+.ctimes.folded:not(:has(input:checked)) .clist {
+  max-height: var(--fold, 300px); overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 70px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 70px), transparent);
+}
+.ctimes.folded:not(:has(input:checked)) > .wide-btn { display: none; }
+.ctimes-open {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: 4px;
+  width: max-content; margin: -34px auto 0; padding: 9px 16px; border-radius: 999px;
+  background: var(--card); color: var(--accent); box-shadow: var(--shadow), 0 2px 10px rgba(0, 0, 0, .08);
+  font-size: 14.5px; font-weight: 650; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.ctimes-open svg { width: 14px; height: 14px; transform: rotate(90deg); }
+.ctimes:has(input:checked) .ctimes-open { display: none; }
+.citem { position: relative; margin: 12px 18px 0; padding: 14px; background: var(--card); border-radius: 18px; box-shadow: var(--shadow); }
+.citem-head { display: flex; gap: 12px; align-items: flex-start; width: calc(100% - 44px); }
+.citem-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.citem-t b { font-size: 17px; font-weight: 700; line-height: 1.2; }
+.citem-t small { color: var(--text-2); font-size: 13.5px; }
+.citem-next { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13.5px; color: var(--live); font-weight: 600; }
+.citem-next .roundel { width: 16px; height: 16px; font-size: 9px; }
+.cadd {
+  position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--card-2); color: var(--accent);
+}
+.citem .tt { margin: 12px 0 0; }
+/* Donate: a parish's page for giving, beside its name. */
+.cgive {
+  position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--card-2); color: #db2777;
+}
+.donate-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 18px 0; }
+
+/* An event. */
+.event .sheet-scroll { padding-top: 0; }
+.ev-poster { display: block; width: 100%; padding: 0; border: 0; background: #000; cursor: zoom-in; }
+/* A poster full size, over everything. */
+.poster-view {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); background: rgba(0, 0, 0, .94); cursor: zoom-out;
+}
+.poster-view img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.poster-view .gbtn { position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 14px; }
+.ev-poster img { display: block; width: 100%; max-height: 62vh; object-fit: contain; }
+.ev-band { height: 150px; display: grid; place-items: center; background: linear-gradient(135deg, var(--j), color-mix(in srgb, var(--j) 55%, #000)); padding-top: 40px; }
+.ev-head { padding: 18px 18px 4px; }
+.ev-head h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.12; margin-top: 4px; }
+.ev-when { margin: 6px 0 0; color: var(--text-2); font-size: 16px; font-weight: 550; }
+.ev-desc { margin: 16px 18px 0; padding: 14px 16px; background: var(--card); border-radius: 16px; font-size: 15px; line-height: 1.45; box-shadow: var(--shadow); }
+.event .details { margin-top: 14px; }
+
+/* A small sheet's head. */
+.lay-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 18px 6px; }
+.lay-head h2 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+.mini .sheet-scroll { padding-top: 0; }
+.lay-note { margin: 4px 18px 10px; color: var(--text-2); font-size: 14.5px; }
+
+.lists { margin: 6px 18px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.lrow { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; min-height: 58px; color: var(--text); }
+.lrow + .lrow { border-top: 1px solid var(--line); }
+.lrow > svg { color: var(--accent); flex: none; }
+.lic { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--card-2); color: var(--accent); font-size: 17px; }
+/* A row's icon that is not one of the line icons: the cross, or the
+   jurisdiction's own logo where /admin has one. */
+.lrow-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--accent); }
+.lrow-ic img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px; }
+.ln { flex: 1; display: flex; flex-direction: column; }
+.ln small { color: var(--text-2); font-size: 13px; }
+.lck { color: var(--accent); opacity: 0; }
+.lrow.on .lck { opacity: 1; }
+.lrow.new { color: var(--accent); }
+
+#toast {
+  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 60;
+  transform: translate(-50%, 20px); opacity: 0; transition: all .2s;
+  padding: 11px 18px; border-radius: 22px; background: rgba(20, 20, 24, .9); color: #fff; font-size: 14.5px; font-weight: 600;
+  pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (min-width: 640px) {
+  .ccard { width: 170px; }
+  .poster { width: 210px; }
+}
+
+/* ── Search ──────────────────────────────────────────────────────────── */
+
+.sheet.search .sheet-scroll { padding-top: 0; }
+.sr-head { display: flex; align-items: center; gap: 12px; padding: 22px 16px 10px; }
+.sr-field {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px;
+  border-radius: 14px; background: var(--card); box-shadow: var(--shadow); color: var(--text-2);
+}
+.sr-field input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  font: inherit; font-size: 17px; color: var(--text);
+}
+.sr-field input::-webkit-search-cancel-button { opacity: .5; }
+.sr-cancel { flex: none; color: var(--accent); font-weight: 600; font-size: 16px; padding: 8px 2px; }
+.sr-sec { display: flex; justify-content: space-between; align-items: baseline; padding: 18px 20px 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.sr-sec span { font-weight: 600; color: var(--text-3); }
+.sr-group { margin: 0 16px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.sr-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 58px; padding: 10px 14px; }
+.sr-row + .sr-row, .sr-group .erow + .erow { border-top: 1px solid var(--line); }
+.sr-group .erow { padding-left: 14px; padding-right: 14px; }
+.sr-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sr-t b { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-t small { color: var(--text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-ic { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card-2); color: var(--text-2); }
+.sr-row[data-place] .sr-ic { background: #ff3b30; color: #fff; }
+.sr-art { width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+.sr-art svg { width: 16px; height: 16px; }
+.sr-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
+.sr-chip { height: 38px; padding: 0 15px; border-radius: 19px; background: var(--card); box-shadow: var(--shadow); font-weight: 600; font-size: 15px; }
+.sr-more { display: block; margin: 8px 16px 0; padding: 12px; width: calc(100% - 32px); border-radius: 14px; color: var(--accent); font-weight: 600; text-align: center; }
+.sr-empty { padding: 40px 28px; text-align: center; color: var(--text-2); }
+.sr-empty b { display: block; color: var(--text); font-size: 18px; margin-bottom: 6px; }
+
+/* ── Contributing, and where things came from ───────────────────────────
+   "Add +" in a dotted outline wherever somebody could add something; it
+   opens the suggest dialog with its topic chosen. */
+.add-box {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: calc(100% - 36px); min-height: 46px; margin: 12px 18px 0;
+  border: 2px dotted var(--border); border-radius: 14px;
+  color: var(--text-2); font-size: 15px; font-weight: 650;
+}
+.add-box:hover { color: var(--accent); border-color: var(--accent); }
+.cu-band .add-box { margin-top: 14px; }
+/* "Updated 3 months ago · Antiochian Archdiocese ↗", the app's line (app.css
+   .sched-source, .ps-source): muted and small on purpose, because it is
+   provenance, not content. */
+.src-line { margin: 8px 20px 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
+.src-line a {
+  color: inherit; text-decoration: underline; text-decoration-style: dotted;
+  text-underline-offset: 2px; white-space: nowrap;
+}
+.src-line a:hover { color: var(--text); }
+.source-link-icon {
+  display: inline-block; width: 9px; height: 9px; margin-left: 3px; vertical-align: baseline;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
+}
+
+/* The app's dialogs: the suggest dialog (public/shared/suggest-dialog.js),
+   and for somebody who may edit, the add-event editor
+   (/shared/event-editor.js, with /shared/event-editor.css) and the questions
+   an edit asks (/next/editing.js). They bring app.css's class names, and this
+   page does not load app.css, so here is the part of it they wear, in this
+   page's tokens. */
+.escalate-backdrop {
+  position: fixed; inset: 0; z-index: 3000;
+  display: flex; align-items: center; justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.45);
+}
+.choice-backdrop { z-index: 3100; }
+.suggest-dialog { z-index: 3200; }
+body.dialog-open { overflow: hidden; }
+.escalate-modal {
+  /* app.css's names, which the editor's stylesheet reads, for this page's colours. */
+  --bg: var(--card);
+  --surface: var(--card);
+  --surface-2: var(--card-2);
+  --soft-bg: var(--card-2);
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+  --muted: var(--text-2);
+  --border-light: var(--line);
+  --accent-text: var(--accent);
+  --accent-ring: color-mix(in srgb, var(--accent) 25%, transparent);
+  position: relative; width: 100%; max-width: 480px; max-height: 88dvh; overflow-y: auto;
+  padding: 20px; border-radius: 18px; background: var(--card); color: var(--text); box-shadow: var(--shadow-lift);
+}
+.form-modal { max-width: 560px; }
+/* The editor's own action bar sticks to the foot and carries its own padding. */
+.new-event-modal { padding-bottom: 0; }
+@media (min-width: 900px) { .new-event-modal:has(.ee.has-poster) { max-width: 940px; } }
+.escalate-modal h2 { margin: 0 0 12px; padding-right: 36px; font-size: 17px; font-weight: 700; }
+.escalate-modal-sub { margin: -10px 0 14px; font-size: 13px; color: var(--text-2); }
+.donate-close {
+  position: absolute; top: 12px; right: 14px; width: 28px; height: 28px;
+  font-size: 22px; line-height: 1; color: var(--text-2); text-align: center;
+}
+.donate-close:hover { color: var(--text); }
+/* askChoice: one question, its answers, each saying what it will do. */
+.choice-modal { max-width: 420px; }
+.choice-body { margin: 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.choice-body p { margin: 0; }
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.choice-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 12px 14px; text-align: left; color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+}
+.choice-opt:hover, .choice-opt:focus-visible { outline: none; border-color: var(--text); }
+.choice-opt.danger .choice-label { color: var(--danger); }
+.choice-label { font-size: 15px; font-weight: 600; }
+.choice-hint { font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.escalate-modal .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.escalate-modal .btn-outline, .escalate-modal .btn-save {
+  min-height: 44px; padding: 11px 22px; border-radius: 999px; font-size: 15px; font-weight: 600; line-height: 1.2;
+}
+.escalate-modal .btn-outline { border: 1px solid var(--border); color: var(--text); }
+.escalate-modal .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
+.escalate-modal .btn-save:disabled { opacity: .7; }
+/* The dark scheme's green is light: white on it does not read. */
+@media (prefers-color-scheme: dark) { .escalate-modal .btn-save { color: #052e16; } }
+.sg-form { margin: 0; }
+.sg-form .edit-row { margin-bottom: 12px; }
+.sg-form input:not([type=checkbox]), .sg-form textarea, .sg-form select {
+  width: 100%; min-height: 44px; padding: 11px 14px;
+  font: inherit; font-size: 16px; line-height: 1.3; color: var(--text);
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px;
+  -webkit-appearance: none; appearance: none;
+}
+.sg-form select {
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
+}
+.sg-form textarea { resize: vertical; min-height: 84px; }
+.sg-form input::placeholder, .sg-form textarea::placeholder { color: var(--text-3); }
+.sg-form input:not([type=checkbox]):focus, .sg-form textarea:focus, .sg-form select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.sg-form .sg-check { display: flex; align-items: center; gap: 10px; margin: 2px 0 12px; color: var(--text); cursor: pointer; }
+.sg-form .sg-check input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--success); }
+.sg-check b { font-size: 15px; font-weight: 600; }
+.sg-error { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--danger); }
+.sg-form [hidden], .sg-error[hidden] { display: none !important; }
+.sg-form .edit-row-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
+
+/* A rule's form (public/shared/rule-form.js, from /next/editing.js): the
+   app's form (app.css .detail-edit-form, .rule-form), fields as the add-event
+   editor draws its own, in this page's tokens. */
+.detail-edit-form .edit-row { margin-bottom: 14px; }
+.detail-edit-form label {
+  display: block; margin-bottom: 6px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2);
+}
+.detail-edit-form input:not([type=checkbox]):not([type=radio]):not([type=date]),
+.detail-edit-form textarea, .detail-edit-form select, .df-btn {
+  width: 100%; min-height: 44px; padding: 11px 14px;
+  font: inherit; font-size: 16px; line-height: 1.3; color: var(--text); text-align: left;
+  background: var(--card-2); border: 1px solid var(--border); border-radius: 12px;
+  -webkit-appearance: none; appearance: none;
+}
+.detail-edit-form select {
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
+}
+.detail-edit-form textarea { resize: vertical; min-height: 72px; }
+.detail-edit-form input::placeholder, .detail-edit-form textarea::placeholder { color: var(--text-3); }
+.detail-edit-form input:focus, .detail-edit-form textarea:focus, .detail-edit-form select:focus, .df-btn:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.detail-edit-form .edit-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.detail-edit-form .edit-checks { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.detail-edit-form label.edit-check {
+  display: inline-flex; align-items: center; gap: 8px; margin: 0;
+  font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text); cursor: pointer;
+}
+.detail-edit-form .edit-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.detail-edit-form [hidden] { display: none !important; }
+.edit-row-hint { margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--text-3); }
+.edit-row-hint-bad { color: var(--danger); font-weight: 600; }
+.rf-dates-hint { margin: -8px 0 14px; }
+.rf-error { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--danger); }
+/* Save stays in sight however long the form: its row sticks to the dialog's foot. */
+.frame-body .form-actions {
+  position: sticky; bottom: -20px; z-index: 2;
+  margin: 14px -20px -20px; padding: 10px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--card); border-top: 1px solid var(--line);
+}
+.escalate-modal .btn-danger {
+  margin-left: auto; min-height: 44px; padding: 11px 22px; border-radius: 999px;
+  font-size: 15px; font-weight: 600; line-height: 1.2; color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.escalate-modal .btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* How often: one control, three answers. */
+.cad-modes { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.detail-edit-form label.cad-mode, .detail-edit-form label.wom-check, .detail-edit-form label.cad-week {
+  display: flex; align-items: center; gap: 7px; margin: 0;
+  font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text); cursor: pointer;
+}
+.cad-mode input, .wom-check input, .cad-week input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.cad-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.wom-label { font-size: 13px; color: var(--text-3); }
+.detail-edit-form label.cad-week { padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.detail-edit-form label.cad-week:has(input:checked) { border-color: var(--text); background: var(--card-2); }
+.cad-week-dates { font-size: 14px; font-variant-numeric: tabular-nums; }
+/* A time (public/shared/time-field.js): quarter-hours in a list, or typed. */
+.tf { position: relative; }
+.detail-edit-form .tf .tf-text { padding-right: 40px; cursor: pointer; }
+.tf.tf-bad .tf-text { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
+.tf-btn { position: absolute; top: 0; right: 0; bottom: 0; width: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+.tf.open .tf-btn svg { transform: rotate(180deg); }
+.tf-list {
+  position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0;
+  display: flex; flex-direction: column; max-height: 260px; overflow: hidden; padding: 4px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lift);
+}
+.tf.tf-up .tf-list { top: auto; bottom: calc(100% + 4px); }
+.tf-list[hidden] { display: none; }
+.tf-head { flex: none; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
+.tf-slots { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.tf-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 9px 12px; border-radius: 8px; font-size: 15px; font-variant-numeric: tabular-nums; text-align: left; color: var(--text);
+}
+.tf-item:hover, .tf-item:focus-visible { background: var(--card-2); outline: none; }
+.tf-item.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+.tf-item.tf-custom { font-weight: 600; color: var(--accent); white-space: nowrap; }
+.tf-item.tf-none { color: var(--text-2); white-space: nowrap; }
+/* A date: a field-shaped button over the browser's own calendar. */
+.df { position: relative; }
+.df-btn { padding-right: 38px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.df-empty { color: var(--text-3); }
+.df-clear {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 30px; height: 30px; border-radius: 50%; font-size: 20px; line-height: 1; text-align: center; color: var(--text-3);
+}
+.df-clear[hidden] { display: none; }
+.df-native { position: absolute; left: 0; bottom: 0; width: 100%; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+/* The rule's own poster. */
+.rf-poster { display: flex; align-items: center; gap: 12px; }
+.rf-poster-thumb { width: 72px; max-height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
+.rf-poster-thumb[hidden] { display: none; }
+.rf-poster-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rf-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px 14px;
+  font-size: 14px; font-weight: 600; color: var(--text); border: 1px solid var(--border); border-radius: 999px;
+}
+.rf-btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.rf-btn[hidden] { display: none; }
+/* "From a photo of the sign", above the fields for typing one in. */
+.sap-drop {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 12px;
+}
+.sap-drop:hover, .sap-drop.is-dragging { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sap-title { font-size: 15px; font-weight: 600; }
+.sap-sub { font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.schedule-add-or {
+  display: flex; align-items: center; gap: 8px; margin: 14px 0 12px;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3);
+}
+.schedule-add-or::before, .schedule-add-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.rf-ended { margin-top: 16px; font-size: 14px; }
+.rf-ended summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
+.rf-ended-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rf-ended-row em { font-style: normal; color: var(--text-3); }
+
+/* A date that is off (public/next/next.js TOMB): struck through, its word
+   beside it, in the app's badge colours (app.css .badge-cancelled and the
+   rest). Warmer for a break, which is a stretch, not one service called off. */
+.etitle-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.erow.tomb .etitle { text-decoration: line-through; color: var(--text-2); }
+.erow.tomb .etime, .erow.tomb .roundel { opacity: .5; }
+.etomb, .ev-state {
+  flex: none; padding: 2px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
+  background: #f0f0f0; color: #777;
+}
+.erow.combined .etomb, .ev-state.combined { background: #ccf0f0; color: #0e7070; }
+.erow.break .etomb, .ev-state.break { background: #f6e6cc; color: #8a5a10; }
+.ev-state.hidden { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.enote { font-size: 12.5px; color: var(--text-2); }
+.ev-head.off h1 { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-2); }
+.ev-off { color: var(--danger); }
+.ev-head.break .ev-off, .ev-head.combined .ev-off { color: var(--text-2); }
+.ev-note { margin: 6px 0 0; color: var(--text-2); font-size: 14.5px; }
+@media (prefers-color-scheme: dark) {
+  .etomb, .ev-state { background: #26272c; color: #8a8a8a; }
+  .erow.combined .etomb, .ev-state.combined { background: #1a3434; color: #9ad4d4; }
+  .erow.break .etomb, .ev-state.break { background: #382d18; color: #e3b86a; }
+}
+
+/* An event's pencil, where a visitor's card has Suggest an edit. */
+.ev-edit { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.ev-edit svg { width: 18px; height: 18px; }
+/* Its form: what the date is, then which service it is a date of. */
+.ev-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.ev-tools .ev-state { margin-right: 4px; font-size: 11px; padding: 4px 8px; }
+.ev-series {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--card-2);
+  font-size: 14px; color: var(--text-2);
+}
+.ev-link { color: var(--accent); font-weight: 650; font-size: 14px; }
+.ev-poster-scope { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; color: var(--text-2); }
+.ev-poster-scope span { flex: none; }
+.ev-poster-scope select { flex: 1; min-width: 0; }
+.detail-edit-form .ev-poster-range { margin-top: 10px; }
+
+/* A break: what is on file, each liftable, above the new one. */
+.bk-lead { margin: 0 0 14px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.bk-head { margin: 0 0 2px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+.bk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.bk-row:last-child { margin-bottom: 16px; }
+.bk-row span, .bk-row small { display: block; color: var(--text-2); }
+.bk-row small { font-size: 13px; }
+/* A combine: the add-event editor's lists (event-editor.css), at this
+   dialog's size, out from under the form's uppercase labels. */
+.cb-form .ee-list { max-height: 280px; border-color: var(--line); border-radius: 12px; }
+.detail-edit-form label.ee-item {
+  display: flex; margin: 0; padding: 8px; gap: 10px;
+  font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text);
+}
+.detail-edit-form .ee-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); }
+.cb-form .ee-item small { font-size: 12.5px; }
+.detail-edit-form .cb-find { margin-bottom: 8px; }
+.cb-ask { margin: 12px 0 0; padding: 12px; border-radius: 12px; background: color-mix(in srgb, #b45309 10%, transparent); }
+.cb-ask p { margin: 0 0 8px; font-size: 14px; line-height: 1.4; }
+
+/* The Details heading's pencil, for whoever may change them. */
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sec-row .tt-edit { margin: -6px -6px -6px 0; }
+/* A parish's details (next/editing.js editDetails): the logo beside the full
+   name, then the card's lines as fields. */
+.pd-head { display: flex; align-items: flex-end; gap: 14px; }
+.pd-head > .av { flex: none; margin-bottom: 14px; }
+.pd-names { flex: 1; min-width: 0; }
+.pd-logo { position: relative; flex: none; margin-bottom: 14px; border-radius: 50%; }
+.pd-logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.pd-logo-pen {
+  position: absolute; right: -2px; bottom: -2px; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--text); color: var(--card); box-shadow: 0 0 0 2px var(--card);
+}
+.pd-pin { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pin-status { margin-top: 6px; font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+/* The only thing saying the dot has moved and nothing is saved yet, so it does not whisper. */
+.pin-status .staged { color: var(--accent); font-weight: 600; }
+.pin-status .bad { color: var(--danger); font-weight: 600; }
+.pd-maps-now { margin-bottom: 8px; font-size: 14px; color: var(--text-2); }
+.pd-find { display: flex; gap: 8px; margin-bottom: 8px; }
+.detail-edit-form .pd-find input { flex: 1; min-width: 0; }
+.pd-find .rf-btn { flex: none; min-height: 44px; }
+.pd-results { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.pd-results:empty { display: none; }
+.pd-result {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px;
+  text-align: left; color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+}
+.pd-result b { font-size: 14.5px; font-weight: 600; }
+.pd-result small { font-size: 12.5px; color: var(--text-2); }
+.pd-result.chosen { border-color: var(--success); box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 30%, transparent); }
+.pd-note { font-size: 13px; color: var(--text-2); }
+.pd-usepin, .pd-ask { margin-top: 8px; }
+.detail-edit-form input:disabled { color: var(--text-2); opacity: 1; }
+.pd-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; color: var(--text-2); }
+.pd-links .rf-btn { flex: none; }
+.pd-form .src-line { margin: 0 0 4px; }
+.pd-delete { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+/* A pin on a map of its own: a crosshair dead centre, the map moving under it. */
+.pin-stage { position: relative; height: 320px; margin-bottom: 10px; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); }
+.pin-map { position: absolute; inset: 0; }
+.pin-cross {
+  position: absolute; top: 50%; left: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px;
+  pointer-events: none; border: 2px solid #fff; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0, 0, 0, .45);
+}
+/* Hairlines, so the exact pixel reads over a busy roof. */
+.pin-cross::before, .pin-cross::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .6); }
+.pin-cross::before { left: 50%; top: -10px; bottom: -10px; width: 1px; margin-left: -.5px; }
+.pin-cross::after { top: 50%; left: -10px; right: -10px; height: 1px; margin-top: -.5px; }
+.pin-readout { margin-bottom: 6px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); }
+.pin-hint, .lg-hint { margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
+/* A logo: as it stands, then a square stage under a round mask. */
+.lg-preview { display: flex; justify-content: center; margin: 4px 0 16px; }
+.lg-preview .av { --s: 108px; font-size: 28px; }
+.lg-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.lg-stage {
+  position: relative; width: 100%; max-width: 320px; aspect-ratio: 1; margin: 4px auto 14px;
+  overflow: hidden; border-radius: 12px; background: var(--card-2); touch-action: none; cursor: grab;
+}
+.lg-stage:active { cursor: grabbing; }
+.lg-canvas { display: block; }
+.lg-mask { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); pointer-events: none; }
+.lg-zoom { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+.lg-zoom input { flex: 1; accent-color: var(--accent); }
+.lg-form [hidden] { display: none !important; }
+/* Short links: each row with the link it makes. */
+.lk-slug { float: right; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-3); }
+.lk-row { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid var(--line); }
+.lk-row:last-child { margin-bottom: 8px; }
+.lk-head { display: flex; align-items: center; gap: 8px; }
+.detail-edit-form .lk-name { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lk-del { flex: none; width: 36px; height: 36px; border-radius: 50%; font-size: 22px; line-height: 1; color: var(--text-3); }
+.lk-del:hover { color: var(--danger); background: var(--card-2); }
+.lk-preview { font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.lk-preview b { color: var(--text); font-weight: 600; }
+
+/* ── The gum-tree loader (public/shared/loading-screen.js; app.css) ─────
+   Over the map alone, while it loads, and gone once it has drawn. */
+#loading-screen {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px;
+  background: var(--loading-bg);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  opacity: 1; transition: opacity .7s ease;
+}
+#loading-screen.hidden { opacity: 0; pointer-events: none; }
+.ls-tree-wrap { display: flex; align-items: flex-end; justify-content: center; width: 150px; height: min(200px, 68%); flex: 0 0 auto; }
+.ls-tree { display: block; width: 100%; max-height: 100%; overflow: visible; }
+.ls-outline-pass path { fill: var(--tree-outline); stroke: none; }
+.ls-colour-pass path { fill: var(--tree-fill); stroke: none; }
+#ls-tree-fill-rect {
+  transform-box: fill-box; transform-origin: bottom; transform: scaleY(0);
+  transition: transform 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ls-log {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; max-width: 360px; min-height: 22px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.55;
+  color: var(--tree-text); text-align: center;
+}
+.ls-log-line { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: ls-log-in .22s ease; }
+@keyframes ls-log-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── A tint ──────────────────────────────────────────────────────────────
+   A collection's colour (public/shared/collections.js lookStyle: --c), mixed
+   into the page so it reads as a tint on light and dark alike, its sign in
+   the colour itself. Last, so it is what a tile wears. */
+.soft { --ink: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--card)); color: var(--ink); }
+@media (prefers-color-scheme: dark) {
+  .soft { --ink: color-mix(in srgb, var(--c) 45%, #fff); background: color-mix(in srgb, var(--c) 26%, var(--card)); }
+}

@@ -84,6 +84,14 @@ test('joined in the browser, a rule reads exactly as the Worker joins it — col
   }
 });
 
+test("the bundle carries the jurisdictions' logos, and none before migration 027", async () => {
+  const { raw, call } = fresh();
+  assert.deepEqual((await (await call('GET', '/api/bundle')).json()).jurisdiction_logos, {});
+  raw.prepare("INSERT INTO jurisdiction_logos (jurisdiction, logo_path) VALUES ('serbian', '/logos/jurisdiction-serbian.png?v=5')").run();
+  const b = await (await call('GET', '/api/bundle')).json();
+  assert.deepEqual(b.jurisdiction_logos, { serbian: '/logos/jurisdiction-serbian.png?v=5' });
+});
+
 test('the browser is made to ask every time, and an unchanged bundle is a 304', async () => {
   const { call } = fresh();
   const a = await call('GET', '/api/bundle');

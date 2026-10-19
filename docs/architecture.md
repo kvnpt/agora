@@ -20,9 +20,9 @@ browser never answers from its own copy and an unchanged bundle is a bodiless
 object, `meta/data-version` — that every successful write under `/api/admin/`
 (except a draft's, which nothing public reads; publishing one does bump) and
 every cron run bumps (`worker/lib/data-version.mjs`), so asking rarely
-reaches D1 and an edit is what the admin's next load of the app gets. It was
+reaches D1 and an edit is what the admin's next load of the page gets. It was
 `max-age=60, stale-while-revalidate=600` until an edit in /admin kept not
-showing on the way back to the app. The version is in R2 rather than D1 so that
+showing on the way back to the app it was then. The version is in R2 rather than D1 so that
 no migration has to land first. A write that bypasses the Worker (an import
 from a terminal) does not bump it and shows within ten minutes, when the edge
 copy expires.
@@ -35,37 +35,37 @@ the browser joins it back from the parish list in the same response
 (`public/shared/parish-join.mjs`, the one list the Worker's SQL join is also
 built from). Nothing public carries `updated_by`; it is an admin's email.
 
-**A shared link is answered by the Worker, not the app.** A link to one
-parish or one event (`/sgr`, `/sgr/next-tue`, `/102`, `/42:2026-10-04`) gets
-a **lite card** — server-rendered by `worker/routes/pages.mjs` +
-`worker/lib/lite-page.mjs`, with its own title, preview image, canonical and
-JSON-LD — instead of the app booting behind a loading screen. Every other
-filter link (`/greek/qld`, `/liturgy`, `/timetables`) gets a **timetable page**
-(`worker/lib/lite-timetable.mjs`): the matching parishes' rules by state and
-jurisdiction, filtered by `public/shared/timetable.js` as the app's Schedules
-view is. The home page is still the app. It uses the
-app's lens and the app's grammar (`public/shared/url-state.js`, which
-`detectUrlState()` now calls too), fails open to the app, and is skipped for
-`?app`, and for the `agora_admin` cookie at a parish or event link — where
-the app answers instead and lays that card out as the same page, with its
-editors (page mode). The pages wear `/app.css` and the app's own markup. `run_worker_first` is `/*` with negations to make this possible, and
-**a negation must never name an image extension** — negatives are tested
-first, and `!/*.png` would send `/posters/*.png` past the Worker's R2 proxy.
-Only parish pages are indexable for now; `docs/lite-pages.md` records why
-events wait.
+**Every link is the page.** v3 is one page that reads its own address
+(`public/index.html`, `public/next/next.js`): the home page, a parish (`/sgr`,
+`/sgr/next-tue`), an event (`/102`, `/42:2026-10-04`), a collection (`/en`,
+`/sun/liturgy`) and any other filter link (`/greek/qld`). Every page path reaches
+the Worker (`worker/routes/pages.mjs`), which writes what the link is into the
+page's head — title, description, canonical, robots, preview, JSON-LD — and paints
+the card it opens (`worker/lib/page-card.mjs`), so a chat preview, a search engine
+and a reader with no JavaScript get it, and a person sees the card before the
+bundle lands. It reads the link with the page's grammar
+(`public/shared/url-state.js`) and the page's lens (`expandFrom` + `buildFeed`), and
+fails open to the page as deployed. `run_worker_first` is `/*` with negations to
+make this possible, and **a negation must never name an image extension** —
+negatives are tested first, and `!/*.png` would send `/posters/*.png` past the
+Worker's R2 proxy. Parish pages and the collections are indexable;
+[lite-pages.md](lite-pages.md) records why events wait. Until October 2026 the
+Worker answered these links with separate lite pages and the app sat at `/`;
+v3 replaced both ([history.md](history.md)).
 
 **Synthetic ids.** A projected occurrence has the id `"<scheduleId>:YYYY-MM-DD"`, e.g.
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.
 
-**The feed has no last page.** `state._horizonDays` is how far forward the
-window reaches; **Load more** adds to it and nothing takes it away. The step
+**The feed has no last page.** The stream at the foot of the page grows a
+fortnight at a time as it is scrolled (`growStream` in `next.js`, to a year), and
+nothing takes it away. The step
 costs a request only for what is genuinely window-bound — the overrides and
 stored one-offs in the new stretch — because the rules that produce the
 occurrences are already in the browser, which is the whole point of the lens.
 `agoraBundle.load()` therefore takes a window and *widens*, never replaces:
-the parish sheet asking for its month must not shrink what the main feed has
-grown to.
+a parish card asking for its weeks must not shrink what the stream has grown
+to.
 
 **A date segment says where the stream starts.** `/smg/2026-07`,
 `/next-thursday`, `/liturgy/wednesday/march` — `public/shared/dates.js` resolves
@@ -73,43 +73,47 @@ them, and a focus is a *from*, never a single day: a parish does not publish a
 month at a time, and a picked day with nothing on it should show the next thing
 that is. A month-shaped slug keeps its shape through the round trip (`2026-07`
 does not read back as `2026-07-01`); a relative one resolves to the day it meant
-and the URL settles on that. One focus, shared by the main feed and the parish
-card, because the URL carries one date segment and two would immediately
-disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` is
+and the URL settles on that. A date beside a parish is that card's; across the page,
+the stream's (`applyRoute`), because the URL carries one date segment and two
+would immediately disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` is
 a parish, the acronym resolves last, and reserving it would not raise a clash but
 silently take that parish's link away.
 
 **`/this-week` is the next seven days**, from today, and `/this-month` the
-month from today. The toolbar's When control cycles Today → This week → This
-month → Today; a week wears chevrons either side, to `/next-week`,
-`/in-3-weeks`, `/last-week`, `/2-weeks-ago` (`weekSegment` / `weekOffsetOf`).
-A date from its calendar takes the period's place, and like a date a period is
-shared by the feed and the parish card. A date segment and a period do not
-stand together: picking a date ends the week. Under Today the feed is endless —
-reaching its foot loads the next stretch; a week ends in a "Next week" button.
+month from today; `/next-week`, `/in-3-weeks`, `/last-week`, `/2-weeks-ago`
+name the others (`weekSegment` / `weekOffsetOf` in `url-state.js`). A date segment
+and a period do not stand together: a date ends the week.
 
-**Where is the map, but only once it is asked.** The feed and the timetable
-start at any location: the map's view narrows nothing. A pan or a zoom by the
-person (a gesture, not a fit or a fly-to: map.js checks `originalEvent`) turns
-on area search — the toolbar's "Searching this area" pill — and the lists are
-then the parishes in view (`areaIds()`); the pill's ×, Clear all, or the empty
-feed's "Search any location" turn it off. It is not in the URL. A week's list
-runs on past its week: ‹ › scroll to the week before or after within it, and
-the label follows the week at the top as the list scrolls.
+**What is on the map is what the lists hold.** The page's lists — Today, What's
+on, the stream, a collection's count — are the parishes and events in the map's
+view (`S.inView`, `inViewEvent`), and the chip under the map counts them and
+says where the map is looking ("Sydney", "Near you", "Oceania" zoomed out); with
+one parish in view it is that parish, by its full name, and opens its card.
+With more, it opens them as a card named for what it holds: "64 parishes in
+Sydney", "8 parishes near you", over the filters said as a link's preview says
+them ("Antiochian Orthodox Liturgies in English near you",
+`public/shared/link-words.js`), and a list saved from it keeps both.
+Scrolled past it and the filters, both ride in the dock at the top of the page
+(`syncDock`), and the filters opened from there open under it. A link that
+names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
+showing everything it means. It is not in the URL.
 
-**The parish card's feed is the feed's.** Its toolbar is the feed's rows 2 and
-3 from the same layout (`public/shared/toolbar.js`) over `state.parishFilters`,
-with the link and × in its header where the feed's first row has them. Its
-list is `renderStream` in `parishMode`: the same Today box, day headers with
-their links, empty state, and weeks that ‹ › scroll within the card.
+**Several jurisdictions, or several days, are one segment**: `/antiochian+greek`,
+`/wed+fri`, written in the tabs' order and from Sunday; `/greek/antiochian` and
+`/fri/wed` read the same. A filter holds one as its key or its number, as every
+older link means, and several as a list (`jurisdictionValue` in `url-state.js`,
+`dayValue` in `services.js`); a `+` segment that is not all jurisdictions or all
+days is a list of parishes, as it always was. The tabs above the map are one
+jurisdiction at a time; the filters' panel takes as many as you like, and each
+is a chip in its colour.
 
 **What kind of event, and in what language, are segments too.** `/services` is
 Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
 or `/feast`; `/talks` is talks, with Bible studies as `/bible-study`;
 `/social` is socials and youth, `/social-gatherings` or `/social-youth` one of
 the two. `/liturgy`, `/feast` and `/bible-study` are service slugs as well
-(services.js): beside a parish they focus its timetable, and across the feed
-the app reads them as the kind (`kindOfService`). The timetable is
+(services.js): beside a parish they focus its timetable, and across the page
+they read as the kind (`kindOfService`). The timetable is
 `/timetables` (or `/parishes`), because it lists more than services; a lone
 `/services` is the timetable page of services for a crawler. The old
 `/worship…`, `/services-liturgy…` and `/studies` links get a 301 to their name
@@ -118,23 +122,22 @@ earlier one, and the timetable wins over all of them. A language is
 `/in-greek`, or `/in-greek-only` for nothing but Greek; English keeps `/en` and
 `/en-only`. An acronym cannot start `in-` or name a week
 (`reservedSlugReason`). The kind and the language narrow the timetable too —
-`kindMatches` and `langsMatch` in `public/shared/timetable.js`, read by the app
-and the timetable pages alike. `KIND_SEGMENTS` and `SERVICE_KINDS` in
+`kindMatches` and `langsMatch` in `public/shared/timetable.js`, read by the page
+and the Worker's painted cards alike. `KIND_SEGMENTS` and `SERVICE_KINDS` in
 `url-state.js` are the table.
-
-**One set of controls for both toolbars.** The main sheet's toolbar and the
-parish card's are painted by the same builders (`renderFilterSlots` in
-`app.js`) over two filter sets: `state.filters` for the feed,
-`state.parishFilters` for the card, which narrows the card's timetable as well
-as its events. The When control is the one they share, because the date is.
 
 **What this browser keeps** — favourite parishes, bookmarked events, saved
 filters — lives in `localStorage` and nowhere else. Nobody signs in to read
-the app, so there is no account to hang them on, and none of it is ever sent:
+the site, so there is no account to hang them on, and none of it is ever sent:
 a saved filter is a link, and a bookmark is an id. A bookmark is an event (a
 stored one, or one date of a rule by its synthetic id) or a whole rule, which
-covers every date of it. Bookmarks are a toolbar filter but not a segment: a
-link to "my bookmarks" would mean nothing in another browser. Every read and
+covers every date of it. The stores are the ones the old app wrote
+(`agora-favourites`, `agora-bookmarks`, `agora-saved-filters`), so nothing kept
+in a browser was lost when v3 replaced it; v3 adds `agora-lists`, lists of
+parishes. Favourites are open on the page under Today once a parish is
+starred, each with what is on next there; the other lists, bookmarks and saved
+views are rows under them (Your lists), once there are any. Bookmarks are not a segment: a link to "my
+bookmarks" would mean nothing in another browser. Every read and
 write survives storage being refused; the controls come back empty.
 
 **`/morning` and `/evening` split the day at 2pm**, on the parish's own clock — the
@@ -144,10 +147,8 @@ reading; the cards use it too (they used to read Sydney's clock, which put a 1pm
 Perth liturgy under Evening). Like a day or a service, a part of the day is a feed
 filter on its own (`/antiochian/evening`, written day–part–service:
 `/wed/evening/vespers`) and a schedule focus beside one parish (`/sgr/evening`).
-Whenever the feed is narrowed by a service, a day or a part of the day, a banner at
-the top of the list says so in a sentence ("Showing Antiochian evening Liturgies in
-Queensland"), as the parish card's does; its × drops those three and keeps the
-jurisdiction and region, which have controls of their own.
+The page's day lists split there too (`isEvening` in
+`public/shared/timetable-lines.js`).
 
 **Recurrence rules store LOCAL time; one-off events store UTC.** This is deliberate and
 is documented at length in `d1/schema.sql`. For a recurring service the wall clock is the
@@ -167,7 +168,7 @@ instance, then most-recently-updated. That middle rule is load-bearing — it is
 scraped event supersedes its recurring twin instead of showing twice.
 
 **A jurisdiction's colour is written down once**, in
-`public/shared/jurisdiction-colors.js`, which the app, the map and the seed all
+`public/shared/jurisdiction-colors.js`, which the page, the map and the seed all
 read — it exists because that table was three tables and two of them disagreed
 about Greek. `jurisdiction_colors` in D1 does not make it four: it holds only
 the rows */admin* → Colours has deliberately changed, absence means the file's
@@ -177,7 +178,7 @@ value, and a reset deletes the row rather than writing the default into it.
 jurisdiction's colour on every parish as `color` the moment the bundle lands —
 before the join copies it onto rules and events as `parish_color` — so every
 reader draws the jurisdiction's without being taught to. Where the Worker joins
-a parish in SQL (a rule projected for a lite page, `/api/schedules`, a one-off
+a parish in SQL (a rule projected for a link's painted card, `/api/schedules`, a one-off
 event), it selects the same colour as `parish_color` with `PARISH_COLOR_SQL`
 (`worker/lib/juris-colors.mjs`): the override where there is a valid one, the
 table's otherwise. There was a `parishes.color`, dropped in migration 026: it

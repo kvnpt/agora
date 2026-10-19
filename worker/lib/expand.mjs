@@ -55,7 +55,7 @@ export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, p
   ];
 
   // Window-filtered, unlike the Express version which loaded every override row.
-  // `parishId` narrows to one parish's rules — the lite page for a shared link
+  // `parishId` narrows to one parish's rules — the card painted for a shared link
   // (worker/routes/pages.mjs) needs one parish, not 293.
   const ovSql = scheduleId
     ? 'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date BETWEEN ? AND ?'

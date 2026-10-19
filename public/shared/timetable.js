@@ -8,10 +8,12 @@
 // thing in the feed and another on its headings. So the question lives here
 // and both ask it.
 //
-// `f` is the filter set as the app keeps it in state.filters — jurisdiction,
-// location (a slug), service, day, part, lang and langStrict (the older
+// `f` is the filter set as the app keeps it in state.filters — jurisdiction
+// (one, or a list: url-state.js), location (a slug), service, day (one, or a
+// list: services.js), dayGroup (/weeknights, /weekends), part,
+// lang and langStrict (the older
 // englishOnly / englishStrict pair still means English), kind and kindSub,
-// and parishIds (a Set) — and as the Worker builds it from the URL.
+// monasteries, and parishIds (a Set) — and as the Worker builds it from the URL.
 //
 // Same dual-mode wrapper as its neighbours.
 (function (root) {
@@ -78,10 +80,21 @@
     return (KIND_TYPES[f.kind] || []).includes(t);
   }
 
+  // A monastery, a convent or a skete, by its name: nothing else on a parish
+  // row says so, and every one of the fifteen on file (October 2026) says it
+  // there — "Holy Transfiguration Monastery", "Our Lady of Kazan Convent",
+  // "St John the Baptist Skete". /monasteries is these.
+  const MONASTERY = /\b(monaster(y|ies)|monastic|convent|skete|hermitage|lavra)\b/i;
+  /** Is this parish a monastery, by its name? */
+  function isMonastery(parish) {
+    return !!parish && MONASTERY.test(`${parish.name || ''} ${parish.full_name || ''}`);
+  }
+
   /** Is this parish one the link covers: its jurisdiction, its region, the parishes it names? */
   function parishInScope(parish, f) {
     if (!parish || parish.id === '_unassigned') return false;
-    if (f.jurisdiction && parish.jurisdiction !== f.jurisdiction) return false;
+    if (f.jurisdiction && ![].concat(f.jurisdiction).includes(parish.jurisdiction)) return false;
+    if (f.monasteries && !isMonastery(parish)) return false;
     if (f.location && locations) {
       const loc = locations.resolveLocation(f.location);
       if (loc && !locations.locationMatchesParish(loc, parish)) return false;
@@ -109,7 +122,8 @@
       if (!one) return false;
     }
     if (f.service && services && !services.serviceMatches(f.service, rule)) return false;
-    if (f.day != null && rule.day_of_week !== f.day) return false;
+    if (f.day != null && ![].concat(f.day).includes(rule.day_of_week)) return false;
+    if (f.dayGroup && services && !services.dayGroupMatches(f.dayGroup, rule.day_of_week, rule)) return false;
     if (f.part && services && services.partOfDayOf(rule) !== f.part) return false;
     if (!kindMatches(rule, f)) return false;
     const lf = langFilterOf(f);
@@ -130,10 +144,10 @@
    * fell out at ruleMatches. A jurisdiction or region page still counts them.
    */
   function narrowsRules(f) {
-    return !!(f.service || f.day != null || f.part || langFilterOf(f) || f.kind);
+    return !!(f.service || f.day != null || f.dayGroup || f.part || langFilterOf(f) || f.kind);
   }
 
-  const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, parishInScope, ruleMatches, narrowsRules };
+  const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, isMonastery, parishInScope, ruleMatches, narrowsRules };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraTimetable = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -89,6 +89,17 @@ test('a part of the day combines with everything a feed filter does', () => {
   assert.equal(U.classifyPath('/liturgy').part, null);
 });
 
+test('/weeknights and /weekends are spans of the week, and a timetable page', () => {
+  const w = U.classifyPath('/greek/weeknights/services');
+  assert.deepEqual([w.jurisdiction, w.dayGroup, w.kind, w.day, w.parishSlugs], ['greek', 'weeknights', 'services', null, null]);
+  assert.equal(U.classifyPath('/weekend').dayGroup, 'weekends', 'one spelling for both');
+  assert.equal(U.classifyPath('/weeknight/vespers').dayGroup, 'weeknights');
+  assert.equal(U.pageKind(U.classifyPath('/weekends')), 'timetable');
+  assert.equal(U.pageKind(U.classifyPath('/weeknights/liturgy')), 'timetable');
+  const p = U.classifyPath('/sgr/weekends');
+  assert.deepEqual([p.parishSlugs, p.dayGroup, U.pageKind(p)], [['sgr'], 'weekends', 'parish']);
+});
+
 test('a path that will not decode means nothing, and does not throw', () => {
   assert.equal(U.classifyPath('/%E0%A4%A').parishSlugs, null);
 });
@@ -176,4 +187,35 @@ test('an old /worship, /services-liturgy or /studies link is sent to its name no
   assert.equal(U.renamedPath('/timetables'), null);
   assert.equal(U.renamedPath('/worshipful'), null, 'whole segments only');
   assert.equal(U.renamedPath('/'), null);
+});
+
+test('/monasteries is a where, beside a jurisdiction or a region, and a page of its own', () => {
+  const r = U.classifyPath('/greek/monasteries');
+  assert.equal(r.jurisdiction, 'greek');
+  assert.equal(r.monasteries, true);
+  assert.equal(r.parishSlugs, null, 'not a parish');
+  assert.equal(U.classifyPath('/monastery').monasteries, true);
+  assert.equal(U.pageKind(U.classifyPath('/monasteries')), 'timetable');
+  assert.equal(U.pageKind(U.classifyPath('/sgr/monasteries')), null, "a parish card does not answer it");
+});
+
+test('several jurisdictions or days: /antiochian+greek, /wed+fri, or one segment each', () => {
+  const r = U.classifyPath('/greek+antiochian/wed+fri');
+  assert.deepEqual([r.jurisdiction, r.day], [['antiochian', 'greek'], [3, 5]], 'in the tabs’ order, and from Sunday');
+  assert.deepEqual(U.classifyPath('/greek/antiochian').jurisdiction, ['antiochian', 'greek']);
+  assert.deepEqual(U.classifyPath('/fri/wed').day, [3, 5]);
+  assert.equal(U.classifyPath('/greek').jurisdiction, 'greek', 'one is still its key');
+  assert.equal(U.classifyPath('/sun').day, 0, 'and one day its number');
+  assert.equal(U.classifyPath('/greek+greek').jurisdiction, 'greek');
+  assert.deepEqual(U.classifyPath('/wed+sgr').parishSlugs, ['wed', 'sgr'], 'a mix is a list of parishes, as it always was');
+  assert.deepEqual(U.classifyPath('/sgr/wed+fri').day, [3, 5], 'beside a parish too');
+  assert.equal(U.pageKind(U.classifyPath('/antiochian+greek')), 'timetable');
+  assert.equal(U.jurisdictionSegment(['greek', 'antiochian']), 'antiochian+greek');
+  assert.equal(U.jurisdictionSegment('greek'), 'greek');
+  assert.equal(U.jurisdictionSegment(null), null);
+  assert.deepEqual(U.jurisdictionValue(['serbian', 'greek', 'serbian']), ['greek', 'serbian']);
+  assert.equal(U.jurisdictionValue([]), null);
+  assert.ok(U.jurisdictionMatches(['greek', 'serbian'], 'serbian'));
+  assert.ok(!U.jurisdictionMatches('greek', 'serbian'));
+  assert.ok(U.jurisdictionMatches(null, 'serbian'));
 });

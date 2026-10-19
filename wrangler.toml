@@ -86,7 +86,7 @@ bucket_name = "agora-preview"
 #
 # The plan said Pages + a Worker on the same domain. Workers static assets does
 # the same job in one deployment: same origin (so every relative fetch in
-# app.js keeps working, and there is no CORS surface at all), SPA fallback
+# the page keeps working, and there is no CORS surface at all), SPA fallback
 # built in (replacing the _redirects file), and assets served free without
 # invoking the Worker.
 [assets]
@@ -96,13 +96,12 @@ not_found_handling = "single-page-application"
 
 # Which paths reach the Worker before the asset router.
 #
-# EVERY PAGE PATH, and no static file. The Worker answers a shared parish or
-# event link with a lite card of its own (worker/routes/pages.mjs) — /sgr,
-# /sgr/next-tue, /102, /42:2026-10-04 — and the parish and event share buttons
-# produce exactly the single-segment paths the asset router used to answer with
-# the app before the Worker ever saw them. Everything the Worker does not
-# answer, it hands back with env.ASSETS.fetch(), so the app still loads for
-# /greek, /services, / and every other client route.
+# EVERY PAGE PATH, and no static file. The Worker answers every link — /,
+# /sgr, /sgr/next-tue, /102, /42:2026-10-04, /greek, /sun/liturgy — with the
+# page (public/index.html), its head saying what the link is and the card it
+# opens painted in (worker/routes/pages.mjs). Everything the Worker does not
+# answer, it hands back with env.ASSETS.fetch(), so the page still loads for
+# anything it could not read.
 #
 # `*` matches across `/` and the NEGATIVE rules are tested first (miniflare's
 # asset router; production's is the same code). That makes the negations

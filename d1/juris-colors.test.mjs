@@ -1,6 +1,6 @@
 // The jurisdiction colour table has to stay one table.
 //
-// It was three: a literal in public/app.js, two constants in
+// It was three: a literal in the app's script, two constants in
 // seeds/parishes.js, and — had it been written by hand — a third copy in the
 // migration that paints every parish its jurisdiction's colour. Two of the
 // three already disagreed about Greek (#0d5eaf in the seed, #00508f in the
@@ -60,12 +60,13 @@ test('the table covers every jurisdiction the schema allows', () => {
   }
 });
 
-test('app.js reads the shared table rather than its own copy', () => {
-  const app = fs.readFileSync('public/app.js', 'utf8');
-  assert.ok(!/_JURIS_RAW_COLORS\s*=\s*\{/.test(app),
-    'app.js has grown its own jurisdiction colour literal again');
-  assert.ok(app.includes('window.agoraJurisdictionColor'),
-    'app.js no longer reads the shared table');
+test('the page reads the shared table rather than its own copy', () => {
+  const page = fs.readFileSync('public/next/next.js', 'utf8');
+  const juris = page.slice(page.indexOf('const JURIS = {'), page.indexOf('const JURIS_ORDER'));
+  assert.deepEqual(juris.match(/#[0-9a-fA-F]{3,8}\b/g) || [], [],
+    'the page has grown its own jurisdiction colour literal again');
+  assert.ok(/const jColor = \(j\) => \(window\.agoraJurisdictionColor \? window\.agoraJurisdictionColor\(j\)/.test(page),
+    'the page no longer reads the shared table');
 
   // The browser gets it as a <script>, so a missing tag is a ReferenceError
   // on the first parish drawn — and nothing in Node would notice.
@@ -74,35 +75,19 @@ test('app.js reads the shared table rather than its own copy', () => {
     'index.html does not load the shared colour table');
 });
 
-test('the jurisdiction chips read the table too, at paint time', () => {
-  // filters.js held a sixth hex per row and stamped it into data-color, which
-  // made the chips the one surface an /admin override could not move: every
-  // other reader goes through jurisdictionColor(), and a chip painted from a
-  // frozen copy never asks. A literal hex anywhere in this file is that copy
-  // coming back.
-  //
-  // Plain white and black are allowed through: the active chip sets its text
-  // to #ffffff for contrast against whatever fill it just took, which is not
-  // a jurisdiction's colour and does not change when one is overridden.
-  const NEUTRAL = new Set(['#fff', '#ffffff', '#000', '#000000']);
-  const filters = fs.readFileSync('public/filters.js', 'utf8');
-  const hexes = (filters.match(/#[0-9a-fA-F]{3,8}\b/g) || [])
-    .filter(h => !NEUTRAL.has(h.toLowerCase()));
-  assert.deepEqual(hexes, [], `filters.js has hard-coded colours again: ${hexes.join(', ')}`);
-  assert.ok(filters.includes('window.getJurisdictionColor'),
-    'applyChipColors no longer resolves the colour at paint time');
-
-  // Painted once by initFilters, before the bundle carrying the overrides
-  // resolves. Every other reader re-renders on that load; the chips do not,
-  // so the repaint has to be called explicitly.
-  assert.ok(filters.includes('agoraRepaintJurisdictionChips'),
-    'filters.js exposes no repaint for the chips');
+test('the jurisdiction tabs read the table too, at paint time, after the overrides', () => {
+  // A tab painted from a frozen copy is the one surface an /admin override
+  // could not move: every other reader goes through jurisdictionColor().
+  const page = fs.readFileSync('public/next/next.js', 'utf8');
+  const tabs = page.slice(page.indexOf('function renderJurisChips'), page.indexOf('\n  }\n', page.indexOf('function renderJurisChips')));
+  assert.ok(tabs.includes('jColor(j)'), 'the tabs no longer resolve their colour at paint time');
+  // The overrides arrive with the bundle, and the page draws only once it has it.
   const bundle = fs.readFileSync('public/bundle.js', 'utf8');
-  assert.ok(bundle.includes('agoraRepaintJurisdictionChips'),
-    'bundle.js applies the overrides without repainting the chips');
-  assert.ok(
-    bundle.indexOf('agoraSetJurisdictionColors') < bundle.indexOf('agoraRepaintJurisdictionChips'),
-    'the chips are repainted before the overrides are applied');
+  assert.ok(bundle.includes('agoraSetJurisdictionColors(raw.jurisdiction_colors)'),
+    'bundle.js no longer applies the overrides');
+  const boot = page.slice(page.indexOf('async function boot()'));
+  assert.ok(boot.indexOf('await window.agoraBundle.load(') < boot.indexOf('renderJurisChips()'),
+    'the tabs are painted before the bundle carrying the overrides is in');
 });
 
 // ── the override layer ──────────────────────────────────────────────────

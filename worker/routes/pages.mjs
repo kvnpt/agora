@@ -1,38 +1,38 @@
-// Shared links, answered with a page.
+// Every link, answered with the page.
 //
-// Every path now reaches the Worker (run_worker_first in wrangler.toml), and
-// this decides which of them it answers itself:
+// Every path reaches the Worker (run_worker_first in wrangler.toml), and every
+// page path gets v3: one page that reads its own address (public/index.html,
+// public/next/next.js). What the Worker adds is what that page cannot say for
+// itself to a reader that runs no JavaScript — a chat app's preview, a search
+// engine — which is what the link is, in the page's head (lib/page-head.mjs):
 //   - a link to ONE parish, with or without a focus (/sgr, /sgr/next-tue,
-//     /sgr/wed/evening/liturgy), and its timetable (/sgr/timetables) — the
-//     lite card (lib/lite-page.mjs);
-//   - a link to one event (/102, /42:2026-10-04) — the same card, pinned;
-//   - every other filter link (/greek/qld, /liturgy, /wed/evening, /en,
-//     /smg+sgr, /timetables) — the timetable page (lib/lite-timetable.mjs).
-// Everything else — the home page, a link with a date and no parish, /social,
-// /services, /donate, unknown slugs — returns null and the caller hands it to the app
-// exactly as before.
+//     /sgr/wed/evening/liturgy, /sgr/timetables): the parish's words, its
+//     Church structured data, indexable at its plain link alone;
+//   - a link to one event (/102, /42:2026-10-04): the event's, never indexed;
+//   - a collection (/en, /greek, /sun/liturgy, /talks) and every other filter
+//     link (/greek/qld, /smg+sgr): the timetable's heading, a collection
+//     indexable once it lists somebody, every other mix noindex;
+//   - the home page: the site's;
+//   - anything else (/2026-10-25, /donate): the home page's words, noindex.
+// A parish or an event that is not there is a 404 with those words.
 //
-// It FAILS OPEN. Any error while building a page returns null, and the app
-// answers the link as it always did: a lite page that cannot be built must
-// never be the reason a link does not work.
-//
-// Two ways past it on purpose:
-//   ?app               "Open in the app", the card's own button.
-//   agora_admin cookie set by the app while somebody holds a role, so an admin
-//                      following a parish or event link lands where editing
-//                      lives: the app, laying that card out as a page (page
-//                      mode). Timetable pages are served to admins as well.
-//                      It grants nothing; it only chooses which page to serve.
+// It FAILS OPEN. Any error reading D1 serves the page as it is deployed, whose
+// own head is the home page's, noindex: a head that cannot be built must never
+// be the reason a link does not work.
 
 import urlState from '../../public/shared/url-state.js';
 import slugs from '../../public/shared/slugs.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
-import { cachedHtml } from '../lib/data-version.mjs';
-import { liteModel, liteWindow, liteStartDate, renderLitePage } from '../lib/lite-page.mjs';
-import { timetableModel, renderTimetablePage } from '../lib/lite-timetable.mjs';
+import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
+import { liteModel, liteWindow, liteStartDate } from '../lib/lite-page.mjs';
+import { timetableModel, timetableIndexable } from '../lib/lite-timetable.mjs';
+import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, headHTML, withPage } from '../lib/page-head.mjs';
+import { parishCardHTML, eventCardHTML, collectionCardHTML } from '../lib/page-card.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
 import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
+import { jurisdictionLogos } from '../lib/juris-logos.mjs';
+import collections from '../../public/shared/collections.js';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
@@ -44,49 +44,87 @@ const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, 
 
 const SITE_PATHS = new Set(slugs.SITE_PATHS);
 
-export const hasAdminCookie = (request) =>
-  /(?:^|;\s*)agora_admin=1(?:;|$)/.test(request.headers.get('cookie') || '');
+/** The page the Worker wraps every link in: v3, as deployed. */
+export const SHELL = '/';
 
 /**
- * Is this path a lite page, and of which kind? Null when it is the app's.
+ * Which kind of page is this path, or null when it is not a page at all (a
+ * site path, a file). Classified against Sydney's today first; a parish's
+ * card reclassifies against the parish's own once it knows which parish it
+ * is, so /next-tue at a Perth parish means Perth's next Tuesday.
  *
- * Classified against Sydney's today first; the page reclassifies against the
- * parish's own once it knows which parish it is, so /next-tue at a Perth
- * parish means Perth's next Tuesday.
+ * `indexable` on a parish says whether the link is the parish's own and
+ * nothing else: /greek/sgr and /sgr/en open the same card, under the card's
+ * canonical, but are not offered to a search engine themselves.
  */
-export function liteKind(pathname, now = Date.now()) {
-  const first = pathname.split('/').filter(Boolean)[0];
-  if (!first || SITE_PATHS.has(first.toLowerCase())) return null;
-  const r = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) });
-  const kind = urlState.pageKind(r);
-  // No parish id or acronym has a dot in it, so a dotted single segment is a
-  // file — /apple-touch-icon.png, which every iPhone asks for — and not worth
-  // two scans of `parishes` to find out.
-  if (kind === 'parish' && r.parishSlugs[0].includes('.')) return null;
-  if (kind === 'parish') return { kind, slug: r.parishSlugs[0], route: r };
-  return kind ? { kind, route: r } : null;
+export function pageOf(pathname, now = Date.now()) {
+  const segs = pathname.split('/').filter(Boolean);
+  if (!segs.length) return { kind: 'home' };
+  if (SITE_PATHS.has(segs[0].toLowerCase())) return null;
+  // No parish id, acronym, date or event id has a dot in it, so a dotted last
+  // segment is a file — /apple-touch-icon.png, which every iPhone asks for —
+  // and not worth a scan of `parishes` to find out.
+  if (/\.[a-z0-9]+$/i.test(segs[segs.length - 1])) return null;
+  let route;
+  try { route = urlState.classifyPath(pathname, { today: localDateOf(DEFAULT_ZONE, now) }); } catch { return { kind: 'other', route: {} }; }
+  const named = route.parishSlugs ? route.parishSlugs.length : 0;
+  if (route.donate) return { kind: 'other', route };
+  if (named === 1) return { kind: 'parish', slug: route.parishSlugs[0], route, indexable: urlState.pageKind(route) === 'parish' };
+  if (route.eventId && !named) return { kind: 'event', route };
+  if (collections.collectionFor(route) || urlState.pageKind(route) === 'timetable') return { kind: 'timetable', route };
+  return { kind: 'other', route };
 }
 
 // The parish columns the timetable page reads — address and pin for the
 // region, languages for /en, and nothing an admin wrote about themselves.
-const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezone, acronym, languages,
+const TIMETABLE_PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone, acronym, languages,
   logo_path`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
   languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
   source_name, source_ref, source_checked_at, location_override, location_parish_id`;
 
-async function buildTimetable(env, url, kind, now) {
-  const [parishes, rules, overrides] = await Promise.all([
+/** What every timetable page reads: the parishes, their rules, /admin's colours and logos. */
+async function timetableRows(env) {
+  const [parishes, rules, overrides, logos] = await Promise.all([
     env.DB.prepare(`SELECT ${TIMETABLE_PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
     env.DB.prepare(`SELECT ${TIMETABLE_RULE_COLS} FROM schedules WHERE active = 1`).all(),
     // The colours /admin set, which the app paints and the page has to match.
     jurisdictionColorOverrides(env.DB),
+    jurisdictionLogos(env.DB),
   ]);
-  const model = timetableModel({
-    parishes: parishes.results || [], rules: rules.results || [],
-    route: kind.route, now, origin: url.origin, overrides,
+  return { parishes: parishes.results || [], rules: rules.results || [], overrides, logos };
+}
+
+/**
+ * A filter link's head, from its timetable, and a collection's card; a 404
+ * when it names parishes none of which are here.
+ */
+async function timetablePage(env, url, page, now) {
+  const rows = await timetableRows(env);
+  const m = timetableModel({ ...rows, route: page.route, now, origin: url.origin });
+  if (!m) return missing(url);
+  return {
+    status: 200, head: headHTML(timetableHeadMeta(m)),
+    // A collection's link opens its card (next.js); any other mix of filters is the page itself.
+    card: m.collection && m.groups.length ? collectionCardHTML(m, { rules: rows.rules }) : '',
+  };
+}
+
+/** A link to something that is not here: the home page's words, noindex. */
+const missing = (url) => ({ status: 404, head: headHTML(otherMeta(url.origin)) });
+
+/**
+ * The collections a search engine is offered: every one whose page lists
+ * somebody — timetableIndexable, asked of each. /talks and /social as well,
+ * since v3 answers them with the same page as any other collection.
+ */
+export function indexedCollections({ parishes, rules, overrides, logos }, now, origin) {
+  return collections.COLLECTIONS.filter(c => {
+    const page = pageOf(c.path, now);
+    if (!page || page.kind !== 'timetable') return false;
+    const m = timetableModel({ parishes, rules, overrides, logos, route: page.route, now, origin });
+    return !!m && timetableIndexable(m);
   });
-  return model ? renderTimetablePage(model) : null;
 }
 
 async function findParish(db, slug) {
@@ -118,19 +156,20 @@ async function findEvent(db, id) {
   return { event: rest, parishId: ev.parish_id };
 }
 
-async function buildLite(env, url, kind, now) {
+/** A parish's or an event's head and card, from the card's model; a 404 when it is not here. */
+async function parishPage(env, url, page, now) {
   const db = env.DB;
   let parish, pinnedEvent = null;
-  if (kind.kind === 'parish') {
-    parish = await findParish(db, kind.slug);
+  if (page.kind === 'parish') {
+    parish = await findParish(db, page.slug);
   } else {
-    const found = await findEvent(db, kind.route.eventId);
-    if (!found) return null;
+    const found = await findEvent(db, page.route.eventId);
+    if (!found) return missing(url);
     pinnedEvent = found.event;
     parish = await db.prepare(`SELECT ${PARISH_PAGE_COLS} FROM parishes WHERE id = ?`)
       .bind(found.parishId).first();
   }
-  if (!parish) return null;
+  if (!parish) return missing(url);
 
   const zone = parish.timezone || DEFAULT_ZONE;
   const route = urlState.classifyPath(url.pathname, { today: localDateOf(zone, now) });
@@ -172,15 +211,23 @@ async function buildLite(env, url, kind, now) {
     route, pinnedEvent, now, origin: url.origin, overrides,
     venues: Object.fromEntries((venueRows.results || []).map(p => [p.id, { name: p.name, address: p.address }])),
   });
-  return renderLitePage(model);
+  return {
+    status: 200, head: headHTML(parishMeta(model, { indexable: page.kind === 'parish' && page.indexable })),
+    // An event that cannot be found where its rule was is still its parish's card.
+    card: page.kind === 'event' && model.pinned ? eventCardHTML(model) : parishCardHTML(model),
+  };
 }
 
 /**
- * The page for this request, or null for the app to answer.
+ * The page for this request, or null when it is not a page (the caller hands
+ * it to the asset layer).
  *
- * Cached at the edge per data version and per HOUR: "today" and the list's
- * first day move with the clock, and an hour is fine enough for both while
- * keeping a crawler's or a chat app's repeat fetch off D1 entirely.
+ * What D1 says about a link — its head — is kept at the edge per data version
+ * and per HOUR: "today" and a card's first day move with the clock, and an
+ * hour is fine enough for both while keeping a crawler's or a chat app's
+ * repeat fetch off D1 entirely. The page around it is the one deployed, read
+ * on every request, so a deploy is live at once. The ETag is the finished
+ * page's.
  */
 export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
@@ -190,11 +237,14 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
     return cachedHtml({
       request, env, ctx, name: 'sitemap.xml', type: 'application/xml; charset=utf-8',
       build: async () => {
-        const r = await env.DB.prepare(
-          `SELECT id, acronym, info_checked_at, updated_at FROM parishes
-           WHERE id != '_unassigned' ORDER BY name`
-        ).all();
-        return sitemapXml(r.results || [], url.origin);
+        const [r, rows] = await Promise.all([
+          env.DB.prepare(
+            `SELECT id, acronym, info_checked_at, updated_at FROM parishes
+             WHERE id != '_unassigned' ORDER BY name`
+          ).all(),
+          timetableRows(env),
+        ]);
+        return sitemapXml(r.results || [], url.origin, indexedCollections(rows, now, url.origin));
       },
     });
   }
@@ -209,26 +259,34 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
     });
   }
 
-  if (url.searchParams.has('app')) return null;
-  const kind = liteKind(url.pathname, now);
-  if (!kind) return null;
-  // An admin at a parish or an event gets the app — which lays the card out as
-  // this same page, with its editing in place (page mode in app.js), because
-  // the editors live in the app. A timetable page has nothing to edit, so it
-  // is everyone's page, admins included.
-  if (kind.kind !== 'timetable' && hasAdminCookie(request)) return null;
+  const page = pageOf(url.pathname, now);
+  if (!page) return null;
+  const shell = await env.ASSETS.fetch(new Request(new URL(SHELL, url)));
+  if (!shell.ok) return null;
+  const html = await shell.text();
 
-  try {
-    const hour = new Date(now).toISOString().slice(0, 13);
-    const res = await cachedHtml({
-      request, env, ctx,
-      name: `lite${encodeURI(url.pathname.toLowerCase())}@${hour}`,
-      build: () => (kind.kind === 'timetable' ? buildTimetable : buildLite)(env, url, kind, now),
-    });
-    if (res) res.headers.set('x-agora-page', 'lite');
-    return res;
-  } catch (err) {
-    console.error(`[lite] ${url.pathname}: ${err && err.message}`);
-    return null;
+  let built = null, version;
+  if (page.kind === 'home') built = { status: 200, head: headHTML(homeMeta(url.origin)) };
+  else {
+    try {
+      const hour = new Date(now).toISOString().slice(0, 13);
+      const kept = await cachedText({
+        request, env, ctx,
+        name: `page${encodeURI(url.pathname.toLowerCase())}@${hour}`,
+        build: async () => JSON.stringify(page.kind === 'other' ? { status: 200, head: headHTML(otherMeta(url.origin)) }
+          : await (page.kind === 'timetable' ? timetablePage : parishPage)(env, url, page, now)),
+      });
+      built = JSON.parse(kept.text);
+      version = kept.version;
+    } catch (err) {
+      console.error(`[page] ${url.pathname}: ${err && err.message}`);
+    }
   }
+  // Failed open: the page as deployed, its own head and all.
+  const body = built ? withPage(html, built) : html;
+  return revalidated(request, {
+    body, etag: await hashEtag(body), version, type: 'text/html; charset=utf-8',
+    status: built ? built.status : 200,
+    headers: { 'x-agora-page': built ? page.kind : 'failed-open' },
+  });
 }
