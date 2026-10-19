@@ -16,6 +16,8 @@
 //   parish(id)   the parish row
 //   parishes()   every parish
 //   may(cap, id) the signed-in account's answer
+//   rule(id)     a rule, and rules(id), a parish's
+//   today()      'YYYY-MM-DD'
 //   reload()     re-read the bundle fresh and repaint what is open
 //   openParish(id), toast(text), recheck() (the account's counts)
 (function (root) {
@@ -113,13 +115,14 @@
    * mounted in. Escape and a tap outside close it, unless a dialog opened
    * over it is the one on top. Returns { el, body, setTitle, close }.
    */
-  function frame({ title, cls = '', onClose = null }) {
+  function frame({ title, sub = '', cls = '', onClose = null }) {
     const back = document.createElement('div');
     back.className = `escalate-backdrop open ${cls}`;
     back.innerHTML = `
       <div class="escalate-modal form-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
         <button class="donate-close" type="button" aria-label="Close" data-frame-close>&times;</button>
         <h2>${esc(title)}</h2>
+        ${sub ? `<div class="escalate-modal-sub">${esc(sub)}</div>` : ''}
         <div class="frame-body"></div>
       </div>`;
     let closed = false;
@@ -210,8 +213,264 @@
     return ends.length ? ends[ends.length - 1] : null;
   }
 
+  // ── Service times ─────────────────────────────────────────────────────
+  //
+  // A rule's form (public/shared/rule-form.js), the same fields to add a
+  // service as to edit one, in a dialog. Add is gated on `schedule.create`,
+  // the pencil on `schedule.edit` and Delete on `schedule.delete`, each at
+  // the rule's parish. Every write at a parish read from somewhere asks
+  // first whether to keep it by hand.
+
+  const RF = () => root.AgoraRuleForm;
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const clock = (t) => {
+    const [h, m] = String(t || '').split(':').map(Number);
+    if (!Number.isFinite(h)) return t || '';
+    return `${h % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
+  };
+  /** "5 Oct 2026". */
+  const longDate = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  /** "Saturday 6pm · Vespers", a rule as a person names it. */
+  const ruleName = (r) => `${DAY_NAMES[r.day_of_week]} ${clock(r.start_time)} · ${r.title}`;
+
+  /** POST /api/admin/geocode, the parish form's own lookup. {lat, lng} or null. */
+  async function geocode(address) {
+    const res = await fetch('/api/admin/geocode', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }),
+    }).catch(() => null);
+    if (!res || !res.ok) return null;
+    const c = await res.json().catch(() => null);
+    return c && Number.isFinite(c.lat) ? { lat: c.lat, lng: c.lng } : null;
+  }
+
+  /** Upload (or, with no file, take off) a rule's own poster. */
+  async function rulePoster(id, file) {
+    const url = `/api/admin/schedules/${encodeURIComponent(id)}/poster`;
+    const res = await (file
+      ? fetch(url, { method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file })
+      : fetch(url, { method: 'DELETE' })).catch(() => null);
+    if (!res) return { error: 'The poster did not go through. Check the connection.' };
+    if (!res.ok) return { error: await errorText(res) };
+    return (await res.json().catch(() => null)) || {};
+  }
+
+  /** A rule's form in a frame: the fields, a line for what stops it, its buttons. */
+  function ruleDialog({ title, sub, rule, parishId, actions, posterNow }) {
+    const f = frame({ title, sub, cls: 'rule-backdrop' });
+    const ctx = { today: host.today(), weekAbOf: window.agoraBundle && window.agoraBundle.weekAbOf };
+    f.body.innerHTML = `<div class="detail-edit-form rule-form">
+        ${RF().fieldsHTML(rule, ctx)}
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">${actions}</div>
+      </div>`;
+    const form = f.body.firstElementChild;
+    const live = RF().wire(form, {
+      rule, ctx,
+      host: host.parish(parishId) || { id: parishId },
+      parishes: host.parishes(),
+      geocode,
+      posterNow,
+      openPoster: (url) => window.open(url, '_blank', 'noopener'),
+    });
+    const err = form.querySelector('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
+    /** The request, once nothing stops it; null if something does (and it is said). */
+    async function ready() {
+      fail('');
+      if (!live.timesRead()) { fail('One of the times is not a time. Pick one from the list, or type it like 6:30 pm.'); return null; }
+      const body = live.body();
+      const p = RF().problem(body);
+      if (p && p.error) { fail(p.error); return null; }
+      if (p && p.late) {
+        const go = await askChoice({
+          title: 'It ends before it starts',
+          choices: [{ value: 'keep', label: 'It runs past midnight' }, { value: 'fix', label: 'Fix the times' }],
+        });
+        if (go !== 'keep') return null;
+      }
+      return body;
+    }
+    return { f, form, live, ready, fail };
+  }
+
+  /** "Add +" under a parish's service times: a new rule, or a photo of the sign. */
+  function addService(parishId) {
+    const parish = host.parish(parishId);
+    if (!parish || !RF() || !host.may('schedule.create', parishId)) return;
+    const d = ruleDialog({
+      title: 'Add a service',
+      sub: parish.name,
+      rule: {},
+      parishId,
+      actions: `<button class="btn-save" type="button" data-rf-add>Add service</button>
+        <button class="btn-outline" type="button" data-frame-close>Cancel</button>`,
+    });
+    // The sign first: the add-event editor reads it, and offers its services
+    // one by one beside what is on file (event-editor.js, intent 'timetable').
+    d.form.insertAdjacentHTML('afterbegin', `
+      <button type="button" class="sap-drop" data-sign>
+        <span class="sap-title">From a photo of the sign</span>
+        <span class="sap-sub">The board out the front, or a printed timetable. Nothing is added until you say so.</span>
+      </button>
+      <input type="file" accept="image/*" hidden data-sign-input>
+      <div class="schedule-add-or">or type it in</div>`);
+    const sign = d.form.querySelector('[data-sign-input]');
+    const fromSign = (file) => {
+      if (!file || !/^image\//.test(file.type || '')) return;
+      d.f.close();
+      addEvent(parishId, { file, intent: 'timetable' });
+    };
+    d.form.querySelector('[data-sign]').addEventListener('click', () => { sign.value = ''; sign.click(); });
+    sign.addEventListener('change', () => fromSign(sign.files && sign.files[0]));
+    const drop = d.form.querySelector('[data-sign]');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-dragging'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('is-dragging'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('is-dragging');
+      fromSign([...((e.dataTransfer && e.dataTransfer.files) || [])].find(x => /^image\//.test(x.type)));
+    });
+
+    const btn = d.form.querySelector('[data-rf-add]');
+    btn.addEventListener('click', async () => {
+      // One request at a time: a second tap while the first was out made two rules.
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try {
+        const body = await d.ready();
+        if (!body || !(await keepByHand(parishId))) return;
+        const res = await fetch('/api/admin/schedules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parish_id: parishId, ...body }),
+        }).catch(() => null);
+        if (!res || !res.ok) return d.fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        const made = await res.json().catch(() => null);
+        // The poster goes on once the rule is there to take it.
+        const file = d.live.poster();
+        if (file && made && made.id) {
+          btn.textContent = 'Adding the poster…';
+          const up = await rulePoster(made.id, file);
+          if (up.error) host.toast(`Added, but not its poster: ${up.error}`);
+        }
+        d.f.close();
+        await host.reload();
+        host.toast(made && made.duplicate ? 'That service was already there' : 'Service added');
+      } finally { btn.disabled = false; btn.textContent = 'Add service'; }
+    });
+
+    endedServices(parishId, d.form);
+    const first = d.form.querySelector('[data-rf="title"]');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  /**
+   * A service that has ended, to bring back: ending is the one deliberate
+   * exception to "nothing disappears", so Add offers what ended here.
+   */
+  async function endedServices(parishId, form) {
+    const res = await fetch(`/api/admin/schedules?parish=${encodeURIComponent(parishId)}`).catch(() => null);
+    const rows = res && res.ok ? await res.json().catch(() => []) : [];
+    const today = host.today();
+    const ended = rows.filter(r => r.active && r.effective_to && r.effective_to < today);
+    if (!ended.length || !form.isConnected) return;
+    form.insertAdjacentHTML('beforeend', `
+      <details class="rf-ended">
+        <summary>Ended services (${ended.length})</summary>
+        ${ended.map(r => `<div class="rf-ended-row">
+            <span>${esc(ruleName(r))} <em>ended ${esc(longDate(r.effective_to))}</em></span>
+            <button type="button" class="rf-btn" data-reopen="${esc(r.id)}">Bring back</button>
+          </div>`).join('')}
+      </details>`);
+    form.querySelector('.rf-ended').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-reopen]');
+      if (!b) return;
+      const r = ended.find(x => String(x.id) === b.dataset.reopen);
+      const go = await askChoice({
+        title: `Bring back ${r.title}?`,
+        body: '<p>It runs again from its next date. If another service replaced it, bring it back only if both really run.</p>',
+        choices: [{ value: 'yes', label: 'Bring it back' }],
+      });
+      if (go !== 'yes' || !(await keepByHand(parishId))) return;
+      const res2 = await fetch(`/api/admin/schedules/${encodeURIComponent(r.id)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ effective_to: null }),
+      });
+      if (!res2.ok) return host.toast(await errorText(res2));
+      b.closest('.rf-ended-row').remove();
+      await host.reload();
+      host.toast(`${r.title} is back`);
+    });
+  }
+
+  /** A rule's pencil: its form, Save, Delete. */
+  function editService(id) {
+    const rule = host.rule(id);
+    if (!rule || !RF() || !host.may('schedule.edit', rule.parish_id)) return;
+    const parish = host.parish(rule.parish_id);
+    const d = ruleDialog({
+      title: 'Edit service',
+      sub: [ruleName(rule), parish && parish.name].filter(Boolean).join(' · '),
+      rule,
+      parishId: rule.parish_id,
+      actions: `<button class="btn-save" type="button" data-rf-save>Save</button>
+        <button class="btn-outline" type="button" data-frame-close>Cancel</button>
+        ${host.may('schedule.delete', rule.parish_id) ? '<button class="btn-danger" type="button" data-rf-delete>Delete</button>' : ''}`,
+      // Outside Save, as the app's: it goes on as it is picked.
+      posterNow: async (file) => {
+        const r = await rulePoster(rule.id, file);
+        if (!r.error) host.reload();
+        return r;
+      },
+    });
+    d.form.querySelector('[data-rf-save]').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try {
+        const body = await d.ready();
+        if (!body || !(await keepByHand(rule.parish_id))) return;
+        const res = await fetch(`/api/admin/schedules/${encodeURIComponent(rule.id)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        }).catch(() => null);
+        if (!res || !res.ok) return d.fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        d.f.close();
+        await host.reload();
+        host.toast('Saved');
+      } finally { btn.disabled = false; }
+    });
+    const del = d.form.querySelector('[data-rf-delete]');
+    if (del) del.addEventListener('click', async () => {
+      const go = await askChoice({
+        title: `Delete ${rule.title}?`,
+        body: '<p>Every date of it goes from the timetable. A service that has stopped can end instead: give it a last date.</p>',
+        choices: [{ value: 'delete', label: 'Delete the service', danger: true }],
+      });
+      if (go !== 'delete' || !(await keepByHand(rule.parish_id))) return;
+      const res = await fetch(`/api/admin/schedules/${encodeURIComponent(rule.id)}`, { method: 'DELETE' }).catch(() => null);
+      if (!res || !res.ok) return d.fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+      d.f.close();
+      await host.reload();
+      host.toast('Deleted');
+    });
+  }
+
+  /**
+   * A timetable line's pencil. A line can be several rules ("Mon–Fri 6pm
+   * Vespers" is five), and each is edited on its own, so a line of more
+   * than one asks which.
+   */
+  async function editLine(ids) {
+    const rules = ids.map(id => host.rule(id)).filter(Boolean)
+      .sort((a, b) => ((a.day_of_week + 6) % 7) - ((b.day_of_week + 6) % 7));
+    if (rules.length === 1) return editService(rules[0].id);
+    const pick = await askChoice({
+      title: 'Which one?',
+      choices: rules.map(r => ({ value: String(r.id), label: ruleName(r) })),
+    });
+    if (pick) editService(pick);
+  }
+
   root.NextEdit = {
     init(h) { host = h; },
-    askChoice, keepByHand, errorText, frame, addEvent,
+    askChoice, keepByHand, errorText, frame, addEvent, addService, editService, editLine,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1262,13 +1262,15 @@
   /** A parish's colour where it marks the parish: its jurisdiction's, lifted in the dark. */
   const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
 
-  function timetable(pid, { compact = false } = {}) {
+  /** `edit`: whoever may change the timetable gets a pencil on each line. */
+  function timetable(pid, { compact = false, edit = false } = {}) {
     const rs = rulesOf(pid).filter(liveRule);
     const lines = new Map();
     for (const r of rs) {
       const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || ''].join('|');
-      if (!lines.has(key)) lines.set(key, { r, days: [] });
+      if (!lines.has(key)) lines.set(key, { r, days: [], ids: [] });
       lines.get(key).days.push(r.day_of_week);
+      lines.get(key).ids.push(r.id);
     }
     // One week, as the app's timetable reads: the morning's services, then
     // the evening's under the moon, each from Sunday; the roundels say which kind.
@@ -1283,10 +1285,11 @@
           <span class="tt-days">${esc((q ? q + ' ' : '') + dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
           <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}</span></span>
+          ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };
     const out = ls.map((l, i) => (i === eve ? EVENING : '') + line(l));
-    return `<div class="tt${compact ? ' compact' : ''}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
+    return `<div class="tt${compact ? ' compact' : ''}${edit ? ' editing' : ''}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
   }
   function nextOf(pid, pred = () => true) {
     const now = Date.now();
@@ -1445,7 +1448,7 @@
 
   function timesHTML(p) {
     const hasTimes = rulesOf(p.id).some(liveRule);
-    return `${hasTimes ? timetable(p.id) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+    return `${hasTimes ? timetable(p.id, { edit: may('schedule.edit', p.id) }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
       ${timesSource(p.id)}
       ${addBox(SUGGEST.service, 'Add a service time')}`;
   }
@@ -2057,12 +2060,17 @@
       return;
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
+    if ((b = t.closest('[data-edit-rules]'))) { window.NextEdit.editLine(b.dataset.editRules.split(',')); return; }
     if ((b = t.closest('[data-suggest]'))) {
       const under = stack.filter(x => x.dataset.pid).pop();
       const pid = b.dataset.pid || (under && under.dataset.pid);
       // Somebody who may add it adds it, in the app's editor; anybody else suggests it.
       if (b.classList.contains('add-box') && b.dataset.suggest === SUGGEST.event && may('event.edit', pid)) {
         window.NextEdit.addEvent(pid);
+        return;
+      }
+      if (b.classList.contains('add-box') && b.dataset.suggest === SUGGEST.service && may('schedule.create', pid)) {
+        window.NextEdit.addService(pid);
         return;
       }
       suggest(pid, b.dataset.suggest);
@@ -2211,6 +2219,8 @@
     window.NextEdit.init({
       parish: (id) => S.byId.get(id),
       parishes: () => S.parishes,
+      rule: (id) => S.rules.find(r => String(r.id) === String(id)),
+      today: todayKey,
       may,
       reload,
       openParish: (id) => openParish(id),

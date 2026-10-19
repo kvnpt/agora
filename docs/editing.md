@@ -329,9 +329,12 @@ timetable can still mark it checked. Details fill an empty field or, where they
 differ, offer **Use the sign's**; an address is changed in the parish's details,
 where the pin moves with it.
 
-The timetable has its own way in: **Add schedule** (the timetable's green +)
-opens a dialog with **From a photo of the sign** above the fields for typing a
-service. It
+The timetable has its own way in: **Add schedule** (the timetable's green +;
+on a `/next` card, the dotted **Add +** under the service times) opens a dialog
+with **From a photo of the sign** above the fields for typing a service. In
+`/next` the fields are `public/shared/rule-form.js`, and the pencil is on each
+line of the grouped timetable: a line that is several rules ("Tue, Wed 6pm
+Vespers") asks which one first, since each is edited on its own. It
 is the same editor and the same read, opened expecting a timetable (`intent:
 'timetable'`): its empty event card stays out of the way and the dialog says
 "Add to the timetable". A photo that turns out not to be a sign is **caught**

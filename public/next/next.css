@@ -662,6 +662,11 @@ body.map-full .parish-row {
 }
 .tt .eve { margin: 9px 0 3px; color: var(--text-3); }
 .tt.compact .tt-line { grid-template-columns: 64px 54px minmax(0, 1fr); padding: 3px 0; }
+/* For whoever may change it, each line's pencil (next/editing.js). */
+.tt.editing .tt-line { grid-template-columns: 68px 60px minmax(0, 1fr) 32px; }
+.tt-edit { align-self: center; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -6px 0; border-radius: 50%; color: var(--text-2); }
+.tt-edit svg { width: 17px; height: 17px; }
+.tt-edit:hover { color: var(--text); background: var(--card-2); }
 .tt.compact .tt-title { font-size: 13.5px; }
 .tt.compact .t-time { font-size: 13px; }
 /* Coming up: this parish's days on the same rule, from today or a date. */
@@ -911,6 +916,8 @@ body.dialog-open { overflow: hidden; }
 .escalate-modal .btn-outline { border: 1px solid var(--border); color: var(--text); }
 .escalate-modal .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
 .escalate-modal .btn-save:disabled { opacity: .7; }
+/* The dark scheme's green is light: white on it does not read. */
+@media (prefers-color-scheme: dark) { .escalate-modal .btn-save { color: #052e16; } }
 .sg-form { margin: 0; }
 .sg-form .edit-row { margin-bottom: 12px; }
 .sg-form input:not([type=checkbox]), .sg-form textarea, .sg-form select {
@@ -935,6 +942,130 @@ body.dialog-open { overflow: hidden; }
 .sg-error { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--danger); }
 .sg-form [hidden], .sg-error[hidden] { display: none !important; }
 .sg-form .edit-row-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
+
+/* A rule's form (public/shared/rule-form.js, from /next/editing.js): the
+   app's form (app.css .detail-edit-form, .rule-form), fields as the add-event
+   editor draws its own, in this page's tokens. */
+.detail-edit-form .edit-row { margin-bottom: 14px; }
+.detail-edit-form label {
+  display: block; margin-bottom: 6px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2);
+}
+.detail-edit-form input:not([type=checkbox]):not([type=radio]):not([type=date]),
+.detail-edit-form textarea, .detail-edit-form select, .df-btn {
+  width: 100%; min-height: 44px; padding: 11px 14px;
+  font: inherit; font-size: 16px; line-height: 1.3; color: var(--text); text-align: left;
+  background: var(--card-2); border: 1px solid var(--border); border-radius: 12px;
+  -webkit-appearance: none; appearance: none;
+}
+.detail-edit-form select {
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
+}
+.detail-edit-form textarea { resize: vertical; min-height: 72px; }
+.detail-edit-form input::placeholder, .detail-edit-form textarea::placeholder { color: var(--text-3); }
+.detail-edit-form input:focus, .detail-edit-form textarea:focus, .detail-edit-form select:focus, .df-btn:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.detail-edit-form .edit-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.detail-edit-form .edit-checks { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.detail-edit-form label.edit-check {
+  display: inline-flex; align-items: center; gap: 8px; margin: 0;
+  font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text); cursor: pointer;
+}
+.detail-edit-form .edit-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.detail-edit-form [hidden] { display: none !important; }
+.edit-row-hint { margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--text-3); }
+.edit-row-hint-bad { color: var(--danger); font-weight: 600; }
+.rf-dates-hint { margin: -8px 0 14px; }
+.rf-error { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--danger); }
+/* Save stays in sight however long the form: its row sticks to the dialog's foot. */
+.frame-body .form-actions {
+  position: sticky; bottom: -20px; z-index: 2;
+  margin: 14px -20px -20px; padding: 10px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--card); border-top: 1px solid var(--line);
+}
+.escalate-modal .btn-danger {
+  margin-left: auto; min-height: 44px; padding: 11px 22px; border-radius: 999px;
+  font-size: 15px; font-weight: 600; line-height: 1.2; color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.escalate-modal .btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* How often: one control, three answers. */
+.cad-modes { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.detail-edit-form label.cad-mode, .detail-edit-form label.wom-check, .detail-edit-form label.cad-week {
+  display: flex; align-items: center; gap: 7px; margin: 0;
+  font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text); cursor: pointer;
+}
+.cad-mode input, .wom-check input, .cad-week input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.cad-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.wom-label { font-size: 13px; color: var(--text-3); }
+.detail-edit-form label.cad-week { padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.detail-edit-form label.cad-week:has(input:checked) { border-color: var(--text); background: var(--card-2); }
+.cad-week-dates { font-size: 14px; font-variant-numeric: tabular-nums; }
+/* A time (public/shared/time-field.js): quarter-hours in a list, or typed. */
+.tf { position: relative; }
+.detail-edit-form .tf .tf-text { padding-right: 40px; cursor: pointer; }
+.tf.tf-bad .tf-text { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
+.tf-btn { position: absolute; top: 0; right: 0; bottom: 0; width: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+.tf.open .tf-btn svg { transform: rotate(180deg); }
+.tf-list {
+  position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0;
+  display: flex; flex-direction: column; max-height: 260px; overflow: hidden; padding: 4px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lift);
+}
+.tf.tf-up .tf-list { top: auto; bottom: calc(100% + 4px); }
+.tf-list[hidden] { display: none; }
+.tf-head { flex: none; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
+.tf-slots { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.tf-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 9px 12px; border-radius: 8px; font-size: 15px; font-variant-numeric: tabular-nums; text-align: left; color: var(--text);
+}
+.tf-item:hover, .tf-item:focus-visible { background: var(--card-2); outline: none; }
+.tf-item.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+.tf-item.tf-custom { font-weight: 600; color: var(--accent); white-space: nowrap; }
+.tf-item.tf-none { color: var(--text-2); white-space: nowrap; }
+/* A date: a field-shaped button over the browser's own calendar. */
+.df { position: relative; }
+.df-btn { padding-right: 38px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.df-empty { color: var(--text-3); }
+.df-clear {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 30px; height: 30px; border-radius: 50%; font-size: 20px; line-height: 1; text-align: center; color: var(--text-3);
+}
+.df-clear[hidden] { display: none; }
+.df-native { position: absolute; left: 0; bottom: 0; width: 100%; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+/* The rule's own poster. */
+.rf-poster { display: flex; align-items: center; gap: 12px; }
+.rf-poster-thumb { width: 72px; max-height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
+.rf-poster-thumb[hidden] { display: none; }
+.rf-poster-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rf-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px 14px;
+  font-size: 14px; font-weight: 600; color: var(--text); border: 1px solid var(--border); border-radius: 999px;
+}
+.rf-btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.rf-btn[hidden] { display: none; }
+/* "From a photo of the sign", above the fields for typing one in. */
+.sap-drop {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 12px;
+}
+.sap-drop:hover, .sap-drop.is-dragging { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sap-title { font-size: 15px; font-weight: 600; }
+.sap-sub { font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.schedule-add-or {
+  display: flex; align-items: center; gap: 8px; margin: 14px 0 12px;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3);
+}
+.schedule-add-or::before, .schedule-add-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.rf-ended { margin-top: 16px; font-size: 14px; }
+.rf-ended summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
+.rf-ended-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rf-ended-row em { font-style: normal; color: var(--text-3); }
 
 /* ── The gum-tree loader (public/shared/loading-screen.js; app.css) ─────
    Over the map alone, while it loads, and gone once it has drawn. */
