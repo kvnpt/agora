@@ -141,14 +141,41 @@
       ? `${DAYS[d.getUTCDay()].slice(0, 3)} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`
       : `${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }
-  /** A date: the value, hidden; a button saying it; the browser's calendar under it. */
-  function dateFieldHTML(name, value, empty) {
+  /**
+   * A date: the value, hidden, under `attr`; a button saying it; the
+   * browser's calendar under it. `required` has no clear. An event's form
+   * uses it too (public/next/editing.js).
+   */
+  function dateFieldHTML(name, value, empty, { attr = ATTR, required = false } = {}) {
     return `<div class="df" data-date-field>
-        <input type="hidden" ${field(name)} value="${esc(value || '')}">
+        <input type="hidden" ${attr}="${name}" value="${esc(value || '')}">
         <button type="button" class="df-btn" data-df-open data-df-empty="${esc(empty)}">${value ? esc(dateLabel(value)) : `<span class="df-empty">${esc(empty)}</span>`}</button>
-        <button type="button" class="df-clear" data-df-clear aria-label="Clear the date"${value ? '' : ' hidden'}>&times;</button>
+        ${required ? '' : `<button type="button" class="df-clear" data-df-clear aria-label="Clear the date"${value ? '' : ' hidden'}>&times;</button>`}
         <input type="date" class="df-native" tabindex="-1" aria-hidden="true">
       </div>`;
+  }
+  /** Make every date field under `scope` live; `today` is where an empty one opens. */
+  function wireDates(scope, today) {
+    scope.querySelectorAll('[data-date-field]').forEach(df => {
+      if (df._dfLive) return;
+      df._dfLive = true;
+      const hidden = df.querySelector('input[type=hidden]');
+      const btn = df.querySelector('[data-df-open]');
+      const clear = df.querySelector('[data-df-clear]');
+      const native = df.querySelector('.df-native');
+      const set = (iso) => {
+        hidden.value = iso || '';
+        btn.innerHTML = iso ? esc(dateLabel(iso)) : `<span class="df-empty">${esc(btn.dataset.dfEmpty || '')}</span>`;
+        if (clear) clear.hidden = !iso;
+        hidden.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      btn.addEventListener('click', () => {
+        native.value = hidden.value || today || '';
+        try { native.showPicker(); } catch { native.focus(); }
+      });
+      native.addEventListener('change', () => { if (native.value) set(native.value); });
+      if (clear) clear.addEventListener('click', () => set(''));
+    });
   }
 
   function cadenceHTML(rule, ctx) {
@@ -275,23 +302,7 @@
     q('event_type').addEventListener('change', () => { if (q('event_type').value === 'other') q('parish_scoped').checked = true; });
 
     // Dates: the button opens the browser's calendar; × clears.
-    form.querySelectorAll('[data-date-field]').forEach(df => {
-      const hidden = df.querySelector('input[type=hidden]');
-      const btn = df.querySelector('[data-df-open]');
-      const clear = df.querySelector('[data-df-clear]');
-      const native = df.querySelector('.df-native');
-      const set = (iso) => {
-        hidden.value = iso || '';
-        btn.innerHTML = iso ? esc(dateLabel(iso)) : `<span class="df-empty">${esc(btn.dataset.dfEmpty || '')}</span>`;
-        clear.hidden = !iso;
-      };
-      btn.addEventListener('click', () => {
-        native.value = hidden.value || ctx.today || '';
-        try { native.showPicker(); } catch { native.focus(); }
-      });
-      native.addEventListener('change', () => { if (native.value) set(native.value); });
-      clear.addEventListener('click', () => set(''));
-    });
+    wireDates(form, ctx.today);
 
     // Where.
     const mount = form.querySelector('[data-venue-mount]');
@@ -371,5 +382,5 @@
     };
   }
 
-  Object.assign(api, { fieldsHTML, wire });
+  Object.assign(api, { fieldsHTML, wire, dateFieldHTML, wireDates });
 })(typeof window !== 'undefined' ? window : globalThis);

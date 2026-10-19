@@ -660,6 +660,7 @@ body.map-full .parish-row {
   display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 3px; vertical-align: 1px;
   background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600;
 }
+.tt-range { display: inline-block; margin-left: 6px; color: var(--text-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .tt .eve { margin: 9px 0 3px; color: var(--text-3); }
 .tt.compact .tt-line { grid-template-columns: 64px 54px minmax(0, 1fr); padding: 3px 0; }
 /* For whoever may change it, each line's pencil (next/editing.js). */
@@ -1066,6 +1067,48 @@ body.dialog-open { overflow: hidden; }
 .rf-ended summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
 .rf-ended-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .rf-ended-row em { font-style: normal; color: var(--text-3); }
+
+/* A date that is off (public/next/next.js TOMB): struck through, its word
+   beside it, in the app's badge colours (app.css .badge-cancelled and the
+   rest). Warmer for a break, which is a stretch, not one service called off. */
+.etitle-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.erow.tomb .etitle { text-decoration: line-through; color: var(--text-2); }
+.erow.tomb .etime, .erow.tomb .roundel { opacity: .5; }
+.etomb, .ev-state {
+  flex: none; padding: 2px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
+  background: #f0f0f0; color: #777;
+}
+.erow.combined .etomb, .ev-state.combined { background: #ccf0f0; color: #0e7070; }
+.erow.break .etomb, .ev-state.break { background: #f6e6cc; color: #8a5a10; }
+.ev-state.hidden { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.enote { font-size: 12.5px; color: var(--text-2); }
+.ev-head.off h1 { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--text-2); }
+.ev-off { color: var(--danger); }
+.ev-head.break .ev-off, .ev-head.combined .ev-off { color: var(--text-2); }
+.ev-note { margin: 6px 0 0; color: var(--text-2); font-size: 14.5px; }
+@media (prefers-color-scheme: dark) {
+  .etomb, .ev-state { background: #26272c; color: #8a8a8a; }
+  .erow.combined .etomb, .ev-state.combined { background: #1a3434; color: #9ad4d4; }
+  .erow.break .etomb, .ev-state.break { background: #382d18; color: #e3b86a; }
+}
+
+/* An event's pencil, where a visitor's card has Suggest an edit. */
+.ev-edit { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.ev-edit svg { width: 18px; height: 18px; }
+/* Its form: what the date is, then which service it is a date of. */
+.ev-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.ev-tools .ev-state { margin-right: 4px; font-size: 11px; padding: 4px 8px; }
+.ev-series {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--card-2);
+  font-size: 14px; color: var(--text-2);
+}
+.ev-link { color: var(--accent); font-weight: 650; font-size: 14px; }
+.ev-poster-scope { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; color: var(--text-2); }
+.ev-poster-scope span { flex: none; }
+.ev-poster-scope select { flex: 1; min-width: 0; }
+.detail-edit-form .ev-poster-range { margin-top: 10px; }
 
 /* ── The gum-tree loader (public/shared/loading-screen.js; app.css) ─────
    Over the map alone, while it loads, and gone once it has drawn. */

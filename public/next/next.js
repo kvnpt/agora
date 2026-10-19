@@ -330,6 +330,12 @@
     return parishMatches(p, S.f, S.juris);
   }
   const visible = (e) => !e.is_tombstone && (!e.status || e.status === 'approved') && !e.break_from && !e.combined_into_event_id;
+  // The three tombstones (public/shared/project.mjs): a date that is off and
+  // says so, struck through on its parish's card, as the app's parish page
+  // has it. Nothing disappears (docs/editing.md). A suppressed date ('hidden')
+  // is the one that goes without notice; only its own link still opens it.
+  const TOMB = { cancelled: 'Cancelled', combined: 'Combined', break: 'Break' };
+  const tombOf = (e) => (e && TOMB[e.status]) || null;
   function eventParishIds(e) { return [e.parish_id, ...(e.extra_parishes || []).map(x => x.id || x.parish_id || x)].filter(Boolean); }
   function eventPasses(e, { scoped = true } = {}) {
     if (!visible(e)) return false;
@@ -883,12 +889,14 @@
     // On a parish's own card its name is the card's; another parish's is said.
     const sub = here && e.parish_id === here ? ''
       : `<span class="esub">${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
-    return `<button class="erow${now ? ' now' : ''}" type="button" data-event="${esc(e.id)}">
+    const tomb = tombOf(e);
+    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}" type="button" data-event="${esc(e.id)}">
         <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
-        <span class="ebody"><span class="etitle">${esc(title)}</span>
+        <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${sub}
-          ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}</span>
+          ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
+          ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
         ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       </button>`;
   }
@@ -1240,6 +1248,18 @@
     if (r.week_parity) bits.push('fortnightly');
     return bits.join(' ');
   }
+  /**
+   * "until 24 Oct", "from 25 Oct": a rule that ends, or has not started yet,
+   * says so (app.js ruleRangeLabel). A service changed from a date on is two
+   * rules, and without it the timetable read as both running.
+   */
+  function ruleRange(r) {
+    const t = todayKey();
+    const from = r.effective_from && r.effective_from > t ? r.effective_from : null;
+    const to = r.effective_to || null;
+    const d = (k) => { const x = new Date(k + 'T00:00:00Z'); return `${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
+    return from && to ? `${d(from)} – ${d(to)}` : from ? `from ${d(from)}` : to ? `until ${d(to)}` : '';
+  }
   function dayList(days) {
     const ds = [...new Set(days)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)); // Monday first, Sunday last
     if (ds.length === 7) return 'Every day';
@@ -1267,7 +1287,7 @@
     const rs = rulesOf(pid).filter(liveRule);
     const lines = new Map();
     for (const r of rs) {
-      const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || ''].join('|');
+      const key = [r.title, r.event_type, r.start_time, qualifier(r), r.languages || '', ruleRange(r)].join('|');
       if (!lines.has(key)) lines.set(key, { r, days: [], ids: [] });
       lines.get(key).days.push(r.day_of_week);
       lines.get(key).ids.push(r.id);
@@ -1281,10 +1301,11 @@
     const line = (l) => {
       const q = qualifier(l.r);
       const langs = !compact && parseLangs(l.r.languages);
+      const range = ruleRange(l.r);
       return `<div class="tt-line">
           <span class="tt-days">${esc((q ? q + ' ' : '') + dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
-          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}</span></span>
+          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}</span></span>
           ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };
@@ -1331,7 +1352,7 @@
     } catch { /* refused cookies only mean the lite card */ }
     syncAccount();
     // A card drawn before the answer came was drawn for a visitor.
-    if (S.who.signedIn) for (const el of stack) if (el.classList.contains('parish')) repaintParish(el);
+    if (S.who.signedIn) repaintSheets();
   }
   /**
    * May this account do `capability`, at this parish? The Worker's two
@@ -1423,7 +1444,7 @@
     const p = S.byId.get(pid);
     const start = from || todayKey();
     const now = Date.now();
-    const list = feedRange(start, days).filter(e => visible(e) && eventParishIds(e).includes(pid) && endMs(e) > now);
+    const list = feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
     const body = daysHTML(list, { start, days, row: { here: pid }, linkFor: (k) => pathOf(segsFor({ parish: p, from: k })) });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
@@ -1581,9 +1602,8 @@
       || (window.agoraBundle.raw?.events || []).find(e => String(e.id) === s)
       || window.agoraBundle.resolveEvent(s);
   }
-  function openEvent(id, { entry = true } = {}) {
-    const e = findEvent(id);
-    if (!e) return;
+  /** An event's card, inside its bar: drawn when it opens, and again after a write. */
+  function eventBodyHTML(e) {
     const segs = segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const l = local(e);
@@ -1592,13 +1612,15 @@
     const lat = e.lat ?? p?.lat, lng = e.lng ?? p?.lng;
     // A service's date is about its rule, which the dialog lists by name.
     const rule = e.schedule_id != null ? S.rules.find(r => String(r.id) === String(e.schedule_id)) : null;
-    const html = `${glassBar(e.title, p ? p.name : '')}
-      <div class="sheet-scroll">
-        ${e.poster_path ? `<div class="ev-poster"><img src="${esc(e.poster_path)}" alt=""></div>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
-        <div class="ev-head">
-          <span class="ckicker">${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
+    // What the date is, when it is not on: in its kicker, and the title struck through.
+    const off = tombOf(e) || (e.status === 'hidden' ? 'Suppressed' : null);
+    const edits = p && may('event.edit', p.id);
+    return `${e.poster_path ? `<div class="ev-poster"><img src="${esc(e.poster_path)}" alt=""></div>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
+        <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
+          <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
           <h1>${esc(e.title)}</h1>
           <p class="ev-when">${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}</p>
+          ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
         </div>
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">
@@ -1608,11 +1630,45 @@
         </div>
         ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
         ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
-        ${p && !may('event.edit', p.id) ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
-        <div class="toolbar-space sm"></div>
-      </div>`;
-    const el = pushSheet(html, 'event', { segs, entry });
+        ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
+          : p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
+        <div class="toolbar-space sm"></div>`;
+  }
+  function openEvent(id, { entry = true } = {}) {
+    const e = findEvent(id);
+    if (!e) return;
+    const p = S.byId.get(e.parish_id);
+    const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e)}</div>`;
+    const el = pushSheet(html, 'event', { segs: segsFor({ eventId: e.id }), entry });
     el._event = e;
+  }
+  /**
+   * An open event card again, from the bundle as it now is. A date that has
+   * gone (a deleted event, a service that has ended) takes its card with it.
+   */
+  function repaintEvent(el) {
+    const e = findEvent(el._event.id);
+    if (!e) {
+      if (stack[stack.length - 1] === el) popSheet();
+      return;
+    }
+    el._event = e;
+    el._segs = segsFor({ eventId: e.id });
+    const p = S.byId.get(e.parish_id);
+    const bar = el.querySelector('.gtitle');
+    if (bar) bar.innerHTML = `<b>${esc(e.title)}</b>${p ? `<small>${esc(p.name)}</small>` : ''}`;
+    const scroller = el.querySelector('.sheet-scroll');
+    const top = scroller.scrollTop;
+    scroller.innerHTML = eventBodyHTML(e);
+    scroller.scrollTop = top;
+    fitLinks(el);
+  }
+  /** Every open card, redrawn. */
+  function repaintSheets() {
+    for (const el of [...stack]) {
+      if (el.classList.contains('parish')) repaintParish(el);
+      else if (el.classList.contains('event')) repaintEvent(el);
+    }
   }
 
   // ── Filters: the app's pills, behind a button beside the chips ─────────
@@ -2061,6 +2117,7 @@
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
     if ((b = t.closest('[data-edit-rules]'))) { window.NextEdit.editLine(b.dataset.editRules.split(',')); return; }
+    if ((b = t.closest('[data-edit-event]'))) { window.NextEdit.editEvent(b.dataset.editEvent); return; }
     if ((b = t.closest('[data-suggest]'))) {
       const under = stack.filter(x => x.dataset.pid).pop();
       const pid = b.dataset.pid || (under && under.dataset.pid);
@@ -2211,7 +2268,9 @@
     renderInView();
     renderFeeds();
     syncMap();
-    for (const el of stack) if (el.classList.contains('parish')) repaintParish(el);
+    repaintSheets();
+    // A card that followed its date onto a new rule has a new link.
+    syncURL();
   }
 
   // What editing.js works on: this page, through the same questions it asks itself.
@@ -2220,6 +2279,11 @@
       parish: (id) => S.byId.get(id),
       parishes: () => S.parishes,
       rule: (id) => S.rules.find(r => String(r.id) === String(id)),
+      event: findEvent,
+      retarget: (from, to) => {
+        const e = findEvent(to);
+        for (const el of stack) if (el._event && String(el._event.id) === String(from)) el._event = e || { ...el._event, id: to };
+      },
       today: todayKey,
       may,
       reload,

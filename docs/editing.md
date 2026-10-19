@@ -184,6 +184,15 @@ somebody who would have turned up sees it is off; a suppression takes the
 service off the site with no notice at all. Reaching for the wrong one sends
 somebody to a locked church, so each says which it is before it does it.
 
+In `/next` an event card's pencil (**Edit this date**, **Edit this event**,
+where a visitor's card has Suggest an edit) opens the same toolkit and fields
+(`editEvent`, `public/next/editing.js`), and Suppress and Delete each offer
+Cancel instead. A date of a service also takes its **Commemoration** (the saint,
+as `patch_feast`), and its card follows the date onto the new rule after
+"this and every following". A cancelled, combined or on-break date stays on its
+parish's Coming up, struck through with its word, as on the app's parish page;
+the open feeds leave all three out for now, where the app's shows a break.
+
 The parish sheet's **add-an-event button** is the one control outside that
 mode, and deliberately: the mode exists so a signed-in person reads the sheet a
 visitor reads, and this alters nothing the sheet is showing — it makes a
