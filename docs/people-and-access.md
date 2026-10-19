@@ -70,8 +70,8 @@ verified — never one typed into the form. The page is answered before the
 panel, because the person arriving usually has no role at all.
 
 **It asks before it signs in.** The button opens a dialog on the page itself
-first (`public/shared/suggest-dialog.js`, on the app's card and the lite card
-alike): what it is about, what it should say, a name, and **I'd like to edit
+first (`public/shared/suggest-dialog.js`, on the app's card, the lite card and
+`/next`, whose dotted **Add +** boxes open it with its topic chosen): what it is about, what it should say, a name, and **I'd like to edit
 this parish myself** — the claim, with its role field. Only then **Confirm
 email and submit** goes to `/admin?suggest=`, through Access; what was typed
 waits in this browser's `localStorage` for two hours and the suggest page fills

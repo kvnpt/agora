@@ -27,6 +27,13 @@
   --glass-line: rgba(255, 255, 255, 0.6);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.07);
   --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.18);
+  --success: #16a34a;
+  --danger: #dc3545;
+  /* The gum-tree loader's (app.css). */
+  --loading-bg: rgba(252, 250, 243, 0.82);
+  --tree-fill: #4f6e41;
+  --tree-outline: #dfe4d8;
+  --tree-text: #2a2a2a;
   --radius: 22px;
   --pad: 16px;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -55,6 +62,12 @@
     --glass-line: rgba(255, 255, 255, 0.10);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
     --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
+    --success: #4ade80;
+    --danger: #f4677a;
+    --loading-bg: rgba(15, 15, 18, 0.92);
+    --tree-fill: #6a8a5c;
+    --tree-outline: #2a3526;
+    --tree-text: #d8d8d8;
   }
 }
 
@@ -556,6 +569,9 @@ body.map-full .parish-row {
   transform: translateY(105%); transition: transform .32s cubic-bezier(.2, .8, .2, 1);
   pointer-events: auto; overflow: hidden;
   display: flex; flex-direction: column;
+  /* Each card its own layer, so the one under it can't show its floating
+     toolbar through the one on top (an open card has no transform to do it). */
+  isolation: isolate;
 }
 .sheet.open { transform: none; }
 .sheet + .sheet { height: calc(100% - 60px - env(safe-area-inset-top)); }
@@ -793,3 +809,123 @@ body.map-full .parish-row {
 .sr-more { display: block; margin: 8px 16px 0; padding: 12px; width: calc(100% - 32px); border-radius: 14px; color: var(--accent); font-weight: 600; text-align: center; }
 .sr-empty { padding: 40px 28px; text-align: center; color: var(--text-2); }
 .sr-empty b { display: block; color: var(--text); font-size: 18px; margin-bottom: 6px; }
+
+/* ── Contributing, and where things came from ───────────────────────────
+   "Add +" in a dotted outline wherever somebody could add something; it
+   opens the suggest dialog with its topic chosen. */
+.add-box {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: calc(100% - 36px); min-height: 46px; margin: 12px 18px 0;
+  border: 2px dotted var(--border); border-radius: 14px;
+  color: var(--text-2); font-size: 15px; font-weight: 650;
+}
+.add-box:hover { color: var(--accent); border-color: var(--accent); }
+.cu-band .add-box { margin-top: 14px; }
+/* "Updated 3 months ago · Antiochian Archdiocese ↗", the app's line (app.css
+   .sched-source, .ps-source): muted and small on purpose, because it is
+   provenance, not content. */
+.src-line { margin: 8px 20px 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
+.src-line a {
+  color: inherit; text-decoration: underline; text-decoration-style: dotted;
+  text-underline-offset: 2px; white-space: nowrap;
+}
+.src-line a:hover { color: var(--text); }
+.source-link-icon {
+  display: inline-block; width: 9px; height: 9px; margin-left: 3px; vertical-align: baseline;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
+}
+
+/* The app's suggest dialog (public/shared/suggest-dialog.js). It brings
+   app.css's class names, and this page does not load app.css, so here is the
+   part of it the dialog wears, in this page's tokens. */
+.suggest-dialog {
+  position: fixed; inset: 0; z-index: 3200;
+  display: flex; align-items: center; justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.45);
+}
+.suggest-dialog .escalate-modal {
+  position: relative; width: 100%; max-width: 480px; max-height: 88dvh; overflow-y: auto;
+  padding: 20px; border-radius: 18px; background: var(--card); color: var(--text); box-shadow: var(--shadow-lift);
+}
+.suggest-dialog h2 { padding-right: 36px; font-size: 17px; font-weight: 700; }
+.suggest-dialog .escalate-modal-sub { margin: 2px 0 14px; font-size: 13px; color: var(--text-2); }
+.suggest-dialog .donate-close {
+  position: absolute; top: 12px; right: 14px; width: 28px; height: 28px;
+  font-size: 22px; line-height: 1; color: var(--text-2); text-align: center;
+}
+.suggest-dialog .donate-close:hover { color: var(--text); }
+.sg-form { margin: 0; }
+.sg-lead { margin: 0 0 14px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.sg-form .edit-row { margin-bottom: 12px; }
+.sg-form label {
+  display: block; margin-bottom: 6px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2);
+}
+.sg-form .edit-row > label > span { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-3); }
+.sg-form input:not([type=checkbox]), .sg-form textarea, .sg-form select {
+  width: 100%; min-height: 44px; padding: 11px 14px;
+  font: inherit; font-size: 16px; line-height: 1.3; color: var(--text);
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px;
+  -webkit-appearance: none; appearance: none;
+}
+.sg-form select {
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
+}
+.sg-form textarea { resize: vertical; min-height: 84px; }
+.sg-form input::placeholder, .sg-form textarea::placeholder { color: var(--text-3); }
+.sg-form input:focus, .sg-form textarea:focus, .sg-form select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.sg-form .sg-check {
+  display: flex; align-items: flex-start; gap: 10px; margin: 2px 0 12px;
+  font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--text); cursor: pointer;
+}
+.sg-form .sg-check input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--success); }
+.sg-check b { display: block; font-size: 14px; font-weight: 600; }
+.sg-check small { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 400; line-height: 1.4; color: var(--text-2); }
+.sg-error { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--danger); }
+.sg-form [hidden], .sg-error[hidden] { display: none !important; }
+.sg-form .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.sg-form .btn-save, .sg-form .btn-outline {
+  min-height: 44px; padding: 11px 22px; border-radius: 999px; font-size: 15px; font-weight: 600; line-height: 1.2;
+}
+.sg-form .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
+.sg-form .btn-save:disabled { opacity: .7; }
+.sg-form .btn-outline { border: 1px solid var(--border); color: var(--text); }
+.sg-form .edit-row-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
+
+/* ── The gum-tree loader (public/shared/loading-screen.js; app.css) ───── */
+#loading-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: max(44px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  background: var(--loading-bg);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  opacity: 1; transition: opacity .7s ease;
+}
+#loading-screen.hidden { opacity: 0; pointer-events: none; }
+.ls-header { font-weight: 800; font-size: 30px; letter-spacing: -0.02em; color: var(--tree-text); text-transform: lowercase; }
+.ls-tree-wrap { display: flex; align-items: flex-end; justify-content: center; width: 240px; height: 320px; flex: 0 0 auto; }
+.ls-tree { display: block; width: 100%; max-height: 100%; overflow: visible; }
+.ls-outline-pass path { fill: var(--tree-outline); stroke: none; }
+.ls-colour-pass path { fill: var(--tree-fill); stroke: none; }
+#ls-tree-fill-rect {
+  transform-box: fill-box; transform-origin: bottom; transform: scaleY(0);
+  transition: transform 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ls-log {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; max-width: 360px; min-height: 22px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.55;
+  color: var(--tree-text); text-align: center;
+}
+.ls-log-line { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: ls-log-in .22s ease; }
+@keyframes ls-log-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -26,6 +26,15 @@
   <link rel="stylesheet" href="/next/next.css">
 </head>
 <body>
+  <!-- The app's gum-tree loader, over the page while it comes to life. It
+       goes when the first render is done (lsHide, in next.js). -->
+  <div id="loading-screen" aria-hidden="true">
+    <div class="ls-header">orthodoxy.au</div>
+    <div class="ls-tree-wrap"></div>
+    <div class="ls-log" id="ls-log"></div>
+  </div>
+  <script src="/shared/loading-screen.js"></script>
+
   <header class="top">
     <button class="place" type="button" id="place" aria-label="Use my location">
       <span class="place-name" id="place-name">Australia</span>
@@ -137,6 +146,9 @@
   <script src="/shared/slugs.js"></script>
   <script src="/shared/url-state.js"></script>
   <script src="/shared/collections.js"></script>
+  <!-- Where things came from, and "Suggest an edit" before the sign-in. -->
+  <script src="/shared/source-line.js"></script>
+  <script src="/shared/suggest-dialog.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>

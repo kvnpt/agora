@@ -625,6 +625,8 @@
     x: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
     share: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+    plusSm: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
     starOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
     more: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
@@ -1283,6 +1285,41 @@
     return feedFor(Math.max(S.streamDays, 14)).find(e => Date.parse(e.start_utc) > now && eventParishIds(e).includes(pid) && visible(e) && pred(e)) || null;
   }
 
+  // ── Contributing, and where things came from ───────────────────────────
+  //
+  // Wherever somebody could add something, a dotted "Add +". It opens the
+  // app's suggest dialog (public/shared/suggest-dialog.js) with the topic
+  // already chosen, and the suggestion goes to whoever keeps the parish, the
+  // way the app's "Suggest edits" does. Nothing on the page changes.
+
+  const SUGGEST = { service: 'A service time not listed', event: 'An event', details: "The parish's details — address, phone, website" };
+  const addBox = (about, label) =>
+    `<button class="add-box" type="button" data-suggest="${esc(about)}" aria-label="${esc(label)}">Add${I.plusSm}</button>`;
+
+  // A rule as the suggest page lists it, so the dialog's choice is the one
+  // selected there: "Sunday 9:30am · Divine Liturgy".
+  const clock = (t) => {
+    const [h, m] = String(t || '').split(':').map(Number);
+    if (!Number.isFinite(h)) return t || '';
+    return `${h % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
+  };
+  const serviceLine = (r) => `${WD_LONG[r.day_of_week]} ${clock(r.start_time)} · ${r.title}`;
+  if (window.AgoraSuggest) {
+    window.AgoraSuggest.servicesFor = (pid) => [...new Set(rulesOf(pid)
+      .filter(r => !(r.effective_to && r.effective_to < todayKey()))
+      .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(b.start_time))
+      .map(serviceLine))];
+  }
+  function suggest(pid, about = '') {
+    const p = S.byId.get(pid);
+    if (!p || !window.AgoraSuggest) return;
+    window.AgoraSuggest.open({ parishId: pid, parishName: p.full_name || p.name, services: window.AgoraSuggest.servicesFor(pid), about });
+  }
+
+  /** "Updated 3 months ago · Antiochian Archdiocese ↗", as the app has it. */
+  const timesSource = (pid) => window.AgoraSourceLine.timetableSourceHTML(rulesOf(pid).filter(liveRule), { cls: 'src-line' });
+  const detailsSource = (p) => window.AgoraSourceLine.detailsSourceHTML(p, { cls: 'src-line' });
+
   // ── The parish card ───────────────────────────────────────────────────
 
   // Coming up: this parish's days, from today or from a date picked, a
@@ -1345,6 +1382,8 @@
         <div class="summary">${summary}</div>
         <h2 class="sec">Service times</h2>
         ${hasTimes ? timetable(pid) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+        ${timesSource(pid)}
+        ${addBox(SUGGEST.service, 'Add a service time')}
         <h2 class="sec">Details</h2>
         <div class="details">
           ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a></div>` : ''}
@@ -1353,12 +1392,14 @@
           ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
           ${p.feast_day ? `<div class="drow"><small>Feast day</small><span>${esc(p.feast_day)}</span></div>` : ''}
         </div>
+        ${detailsSource(p)}
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
           <h2 class="sec">Coming up</h2>
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS)}</div>
+          ${addBox(SUGGEST.event, 'Add an event')}
         </section>
-        <a class="wide-btn" href="/${esc((p.acronym || '').toLowerCase() || '')}" target="_blank" rel="noopener">Suggest an edit or claim this parish</a>
+        <button class="wide-btn" type="button" data-suggest="">Suggest an edit</button>
         <div class="toolbar-space"></div>
       </div>
       <div class="floatbar" role="toolbar">
@@ -1437,6 +1478,8 @@
     const end = e.end_local ? e.end_local.slice(11, 16) : (e.end_utc ? partsIn(e.timezone || TZ, Date.parse(e.end_utc)).hm : null);
     const where = e.location_override || p?.address || '';
     const lat = e.lat ?? p?.lat, lng = e.lng ?? p?.lng;
+    // A service's date is about its rule, which the dialog lists by name.
+    const rule = e.schedule_id != null ? S.rules.find(r => String(r.id) === String(e.schedule_id)) : null;
     const html = `${glassBar(e.title, p ? p.name : '')}
       <div class="sheet-scroll">
         ${e.poster_path ? `<div class="ev-poster"><img src="${esc(e.poster_path)}" alt=""></div>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
@@ -1453,6 +1496,7 @@
         </div>
         ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
         ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+        ${p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
         <div class="toolbar-space sm"></div>
       </div>`;
     const el = pushSheet(html, 'event', { segs, entry });
@@ -1569,7 +1613,8 @@
         <a class="lrow" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">${I.car}<span class="ln"><b>Directions</b></span></a>
         ${p.website ? `<a class="lrow" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span class="ln"><b>Website</b></span></a>` : ''}
         <button class="lrow" type="button" data-act="juris-of">${I.cross.replace('<svg', '<svg width="14" height="22"')}<span class="ln"><b>More ${esc(JURIS[p.jurisdiction]?.long || '')} parishes</b></span></button>
-        <a class="lrow" href="/${esc((p.acronym || '').toLowerCase())}" target="_blank" rel="noopener">${I.chev}<span class="ln"><b>Open in the current app</b><small>Suggest an edit, claim the parish</small></span></a>
+        <button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b><small>Or ask to keep this parish's page</small></span></button>
+        <a class="lrow" href="/${esc((p.acronym || '').toLowerCase())}" target="_blank" rel="noopener">${I.chev}<span class="ln"><b>Open in the current app</b></span></a>
       </div></div>`;
     const el = pushSheet(html, 'mini');
     el.dataset.pid = pid;
@@ -1901,6 +1946,11 @@
       return;
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
+    if ((b = t.closest('[data-suggest]'))) {
+      const under = stack.filter(x => x.dataset.pid).pop();
+      suggest(b.dataset.pid || (under && under.dataset.pid), b.dataset.suggest);
+      return;
+    }
     if ((b = t.closest('[data-parish]'))) { openParish(b.dataset.parish); return; }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) { $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
@@ -2012,10 +2062,14 @@
   async function boot() {
     const mapStarted = startMap().catch(err => console.warn('map', err));
     const t = todayKey();
+    // The loader's tree grows with each real step, as it does at / (app.js).
+    const step = (line, p) => { if (window.lsLog) window.lsLog(line); if (window.lsProgress) window.lsProgress(p); };
+    step('GET /api/bundle …', 0.15);
     await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(addDays(t, 60) + 'T14:00:00Z')).toISOString() });
     S.parishes = window.agoraBundle.parishes();
     S.byId = new Map(S.parishes.map(p => [p.id, p]));
     S.rules = window.agoraBundle.schedules();
+    step(`✓ ${S.parishes.length} parishes, ${S.rules.length} service times`, 0.6);
     S.rulesByParish = new Map();
     for (const r of S.rules) {
       if (!S.rulesByParish.has(r.parish_id)) S.rulesByParish.set(r.parish_id, []);
@@ -2038,11 +2092,14 @@
     // back from the page rather than from wherever the person came from.
     try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + location.search); } catch { /* sandboxed */ }
     renderLink();
+    step('✓ page drawn', 0.85);
     await mapStarted;
     applyRoute(route, { animate: false });
+    if (window.lsHide) window.lsHide();
   }
   boot().catch(err => {
     console.error(err);
+    if (window.lsHide) window.lsHide();
     $('#today').innerHTML = `<div class="tempty">Couldn’t load the parishes. ${esc(err.message)}</div>`;
   });
   // map.js rebuilds its own style on a scheme change; the colours this page

@@ -122,6 +122,16 @@ test('a parish link is a page that says what it is, and is indexable', async () 
   assert.match(html, /<h2 class="section-header feed-header" id="ll-h"[^>]*>Coming up<\/h2>/);
 });
 
+test('the card says where its details and its times came from, and how long ago (public/shared/source-line.js)', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`UPDATE parishes SET info_source_name = 'Antiochian Archdiocese', info_source_ref = 'https://antiochian.org.au/sgr',
+    info_checked_at = '2026-08-30' WHERE id = ?`).run(PARISH);
+  raw.prepare(`UPDATE schedules SET source_name = 'Admin', source_ref = NULL, source_checked_at = '2026-09-28T05:00:00Z' WHERE parish_id = ?`).run(PARISH);
+  const { html } = await get('/sgr');
+  assert.match(timesOf(html), /<div class="sched-source">Updated yesterday &middot; Admin<\/div>/, 'under the timetable, and no link for a person');
+  assert.match(html, /<div class="ps-source lc-src">Updated 1 month ago &middot; <a href="https:\/\/antiochian\.org\.au\/sgr" target="_blank" rel="noopener nofollow">Antiochian Archdiocese<span class="source-link-icon"/);
+});
+
 test('a rule’s languages sit on its title’s line, before the chevron', async () => {
   const { raw, get } = fresh();
   raw.prepare(`UPDATE schedules SET languages = '["Arabic","English"]' WHERE parish_id = ?`).run(PARISH);

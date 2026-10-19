@@ -85,9 +85,11 @@
    * Open the dialog for one parish. `services` are its service times as the
    * suggest page lists them ("Sunday 9:30am · Divine Liturgy"); `href` is
    * where Confirm goes, the link that was tapped. `signInHref`, when given,
-   * offers a plain sign-in to somebody who already keeps the parish.
+   * offers a plain sign-in to somebody who already keeps the parish. `about`
+   * picks "What is it about?" for them when the tap already said (an Add +
+   * under the service times is 'A service time not listed').
    */
-  function open({ parishId, parishName = '', services = [], href = null, signInHref = null }) {
+  function open({ parishId, parishName = '', services = [], href = null, signInHref = null, about = '' }) {
     close();
     const target = href || `/admin?suggest=${encodeURIComponent(parishId)}`;
     const wrap = document.createElement('div');
@@ -136,6 +138,7 @@
       contactRow.hidden = !f.contact.checked;
       wrap.querySelector('[data-sg-name-hint]').textContent = f.contact.checked ? '' : '(optional)';
     };
+    if (about && [...f.about.options].some(o => o.value === about)) f.about.value = about;
     form.addEventListener('change', sync);
     wrap.addEventListener('click', (e) => {
       if (e.target === wrap || e.target.closest('[data-sg-close]')) close();

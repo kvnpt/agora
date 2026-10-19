@@ -30,6 +30,7 @@ import linkifyShared from '../../public/shared/linkify.js';
 import dates from '../../public/shared/dates.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
+import sourceLine from '../../public/shared/source-line.js';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
@@ -271,19 +272,6 @@ export function longDate(date, thisYear) {
   return s.replace(',', '');
 }
 
-/** The app's wording: "Updated 3 months ago", from relativeAge in app.js. */
-export function relativeAge(iso, now) {
-  const then = Date.parse(iso || '');
-  if (!Number.isFinite(then)) return null;
-  const days = Math.floor((now - then) / DAY_MS);
-  if (days < 0) return 'just now';
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  const [value, unit] = days < 30 ? [days, 'day']
-    : days < 365 ? [Math.round(days / 30.44), 'month'] : [Math.round(days / 365.25), 'year'];
-  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-value, unit);
-}
-
 
 const ORDINAL = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
 
@@ -444,17 +432,6 @@ function ruleTimeHTML(hhmm) {
   const [h, m] = String(hhmm || '').split(':').map(Number);
   if (!Number.isFinite(h)) return '';
   return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')}<span class="ampm">${h >= 12 ? 'PM' : 'AM'}</span>`;
-}
-
-/** sourceLineHTML: "Updated 3 months ago · Antiochian Archdiocese ↗". */
-function sourceLineHTMLApp(name, ref, checked, now, cls) {
-  if (!name) return '';
-  const age = relativeAge(checked, now);
-  const linkIcon = '<span class="source-link-icon" aria-hidden="true"></span>';
-  // A church sign's photo is ours, under /posters/ (public/shared/signs.js).
-  const label = /^(https?:|\/posters\/)/.test(ref || '')
-    ? `<a href="${esc(ref)}" target="_blank" rel="noopener nofollow">${esc(name)}${linkIcon}</a>` : esc(name);
-  return `<div class="${cls}">${age ? `Updated ${esc(age)} &middot; ` : ''}${label}</div>`;
 }
 
 /**
@@ -687,10 +664,8 @@ export function scheduleRowsHTML(rules, slug, now, venues = {}) {
           ${whereRowHTML(r, venues)}
         </a>`;
   }
-  // scheduleSourceHTML: one line, whoever changed the timetable last.
-  const latest = rules.filter(r => r.source_name)
-    .sort((a, b) => String(b.source_checked_at || '').localeCompare(String(a.source_checked_at || '')))[0];
-  return html + (latest ? sourceLineHTMLApp(latest.source_name, latest.source_ref, latest.source_checked_at, now, 'sched-source') : '');
+  // One line, whoever changed the timetable last.
+  return html + sourceLine.timetableSourceHTML(rules, { cls: 'sched-source', now });
 }
 
 /** A rule's "meets elsewhere" line, as the app's timetable has it. */
@@ -853,7 +828,7 @@ export function renderLitePage(m) {
   <section class="ps-section lc-info">
     ${p.address ? copyChipHTML(p.address, p.address, 'Copy address') : ''}
     ${website ? copyChipHTML(p.website, website, 'Copy website URL') : ''}
-    ${sourceLineHTMLApp(p.info_source_name, p.info_source_ref, p.info_checked_at, m.now, 'ps-source lc-src')}
+    ${sourceLine.detailsSourceHTML(p, { cls: 'ps-source lc-src', now: m.now })}
     ${contributeHTML(m)}
     ${actionsHTML(m)}
   </section>
