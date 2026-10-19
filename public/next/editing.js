@@ -1234,7 +1234,7 @@
     const at = lat != null && lng != null && Number.isFinite(+lat) ? [+lng, +lat] : null;
     m = new root.maplibregl.Map({
       container: f.body.querySelector('.pin-map'), style,
-      center: at || [151.21, -33.87], zoom: at ? 18 : 12,
+      center: at || [151.21, -33.87], zoom: at ? 17 : 12,
       attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, boxZoom: false,
     });
     m.touchZoomRotate.disableRotation();
