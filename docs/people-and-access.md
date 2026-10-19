@@ -71,8 +71,10 @@ panel, because the person arriving usually has no role at all.
 
 **It asks before it signs in.** The button opens a dialog on the page itself
 first (`public/shared/suggest-dialog.js`, on the app's card, the lite card and
-`/next`, whose dotted **Add +** boxes open it with its topic chosen): what it is about, what it should say, a name, and **I'd like to edit
-this parish myself** — the claim, with its role field. Only then **Confirm
+`/next`, whose dotted **Add +** boxes open it with its topic chosen): what it
+is about, the details, a name, and **Add me as a permanent editor** — the
+claim, with its role field. Its fields name themselves as placeholders, with
+no lead or labels. Only then **Confirm
 email and submit** goes to `/admin?suggest=`, through Access; what was typed
 waits in this browser's `localStorage` for two hours and the suggest page fills
 it in and sends it the moment it loads (`takeDraft`), so the person writes once.

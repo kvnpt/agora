@@ -12,6 +12,9 @@
 // (admin.html, suggestPage). Nothing is posted before then, because nothing
 // can be: the suggestion is filed under the address Access verified.
 //
+// Few words on purpose: the fields say what they are as placeholders, and
+// the one box says what it asks (Kevin's markup of 19 Oct 2026).
+//
 // Classic script, the dual shape of its neighbours: the draft helpers are a
 // module export for the tests (d1/suggest-dialog.test.mjs), the dialog a
 // browser global that the app, the lite card and /admin all load.
@@ -100,23 +103,22 @@
         <h2 id="sg-title">Suggest an edit</h2>
         ${parishName ? `<div class="escalate-modal-sub">${esc(parishName)}</div>` : ''}
         <form class="detail-edit-form sg-form" novalidate>
-          <p class="sg-lead">Spotted something wrong or missing? Tell the people who keep this page — they read exactly what you write here.</p>
-          <div class="edit-row"><label for="sg-about">What is it about? <span>(optional)</span></label>
-            <select id="sg-about" name="about">
-              <option value="">Choose…</option>
+          <div class="edit-row">
+            <select id="sg-about" name="about" aria-label="What is it about? (optional)">
+              <option value="">What is it about?</option>
               ${services.length ? `<optgroup label="Service times">${services.map(o => `<option>${esc(o)}</option>`).join('')}</optgroup>` : ''}
               <optgroup label="${services.length ? 'Something else' : 'What part of the page'}">
                 ${OTHER_TOPICS.map(o => `<option>${esc(o)}</option>`).join('')}
               </optgroup>
             </select></div>
-          <div class="edit-row"><label for="sg-body">What should it say?</label>
-            <textarea id="sg-body" name="change_body" rows="4" maxlength="2000" placeholder="Liturgy is at 9:30 from November. The phone number is …"></textarea></div>
-          <div class="edit-row"><label for="sg-name">Your name <span data-sg-name-hint>(optional)</span></label>
-            <input id="sg-name" name="name" maxlength="120" autocomplete="name"></div>
+          <div class="edit-row">
+            <textarea id="sg-body" name="change_body" rows="4" maxlength="2000" placeholder="Details" aria-label="Details"></textarea></div>
+          <div class="edit-row">
+            <input id="sg-name" name="name" maxlength="120" autocomplete="name" placeholder="Name" aria-label="Name"></div>
           <label class="edit-check sg-check"><input type="checkbox" name="contact">
-            <span><b>I'd like to edit this parish myself</b><small>Ask to become its parish editor, and keep its service times, events and details up to date. The site owner checks each request.</small></span></label>
-          <div class="edit-row" data-sg-contact hidden><label for="sg-rel">Your role at the parish</label>
-            <input id="sg-rel" name="relation" maxlength="120" placeholder="Parish priest, secretary, council member…"></div>
+            <span><b>Add me as a permanent editor</b></span></label>
+          <div class="edit-row" data-sg-contact hidden>
+            <input id="sg-rel" name="relation" maxlength="120" placeholder="Your role at the parish" aria-label="Your role at the parish"></div>
           <div class="sg-error" role="alert" hidden></div>
           <div class="form-actions">
             <button type="submit" class="btn-save sg-submit">Confirm email and submit</button>
@@ -134,10 +136,7 @@
     const f = form.elements;
     const err = wrap.querySelector('.sg-error');
     const contactRow = wrap.querySelector('[data-sg-contact]');
-    const sync = () => {
-      contactRow.hidden = !f.contact.checked;
-      wrap.querySelector('[data-sg-name-hint]').textContent = f.contact.checked ? '' : '(optional)';
-    };
+    const sync = () => { contactRow.hidden = !f.contact.checked; };
     if (about && [...f.about.options].some(o => o.value === about)) f.about.value = about;
     form.addEventListener('change', sync);
     wrap.addEventListener('click', (e) => {

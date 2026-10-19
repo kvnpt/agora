@@ -1,9 +1,10 @@
 // The gum-tree loader: a eucalyptus that fills green from the ground up while
-// a one-line log ticks over under it, over the page as it comes to life.
+// a one-line log ticks over under it, over whatever is coming to life behind
+// it: the whole page at /, and at /next only the map, while the map loads.
 //
 // The app's (index.html, inline), as a file for /next: load it as a plain
-// script straight after the #loading-screen markup, before anything else, so
-// it shows from the first paint and anything after can log to it. It hands
+// script straight after the #loading-screen markup, so it shows from the
+// first paint and anything after can log to it. It hands
 // out three globals: lsLog(line), lsProgress(0..1) and lsHide(), which the
 // page calls once its first render is done. A tree that never hears lsHide
 // goes after 10s anyway, so nobody is stuck behind it.

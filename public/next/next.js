@@ -635,7 +635,9 @@
     globe: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>',
     map: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg>',
     chev: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>',
-    cross: '<svg viewBox="0 0 40 64" aria-hidden="true" fill="currentColor"><rect x="17" y="0" width="6" height="64" rx="1"/><rect x="9" y="9" width="22" height="5" rx="1"/><rect x="2" y="21" width="36" height="6" rx="1"/><rect x="9" y="44" width="22" height="5" rx="1" transform="rotate(-22 20 46.5)"/></svg>',
+    // The footrest rises to the viewer's LEFT, Christ's right and the good
+    // thief's side, as on every Orthodox cross (scripts/build-og-images.mjs).
+    cross: '<svg viewBox="0 0 40 64" aria-hidden="true" fill="currentColor"><rect x="17" y="0" width="6" height="64" rx="1"/><rect x="9" y="9" width="22" height="5" rx="1"/><rect x="2" y="21" width="36" height="6" rx="1"/><rect x="9" y="44" width="22" height="5" rx="1" transform="rotate(20 20 46.5)"/></svg>',
     search: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>',
     pin: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
     clock: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
@@ -706,6 +708,9 @@
     mapState.userLng = S.loc ? S.loc.lng : null;
     await window.initMap(mapState);
     map = window.agoraMap;
+    // The map's own first full draw. initMap returns before it can happen, so
+    // this is never too late to hear it.
+    S.mapLoaded = new Promise(resolve => map.once('load', resolve));
     // Where the person is; else Sydney, where most of the parishes are.
     map.fitBounds(S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
       : [[150.6, -34.15], [151.35, -33.6]], { animate: false, padding: 0 });
@@ -1612,8 +1617,10 @@
         <button class="lrow" type="button" data-act="share-parish">${I.share}<span class="ln"><b>Share</b></span></button>
         <a class="lrow" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">${I.car}<span class="ln"><b>Directions</b></span></a>
         ${p.website ? `<a class="lrow" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span class="ln"><b>Website</b></span></a>` : ''}
-        <button class="lrow" type="button" data-act="juris-of">${I.cross.replace('<svg', '<svg width="14" height="22"')}<span class="ln"><b>More ${esc(JURIS[p.jurisdiction]?.long || '')} parishes</b></span></button>
-        <button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b><small>Or ask to keep this parish's page</small></span></button>
+        <button class="lrow" type="button" data-act="juris-of">${jurisLogo(p.jurisdiction)
+          ? `<span class="lrow-ic"><img src="${esc(jurisLogo(p.jurisdiction))}" alt=""></span>`
+          : `<span class="lrow-ic">${I.cross.replace('<svg', '<svg width="14" height="22"')}</span>`}<span class="ln"><b>More ${esc(JURIS[p.jurisdiction]?.long || '')} parishes</b></span></button>
+        <button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b></span></button>
         <a class="lrow" href="/${esc((p.acronym || '').toLowerCase())}" target="_blank" rel="noopener">${I.chev}<span class="ln"><b>Open in the current app</b></span></a>
       </div></div>`;
     const el = pushSheet(html, 'mini');
@@ -2092,9 +2099,23 @@
     // back from the page rather than from wherever the person came from.
     try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + location.search); } catch { /* sandboxed */ }
     renderLink();
-    step('✓ page drawn', 0.85);
+    step('✓ page drawn', 0.7);
     await mapStarted;
     applyRoute(route, { animate: false });
+    // A map that settled before the parishes came counted none in view: count again.
+    onView();
+    // The loader is the map's: it goes when the map has drawn, its tiles in
+    // and its dots on. Not on 'idle', which a ringing halo never lets come.
+    if (map) {
+      step('Drawing the map…', 0.85);
+      await S.mapLoaded;
+      if (!map.areTilesLoaded()) {
+        await new Promise(resolve => {
+          const done = () => { if (map.areTilesLoaded()) { map.off('render', done); resolve(); } };
+          map.on('render', done);
+        });
+      }
+    }
     if (window.lsHide) window.lsHide();
   }
   boot().catch(err => {

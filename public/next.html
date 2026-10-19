@@ -26,15 +26,6 @@
   <link rel="stylesheet" href="/next/next.css">
 </head>
 <body>
-  <!-- The app's gum-tree loader, over the page while it comes to life. It
-       goes when the first render is done (lsHide, in next.js). -->
-  <div id="loading-screen" aria-hidden="true">
-    <div class="ls-header">orthodoxy.au</div>
-    <div class="ls-tree-wrap"></div>
-    <div class="ls-log" id="ls-log"></div>
-  </div>
-  <script src="/shared/loading-screen.js"></script>
-
   <header class="top">
     <button class="place" type="button" id="place" aria-label="Use my location">
       <span class="place-name" id="place-name">Australia</span>
@@ -61,6 +52,14 @@
       <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
       <div class="viewport" id="viewport">
         <div id="map"></div>
+        <!-- The app's gum-tree loader, over the map alone while it loads: the
+             rest of the page is there to read meanwhile. It goes once the map
+             has drawn with its parishes on it (lsHide, in next.js). -->
+        <div id="loading-screen" aria-hidden="true">
+          <div class="ls-tree-wrap"></div>
+          <div class="ls-log" id="ls-log"></div>
+        </div>
+        <script src="/shared/loading-screen.js"></script>
         <button class="map-fs" type="button" id="btn-fullscreen" aria-label="Full screen" title="Full screen">
           <svg class="fs-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
           <svg class="fs-close" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>
