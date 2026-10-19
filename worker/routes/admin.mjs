@@ -34,6 +34,7 @@ import readFromShared from '../../public/shared/read-from.js';
 import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
          daysSince, staleness } from '../lib/jurisdictions.mjs';
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
+import { jurisdictionLogos, jurisdictionLogoKey, LOGO_JURISDICTIONS } from '../lib/juris-logos.mjs';
 import slugs from '../../public/shared/slugs.js';
 import timezones from '../../public/shared/timezones.js';
 import eventChecks from '../../public/shared/event-checks.js';
@@ -3456,6 +3457,59 @@ export function registerAdminRoutes(router) {
     if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(logoKeys(id));
     await env.DB.prepare('UPDATE parishes SET logo_path = NULL WHERE id = ?').bind(id).run();
     return json({ logo_path: null });
+  }));
+
+  // POST /api/admin/jurisdictions/:j/logo — raw image body, as a parish's.
+  //
+  // The picture on the jurisdiction's collection card and its link preview
+  // (/greek). Kept at logos/jurisdiction-<j>.<ext>, so the /logos/ route
+  // serves it as it serves a parish's, and recorded in jurisdiction_logos —
+  // a table of its own rather than a column of jurisdiction_colors, whose
+  // rows exist only where a colour was changed.
+  router.post('/api/admin/jurisdictions/:j/logo', guarded('jurisdiction.logo', async ({ env, params, request }) => {
+    const j = params.j;
+    if (!LOGO_JURISDICTIONS.has(j)) return json({ error: `Not a jurisdiction: ${j}` }, 400);
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+
+    const contentType = request.headers.get('content-type') || '';
+    const ext = contentType.includes('png') ? 'png'
+              : contentType.includes('svg') ? 'svg'
+              : contentType.includes('webp') ? 'webp' : 'jpg';
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return json({ error: 'No data received' }, 400);
+    if (body.byteLength > 5 * 1024 * 1024) return json({ error: 'Logo too large (5 MB max)' }, 413);
+
+    const key = jurisdictionLogoKey(j, ext);
+    const logoPath = `/${key}?v=${Date.now()}`;
+    // The row first: without migration 027 there is nowhere to record the
+    // logo, and an image put in R2 that nothing names is one nobody can remove.
+    try {
+      await env.DB.prepare(
+        `INSERT INTO jurisdiction_logos (jurisdiction, logo_path, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(jurisdiction) DO UPDATE SET logo_path = excluded.logo_path, updated_at = excluded.updated_at`
+      ).bind(j, logoPath, new Date().toISOString()).run();
+    } catch (err) {
+      if (/no such table/i.test(String(err && err.message))) {
+        return json({ error: 'Jurisdiction logos need migration 027 (d1/migrations/027-jurisdiction-logos.sql).' }, 503);
+      }
+      throw err;
+    }
+    await env.ASSETS_BUCKET.put(key, body, {
+      httpMetadata: { contentType: contentType || 'image/jpeg', cacheControl: 'public, max-age=86400' },
+    });
+    const stale = LOGO_EXTS.map(e => jurisdictionLogoKey(j, e)).filter(k => k !== key);
+    await env.ASSETS_BUCKET.delete(stale);
+    return json(await jurisdictionLogos(env.DB));
+  }));
+
+  // DELETE /api/admin/jurisdictions/:j/logo — back to the card's cross.
+  // The objects go as well as the row, as a parish's do.
+  router.delete('/api/admin/jurisdictions/:j/logo', guarded('jurisdiction.logo', async ({ env, params }) => {
+    const j = params.j;
+    if (!LOGO_JURISDICTIONS.has(j)) return json({ error: `Not a jurisdiction: ${j}` }, 400);
+    if (env.ASSETS_BUCKET) await env.ASSETS_BUCKET.delete(LOGO_EXTS.map(e => jurisdictionLogoKey(j, e)));
+    await env.DB.prepare('DELETE FROM jurisdiction_logos WHERE jurisdiction = ?').bind(j).run().catch(() => {});
+    return json(await jurisdictionLogos(env.DB));
   }));
 
   // ── jurisdictions ──

@@ -188,3 +188,13 @@ test('an old /worship, /services-liturgy or /studies link is sent to its name no
   assert.equal(U.renamedPath('/worshipful'), null, 'whole segments only');
   assert.equal(U.renamedPath('/'), null);
 });
+
+test('/monasteries is a where, beside a jurisdiction or a region, and a page of its own', () => {
+  const r = U.classifyPath('/greek/monasteries');
+  assert.equal(r.jurisdiction, 'greek');
+  assert.equal(r.monasteries, true);
+  assert.equal(r.parishSlugs, null, 'not a parish');
+  assert.equal(U.classifyPath('/monastery').monasteries, true);
+  assert.equal(U.pageKind(U.classifyPath('/monasteries')), 'timetable');
+  assert.equal(U.pageKind(U.classifyPath('/sgr/monasteries')), null, "a parish card does not answer it");
+});

@@ -12,7 +12,7 @@
 // location (a slug), service, day, dayGroup (/weeknights, /weekends), part,
 // lang and langStrict (the older
 // englishOnly / englishStrict pair still means English), kind and kindSub,
-// and parishIds (a Set) — and as the Worker builds it from the URL.
+// monasteries, and parishIds (a Set) — and as the Worker builds it from the URL.
 //
 // Same dual-mode wrapper as its neighbours.
 (function (root) {
@@ -79,10 +79,21 @@
     return (KIND_TYPES[f.kind] || []).includes(t);
   }
 
+  // A monastery, a convent or a skete, by its name: nothing else on a parish
+  // row says so, and every one of the fifteen on file (October 2026) says it
+  // there — "Holy Transfiguration Monastery", "Our Lady of Kazan Convent",
+  // "St John the Baptist Skete". /monasteries is these.
+  const MONASTERY = /\b(monaster(y|ies)|monastic|convent|skete|hermitage|lavra)\b/i;
+  /** Is this parish a monastery, by its name? */
+  function isMonastery(parish) {
+    return !!parish && MONASTERY.test(`${parish.name || ''} ${parish.full_name || ''}`);
+  }
+
   /** Is this parish one the link covers: its jurisdiction, its region, the parishes it names? */
   function parishInScope(parish, f) {
     if (!parish || parish.id === '_unassigned') return false;
     if (f.jurisdiction && parish.jurisdiction !== f.jurisdiction) return false;
+    if (f.monasteries && !isMonastery(parish)) return false;
     if (f.location && locations) {
       const loc = locations.resolveLocation(f.location);
       if (loc && !locations.locationMatchesParish(loc, parish)) return false;
@@ -135,7 +146,7 @@
     return !!(f.service || f.day != null || f.dayGroup || f.part || langFilterOf(f) || f.kind);
   }
 
-  const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, parishInScope, ruleMatches, narrowsRules };
+  const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, isMonastery, parishInScope, ruleMatches, narrowsRules };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraTimetable = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

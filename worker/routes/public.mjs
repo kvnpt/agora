@@ -14,6 +14,7 @@ import { pdfSourceOverrides, publicOverridePayload } from '../lib/pdf-source-ove
 import { json } from '../lib/router.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
+import { jurisdictionLogos } from '../lib/juris-logos.mjs';
 import { coverageState, coverageMessage } from '../lib/coverage.mjs';
 import { cachedJson } from '../lib/data-version.mjs';
 
@@ -62,7 +63,7 @@ export function registerPublicRoutes(router) {
   });
 
   async function buildBundle(env, from, to) {
-    const [rows, parishes, oneOffs, cross, jurisColors, links] = await Promise.all([
+    const [rows, parishes, oneOffs, cross, jurisColors, links, jurisLogos] = await Promise.all([
       // Each rule's own columns only; the browser joins the parish back on
       // (public/shared/parish-join.mjs), from the list travelling alongside.
       fetchWindowRows(env.DB, from, to, { withParish: false }),
@@ -85,6 +86,8 @@ export function registerPublicRoutes(router) {
       // while migration 008 has not run.
       env.DB.prepare('SELECT parish_id, slug, label, url FROM parish_links ORDER BY sort_order, slug')
         .all().catch(() => ({ results: [] })),
+      // A jurisdiction's logo, for its collection card. Six rows at most.
+      jurisdictionLogos(env.DB),
     ]);
 
     return {
@@ -106,6 +109,7 @@ export function registerPublicRoutes(router) {
       // trip would mean drawing the map once in the old colours and again in
       // the new ones.
       jurisdiction_colors: jurisColors,
+      jurisdiction_logos: jurisLogos,
       parish_links: links.results || [],
     };
   }
@@ -137,6 +141,11 @@ export function registerPublicRoutes(router) {
   // not want the whole bundle (the admin panel's colours tab).
   router.get('/api/jurisdiction-colors', async ({ env }) => {
     return json(await jurisdictionColorOverrides(env.DB));
+  });
+
+  // GET /api/jurisdiction-logos — { greek: '/logos/…' }, for the same tab.
+  router.get('/api/jurisdiction-logos', async ({ env }) => {
+    return json(await jurisdictionLogos(env.DB));
   });
 
   // GET /api/schedules — the raw weekly timetable, as the services view renders it.

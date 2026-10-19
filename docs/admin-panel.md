@@ -107,7 +107,7 @@ Four tabs, one global jurisdiction filter, one privilege level.
 | Parishes | the `parishes` row, logo, short links | `/api/admin/parishes*` |
 | Schedules | recurrence rules, and *Infer rules from scraped events* | `/api/admin/schedules*`, `…/schedule-proposals` |
 | Adapters | per-adapter enable/pace/run-now | `/api/admin/adapters*` |
-| Colours | the `jurisdiction_colors` override rows | `/api/admin/jurisdiction-colors` |
+| Colours | the `jurisdiction_colors` override rows, and each jurisdiction's logo (`jurisdiction_logos`) | `/api/admin/jurisdiction-colors`, `/api/admin/jurisdictions/:j/logo` |
 
 **Events** (October 2026) holds the drafts of one-off events not yet
 published, across every parish the account may edit, and its + opens the

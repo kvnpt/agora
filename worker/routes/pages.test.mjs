@@ -12,7 +12,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { servePage, liteKind, hasAdminCookie } from './pages.mjs';
+import { servePage, liteKind, hasAdminCookie, indexedCollections } from './pages.mjs';
+import collections from '../../public/shared/collections.js';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -32,6 +33,7 @@ class S {
 }
 
 const PARISH = 'antiochian-stgeorge-redfern';
+const COLLECTION_PATHS = new Set(collections.COLLECTIONS.map(c => c.path));
 // Wednesday 30 September 2026, midday in Sydney.
 const NOW = Date.parse('2026-09-30T02:00:00Z');
 
@@ -281,15 +283,35 @@ test('a name cannot break out of the page or its structured data', async () => {
   assert.match(html, /<h1 class="ps-name">St George &lt;\/script&gt;&lt;b&gt;x&lt;\/b&gt; &quot;q&quot;<\/h1>/);
 });
 
-test('the sitemap lists every parish and nothing else', async () => {
+test('the sitemap lists every parish, and the collections that list somebody', async () => {
   const { raw, get } = fresh();
   const { res, html } = await get('/sitemap.xml');
   assert.match(res.headers.get('content-type'), /xml/);
   const locs = [...html.matchAll(/<loc>([^<]*)<\/loc>/g)].map(m => m[1]);
   const n = raw.prepare("SELECT COUNT(*) n FROM parishes WHERE id != '_unassigned'").get().n;
-  assert.equal(locs.length, n + 1, 'the home page and every parish');
+  const parishes = locs.filter(l => !COLLECTION_PATHS.has(l.slice('https://orthodoxy.au'.length)));
+  assert.equal(parishes.length, n + 1, 'the home page and every parish');
   assert.ok(locs.includes('https://orthodoxy.au/sgr'), 'by acronym where there is one');
   assert.ok(locs.every(l => !/\d+:\d{4}/.test(l)), 'no events');
+  const listed = locs.filter(l => COLLECTION_PATHS.has(l.slice('https://orthodoxy.au'.length)));
+  for (const p of ['/en', '/sun/liturgy', '/greek', '/antiochian']) {
+    assert.ok(listed.includes(`https://orthodoxy.au${p}`), `${p}: a collection with parishes in it`);
+  }
+  for (const p of ['/serbian', '/monasteries', '/talks', '/social']) {
+    assert.ok(!listed.includes(`https://orthodoxy.au${p}`),
+      `${p}: nobody in the seed, or the app's feed rather than a page`);
+  }
+});
+
+test('a monastery on file puts /monasteries in the sitemap', () => {
+  const { raw } = fresh();
+  const parishes = raw.prepare("SELECT * FROM parishes WHERE id != '_unassigned'").all();
+  const rules = raw.prepare('SELECT * FROM schedules WHERE active = 1').all();
+  const ids = (ps) => indexedCollections({ parishes: ps, rules, overrides: {}, logos: {} }, NOW, 'https://orthodoxy.au')
+    .map(c => c.id);
+  assert.ok(!ids(parishes).includes('monasteries'));
+  const named = parishes.map(p => (p.id === PARISH ? { ...p, name: 'St George Monastery, Redfern' } : p));
+  assert.ok(ids(named).includes('monasteries'));
 });
 
 test('HEAD gets the headers without the body', async () => {
@@ -560,4 +582,63 @@ test('an event\'s page: the card, then "More at this parish" for the next seven 
   assert.match(more, /Vespers/, 'another rule\'s date this week');
   assert.doesNotMatch(more, /Parish picnic/, 'not the event itself again');
   assert.match(html, /<a class="lc-app" href="\/sgr">View St George Cathedral, Redfern →<\/a>/);
+});
+
+// ── collections: the timetable pages a search engine is offered ──────────
+
+const img = (html) => meta(html, 'property', 'og:image');
+
+test('a collection is indexed, under its own name, with its own preview', async () => {
+  const { get } = fresh();
+  const en = (await get('/en')).html;
+  assert.equal(meta(en, 'name', 'robots'), 'index,follow');
+  assert.equal(canonical(en), 'https://orthodoxy.au/en');
+  assert.match(meta(en, 'name', 'description'), /^Parishes with services in English\. \d+ parish/,
+    'what it holds, then who');
+  assert.equal(img(en), 'https://orthodoxy.au/og/c-english.jpg');
+
+  const sun = (await get('/liturgy/sunday')).html;
+  assert.equal(canonical(sun), 'https://orthodoxy.au/sun/liturgy', 'however the link spells it');
+  assert.equal(meta(sun, 'name', 'robots'), 'index,follow');
+  assert.equal(img(sun), 'https://orthodoxy.au/og/c-sunday.jpg');
+
+  const greek = (await get('/greek')).html;
+  assert.equal(meta(greek, 'name', 'robots'), 'index,follow');
+  assert.equal(img(greek), 'https://orthodoxy.au/og/greek.jpg', "the jurisdiction's card, with no logo");
+});
+
+test('every other link stays noindex: a hand-picked list, a mix of filters, an empty collection', async () => {
+  const { raw, get } = fresh();
+  rule(raw, GREEK_QLD, 0, '09:00', 'Divine Liturgy');
+  for (const p of ['/smg+sgr', '/greek/qld', '/greek/en', '/sun', '/timetables', '/serbian', '/in-macedonian']) {
+    const page = await get(p);
+    if (page) assert.equal(meta(page.html, 'name', 'robots'), 'noindex,follow', p);
+  }
+  assert.equal(meta((await get('/greek/qld')).html, 'property', 'og:image'), 'https://orthodoxy.au/og/greek.jpg');
+});
+
+test("a jurisdiction's logo is its collection's preview once /admin has one", async () => {
+  const { raw, get } = fresh();
+  raw.prepare("INSERT INTO jurisdiction_logos (jurisdiction, logo_path) VALUES ('greek', '/logos/jurisdiction-greek.png?v=1')").run();
+  // A row that is not one of ours is not served.
+  raw.prepare("INSERT INTO jurisdiction_logos (jurisdiction, logo_path) VALUES ('antiochian', 'javascript:alert(1)')").run();
+  assert.equal(img((await get('/greek')).html), 'https://orthodoxy.au/logos/jurisdiction-greek.png?v=1');
+  assert.equal(img((await get('/antiochian')).html), 'https://orthodoxy.au/og/antiochian.jpg');
+  assert.equal(img((await get('/greek/qld')).html), 'https://orthodoxy.au/og/greek.jpg', 'not a collection, so its card');
+  raw.exec('DROP TABLE jurisdiction_logos');
+  assert.equal(img((await get('/greek')).html), 'https://orthodoxy.au/og/greek.jpg', 'before migration 027, the card');
+});
+
+test('/monasteries is the monasteries, convents and sketes, by name', async () => {
+  const { raw, get } = fresh();
+  raw.prepare("UPDATE parishes SET name = 'Holy Monastery of St George, Redfern' WHERE id = ?").run(PARISH);
+  raw.prepare("UPDATE parishes SET full_name = 'Pantanassa Skete' WHERE id = ?").run(GREEK_QLD);
+  const { html } = await get('/monasteries');
+  assert.match(html, /<h1>Orthodox monasteries and service times<\/h1>/);
+  assert.deepEqual(names(html).sort(), ['Holy Monastery of St George, Redfern', 'Sunshine Coast, Buderim']);
+  assert.equal(canonical(html), 'https://orthodoxy.au/monasteries');
+  assert.equal(meta(html, 'name', 'robots'), 'index,follow');
+  assert.match((await get('/greek/monasteries')).html, /<h1>Greek Orthodox monasteries and service times<\/h1>/);
+  assert.equal(canonical((await get('/monastery/greek')).html), 'https://orthodoxy.au/greek/monasteries');
+  assert.match((await get('/monasteries/sun/liturgy')).html, /<h1>Orthodox Liturgies at monasteries on Sundays<\/h1>/);
 });

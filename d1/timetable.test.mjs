@@ -70,3 +70,17 @@ test('a languages column reads as an array or as nothing', () => {
   assert.equal(T.langsOf('not json'), null);
   assert.equal(T.langsOf(null), null);
 });
+
+test('a monastery is one by its name: monastery, convent, skete', () => {
+  const named = (name, full_name) => ({ id: 'x', jurisdiction: 'russian', name, full_name });
+  for (const [name, full] of [
+    ['Holy Transfiguration Monastery, Gunningrah'], ['Our Lady of Kazan Convent, Kentlyn'],
+    ['St. John the Baptist Skete, Kentlyn'], ['Nativity Skete, Inglewood'], ['St George, Yellow Rock', 'Holy Monastery of St. George'],
+  ]) assert.ok(T.isMonastery(named(name, full)), name);
+  for (const name of ['St George Cathedral, Redfern', 'Monastery Road Parish'.replace('Monastery ', 'Monasterio ')]) {
+    assert.ok(!T.isMonastery(named(name)), name);
+  }
+  assert.ok(T.parishInScope(named('St Sava Monastery, Elaine'), { monasteries: true }));
+  assert.ok(!T.parishInScope(redfern, { monasteries: true }));
+  assert.ok(T.parishInScope(redfern, { monasteries: false }));
+});

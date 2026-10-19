@@ -117,6 +117,10 @@
   // /parishes, which is what the page lists.
   const TIMETABLE_SEGMENTS = ['timetables', 'timetable', 'parishes'];
 
+  // The monasteries, convents and sketes (timetable.isMonastery): a kind of
+  // place, as a region is a where. /monasteries, /greek/monasteries.
+  const MONASTERY_SEGMENTS = ['monasteries', 'monastery'];
+
   /**
    * The path an old link should be sent to, or null when it is current:
    * /worship → /services, /sgr/services-liturgy → /sgr/liturgy.
@@ -193,6 +197,7 @@
       part: null,
       service: null,
       location: null,
+      monasteries: false,
       parishSlugs: null,
     };
     let parts;
@@ -213,6 +218,8 @@
         [out.kind, out.kindSub] = KIND_SEGMENTS[seg];
       } else if (TIMETABLE_SEGMENTS.includes(seg)) {
         out.timetable = true;
+      } else if (MONASTERY_SEGMENTS.includes(seg)) {
+        out.monasteries = true;
       } else if (weekOffsetOf(seg) !== null) {
         // Before the dates: /next-week is a week, not "from seven days out".
         out.week = true;
@@ -294,7 +301,7 @@
    *                 /sgr/next-tue, /sgr/timetables)
    *   'event'     — one event by id (/102, /42:2026-10-04)
    *   'timetable' — any other filter link (/greek/qld, /liturgy, /smg+sgr,
-   *                 /timetables, /services)
+   *                 /timetables, /services, /monasteries)
    *   null        — the home page, a link with a date and no parish, /social,
    *                 /talks, a week, /donate, and a path that names nothing
    *
@@ -309,7 +316,7 @@
     if (!r || (r.kind && !servicesOnly) || r.week || r.month || r.donate) return null;
     // A card is one parish's, so a jurisdiction, a region or a language beside
     // one is a question the card does not answer; the app does.
-    const scoped = r.jurisdiction || r.location || r.lang;
+    const scoped = r.jurisdiction || r.location || r.lang || r.monasteries;
     if (r.parishSlugs && r.parishSlugs.length === 1) return scoped ? null : 'parish';
     if (r.eventId) {
       const bare = !r.parishSlugs && !scoped && !r.dateFocus && r.day == null && !r.dayGroup && !r.service
@@ -325,7 +332,8 @@
     return names ? 'timetable' : null;
   }
 
-  const api = { JURISDICTION_KEYS, KIND_SEGMENTS, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, renamedPath,
+  const api = { JURISDICTION_KEYS, KIND_SEGMENTS, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, MONASTERY_SEGMENTS,
+    renamedPath,
     weekOffsetOf, weekSegment, isEventId, classifyPath, firstEventOnDay, pageKind,
     englishSegment, kindSegment, langSlug, langFromSlug };
   if (isCjs) module.exports = api;

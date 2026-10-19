@@ -35,12 +35,12 @@
   const TZ = 'Australia/Sydney';
 
   const JURIS = {
-    greek: { short: 'Greek', long: 'Greek Orthodox', blurb: 'The Greek Orthodox Archdiocese of Australia and its parishes.' },
-    antiochian: { short: 'Antiochian', long: 'Antiochian Orthodox', blurb: 'The Antiochian Archdiocese — Arabic and English, and the most English of the jurisdictions.' },
-    serbian: { short: 'Serbian', long: 'Serbian Orthodox', blurb: 'The Serbian Orthodox Church in Australia and New Zealand.' },
-    russian: { short: 'Russian', long: 'Russian Orthodox', blurb: 'The Russian Orthodox Church Outside of Russia, Diocese of Australia and New Zealand.' },
-    romanian: { short: 'Romanian', long: 'Romanian Orthodox', blurb: 'Romanian Orthodox parishes of Australia and New Zealand.' },
-    macedonian: { short: 'Macedonian', long: 'Macedonian Orthodox', blurb: 'The Macedonian Orthodox Diocese of Australia and New Zealand.' },
+    greek: { short: 'Greek', long: 'Greek Orthodox' },
+    antiochian: { short: 'Antiochian', long: 'Antiochian Orthodox' },
+    serbian: { short: 'Serbian', long: 'Serbian Orthodox' },
+    russian: { short: 'Russian', long: 'Russian Orthodox' },
+    romanian: { short: 'Romanian', long: 'Romanian Orthodox' },
+    macedonian: { short: 'Macedonian', long: 'Macedonian Orthodox' },
   };
   const JURIS_ORDER = ['greek', 'antiochian', 'serbian', 'russian', 'romanian', 'macedonian'];
   const jColor = (j) => (window.agoraJurisdictionColor ? window.agoraJurisdictionColor(j) : '#888');
@@ -90,12 +90,13 @@
   /**
    * The filters as the app keeps them (state.filters), so the shared readers
    * of a link (url-state.js) and of a timetable (timetable.js) take them as
-   * they are. `listId` names the saved list a set of parishes came from, and
-   * `timesOnly` is this page's own, which no link carries.
+   * they are. `monasteries` is /monasteries; `listId` names the saved list a
+   * set of parishes came from, and `timesOnly` is this page's own, which no
+   * link carries.
    */
   const blankFilters = () => ({
     kind: null, kindSub: null, lang: null, langStrict: false, day: null, dayGroup: null, part: null, service: null,
-    location: null, parishIds: null, listId: null, timesOnly: false,
+    location: null, monasteries: false, parishIds: null, listId: null, timesOnly: false,
   });
   S.f = blankFilters();
 
@@ -315,6 +316,7 @@
     if (juris && p.jurisdiction !== juris) return false;
     const loc = regionOf(f);
     if (loc && !window.AgoraLocations.locationMatchesParish(loc, p)) return false;
+    if (f.monasteries && !window.AgoraTimetable.isMonastery(p)) return false;
     if (f.parishIds && !f.parishIds.has(p.id)) return false;
     if (f.lang && !hasLang(p, f.lang)) return false;
     if (f.lang && f.langStrict && !rulesOf(p.id).some(r => liveRule(r) && onlyIn(parseLangs(r.languages), f.lang))) return false;
@@ -339,6 +341,7 @@
     const f = S.f;
     const loc = regionOf(f);
     if (loc && !ps.some(p => window.AgoraLocations.locationMatchesParish(loc, p))) return false;
+    if (f.monasteries && !ps.some(p => window.AgoraTimetable.isMonastery(p))) return false;
     if (f.parishIds && !pids.some(id => f.parishIds.has(id))) return false;
     if (!whatMatches(e, f, false)) return false;
     if (f.lang) {
@@ -356,7 +359,7 @@
     if (isFinite(e.lat) && isFinite(e.lng) && e.lat != null) return S.bounds.contains([e.lng, e.lat]);
     return eventParishIds(e).some(id => S.inView && S.inView.has(id));
   }
-  const filterCount = () => { const f = S.f; return [f.kind, f.lang, f.day != null, f.dayGroup, f.part, f.service, f.location, f.parishIds, f.timesOnly].filter(Boolean).length; };
+  const filterCount = () => { const f = S.f; return [f.kind, f.lang, f.day != null, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
   const filtersOn = () => filterCount() > 0;
 
   // ── Links ─────────────────────────────────────────────────────────────
@@ -386,6 +389,7 @@
     const segs = [];
     if (juris) segs.push(juris);
     if (f.location) segs.push(f.location);
+    if (f.monasteries) segs.push('monasteries');
     if (f.day != null) segs.push(SV.daySlug(f.day));
     if (f.dayGroup) segs.push(f.dayGroup);
     if (f.part) segs.push(f.part);
@@ -412,6 +416,7 @@
     if (r.kind) { f.kind = r.kind; f.kindSub = r.kindSub || null; }
     if (r.lang) { f.lang = r.lang; f.langStrict = !!r.langStrict; }
     if (r.location) f.location = r.location;
+    if (r.monasteries) f.monasteries = true;
     const named = (r.parishSlugs || []).map(parishBySlug).filter(Boolean);
     const parish = r.parishSlugs && r.parishSlugs.length === 1 ? named[0] || null : null;
     if (!parish && named.length) {
@@ -824,6 +829,7 @@
     if (S.focus) bits.push(chip('focus', S.focus.title));
     const loc = regionOf(f);
     if (loc) bits.push(chip('location', loc.label));
+    if (f.monasteries) bits.push(chip('monasteries', 'Monasteries'));
     if (f.day != null) bits.push(chip('day', SV.dayName(f.day)));
     if (f.dayGroup) bits.push(chip('dayGroup', SV.dayGroupLabel(f.dayGroup)));
     if (f.part) bits.push(chip('part', SV.partOfDayLabel(f.part)));
@@ -902,50 +908,52 @@
   // ── Shelves: collections of parishes ──────────────────────────────────
 
   /**
-   * A collection that filters can say is those filters: its parishes are the
-   * ones that pass them, and its link is theirs (/sun/liturgy). The rest
-   * (monasteries, what is in view) have no link yet.
+   * A collection is its link (shared/collections.js, which the Worker's page
+   * for it and the sitemap read too): its filters are what the link means,
+   * read as any link is, and its parishes the ones that pass them.
    */
   function byFilters(c) {
     if (!c.f && !c.juris) return c;
     const f = { ...blankFilters(), ...(c.f || {}) };
     return { ...c, f, ids: c.ids || S.parishes.filter(p => parishMatches(p, f, c.juris || null)).map(p => p.id), segs: segsFor({ juris: c.juris || null, f }) };
   }
-  /** Curated slices — preset filters that open as a card of parishes. */
+  /** A shared collection with this page's look, and its filters from its link. */
+  function fromShared(c, look) {
+    const route = readPath(BASE + c.path);
+    return byFilters({ ...c, ...look, juris: route.juris, f: route.f });
+  }
+  // The look of each, which is this page's business: the art behind its card
+  // and what is drawn on it.
+  const LOOK = {
+    english: { art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En' },
+    sunday: { art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy' },
+    vespers: { art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer' },
+    weeknights: { art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer' },
+    talks: { art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk' },
+    socials: { art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social' },
+    monasteries: { art: 'linear-gradient(135deg,#3f3f46,#a8a29e)', glyph: '☦' },
+  };
+  /** The curated slices: preset filters that open as a card of parishes. */
   function curated() {
-    const P = S.parishes;
-    return [
-      { id: 'english', title: 'English services', kicker: 'For inquirers', blurb: 'Parishes that hold services in English, or put English first.',
-        art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En', f: { lang: 'English' } },
-      { id: 'sunday', title: 'Sunday Liturgy', kicker: 'This Sunday', blurb: 'Every parish with a Sunday Liturgy on its timetable.',
-        art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy', f: { day: 0, kind: 'services', kindSub: 'liturgy' } },
-      { id: 'vespers', title: 'Saturday Vespers', kicker: 'Saturday evening', blurb: 'Vespers and Vigils on Saturday evenings.',
-        art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer', f: { day: 6, part: 'evening', kind: 'services', kindSub: 'prayer' } },
-      { id: 'weeknights', title: 'Weeknight services', kicker: 'After work', blurb: 'Services Monday to Friday, from late afternoon.',
-        art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer', f: { dayGroup: 'weeknights', kind: 'services' } },
-      { id: 'talks', title: 'Talks & Bible studies', kicker: 'Learn', blurb: 'Catechism, Bible study and talks — the easiest way in.',
-        art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk', f: { kind: 'talks' } },
-      { id: 'socials', title: 'Youth & socials', kicker: 'Meet people', blurb: 'Youth groups, festivals, meals and fundraisers.',
-        art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social', f: { kind: 'socials' } },
-      { id: 'monasteries', title: 'Monasteries', kicker: 'Pilgrimage', blurb: 'Monasteries and sketes, often a drive away and worth it.',
-        art: 'linear-gradient(135deg,#3f3f46,#a8a29e)', glyph: '☦', ids: P.filter(p => /monaster|skete|convent/i.test(`${p.name} ${p.full_name || ''}`)).map(p => p.id) },
-    ].map(byFilters).filter(c => c.ids.length);
+    return window.AgoraCollections.CURATED.map(c => fromShared(c, LOOK[c.id])).filter(c => c.ids.length);
   }
   const LANGS = [
     ['Greek', 'Ελ', '#0061fe'], ['Arabic', 'عر', '#7c3bc1'], ['Serbian', 'Ср', '#cc2234'], ['Slavonic', 'Сл', '#d38301'],
     ['Romanian', 'Ro', '#4e7a27'], ['Macedonian', 'Мк', '#b92d5d'],
   ];
   function languageCollections() {
-    return LANGS.map(([lang, glyph, color]) => ({
-      id: 'lang-' + lang, title: lang, kicker: 'Language', lang, glyph, art: `linear-gradient(160deg,${color},${shade(color, -0.35)})`,
-      blurb: `Parishes that pray in ${lang}.`, f: { lang },
-    })).map(byFilters).filter(c => c.ids.length);
+    return window.AgoraCollections.LANGUAGES.map(c => {
+      const [, glyph, color] = LANGS.find(([l]) => l === c.lang) || [c.lang, c.title.slice(0, 2), '#64748b'];
+      return fromShared(c, { glyph, art: `linear-gradient(160deg,${color},${shade(color, -0.35)})` });
+    }).filter(c => c.ids.length);
   }
+  /** A jurisdiction's logo, once /admin has one: the picture on its card. */
+  const jurisLogo = (j) => ((window.agoraBundle && window.agoraBundle.raw && window.agoraBundle.raw.jurisdiction_logos) || {})[j] || null;
   function jurisCollections() {
-    return JURIS_ORDER.map(j => ({
-      id: 'j-' + j, title: JURIS[j].long, kicker: 'Jurisdiction', juris: j, blurb: JURIS[j].blurb,
-      art: `radial-gradient(120% 90% at 85% 10%, ${shade(jColor(j), 0.35)}, ${jColor(j)} 55%, ${shade(jColor(j), -0.4)})`,
-    })).map(byFilters);
+    return JURIS_ORDER.map(j => window.AgoraCollections.byId('j-' + j)).filter(Boolean).map(c => fromShared(c, {
+      logo: jurisLogo(c.jurisdiction),
+      art: `radial-gradient(120% 90% at 85% 10%, ${shade(jColor(c.jurisdiction), 0.35)}, ${jColor(c.jurisdiction)} 55%, ${shade(jColor(c.jurisdiction), -0.4)})`,
+    }));
   }
   function shade(hex, amt) {
     const n = parseInt(hex.slice(1), 16);
@@ -959,7 +967,8 @@
     const n = c.ids.length;
     const inView = S.inView ? c.ids.filter(id => S.inView.has(id)).length : null;
     const sub = `${n} ${n === 1 ? 'place' : 'places'}${inView != null && inView && inView !== n ? ` · ${inView} in view` : ''}`;
-    const art = c.glyph ? `<span class="cglyph">${esc(c.glyph)}</span>`
+    const art = c.logo ? `<span class="clogo"><img src="${esc(c.logo)}" alt=""></span>`
+      : c.glyph ? `<span class="cglyph">${esc(c.glyph)}</span>`
       : c.icon ? roundel(c.kind, true)
       : c.juris ? `<span class="ccross">${I.cross}</span>`
       : '';
@@ -974,7 +983,7 @@
       <div class="shelf-row">${cards}</div>`;
   }
   function renderCollections() {
-    shelf($('#shelf-collections'), 'Collections', 'Ready-made slices, for a first visit or a new habit', remember(curated()).map(c => collCard(c)).join(''));
+    shelf($('#shelf-collections'), 'Collections', null, remember(curated()).map(c => collCard(c)).join(''));
     shelf($('#shelf-languages'), 'By language', null, remember(languageCollections()).map(c => collCard(c, 'sm')).join(''));
     shelf($('#shelf-jurisdictions'), 'Jurisdictions', null, remember(jurisCollections()).map(c => collCard(c, 'wide')).join(''));
     renderLists();
@@ -1490,7 +1499,8 @@
     const regions = [...REGIONS, ...(f.location && !REGIONS.includes(f.location) ? [f.location] : [])]
       .map(r => fpill('location', r, f.location === r, esc(regionShort(r)))).join('');
     const lists = allLists().filter(l => l.ids.length);
-    const parishes = fpill('timesOnly', '1', f.timesOnly, 'With service times')
+    const parishes = fpill('monasteries', '1', f.monasteries, 'Monasteries')
+      + fpill('timesOnly', '1', f.timesOnly, 'With service times')
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
     return group('What', kinds, services) + group('Language', langs) + group('When', days, spans, parts)
       + group('Where', regions) + group('Parishes', parishes)
@@ -1524,7 +1534,7 @@
     else if (k === 'day') { f.day = f.day === +v ? null : +v; f.dayGroup = null; }
     else if (k === 'dayGroup') { flip('dayGroup', v); f.day = null; }
     else if (k === 'part' || k === 'service' || k === 'location') flip(k, v);
-    else if (k === 'timesOnly') f.timesOnly = !f.timesOnly;
+    else if (k === 'timesOnly' || k === 'monasteries') f[k] = !f[k];
     else if (k === 'list') {
       const l = f.listId === v ? null : listById(v);
       f.parishIds = l && l.ids.length ? new Set(l.ids) : null;
@@ -1874,7 +1884,7 @@
       else if (k === 'kind') { S.f.kind = null; S.f.kindSub = null; }
       else if (k === 'lang') { S.f.lang = null; S.f.langStrict = false; }
       else if (k === 'parishIds') { S.f.parishIds = null; S.f.listId = null; }
-      else S.f[k] = k === 'timesOnly' ? false : null;
+      else S.f[k] = k === 'timesOnly' || k === 'monasteries' ? false : null;
       refilter();
       return;
     }

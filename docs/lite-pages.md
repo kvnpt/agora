@@ -202,14 +202,25 @@ Not done yet, pending a real WhatsApp send: a small JPEG preview variant for pos
 
 ## Search
 
-Only the parish pages are for indexing: `index,follow` + self-canonical on
-`/<acronym>`, and `/sitemap.xml` lists them. Everything else — event pages, date, day
-and service variants, and every timetable page — is `noindex,follow`; the variants are
-an infinite URL space. The timetable pages are the likeliest to rank ("Greek Orthodox
-service times Queensland"), and the next step is to index jurisdiction and
-jurisdiction × state pages that have enough parishes with times, and list them in the
-sitemap — once Search Console shows more than the home page, and not while
-`/macedonian` would be an empty page.
+The parish pages and the collections are for indexing: `index,follow` + self-canonical
+on `/<acronym>`, and on each collection's own link — `/en`, `/sun/liturgy`,
+`/greek`, `/in-arabic`, `/monasteries`, the list in `public/shared/collections.js` —
+once its page lists somebody. `/sitemap.xml` lists both. A collection is what a link
+*means*, so `/liturgy/sunday` is `/sun/liturgy` and canonicalises to it. Everything
+else — event pages, date, day and service variants, a list picked by hand
+(`/smg+sgr`), every other mix of filters (`/greek/qld`) — is `noindex,follow`; the
+variants are an infinite URL space, and the collections are the ones somebody chose.
+That was the owner's ruling for v3 (October 2026); before it, only the parish pages
+were indexed, and the timetable pages waited on Search Console.
+
+**Each collection previews with its own card**, `public/og/c-<id>.jpg`, drawn by
+`scripts/build-og-images.mjs c-` in the colour of its card on the page's shelves. A
+jurisdiction's is its card (`/og/greek.jpg`) until `/admin` has a logo for it
+(Colours → Jurisdiction logos; table `jurisdiction_logos`, migration 027), and then
+the logo, as a parish previews with its own — except an SVG, which no chat app draws.
+`/next` gets the same: the Worker writes a collection's title, description and
+picture into `next.html`'s head for `/next/<collection>` (`worker/lib/next-page.mjs`),
+still `noindex` while it is the prototype.
 `public/robots.txt` points at the sitemap. The owner verifies orthodoxy.au in Google
 Search Console and submits the sitemap.
 

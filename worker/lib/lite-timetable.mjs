@@ -25,10 +25,12 @@
 import services from '../../public/shared/services.js';
 import locations from '../../public/shared/locations.js';
 import timetable from '../../public/shared/timetable.js';
+import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import eventTypes from '../../public/shared/event-types.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
+import { previewLogo } from './juris-logos.mjs';
 import {
   esc, jurisLabel, timetableLabel, avatarHTML, weekFrom, parishSlug, isNarrowed, liteDocument, scheduleRowsHTML,
 } from './lite-page.mjs';
@@ -69,10 +71,11 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
  *
  * `route` is url-state's classification of the path. `parishes` is every
  * parish (the scope is decided here, not in SQL, because a region is a
- * question for locations.js); `rules` every active rule. Null when the link
- * names parishes and none of them exists — the app answers that one.
+ * question for locations.js); `rules` every active rule. `logos` is /admin's
+ * jurisdiction logos, { greek: '/logos/…' }. Null when the link names
+ * parishes and none of them exists — the app answers that one.
  */
-export function timetableModel({ parishes, rules, route, now, origin, overrides = {} }) {
+export function timetableModel({ parishes, rules, route, now, origin, overrides = {}, logos = {} }) {
   // Several parishes by name: /smg+sgr. Acronym first, the id as the fallback,
   // in the order the link gives them — the same reading the app makes.
   let named = null;
@@ -86,7 +89,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     if (!named.length) return null;
   }
   const f = {
-    jurisdiction: route.jurisdiction, location: route.location,
+    jurisdiction: route.jurisdiction, location: route.location, monasteries: route.monasteries,
     service: route.service, day: route.day, dayGroup: route.dayGroup, part: route.part,
     kind: route.kind, kindSub: route.kindSub,
     lang: route.lang, langStrict: route.langStrict,
@@ -147,6 +150,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   const segs = [
     ...(route.jurisdiction ? [route.jurisdiction] : []),
     ...(loc ? [loc.slug] : []),
+    ...(route.monasteries ? ['monasteries'] : []),
     ...(route.day != null ? [services.daySlug(route.day)] : []),
     ...(route.dayGroup ? [route.dayGroup] : []),
     ...(route.part ? [route.part] : []),
@@ -155,7 +159,10 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     ...(named ? [named.map(parishSlug).join('+')] : []),
     ...(route.lang ? [urlState.englishSegment(route)] : []),
   ];
-  const canonicalPath = segs.length ? pathOf(segs) : '/timetables';
+  // A collection (shared/collections.js) is named by its own link, however
+  // this one spelt it: /liturgy/sun is /sun/liturgy.
+  const collection = named ? null : collections.collectionFor(route);
+  const canonicalPath = collection ? collection.path : segs.length ? pathOf(segs) : '/timetables';
 
   // The parishes a rule meets at, when it meets at another (venueLite).
   const venueIds = new Set(rules.map(r => r.location_parish_id).filter(Boolean));
@@ -164,7 +171,7 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
 
   return {
     route, named, loc, groups, parishCount, withoutTimes, scopeCount: scope.length, now, origin, venues,
-    listsAll,
+    listsAll, collection, logos,
     canonical: `${origin}${canonicalPath}`,
     // The dated feed for the same link, and the Schedules view, where the
     // parishes with no times are listed by name. ?app is the Worker's cue to
@@ -194,9 +201,10 @@ export function timetableHeading(m) {
   // English keeps its words ("fully-English"); another language is "Greek-only".
   const full = r.lang && r.langStrict ? (/^english$/i.test(r.lang) ? 'fully-English' : `${r.lang}-only`) : '';
   const sub = r.kind === 'services' && r.kindSub
-    ? `${EVENT_TYPE_LABEL(r.kindSub).toLowerCase()} services` : null;
-  const noun = svc || sub || (r.kind === 'services' ? (isNarrowed(r) ? 'services' : 'service times')
+    ? `${EVENT_TYPE_LABEL(r.kindSub).toLowerCase()} services` : (r.kindSub && OTHER_SUBS[r.kindSub]) || null;
+  let noun = svc || sub || OTHER_KINDS[r.kind] || (r.kind === 'services' ? (isNarrowed(r) ? 'services' : 'service times')
     : isNarrowed(r) || r.lang ? 'services' : 'parishes and times');
+  if (r.monasteries) noun = noun === 'parishes and times' ? 'monasteries and service times' : `${noun} at monasteries`;
   const day = r.day != null ? ` on ${services.dayName(r.day)}s`
     : r.dayGroup ? ` on ${services.dayGroupLabel(r.dayGroup).toLowerCase()}` : '';
   const lang = r.lang && !full ? ` in ${r.lang}` : '';
@@ -208,18 +216,48 @@ export function timetableHeading(m) {
   return [who, full, r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
 }
 
+// The feed's other kinds, which only /next names a page for (/talks, /social):
+// the app answers them at /.
+const OTHER_KINDS = { talks: 'talks and Bible studies', socials: 'youth groups and socials' };
+const OTHER_SUBS = { 'bible-study': 'Bible studies', youth: 'youth groups', social: 'social gatherings' };
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 export function timetableMeta(m) {
   const heading = timetableHeading(m);
   const listed = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes));
   const names = listed.slice(0, 4).map(x => x.parish.name).join(', ');
+  const which = listed.length
+    ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
+    : 'Nothing on file for this yet.';
   return {
     title: heading,
-    description: listed.length
-      ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
-      : 'Nothing on file for this yet.',
+    // A collection says what it holds first, then what it holds now.
+    description: m.collection ? `${m.collection.blurb} ${which}` : which,
   };
+}
+
+/**
+ * Is this page for a search engine? A collection's is, once it lists
+ * somebody: the owner's ruling of October 2026, which replaced "only the parish
+ * pages" (docs/lite-pages.md). Every other link stays noindex: a list picked
+ * by hand is its maker's, and the other mixes of filters are an endless space
+ * of near-copies of these.
+ */
+export function timetableIndexable(m) {
+  return !!m.collection && !m.named && m.groups.length > 0;
+}
+
+/**
+ * The preview's picture: a jurisdiction's logo once /admin has one, as a
+ * parish previews with its own; else the collection's card, else the
+ * jurisdiction's, else the site's.
+ */
+export function timetableImage(m) {
+  const j = m.route.jurisdiction;
+  const logo = m.collection && previewLogo(m.logos, m.collection.jurisdiction);
+  const path = logo || (m.collection && m.collection.image) || `/og/${OG_CARDS.has(j) ? j : 'default'}.jpg`;
+  return /^https?:/.test(path) ? path : `${m.origin}${path}`;
 }
 
 // ── markup ───────────────────────────────────────────────────────────────
@@ -276,8 +314,6 @@ function groupsHTML(m, vars) {
 export function renderTimetablePage(m) {
   const meta = timetableMeta(m);
   const sub = m.parishCount ? `${plural(m.parishCount, 'parish', 'parishes')} with times` : '';
-  // The jurisdiction's card, as a parish without a logo previews.
-  const image = `${m.origin}/og/${OG_CARDS.has(m.route.jurisdiction) ? m.route.jurisdiction : 'default'}.jpg`;
   // The page's colours, collected while the groups render: one custom property
   // per jurisdiction and per parish, each with the app's dark lift.
   const vars = { parish: m.color, parishDark: jurisColors.liftForDark(m.color) };
@@ -288,11 +324,9 @@ export function renderTimetablePage(m) {
     title: meta.title,
     description: meta.description,
     canonical: m.canonical,
-    // Not yet: Search Console has indexed nothing but the home page, and a
-    // mostly empty /macedonian is thin content. docs/lite-pages.md.
-    indexable: false,
+    indexable: timetableIndexable(m),
     ogType: 'website',
-    image,
+    image: timetableImage(m),
     color: m.color,
     vars,
     // The map with this page's filters: the dated feed's link, which is the

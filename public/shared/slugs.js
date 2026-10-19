@@ -37,6 +37,7 @@
   const PATH_KEYWORDS = ['social', 'social-gatherings', 'social-youth', 'services', 'prayer', 'talks',
     'worship', 'worship-liturgy', 'worship-prayer', 'worship-feast', 'services-liturgy', 'services-prayer',
     'services-feast', 'studies', 'this-week', 'last-week', 'this-month', 'timetables', 'timetable', 'parishes',
+    'monasteries', 'monastery',
     ...ENGLISH_SEGMENTS, ...ENGLISH_ONLY_SEGMENTS];
 
   // The second segment of a payment deep link, /<acronym>/donate. Reserved as

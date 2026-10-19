@@ -30,9 +30,11 @@ import { localDateOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml } from '../lib/data-version.mjs';
 import { liteModel, liteWindow, liteStartDate, renderLitePage } from '../lib/lite-page.mjs';
-import { timetableModel, renderTimetablePage } from '../lib/lite-timetable.mjs';
+import { timetableModel, timetableIndexable, renderTimetablePage } from '../lib/lite-timetable.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
 import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
+import { jurisdictionLogos } from '../lib/juris-logos.mjs';
+import collections from '../../public/shared/collections.js';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
@@ -69,24 +71,41 @@ export function liteKind(pathname, now = Date.now()) {
 
 // The parish columns the timetable page reads — address and pin for the
 // region, languages for /en, and nothing an admin wrote about themselves.
-const TIMETABLE_PARISH_COLS = `id, name, jurisdiction, address, lat, lng, timezone, acronym, languages,
+const TIMETABLE_PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone, acronym, languages,
   logo_path`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
   languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
   source_name, source_ref, source_checked_at, location_override, location_parish_id`;
 
-async function buildTimetable(env, url, kind, now) {
-  const [parishes, rules, overrides] = await Promise.all([
+/** What every timetable page reads: the parishes, their rules, /admin's colours and logos. */
+async function timetableRows(env) {
+  const [parishes, rules, overrides, logos] = await Promise.all([
     env.DB.prepare(`SELECT ${TIMETABLE_PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
     env.DB.prepare(`SELECT ${TIMETABLE_RULE_COLS} FROM schedules WHERE active = 1`).all(),
     // The colours /admin set, which the app paints and the page has to match.
     jurisdictionColorOverrides(env.DB),
+    jurisdictionLogos(env.DB),
   ]);
-  const model = timetableModel({
-    parishes: parishes.results || [], rules: rules.results || [],
-    route: kind.route, now, origin: url.origin, overrides,
-  });
+  return { parishes: parishes.results || [], rules: rules.results || [], overrides, logos };
+}
+
+async function buildTimetable(env, url, kind, now) {
+  const model = timetableModel({ ...await timetableRows(env), route: kind.route, now, origin: url.origin });
   return model ? renderTimetablePage(model) : null;
+}
+
+/**
+ * The collections a search engine is offered: the ones the Worker answers
+ * with a page (/talks and /social are the app's dated feed, not a timetable)
+ * whose page lists somebody — timetableIndexable, asked of each.
+ */
+export function indexedCollections({ parishes, rules, overrides, logos }, now, origin) {
+  return collections.COLLECTIONS.filter(c => {
+    const kind = liteKind(c.path, now);
+    if (!kind || kind.kind !== 'timetable') return false;
+    const m = timetableModel({ parishes, rules, overrides, logos, route: kind.route, now, origin });
+    return !!m && timetableIndexable(m);
+  });
 }
 
 async function findParish(db, slug) {
@@ -190,11 +209,14 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
     return cachedHtml({
       request, env, ctx, name: 'sitemap.xml', type: 'application/xml; charset=utf-8',
       build: async () => {
-        const r = await env.DB.prepare(
-          `SELECT id, acronym, info_checked_at, updated_at FROM parishes
-           WHERE id != '_unassigned' ORDER BY name`
-        ).all();
-        return sitemapXml(r.results || [], url.origin);
+        const [r, rows] = await Promise.all([
+          env.DB.prepare(
+            `SELECT id, acronym, info_checked_at, updated_at FROM parishes
+             WHERE id != '_unassigned' ORDER BY name`
+          ).all(),
+          timetableRows(env),
+        ]);
+        return sitemapXml(r.results || [], url.origin, indexedCollections(rows, now, url.origin));
       },
     });
   }

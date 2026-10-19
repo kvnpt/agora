@@ -14,6 +14,9 @@ import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
 import { isProbePath, probeResponse } from './lib/probe.mjs';
 import { adminHostRedirect } from './lib/admin-host.mjs';
+import { nextCollection, nextMeta, withHead } from './lib/next-page.mjs';
+import { jurisdictionLogos } from './lib/juris-logos.mjs';
+import { localDateOf } from '../public/shared/tz.mjs';
 import slugs from '../public/shared/slugs.js';
 
 const router = new Router();
@@ -96,6 +99,33 @@ export function nextPrototype(request) {
   return new Request(new URL('/next', url), request);
 }
 
+/**
+ * /next for this request: the page, with a collection's title, description
+ * and picture in its head when the link means one (lib/next-page.mjs). Fails
+ * open to the page as it is.
+ */
+export async function serveNext(request, env) {
+  const url = new URL(request.url);
+  const found = nextCollection(url.pathname, { today: localDateOf('Australia/Sydney', Date.now()) });
+  if (!found) return env.ASSETS.fetch(nextPrototype(request));
+  try {
+    // Unconditional: the page's own ETag is the same for every link under it,
+    // and this answer is not.
+    const [asset, logos] = await Promise.all([
+      env.ASSETS.fetch(new Request(new URL('/next', url))),
+      found.collection.jurisdiction ? jurisdictionLogos(env.DB) : {},
+    ]);
+    if (!asset.ok) return asset;
+    const html = withHead(await asset.text(), nextMeta(found, { origin: url.origin, logos }));
+    return new Response(request.method === 'HEAD' ? null : html, {
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' },
+    });
+  } catch (err) {
+    console.error(`[next] ${url.pathname}: ${err && err.message}`);
+    return env.ASSETS.fetch(nextPrototype(request));
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     // /.env, /.git/config, /wp-login.php: a scanner's, answered before the
@@ -107,8 +137,7 @@ export default {
     if (toAdminHost) return toAdminHost;
     // /next, the next version while it is a prototype: every path under it is
     // the one page, which reads its own address (/next/greek/en, /next/sgr).
-    const nextPage = nextPrototype(request);
-    if (nextPage) return env.ASSETS.fetch(nextPage);
+    if (nextPrototype(request)) return serveNext(request, env);
     try {
       const res = await router.handle(request, env, ctx);
       // A write that landed moves the data version, so the next /api/bundle

@@ -8,6 +8,16 @@
   <meta name="theme-color" content="#0f1013" media="(prefers-color-scheme: dark)">
   <meta name="robots" content="noindex">
   <title>orthodoxy.au · next</title>
+  <!-- The preview a chat app shows. A link that means a collection (/next/en,
+       /next/greek) gets its own, written in by the Worker
+       (worker/lib/next-page.mjs), which rewrites these tags in place. -->
+  <meta name="description" content="Service times and events at Orthodox parishes across Australia and New Zealand, on one map.">
+  <meta property="og:site_name" content="orthodoxy.au">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Orthodox Services &amp; Events">
+  <meta property="og:description" content="Service times and events at Orthodox parishes across Australia and New Zealand, on one map.">
+  <meta property="og:image" content="https://orthodoxy.au/og/default.jpg">
+  <meta name="twitter:card" content="summary_large_image">
   <!-- A prototype of the next version: a page around a map rather than a map
        under a sheet. It reads the same /api/bundle through the same bundle.js
        and /shared/ projection as the app, and writes nothing but this
@@ -126,6 +136,7 @@
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
   <script src="/shared/url-state.js"></script>
+  <script src="/shared/collections.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
