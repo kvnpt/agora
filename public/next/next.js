@@ -595,7 +595,7 @@
     const t = todayKey();
     const from = new Date(Date.now() - 6 * 3600000).toISOString();
     const to = new Date(Date.parse(addDays(t, days) + 'T14:00:00Z')).toISOString();
-    const key = `${from.slice(0, 13)}|${to}`;
+    const key = `${from.slice(0, 13)}|${to}|${S.loads}`;
     if (feedCache.key !== key) {
       const list = window.agoraBundle.feed(from, to).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
       feedCache = { key, list };
@@ -626,6 +626,9 @@
     share: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     pencil: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+    signIn: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l4-4-4-4M14 12H4"/></svg>',
+    signOut: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M16 16l4-4-4-4M20 12H10"/></svg>',
+    sliders: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4v6M5 14v6M12 4v10M12 18v2M19 4v2M19 10v10"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="16" r="2"/><circle cx="19" cy="8" r="2"/></svg>',
     plusSm: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
     starOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
@@ -1290,6 +1293,85 @@
     return feedFor(Math.max(S.streamDays, 14)).find(e => Date.parse(e.start_utc) > now && eventParishIds(e).includes(pid) && visible(e) && pred(e)) || null;
   }
 
+  // ── Signed in ─────────────────────────────────────────────────────────
+  //
+  // The app's way of knowing (app.js checkAdmin, adminMay). /api/admin/ping is
+  // the Worker reading the Access token Cloudflare put on the request, so its
+  // answer IS whether this browser may administer, and `can` is the capability
+  // map from worker/lib/roles.mjs that every route re-checks. Signed in is not
+  // editing: what this decides is which controls a card offers, never whether
+  // a write is allowed.
+
+  const NOBODY = { signedIn: false, identity: null, role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0, suggestions: 0 };
+  S.who = NOBODY;
+  async function checkSignIn() {
+    const ping = await fetch('/api/admin/ping', { cache: 'no-store' }).catch(() => null);
+    const who = ping && ping.ok ? await ping.json().catch(() => null) : null;
+    S.who = who ? {
+      signedIn: true,
+      identity: typeof who.identity === 'string' ? who.identity : null,
+      role: who.role || null,
+      parishIds: who.parishIds || [],
+      can: who.can || {},
+      // What is waiting on this person: an owner's asks, a contact's notices,
+      // and suggestions at the parishes they may edit (the Worker scopes all three).
+      openAsks: who.openAsks || 0,
+      parishNotices: who.parishNotices || 0,
+      suggestions: who.suggestions || 0,
+    } : NOBODY;
+    // The cookie the Worker reads to answer a parish link with the app rather
+    // than its lite card (worker/routes/pages.mjs). It grants nothing.
+    try {
+      document.cookie = S.who.role
+        ? 'agora_admin=1; path=/; max-age=2592000; samesite=lax; secure'
+        : 'agora_admin=; path=/; max-age=0; samesite=lax; secure';
+    } catch { /* refused cookies only mean the lite card */ }
+    syncAccount();
+    // A card drawn before the answer came was drawn for a visitor.
+    if (S.who.signedIn) for (const el of stack) if (el.classList.contains('parish')) repaintParish(el);
+  }
+  /**
+   * May this account do `capability`, at this parish? The Worker's two
+   * questions in its order: the role's map, then (for a parish contact only)
+   * whether the parish is theirs.
+   */
+  function may(capability, parishId = null) {
+    const w = S.who;
+    if (!w.signedIn || !w.can[capability]) return false;
+    if (w.role !== 'parish') return true;
+    return !!parishId && w.parishIds.includes(parishId);
+  }
+  /** What is waiting, in words, or ''. */
+  function waiting() {
+    const { openAsks: a, parishNotices: n, suggestions: g } = S.who;
+    return [a && `${a} ${a === 1 ? 'ask' : 'asks'} waiting`, n && `${n} new at your ${n === 1 ? 'parish' : 'parishes'}`,
+      g && `${g} ${g === 1 ? 'suggestion' : 'suggestions'}`].filter(Boolean).join(', ');
+  }
+  function syncAccount() {
+    const btn = $('#btn-account');
+    const w = waiting();
+    btn.classList.toggle('signed-in', S.who.signedIn);
+    $('#account-dot').hidden = !(S.who.signedIn && w);
+    const label = !S.who.signedIn ? 'Sign in' : w ? `Account: ${w}` : 'Account';
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
+  // Signing in is a redirect Cloudflare owns: /admin is behind Access, so going
+  // there is what shows its sign-in, and signing out is its own logout path.
+  function openAccount() {
+    const w = waiting();
+    const rows = S.who.signedIn
+      ? `<a class="lrow" href="/admin">${I.sliders}<span class="ln"><b>Admin panel</b>${w ? `<small>${esc(w)}</small>` : ''}</span></a>
+         <a class="lrow" href="/cdn-cgi/access/logout">${I.signOut}<span class="ln"><b>Sign out</b></span></a>`
+      : `<a class="lrow" href="/admin">${I.signIn}<span class="ln"><b>Sign in</b></span></a>`;
+    const html = `<div class="lay-head"><h2>${S.who.signedIn ? 'Account' : 'Sign in'}</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
+      <div class="sheet-scroll">
+        ${S.who.signedIn && S.who.identity ? `<p class="lay-note">${esc(S.who.identity)}</p>` : ''}
+        <div class="lists">${rows}</div>
+      </div>`;
+    pushSheet(html, 'mini');
+  }
+
   // ── Contributing, and where things came from ───────────────────────────
   //
   // Wherever somebody could add something, a dotted "Add +". It opens the
@@ -1315,6 +1397,10 @@
       .sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(b.start_time))
       .map(serviceLine))];
   }
+  // "Suggest an edit" is for whoever cannot make the edit themselves, as the
+  // app's "Suggest edits" is (app.js contributeButtonHTML).
+  const suggestsHere = (pid) => !may('schedule.edit', pid);
+  const suggestEditHTML = (pid) => (suggestsHere(pid) ? '<button class="wide-btn" type="button" data-suggest="">Suggest an edit</button>' : '');
   function suggest(pid, about = '') {
     const p = S.byId.get(pid);
     if (!p || !window.AgoraSuggest) return;
@@ -1357,6 +1443,34 @@
     refreshComingUp(el);
   }
 
+  function timesHTML(p) {
+    const hasTimes = rulesOf(p.id).some(liveRule);
+    return `${hasTimes ? timetable(p.id) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+      ${timesSource(p.id)}
+      ${addBox(SUGGEST.service, 'Add a service time')}`;
+  }
+  function detailsHTML(p) {
+    return `<div class="details">
+        ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a></div>` : ''}
+        ${p.website ? `<div class="drow"><small>Website</small><a href="${esc(p.website)}" target="_blank" rel="noopener">${esc(p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a></div>` : ''}
+        ${p.email ? `<div class="drow"><small>Email</small><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}
+        ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
+        ${p.feast_day ? `<div class="drow"><small>Feast day</small><span>${esc(p.feast_day)}</span></div>` : ''}
+      </div>
+      ${detailsSource(p)}`;
+  }
+  /** An open card again, from the bundle as it now is, where it was scrolled to. */
+  function repaintParish(el) {
+    const p = S.byId.get(el.dataset.pid);
+    if (!p) return;
+    const times = el.querySelector('.p-times'), details = el.querySelector('.p-details');
+    if (times) times.innerHTML = timesHTML(p);
+    if (details) details.innerHTML = detailsHTML(p);
+    const sug = el.querySelector('.p-suggest');
+    if (sug) sug.innerHTML = suggestEditHTML(p.id);
+    refreshComingUp(el);
+  }
+
   function openParish(pid, { entry = true, from = null } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
@@ -1364,7 +1478,6 @@
     const d = distOf(p);
     const nextLit = nextOf(pid, e => e.event_type === 'liturgy') || nextOf(pid);
     const langs = parishLangs(p);
-    const hasTimes = rulesOf(pid).some(liveRule);
     const summary = [
       `<div class="sum"><small>${nextLit ? `Next ${esc(kindLabel(nextLit.event_type))}` : 'Next'}</small><b class="${nextLit ? 'ok' : ''}">${nextLit ? summaryWhen(nextLit) : '—'}</b></div>`,
       `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>`,
@@ -1386,25 +1499,16 @@
         </div>
         <div class="summary">${summary}</div>
         <h2 class="sec">Service times</h2>
-        ${hasTimes ? timetable(pid) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
-        ${timesSource(pid)}
-        ${addBox(SUGGEST.service, 'Add a service time')}
+        <div class="p-times">${timesHTML(p)}</div>
         <h2 class="sec">Details</h2>
-        <div class="details">
-          ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a></div>` : ''}
-          ${p.website ? `<div class="drow"><small>Website</small><a href="${esc(p.website)}" target="_blank" rel="noopener">${esc(p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a></div>` : ''}
-          ${p.email ? `<div class="drow"><small>Email</small><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}
-          ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
-          ${p.feast_day ? `<div class="drow"><small>Feast day</small><span>${esc(p.feast_day)}</span></div>` : ''}
-        </div>
-        ${detailsSource(p)}
+        <div class="p-details">${detailsHTML(p)}</div>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
           <h2 class="sec">Coming up</h2>
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
-        <button class="wide-btn" type="button" data-suggest="">Suggest an edit</button>
+        <div class="p-suggest">${suggestEditHTML(pid)}</div>
         <div class="toolbar-space"></div>
       </div>
       <div class="floatbar" role="toolbar">
@@ -1501,7 +1605,7 @@
         </div>
         ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
         ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
-        ${p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
+        ${p && !may('event.edit', p.id) ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
         <div class="toolbar-space sm"></div>
       </div>`;
     const el = pushSheet(html, 'event', { segs, entry });
@@ -1620,7 +1724,7 @@
         <button class="lrow" type="button" data-act="juris-of">${jurisLogo(p.jurisdiction)
           ? `<span class="lrow-ic"><img src="${esc(jurisLogo(p.jurisdiction))}" alt=""></span>`
           : `<span class="lrow-ic">${I.cross.replace('<svg', '<svg width="14" height="22"')}</span>`}<span class="ln"><b>More ${esc(JURIS[p.jurisdiction]?.long || '')} parishes</b></span></button>
-        <button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b></span></button>
+        ${suggestsHere(pid) ? `<button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b></span></button>` : ''}
         <a class="lrow" href="/${esc((p.acronym || '').toLowerCase())}" target="_blank" rel="noopener">${I.chev}<span class="ln"><b>Open in the current app</b></span></a>
       </div></div>`;
     const el = pushSheet(html, 'mini');
@@ -1955,7 +2059,13 @@
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
     if ((b = t.closest('[data-suggest]'))) {
       const under = stack.filter(x => x.dataset.pid).pop();
-      suggest(b.dataset.pid || (under && under.dataset.pid), b.dataset.suggest);
+      const pid = b.dataset.pid || (under && under.dataset.pid);
+      // Somebody who may add it adds it, in the app's editor; anybody else suggests it.
+      if (b.classList.contains('add-box') && b.dataset.suggest === SUGGEST.event && may('event.edit', pid)) {
+        window.NextEdit.addEvent(pid);
+        return;
+      }
+      suggest(pid, b.dataset.suggest);
       return;
     }
     if ((b = t.closest('[data-parish]'))) { openParish(b.dataset.parish); return; }
@@ -2060,28 +2170,68 @@
     if (e.key === '/' && !stack.length && !/input|textarea/i.test(document.activeElement?.tagName || '')) { e.preventDefault(); openSearch(); }
   });
   $('#btn-locate').addEventListener('click', locate);
+  $('#btn-account').addEventListener('click', openAccount);
   $('#place').addEventListener('click', locate);
 
   new IntersectionObserver((ents) => { if (ents.some(e => e.isIntersecting)) growStream(); }, { rootMargin: '600px' }).observe($('#stream-more'));
 
+  // ── The bundle, held and re-read ──────────────────────────────────────
+
+  /** What the page reads from the bundle it has just been given. */
+  function adopt() {
+    S.parishes = window.agoraBundle.parishes();
+    S.byId = new Map(S.parishes.map(p => [p.id, p]));
+    S.rules = window.agoraBundle.schedules();
+    S.rulesByParish = new Map();
+    for (const r of S.rules) {
+      if (!S.rulesByParish.has(r.parish_id)) S.rulesByParish.set(r.parish_id, []);
+      S.rulesByParish.get(r.parish_id).push(r);
+    }
+  }
+  /**
+   * After a write: the bundle again, past the browser's copy, as the app does
+   * (app.js fetchSchedules({ fresh })), then the page and every open card
+   * drawn from it. `through` is a day the page must now hold, such as the
+   * last date of an event just published.
+   */
+  async function reload({ through = null } = {}) {
+    const end = [S.loadedTo, through, addDays(todayKey(), 60)].filter(Boolean).sort().pop();
+    await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(end + 'T14:00:00Z')).toISOString(), fresh: true });
+    S.loadedTo = end;
+    S.loads++;
+    adopt();
+    renderInView();
+    renderFeeds();
+    syncMap();
+    for (const el of stack) if (el.classList.contains('parish')) repaintParish(el);
+  }
+
+  // What editing.js works on: this page, through the same questions it asks itself.
+  if (window.NextEdit) {
+    window.NextEdit.init({
+      parish: (id) => S.byId.get(id),
+      parishes: () => S.parishes,
+      may,
+      reload,
+      openParish: (id) => openParish(id),
+      toast,
+      recheck: checkSignIn,
+    });
+  }
+
   // ── Boot ──────────────────────────────────────────────────────────────
 
   async function boot() {
+    // Who is looking, alongside everything else; the cards ask it as they open.
+    checkSignIn();
     const mapStarted = startMap().catch(err => console.warn('map', err));
     const t = todayKey();
     // The loader's tree grows with each real step, as it does at / (app.js).
     const step = (line, p) => { if (window.lsLog) window.lsLog(line); if (window.lsProgress) window.lsProgress(p); };
     step('GET /api/bundle …', 0.15);
     await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(addDays(t, 60) + 'T14:00:00Z')).toISOString() });
-    S.parishes = window.agoraBundle.parishes();
-    S.byId = new Map(S.parishes.map(p => [p.id, p]));
-    S.rules = window.agoraBundle.schedules();
+    adopt();
     step(`✓ ${S.parishes.length} parishes, ${S.rules.length} service times`, 0.6);
-    S.rulesByParish = new Map();
-    for (const r of S.rules) {
-      if (!S.rulesByParish.has(r.parish_id)) S.rulesByParish.set(r.parish_id, []);
-      S.rulesByParish.get(r.parish_id).push(r);
-    }
     if (S.loc) document.body.classList.add('located');
     // What the address asks for. The older /next#sgr is /next/sgr.
     const route = readPath(location.pathname);

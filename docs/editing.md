@@ -196,9 +196,11 @@ that is absent and a route that refuses cannot disagree. An owner and an editor
 see it on every sheet; a parish contact sees it on their own parishes only.
 
 **Adding an event is a draft until Publish.** The add-event editor
-(`public/shared/event-editor.js`) is one component with two hosts — the parish
-sheet's + in the app, and **Events** in /admin — because the old dialog lived
-only in app.js and /admin had none, and two forms would drift. It saves every
+(`public/shared/event-editor.js`) is one component with three hosts — the parish
+sheet's + in the app, **Events** in /admin, and the dotted **Add +** under a
+`/next` card's Coming up for whoever may add one there
+(`public/next/editing.js`) — because the old dialog lived only in app.js and
+/admin had none, and two forms would drift. It saves every
 card a moment after the typing stops into `drafts` / `draft_events`
 (`worker/lib/drafts.mjs`), so closing it loses nothing and **Save draft** is
 just closing it. A draft is made by the first thing typed or by a dropped

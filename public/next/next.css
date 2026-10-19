@@ -110,6 +110,14 @@ main { padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
   background: var(--card); box-shadow: var(--shadow);
 }
 body.located #btn-locate { color: var(--accent); }
+#btn-account { color: var(--text-2); }
+#btn-account.signed-in { color: var(--accent); }
+/* Something is waiting for this person (app.css .account-dot). */
+.account-dot {
+  position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--danger); box-shadow: 0 0 0 2px var(--card); pointer-events: none;
+}
+.account-dot[hidden] { display: none; }
 
 /* ── The viewport: tabs, map, in-view chip ───────────────────────────────
    The app's own pieces (app.css), framed in hairlines rather than lifted on
@@ -841,26 +849,68 @@ body.map-full .parish-row {
   mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20256%20256%27%3E%3Cpath%20d%3D%27M200%2C64V168a8%2C8%2C0%2C0%2C1-16%2C0V83.31L69.66%2C197.66a8%2C8%2C0%2C0%2C1-11.32-11.32L172.69%2C72H88a8%2C8%2C0%2C0%2C1%2C0-16H192A8%2C8%2C0%2C0%2C1%2C200%2C64Z%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
 }
 
-/* The app's suggest dialog (public/shared/suggest-dialog.js). It brings
-   app.css's class names, and this page does not load app.css, so here is the
-   part of it the dialog wears, in this page's tokens. */
-.suggest-dialog {
-  position: fixed; inset: 0; z-index: 3200;
+/* The app's dialogs: the suggest dialog (public/shared/suggest-dialog.js),
+   and for somebody who may edit, the add-event editor
+   (/shared/event-editor.js, with /shared/event-editor.css) and the questions
+   an edit asks (/next/editing.js). They bring app.css's class names, and this
+   page does not load app.css, so here is the part of it they wear, in this
+   page's tokens. */
+.escalate-backdrop {
+  position: fixed; inset: 0; z-index: 3000;
   display: flex; align-items: center; justify-content: center;
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
   background: rgba(0, 0, 0, 0.45);
 }
-.suggest-dialog .escalate-modal {
+.choice-backdrop { z-index: 3100; }
+.suggest-dialog { z-index: 3200; }
+body.dialog-open { overflow: hidden; }
+.escalate-modal {
+  /* app.css's names, which the editor's stylesheet reads, for this page's colours. */
+  --bg: var(--card);
+  --surface: var(--card);
+  --surface-2: var(--card-2);
+  --soft-bg: var(--card-2);
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+  --muted: var(--text-2);
+  --border-light: var(--line);
+  --accent-text: var(--accent);
+  --accent-ring: color-mix(in srgb, var(--accent) 25%, transparent);
   position: relative; width: 100%; max-width: 480px; max-height: 88dvh; overflow-y: auto;
   padding: 20px; border-radius: 18px; background: var(--card); color: var(--text); box-shadow: var(--shadow-lift);
 }
-.suggest-dialog h2 { padding-right: 36px; font-size: 17px; font-weight: 700; }
-.suggest-dialog .escalate-modal-sub { margin: 2px 0 14px; font-size: 13px; color: var(--text-2); }
-.suggest-dialog .donate-close {
+.form-modal { max-width: 560px; }
+/* The editor's own action bar sticks to the foot and carries its own padding. */
+.new-event-modal { padding-bottom: 0; }
+@media (min-width: 900px) { .new-event-modal:has(.ee.has-poster) { max-width: 940px; } }
+.escalate-modal h2 { margin: 0 0 12px; padding-right: 36px; font-size: 17px; font-weight: 700; }
+.escalate-modal-sub { margin: -10px 0 14px; font-size: 13px; color: var(--text-2); }
+.donate-close {
   position: absolute; top: 12px; right: 14px; width: 28px; height: 28px;
   font-size: 22px; line-height: 1; color: var(--text-2); text-align: center;
 }
-.suggest-dialog .donate-close:hover { color: var(--text); }
+.donate-close:hover { color: var(--text); }
+/* askChoice: one question, its answers, each saying what it will do. */
+.choice-modal { max-width: 420px; }
+.choice-body { margin: 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.choice-body p { margin: 0; }
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.choice-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 12px 14px; text-align: left; color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+}
+.choice-opt:hover, .choice-opt:focus-visible { outline: none; border-color: var(--text); }
+.choice-opt.danger .choice-label { color: var(--danger); }
+.choice-label { font-size: 15px; font-weight: 600; }
+.choice-hint { font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.escalate-modal .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.escalate-modal .btn-outline, .escalate-modal .btn-save {
+  min-height: 44px; padding: 11px 22px; border-radius: 999px; font-size: 15px; font-weight: 600; line-height: 1.2;
+}
+.escalate-modal .btn-outline { border: 1px solid var(--border); color: var(--text); }
+.escalate-modal .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
+.escalate-modal .btn-save:disabled { opacity: .7; }
 .sg-form { margin: 0; }
 .sg-form .edit-row { margin-bottom: 12px; }
 .sg-form input:not([type=checkbox]), .sg-form textarea, .sg-form select {
@@ -884,13 +934,6 @@ body.map-full .parish-row {
 .sg-check b { font-size: 15px; font-weight: 600; }
 .sg-error { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--danger); }
 .sg-form [hidden], .sg-error[hidden] { display: none !important; }
-.sg-form .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.sg-form .btn-save, .sg-form .btn-outline {
-  min-height: 44px; padding: 11px 22px; border-radius: 999px; font-size: 15px; font-weight: 600; line-height: 1.2;
-}
-.sg-form .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
-.sg-form .btn-save:disabled { opacity: .7; }
-.sg-form .btn-outline { border: 1px solid var(--border); color: var(--text); }
 .sg-form .edit-row-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
 
 /* ── The gum-tree loader (public/shared/loading-screen.js; app.css) ─────

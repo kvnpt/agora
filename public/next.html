@@ -20,9 +20,10 @@
   <meta name="twitter:card" content="summary_large_image">
   <!-- A prototype of the next version: a page around a map rather than a map
        under a sheet. It reads the same /api/bundle through the same bundle.js
-       and /shared/ projection as the app, and writes nothing but this
-       browser's lists. -->
+       and /shared/ projection as the app. Somebody signed in edits through
+       the same /api/admin routes the app does. -->
   <link rel="stylesheet" href="/lib/maplibre-gl.css">
+  <link rel="stylesheet" href="/shared/event-editor.css">
   <link rel="stylesheet" href="/next/next.css">
 </head>
 <body>
@@ -32,6 +33,12 @@
       <span class="place-sub" id="place-sub">orthodoxy.au</span>
     </button>
     <div class="top-actions">
+      <!-- The account: a way in when nobody is signed in, the panel and the
+           way out when somebody is (next.js, checkSignIn). -->
+      <button class="round-btn" type="button" id="btn-account" aria-label="Sign in" title="Sign in">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3.3"/><path d="M6.2 18.6a7 7 0 0 1 11.6 0"/></svg>
+        <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
+      </button>
       <button class="round-btn" type="button" id="btn-locate" aria-label="Near me" title="Near me">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
       </button>
@@ -148,11 +155,22 @@
   <!-- Where things came from, and "Suggest an edit" before the sign-in. -->
   <script src="/shared/source-line.js"></script>
   <script src="/shared/suggest-dialog.js"></script>
+  <!-- For somebody who may edit (next/editing.js): the app's add-event
+       editor and what it rests on, in /admin's order. -->
+  <script src="/shared/read-from.js"></script>
+  <script src="/shared/logo-image.js"></script>
+  <script src="/shared/kind-picker.js"></script>
+  <script src="/shared/event-checks.js"></script>
+  <script src="/shared/sse.js"></script>
+  <script src="/shared/signs.js"></script>
+  <script src="/shared/venue-picker.js"></script>
+  <script src="/shared/event-editor.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
   <script src="/map.js"></script>
   <script src="/bundle.js"></script>
+  <script src="/next/editing.js"></script>
   <script src="/next/next.js"></script>
 </body>
 </html>
