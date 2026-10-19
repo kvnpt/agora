@@ -224,10 +224,11 @@ test('the stack a visitor gets is the clustered one', () => {
 
 test('grapes gather only dots that would touch, and never close in', () => {
   // A grape where four churches a street apart should be four dots was the
-  // complaint: 38px and clustering up to MapLibre's default zoom 14.
-  assert.ok(SOURCES.parishes.clusterRadius <= 33, 'the radius gathers only parishes close to touching');
-  assert.ok(SOURCES.parishes.clusterMaxZoom != null && SOURCES.parishes.clusterMaxZoom <= 11,
-    'grapes form at suburb zoom again (no clusterMaxZoom means 14)');
+  // complaint: 38px and clustering up to MapLibre's default zoom 14. Then
+  // 33px, still dots a person could tell apart ("only when very close").
+  assert.ok(SOURCES.parishes.clusterRadius <= 12, 'the radius gathers only parishes whose dots would sit on each other');
+  assert.ok(SOURCES.parishes.clusterMaxZoom != null && SOURCES.parishes.clusterMaxZoom <= 10,
+    'grapes form at a city\'s zoom again (no clusterMaxZoom means 14)');
 });
 
 // ── Halos ────────────────────────────────────────────────────────────────

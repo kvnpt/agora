@@ -143,7 +143,10 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
   assert.match(c, /<div class="gtitle"><b>St George Cathedral, Redfern<\/b><small>Antiochian Orthodox<\/small><\/div>/);
   assert.match(c, /<a class="gbtn" href="\/" aria-label="Close">/);
   assert.match(c, /<h1>St George Antiochian Orthodox Cathedral<\/h1>/);
-  assert.match(c, /<a class="abtn primary" href="https:\/\/www\.google\.com\/maps\/search\/\?api=1&amp;query=-33\.891,151\.2089"/);
+  assert.match(c, /<a class="abtn primary" href="https:\/\/www\.google\.com\/maps\/search\/\?api=1&amp;query=-33\.891,151\.2089" target="_blank" rel="noopener"><svg[^]*?<span>Google Maps<\/span>/,
+    'Google Maps, at the place, never directions to it');
+  assert.doesNotMatch(c, /maps\/dir\//);
+  assert.match(c, /<a class="sum sum-link" href="\/antiochian"><small>Jurisdiction<\/small>/, 'the jurisdiction opens its collection');
   assert.match(timesOf(html), /<span class="tt-days">Sun<\/span>\s*<span class="t-time">10<span class="t-mer">am<\/span><\/span>[\s\S]*<span class="tt-title">Sunday Divine Liturgy/);
   assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><a class="erow" href="\/\d+:2026-10-04">/,
     'the next fortnight, day by day, each date its own link');
@@ -303,7 +306,7 @@ test('an event and a rule held at another parish, or a place, say where', async 
     "the parish it is at, by that parish's own address");
   const place = card((await get(`/${away}`)).html);
   assert.match(place, /<small>Where<\/small><span>Antiochian Village, Kangaroo Valley<\/span>/);
-  assert.match(place, /destination=-34\.75,150\.53/, 'and Directions go there');
+  assert.match(place, /maps\/search\/\?api=1&amp;query=-34\.75,150\.53"[^>]*>.*<span>Google Maps<\/span>/, 'and Google Maps opens there, not directions to it');
 });
 
 test('the home page is the site, indexable; anything else is the page with its words, noindex', async () => {
@@ -522,7 +525,7 @@ test('a collection is indexed, under its own name, with its own preview and its 
   assert.equal(meta(en, 'property', 'og:image'), 'https://orthodoxy.au/og/c-english.jpg');
   const c = card(en);
   assert.match(c, /^<section class="sheet collection open ssr" role="dialog" aria-label="English services">/);
-  assert.match(c, /<div class="chero" style="background:linear-gradient\(135deg,#1d4ed8,#0ea5e9\)">\s*<span class="ckicker">Language<\/span>\s*<h1>English services<\/h1>/,
+  assert.match(c, /<div class="chero soft" style="--c:#1d4ed8">\s*<span class="ckicker">Language<\/span>\s*<h1>English services<\/h1>/,
     "in the collection's own look (collections.js)");
   assert.match(c, /<a class="citem-head" href="\/sgr">[\s\S]*?<b>St George Cathedral, Redfern<\/b>/, 'each parish a link to its card');
   assert.match(c, /<div class="tt compact"/, 'with its times');

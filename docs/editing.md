@@ -112,7 +112,7 @@ open from a pencil on the card's **Details** heading (`editDetails`, for
 `parish.edit`): the logo (with the app's cropper), the names and jurisdiction, then
 each line of Details as its field (phone, website, email, address), the pin
 (Locate, or Move on a map of its own, which every venue's "Move the pin" uses too),
-the Google Maps place Directions opens, languages, the short link, the live
+the Google Maps place its Google Maps button opens, languages, the short link, the live
 stream, the links (their own dialog), and where the parish is read from. The short
 link is an owner's (`parish.acronym`); anybody else sees it with **Ask an owner to
 change it**, which files the same ask /admin's does. Delete parish is at the foot of
@@ -150,9 +150,11 @@ over the page (`frame` in `public/next/editing.js`), and the dialogs a form
 opens in turn (Combine, Break, "which dates", the logo editor) stack above it.
 Saving closes it, the page re-reads the bundle fresh and repaints what is open.
 
-**Directions** opens the parish's place in Google Maps — `parishes.maps_url`
-when somebody picked its Maps entry (a Places search through `POST
-/api/admin/places`, or a pasted link) — and a route to the pin otherwise.
+**Google Maps** opens the parish's place there — `parishes.maps_url` when
+somebody picked its Maps entry (a Places search through `POST
+/api/admin/places`, or a pasted link) — and its pin otherwise: the place,
+never a route to it (October 2026, the owner's ruling; it was Directions to
+`/maps/dir/` before). An event's opens its own pin, or its venue's.
 
 **Three different things are called "hide", and only one of them hides an
 event.** Worth knowing before reaching for one:
@@ -422,7 +424,7 @@ in the venue's sheet and its filters, and in `combined_parishes` only if a
 combine put it there — the COMBINED badge and "@ host" read that one. Cards say
 "@ St Nicholas, Bankstown" or "@ Antiochian Village" (the place's first words)
 everywhere but the venue's own sheet; the drawer gives the name and address and
-sends Directions to the venue's pin; a timetable row says "At St Nicholas,
+sends Google Maps to the venue's pin; a timetable row says "At St Nicholas,
 Bankstown". On the map a place of its own is a **square** — see
 [architecture.md](architecture.md).
 

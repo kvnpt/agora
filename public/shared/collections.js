@@ -63,20 +63,25 @@
 
   const COLLECTIONS = [...CURATED, ...LANGUAGES, ...JURISDICTIONS];
 
-  // How each is drawn on its card: the art behind it and what is on it. The
-  // page's shelves and cards draw it, and so does the Worker's first paint of a
+  // How each is drawn on its card: its colour and what is on it. The page's
+  // shelves and cards draw it, and so does the Worker's first paint of a
   // collection's card, so the two cannot differ.
+  //
+  // Quiet on purpose: a collection's colour is a tint behind its sign, and
+  // the sign in the colour (`tint`). Only a jurisdiction's card is its colour
+  // in full (`art`), because there the colour means something.
   const LOOK = {
-    english: { art: 'linear-gradient(135deg,#1d4ed8,#0ea5e9)', glyph: 'En' },
-    sunday: { art: 'linear-gradient(135deg,#7c2d12,#d97706)', icon: 'L', kind: 'liturgy' },
-    vespers: { art: 'linear-gradient(135deg,#1e1b4b,#6d28d9)', icon: 'P', kind: 'prayer' },
-    weeknights: { art: 'linear-gradient(135deg,#0f766e,#22c55e)', icon: 'P', kind: 'prayer' },
-    talks: { art: 'linear-gradient(135deg,#78350f,#ca8a04)', icon: 'T', kind: 'talk' },
-    socials: { art: 'linear-gradient(135deg,#9d174d,#f43f5e)', icon: 'S', kind: 'social' },
-    monasteries: { art: 'linear-gradient(135deg,#3f3f46,#a8a29e)', glyph: '☦' },
+    english: { tint: '#1d4ed8', glyph: 'En' },
+    sunday: { tint: '#b45309', icon: 'L', kind: 'liturgy' },
+    vespers: { tint: '#5b21b6', icon: 'P', kind: 'prayer' },
+    weeknights: { tint: '#0f766e', icon: 'P', kind: 'prayer' },
+    talks: { tint: '#a16207', icon: 'T', kind: 'talk' },
+    socials: { tint: '#be123c', icon: 'S', kind: 'social' },
+    monasteries: { tint: '#57534e', glyph: '☦' },
   };
   // A language's: its first letters in its own script, and a colour.
   const LANGUAGE_LOOK = {
+    English: ['En', '#1d4ed8'],
     Greek: ['Ελ', '#0061fe'], Arabic: ['عر', '#7c3bc1'], Serbian: ['Ср', '#cc2234'], Slavonic: ['Сл', '#d38301'],
     Romanian: ['Ro', '#4e7a27'], Macedonian: ['Мк', '#b92d5d'],
   };
@@ -87,20 +92,27 @@
     return '#' + ch.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
   }
   /**
-   * A collection's look: { art, glyph?, icon?, kind? }. A jurisdiction's is
-   * its colour, which /admin may have changed: `colorOf(jurisdiction)`.
+   * A collection's look: { art } for a jurisdiction, its colour in full —
+   * which /admin may have changed: `colorOf(jurisdiction)` — and for every
+   * other { tint, glyph?, icon?, kind? }.
    */
   function lookOf(c, colorOf) {
     if (c.group === 'jurisdiction') {
       const j = colorOf ? colorOf(c.jurisdiction) : '#64748b';
-      return { art: `radial-gradient(120% 90% at 85% 10%, ${shade(j, 0.35)}, ${j} 55%, ${shade(j, -0.4)})` };
+      return { art: `radial-gradient(120% 90% at 85% 10%, ${shade(j, 0.35)}, ${j} 55%, ${shade(j, -0.4)})`, color: j };
     }
     if (c.group === 'language') {
-      const [glyph, color] = LANGUAGE_LOOK[c.lang] || [c.title.slice(0, 2), '#64748b'];
-      return { glyph, art: `linear-gradient(160deg,${color},${shade(color, -0.35)})` };
+      const [glyph, tint] = LANGUAGE_LOOK[c.lang] || [c.title.slice(0, 2), '#64748b'];
+      return { glyph, tint };
     }
     return LOOK[c.id] || {};
   }
+  /**
+   * The style that paints a look behind a card or a card's head: a
+   * jurisdiction's colour, or a tint of a collection's (next.css .soft, which
+   * mixes it with the page so it reads on light and dark alike).
+   */
+  const lookStyle = (look) => (look && look.tint ? `--c:${look.tint}` : `background:${(look && look.art) || '#64748b'}`);
 
   /**
    * What a classified link means, as one string to compare, or null when it is
@@ -133,7 +145,7 @@
 
   const byId = (id) => COLLECTIONS.find(c => c.id === id) || null;
 
-  const api = { COLLECTIONS, CURATED, LANGUAGES, JURISDICTIONS, JURISDICTION_NAMES, LANGUAGE_LOOK, meaningOf, collectionFor, byId, lookOf, shade };
+  const api = { COLLECTIONS, CURATED, LANGUAGES, JURISDICTIONS, JURISDICTION_NAMES, LANGUAGE_LOOK, meaningOf, collectionFor, byId, lookOf, lookStyle, shade };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraCollections = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

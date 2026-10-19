@@ -42,7 +42,9 @@ const CARDS = [
   { file: 'macedonian', label: 'Macedonian Orthodox' },
   { file: 'default', label: 'Orthodox Services & Events', color: '#1f3a5f' },
 ];
-// The first colour of each card's art on /next (LOOK and LANGS in next.js).
+// Each collection's colour, a shade deeper than its tint on the page
+// (LOOK and LANGUAGE_LOOK in public/shared/collections.js): a preview is
+// the colour in full, where the page's card is only tinted with it.
 const COLLECTION_COLORS = {
   english: '#1d4ed8', sunday: '#9a3412', vespers: '#312e81', weeknights: '#0f766e', talks: '#92400e',
   socials: '#9d174d', monasteries: '#3f3f46',

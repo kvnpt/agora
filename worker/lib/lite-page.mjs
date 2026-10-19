@@ -331,7 +331,7 @@ export function churchJsonLd(m) {
   return JSON.stringify(data).replace(/</g, '\\u003c');
 }
 
-/** Where Directions goes: the parish's own Maps entry where somebody picked one, else its pin. */
+/** Where Google Maps opens: the parish's own Maps entry where somebody picked one, else its pin. Never directions. */
 export function mapsHref(p) {
   if (p.maps_url) return p.maps_url;
   if (p.lat && p.lng) return `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;

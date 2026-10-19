@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f1013" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#20232a" media="(prefers-color-scheme: dark)">
   <!-- What this link is, for a reader that runs no JavaScript: a chat app's
        preview, a search engine. The Worker writes each link's own between
        the marks (worker/lib/page-head.mjs): a parish's name and Church data,
@@ -30,31 +30,47 @@
   <link rel="stylesheet" href="/next/next.css">
 </head>
 <body>
+  <!-- Search and the account, and nothing else: where the map is looking
+       is said under it, in the parish chip. -->
   <header class="top">
-    <button class="place" type="button" id="place" aria-label="Use my location">
-      <span class="place-name" id="place-name">Australia</span>
-      <span class="place-sub" id="place-sub">orthodoxy.au</span>
-    </button>
     <div class="top-actions">
+      <button class="round-btn" type="button" data-search aria-label="Search" title="Search">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+      </button>
       <!-- The account: a way in when nobody is signed in, the panel and the
            way out when somebody is (next.js, checkSignIn). -->
-      <button class="round-btn" type="button" id="btn-account" aria-label="Sign in" title="Sign in">
+      <button class="round-btn" type="button" id="btn-account" data-account aria-label="Sign in" title="Sign in">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3.3"/><path d="M6.2 18.6a7 7 0 0 1 11.6 0"/></svg>
-        <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
-      </button>
-      <button class="round-btn" type="button" id="btn-locate" aria-label="Near me" title="Near me">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
+        <span class="account-dot" aria-hidden="true" hidden></span>
       </button>
     </div>
   </header>
 
-  <main id="page">
-    <!-- Search: a field you can see, opening a sheet that answers as you type. -->
-    <button class="search-pill" type="button" id="search-pill">
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
-      <span>Parishes, suburbs, services…</span>
-    </button>
+  <!-- Scrolled past the parish chip and the filters, they come with you,
+       in a header of their own (next.js, the dock): the chip, the filters,
+       search and the account, and the filters' chips under them. The panel
+       opened from here opens under it. -->
+  <div class="dock" id="dock" inert>
+    <div class="dock-head">
+      <div class="dock-row">
+        <button class="dock-chip" type="button" data-inview aria-label="Parishes in view"></button>
+        <button class="fpill fbtn" type="button" data-filters aria-expanded="false" aria-controls="filter-panel">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+          <span>Filters</span><span class="fcount" hidden></span>
+        </button>
+        <button class="round-btn sm" type="button" data-search aria-label="Search" title="Search">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+        </button>
+        <button class="round-btn sm" type="button" data-account aria-label="Sign in" title="Sign in">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3.3"/><path d="M6.2 18.6a7 7 0 0 1 11.6 0"/></svg>
+          <span class="account-dot" aria-hidden="true" hidden></span>
+        </button>
+      </div>
+      <div class="dock-active" id="dock-active"></div>
+    </div>
+  </div>
 
+  <main id="page">
     <!-- NextThere's viewport: a map inside the page, nothing on it but full
          screen. The tabs above it and the parish row under it are next.js's,
          and the map is map.js itself. -->
@@ -74,9 +90,14 @@
           <svg class="fs-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
           <svg class="fs-close" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>
         </button>
+        <!-- Where you are, in the map's corner. -->
+        <button class="map-locate" type="button" id="btn-locate" aria-label="Near me" title="Near me">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
+        </button>
       </div>
-      <!-- What the viewport holds, said in words under the small map: a count
-           and up to seven logos. Panning changes it. -->
+      <!-- What the viewport holds, said in words under the small map: a count,
+           where the map is looking, and up to seven logos; one parish by its
+           name. Panning changes it. -->
       <button class="inview" type="button" id="inview" aria-label="Parishes in view"></button>
       <!-- Full screen, the app's parish row at the foot of the map instead:
            the count, then every parish as its logo, in view first. -->
@@ -95,7 +116,7 @@
     <!-- The filters: a button beside the chips they make, opening the app's
          pills under it. -->
     <div class="filter-bar">
-      <button class="fpill fbtn" type="button" id="btn-filters" aria-expanded="false" aria-controls="filter-panel">
+      <button class="fpill fbtn" type="button" id="btn-filters" data-filters aria-expanded="false" aria-controls="filter-panel">
         <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
         <span>Filters</span><span class="fcount" id="filter-count" hidden></span>
       </button>
@@ -112,22 +133,26 @@
     <!-- Today, before anything else. -->
     <section class="today card" id="today" aria-label="Today"></section>
 
-    <!-- Curated: the slices of the data, as collections of parishes. -->
+    <!-- Favourites, open on the page: each starred parish and what is next
+         there. Then the other lists, bookmarks and saved views, small. -->
+    <section class="favs" id="favs"></section>
     <section class="shelf" id="shelf-lists"></section>
+
+    <!-- Curated: the slices of the data, as collections of parishes. -->
     <section class="shelf" id="shelf-collections"></section>
 
-    <!-- App Store's feed: what's on, poster first. -->
+    <!-- What's on: the one-offs, poster first. -->
     <section class="shelf" id="shelf-whatson"></section>
 
+    <!-- Languages and jurisdictions: links in a row, not more shelves. -->
     <section class="shelf" id="shelf-languages"></section>
     <section class="shelf" id="shelf-jurisdictions"></section>
 
     <!-- And always waiting underneath, like reviews at the bottom of a place:
          every service and event, day after day, for as long as you scroll. -->
-    <section class="stream" id="stream" aria-label="Every service and event">
+    <section class="stream" id="stream" aria-label="Events feed">
       <header class="stream-head">
-        <h2>Every service &amp; event</h2>
-        <p id="stream-sub">In view, day by day. Keep scrolling.</p>
+        <h2>Events feed</h2>
         <!-- From today, or from a date picked: /2026-10-25. -->
         <div id="stream-when"></div>
       </header>

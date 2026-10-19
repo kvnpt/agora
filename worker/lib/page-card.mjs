@@ -49,7 +49,7 @@ export const CARD_DAYS = 14;
 // next.js's icons, the few a first paint shows.
 const I = {
   x: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-  car: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11a2 2 0 0 1 2 2v4a1 1 0 0 1-1 1h-1v1a1 1 0 0 1-2 0v-1H7v1a1 1 0 0 1-2 0v-1H4a1 1 0 0 1-1-1v-4a2 2 0 0 1 2-2zm2.1 0h9.8l-1.2-3.6a.5.5 0 0 0-.5-.4H8.8a.5.5 0 0 0-.5.4zM7 15.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm10 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>',
+  place: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
   phone: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>',
   globe: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>',
   cross: '<svg viewBox="0 0 40 64" aria-hidden="true" fill="currentColor"><rect x="17" y="0" width="6" height="64" rx="1"/><rect x="9" y="9" width="22" height="5" rx="1"/><rect x="2" y="21" width="36" height="6" rx="1"/><rect x="9" y="44" width="22" height="5" rx="1" transform="rotate(20 20 46.5)"/></svg>',
@@ -185,7 +185,7 @@ function summaryHTML(m, today) {
   const langs = [...new Set([...m.rules.flatMap(r => langsOf(r.languages)), ...langsOf(m.parish.languages)])];
   return `<div class="sum"><small>${next ? `Next ${esc(eventTypes.eventTypeLabel(next.event_type))}` : 'Next'}</small><b class="${next ? 'ok' : ''}">${when}</b></div>
       <div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>
-      <div class="sum"><small>Jurisdiction</small><b style="color:${m.color}">${esc(JURIS_SHORT(m.parish.jurisdiction) || m.parish.jurisdiction || '')}</b></div>`;
+      <a class="sum sum-link" href="/${esc(m.parish.jurisdiction || '')}"><small>Jurisdiction</small><b style="color:${m.color}">${esc(JURIS_SHORT(m.parish.jurisdiction) || m.parish.jurisdiction || '')}</b></a>`;
 }
 
 /** A parish's card, as next.js's openParish draws it. */
@@ -196,7 +196,7 @@ export function parishCardHTML(m) {
   const p = m.parish;
   const today = localDateOf(m.zone, m.now);
   const start = m.route.dateFocus && m.route.dateFocus > today ? m.route.dateFocus : today;
-  const dirs = mapsHref(p) || (p.lat && p.lng ? `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}` : '');
+  const gmaps = mapsHref(p);
   const times = timetableHTML(m.rules, { today, color: m.color });
   const website = p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : '';
   return sheet('parish', p.name, `--j:${m.color}`, `${glassBar(p.name, JURIS_LONG[p.jurisdiction])}
@@ -204,7 +204,7 @@ export function parishCardHTML(m) {
       <div class="ph">${avatar(p, 'xl', m.color)}<div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}</p></div></div>
       ${linkChipHTML(m.origin, `/${m.slug}${start !== today ? `/${start}` : ''}`, m.color)}
       <div class="actions">
-        ${dirs ? `<a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>` : ''}
+        ${gmaps ? `<a class="abtn primary" href="${esc(gmaps)}" target="_blank" rel="noopener">${I.place}<span>Google Maps</span></a>` : ''}
         ${p.phone ? `<a class="abtn" href="tel:${esc(tel(p.phone))}">${I.phone}<span>Call</span></a>` : ''}
         ${p.website ? outBtn(p.website, I.globe, 'Website') : ''}
         ${p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
@@ -260,7 +260,7 @@ export function eventCardHTML(m) {
       </div>
       ${linkChipHTML(m.origin, `/${e.id}`)}
       <div class="actions">
-        ${lat && lng ? `<a class="abtn primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>` : ''}
+        ${lat && lng ? `<a class="abtn primary" href="${esc(mapsHref({ lat, lng }))}" target="_blank" rel="noopener">${I.place}<span>Google Maps</span></a>` : ''}
         ${!e.hide_live && p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>Parish</span></a>
       </div>
@@ -302,7 +302,7 @@ export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
   };
   return sheet('collection', c.title, '', `${glassBar(c.title, `${ps.length} places`)}
     <div class="sheet-scroll">
-      <div class="chero" style="background:${look.art || 'var(--text-2)'}">
+      <div class="chero${look.tint ? ' soft' : ''}" style="${esc(collections.lookStyle(look))}">
         <span class="ckicker">${esc(c.kicker || '')}</span>
         <h1>${esc(c.title)}</h1>
         <p>${esc(c.blurb || '')}</p>

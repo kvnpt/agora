@@ -64,7 +64,7 @@ for a filter link. `page-head.mjs` writes them.
 
 `worker/lib/page-card.mjs`, pure (models in, markup out; covered by `node --test`).
 The same sheet next.js draws, in the same class names (`public/next/next.css`), with
-what a first paint needs: a parish's names and address, its buttons (Directions,
+what a first paint needs: a parish's names and address, its buttons (Google Maps,
 Website, the stream, Donate, its own links), its service times, what is coming up and
 its details; an event's when and where, its poster and its description with its links
 as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing

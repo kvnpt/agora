@@ -1,11 +1,13 @@
-/* orthodoxy.au — next. A prototype: a page around a map, with big targets.
-   Tokens first; every colour below reads one. */
+/* orthodoxy.au — v3: a page around a map, with big targets, in the app's
+   white and its hairlines: a card is framed in a hairline, not lifted on a
+   shadow, and colour is a jurisdiction's or a quiet tint. Tokens first;
+   every colour below reads one. */
 
 :root {
   color-scheme: light dark;
-  --bg: #f2f2f7;
+  --bg: #ffffff;
   --card: #ffffff;
-  --card-2: #f6f6f9;
+  --card-2: #f5f5f7;
   --text: #0b0b0d;
   --text-2: #6b6b73;
   --text-3: #a0a0a8;
@@ -25,7 +27,9 @@
   --glass: rgba(255, 255, 255, 0.72);
   --glass-solid: rgba(250, 250, 252, 0.97);
   --glass-line: rgba(255, 255, 255, 0.6);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.07);
+  /* A card's edge: a hairline, as the app's are. Only what floats (a sheet,
+     the toolbar on it, a dialog) is lifted. */
+  --shadow: 0 0 0 1px var(--hair);
   --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.18);
   --success: #16a34a;
   --danger: #dc3545;
@@ -34,15 +38,16 @@
   --tree-fill: #4f6e41;
   --tree-outline: #dfe4d8;
   --tree-text: #2a2a2a;
-  --radius: 22px;
+  --radius: 12px;
   --pad: 16px;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1013;
-    --card: #1c1c20;
-    --card-2: #26262b;
+    /* The app's charcoal (app.css), not OLED black. */
+    --bg: #20232a;
+    --card: #272a32;
+    --card-2: #30333b;
     --text: #f4f4f6;
     --text-2: #a1a1aa;
     --text-3: #6f6f78;
@@ -60,7 +65,7 @@
     --glass: rgba(36, 36, 42, 0.62);
     --glass-solid: rgba(30, 30, 35, 0.97);
     --glass-line: rgba(255, 255, 255, 0.10);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --shadow: 0 0 0 1px var(--hair);
     --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
     --success: #4ade80;
     --danger: #f4677a;
@@ -92,32 +97,56 @@ main { padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
 /* ── Header ──────────────────────────────────────────────────────────── */
 
 .top {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) var(--pad) 8px;
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  -webkit-backdrop-filter: saturate(1.8) blur(18px);
-  backdrop-filter: saturate(1.8) blur(18px);
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: calc(8px + env(safe-area-inset-top)) var(--pad) 6px;
 }
-.place { display: flex; flex-direction: column; min-width: 0; }
-.place-name { font-size: 26px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.place-sub { font-size: 13px; color: var(--text-2); }
 .top-actions { display: flex; gap: 10px; }
 .round-btn {
   position: relative;
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center;
   background: var(--card); box-shadow: var(--shadow);
 }
-body.located #btn-locate { color: var(--accent); }
-#btn-account { color: var(--text-2); }
-#btn-account.signed-in { color: var(--accent); }
+.round-btn.sm { width: 36px; height: 36px; flex: none; }
+[data-account] { color: var(--text-2); }
+[data-account].signed-in { color: var(--accent); }
 /* Something is waiting for this person (app.css .account-dot). */
 .account-dot {
-  position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%;
+  position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%;
   background: var(--danger); box-shadow: 0 0 0 2px var(--card); pointer-events: none;
 }
 .account-dot[hidden] { display: none; }
+
+/* ── The dock ────────────────────────────────────────────────────────────
+   Scrolled past the parish chip and the filters, they ride along at the top
+   (next.js syncDock): the chip, the filters' button, search, the account,
+   and the filters' chips under them. The panel opened from it opens under
+   it, scrolling on its own. --dock-h is its height, for what sticks under it. */
+.dock {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 25;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.8) blur(18px); backdrop-filter: saturate(1.8) blur(18px);
+  border-bottom: 1px solid var(--hair);
+  transform: translateY(-100%); visibility: hidden;
+  transition: transform .22s ease, visibility .22s;
+}
+body.docked .dock { transform: none; visibility: visible; }
+.dock-head { max-width: 600px; margin: 0 auto; padding: calc(6px + env(safe-area-inset-top)) var(--pad) 6px; }
+.dock-row { display: flex; align-items: center; gap: 8px; }
+.dock-chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.dock-chip .stackrow .av { --s: 26px; margin-left: -8px; }
+.dock-chip .stackrow .av:first-child { margin-left: 0; }
+.dock-chip-t { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.dock-chip-t b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-chip-t small { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-row .fbtn { min-height: 34px; }
+.dock-active { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+.dock-active:empty { display: none; }
+.dock .filter-panel {
+  max-width: calc(600px - 2 * var(--pad)); margin: 0 auto 10px; width: calc(100% - 2 * var(--pad));
+  max-height: calc(100dvh - var(--dock-h, 60px) - 16px); overflow-y: auto; overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 
 /* ── The viewport: tabs, map, in-view chip ───────────────────────────────
    The app's own pieces (app.css), framed in hairlines rather than lifted on
@@ -173,6 +202,17 @@ body.located #btn-locate { color: var(--accent); }
   border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
 }
 .map-fs .fs-close { display: none; }
+/* Where you are, in the map's bottom-right corner; full screen, above the parish row. */
+.map-locate {
+  position: absolute; right: 10px; bottom: 10px; z-index: 2;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+}
+body.located .map-locate { color: var(--accent); }
+body.map-full .map-locate { bottom: calc(78px + env(safe-area-inset-bottom)); }
 body.map-full .map-fs .fs-open { display: none; }
 body.map-full .map-fs .fs-close { display: block; }
 .maplibregl-ctrl-attrib { display: none; }
@@ -185,12 +225,15 @@ body.map-full .map-fs .fs-close { display: block; }
   text-align: left;
 }
 .stackrow { display: flex; flex: none; }
-.stackrow .av { margin-left: -9px; box-shadow: 0 0 0 2px var(--card); }
+.stackrow .av { margin-left: -9px; box-shadow: var(--av-ring), 0 0 0 2px var(--card); }
 .stackrow .av:first-child { margin-left: 0; }
 .inview-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; white-space: nowrap; }
 .inview-text b, .inview-text small { overflow: hidden; text-overflow: ellipsis; }
 .inview-text small { color: var(--text-2); font-size: 13px; }
 .inview-go { color: var(--text-3); }
+/* One parish in view is that parish, by its full name, on up to two lines. */
+.inview.one .inview-text { white-space: normal; }
+.inview.one .inview-text b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
 
 /* The parish row (app.css .parish-filter-row-wrap), full screen only: the
    count, then every parish as its logo ringed in its colour, in view first. */
@@ -284,14 +327,17 @@ body.map-full .parish-row {
   background: transparent;
 }
 
-/* ── Avatars ─────────────────────────────────────────────────────────── */
-
+/* ── Avatars ───────────────────────────────────────────────────────────
+   A parish's logo; a parish with none, its letters in its colour on white,
+   ringed in a hairline of the colour — on the dark scheme too, as a logo is
+   on white there. A logo covers the ring. */
 
 .av {
   --s: 34px;
+  --av-ring: inset 0 0 0 1px var(--j, #888);
   position: relative; flex: none;
   width: var(--s); height: var(--s); border-radius: 50%;
-  background: var(--j, #888); color: #fff;
+  background: #fff; color: var(--j, #888); box-shadow: var(--av-ring);
   display: inline-grid; place-items: center; overflow: hidden;
   font-size: calc(var(--s) * .3); font-weight: 750; letter-spacing: -.02em;
 }
@@ -300,7 +346,7 @@ body.map-full .parish-row {
 .av.sm { --s: 30px; }
 .av.stack { --s: 32px; }
 .av.md { --s: 46px; }
-.av.xl { --s: 72px; font-size: 20px; box-shadow: 0 0 0 3px var(--card), var(--shadow); }
+.av.xl { --s: 72px; --av-ring: inset 0 0 0 1.5px var(--j, #888); font-size: 20px; }
 
 /* ── Roundels (the kinds) ────────────────────────────────────────────── */
 
@@ -425,8 +471,8 @@ body.map-full .parish-row {
 /* ── Cards, Today ────────────────────────────────────────────────────── */
 
 .card { margin: 16px var(--pad) 0; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-.card-head { padding: 16px 18px 6px; }
-.card-head h2 { font-size: 24px; font-weight: 750; letter-spacing: -.02em; }
+.card-head { padding: 14px 18px 4px; }
+.card-head h2 { font-size: 21px; font-weight: 700; letter-spacing: -.015em; }
 .card-head p { margin: 2px 0 0; color: var(--text-2); font-size: 14px; }
 .livetxt { color: var(--live); font-weight: 600; }
 .tsub { padding: 12px 18px 2px; font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
@@ -469,86 +515,122 @@ body.map-full .parish-row {
 .eve .moon { flex: none; }
 .ethumb { width: 44px; height: 56px; border-radius: 8px; object-fit: cover; flex: none; }
 
-/* ── Shelves (Apple's Guides rows, the App Store's) ──────────────────── */
+/* ── Under Today: Favourites, lists, collections ───────────────────────
+   Quiet, as the app is: rows in a hairline frame; one shelf of collections,
+   each a tint and its sign; one of posters, the title under the art; the
+   languages and the jurisdictions as links in a row. */
 
-.shelf { margin-top: 28px; }
+.favs { margin-top: 26px; }
+.shelf { margin-top: 26px; }
 .shelf:empty { display: none; }
-.shelf-head { padding: 0 var(--pad) 10px; }
-.shelf-head h2 { font-size: 22px; font-weight: 750; letter-spacing: -.02em; display: flex; align-items: center; gap: 4px; }
-.shelf-head p { margin: 3px 0 0; color: var(--text-2); font-size: 14px; }
+.shelf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 var(--pad) 8px; }
+.shelf-head h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+.shelf-act { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--accent); font-size: 14px; font-weight: 600; }
+.shelf-act svg { width: 14px; height: 14px; }
+.shelf-sub { margin: -4px var(--pad) 8px; color: var(--text-2); font-size: 13.5px; }
+.shelf-empty { margin: 0 var(--pad); color: var(--text-3); font-size: 14px; line-height: 1.4; }
 .shelf-row {
-  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
-  padding: 2px var(--pad) 14px; scroll-padding: 0 var(--pad);
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  padding: 2px var(--pad) 6px; scroll-padding: 0 var(--pad);
 }
 .shelf-row::-webkit-scrollbar { display: none; }
 .shelf-row > * { scroll-snap-align: start; }
 
+/* Rows: a starred parish and what is next there; a list, bookmarks, a view. */
+.hlist { margin: 0 var(--pad); background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.hrow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 9px 12px; }
+.hrow + .hrow { border-top: 1px solid var(--line); }
+.ht { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ht b { font-size: 15.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ht small { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: 13px; }
+.ht small span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ht small .roundel { width: 16px; height: 16px; font-size: 8.5px; }
+.hrow em { flex: none; font-style: normal; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.hrow > svg { flex: none; color: var(--text-3); }
+.hic { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--card-2); color: var(--accent); font-size: 15px; font-weight: 700; }
+.hic svg { width: 16px; height: 16px; }
+.hrow.new { color: var(--accent); min-height: 48px; }
+
+/* A collection: its tint and its sign, its name and how many. */
 .ccard {
-  flex: none; width: 46%; max-width: 230px; display: flex; flex-direction: column;
-  background: var(--card); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden;
+  flex: none; width: 42%; max-width: 180px; display: flex; flex-direction: column;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
 }
-.ccard.sm { width: 36%; max-width: 170px; }
-.ccard.wide { width: 70%; max-width: 330px; }
 .cart {
   position: relative; display: grid; place-items: center;
-  aspect-ratio: 1 / 1; color: #fff;
+  aspect-ratio: 4 / 3; color: #fff;
   background: var(--card-2);
 }
-.ccard.wide .cart { aspect-ratio: 16 / 9; }
-.cglyph { font-size: 44px; font-weight: 800; letter-spacing: -.03em; text-shadow: 0 2px 12px rgba(0, 0, 0, .18); }
-.ccard.sm .cglyph { font-size: 34px; }
-.cglyph svg { display: block; width: 40px; height: 40px; }
-.ccard.sm .cglyph svg { width: 34px; height: 34px; }
-.ccross { width: 34px; height: 54px; opacity: .92; }
+.cglyph { font-size: 32px; font-weight: 800; letter-spacing: -.03em; }
+.cglyph svg { display: block; width: 32px; height: 32px; }
+.ccross { width: 26px; height: 42px; opacity: .92; }
 .ccross svg { width: 100%; height: 100%; }
 /* A jurisdiction's logo, from /admin: on a white tile, so a crest drawn on
    white or on nothing reads the same against its colour. */
-.clogo { width: 76px; height: 76px; padding: 8px; box-sizing: border-box; border-radius: 18px; background: #fff; box-shadow: 0 4px 18px rgba(0, 0, 0, .18); }
+.clogo { width: 64px; height: 64px; padding: 7px; box-sizing: border-box; border-radius: 14px; background: #fff; box-shadow: var(--shadow); }
 .clogo img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.cart .roundel.big { box-shadow: 0 4px 20px rgba(0, 0, 0, .2); width: 56px; height: 56px; font-size: 24px; }
-.clogos { position: absolute; left: 10px; bottom: 10px; display: flex; }
-.clogos .av { --s: 26px; margin-left: -6px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .85); }
+.cart .roundel.big { width: 44px; height: 44px; font-size: 20px; }
+.clogos { position: absolute; left: 8px; bottom: 8px; display: flex; }
+.clogos .av { --s: 22px; margin-left: -6px; box-shadow: var(--av-ring), 0 0 0 2px var(--card); }
 .clogos .av:first-child { margin-left: 0; }
-.ctext { display: flex; flex-direction: column; padding: 10px 12px 13px; gap: 1px; }
+.ctext { display: flex; flex-direction: column; padding: 8px 10px 10px; gap: 1px; }
 .ckicker { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
-.ctitle { font-size: 16.5px; font-weight: 700; line-height: 1.2; }
-.csub { font-size: 13.5px; color: var(--text-2); }
-.ccard.new .cart { color: var(--accent); border: 2px dashed var(--line); background: transparent; border-radius: 20px 20px 0 0; }
-.ccard.new .cart svg { width: 34px; height: 34px; }
+.ctitle { font-size: 14.5px; font-weight: 650; line-height: 1.2; }
+.csub { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* The App Store poster card. */
+/* A poster whole, and what it is under it, where the poster's own words are not. */
 .poster {
-  flex: none; width: 82%; max-width: 380px; display: flex; flex-direction: column;
-  background: var(--card); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden;
+  flex: none; width: 54%; max-width: 230px; display: flex; flex-direction: column;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
 }
-.pimg { position: relative; aspect-ratio: 4 / 4.2; background: var(--card-2); overflow: hidden; }
+.pimg { position: relative; aspect-ratio: 4 / 5; background: var(--card-2); overflow: hidden; }
 .pimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pimg.noimg img { display: none; }
-.pover {
-  position: absolute; left: 0; right: 0; bottom: 0; padding: 50px 16px 14px;
-  display: flex; flex-direction: column; gap: 2px; color: #fff;
-  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, .72));
+.ptext { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px 11px; min-width: 0; }
+.pkicker { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.ptitle {
+  font-size: 15px; font-weight: 650; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
-.pkicker { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; opacity: .92; }
-.ptitle { font-size: 21px; font-weight: 750; line-height: 1.15; letter-spacing: -.01em; }
-.pfoot { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
-.pfname { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 14.5px; }
-.pfname b, .pfname small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pfname small { color: var(--text-2); font-size: 12.5px; }
-.pbtn { flex: none; padding: 7px 16px; border-radius: 16px; background: var(--card-2); color: var(--accent); font-weight: 700; font-size: 15px; }
+.pfrom { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; color: var(--text-2); font-size: 12.5px; }
+.pfrom span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Languages: a chip each, its letters in its own script on its tint. */
+.lang-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 var(--pad); }
+.lchip {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px 0 4px;
+  background: var(--card); border-radius: 999px; box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 600;
+}
+.lglyph { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card-2); font-size: 11.5px; font-weight: 800; }
+.lchip small { color: var(--text-3); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Jurisdictions: two to a line, each its name in its colour, as its tab is. */
+.juris-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 var(--pad); }
+.jrow {
+  display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 8px 10px;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.jmark { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; overflow: hidden; background: var(--j); color: #fff; }
+.jmark svg { width: 12px; height: 19px; }
+.jmark img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.jt { min-width: 0; display: flex; flex-direction: column; }
+.jt b { font-size: 15px; font-weight: 650; color: var(--j); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jt small { font-size: 12.5px; color: var(--text-2); }
 
 /* ── The stream ──────────────────────────────────────────────────────── */
 
-.stream { margin-top: 32px; }
+.stream { margin-top: 30px; scroll-margin-top: var(--dock-h, 0px); }
 .stream-head { padding: 0 var(--pad) 6px; }
-.stream-head h2 { font-size: 22px; font-weight: 750; letter-spacing: -.02em; }
+.stream-head h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
 .stream-head p { margin: 3px 0 0; color: var(--text-2); font-size: 14px; }
 /* A day: the app's header (app.css .day-hdr) with its link, then its rows;
    framed in hairlines, not lifted on a shadow. */
 #stream-days { border-bottom: 1px solid var(--hair); }
-.sday { background: var(--card); border-top: 1px solid var(--hair); }
+.sday { background: var(--card); border-top: 1px solid var(--hair); scroll-margin-top: var(--dock-h, 0px); }
+/* A day's header sticks under the dock, which is there whenever one does. */
 .dh {
-  position: sticky; top: calc(64px + env(safe-area-inset-top)); z-index: 2;
+  position: sticky; top: var(--dock-h, 0px); z-index: 2;
   display: flex; align-items: center; gap: 2px;
   padding: 14px var(--pad) 6px; background: var(--card);
   font-size: 13px; font-weight: 700; letter-spacing: .01em;
@@ -585,6 +667,8 @@ body.map-full .parish-row {
   isolation: isolate;
 }
 .sheet.open { transform: none; }
+/* Following the finger down (next.js swipeToClose); let go, it slides on. */
+.sheet.dragging { transition: none; }
 /* A card the Worker painted (.ssr), up before the page's script is: the scrim
    under it, and the page under that still. The card next.js opens takes its
    place with no slide (.instant). */
@@ -646,7 +730,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   background: var(--card); color: var(--accent); font-weight: 650; font-size: 15px; box-shadow: var(--shadow);
 }
-.abtn.primary { background: var(--accent); color: #fff; }
+.abtn.primary { min-width: 124px; background: var(--accent); color: #fff; }
 .abtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .summary { display: flex; margin: 14px 18px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .sum { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 0 8px; }
@@ -655,6 +739,10 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .sum small { color: var(--text-2); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sum b { font-size: 15px; font-weight: 650; display: block; line-height: 1.2; overflow-wrap: break-word; }
 .sum b.ok { color: var(--live); }
+/* The jurisdiction, which opens its collection. */
+.sum-link { color: var(--text); text-align: left; }
+.sum-link b { display: flex; align-items: center; gap: 1px; }
+.sum-link b svg { width: 13px; height: 13px; flex: none; opacity: .65; }
 .sec { font-size: 20px; font-weight: 750; letter-spacing: -.015em; padding: 24px 18px 10px; }
 
 /* Service times: one line per service, the days it runs listed on it, in the
@@ -748,6 +836,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   background: rgba(255, 255, 255, .18); font-weight: 650; font-size: 14.5px;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
+/* Every head but a jurisdiction's is its tint (.soft): the words in the
+   page's ink, the kicker and the buttons in the tint's. */
+.chero.soft h1 { color: var(--text); }
+.chero.soft p { color: var(--text-2); opacity: 1; }
+.chero.soft .ckicker { color: var(--ink); }
+.chero.soft .hbtn { background: var(--card); box-shadow: var(--shadow); color: var(--ink); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .clist { padding: 6px 0 0; }
 .citem { position: relative; margin: 12px 18px 0; padding: 14px; background: var(--card); border-radius: 18px; box-shadow: var(--shadow); }
 .citem-head { display: flex; gap: 12px; align-items: flex-start; width: calc(100% - 44px); }
@@ -816,20 +910,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 @media (min-width: 640px) {
-  .ccard { width: 210px; }
-  .ccard.sm { width: 160px; }
-  .poster { width: 340px; }
+  .ccard { width: 170px; }
+  .poster { width: 210px; }
 }
 
 /* ── Search ──────────────────────────────────────────────────────────── */
 
-.search-pill {
-  display: flex; align-items: center; gap: 10px;
-  width: calc(100% - 2 * var(--pad)); margin: 4px var(--pad) 6px; height: 48px; padding: 0 16px;
-  border-radius: 24px; background: var(--card); box-shadow: var(--shadow);
-  color: var(--text-2); font-size: 16.5px;
-}
-.search-pill svg { color: var(--text-2); flex: none; }
 .sheet.search .sheet-scroll { padding-top: 0; }
 .sr-head { display: flex; align-items: center; gap: 12px; padding: 22px 16px 10px; }
 .sr-field {
@@ -854,6 +940,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .sr-ic { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card-2); color: var(--text-2); }
 .sr-row[data-place] .sr-ic { background: #ff3b30; color: #fff; }
 .sr-art { width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+.sr-art svg { width: 16px; height: 16px; }
 .sr-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
 .sr-chip { height: 38px; padding: 0 15px; border-radius: 19px; background: var(--card); box-shadow: var(--shadow); font-weight: 600; font-size: 15px; }
 .sr-more { display: block; margin: 8px 16px 0; padding: 12px; width: calc(100% - 32px); border-radius: 14px; color: var(--accent); font-weight: 600; text-align: center; }
@@ -1271,4 +1358,13 @@ body.dialog-open { overflow: hidden; }
 @keyframes ls-log-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── A tint ──────────────────────────────────────────────────────────────
+   A collection's colour (public/shared/collections.js lookStyle: --c), mixed
+   into the page so it reads as a tint on light and dark alike, its sign in
+   the colour itself. Last, so it is what a tile wears. */
+.soft { --ink: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--card)); color: var(--ink); }
+@media (prefers-color-scheme: dark) {
+  .soft { --ink: color-mix(in srgb, var(--c) 45%, #fff); background: color-mix(in srgb, var(--c) 26%, var(--card)); }
 }

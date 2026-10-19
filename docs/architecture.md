@@ -86,8 +86,12 @@ and a period do not stand together: a date ends the week.
 
 **What is on the map is what the lists hold.** The page's lists — Today, What's
 on, the stream, a collection's count — are the parishes and events in the map's
-view (`S.inView`, `inViewEvent`), and the chip under the map counts them. A link
-that names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
+view (`S.inView`, `inViewEvent`), and the chip under the map counts them and
+says where the map is looking ("Sydney", "Near you", "Oceania" zoomed out); with
+one parish in view it is that parish, by its full name, and opens its card.
+Scrolled past it and the filters, both ride in the dock at the top of the page
+(`syncDock`), and the filters opened from there open under it. A link that
+names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
 showing everything it means. It is not in the URL.
 
 **What kind of event, and in what language, are segments too.** `/services` is
@@ -117,7 +121,9 @@ stored one, or one date of a rule by its synthetic id) or a whole rule, which
 covers every date of it. The stores are the ones the old app wrote
 (`agora-favourites`, `agora-bookmarks`, `agora-saved-filters`), so nothing kept
 in a browser was lost when v3 replaced it; v3 adds `agora-lists`, lists of
-parishes. Your lists shows them all. Bookmarks are not a segment: a link to "my
+parishes. Favourites are open on the page under Today, each starred parish
+with what is on next there; the other lists, bookmarks and saved views are
+rows under them (Your lists), once there are any. Bookmarks are not a segment: a link to "my
 bookmarks" would mean nothing in another browser. Every read and
 write survives storage being refused; the controls come back empty.
 
