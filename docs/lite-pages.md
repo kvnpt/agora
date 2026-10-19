@@ -52,7 +52,8 @@ markup went.
   the same card under the same canonical, and are not offered to a search engine.
 - **An event** (`/102`, `/42:2026-10-04`): its title, when and where, its poster as the
   preview. Never indexed (below).
-- **A filter link**: the timetable's heading (`timetableHeading`), a collection
+- **A filter link**: the timetable's heading (`timetableHeading`, whose words are
+  `public/shared/link-words.js`, which the page's parishes in view read too), a collection
   indexable once its page lists somebody, every other mix noindex.
 - **The home page**: the site's own words. **Anything else**: the home page's words,
   noindex.
@@ -99,7 +100,9 @@ OKLab dark-mode lift in `public/shared/jurisdiction-colors.js` (`liftForDark`).
 `/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/timetables` — the
 aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, the list
 in `public/shared/collections.js`) opens its card, painted from the model
-(`collectionCardHTML`): the parishes, those with times first, each with its times. Any
+(`collectionCardHTML`): the parishes, those with times first, each with its times,
+folded to the first few lines until Show timetables (a checkbox in its label, so it
+opens with no script); the page adds what is coming up at them underneath. Any
 other mix of filters is the page itself, filtered, and gets only its head.
 
 `worker/lib/lite-timetable.mjs` (`timetableModel`), pure like the card's:

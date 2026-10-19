@@ -466,6 +466,23 @@ test("a jurisdiction and a region narrow the parishes; the canonical is the app'
   assert.equal(meta((await get('/antiochian/qld')).html, 'name', 'description'), 'Nothing on file for this yet.');
 });
 
+test('several jurisdictions or days are one link, said together, in the app\'s order', async () => {
+  const { raw, get } = fresh();
+  rule(raw, GREEK_QLD, 0, '09:00', 'Divine Liturgy');
+  rule(raw, PARISH, 5, '18:00', 'Vespers');
+  const { html } = await get('/greek/antiochian');
+  assert.equal(canonical(html), 'https://orthodoxy.au/antiochian+greek');
+  assert.equal(title(html), 'Antiochian and Greek Orthodox parishes and times | orthodoxy.au');
+  const both = listed(raw, '/greek+antiochian');
+  assert.ok(both.includes('Sunshine Coast, Buderim') && both.includes('St George Cathedral, Redfern'));
+  assert.ok(!both.some(n => /serbian/i.test(n)));
+  const days = (await get('/fri/sun')).html;
+  assert.equal(canonical(days), 'https://orthodoxy.au/sun+fri');
+  assert.equal(title(days), 'Orthodox services on Sundays and Fridays | orthodoxy.au');
+  assert.ok(listed(raw, '/sun+fri').includes('St George Cathedral, Redfern'), 'its Friday Vespers');
+  assert.ok(!listed(raw, '/mon+tue').includes('St George Cathedral, Redfern'));
+});
+
 test('a service, a day and a part of the day narrow the rules', async () => {
   const { raw, get } = fresh();
   rule(raw, PARISH, 6, '18:00', 'Vespers');
@@ -529,6 +546,8 @@ test('a collection is indexed, under its own name, with its own preview and its 
     "in the collection's own look (collections.js)");
   assert.match(c, /<a class="citem-head" href="\/sgr">[\s\S]*?<b>St George Cathedral, Redfern<\/b>/, 'each parish a link to its card');
   assert.match(c, /<div class="tt compact"/, 'with its times');
+  assert.match(c, /<section class="ctimes folded">[\s\S]*<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables<\/span>/,
+    'folded to the first few lines until Show timetables, which opens with no script');
 
   const sun = (await get('/liturgy/sunday')).html;
   assert.equal(canonical(sun), 'https://orthodoxy.au/sun/liturgy', 'however the link spells it');

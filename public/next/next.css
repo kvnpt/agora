@@ -12,7 +12,11 @@
   --text-2: #6b6b73;
   --text-3: #a0a0a8;
   --line: rgba(60, 60, 67, 0.14);
+  /* Today's rows, a hairline you can see. */
+  --line-strong: rgba(60, 60, 67, 0.26);
   --accent: #2c6cb4;
+  /* A distance from you, as the app's are. */
+  --dist: #2196f3;
   --live: #2fb350;
   --evening: #2c3d72;
   /* Hairlines, and the app's own tokens for the pieces taken from it. */
@@ -52,7 +56,9 @@
     --text-2: #a1a1aa;
     --text-3: #6f6f78;
     --line: rgba(255, 255, 255, 0.10);
+    --line-strong: rgba(255, 255, 255, 0.20);
     --accent: #5b8fd6;
+    --dist: #4aa8f7;
     --live: #38c75c;
     --evening: #8ba3d4;
     --hair: rgba(255, 255, 255, 0.12);
@@ -428,6 +434,8 @@ body.map-full .parish-row {
   max-width: 100%;
 }
 .afchip svg { width: 12px; height: 12px; flex: none; opacity: .75; }
+/* A jurisdiction's chip is its colour, as its tab is when chosen. */
+.afchip.afj { background: var(--j); border-color: var(--j); color: #fff; }
 
 .filter-panel {
   margin: 8px var(--pad) 0; padding: 2px 12px 10px;
@@ -443,6 +451,8 @@ body.map-full .parish-row {
 .fdays { flex-basis: 100%; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .fdays .fpill { justify-content: center; padding: 5px 0; }
 .fstar { color: #e0a100; font-size: 11px; margin-right: -2px; }
+.fpill-j { color: var(--j); }
+.fpill-j.on { background: var(--j); border-color: var(--j); color: #fff; }
 .fpill.on .fstar { color: inherit; }
 /* "only" arrives beside its language, and a kind's roundels beside it. */
 .fpill-only, .kind-subs { animation: f-in .18s ease-out; }
@@ -488,6 +498,7 @@ body.map-full .parish-row {
   padding: 11px 18px; min-height: 60px;
 }
 .erow + .erow { border-top: 1px solid var(--line); }
+#today .erow + .erow, #today .see-all { border-top-color: var(--line-strong); }
 .etime { width: 58px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
 .erow.now .etime { color: var(--live); flex-direction: row; align-items: center; gap: 6px; }
@@ -497,7 +508,8 @@ body.map-full .parish-row {
 .etitle { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
 .esub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.esub em { font-style: normal; margin-left: auto; padding-left: 6px; flex: none; }
+/* With your location on, how far: in blue, as on a parish's card. */
+.esub em { font-style: normal; margin-left: auto; padding-left: 6px; flex: none; color: var(--dist); font-weight: 600; font-variant-numeric: tabular-nums; }
 .efeast { font-size: 12.5px; color: var(--text-2); font-style: italic; }
 
 /* The app's time (app.css .event-time): sans, tabular, then a small ":30"
@@ -545,7 +557,7 @@ body.map-full .parish-row {
 .ht small { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: 13px; }
 .ht small span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ht small .roundel { width: 16px; height: 16px; font-size: 8.5px; }
-.hrow em { flex: none; font-style: normal; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.hrow em { flex: none; font-style: normal; color: var(--dist); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
 .hrow > svg { flex: none; color: var(--text-3); }
 .hic { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--card-2); color: var(--accent); font-size: 15px; font-weight: 700; }
 .hic svg { width: 16px; height: 16px; }
@@ -717,7 +729,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .ph-text h1 { font-size: 22px; line-height: 1.2; font-weight: 750; letter-spacing: -.015em; }
 .ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
 /* How far, beside where (app.css .distance-blue). */
-.ph-dist { margin-left: 3px; color: #2196f3; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ph-dist { margin-left: 3px; color: var(--dist); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* As many as fit at a readable width; more scroll sideways, as Maps' do.
    The padding under them is room for their shadow, which a scroller clips. */
 .actions {
@@ -843,6 +855,23 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .chero.soft .ckicker { color: var(--ink); }
 .chero.soft .hbtn { background: var(--card); box-shadow: var(--shadow); color: var(--ink); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .clist { padding: 6px 0 0; }
+/* A collection's timetables, folded to the first few lines of the first
+   under a fade until Show timetables: a checkbox in its label, so the
+   Worker's first paint opens the same way with no script. */
+.ctimes.folded:not(:has(input:checked)) .clist {
+  max-height: var(--fold, 300px); overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 70px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 70px), transparent);
+}
+.ctimes.folded:not(:has(input:checked)) > .wide-btn { display: none; }
+.ctimes-open {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: 4px;
+  width: max-content; margin: -34px auto 0; padding: 9px 16px; border-radius: 999px;
+  background: var(--card); color: var(--accent); box-shadow: var(--shadow), 0 2px 10px rgba(0, 0, 0, .08);
+  font-size: 14.5px; font-weight: 650; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.ctimes-open svg { width: 14px; height: 14px; transform: rotate(90deg); }
+.ctimes:has(input:checked) .ctimes-open { display: none; }
 .citem { position: relative; margin: 12px 18px 0; padding: 14px; background: var(--card); border-radius: 18px; box-shadow: var(--shadow); }
 .citem-head { display: flex; gap: 12px; align-items: flex-start; width: calc(100% - 44px); }
 .citem-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

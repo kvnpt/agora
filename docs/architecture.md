@@ -89,10 +89,23 @@ on, the stream, a collection's count — are the parishes and events in the map'
 view (`S.inView`, `inViewEvent`), and the chip under the map counts them and
 says where the map is looking ("Sydney", "Near you", "Oceania" zoomed out); with
 one parish in view it is that parish, by its full name, and opens its card.
+With more, it opens them as a card named for what it holds: "64 parishes in
+Sydney", "8 parishes near you", over the filters said as a link's preview says
+them ("Antiochian Orthodox Liturgies in English near you",
+`public/shared/link-words.js`), and a list saved from it keeps both.
 Scrolled past it and the filters, both ride in the dock at the top of the page
 (`syncDock`), and the filters opened from there open under it. A link that
 names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
 showing everything it means. It is not in the URL.
+
+**Several jurisdictions, or several days, are one segment**: `/antiochian+greek`,
+`/wed+fri`, written in the tabs' order and from Sunday; `/greek/antiochian` and
+`/fri/wed` read the same. A filter holds one as its key or its number, as every
+older link means, and several as a list (`jurisdictionValue` in `url-state.js`,
+`dayValue` in `services.js`); a `+` segment that is not all jurisdictions or all
+days is a list of parishes, as it always was. The tabs above the map are one
+jurisdiction at a time; the filters' panel takes as many as you like, and each
+is a chip in its colour.
 
 **What kind of event, and in what language, are segments too.** `/services` is
 Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
@@ -121,9 +134,9 @@ stored one, or one date of a rule by its synthetic id) or a whole rule, which
 covers every date of it. The stores are the ones the old app wrote
 (`agora-favourites`, `agora-bookmarks`, `agora-saved-filters`), so nothing kept
 in a browser was lost when v3 replaced it; v3 adds `agora-lists`, lists of
-parishes. Favourites are open on the page under Today, each starred parish
-with what is on next there; the other lists, bookmarks and saved views are
-rows under them (Your lists), once there are any. Bookmarks are not a segment: a link to "my
+parishes. Favourites are open on the page under Today once a parish is
+starred, each with what is on next there; the other lists, bookmarks and saved
+views are rows under them (Your lists), once there are any. Bookmarks are not a segment: a link to "my
 bookmarks" would mean nothing in another browser. Every read and
 write survives storage being refused; the controls come back empty.
 

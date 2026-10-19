@@ -22,6 +22,7 @@
 import services from '../../public/shared/services.js';
 import dates from '../../public/shared/dates.js';
 import urlState from '../../public/shared/url-state.js';
+import linkWords from '../../public/shared/link-words.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
@@ -113,7 +114,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   const matches = (e) => {
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
     if (route.service && !services.serviceMatches(route.service, e)) return false;
-    if (route.day != null && e._local.dow !== route.day) return false;
+    if (!services.dayMatches(route.day, e._local.dow)) return false;
     if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
     if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
     return true;
@@ -154,7 +155,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // Day, part, service — the order the app writes them in, and the order they
   // are said: /sgr/wed/evening/vespers.
   const kindSegs = [
-    ...(route.day != null ? [services.daySlug(route.day)] : []),
+    ...(route.day != null ? [services.daySegment(route.day)] : []),
     ...(route.dayGroup ? [route.dayGroup] : []),
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
@@ -177,7 +178,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // the parish's times, not the answer to the link.
   const timetable = !servicesMode ? rules : rules.filter(r =>
     (!route.service || services.serviceMatches(route.service, r))
-    && (route.day == null || r.day_of_week === route.day)
+    && services.dayMatches(route.day, r.day_of_week)
     && (!route.dayGroup || services.dayGroupMatches(route.dayGroup, r.day_of_week, r, zone))
     && (!route.part || services.partOfDayOf(r, zone) === route.part));
 
@@ -212,11 +213,8 @@ export function pageColors(parish, overrides = {}) {
 
 // ── words ────────────────────────────────────────────────────────────────
 
-const JURIS_LABEL = {
-  antiochian: 'Antiochian Orthodox', greek: 'Greek Orthodox', serbian: 'Serbian Orthodox',
-  russian: 'Russian Orthodox (ROCOR)', romanian: 'Romanian Orthodox', macedonian: 'Macedonian Orthodox',
-};
-export const jurisLabel = (j) => JURIS_LABEL[j] || 'Orthodox';
+const JURIS_LABEL = linkWords.JURIS_LABEL;
+export const jurisLabel = (j) => linkWords.jurisLabel(j);
 
 
 
@@ -241,7 +239,7 @@ export function longDate(date, thisYear) {
 
 
 
-export const isNarrowed = (r) => !!(r.service || r.day != null || r.dayGroup || r.part);
+export const isNarrowed = (r) => linkWords.isNarrowed(r);
 
 /**
  * What a link narrows to, as a heading: "Vespers on Wednesdays", "Evening
@@ -250,8 +248,7 @@ export const isNarrowed = (r) => !!(r.service || r.day != null || r.dayGroup || 
 export function kindLabel(r) {
   const plural = r.service ? services.servicePlural(r.service) : null;
   const what = r.part ? `${services.partOfDayLabel(r.part)} ${plural || 'services'}` : (plural || 'Services');
-  return what + (r.day != null ? ` on ${services.dayName(r.day)}s`
-    : r.dayGroup ? ` on ${services.dayGroupLabel(r.dayGroup).toLowerCase()}` : '');
+  return what + linkWords.daysPhrase(r);
 }
 
 /** "Sun 10am Divine Liturgy · Sat 6pm Vespers" — what runs now, for a preview. */

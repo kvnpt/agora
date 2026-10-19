@@ -81,7 +81,7 @@
     inView: null,            // Set of parish ids the viewport holds (null before the map)
     fetched: new Map(),      // stored events read on their own, outside the bundle (fetchEvent)
     bounds: null,
-    juris: null,             // a jurisdiction tab
+    juris: null,             // a jurisdiction, or several from the filters: url-state.js's shape
     f: null,                 // the filters, in the app's shape (blankFilters)
     focus: null,             // { title, ids:Set } — a collection no link can name, on the map
     streamDays: 14,          // how far the stream has grown
@@ -100,6 +100,7 @@
    * link carries.
    */
   const blankFilters = () => ({
+    // `day` is one weekday or several, as services.js holds them (null, 3, [3, 5]).
     kind: null, kindSub: null, lang: null, langStrict: false, day: null, dayGroup: null, part: null, service: null,
     location: null, monasteries: false, parishIds: null, listId: null, timesOnly: false,
   });
@@ -355,7 +356,7 @@
     if (!window.AgoraTimetable.kindMatches(row, f)) return false;
     if (f.service && !window.AgoraServices.serviceMatches(f.service, row)) return false;
     const dow = isRule ? row.day_of_week : weekdayOf(local(row).date);
-    if (f.day != null && dow !== f.day) return false;
+    if (!window.AgoraServices.dayMatches(f.day, dow)) return false;
     if (f.dayGroup && !window.AgoraServices.dayGroupMatches(f.dayGroup, dow, row)) return false;
     if (f.part && window.AgoraServices.partOfDayOf(row) !== f.part) return false;
     return true;
@@ -366,9 +367,11 @@
   const onlyIn = (langs, want) => !!langs && langs.length > 0 && langs.every(l => langIs(l, want));
   const regionOf = (f) => (f.location && window.AgoraLocations ? window.AgoraLocations.resolveLocation(f.location) : null);
 
+  /** One jurisdiction or several (url-state.js), as a list. */
+  const jList = (j) => window.AgoraUrlState.jurisdictionsOf(j);
   /** Does a parish answer these filters? Collections ask it of their own filters. */
   function parishMatches(p, f, juris) {
-    if (juris && p.jurisdiction !== juris) return false;
+    if (juris && !jList(juris).includes(p.jurisdiction)) return false;
     const loc = regionOf(f);
     if (loc && !window.AgoraLocations.locationMatchesParish(loc, p)) return false;
     if (f.monasteries && !window.AgoraTimetable.isMonastery(p)) return false;
@@ -392,14 +395,18 @@
   const TOMB = { cancelled: 'Cancelled', combined: 'Combined', break: 'Break' };
   const tombOf = (e) => (e && TOMB[e.status]) || null;
   function eventParishIds(e) { return [e.parish_id, ...(e.extra_parishes || []).map(x => x.id || x.parish_id || x)].filter(Boolean); }
-  function eventPasses(e, { scoped = true } = {}) {
+  /** Does an event answer the page's filters, and the collection on the map if there is one? */
+  function eventPasses(e, opts) {
+    if (S.focus && !eventParishIds(e).some(id => S.focus.ids.has(id))) return false;
+    return eventMatches(e, S.f, S.juris, opts);
+  }
+  /** Does an event answer these filters? A collection asks it of its own. */
+  function eventMatches(e, f, juris, { scoped = true } = {}) {
     if (!visible(e)) return false;
     if (scoped && e.parish_scoped) return false;
     const pids = eventParishIds(e);
     const ps = pids.map(id => S.byId.get(id)).filter(Boolean);
-    if (S.juris && !ps.some(p => p.jurisdiction === S.juris)) return false;
-    if (S.focus && !pids.some(id => S.focus.ids.has(id))) return false;
-    const f = S.f;
+    if (juris && !ps.some(p => jList(juris).includes(p.jurisdiction))) return false;
     const loc = regionOf(f);
     if (loc && !ps.some(p => window.AgoraLocations.locationMatchesParish(loc, p))) return false;
     if (f.monasteries && !ps.some(p => window.AgoraTimetable.isMonastery(p))) return false;
@@ -420,7 +427,8 @@
     if (isFinite(e.lat) && isFinite(e.lng) && e.lat != null) return S.bounds.contains([e.lng, e.lat]);
     return eventParishIds(e).some(id => S.inView && S.inView.has(id));
   }
-  const filterCount = () => { const f = S.f; return [f.kind, f.lang, f.day != null, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
+  // A chip each: each jurisdiction and each day its own.
+  const filterCount = () => { const f = S.f; return jList(S.juris).length + window.AgoraServices.daysOf(f.day).length + [f.kind, f.lang, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
   const filtersOn = () => filterCount() > 0;
 
   // ── Links ─────────────────────────────────────────────────────────────
@@ -446,10 +454,10 @@
     if (eventId) return [String(eventId)];
     const U = window.AgoraUrlState, SV = window.AgoraServices;
     const segs = [];
-    if (juris) segs.push(juris);
+    if (juris) segs.push(U.jurisdictionSegment(juris));
     if (f.location) segs.push(f.location);
     if (f.monasteries) segs.push('monasteries');
-    if (f.day != null) segs.push(SV.daySlug(f.day));
+    if (f.day != null) segs.push(SV.daySegment(f.day));
     if (f.dayGroup) segs.push(f.dayGroup);
     if (f.part) segs.push(f.part);
     if (f.service) segs.push(f.service);
@@ -497,7 +505,9 @@
     // /donate and /greek/donate are the parishes that take donations. A
     // parish's own (/smg/donate) went to its page from the Worker, unless it
     // has none on file: then its jurisdiction's, as the app had it.
-    if (r.donate) return { juris: r.jurisdiction || null, f, parish: null, eventId: null, from: null, donate: (parish && parish.jurisdiction) || r.jurisdiction || 'all' };
+    // One jurisdiction's donations; a link to several is everybody's.
+    const one = typeof r.jurisdiction === 'string' ? r.jurisdiction : null;
+    if (r.donate) return { juris: one, f, parish: null, eventId: null, from: null, donate: (parish && parish.jurisdiction) || one || 'all' };
     return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null, from };
   }
 
@@ -864,7 +874,9 @@
   // ── Jurisdiction tabs (above the viewport) ────────────────────────────
   //
   // The app's banner (filters.js): each name in its own colour, underlined
-  // while none is chosen; the chosen one filled, the others dimmed.
+  // while none is chosen; the chosen one filled, the others dimmed. A tab is
+  // one jurisdiction at a time, and a second tap lets it go; several at once
+  // are the filters' (setFilter), and each of those is filled here too.
 
   const TAB_ORDER = ['antiochian', 'greek', 'serbian', 'russian', 'romanian', 'macedonian'];
   /** A colour as it is drawn: lifted on the dark scheme, as app.js does. */
@@ -873,7 +885,7 @@
     const row = $('#juris-row');
     row.classList.toggle('has-active', !!S.juris);
     row.innerHTML = TAB_ORDER.map(j => {
-      const on = S.juris === j;
+      const on = jList(S.juris).includes(j);
       return `<button class="jurisdiction-chip${on ? ' active' : ''}" type="button" data-juris="${j}" style="--j:${shown(jColor(j))}" aria-pressed="${on}">${esc(JURIS[j].short)}</button>`;
     }).join('');
   }
@@ -896,6 +908,28 @@
 
   function viewParishes() {
     return S.parishes.filter(p => (!S.inView || S.inView.has(p.id)) && parishPasses(p));
+  }
+  /**
+   * The parishes in view, named for what they are: "64 parishes in Sydney",
+   * and the filters as a link's preview says them (shared/link-words.js):
+   * "Orthodox youth groups in Sydney", "Antiochian Orthodox Liturgies in
+   * English near you". Their card wears these, and so does a list saved
+   * from it.
+   */
+  function viewWords(n) {
+    const place = !S.place ? '' : S.place === 'Near you' ? 'near you' : `in ${S.place}`;
+    const r = window.AgoraUrlState.classifyPath(pathOf(viewSegs()), { today: todayKey() });
+    const loc = regionOf(S.f);
+    const list = S.f.listId && listById(S.f.listId);
+    const named = !list && S.f.parishIds ? [...S.f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : null;
+    let what = window.AgoraLinkWords.headingOf(r, { loc, named: named && named.length <= 3 ? named : null });
+    if (list) what += ` from ${list.name}`;
+    else if (named && named.length > 3) what += ` at ${named.length} parishes`;
+    return {
+      title: `${n} ${n === 1 ? 'parish' : 'parishes'}${place ? ` ${place}` : ''}`,
+      // A region or the parishes named say where already.
+      blurb: loc || named ? what : [what, place].filter(Boolean).join(' '),
+    };
   }
   function pillLogo(p) {
     if (p.logo_path) return `<span class="pill-logo avatar-logo"><img src="${esc(p.logo_path)}" alt="" loading="lazy"></span>`;
@@ -953,14 +987,15 @@
 
   // ── Active filters, said once beside their button ────────────────────
 
-  /** Each filter that is on, as [its key, what its chip says]. */
+  /** Each filter that is on, as [its key, what its chip says, and which of several it is]. */
   function activeBits(f) {
     const SV = window.AgoraServices;
     const bits = [];
     const loc = regionOf(f);
     if (loc) bits.push(['location', loc.label]);
     if (f.monasteries) bits.push(['monasteries', 'Monasteries']);
-    if (f.day != null) bits.push(['day', SV.dayName(f.day)]);
+    // Each day its own chip, to let go of one of them.
+    SV.daysOf(f.day).forEach(d => bits.push(['day', SV.dayName(d), d]));
     if (f.dayGroup) bits.push(['dayGroup', SV.dayGroupLabel(f.dayGroup)]);
     if (f.part) bits.push(['part', SV.partOfDayLabel(f.part)]);
     if (f.service) bits.push(['service', SV.serviceLabel(f.service)]);
@@ -975,8 +1010,10 @@
   }
   function renderActive() {
     const f = S.f;
-    const chip = (k, label) => `<button class="afchip" type="button" data-clear="${k}" aria-label="${esc(`Remove ${label}`)}">${esc(label)}${I.x}</button>`;
-    const bits = activeBits(f).map(([k, label]) => chip(k, label));
+    const chip = (k, label, val = null, style = '') => `<button class="afchip${style ? ' afj' : ''}" type="button" data-clear="${k}"${val != null ? ` data-val="${esc(val)}"` : ''}${style ? ` style="${style}"` : ''} aria-label="${esc(`Remove ${label}`)}">${esc(label)}${I.x}</button>`;
+    const bits = activeBits(f).map(([k, label, val]) => chip(k, label, val));
+    // A jurisdiction first, in its colour, as its tab is.
+    bits.unshift(...jList(S.juris).map(j => chip('juris', JURIS[j]?.short || j, j, `--j:${shown(jColor(j))}`)));
     if (S.focus) bits.unshift(chip('focus', S.focus.title));
     // Beside the button on the page, and under the dock's.
     $('#active-filters').innerHTML = $('#dock-active').innerHTML = bits.join('');
@@ -1032,15 +1069,17 @@
     let body = '';
     if (live.length) body += `<div class="tsub">Happening now</div>${live.slice(0, 4).map(e => eventRow(e, { now: true })).join('')}`;
     if (later.length) body += `<div class="tsub">Later today</div>${later.slice(0, live.length ? 3 : 5).map(e => eventRow(e)).join('')}`;
+    const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
     if (!live.length && !later.length) {
       body += `<div class="tempty">Nothing more today in view.</div>`;
-      if (tomorrow.length) body += `<div class="tsub">Tomorrow</div>${tomorrow.slice(0, 4).map(e => eventRow(e)).join('')}`;
+      if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${tomorrow.slice(0, 4).map(e => eventRow(e)).join('')}`;
     }
     const d = new Date(t + 'T00:00:00Z');
-    // Tomorrow is the Events feed's, from its day on.
+    // Tomorrow is the Events feed's, from its day on: the rest of the week,
+    // once tomorrow is here already.
     el.innerHTML = `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div></header>
       ${body}
-      <button class="see-all" type="button" data-jump="tomorrow">Tomorrow ${I.chev}</button>`;
+      <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
@@ -1133,14 +1172,15 @@
     const r = readPath(path);
     if (r.parish) return S.byId.get(r.parish)?.name || path;
     const bits = activeBits(r.f).map(b => b[1]);
-    if (r.juris) bits.unshift(JURIS[r.juris]?.short || r.juris);
+    if (r.juris) bits.unshift(jList(r.juris).map(j => JURIS[j]?.short || j).join(' + '));
     return bits.join(' · ') || path;
   }
 
   /**
    * Favourites, open on the page rather than behind a card: each starred
    * parish, in the order starred, with what is on next there. Its card of
-   * timetables is a tap away; with nothing starred, how to star one.
+   * timetables is a tap away. Nothing starred, no section: the star on a
+   * parish's card says what it does.
    */
   function renderFavs() {
     const ps = favIds().map(id => S.byId.get(id)).filter(Boolean);
@@ -1151,14 +1191,16 @@
           <span class="ht"><b>${esc(p.name)}</b><small>${nx ? `${roundel(nx.event_type)}<span>${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : '<span>No service times on file yet</span>'}</small></span>
           ${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}${I.chev}</button>`;
     }).join('');
-    $('#favs').innerHTML = `${secHead('Favourites', ps.length ? `<button class="shelf-act" type="button" data-coll="list-fav">Timetables${I.chev}</button>` : '')}
-      ${rows ? `<div class="hlist">${rows}</div>` : `<p class="shelf-empty">Star a parish on its card and it is kept here, with what is on next there.</p>`}`;
+    const el = $('#favs');
+    el.hidden = !rows;
+    el.innerHTML = rows ? `${secHead('Favourites', `<button class="shelf-act" type="button" data-coll="list-fav">Timetables${I.chev}</button>`)}
+      <div class="hlist">${rows}</div>` : '';
   }
   /** Your other lists, bookmarks and saved views, as rows: only once there is one. */
   function renderLists() {
     const ls = allLists().map(l => ({
       id: 'list-' + l.id, listId: l.id, title: l.name, kicker: 'Your list',
-      ...(l.fav ? FAV_LOOK : LIST_LOOK), ids: l.ids, blurb: l.fav ? 'Parishes you starred.' : 'A list you made.',
+      ...(l.fav ? FAV_LOOK : LIST_LOOK), ids: l.ids, blurb: l.about || (l.fav ? 'Parishes you starred.' : 'A list you made.'),
       // A list of parishes is a link: /sgr+snb.
       ...(l.ids.length ? byFilters({ ids: l.ids, f: { parishIds: new Set(l.ids), listId: l.id } }) : {}),
     }));
@@ -1172,6 +1214,7 @@
       ...(bm.dates.length || bm.rules.length ? [row('data-act="bookmarks"', BOOKMARK_LOOK, 'Bookmarks', `${bm.dates.length} to come`)] : []),
       ...savedViews().map(v => row(`data-view="${esc(v.path)}"`, VIEW_LOOK, viewTitle(v.path), v.path)),
     ];
+    $('#shelf-lists').hidden = !rows.length;
     $('#shelf-lists').innerHTML = rows.length ? `${secHead('Your lists')}<div class="hlist">${rows.join('')}
         <button class="hrow new" type="button" data-newlist><span class="hic">${I.plusSm}</span><span class="ht"><b>New list</b></span></button></div>` : '';
     renderPanel();
@@ -1267,7 +1310,7 @@
       const k = addDays(start, i);
       const es = byDay.get(k) || [];
       if (!es.length && !empty) continue;
-      const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${dayLink(k, linkFor(k))}</h3>`;
+      const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${linkFor ? dayLink(k, linkFor(k)) : ''}</h3>`;
       if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>Nothing in view</p></section>`); continue; }
       const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
       out.push(`<section class="sday" data-date="${k}">${head}${morning.map(e => eventRow(e, row)).join('')}${evening.length ? EVENING + evening.map(e => eventRow(e, row)).join('') : ''}</section>`);
@@ -1634,7 +1677,7 @@
     const box = el.querySelector('.cu');
     if (!box) return;
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
-    box.innerHTML = comingUpHTML(el.dataset.pid, el._from, el._days);
+    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days) : comingUpHTML(el.dataset.pid, el._from, el._days);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
   function setCardDate(el, k) {
@@ -1780,6 +1823,27 @@
   }
 
   // ── A collection's card: a bunch of parishes, with their timetables ───
+  //
+  // The timetables folded to the first few lines of the first, under a fade,
+  // with Show timetables to open them all; under them, what is coming up at
+  // these parishes, by the collection's own filters. The fold is a checkbox
+  // in its label (next.css .ctimes), so the Worker's first paint of the card
+  // opens the same way with no script (worker/lib/page-card.mjs).
+
+  /** What is on at a collection's parishes, by its filters, a fortnight at a time. */
+  function collFeedHTML(c, days) {
+    const start = todayKey();
+    const now = Date.now();
+    const ids = new Set(c.ids);
+    const f = { ...blankFilters(), ...(c.f || {}) };
+    const list = feedRange(start, days).filter(e => endMs(e) > now && eventParishIds(e).some(id => ids.has(id)) && eventMatches(e, f, c.juris || null));
+    // A day's link, where the collection has one of its own.
+    const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
+    const body = daysHTML(list, { start, days, linkFor });
+    return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+  }
+  const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
 
   function openCollection(c, { entry = true } = {}) {
     const o = sortOrigin();
@@ -1813,11 +1877,26 @@
           <p>${esc(c.blurb || '')}</p>
         </div>
         ${c.segs ? `<div class="sheet-link">${linkChip(c.segs)}</div>` : ''}
-        <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
-        ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
+        <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
+          <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
+          ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
+          ${ps.length > 1 ? foldHTML() : ''}
+        </section>
+        ${ps.length ? `<section class="cu-band">
+          <h2 class="sec">Coming up</h2>
+          <div class="cu">${collFeedHTML(c, CU_DAYS)}</div>
+        </section>` : ''}
+        <div class="toolbar-space"></div>
       </div>`;
     const el = pushSheet(html, 'collection', { segs: c.segs || null, entry });
     el._coll = c;
+    el._days = CU_DAYS;
+    // Folded to the first parish's first few lines, however tall its name.
+    const tt = el.querySelector('.ctimes.folded .citem .tt');
+    if (tt) {
+      const list = tt.closest('.clist');
+      list.style.setProperty('--fold', `${Math.round(tt.getBoundingClientRect().top - list.getBoundingClientRect().top + Math.min(tt.offsetHeight, 130))}px`);
+    }
     el._rest = () => ps.slice(LIMIT).map(item).join('');
   }
 
@@ -2073,8 +2152,8 @@
   const REGIONS = ['nsw', 'vic', 'qld', 'wa', 'sa', 'tas', 'act', 'nt', 'nz'];
   const regionShort = (slug) => (REGIONS.includes(slug) ? slug.toUpperCase() : window.AgoraLocations.resolveLocation(slug)?.label || slug);
 
-  const fpill = (set, val, on, label, cls = '') =>
-    `<button class="fpill${cls}${on ? ' on' : ''}" type="button" data-set="${set}" data-val="${esc(val)}" aria-pressed="${on}">${label}</button>`;
+  const fpill = (set, val, on, label, cls = '', style = '') =>
+    `<button class="fpill${cls}${on ? ' on' : ''}" type="button" data-set="${set}" data-val="${esc(val)}"${style ? ` style="${style}"` : ''} aria-pressed="${on}">${label}</button>`;
   function kindSub(id, on) {
     const c = window.AgoraEventTypes.kindColors(id === 'bible-study' ? 'talk' : id, dark());
     const l = kindSubLabel(id);
@@ -2090,7 +2169,9 @@
     const services = PANEL_SERVICES.map(sv => fpill('service', sv, f.service === sv, esc(SV.serviceLabel(sv)))).join('');
     const langs = LANGS.map(([l]) => l).map(l => fpill('lang', l, f.lang === l, esc(l))
       + (f.lang === l ? fpill('langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('');
-    const days = `<span class="fdays">${WD.map((d, i) => fpill('day', i, f.day === i, d)).join('')}</span>`;
+    const days = `<span class="fdays">${WD.map((d, i) => fpill('day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
+    // Jurisdictions, as many as you like; each in its colour, as its tab is.
+    const juris = TAB_ORDER.map(j => fpill('juris', j, jList(S.juris).includes(j), esc(JURIS[j].short), ' fpill-j', `--j:${shown(jColor(j))}`)).join('');
     const spans = SV.DAY_GROUPS.map(g => fpill('dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
     const parts = SV.PARTS_OF_DAY.map(pt => fpill('part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
     const regions = [...REGIONS, ...(f.location && !REGIONS.includes(f.location) ? [f.location] : [])]
@@ -2100,7 +2181,7 @@
       + fpill('timesOnly', '1', f.timesOnly, 'With service times')
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
     return group('What', kinds, services) + group('Language', langs) + group('When', days, spans, parts)
-      + group('Where', regions) + group('Parishes', parishes)
+      + group('Jurisdiction', juris) + group('Where', regions) + group('Parishes', parishes)
       + `<div class="fpanel-foot">${filterCount() ? '<button class="fpill fpill-ghost" type="button" data-act="clear-filters">Clear all</button>' : '<span></span>'}
           <span class="fpanel-end">${saveViewHTML()}<button class="fpill on" type="button" data-act="filters-done">Done</button></span></div>`;
   }
@@ -2144,8 +2225,17 @@
     else if (k === 'kindSub') flip('kindSub', v);
     else if (k === 'lang') { flip('lang', v); f.langStrict = false; }
     else if (k === 'langStrict') f.langStrict = !f.langStrict;
-    // A day and a span of the week are one question, asked one way at a time.
-    else if (k === 'day') { f.day = f.day === +v ? null : +v; f.dayGroup = null; }
+    // Days, as many as you like. A day and a span of the week are one
+    // question, asked one way at a time.
+    else if (k === 'day') {
+      const SV = window.AgoraServices, ds = SV.daysOf(f.day);
+      f.day = SV.dayValue(ds.includes(+v) ? ds.filter(d => d !== +v) : [...ds, +v]);
+      f.dayGroup = null;
+    }
+    else if (k === 'juris') {
+      const js = jList(S.juris);
+      S.juris = window.AgoraUrlState.jurisdictionValue(js.includes(v) ? js.filter(j => j !== v) : [...js, v]);
+    }
     else if (k === 'dayGroup') { flip('dayGroup', v); f.day = null; }
     else if (k === 'part' || k === 'service' || k === 'location') flip(k, v);
     else if (k === 'timesOnly' || k === 'monasteries') f[k] = !f[k];
@@ -2500,6 +2590,8 @@
     if ((b = t.closest('[data-clear]'))) {
       const k = b.dataset.clear;
       if (k === 'focus') S.focus = null;
+      else if (k === 'juris') S.juris = window.AgoraUrlState.jurisdictionValue(jList(S.juris).filter(j => j !== b.dataset.val));
+      else if (k === 'day' && b.dataset.val != null) S.f.day = window.AgoraServices.dayValue(window.AgoraServices.daysOf(S.f.day).filter(d => d !== +b.dataset.val));
       else if (k === 'kind') { S.f.kind = null; S.f.kindSub = null; }
       else if (k === 'lang') { S.f.lang = null; S.f.langStrict = false; }
       else if (k === 'parishIds') { S.f.parishIds = null; S.f.listId = null; }
@@ -2512,7 +2604,8 @@
       const ids = viewParishes().map(p => p.id);
       // One parish in view is that parish.
       if (ids.length === 1) { openParish(ids[0]); return; }
-      openCollection({ id: 'inview', title: `In view`, kicker: S.place || '', blurb: 'Every parish the map is showing, nearest and best-documented first.', tint: '#475569', ids });
+      // Its events are the page's filters' too.
+      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, ...viewWords(ids.length) });
       return;
     }
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(c); return; }
@@ -2595,7 +2688,7 @@
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, tint: '#475569', ids: searchState.ps.map(p => p.id) });
       }
-      if (a === 'clear-filters') { S.f = blankFilters(); S.focus = null; refilter(); return; }
+      if (a === 'clear-filters') { S.f = blankFilters(); S.juris = null; S.focus = null; refilter(); return; }
       if (a === 'filters-done') { setPanel(false); return; }
       if (a === 'save-view') {
         const path = pathOf(viewSegs());
@@ -2643,7 +2736,8 @@
       if (a === 'savelist') {
         const c = top._coll;
         const l = newList(c.title);
-        const ls = userLists(); const mine = ls.find(x => x.id === l.id); mine.ids = c.ids.slice(); writeLS(LISTS, ls);
+        // Its parishes, and what they were: "Orthodox youth groups in Sydney".
+        const ls = userLists(); const mine = ls.find(x => x.id === l.id); mine.ids = c.ids.slice(); mine.about = c.blurb || ''; writeLS(LISTS, ls);
         renderLists();
         toast(`Saved “${c.title}” to your lists`);
         return;

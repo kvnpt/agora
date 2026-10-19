@@ -84,6 +84,28 @@
     return DAY_NAMES[dow] || '';
   }
 
+  // Several weekdays at once: /wed+fri, or /wed/fri. A day filter is held as
+  // one number while it is one day, which is what every link before October
+  // 2026 meant and what most still do, and as a list from Sunday once it is
+  // more: null, 3, or [3, 5]. These read either.
+
+  /** null → [], 3 → [3], [5, 3] → [5, 3]. */
+  const daysOf = (day) => (day == null ? [] : [].concat(day));
+  /** A list of weekdays as a day filter holds it: [] → null, [3] → 3, [5, 3, 5] → [3, 5]. */
+  function dayValue(list) {
+    const ds = [...new Set(daysOf(list).filter(d => DAY_NAMES[d]))].sort((a, b) => a - b);
+    return ds.length ? (ds.length === 1 ? ds[0] : ds) : null;
+  }
+  /** Is weekday `dow` one the filter asks for? No filter asks for every day. */
+  const dayMatches = (day, dow) => day == null || daysOf(day).includes(dow);
+  /** The segment for a day filter: 'wed', 'wed+fri', or null. */
+  const daySegment = (day) => daysOf(day).map(daySlug).filter(Boolean).join('+') || null;
+  /** "Wednesdays", "Wednesdays and Fridays", "Mondays, Wednesdays and Fridays". */
+  function dayNames(day) {
+    const ns = daysOf(day).map(d => `${dayName(d)}s`);
+    return ns.length > 2 ? `${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}` : ns.join(' and ');
+  }
+
   // ── Morning and evening ──────────────────────────────────────────────
   //
   // /evening is everything from two in the afternoon on, /morning everything
@@ -266,7 +288,7 @@
   }
 
   const api = { SERVICES, SERVICE_SLUGS, resolveService, serviceOf, serviceMatches, serviceLabel, servicePlural,
-    DAY_SLUGS, DAY_NAMES, resolveDay, daySlug, dayName,
+    DAY_SLUGS, DAY_NAMES, resolveDay, daySlug, dayName, daysOf, dayValue, dayMatches, daySegment, dayNames,
     EVENING_FROM_HOUR, PARTS_OF_DAY, PART_SLUGS, resolvePartOfDay, partOfDayLabel, localHourOf, partOfDayOf,
     DAY_GROUPS, DAY_GROUP_SLUGS, resolveDayGroup, dayGroupLabel, dayGroupMatches };
   if (typeof module === 'object' && module.exports) module.exports = api;

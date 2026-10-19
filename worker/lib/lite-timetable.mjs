@@ -23,13 +23,12 @@ import timetable from '../../public/shared/timetable.js';
 import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
-import eventTypes from '../../public/shared/event-types.js';
+import linkWords from '../../public/shared/link-words.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { previewLogo } from './juris-logos.mjs';
 import { jurisLabel, weekFrom, parishSlug, isNarrowed } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
-const EVENT_TYPE_LABEL = (id) => eventTypes.eventTypeLabel(id);
 /** The accent when the page is not one jurisdiction's: the app's own blue. */
 const NEUTRAL = '#1565c0';
 
@@ -141,10 +140,10 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
   // except on its own, where nothing else would be left to name the page.
   const loc = route.location ? locations.resolveLocation(route.location) : null;
   const segs = [
-    ...(route.jurisdiction ? [route.jurisdiction] : []),
+    ...(route.jurisdiction ? [urlState.jurisdictionSegment(route.jurisdiction)] : []),
     ...(loc ? [loc.slug] : []),
     ...(route.monasteries ? ['monasteries'] : []),
-    ...(route.day != null ? [services.daySlug(route.day)] : []),
+    ...(route.day != null ? [services.daySegment(route.day)] : []),
     ...(route.dayGroup ? [route.dayGroup] : []),
     ...(route.part ? [route.part] : []),
     ...(route.service ? [route.service] : []),
@@ -167,48 +166,21 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     listsAll, collection, logos,
     canonical: `${origin}${canonicalPath}`,
     overrides,
-    color: route.jurisdiction ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
+    // One jurisdiction's page is its colour; several are the site's.
+    color: typeof route.jurisdiction === 'string' ? jurisColors.jurisdictionColorFrom(overrides, route.jurisdiction) : NEUTRAL,
   };
 }
 
 // ── words ────────────────────────────────────────────────────────────────
 
 /**
- * "Greek Orthodox parishes and times in Queensland" (/greek/qld, /timetables),
- * "Orthodox service times in English" (/services/en), "Orthodox evening
- * Vespers on Wednesdays", "Antiochian Orthodox Liturgies in English",
- * "Orthodox fully-English services".
- *
- * Two languages, two names: /en is English services — English, or English
- * beside another language — and /en-only is fully-English services, English
- * and nothing else.
+ * "Greek Orthodox parishes and times in Queensland" (/greek/qld), "Antiochian
+ * Orthodox Liturgies in English": public/shared/link-words.js, whose words the
+ * page uses too for what its map is showing.
  */
 export function timetableHeading(m) {
-  const r = m.route;
-  const who = r.jurisdiction ? jurisLabel(r.jurisdiction) : 'Orthodox';
-  const svc = r.service ? services.servicePlural(r.service) : null;
-  // English keeps its words ("fully-English"); another language is "Greek-only".
-  const full = r.lang && r.langStrict ? (/^english$/i.test(r.lang) ? 'fully-English' : `${r.lang}-only`) : '';
-  const sub = r.kind === 'services' && r.kindSub
-    ? `${EVENT_TYPE_LABEL(r.kindSub).toLowerCase()} services` : (r.kindSub && OTHER_SUBS[r.kindSub]) || null;
-  let noun = svc || sub || OTHER_KINDS[r.kind] || (r.kind === 'services' ? (isNarrowed(r) ? 'services' : 'service times')
-    : isNarrowed(r) || r.lang ? 'services' : 'parishes and times');
-  if (r.monasteries) noun = noun === 'parishes and times' ? 'monasteries and service times' : `${noun} at monasteries`;
-  const day = r.day != null ? ` on ${services.dayName(r.day)}s`
-    : r.dayGroup ? ` on ${services.dayGroupLabel(r.dayGroup).toLowerCase()}` : '';
-  const lang = r.lang && !full ? ` in ${r.lang}` : '';
-  let where = m.loc ? ` in ${m.loc.label}` : '';
-  if (m.named) {
-    const names = m.named.map(p => p.name);
-    where = ` at ${names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ')}`;
-  }
-  return [who, full, r.part || '', noun].filter(Boolean).join(' ') + day + lang + where;
+  return linkWords.headingOf(m.route, { loc: m.loc, named: m.named });
 }
-
-// The feed's other kinds, which only /next names a page for (/talks, /social):
-// the app answers them at /.
-const OTHER_KINDS = { talks: 'talks and Bible studies', socials: 'youth groups and socials' };
-const OTHER_SUBS = { 'bible-study': 'Bible studies', youth: 'youth groups', social: 'social gatherings' };
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 

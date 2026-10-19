@@ -55,6 +55,7 @@ const I = {
   cross: '<svg viewBox="0 0 40 64" aria-hidden="true" fill="currentColor"><rect x="17" y="0" width="6" height="64" rx="1"/><rect x="9" y="9" width="22" height="5" rx="1"/><rect x="2" y="21" width="36" height="6" rx="1"/><rect x="9" y="44" width="22" height="5" rx="1" transform="rotate(20 20 46.5)"/></svg>',
   live: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none"/><path d="M8.3 8.3a5.2 5.2 0 0 0 0 7.4M15.7 8.3a5.2 5.2 0 0 1 0 7.4M5.4 5.4a9.3 9.3 0 0 0 0 13.2M18.6 5.4a9.3 9.3 0 0 1 0 13.2"/></svg>',
   heart: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>',
   link: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>',
 };
 const MOON = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg>';
@@ -273,8 +274,11 @@ export function eventCardHTML(m) {
 
 /**
  * A collection's card, as next.js's openCollection draws it: its hero in its
- * look, then its parishes, those with times first, each with its timetable.
- * `rules` is every active rule, since a card shows a parish's whole week.
+ * look, then its parishes, those with times first, each with its timetable,
+ * folded to the first few lines until Show timetables (a checkbox in its
+ * label, so it opens with no script). `rules` is every active rule, since a
+ * card shows a parish's whole week. What is coming up under them is the
+ * page's to add, once it holds the occurrences.
  */
 export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
   const c = m.collection;
@@ -308,6 +312,9 @@ export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
         <p>${esc(c.blurb || '')}</p>
       </div>
       ${linkChipHTML(m.origin, c.path)}
-      <div class="clist">${ps.slice(0, limit).map(item).join('') || '<div class="tt-none">Nothing here yet.</div>'}</div>
+      <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
+        <div class="clist">${ps.slice(0, limit).map(item).join('') || '<div class="tt-none">Nothing here yet.</div>'}</div>
+        ${ps.length > 1 ? `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>` : ''}
+      </section>
     </div>`);
 }
