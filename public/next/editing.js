@@ -1,5 +1,5 @@
-// Editing in /next: the signed-in half of the app (app.js), moved over a
-// piece at a time.
+// Editing in v3: the signed-in half of the app, moved over from the app
+// v3 replaced (app.js, in the history) a piece at a time.
 //
 // Signed in is not editing (docs/editing.md). A card reads as a visitor's,
 // and a form is built when its control is pressed, in one dialog over the

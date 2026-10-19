@@ -46,7 +46,7 @@ test('the home page is the page with its head, from the asset layer alone', asyn
   const home = { ...env, ASSETS: { fetch: (req) => { asked.push(new URL(req.url).pathname); return new Response(PAGE); } } };
   const res = await worker.fetch(new Request('https://orthodoxy.au/'), home, ctx);
   const html = await res.text();
-  assert.deepEqual(asked, ['/next'], 'the page, as deployed');
+  assert.deepEqual(asked, ['/'], 'the page, as deployed');
   assert.match(html, /<title>Orthodox Services &amp; Events — orthodoxy\.au<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/orthodoxy\.au\/">/);
 });

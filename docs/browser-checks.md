@@ -1,7 +1,7 @@
 # Checking the frontend in a browser
 
-CLAUDE.md names the limit: CI covers `public/shared/` well and **executes none
-of** `app.js`, `filters.js`, `bundle.js` or `map.js`. So a change to rendering,
+CLAUDE.md names the limit: CI covers `public/shared/` and the Worker well and
+**executes none of** `next/next.js`, `next/editing.js`, `bundle.js` or `map.js`. So a change to rendering,
 filtering or wiring merges on the strength of whatever its author did to check
 it. This is how to do that here, and what has already cost time.
 
@@ -26,7 +26,7 @@ A useful habit: before writing a browser script that drives a new control,
 write one that just asserts the control is *there*, for the role that is
 supposed to see it. Both bugs above would have died in thirty seconds.
 
-## Running the app
+## Running the page
 
 ```bash
 npx wrangler d1 execute agora --local --file=d1/schema.sql      # first run only
@@ -79,14 +79,14 @@ Two failures are environmental and appear on every page load. Filter them, or
 every run reports errors:
 
 - `ERR_CERT_AUTHORITY_INVALID` — `api.iconify.design` is blocked by the agent
-  proxy, so **every glyph is missing**. A blank circular button in a screenshot
-  is usually this, not your CSS.
+  proxy. /admin still draws its glyphs from it, so a blank button there is
+  usually this, not your CSS; the page's icons are inline SVG.
 - `Bad response code: 404` from `pmtiles.js` — the basemap archive is not in
   local R2, so the map is a grey rectangle. `docs/deploy.md` covers it. Worse,
-  the style never finishes loading, so **none of the app's own layers draw** —
-  no dots, squares, stars or halos, and `state.viewportParishIds` stays null.
+  the style never finishes loading, so **none of the page's own layers draw** —
+  no dots, squares, stars or halos — and the map's loader stays up.
   To check anything on the map, drop the archive's source from the base style
-  before the app asks for it:
+  before the page asks for it:
 
   ```js
   await page.addInitScript(() => {
@@ -121,16 +121,20 @@ Keep `pageerror` **unfiltered** — that is your code throwing.
 A 403 from `/api/admin/*` may be the thing under test (a refusal you designed),
 so filter it only in scripts where it is expected.
 
-### Waiting for the app to be ready
+### Waiting for the page to be ready
 
-`networkidle` is not enough — the admin ping lands after first paint:
+`networkidle` is not enough. A link's first paint is the Worker's card
+(`.sheet.open.ssr`), which next.js replaces with its own once the bundle is in;
+a click on the painted one is a plain link. Wait for the page's own:
 
 ```js
-await page.goto('http://localhost:8787/', { waitUntil: 'networkidle' });
-await page.waitForFunction(() => window.agoraState && window.agoraState.isAdmin === true,
-  { timeout: 20000 });
-await page.waitForTimeout(1800);   // parishes + first render
+await page.goto('http://localhost:8787/sgr', { waitUntil: 'load' });
+await page.waitForSelector('.sheet.parish.open:not(.ssr)', { timeout: 20000 });
 ```
+
+The admin ping lands after that, and an editor's controls with it. Wait for the
+door itself — `.sheet.parish.open .tt-edit`, `[data-edit-details]` — which is
+also the check that it is there for the role that should see it.
 
 ## The trap that used to waste an hour
 
@@ -157,48 +161,43 @@ Two things can still look stale, and neither is the browser:
 
 `x-data-version` on the response says which version answered.
 
-## Shared links get the lite card, not the app
+## Every link is the page, with its card painted in
 
-Since `docs/lite-pages.md`, `/sgr`, `/sgr/next-tue`, `/102` and `/42:2026-…` load
-a server-rendered card, not the app. Three things follow for a browser script:
+Since v3 took `/` (docs/lite-pages.md), every page path is the same page, with
+the link's head and card written in by the Worker. Things that follow for a
+browser script:
 
-- **The first load of a fresh context is the card.** The app sets `agora_admin=1`
-  once `/api/admin/ping` answers with a role — which the dev bypass always does —
-  so load `/` first if the script wants the app at a parish URL. It then gets the
-  app in **page mode** (`body.page-mode`: the card as a page, map hidden); add
-  `?app` for the map with the sheet over it. Timetable pages (`/greek`) are the
-  page for admins too.
-- **A changed page renders stale.** Pages are cached under the data version, which
-  only an admin write moves — so after editing `lite-page.mjs` or
-  `lite-timetable.mjs`, stop `wrangler dev`, `rm -rf .wrangler/state/v3/cache`, and
-  start it again, or the old markup keeps coming back.
-- **Check the card with JavaScript off too** (`javaScriptEnabled: false`); it is
-  meant to read without it.
-- `curl -D - http://localhost:8787/sgr` shows `x-agora-page: lite` on a card.
-  Nothing on an app response says so.
-- **What a lite page shows on its way into the app** (the loading screen `lite.js`
-  puts up before it navigates) cannot be caught by waiting: `page.click`, `evaluate`
-  and `screenshot` all wait out a navigation the page has started, and a route that
-  holds the response back does not keep the old page up either. Keep the page instead:
-  `addEventListener('beforeunload', e => e.preventDefault())` in the page, dismiss the
-  dialog (`page.on('dialog', d => d.dismiss())`), click with `noWaitAfter: true` — the
-  navigation is cancelled and the page stays as it was when it tried to leave.
-- **The dev bypass makes every browser an admin** — the app sets `agora_admin` — so
-  Back from the app to a parish link reloads it as page mode. For a visitor's Back,
-  answer `/api/admin/ping` with a 403 in the context (`ctx.route`).
+- **A changed head or card renders stale.** They are kept at the edge under the
+  data version and the hour, which only an admin write or the clock moves — so
+  after editing `page-card.mjs`, `page-head.mjs`, `lite-page.mjs` or
+  `lite-timetable.mjs`, bump the version (any admin write) or stop `wrangler dev`,
+  `rm -rf .wrangler/state/v3/cache`, and start it again. The page around them is
+  read fresh on every request.
+- **Check the painted card with JavaScript off too** (`javaScriptEnabled: false`);
+  it is meant to read without it.
+- `curl -D - http://localhost:8787/sgr` shows `x-agora-page: parish` (or `event`,
+  `timetable`, `home`, `other`); `failed-open` means the Worker could not read D1
+  and served the page as deployed.
+- **A collection's link opens its card over the page** (`/sun/liturgy`, `/greek`),
+  covering the filters button. Press Escape first to reach the page under it.
+- **The dev bypass makes every browser an admin.** For a visitor, answer
+  `/api/admin/ping` with a 403 in the context (`ctx.route`).
 
-## Useful handles the app exposes
+## Useful handles the page exposes
 
 ```js
-window.agoraState              // the whole state object, incl. adminWho
-window.openParishSheet(id)     // open a parish card without clicking the map
-window.closeParishSheet()
-window.expandEventCard(id)     // open an event drawer by id, synthetic ids too
-window.setEventEditMode(id)    // open the event's edit dialog; null closes it
-window.openFormDialog({...})   // the edit dialog: parish details, a rule, a new rule, an event
-window.closeFormDialog()
-window.agoraAdminMay(cap, pid) // the same two questions the Worker asks
+window.openParishSheet(id)        // open a parish card without clicking the map
+window.agoraOpenEventSheet(id)    // open an event card by id, synthetic ids too
+window.NextEdit.editDetails(pid)  // the details pencil
+window.NextEdit.editLine([ruleId])// a timetable line's pencil
+window.NextEdit.editEvent(id)     // an event card's pencil
+window.NextEdit.addEvent(pid)     // the add-event editor, as Add + opens it
+window.NextEdit.addService(pid)   // Add schedule
+window.agoraStateRef              // what map.js reads
 ```
+
+Each `NextEdit` call checks the capability first, as its control does, so one
+that does nothing for a role is the same answer the page gives.
 
 ## Driving the roles
 
@@ -216,7 +215,7 @@ $D1 "UPDATE admin_roles SET role='owner', parish_ids=NULL WHERE email='dev'"
 $D1 "INSERT INTO admin_roles (email, role) VALUES ('someone@else','owner')"  # no role at all
 ```
 
-A reload is needed after each — the role is read once, by `checkAdmin()`.
+A reload is needed after each — the page reads the role once, by `checkSignIn()`.
 
 ### Making the client and the server disagree
 
@@ -227,11 +226,11 @@ fallback path you need them to disagree, and the only reliable way is to
 
 ```js
 // Open as an owner: the client predicts no refusal and sends no `propose`.
-await page.locator('#parish-add-event-fab').click();
+await page.locator('.sheet.parish.open .add-box[data-suggest="An event"]').click();
 // …type a card and tick another parish under "Also at other parishes"…
 // Narrow the role in D1, then press. The Worker refuses; the card shows the ask.
 execSync(`npx wrangler d1 execute agora --local --command "INSERT INTO admin_roles ..."`);
-await page.locator('#new-event-editor [data-ee="publish"]').click();
+await page.locator('.new-event-modal [data-ee="publish"]').click();
 ```
 
 That path found a real bug the first time it was driven: typing the reason
@@ -253,9 +252,9 @@ npx wrangler d1 execute agora --local --command \
 
 ## The add-event editor and the poster reader
 
-The editor (`public/shared/event-editor.js`) is the same component in the app
-(`#new-event-editor`, behind `#parish-add-event-fab`) and in /admin
-(`#add-event-editor`, behind **Events** → + Event). Its controls carry
+The editor (`public/shared/event-editor.js`) is the same component on the page
+(`.new-event-modal`, behind the dotted **Add +** under a card's Coming up) and in
+/admin (`#add-event-editor`, behind **Events** → + Event). Its controls carry
 `data-ee` hooks — `parish` (the picker; /admin has no select of its own any
 more), `suggest` and `move-suggested` (whose poster it is, and the one-tap
 move), `poster-input`, `drop`, `status`, `publish`, `save-draft`, `discard`,
@@ -336,7 +335,7 @@ await page.screenshot({ path: 'out.png',
   clip: { x: b.x - 60, y: b.y - 14, width: 130, height: b.height + 28 } });
 ```
 
-Remember the missing glyphs — an empty-looking button is probably iconify.
+Remember the missing glyphs in /admin — an empty-looking button there is probably iconify.
 
 ## What to say in the PR
 

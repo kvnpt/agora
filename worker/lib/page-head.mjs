@@ -1,6 +1,6 @@
 // The page's head, for each link.
 //
-// v3 is one page that reads its own address (public/next.html,
+// v3 is one page that reads its own address (public/index.html,
 // public/next/next.js): the home page, a parish (/sgr), an event (/102), a
 // collection (/en, /greek), any other filter link (/greek/qld). A chat app
 // previewing a link and a search engine reading one run no JavaScript, so the

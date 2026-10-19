@@ -27,6 +27,7 @@ import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import sourceLine from '../../public/shared/source-line.js';
 import lines from '../../public/shared/timetable-lines.js';
 import collections from '../../public/shared/collections.js';
+import linkify from '../../public/shared/linkify.js';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 import { mapsHref } from './lite-page.mjs';
 
@@ -77,6 +78,11 @@ function dayLabel(k, today) {
   const d = new Date(`${k}T00:00:00Z`);
   const base = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
   return k === today ? `Today · ${base}` : k === addDays(today, 1) ? `Tomorrow · ${base}` : base;
+}
+/** "Fri 13 Nov", "Today": next.js's dayLabel without `long`. */
+function shortDay(k, today) {
+  const d = new Date(`${k}T00:00:00Z`);
+  return k === today ? 'Today' : k === addDays(today, 1) ? 'Tomorrow' : `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
 }
 function roundel(kind, big) {
   const c = eventTypes.kindColors(kind || 'other', false);
@@ -233,8 +239,11 @@ export function eventCardHTML(m) {
   const e = m.pinned;
   const p = m.parish;
   const today = localDateOf(m.zone, m.now);
-  const end = e.end_local ? String(e.end_local).slice(11, 16)
-    : e.end_utc ? localPartsOf(e.timezone || m.zone, Date.parse(e.end_utc)).time : null;
+  const last = e.end_local ? { date: String(e.end_local).slice(0, 10), time: String(e.end_local).slice(11, 16) }
+    : e.end_utc ? localPartsOf(e.timezone || m.zone, Date.parse(e.end_utc)) : null;
+  const end = last ? last.time : null;
+  // Over days (a weekend camp), each end says its day. A vigil past midnight is one night.
+  const overDays = last && e.end_utc && last.date > e._local.date && Date.parse(e.end_utc) - Date.parse(e.start_utc) >= 12 * 3600000;
   const venue = e.location_parish_id && m.venues[e.location_parish_id];
   const where = e.location_override || (venue ? `${venue.name} — ${venue.address || ''}` : p.address) || '';
   const lat = e.location_lat ?? e.lat ?? p.lat, lng = e.location_lng ?? e.lng ?? p.lng;
@@ -245,7 +254,8 @@ export function eventCardHTML(m) {
       <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
         <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(eventTypes.eventTypeLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
         <h1>${esc(e.title)}</h1>
-        <p class="ev-when">${esc(dayLabel(e._local.date, today))} · ${esc(hm12(e._local.time))}${end ? `–${esc(hm12(end))}` : ''}</p>
+        <p class="ev-when">${overDays ? `${esc(shortDay(e._local.date, today))} ${esc(hm12(e._local.time))} – ${esc(shortDay(last.date, today))} ${esc(hm12(end))}`
+          : `${esc(dayLabel(e._local.date, today))} · ${esc(hm12(e._local.time))}${end ? `–${esc(hm12(end))}` : ''}`}</p>
         ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
       </div>
       ${linkChipHTML(m.origin, `/${e.id}`)}
@@ -255,7 +265,7 @@ export function eventCardHTML(m) {
         <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>Parish</span></a>
       </div>
       ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
-      ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+      ${e.description ? `<div class="ev-desc">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
     </div>`);
 }
 

@@ -40,7 +40,7 @@ const GREEK_QLD = 'greek-gopssc-buderim';
 const COLLECTION_PATHS = new Set(collections.COLLECTIONS.map(c => c.path));
 // Wednesday 30 September 2026, midday in Sydney.
 const NOW = Date.parse('2026-09-30T02:00:00Z');
-const SHELL = fs.readFileSync('public/next.html', 'utf8');
+const SHELL = fs.readFileSync('public/index.html', 'utf8');
 const assets = (html = SHELL) => ({ fetch: async () => new Response(html) });
 
 function fresh() {
@@ -584,14 +584,13 @@ test('/monasteries is the monasteries, convents and sketes, by name', async () =
 // ── the lite model's helpers the head still reads ────────────────────────
 
 test('a multi-day event says its span; a vigil past midnight does not', async () => {
-  const { multiDaySpan } = await import('../lib/lite-page.mjs');
-  const zone = 'Australia/Sydney';
-  assert.equal(multiDaySpan({ start_utc: '2026-11-13T07:00:00.000Z', end_utc: '2026-11-15T05:00:00.000Z' }, zone),
-    'Fri 13 – Sun 15 Nov, until 4pm');
-  assert.equal(multiDaySpan({ start_utc: '2026-10-30T07:00:00.000Z', end_utc: '2026-11-01T05:00:00.000Z' }, zone),
-    'Fri 30 Oct – Sun 1 Nov, until 4pm');
-  assert.equal(multiDaySpan({ start_utc: '2026-11-14T12:00:00.000Z', end_utc: '2026-11-14T16:00:00.000Z' }, zone), null);
-  assert.equal(multiDaySpan({ start_utc: '2026-11-14T12:00:00.000Z', end_utc: null }, zone), null);
+  const { raw, get } = fresh();
+  const add = (t, start, end) => raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', ?, ?, ?, 'social', 'approved', 'headless') RETURNING id`).get(PARISH, t, start, end).id;
+  const camp = add('Youth camp', '2026-11-13T07:00:00Z', '2026-11-15T05:00:00Z');
+  assert.match(card((await get(`/${camp}`)).html), /<p class="ev-when">Fri 13 Nov 6pm – Sun 15 Nov 4pm<\/p>/);
+  const vigil = add('Vigil', '2026-11-14T12:00:00Z', '2026-11-14T16:00:00Z');
+  assert.match(card((await get(`/${vigil}`)).html), /<p class="ev-when">Saturday 14 Nov · 11pm–3am<\/p>/);
 });
 
 test('a timetable reads from today round the week', async () => {

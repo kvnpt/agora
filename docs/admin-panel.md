@@ -118,8 +118,9 @@ picker: with more than one parish to choose from it asks first, and it moves a
 draft whose poster turned out to be another parish's (docs/editing.md).
 
 And a fifth surface that is not here at all. Editing a single occurrence —
-cancel this Sunday, move it to 10am, combine it with the cathedral — lives in
-`public/app.js`, inline on the public site, gated on `state.isAdmin`. It is the
+cancel this Sunday, move it to 10am, combine it with the cathedral — lives on
+the public page, behind an event card's pencil (`public/next/editing.js`), gated
+on the capability at that parish. It is the
 most frequent admin act and the one a parish contact would actually be given.
 `/admin` neither contains it nor mentions it.
 

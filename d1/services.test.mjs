@@ -149,23 +149,18 @@ test('a service slug is never also a day or a jurisdiction', () => {
   }
 });
 
-test('app.js reads the registry and writes the segments back', () => {
-  const app = fs.readFileSync('public/app.js', 'utf8');
+test('the page reads the registry and writes the segments back', () => {
+  const page = fs.readFileSync('public/next/next.js', 'utf8');
   // Days are parsed before services — in the shared grammar now.
   const grammar = fs.readFileSync('public/shared/url-state.js', 'utf8');
   assert.ok(grammar.indexOf('services.resolveDay(seg)') < grammar.indexOf('services.resolveService(seg)'),
     'the URL grammar must read a weekday before a service');
-  for (const needle of [
-    'AgoraUrlState.classifyPath(',
-    'scheduleFocusBannerHtml',           // the "Showing …" row
-    'data-schedule-focus-clear',         // its dismiss
-    'data-sched-focus',                  // tappable schedule rows
-    'syncFeedFilterBanner',              // the main feed's "Showing …"
-    'data-feed-filter-clear',            // its dismiss
-  ]) {
-    assert.ok(app.includes(needle), `app.js is missing ${needle}`);
+  assert.ok(page.includes('window.AgoraUrlState.classifyPath('), 'readPath does not use the shared grammar');
+  const segs = page.slice(page.indexOf('function segsFor('), page.indexOf('const pathOf'));
+  for (const needle of ['SV.daySlug(f.day)', 'segs.push(f.dayGroup)', 'segs.push(f.part)', 'segs.push(f.service)']) {
+    assert.ok(segs.includes(needle), `segsFor does not write back ${needle}`);
   }
   const html = fs.readFileSync('public/index.html', 'utf8');
   assert.ok(html.includes('/shared/services.js'));
-  assert.ok(html.includes('id="feed-filter-banner"'), 'the feed banner needs somewhere to render');
 });
+

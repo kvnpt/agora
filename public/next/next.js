@@ -22,6 +22,9 @@
 // in the same grammar (/greek/en, /sun/liturgy, /sgr+snb, /sgr, /102). The
 // Worker answers every one with this page, its head saying what the link is
 // (worker/routes/pages.mjs). The link shows on the page as it builds.
+//
+// v3 replaced the app at / (app.js, app.css, filters.js). Where a comment here
+// names one of them, it is where a piece came from; git history has them.
 
 (function () {
   'use strict';
@@ -1752,7 +1755,10 @@
     const segs = segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const l = local(e);
-    const end = e.end_local ? e.end_local.slice(11, 16) : (e.end_utc ? partsIn(e.timezone || TZ, Date.parse(e.end_utc)).hm : null);
+    const last = e.end_local ? { date: e.end_local.slice(0, 10), hm: e.end_local.slice(11, 16) } : (e.end_utc ? partsIn(e.timezone || TZ, Date.parse(e.end_utc)) : null);
+    const end = last ? last.hm : null;
+    // Over days (a weekend camp), each end says its day. A vigil past midnight is one night.
+    const overDays = last && last.date > l.date && endMs(e) - Date.parse(e.start_utc) >= 12 * 3600000;
     const where = e.location_override || p?.address || '';
     const lat = e.lat ?? p?.lat, lng = e.lng ?? p?.lng;
     // A service's date is about its rule, which the dialog lists by name.
@@ -1768,7 +1774,8 @@
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
           <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
           <h1>${esc(e.title)}</h1>
-          <p class="ev-when">${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}</p>
+          <p class="ev-when">${overDays ? `${esc(dayLabel(l.date))} ${esc(hm12(l.hm))} – ${esc(dayLabel(last.date))} ${esc(hm12(end))}`
+            : `${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}`}</p>
           ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
           ${into ? `<p class="ev-note">In its place: <button class="ev-link" type="button" data-event="${esc(into.id)}">${esc(into.title)}</button></p>` : ''}
         </div>
@@ -1779,7 +1786,7 @@
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
         </div>
         ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
-        ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+        ${e.description ? `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
         ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
           : p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
         <div class="toolbar-space"></div>`;
@@ -2559,7 +2566,7 @@
 
   async function boot() {
     // Who is looking, alongside everything else; the cards ask it as they open.
-    checkSignIn();
+    const signedIn = checkSignIn();
     const mapStarted = startMap().catch(err => console.warn('map', err));
     const t = todayKey();
     // The loader's tree grows with each real step, as it does at / (app.js).
@@ -2602,6 +2609,13 @@
     }
     // A card painted for a link this page did not open (a parish since gone).
     $$('#sheets > .ssr').forEach(x => x.remove());
+    // /admin's New parish asks only what the row needs, then sends its maker
+    // here to finish it: the logo, the buttons, the links, the Maps place.
+    let made = null;
+    try { made = sessionStorage.getItem('agora-edit-parish'); sessionStorage.removeItem('agora-edit-parish'); } catch { /* storage refused */ }
+    if (made && made === route.parish && window.NextEdit) {
+      signedIn.then(() => { if (may('parish.edit', made)) window.NextEdit.editDetails(made); }).catch(() => {});
+    }
     // A map that settled before the parishes came counted none in view: count again.
     onView();
     // The loader is the map's: it goes when the map has drawn, its tiles in

@@ -2778,9 +2778,9 @@
       const made = await res.json().catch(() => null);
       toast('Parish added');
       f.reset(); closeModal('add-parish-backdrop');
-      // On to its editor in the app — the one with the logo, the buttons, the
-      // links and the Google Maps place, none of which this form asks. The app
-      // reads the key once it has loaded and opens the editor on that parish.
+      // On to its details on the page — the logo, the buttons, the links and
+      // the Google Maps place, none of which this form asks. The page reads the
+      // key once it has loaded and opens the details pencil on that parish.
       if (made && made.id) {
         try { sessionStorage.setItem('agora-edit-parish', made.id); } catch { /* the card still opens */ }
         location.href = appParishUrl(made);
@@ -4028,7 +4028,7 @@
       const when = (x) => [x.date ? draftDate(x.date) : '',
         [x.start_time, x.end_time].filter(Boolean).join('\u2013'), x.place || ''].filter(Boolean).join(' \u00b7 ');
       el.innerHTML = [...open, ...recent].map(x => {
-        const parishLink = `/${encodeURIComponent(String(x.parish_acronym || x.parish_id).toLowerCase())}?app`;
+        const parishLink = `/${encodeURIComponent(String(x.parish_acronym || x.parish_id).toLowerCase())}`;
         const decided = x.status !== 'open';
         return `
         <div class="ask"${decided ? ' style="opacity:.7;border-left-color:var(--border-light);"' : ' style="border-left-color:var(--accent);"'}>
@@ -4455,7 +4455,7 @@
       const parishes = await fetch('/api/parishes').then(r => r.ok ? r.json() : []).catch(() => []);
       const parish = parishes.find(p => p.id === parishId);
       const name = parish ? (parish.full_name || parish.name) : parishId;
-      const link = parish ? `/${encodeURIComponent((parish.acronym || parish.id).toLowerCase())}?app` : '/';
+      const link = parish ? `/${encodeURIComponent((parish.acronym || parish.id).toLowerCase())}` : '/';
       const claim = (me.claims || []).find(k => k.parish_id === parishId && k.status === 'open');
       const sent = (me.suggestions || []).filter(s => s.parish_id === parishId && s.status !== 'withdrawn');
       const covers = me.role === 'owner' || me.role === 'editor'

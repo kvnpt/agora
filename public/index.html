@@ -2,673 +2,183 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#15161a" media="(prefers-color-scheme: dark)">
-  <title>Orthodox Services & Events — orthodoxy.au</title>
-  <!-- What a link to the app itself previews as. A link to one parish or one
-       event never gets this page: the Worker answers it with a lite card that
-       carries its own (worker/lib/lite-page.mjs). -->
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1013" media="(prefers-color-scheme: dark)">
+  <!-- What this link is, for a reader that runs no JavaScript: a chat app's
+       preview, a search engine. The Worker writes each link's own between
+       the marks (worker/lib/page-head.mjs): a parish's name and Church data,
+       a collection's heading and card. What is here is what a link gets when
+       it could not: the home page's words, kept out of the index. -->
+  <!--page:head-->
+  <title>Orthodox Services &amp; Events — orthodoxy.au</title>
   <meta name="description" content="Service times and events at Orthodox parishes across Australia and New Zealand — Greek, Antiochian, Serbian, Russian, Romanian and Macedonian — on one map.">
+  <meta name="robots" content="noindex,follow">
   <meta property="og:site_name" content="orthodoxy.au">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Orthodox Services & Events">
-  <meta property="og:description" content="Service times and events at Orthodox parishes across Australia and New Zealand, on one map.">
+  <meta property="og:title" content="Orthodox Services &amp; Events">
+  <meta property="og:description" content="Service times and events at Orthodox parishes across Australia and New Zealand — Greek, Antiochian, Serbian, Russian, Romanian and Macedonian — on one map.">
   <meta property="og:image" content="https://orthodoxy.au/og/default.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="stylesheet" href="/lib/maplibre-gl.css" />
-  <link rel="stylesheet" href="/app.css">
+  <!--/page:head-->
+  <!-- v3: a page around a map rather than a map under a sheet. It reads
+       /api/bundle through bundle.js and the /shared/ projection, and somebody
+       signed in edits through the /api/admin routes /admin uses. -->
+  <link rel="stylesheet" href="/lib/maplibre-gl.css">
   <link rel="stylesheet" href="/shared/event-editor.css">
+  <link rel="stylesheet" href="/next/next.css">
 </head>
 <body>
-  <!-- Loading overlay (gum-tree fills from bottom; Minecraft-style verbose log).
-       Removed by lsHide() once parishes + events + first render are done. -->
-  <div id="loading-screen" aria-hidden="true">
-    <div class="ls-header">orthodoxy.au</div>
-    <!-- Eucalyptus SVG is injected on boot (random pick of 7) by the inline
-         script below. The wrapper stays empty until the fetch resolves. -->
-    <div class="ls-tree-wrap"></div>
-    <div class="ls-log" id="ls-log"></div>
-  </div>
-  <script>
-    // Inline boot loader — defined before app.js so it can log from anywhere.
-    // Tree fills via CSS scaleY on the clip-rect; log stream emulates a
-    // Minecraft world-loader with a pool of fake-verbose init messages and
-    // real events pushed in from app.js as data arrives.
-    (function () {
-      var log = document.getElementById('ls-log');
-      var screen = document.getElementById('loading-screen');
-      var progress = 0;
-
-      function lsLog(msg) {
-        if (!log) return;
-        // Single status line that re-animates on each update — no stack.
-        // Fresh element forces the CSS enter animation to retrigger.
-        while (log.firstChild) log.removeChild(log.firstChild);
-        var line = document.createElement('div');
-        line.className = 'ls-log-line';
-        line.textContent = msg;
-        log.appendChild(line);
-      }
-      function lsProgress(p) {
-        progress = Math.max(progress, Math.min(1, p));
-        // Rect is created asynchronously once the random eucalyptus SVG
-        // loads — re-query each call so progress lands whether the SVG
-        // arrived or not.
-        var rect = document.getElementById('ls-tree-fill-rect');
-        if (rect) rect.style.transform = 'scaleY(' + progress + ')';
-      }
-      function lsHide() {
-        lsProgress(1);
-        setTimeout(function () {
-          if (!screen) return;
-          screen.classList.add('hidden');
-          setTimeout(function () { if (screen && screen.parentNode) screen.parentNode.removeChild(screen); }, 750);
-        }, 400);
-      }
-
-      // Filler messages — deterministic-ish but shuffled so each load looks
-      // different. Real progress events (from app.js) interleave via lsLog.
-      var pool = [
-        'Initialising namespace…',
-        'Parsing Australia/Sydney timezone…',
-        'Allocating tile cache (CARTO light_all)…',
-        'Reading jurisdiction palette…',
-        'Warming haversine cache…',
-        'Hydrating cached location…',
-        'Seeding parish-filter pills…',
-        'Binding touch event handlers…',
-        'Disabling pull-to-refresh…',
-        'Inflating map container…',
-        'Computing viewport bounds…',
-        'Synchronising URL slug state…',
-        'Registering history popstate handler…',
-        'Scheduling LIVE countdown timer (60s)…',
-        'Checking admin session…',
-        'Evaluating prefers-color-scheme…',
-        'Reticulating iconostases…',
-        'Calibrating bottom-sheet snap points…',
-        'Resolving adapter registry…',
-        'Mounting event-card delegate…',
-        'Opening IndexedDB (noop)…',
-        'Priming MapLibre symbol layers…',
-        'Hydrating location reticle…',
-        'Checking service worker (disabled)…',
-        'Measuring safe-area insets…'
-      ];
-      for (var i = pool.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i + 1));
-        var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
-      }
-
-      lsLog('» boot orthodoxy.au');
-      var poolIdx = 0;
-      var spam = setInterval(function () {
-        if (!document.getElementById('loading-screen')) { clearInterval(spam); return; }
-        lsLog(pool[poolIdx % pool.length]);
-        poolIdx++;
-        // Creep fill on filler lines so the tree grows even before real
-        // events arrive. Real events bump it further.
-        lsProgress(progress + 0.02);
-      }, 85);
-
-      window.lsLog = lsLog;
-      window.lsProgress = lsProgress;
-      window.lsHide = lsHide;
-
-      // Eucalyptus tree: cached in localStorage for instant boot on repeat
-      // visits. Most loads reuse the cached SVG; a small reroll chance
-      // occasionally picks a new one — long-term variety without forcing
-      // short-term churn. No cache (first visit) always fetches.
-      var TOTAL = 7;
-      var REROLL_CHANCE = 0.2;
-      var cachedSvg = null, cachedIdx = null;
-      try {
-        cachedSvg = localStorage.getItem('ls-tree-svg');
-        cachedIdx = localStorage.getItem('ls-tree-idx');
-      } catch (e) {}
-      var shouldReroll = !cachedSvg || Math.random() < REROLL_CHANCE;
-
-      function mountTree(text, idx) {
-        var SVG_NS = 'http://www.w3.org/2000/svg';
-        var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
-        var src = doc.querySelector('svg');
-        if (!src) return;
-        var vb = src.getAttribute('viewBox') || '0 0 2048 2048';
-        var parts = vb.split(/\s+/).map(Number);
-        var x0 = parts[0] || 0, y0 = parts[1] || 0;
-        var vbW = (parts[2] || 2048) - x0;
-        var vbH = (parts[3] || 2048) - y0;
-
-        var out = document.createElementNS(SVG_NS, 'svg');
-        out.setAttribute('class', 'ls-tree');
-        out.setAttribute('viewBox', vb);
-        out.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        out.setAttribute('aria-hidden', 'true');
-
-        var defs = document.createElementNS(SVG_NS, 'defs');
-        var clip = document.createElementNS(SVG_NS, 'clipPath');
-        clip.setAttribute('id', 'ls-tree-fill-clip');
-        var rect = document.createElementNS(SVG_NS, 'rect');
-        rect.setAttribute('id', 'ls-tree-fill-rect');
-        rect.setAttribute('x', String(x0));
-        rect.setAttribute('y', String(y0));
-        rect.setAttribute('width', String(vbW));
-        rect.setAttribute('height', String(vbH));
-        clip.appendChild(rect);
-        defs.appendChild(clip);
-        out.appendChild(defs);
-
-        var outline = document.createElementNS(SVG_NS, 'g');
-        outline.setAttribute('class', 'ls-outline-pass');
-        var colour = document.createElementNS(SVG_NS, 'g');
-        colour.setAttribute('class', 'ls-colour-pass');
-        colour.setAttribute('clip-path', 'url(#ls-tree-fill-clip)');
-
-        var kids = Array.prototype.slice.call(src.childNodes);
-        for (var i = 0; i < kids.length; i++) {
-          outline.appendChild(kids[i].cloneNode(true));
-          colour.appendChild(kids[i].cloneNode(true));
-        }
-        out.appendChild(outline);
-        out.appendChild(colour);
-
-        var wrap = document.querySelector('.ls-tree-wrap');
-        if (!wrap) return;
-        while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
-        wrap.appendChild(out);
-        // Replay whatever progress accumulated before mount.
-        lsProgress(progress);
-      }
-
-      if (!shouldReroll && cachedSvg) {
-        mountTree(cachedSvg, cachedIdx);
-      } else {
-        var idx = Math.floor(Math.random() * TOTAL) + 1;
-        fetch('/eucalyptus/eucalyptus-' + idx + '.svg')
-          .then(function (r) { return r.ok ? r.text() : null; })
-          .then(function (text) {
-            if (!text) return;
-            try {
-              localStorage.setItem('ls-tree-svg', text);
-              localStorage.setItem('ls-tree-idx', String(idx));
-            } catch (e) {}
-            mountTree(text, idx);
-          })
-          .catch(function () {
-            // Fetch failed — fall back to cache if we have one.
-            if (cachedSvg) mountTree(cachedSvg, cachedIdx);
-          });
-      }
-
-      // Safety net — if applyStartMode throws or a fetch hangs, tear down
-      // the overlay after 10s so the user isn't stuck behind a tree.
-      setTimeout(function () { lsHide(); }, 10000);
-    })();
-  </script>
-
-  <!-- Jurisdiction banner — wrapper carries the fixed positioning + edge
-       fade overlays; inner div is the actual horizontally-scrolling row. -->
-  <div class="jurisdiction-banner-wrap" id="jurisdiction-banner-wrap">
-    <!-- The account, as the banner's first chip: a square, and outside the
-         scrolling row so it stays put while the jurisdictions scroll. It
-         starts the Cloudflare Access sign-in when nobody is signed in, and
-         opens the menu below when somebody is. -->
-    <button class="juris-account fm-account" id="btn-account" type="button"
-            aria-haspopup="menu" aria-expanded="false" aria-label="Account" title="Account">
-      <img class="juris-account-icon" src="https://api.iconify.design/ph:user-circle.svg" alt="">
-      <!-- Something is waiting for this person to decide (syncAccountMenu). -->
-      <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
+  <header class="top">
+    <button class="place" type="button" id="place" aria-label="Use my location">
+      <span class="place-name" id="place-name">Australia</span>
+      <span class="place-sub" id="place-sub">orthodoxy.au</span>
     </button>
-    <div class="jurisdiction-banner" id="jurisdiction-chips"></div>
-  </div>
-  <!-- Signed-in menu, dropping from the account chip. Hidden outright until
-       the ping says this browser can administer; Sign in takes its place
-       until then. -->
-  <div class="account-menu hidden" id="account-menu" role="menu" aria-labelledby="btn-account">
-    <a class="account-menu-item" id="btn-admin" href="/admin" role="menuitem" hidden>
-      <img class="account-menu-icon" src="https://api.iconify.design/ph:sliders-horizontal.svg" alt="">
-      <span>Admin panel</span>
-    </a>
-    <button class="account-menu-item" id="btn-logout" type="button" role="menuitem" hidden>
-      <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-out.svg" alt="">
-      <span>Log out</span>
-    </button>
-    <a class="account-menu-item" id="btn-signin" href="/admin" role="menuitem">
-      <img class="account-menu-icon" src="https://api.iconify.design/ph:sign-in.svg" alt="">
-      <span>Sign in</span>
-    </a>
-  </div>
-
-
-  <!-- Parish filter pills — wrapper handles fixed positioning + fade
-       overlays; inner row is the scrolling flex container. The favourites
-       star and the parish counter are OUTSIDE the scroll so they don't move
-       with it. Pill buttons render into the inner #parish-pills-list. -->
-  <div class="parish-filter-row-wrap" id="parish-filter-row-wrap">
-    <!-- Favourites: the parishes this browser starred, newest first, as a
-         column of their own dropping down from here (toggleFavouritesList). -->
-    <button class="parish-fav-fab" id="btn-favourites" type="button" hidden
-            aria-haspopup="true" aria-expanded="false" aria-label="Favourite parishes" title="Favourite parishes">
-      <img src="https://api.iconify.design/ph:star.svg" alt="">
-    </button>
-    <!-- The parishes in view, counted. A tap chooses them: multi-select with
-         those already ticked — or, with none in view, multi-select and the
-         map out to the nearest (renderParishCounter). -->
-    <button class="parish-counter" id="btn-parish-counter" type="button" aria-label="Parishes in view">
-      <img src="https://api.iconify.design/ph:church.svg" alt="">
-      <span class="parish-counter-n" id="parish-counter-n">0</span>
-    </button>
-    <div class="parish-filter-row" id="parish-filter-row">
-      <div class="parish-pills-list" id="parish-pills-list"></div>
-    </div>
-  </div>
-
-  <!-- Map (full-screen background) -->
-  <div class="map-container" id="map-container">
-    <div id="map"></div>
-  </div>
-
-  <!-- Location FAB (bottom right, above sheet) -->
-  <button id="location-fab" type="button" title="My location" aria-label="My location">
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" fill="currentColor"/>
-      <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.7" fill="none"/>
-      <line x1="12" y1="2" x2="12" y2="4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-      <line x1="12" y1="19.5" x2="12" y2="22" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-      <line x1="2" y1="12" x2="4.5" y2="12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-      <line x1="19.5" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-    </svg>
-  </button>
-
-  <!-- Active filter label stack (×-able chips). The old filter FAB has
-       been removed; Share View FAB takes its bottom-left position. -->
-  <div id="filter-active-stack" class="filter-active-stack">
-    <button id="filter-clear-btn" class="filter-clear-chip" type="button">Clear all</button>
-    <div id="filter-chip-list" class="filter-chip-list"></div>
-  </div>
-
-  <!-- Save list (it was Share View): the lists kept so far, and the offer
-       to keep or share this one. Bottom-left over the map; it follows the
-       sheet as the old fab did. -->
-  <div class="save-fabs" id="mode-url">
-    <button class="map-fab share-fab" id="btn-save-filter" type="button" aria-label="Save list">
-      <img class="share-pill-icon" src="https://api.iconify.design/ph:list-star.svg" alt="">
-      <span class="share-pill-label">Save list</span>
-    </button>
-  </div>
-
-
-  <!-- Map-selection overlay (visible when state.selectionMode is true).
-       Toolbar sits inset in the dotted ring's top-left corner: label +
-       Done-pill side by side, same height. -->
-  <div id="map-select-overlay" class="hidden" aria-hidden="true">
-    <div class="map-select-ring"></div>
-    <div class="map-select-toolbar">
-      <div class="map-select-label">Select parishes</div>
-      <button id="map-select-confirm" class="map-select-done" type="button" aria-label="Confirm selection">
-        <span class="map-select-done-label">Done</span>
-        <img class="map-select-done-icon" src="https://api.iconify.design/ph:check-bold.svg" alt="">
+    <div class="top-actions">
+      <!-- The account: a way in when nobody is signed in, the panel and the
+           way out when somebody is (next.js, checkSignIn). -->
+      <button class="round-btn" type="button" id="btn-account" aria-label="Sign in" title="Sign in">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3.3"/><path d="M6.2 18.6a7 7 0 0 1 11.6 0"/></svg>
+        <span class="account-dot" id="account-dot" aria-hidden="true" hidden></span>
+      </button>
+      <button class="round-btn" type="button" id="btn-locate" aria-label="Near me" title="Near me">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
       </button>
     </div>
-  </div>
+  </header>
 
-  <div id="bottom-sheet">
-    <div class="map-grab-handle"></div>
+  <main id="page">
+    <!-- Search: a field you can see, opening a sheet that answers as you type. -->
+    <button class="search-pill" type="button" id="search-pill">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+      <span>Parishes, suburbs, services…</span>
+    </button>
 
-    <!-- Mode bar: English toggle (left, was share pill), in-view chip (centred),
-         then a second row with Schedules / Socials promoted from the filter
-         menu, and Admin as a round icon locked to the right. Share button is
-         now a FAB next to the filter FAB.
-
-         Admin and Log out are `hidden` until /api/admin/ping says this browser
-         can administer, and they are hidden to everyone else — which took a
-         CSS rule as well as the attribute, because a pill's own
-         `display: inline-flex` outranks the UA's [hidden]. -->
-    <div class="mode-bar" id="mode-bar">
-      <!-- Three rows, each filter rendered by the same builders as the parish
-           card's (filterControlsHTML in app.js):
-             1. where — Any location / Searching this area;   the link, ×
-             2. the language, the kind of event, bookmarks;   Save list
-             3. the timetable, and when, centred -->
-      <div class="mode-bar-row mode-bar-row-top">
-        <!-- Area search (renderAreaPill): on once the map is moved, a tap
-             goes back to any location. -->
-        <button class="mode-bar-pill area-pill" id="area-pill" type="button" aria-pressed="false">
-          <span class="mode-bar-pill-label">Any location</span>
+    <!-- NextThere's viewport: a map inside the page, nothing on it but full
+         screen. The tabs above it and the parish row under it are next.js's,
+         and the map is map.js itself. -->
+    <section class="viewport-card" id="viewport-card">
+      <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
+      <div class="viewport" id="viewport">
+        <div id="map"></div>
+        <!-- The app's gum-tree loader, over the map alone while it loads: the
+             rest of the page is there to read meanwhile. It goes once the map
+             has drawn with its parishes on it (lsHide, in next.js). -->
+        <div id="loading-screen" aria-hidden="true">
+          <div class="ls-tree-wrap"></div>
+          <div class="ls-log" id="ls-log"></div>
+        </div>
+        <script src="/shared/loading-screen.js"></script>
+        <button class="map-fs" type="button" id="btn-fullscreen" aria-label="Full screen" title="Full screen">
+          <svg class="fs-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
+          <svg class="fs-close" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>
         </button>
-        <!-- This view's link, building as the filters change: tap to copy, as
-             the parish card's is. -->
-        <button class="mode-url ps-url" id="mode-url-btn" type="button" aria-label="Copy this view's link">
-          <span class="mode-url-text ps-url-text" id="mode-url-text"></span>
-          <img class="ps-url-copy" src="https://api.iconify.design/ph:copy.svg" alt="">
+      </div>
+      <!-- What the viewport holds, said in words under the small map: a count
+           and up to seven logos. Panning changes it. -->
+      <button class="inview" type="button" id="inview" aria-label="Parishes in view"></button>
+      <!-- Full screen, the app's parish row at the foot of the map instead:
+           the count, then every parish as its logo, in view first. -->
+      <div class="parish-row" id="parish-row">
+        <button class="parish-fav-fab" id="btn-favourites" type="button" hidden aria-label="Favourite parishes" title="Favourite parishes">
+          <svg viewBox="0 0 256 256" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="m234.29 114.85l-45 38.83L203 211.75a16.4 16.4 0 0 1-24.5 17.82L128 198.49l-50.53 31.08A16.4 16.4 0 0 1 53 211.75l13.76-58.07l-45-38.83A16.46 16.46 0 0 1 31.08 86l59-4.76l22.76-55.08a16.36 16.36 0 0 1 30.27 0l22.75 55.08l59 4.76a16.46 16.46 0 0 1 9.37 28.86Z"/></svg>
         </button>
-        <button class="mode-bar-clear" id="btn-clear-filters" type="button" hidden
-                aria-label="Clear all filters" title="Clear all">&times;</button>
+        <button class="parish-counter" type="button" data-inview aria-label="Parishes in view">
+          <svg viewBox="0 0 256 256" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M228.12 145.14L192 123.47V104a8 8 0 0 0-4-7l-52-29.64V48h16a8 8 0 0 0 0-16h-16V16a8 8 0 0 0-16 0v16h-16a8 8 0 0 0 0 16h16v19.36L68 97.05a8 8 0 0 0-4 7v19.47l-36.12 21.62A8 8 0 0 0 24 152v64a8 8 0 0 0 8 8h80a8 8 0 0 0 8-8v-48a8 8 0 0 1 16 0v48a8 8 0 0 0 8 8h80a8 8 0 0 0 8-8v-64a8 8 0 0 0-3.88-6.86M40 156.53l24-14.4V208H40ZM128 144a24 24 0 0 0-24 24v40H80v-99.36l48-27.43l48 27.43V208h-24v-40a24 24 0 0 0-24-24m88 64h-24v-65.87l24 14.4Z"/></svg>
+          <span id="inview-n">0</span>
+        </button>
+        <div class="parish-pills" id="parish-pills"></div>
       </div>
-      <!-- Rows 2 and 3, laid out by /shared/toolbar.js as the parish card's
-           are, with Save list and the timetable added (mountMainToolbar). -->
-      <div data-toolbar-rows="main" hidden></div>
+    </section>
 
+    <!-- The filters: a button beside the chips they make, opening the app's
+         pills under it. -->
+    <div class="filter-bar">
+      <button class="fpill fbtn" type="button" id="btn-filters" aria-expanded="false" aria-controls="filter-panel">
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        <span>Filters</span><span class="fcount" id="filter-count" hidden></span>
+      </button>
+      <div class="active-filters" id="active-filters"></div>
+    </div>
+    <div class="filter-panel" id="filter-panel" role="group" aria-label="Filters" hidden></div>
+
+    <!-- This view's link, building as the filters change, as the app's does:
+         tap to copy. -->
+    <div class="page-link">
+      <button class="url-chip" type="button" id="page-link" data-copy="/" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
     </div>
 
-    <!-- Archdiocese events banner (shown in services mode when jurisdiction selected) -->
-    <a class="archdiocese-events-banner" id="archdiocese-events-banner" href="#" target="_blank" rel="noopener">
-      <span class="archdiocese-events-label">Archdiocese Events</span>
-      <img src="https://api.iconify.design/mingcute:external-link-line.svg" alt="" class="archdiocese-events-icon">
-    </a>
+    <!-- Today, before anything else. -->
+    <section class="today card" id="today" aria-label="Today"></section>
 
-    <!-- Scrollable content area -->
-    <div id="sheet-scroll">
-      <!-- What the feed is narrowed to, in words — filled by syncFeedFilterBanner -->
-      <div id="feed-filter-banner" class="ps-focus-banner feed-filter-banner" hidden></div>
+    <!-- Curated: the slices of the data, as collections of parishes. -->
+    <section class="shelf" id="shelf-lists"></section>
+    <section class="shelf" id="shelf-collections"></section>
 
-      <!-- Events view (default) -->
-      <div id="events-view" class="content-view active">
-        <div id="events-list" class="events-list"></div>
-      </div>
+    <!-- App Store's feed: what's on, poster first. -->
+    <section class="shelf" id="shelf-whatson"></section>
 
-      <!-- Services view -->
-      <div id="services-view" class="content-view">
-        <div id="services-list" class="services-list"></div>
-      </div>
-    </div>
+    <section class="shelf" id="shelf-languages"></section>
+    <section class="shelf" id="shelf-jurisdictions"></section>
 
-    <!-- Offscreen buffer below sheet-scroll; becomes visible only when
-         rubber-band lifts the sheet past SNAP_FULL, covering the map gap. -->
-    <div class="sheet-spacer"></div>
-  </div>
+    <!-- And always waiting underneath, like reviews at the bottom of a place:
+         every service and event, day after day, for as long as you scroll. -->
+    <section class="stream" id="stream" aria-label="Every service and event">
+      <header class="stream-head">
+        <h2>Every service &amp; event</h2>
+        <p id="stream-sub">In view, day by day. Keep scrolling.</p>
+        <!-- From today, or from a date picked: /2026-10-25. -->
+        <div id="stream-when"></div>
+      </header>
+      <div id="stream-days"></div>
+      <div class="stream-more" id="stream-more">Loading…</div>
+    </section>
+  </main>
 
-  <!-- Parish sheet (secondary bottom sheet, opened from event drawer) -->
-  <div id="parish-sheet" class="parish-sheet hidden" aria-hidden="true">
-    <div class="parish-sheet-grab-handle"></div>
-    <button class="parish-sheet-close" id="parish-sheet-close" type="button" aria-label="Close">&times;</button>
-    <div id="parish-sheet-scroll" class="parish-sheet-scroll">
-      <div id="parish-sheet-content"></div>
-    </div>
-  </div>
+  <!-- Sheets: a collection, a parish, an event, lists. A link that opens one
+       has it painted here by the Worker (worker/lib/page-card.mjs), until
+       next.js opens its own in its place. -->
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="sheet-host" id="sheets"><!--page:card--></div>
 
-  <!-- The event sheet: one event, expanded, opened from a place's square on
-       the map or from a parish card's pinned event (openEventSheet). -->
-  <div id="event-sheet" class="event-sheet hidden" aria-hidden="true" role="dialog" aria-label="Event">
-    <div class="event-sheet-handle" aria-hidden="true"></div>
-    <div id="event-sheet-scroll" class="event-sheet-scroll">
-      <div id="event-sheet-content"></div>
-    </div>
-  </div>
-
-  <!-- Add a one-off event at the open parish.
-       OUTSIDE the sheet, and that is not tidiness. The sheet is as tall as the
-       viewport and slid down by its snap offset, so its own bottom edge is
-       half a screen below the fold — a control anchored there would be
-       invisible at every snap but full. Fixed to the viewport's bottom right
-       it is always over the sheet, because an open sheet always reaches the
-       bottom of the screen, and it holds still while the sheet is dragged
-       rather than swimming with it.
-       Hidden until /api/admin/ping says this account may write an event at
-       THIS parish — see syncParishAddEventFab. -->
-  <button id="parish-add-event-fab" class="ps-fab" type="button" hidden
-          aria-label="Add an event at this parish"></button>
-
-  <!-- Event detail panel -->
-  <div id="event-detail" class="detail-panel hidden">
-    <div class="detail-grab-handle"></div>
-    <button class="close-btn" id="close-detail">&times;</button>
-    <div id="detail-content"></div>
-  </div>
-
-  <!-- Fullscreen poster lightbox -->
-  <div id="poster-fullscreen" class="poster-fullscreen hidden">
-    <button id="poster-close" class="poster-close" type="button" aria-label="Close">&times;</button>
-    <img id="poster-fullscreen-img" src="" alt="Event poster">
-    <a id="poster-download" class="poster-download" download aria-label="Download poster">
-      <img src="https://api.iconify.design/ph:download-simple-bold.svg" alt="" class="poster-download-icon">
-      Download
-    </a>
-  </div>
-
-  <!-- Date picker — opened by every calendar button (mode bar, day headers,
-       both feed footers, the parish card's filter row).
-       A month grid of our own rather than <input type="date">: the native
-       control cannot carry the × that cancels the focus, showPicker() is not
-       available everywhere, and its max would have to be the loaded horizon —
-       which is the very thing this picker exists to reach past. The grid is
-       drawn by renderDatePicker(); the shell is here so the dialog markup
-       lives with the rest of the dialogs. -->
-  <div class="date-pop hidden" id="date-pop" role="dialog" aria-label="Jump to a date">
-    <div class="date-pop-head">
-      <button class="date-pop-nav" type="button" data-date-pop-prev aria-label="Previous month">&lsaquo;</button>
-      <div class="date-pop-title" id="date-pop-title"></div>
-      <button class="date-pop-nav" type="button" data-date-pop-next aria-label="Next month">&rsaquo;</button>
-      <button class="date-pop-x" type="button" data-date-pop-clear aria-label="Cancel the date filter" hidden>&times;</button>
-    </div>
-    <div class="date-pop-dows" id="date-pop-dows" aria-hidden="true"></div>
-    <div class="date-pop-grid" id="date-pop-grid"></div>
-    <div class="date-pop-foot">
-      <button class="date-pop-today" type="button" data-date-pop-today>This month</button>
-    </div>
-  </div>
-
-  <!-- The jurisdiction colour table, before anything that draws with it.
-       Classic script, not an .mjs, because app.js is a classic script and
-       seeds/parishes.js is CommonJS — see the file's own note. -->
   <script src="/shared/jurisdiction-colors.js"></script>
   <script src="/shared/declutter.js"></script>
-  <!-- Location slugs (/qld, /syd, /nz). Same wrapper, same reason, and the
-       Worker bundles this one too so the acronyms it refuses are checked
-       against this list rather than a copy of it. -->
+  <script src="/shared/event-types.js"></script>
+  <!-- The app's link grammar and the readers it rests on, in the app's order. -->
   <script src="/shared/locations.js"></script>
-  <!-- Reads the two above: what a parish acronym may not be, so the edit form
-       can say so before the save round-trip. The Worker is the enforcement. -->
-  <!-- Service kinds (/liturgy, /vespers, /paraklesis). -->
   <script src="/shared/services.js"></script>
-  <!-- Which parishes and rules a link means, for a list of many timetables.
-       After the two it reads; the Worker's timetable page asks it too. -->
   <script src="/shared/timetable.js"></script>
-  <script src="/shared/toolbar.js"></script>
-  <!-- Where the stream starts (/2026-07, /next-thursday, /march). After
-       services.js, whose weekday aliases it builds "next-<day>" from. -->
+  <script src="/shared/timetable-lines.js"></script>
   <script src="/shared/dates.js"></script>
   <script src="/shared/slugs.js"></script>
-  <script src="/shared/acronym-suggest.js"></script>
-  <!-- The URL grammar, shared with the Worker, which answers shared links
-       with a lite card. After the three tables it reads. -->
   <script src="/shared/url-state.js"></script>
-  <script src="/shared/read-from.js"></script>
-  <script src="/shared/logo-image.js"></script>
-  <!-- The add-event editor and what it stands on: the seven kinds, the checks
-       a card shows, and the SSE parser its poster reader streams through. -->
-  <script src="/shared/event-types.js"></script>
-  <script src="/shared/kind-picker.js"></script>
-  <script src="/shared/time-field.js"></script>
+  <script src="/shared/collections.js"></script>
+  <!-- The links in an event's description, as links. -->
+  <script src="/shared/linkify.js"></script>
+  <!-- Where things came from, and "Suggest an edit" before the sign-in. -->
+  <script src="/shared/source-line.js"></script>
   <script src="/shared/suggest-dialog.js"></script>
+  <!-- For somebody who may edit (next/editing.js): the app's add-event
+       editor and what it rests on, in /admin's order, a rule's form, and a
+       parish's details (the short link it suggests). -->
+  <script src="/shared/read-from.js"></script>
+  <script src="/shared/acronym-suggest.js"></script>
+  <script src="/shared/logo-image.js"></script>
+  <script src="/shared/kind-picker.js"></script>
   <script src="/shared/event-checks.js"></script>
   <script src="/shared/sse.js"></script>
   <script src="/shared/signs.js"></script>
-  <script src="/shared/linkify.js"></script>
   <script src="/shared/venue-picker.js"></script>
   <script src="/shared/event-editor.js"></script>
+  <script src="/shared/time-field.js"></script>
+  <script src="/shared/rule-form.js"></script>
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
   <script src="/map.js"></script>
-  <script src="/filters.js"></script>
   <script src="/bundle.js"></script>
-  <script src="/app.js"></script>
-
-  <!-- The edit dialog: a parish's details, a rule of its timetable, a new rule,
-       an event (openFormDialog in app.js). FIRST of the dialogs on purpose —
-       what these open (Combine, Break, the logo, the pin, the links, "keep it
-       by hand?") comes later in the document and so sits above it. -->
-  <div class="escalate-backdrop" id="form-backdrop" onclick="if(event.target===this)closeFormDialog()">
-    <div class="escalate-modal form-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeFormDialog()">&times;</button>
-      <h2 id="form-title"></h2>
-      <div class="escalate-modal-sub" id="form-sub"></div>
-      <div id="form-body"></div>
-    </div>
-  </div>
-
-  <!-- Escalate modal (admin-only, injected at runtime) -->
-  <div class="escalate-backdrop" id="escalate-backdrop" onclick="if(event.target===this)closePublicEscalateModal()">
-    <div class="escalate-modal">
-      <h2>Include other parishes</h2>
-      <div class="escalate-modal-sub" id="escalate-pub-sub"></div>
-
-      <div class="escalate-section-title">Include these parishes too</div>
-      <div class="escalate-list" id="escalate-pub-parishes"></div>
-
-      <div class="escalate-section-title">…in place of their own services (optional)</div>
-      <div class="escalate-list" id="escalate-pub-events"><div class="escalate-empty">Loading…</div></div>
-
-      <div class="escalate-btn-row">
-        <button class="btn-outline" onclick="closePublicEscalateModal()">Cancel</button>
-        <button class="btn-primary" id="escalate-pub-confirm" onclick="confirmPublicEscalate()">Confirm</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Adding an event at a parish, from the parish sheet's FAB.
-
-       The body is public/shared/event-editor.js, the same editor /admin's
-       Events section mounts, so the two ways in cannot drift. It starts from
-       a poster (read into the form by Claude) or from nothing, keeps every
-       card as a draft as it is typed, and carries the combine the old dialog
-       did — "also appears at" and "replaces" — on every card, because an
-       event entered because it replaces the 9am liturgy should never exist
-       for a round trip beside it. Only Publish writes `events`; closing this
-       loses nothing. docs/editing.md. -->
-  <div class="escalate-backdrop" id="new-event-backdrop" onclick="if(event.target===this)closeNewEventDialog()">
-    <div class="escalate-modal new-event-modal" role="dialog" aria-modal="true" aria-labelledby="new-event-title">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeNewEventDialog()">&times;</button>
-      <h2 id="new-event-title">Add an event</h2>
-      <div class="escalate-modal-sub" id="new-event-sub"></div>
-      <div id="new-event-editor"></div>
-    </div>
-  </div>
-
-  <!-- Donate parish-picker dialog (deep-linked via /donate, /<juris>/donate) -->
-  <div class="escalate-backdrop" id="donate-backdrop" onclick="if(event.target===this)closeDonateDialog()">
-    <div class="escalate-modal donate-modal">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeDonateDialog()">&times;</button>
-      <h2>Support a parish</h2>
-      <div class="escalate-modal-sub">Pick a parish to open its donation page.</div>
-      <select id="donate-juris-filter" class="donate-juris-filter" onchange="_onDonateJurisChange(this.value)"></select>
-      <div class="donate-list" id="donate-list"></div>
-    </div>
-  </div>
-
-  <!-- Parish logo editor (admin-only). Two panes in one dialog: the chooser
-       (upload / crop / clear) and the cropper the first two land in. Cropping
-       happens on a canvas here rather than server-side because the Worker has
-       no image pipeline, and a 3 MB phone photo squared down to 512px before
-       upload is the difference between a logo and a payload. -->
-  <div class="escalate-backdrop" id="logo-backdrop" onclick="if(event.target===this)closeParishLogoEditor()">
-    <div class="escalate-modal logo-modal">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishLogoEditor()">&times;</button>
-      <h2 id="logo-modal-title">Parish logo</h2>
-      <div class="escalate-modal-sub" id="logo-modal-sub"></div>
-
-      <div id="logo-pane-choose">
-        <div class="logo-preview" id="logo-preview"></div>
-        <div class="logo-choose-actions" id="logo-choose-actions"></div>
-      </div>
-
-      <div id="logo-pane-crop" hidden>
-        <div class="logo-crop-stage" id="logo-crop-stage">
-          <canvas class="logo-crop-canvas" id="logo-crop-canvas"></canvas>
-          <div class="logo-crop-mask" aria-hidden="true"></div>
-        </div>
-        <label class="logo-zoom-row">
-          <span class="logo-zoom-label">Zoom</span>
-          <input type="range" id="logo-zoom" min="100" max="400" value="100" step="1">
-        </label>
-        <div class="logo-crop-hint">Drag the image to reposition. The circle is what shows.</div>
-        <div class="escalate-btn-row">
-          <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishLogoEditor()">Cancel</button>
-          <button class="btn-save" type="button" id="logo-crop-save" onclick="saveParishLogoCrop()">Save logo</button>
-        </div>
-      </div>
-
-      <input type="file" id="logo-file-input" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
-    </div>
-  </div>
-
-  <!-- Placing a parish's pin by hand.
-       A crosshair fixed dead centre and a map that moves under it, rather
-       than a marker you drag: on a phone the dragging thumb covers the exact
-       spot being aimed at, which is the one pixel that matters here. The
-       readout under the map is live, so the coordinate that will be saved is
-       never a surprise.
-       This is the override for a geocoder that cannot find the building —
-       Nominatim answers a street with no house number by returning the middle
-       of the street, and no amount of retyping the address fixes that. -->
-  <div class="escalate-backdrop" id="pin-backdrop" onclick="if(event.target===this)closeParishPinMover()">
-    <div class="escalate-modal pin-modal">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishPinMover()">&times;</button>
-      <h2>Move pin location</h2>
-      <div class="escalate-modal-sub" id="pin-modal-sub"></div>
-
-      <div class="pin-map-stage">
-        <div class="pin-map" id="pin-map"></div>
-        <div class="pin-crosshair" aria-hidden="true"></div>
-      </div>
-      <div class="pin-readout" id="pin-readout" aria-live="polite"></div>
-      <div class="logo-crop-hint">Drag the map so the crosshair sits on the church door. This is the dot people tap for directions, so it beats the street it stands on.</div>
-      <div class="escalate-btn-row">
-        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishPinMover()">Cancel</button>
-        <button class="btn-save" type="button" id="pin-confirm" onclick="confirmParishPin()">Use this spot</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Every short link a parish hands out, in one dialog.
-       The four with columns of their own (donate, payment, raffle, gala) and
-       the ones without, edited the same way and shown beside the URL each
-       actually resolves to — because the question being answered is "what
-       happens when somebody types orthodoxy.au/smg/raffle", and a form that
-       shows only the destination does not answer it. -->
-  <div class="escalate-backdrop" id="links-backdrop" onclick="if(event.target===this)closeParishLinks()">
-    <div class="escalate-modal links-modal">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeParishLinks()">&times;</button>
-      <h2>Short links</h2>
-      <div class="escalate-modal-sub" id="links-modal-sub"></div>
-      <div id="links-rows"></div>
-      <button class="ps-btn ps-btn-admin links-add" type="button" id="links-add">Add a link</button>
-      <div class="escalate-btn-row">
-        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeParishLinks()">Cancel</button>
-        <button class="btn-save" type="button" id="links-save">Save links</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- A break: a stretch of dates a service is not running. Its own dialog
-       rather than a field on the schedule form, because it is a statement
-       about a RANGE and the commonest one covers the whole parish rather than
-       the rule the person happens to be looking at. -->
-  <div class="escalate-backdrop" id="break-backdrop" onclick="if(event.target===this)closeBreakEditor()">
-    <div class="escalate-modal break-modal">
-      <button class="donate-close" type="button" aria-label="Close" onclick="closeBreakEditor()">&times;</button>
-      <h2>Break</h2>
-      <div class="escalate-modal-sub" id="break-modal-sub"></div>
-      <div class="break-existing" id="break-existing"></div>
-      <div class="break-form">
-        <div class="break-scope" id="break-scope"></div>
-        <div class="break-dates">
-          <label>From<input type="date" id="break-from"></label>
-          <label>To<input type="date" id="break-to"></label>
-        </div>
-        <label class="break-note-label">Why
-          <input type="text" id="break-note" placeholder="Christmas break" maxlength="120">
-        </label>
-        <div class="break-hint" id="break-hint"></div>
-      </div>
-      <div class="escalate-btn-row">
-        <button class="ps-btn ps-btn-ghost" type="button" onclick="closeBreakEditor()">Cancel</button>
-        <button class="btn-save" type="button" id="break-save">Set break</button>
-      </div>
-    </div>
-  </div>
+  <script src="/next/editing.js"></script>
+  <script src="/next/next.js"></script>
 </body>
 </html>

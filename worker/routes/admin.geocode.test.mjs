@@ -183,56 +183,30 @@ test('a pin placed by hand is saved where it was placed, not where the geocoder 
   assert.equal(row.lng, 138.67015);
 });
 
-// ── The panel's wiring ─────────────────────────────────────────────────
+// ── The details form's wiring ──────────────────────────────────────────
 //
 // Read as TEXT, and that is a real limit worth naming rather than papering
-// over: nothing here executes app.js, so these prove the handlers are wired to
-// the names above and not that pressing the button works. What they do catch
-// is the regression that would be silent — a second Done growing back beside
-// Save, or the address row losing its pin controls in a re-render rewrite.
+// over: nothing here executes public/next/editing.js, so these prove the
+// form is wired to the route above and not that pressing the button works.
+// What they do catch is the regression that would be silent: the address row
+// losing its pin controls, or a staged pin not reaching the save.
 
-test('the edit form offers one way to finish, and it saves', () => {
-  const app = fs.readFileSync('public/app.js', 'utf8');
-
-  // Edit mode is inline now, so the way out is the admin row: Save, and a
-  // Cancel that SAYS it throws the edits away. What must not come back is a
-  // second finishing button whose only difference is silently discarding.
-  const actions = app.slice(app.indexOf('<div class="ps-actions ps-admin-actions'));
-  const row = actions.slice(0, actions.indexOf('</div>'));
-  assert.ok(row.includes("finishParishEdit('${pid}', this)"), 'the row lost its Save');
-  assert.ok(/'Save'/.test(row), 'the finishing button is not labelled Save');
-  assert.doesNotMatch(row, /'Done'/, 'a Done beside Save is the pair that differed only by discarding');
-  assert.ok(row.includes("setParishEditMode('${pid}', false)\">Cancel<"), 'leaving without saving must be labelled Cancel');
-
-  // The header's Done is the same act, not a quieter one that drops the form.
-  assert.ok(app.includes("finishParishEdit('${pid}', this)"), 'the header Done no longer saves');
-  assert.ok(
-    /window\.finishParishEdit[\s\S]{0,1600}window\.saveParish\(id\)/.test(app),
-    'finishParishEdit does not route through the save',
-  );
-  // One save at a time: a second press while the first is in flight is ignored,
-  // and the button says it is working.
-  assert.ok(
-    /window\.finishParishEdit[\s\S]{0,1600}if \(_parishSaving\.has\(id\)\) return;[\s\S]{0,400}btn\.disabled = true/.test(app),
-    'Save no longer guards against a second press while saving',
-  );
-  // And saving finishes, which is the other half of "they are one and the same".
-  assert.ok(
-    /window\.saveParish[\s\S]*?window\.setParishEditMode\(pid, false\)/.test(app),
-    'a successful save no longer leaves edit mode',
-  );
+test('the details form has one Save, which says it is working while it saves', () => {
+  const ed = fs.readFileSync('public/next/editing.js', 'utf8');
+  const form = ed.slice(ed.indexOf('data-pd-locate'));
+  assert.equal((form.match(/data-pd-save/g) || []).length >= 1, true, 'the details form lost its Save');
+  assert.doesNotMatch(form.slice(0, form.indexOf('data-pd-save')), />Done</, 'a Done beside Save is the pair that differed only by discarding');
+  assert.ok(/save\.disabled = true;\s*try \{\s*const res = await fetch\(`\/api\/admin\/parishes\//.test(ed),
+    'Save no longer guards against a second press while saving');
 });
 
 test('the address row carries both pin controls, and they reach the route', () => {
-  const app = fs.readFileSync('public/app.js', 'utf8');
-  assert.ok(app.includes("geolocateParishPin('${pid}')"), 'no Locate pin button');
-  assert.ok(app.includes("openParishPinMover('${pid}')"), 'no Move pin location button');
-  assert.ok(app.includes("'/api/admin/geocode'"), 'Locate pin does not call the route this file tests');
+  const ed = fs.readFileSync('public/next/editing.js', 'utf8');
+  assert.ok(ed.includes('data-pd-locate'), 'no Locate pin button');
+  assert.ok(ed.includes('data-pd-move'), 'no Move pin button');
+  assert.ok(ed.includes("fetch('/api/admin/geocode'"), 'Locate pin does not call the route this file tests');
   // The same lookup as the save, which is why the preview can be trusted.
-  assert.ok(
-    /data\.lat = draft\.lat/.test(app),
-    'a staged pin is not sent with the save, so the server would re-geocode over it',
-  );
-  const html = fs.readFileSync('public/index.html', 'utf8');
-  assert.ok(html.includes('id="pin-map"'), 'index.html has no map to place the pin on');
+  assert.ok(/if \(pin\) \{ data\.lat = pin\.lat; data\.lng = pin\.lng; \}/.test(ed),
+    'a staged pin is not sent with the save, so the server would re-geocode over it');
+  assert.ok(ed.includes('<div class="pin-map">'), 'Move pin has no map to place the pin on');
 });

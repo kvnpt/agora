@@ -200,12 +200,12 @@ test('both schemes get a shadow colour, from CSS rather than from here', () => {
   const src = fs.readFileSync('public/map.js', 'utf8');
   assert.ok(src.includes("getPropertyValue('--map-shadow')"),
     'map.js no longer reads the shadow colour from CSS');
-  const css = fs.readFileSync('public/app.css', 'utf8');
+  const css = fs.readFileSync('public/next/next.css', 'utf8');
   const dark = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'));
   assert.ok(/--map-shadow:/.test(css.slice(0, css.indexOf('@media'))),
-    'app.css has no light-mode --map-shadow');
+    'next.css has no light-mode --map-shadow');
   assert.ok(/--map-shadow:/.test(dark),
-    'app.css has no dark-mode --map-shadow, so the light one is used on both');
+    'next.css has no dark-mode --map-shadow, so the light one is used on both');
 });
 
 test('the stack a visitor gets is the clustered one', () => {

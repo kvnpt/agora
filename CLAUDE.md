@@ -16,7 +16,7 @@ Everything runs on Cloudflare. There is no server and no build step.
 
 | Piece | What |
 |---|---|
-| Frontend | `public/` — vanilla JS, MapLibre, served as Workers static assets |
+| Frontend | `public/` — one page (`index.html`, `next/`), vanilla JS, MapLibre, served as Workers static assets |
 | API | `worker/` — a Worker, no third-party runtime dependencies |
 | Database | D1 (SQLite at the edge) |
 | Tiles, logos, posters | R2, served with HTTP range support |
@@ -51,10 +51,9 @@ for them, are in the doc it links to — read that before changing the area.
 - `/api/bundle` is `no-cache` + ETag, cached at the edge under the data version
   every admin write and cron run bumps. A rule on the wire carries its own
   columns only; the browser joins the parish back on.
-- A shared parish or event link gets a server-rendered lite card; any other
-  filter link, a timetable page; both wear `/app.css` and the app's markup. An
-  admin at a parish link gets the app laying the card out as that page (page
-  mode). In `run_worker_first`, **a negation must never name an image extension**.
+- Every link is the one page (`public/index.html`, `public/next/`): the Worker
+  writes the link's head and paints its card in, and fails open to the page as
+  deployed. In `run_worker_first`, **a negation must never name an image extension**.
 - A synthetic id is `"<scheduleId>:YYYY-MM-DD"`. The feed widens, never shrinks.
   A date segment is a FROM, never a single day.
 
@@ -86,7 +85,7 @@ for them, are in the doc it links to — read that before changing the area.
   own with a pin (a square on the map). `worker/lib/venues.mjs` reads it, for
   every route that takes one.
 - Signed in is not editing: details and events open behind their own pencil;
-  the timetable carries a green + and a pencil per rule, for whoever may edit it.
+  the timetable carries Add + and a pencil per line, for whoever may edit it.
 
 **Sources** — [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md)
 - A parish's address is where the service is.
@@ -117,7 +116,7 @@ for them, are in the doc it links to — read that before changing the area.
 - Every push to `main` deploys (Workers Builds). Green CI is the merge gate.
 - Every PR gets a Worker Preview on a copy of the data. A Preview binds only
   `[previews]` in `wrangler.toml`; never put a secret there.
-- CI runs none of `app.js`, `filters.js`, `bundle.js`, `map.js`: a change there
+- CI runs none of `next/next.js`, `next/editing.js`, `bundle.js`, `map.js`: a change there
   is checked in a browser ([docs/browser-checks.md](docs/browser-checks.md)) and
   the PR says how. Check the way in, not just the behaviour.
 - A schema change is two files (baseline + `d1/migrations/`), and the migration
@@ -132,7 +131,7 @@ for them, are in the doc it links to — read that before changing the area.
 
 | Doc | What |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | The lens, the bundle, lite pages, dates, time zones, dedup, colours, the cron |
+| [docs/architecture.md](docs/architecture.md) | The lens, the bundle, the page at every link, dates, time zones, dedup, colours, the cron |
 | [docs/editing.md](docs/editing.md) | Occurrences, series, posters, combines, modes, the three "hides" |
 | [docs/sources-and-ingestion.md](docs/sources-and-ingestion.md) | Addresses, provenance, where a parish is read from, adapters |
 | [docs/people-and-access.md](docs/people-and-access.md) | Roles, asks, suggestions, claims, notices, and setting up Cloudflare Access |
@@ -143,6 +142,6 @@ for them, are in the doc it links to — read that before changing the area.
 | `docs/deploy.md` | The runbook, for a browser |
 | `docs/browser-checks.md` | Driving the app with Playwright |
 | `docs/adapters.md` | Writing an adapter |
-| `docs/lite-pages.md` | Shared links, previews, search |
+| `docs/lite-pages.md` | Every link's head and painted card, previews, search |
 | `docs/search-console.md` | Search Console exports, dated, from the baseline on |
 | `docs/parish-ingestion.md` | Importing a jurisdiction's directory (`/ingest-jurisdiction`) |

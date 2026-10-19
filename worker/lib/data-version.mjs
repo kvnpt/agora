@@ -112,7 +112,7 @@ export async function cachedJson({ request, env, ctx, name, build, cache = edgeC
 }
 
 /**
- * The same, for a page: a lite card for a shared link (routes/pages.mjs), or
+ * The same, for a page: a link's head and card (routes/pages.mjs), or
  * the sitemap. `build` returns the markup, or null when the path turned out not
  * to be a page at all — nothing is cached and the caller answers otherwise.
  */

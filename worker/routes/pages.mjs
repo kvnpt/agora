@@ -1,7 +1,7 @@
 // Every link, answered with the page.
 //
 // Every path reaches the Worker (run_worker_first in wrangler.toml), and every
-// page path gets v3: one page that reads its own address (public/next.html,
+// page path gets v3: one page that reads its own address (public/index.html,
 // public/next/next.js). What the Worker adds is what that page cannot say for
 // itself to a reader that runs no JavaScript — a chat app's preview, a search
 // engine — which is what the link is, in the page's head (lib/page-head.mjs):
@@ -45,7 +45,7 @@ const PARISH_PAGE_COLS = `id, name, full_name, jurisdiction, address, lat, lng, 
 const SITE_PATHS = new Set(slugs.SITE_PATHS);
 
 /** The page the Worker wraps every link in: v3, as deployed. */
-export const SHELL = '/next';
+export const SHELL = '/';
 
 /**
  * Which kind of page is this path, or null when it is not a page at all (a
