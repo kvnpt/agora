@@ -288,6 +288,56 @@
     return l;
   }
 
+  // Bookmarks are the current app's too (agora-bookmarks, [{ id, kind, at }]):
+  // a date — a stored event, or one of a rule's by its "<rule>:<date>" id —
+  // or a whole service, by its rule. They stay in this browser: a date's
+  // link expires, so a list of them is not a link.
+  const BOOKMARKS = 'agora-bookmarks';
+  const ruleIdOf = (e) => {
+    if (e.schedule_id != null) return String(e.schedule_id);
+    const m = String(e.id || '').match(/^(\d+):\d{4}-\d{2}-\d{2}$/);
+    return m ? m[1] : null;
+  };
+  const isMarked = (kind, id) => id != null && readLS(BOOKMARKS).some(b => b.kind === kind && String(b.id) === String(id));
+  /** Every bookmark, read once: the dates' ids and the services'. */
+  function marks() {
+    const ev = new Set(), ru = new Set();
+    for (const b of readLS(BOOKMARKS)) (b.kind === 'rule' ? ru : ev).add(String(b.id));
+    return { ev, ru };
+  }
+  /** Is this date bookmarked, itself or as one of its service's? */
+  const isBookmarked = (e, m = marks()) => m.ev.has(String(e.id)) || m.ru.has(ruleIdOf(e));
+  function toggleMark(kind, id) {
+    const l = readLS(BOOKMARKS);
+    const had = isMarked(kind, id);
+    writeLS(BOOKMARKS, had ? l.filter(b => !(b.kind === kind && String(b.id) === String(id))) : [{ id: String(id), kind, at: Date.now() }, ...l]);
+    return !had;
+  }
+  /** What is bookmarked and still to come: the dates, by day, and the services bookmarked whole. */
+  function bookmarked() {
+    const now = Date.now();
+    const raw = window.agoraBundle.raw;
+    const m = marks(), seen = new Set();
+    const dates = feedFor(60).concat(raw?.events || [])
+      .filter(e => endMs(e) > now && isBookmarked(e, m) && (visible(e) || tombOf(e)) && !seen.has(String(e.id)) && seen.add(String(e.id)))
+      .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+    const rules = S.rules.filter(r => m.ru.has(String(r.id)) && liveRule(r));
+    return { dates, rules };
+  }
+
+  // Saved views are the current app's saved filters (agora-saved-filters,
+  // [{ url, path, at }]): a link to the page as its filters make it, kept to
+  // come back to. They sit in Your lists beside the lists of parishes.
+  const SAVED = 'agora-saved-filters';
+  const savedViews = () => readLS(SAVED).filter(x => x && typeof x.path === 'string' && x.path !== '/').sort((a, b) => b.at - a.at);
+  const isSavedView = (path) => savedViews().some(x => x.path === path);
+  function toggleSavedView(path) {
+    const had = isSavedView(path);
+    const rest = readLS(SAVED).filter(x => x && x.path !== path);
+    writeLS(SAVED, had ? rest : [{ url: location.origin + path, path, at: Date.now() }, ...rest]);
+    return !had;
+  }
+
   // ── Filters ───────────────────────────────────────────────────────────
   //
   // The app's own readers, where it has them: timetable.js decides a kind,
@@ -440,6 +490,10 @@
     }
     // A date already past starts the list today, which is the list with no date.
     const from = r.dateFocus && r.dateFocus > todayKey() ? r.dateFocus : null;
+    // /donate and /greek/donate are the parishes that take donations. A
+    // parish's own (/smg/donate) went to its page from the Worker, unless it
+    // has none on file: then its jurisdiction's, as the app had it.
+    if (r.donate) return { juris: r.jurisdiction || null, f, parish: null, eventId: null, from: null, donate: (parish && parish.jurisdiction) || r.jurisdiction || 'all' };
     return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null, from };
   }
 
@@ -496,6 +550,27 @@
     applyRoute(readPath(location.pathname), { entry: false });
   });
 
+  /** The collection a link names (/en, /greek, /talks), as the page has it, or null. */
+  function collectionAt(path) {
+    const meant = window.AgoraCollections.collectionFor(window.AgoraUrlState.classifyPath(path, { today: todayKey() }));
+    return (meant && COLL.get(meant.id)) || null;
+  }
+  /**
+   * Follow one of this site's links from inside the page, as if it had been
+   * opened: its filters are a step, and the card it names opens over them.
+   */
+  function go(path) {
+    if (panelOpen()) setPanel(false);
+    const route = readPath(path);
+    applyRoute(route);
+    if (!route.parish && !route.eventId && !route.donate) {
+      syncURL({ push: true });
+      const c = collectionAt(path);
+      if (c) openCollection(c);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   /** Make the page what an address asks for. */
   function applyRoute(route, { entry = true, animate = true } = {}) {
     S.juris = route.juris;
@@ -510,6 +585,7 @@
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
     if (route.parish) openParish(route.parish, { entry, from: route.from });
     else if (route.eventId) openEvent(route.eventId, { entry });
+    else if (route.donate) openDonate(route.donate === 'all' ? null : route.donate, { entry });
   }
   /** A region's parishes fill the small map; its whole box (Queensland reaches Torres Strait) would leave it empty. */
   function frameRegion(slug, animate) {
@@ -649,6 +725,11 @@
     pin: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
     clock: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     check: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+    bookmark: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9z"/></svg>',
+    bookmarkOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9z"/></svg>',
+    live: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none"/><path d="M8.3 8.3a5.2 5.2 0 0 0 0 7.4M15.7 8.3a5.2 5.2 0 0 1 0 7.4M5.4 5.4a9.3 9.3 0 0 0 0 13.2M18.6 5.4a9.3 9.3 0 0 1 0 13.2"/></svg>',
+    heart: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>',
+    link: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>',
   };
 
   // ── The map: the app's own, in a viewport ─────────────────────────────
@@ -836,25 +917,31 @@
 
   // ── Active filters, said once beside their button ────────────────────
 
-  function renderActive() {
-    const f = S.f, SV = window.AgoraServices;
-    const chip = (k, label) => `<button class="afchip" type="button" data-clear="${k}" aria-label="${esc(`Remove ${label}`)}">${esc(label)}${I.x}</button>`;
+  /** Each filter that is on, as [its key, what its chip says]. */
+  function activeBits(f) {
+    const SV = window.AgoraServices;
     const bits = [];
-    if (S.focus) bits.push(chip('focus', S.focus.title));
     const loc = regionOf(f);
-    if (loc) bits.push(chip('location', loc.label));
-    if (f.monasteries) bits.push(chip('monasteries', 'Monasteries'));
-    if (f.day != null) bits.push(chip('day', SV.dayName(f.day)));
-    if (f.dayGroup) bits.push(chip('dayGroup', SV.dayGroupLabel(f.dayGroup)));
-    if (f.part) bits.push(chip('part', SV.partOfDayLabel(f.part)));
-    if (f.service) bits.push(chip('service', SV.serviceLabel(f.service)));
-    if (f.kind) bits.push(chip('kind', f.kindSub ? kindSubLabel(f.kindSub) : KIND_NAMES[f.kind] || f.kind));
-    if (f.lang) bits.push(chip('lang', f.langStrict ? `${f.lang} only` : f.lang));
-    if (f.timesOnly) bits.push(chip('timesOnly', 'With service times'));
+    if (loc) bits.push(['location', loc.label]);
+    if (f.monasteries) bits.push(['monasteries', 'Monasteries']);
+    if (f.day != null) bits.push(['day', SV.dayName(f.day)]);
+    if (f.dayGroup) bits.push(['dayGroup', SV.dayGroupLabel(f.dayGroup)]);
+    if (f.part) bits.push(['part', SV.partOfDayLabel(f.part)]);
+    if (f.service) bits.push(['service', SV.serviceLabel(f.service)]);
+    if (f.kind) bits.push(['kind', f.kindSub ? kindSubLabel(f.kindSub) : KIND_NAMES[f.kind] || f.kind]);
+    if (f.lang) bits.push(['lang', f.langStrict ? `${f.lang} only` : f.lang]);
+    if (f.timesOnly) bits.push(['timesOnly', 'With service times']);
     if (f.parishIds) {
       const l = f.listId && listById(f.listId);
-      bits.push(chip('parishIds', l ? l.name : [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(p => p.acronym || p.name).join(' + ')));
+      bits.push(['parishIds', l ? l.name : [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(p => p.acronym || p.name).join(' + ')]);
     }
+    return bits;
+  }
+  function renderActive() {
+    const f = S.f;
+    const chip = (k, label) => `<button class="afchip" type="button" data-clear="${k}" aria-label="${esc(`Remove ${label}`)}">${esc(label)}${I.x}</button>`;
+    const bits = activeBits(f).map(([k, label]) => chip(k, label));
+    if (S.focus) bits.unshift(chip('focus', S.focus.title));
     $('#active-filters').innerHTML = bits.join('');
     const n = filterCount();
     const count = $('#filter-count');
@@ -984,6 +1071,16 @@
     shelf($('#shelf-jurisdictions'), 'Jurisdictions', null, remember(jurisCollections()).map(c => collCard(c, 'wide')).join(''));
     renderLists();
   }
+  const BOOKMARK_ART = 'linear-gradient(160deg,#a5b4fc,#4f46e5)';
+  const VIEW_ART = 'linear-gradient(160deg,#99f6e4,#0d9488)';
+  /** A saved view's name: what its link asks for, as its chips say it. */
+  function viewTitle(path) {
+    const r = readPath(path);
+    if (r.parish) return S.byId.get(r.parish)?.name || path;
+    const bits = activeBits(r.f).map(b => b[1]);
+    if (r.juris) bits.unshift(JURIS[r.juris]?.short || r.juris);
+    return bits.join(' · ') || path;
+  }
   function renderLists() {
     const ls = allLists().map(l => ({
       id: 'list-' + l.id, listId: l.id, title: l.name, kicker: l.fav ? 'Your list' : 'Your list',
@@ -993,8 +1090,18 @@
       ...(l.ids.length ? byFilters({ ids: l.ids, f: { parishIds: new Set(l.ids), listId: l.id } }) : {}),
     }));
     remember(ls);
+    // Bookmarks, once there are any, and the views saved from the filters.
+    const bm = bookmarked();
+    const bmCard = bm.dates.length || bm.rules.length ? `<button class="ccard sm" type="button" data-act="bookmarks">
+        <span class="cart" style="background:${BOOKMARK_ART}"><span class="cglyph">${I.bookmarkOn}</span></span>
+        <span class="ctext"><span class="ckicker">Your list</span><span class="ctitle">Bookmarks</span><span class="csub">${bm.dates.length} to come</span></span>
+      </button>` : '';
+    const views = savedViews().map(v => `<button class="ccard sm" type="button" data-view="${esc(v.path)}">
+        <span class="cart" style="background:${VIEW_ART}"><span class="cglyph">${I.sliders}</span></span>
+        <span class="ctext"><span class="ckicker">Saved view</span><span class="ctitle">${esc(viewTitle(v.path))}</span><span class="csub">${esc(v.path)}</span></span>
+      </button>`).join('');
     shelf($('#shelf-lists'), 'Your lists', null,
-      ls.map(c => collCard(c, 'sm')).join('') + `<button class="ccard sm new" type="button" data-newlist><span class="cart">${I.plus}</span><span class="ctext"><span class="ctitle">New list</span><span class="csub">Collect parishes</span></span></button>`);
+      ls.map(c => collCard(c, 'sm')).join('') + bmCard + views + `<button class="ccard sm new" type="button" data-newlist><span class="cart">${I.plus}</span><span class="ctext"><span class="ctitle">New list</span><span class="csub">Collect parishes</span></span></button>`);
 
     renderPanel();
   }
@@ -1456,11 +1563,22 @@
     return `${avatar(p, 'xl')}
       <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist">${esc(fmtKm(d))}</span>` : ''}</p></div>`;
   }
+  /** A parish's own links (parish_links), named by their label: a festival, a building fund. */
+  const parishLinks = (pid) => ((window.agoraBundle.raw && window.agoraBundle.raw.parish_links) || []).filter(l => l.parish_id === pid && l.url);
+  /**
+   * Directions, then whatever the parish has: a phone, a website, a live
+   * stream, a way to donate, and links of its own. More than fit scroll
+   * sideways, as Maps' do.
+   */
   function actionsHTML(p) {
     const dirs = p.maps_url || `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+    const out = (href, icon, label) => `<a class="abtn" href="${esc(href)}" target="_blank" rel="noopener">${icon}<span>${esc(label)}</span></a>`;
     return `<a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>
       ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
-      ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}`;
+      ${p.website ? out(p.website, I.globe, 'Website') : ''}
+      ${p.live_url ? out(p.live_url, I.live, 'Watch live') : ''}
+      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}
+      ${parishLinks(p.id).map(l => out(l.url, I.link, l.label || l.slug)).join('')}`;
   }
   /**
    * An open card again, from the bundle as it now is, where it was scrolled
@@ -1574,6 +1692,53 @@
     el._rest = () => ps.slice(LIMIT).map(item).join('');
   }
 
+  // ── Donate: the parishes that take donations online ───────────────────
+  //
+  // /donate, and /greek/donate for one jurisdiction's: what the app's picker
+  // listed (app.js openDonateDialog), as a card. A parish's own Donate is on
+  // its card, and /smg/donate goes straight to its page from the Worker.
+
+  const DONATE_ART = 'linear-gradient(135deg,#f9a8d4,#be185d)';
+  function donateBodyHTML(juris) {
+    const o = sortOrigin();
+    const all = S.parishes.filter(p => p.donation_url);
+    const ps = all.filter(p => !juris || p.jurisdiction === juris)
+      .sort((a, b) => (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
+    const tabs = JURIS_ORDER.filter(j => all.some(p => p.jurisdiction === j));
+    const item = (p) => {
+      const d = distOf(p);
+      return `<article class="citem">
+          <button class="citem-head" type="button" data-parish="${esc(p.id)}">${avatar(p, 'md')}
+            <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}</small></span></button>
+          <a class="cgive" href="${esc(p.donation_url)}" target="_blank" rel="noopener" aria-label="${esc(`Donate to ${p.name}`)}">${I.heart}</a>
+        </article>`;
+    };
+    return `<div class="chero" style="background:${DONATE_ART}">
+          <span class="ckicker">Give</span>
+          <h1>Donate</h1>
+          <p>Parishes that take donations online.</p>
+        </div>
+        <div class="sheet-link">${linkChip(donateSegs(juris))}</div>
+        ${tabs.length > 1 ? `<div class="frow donate-tabs">${fpill('donate', '', !juris, 'All')}${tabs.map(j => fpill('donate', j, juris === j, esc(JURIS[j].short))).join('')}</div>` : ''}
+        <div class="clist">${ps.map(item).join('') || '<div class="tt-none">No parish here takes donations online yet.</div>'}</div>
+        <div class="toolbar-space sm"></div>`;
+  }
+  const donateSegs = (juris) => (juris ? [juris, 'donate'] : ['donate']);
+  function openDonate(juris, { entry = true } = {}) {
+    const el = pushSheet(`${glassBar('Donate', juris ? JURIS[juris]?.long : null)}<div class="sheet-scroll">${donateBodyHTML(juris)}</div>`, 'donate', { segs: donateSegs(juris), entry });
+    el._juris = juris;
+    return el;
+  }
+  /** One jurisdiction's, or all: the card and its link change where they are. */
+  function setDonate(el, juris) {
+    el._juris = juris || null;
+    el._segs = donateSegs(el._juris);
+    el.querySelector('.gtitle').innerHTML = `<b>Donate</b>${el._juris ? `<small>${esc(JURIS[el._juris]?.long || '')}</small>` : ''}`;
+    el.querySelector('.sheet-scroll').innerHTML = donateBodyHTML(el._juris);
+    fitLinks(el);
+    syncURL();
+  }
+
   // ── An event ──────────────────────────────────────────────────────────
 
   function findEvent(id) {
@@ -1597,7 +1762,9 @@
     // A date combined into another event points at it.
     const into = e.status === 'combined' && e.combined_into_event_id ? findEvent(e.combined_into_event_id) : null;
     const edits = p && may('event.edit', p.id);
-    return `${e.poster_path ? `<div class="ev-poster"><img src="${esc(e.poster_path)}" alt=""></div>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
+    // The parish's stream, unless this date hides it (hide_live).
+    const live = !e.hide_live && (e.parish_live_url || p?.live_url);
+    return `${e.poster_path ? `<button class="ev-poster" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt=""></button>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
           <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
           <h1>${esc(e.title)}</h1>
@@ -1608,20 +1775,22 @@
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">
           <a class="abtn primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>
+          ${live ? `<a class="abtn" href="${esc(live)}" target="_blank" rel="noopener">${I.live}<span>Watch live</span></a>` : ''}
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
-          <button class="abtn" type="button" data-act="share">${I.share}<span>Share</span></button>
         </div>
         ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
         ${e.description ? `<div class="ev-desc">${esc(e.description).replace(/\n/g, '<br>')}</div>` : ''}
         ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
           : p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
-        <div class="toolbar-space sm"></div>`;
+        <div class="toolbar-space"></div>`;
   }
   function openEvent(id, { entry = true } = {}) {
     const e = findEvent(id);
     if (!e) return;
     const p = S.byId.get(e.parish_id);
-    const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e)}</div>`;
+    // Its bookmark floats, as a parish's star does.
+    const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e)}</div>
+      <div class="floatbar" role="toolbar">${bookmarkButton(e)}</div>`;
     const el = pushSheet(html, 'event', { segs: segsFor({ eventId: e.id }), entry });
     el._event = e;
   }
@@ -1646,6 +1815,89 @@
     scroller.scrollTop = top;
     fitLinks(el);
   }
+  // ── Bookmarks ─────────────────────────────────────────────────────────
+
+  /** An event card's bookmark: on for the date, or for its whole service. */
+  function bookmarkButton(e) {
+    const on = isBookmarked(e);
+    return `<button class="bm${on ? ' on' : ''}" type="button" data-act="bookmark" aria-pressed="${on}" aria-label="${on ? 'Bookmarked' : 'Bookmark'}">${on ? I.bookmarkOn : I.bookmark}</button>`;
+  }
+  /**
+   * A one-off is bookmarked with a tap. A date of a regular service asks
+   * which: this date, or every date of the service, as the app's pair of
+   * buttons did.
+   */
+  function bookmarkEvent(e) {
+    const rid = ruleIdOf(e);
+    const r = rid && S.rules.find(x => String(x.id) === rid);
+    if (!r) {
+      toast(toggleMark('event', e.id) ? 'Bookmarked' : 'Bookmark removed');
+      return afterMarks();
+    }
+    const html = `<div class="lay-head"><h2>Bookmark</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
+      <div class="sheet-scroll">
+        <p class="lay-note">${esc(e.title)}</p>
+        <div class="lists">
+          <button class="lrow${isMarked('event', e.id) ? ' on' : ''}" type="button" data-mark="event" data-id="${esc(e.id)}">
+            <span class="lic">${I.bookmark}</span><span class="ln"><b>${esc(dayLabel(local(e).date, true))}</b><small>This date</small></span><span class="lck">${I.check}</span></button>
+          <button class="lrow${isMarked('rule', rid) ? ' on' : ''}" type="button" data-mark="rule" data-id="${esc(rid)}">
+            <span class="lic">${I.bookmark}</span><span class="ln"><b>Every ${esc(WD_LONG[r.day_of_week])}, ${esc(clock(r.start_time))}</b><small>Every date of this service</small></span><span class="lck">${I.check}</span></button>
+        </div>
+      </div>`;
+    pushSheet(html, 'mini');
+  }
+  /** After a bookmark changes: the cards that show one, and Your lists. */
+  function afterMarks() {
+    for (const el of stack) {
+      if (el._event) { const b = el.querySelector('[data-act="bookmark"]'); if (b) b.outerHTML = bookmarkButton(el._event); }
+      if (el.classList.contains('bookmarks')) el.querySelector('.sheet-scroll').innerHTML = bookmarksBodyHTML();
+    }
+    renderLists();
+  }
+  function bookmarksBodyHTML() {
+    const { dates, rules } = bookmarked();
+    const byDay = new Map();
+    for (const e of dates) {
+      const k = local(e).date;
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(e);
+    }
+    const days = [...byDay].map(([k, es]) => `<section class="sday"><h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span></h3>${es.map(e => eventRow(e)).join('')}</section>`).join('');
+    // A service bookmarked whole: its line, and its parish, which opens.
+    const services = rules.map(r => {
+      const p = S.byId.get(r.parish_id);
+      return `<button class="lrow" type="button" data-parish="${esc(r.parish_id)}">${avatar(p, 'sm')}
+          <span class="ln"><b>${esc(r.title)}</b><small>${esc(`${WD_LONG[r.day_of_week]}s, ${clock(r.start_time)}`)} · ${esc(p ? p.name : '')}</small></span>${I.chev}</button>`;
+    }).join('');
+    return `<div class="chero" style="background:${BOOKMARK_ART}">
+          <span class="ckicker">Your list</span>
+          <h1>Bookmarks</h1>
+          <p>Kept in this browser.</p>
+        </div>
+        ${services ? `<h2 class="sec">Services</h2><div class="lists">${services}</div>` : ''}
+        <h2 class="sec">Coming up</h2>
+        <div class="cu">${days || '<div class="tt-none sm">Nothing bookmarked is coming up.</div>'}</div>
+        <div class="toolbar-space sm"></div>`;
+  }
+  function openBookmarks() {
+    const el = pushSheet(`${glassBar('Bookmarks', null, { share: false })}<div class="sheet-scroll">${bookmarksBodyHTML()}</div>`, 'bookmarks');
+    return el;
+  }
+
+  /** A poster, as big as the screen allows: a tap, or Escape, puts it away. */
+  function openPoster(src) {
+    const el = document.createElement('div');
+    el.className = 'poster-view';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Poster');
+    el.innerHTML = `<img src="${esc(src)}" alt=""><button class="gbtn" type="button" aria-label="Close">${I.x}</button>`;
+    const close = () => { el.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+    el.addEventListener('click', close);
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(el);
+  }
+
   /** Every open card, redrawn. */
   function repaintSheets() {
     for (const el of [...stack]) {
@@ -1700,7 +1952,16 @@
     return group('What', kinds, services) + group('Language', langs) + group('When', days, spans, parts)
       + group('Where', regions) + group('Parishes', parishes)
       + `<div class="fpanel-foot">${filterCount() ? '<button class="fpill fpill-ghost" type="button" data-act="clear-filters">Clear all</button>' : '<span></span>'}
-          <button class="fpill on" type="button" data-act="filters-done">Done</button></div>`;
+          <span class="fpanel-end">${saveViewHTML()}<button class="fpill on" type="button" data-act="filters-done">Done</button></span></div>`;
+  }
+  /** What a saved view keeps: the page's filters, without a date, which would pass. */
+  const viewSegs = () => segsFor({ juris: S.juris, f: S.f });
+  /** Save: the page as its filters make it, kept in Your lists. Saved: tap to let it go. */
+  function saveViewHTML() {
+    const path = pathOf(viewSegs());
+    if (path === '/') return '';
+    const on = isSavedView(path);
+    return `<button class="fpill fpill-ghost${on ? ' fpill-saved' : ''}" type="button" data-act="save-view" aria-pressed="${on}">${on ? `${CHECK}<span>Saved</span>` : 'Save'}</button>`;
   }
   // Open, the panel is one step: the first change in it is a step back, the
   // rest are written onto it, so back undoes a whole go at the filters.
@@ -1767,7 +2028,6 @@
           ? `<span class="lrow-ic"><img src="${esc(jurisLogo(p.jurisdiction))}" alt=""></span>`
           : `<span class="lrow-ic">${I.cross.replace('<svg', '<svg width="14" height="22"')}</span>`}<span class="ln"><b>More ${esc(JURIS[p.jurisdiction]?.long || '')} parishes</b></span></button>
         ${suggestsHere(pid) ? `<button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b></span></button>` : ''}
-        <a class="lrow" href="/${esc((p.acronym || '').toLowerCase())}" target="_blank" rel="noopener">${I.chev}<span class="ln"><b>Open in the current app</b></span></a>
       </div></div>`;
     const el = pushSheet(html, 'mini');
     el.dataset.pid = pid;
@@ -2117,6 +2377,14 @@
       suggest(pid, b.dataset.suggest);
       return;
     }
+    if ((b = t.closest('[data-poster]'))) { openPoster(b.dataset.poster); return; }
+    if ((b = t.closest('[data-mark]'))) {
+      toggleMark(b.dataset.mark, b.dataset.id);
+      b.classList.toggle('on', isMarked(b.dataset.mark, b.dataset.id));
+      afterMarks();
+      return;
+    }
+    if ((b = t.closest('[data-view]'))) { go(b.dataset.view); return; }
     if ((b = t.closest('[data-parish]'))) { openParish(b.dataset.parish); return; }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) { $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
@@ -2136,6 +2404,7 @@
 
     // The filters apply as you tap; the map is above them.
     if (t.closest('#btn-filters')) { setPanel(!panelOpen()); return; }
+    if ((b = t.closest('[data-set="donate"]')) && top) { setDonate(top, b.dataset.val); return; }
     if ((b = t.closest('[data-set]'))) { setFilter(b.dataset.set, b.dataset.val); return; }
 
     if ((b = t.closest('[data-inlist]'))) {
@@ -2154,6 +2423,14 @@
       }
       if (a === 'clear-filters') { S.f = blankFilters(); S.focus = null; refilter(); return; }
       if (a === 'filters-done') { setPanel(false); return; }
+      if (a === 'save-view') {
+        const path = pathOf(viewSegs());
+        toast(toggleSavedView(path) ? 'Saved to your lists' : 'Removed from your lists');
+        renderLists();
+        return;
+      }
+      if (a === 'bookmark' && top && top._event) return bookmarkEvent(top._event);
+      if (a === 'bookmarks') return openBookmarks();
       if (a === 'share') {
         if (top && top._segs) return share(top._coll ? top._coll.title : top._event ? top._event.title : S.byId.get(top.dataset.pid)?.name || '', pathOf(top._segs));
         if (top && top._coll) return share(top._coll.title, pathOf(pageSegs()));
@@ -2296,6 +2573,9 @@
     const route = readPath(location.pathname);
     const h = decodeURIComponent(location.hash.slice(1));
     if (h && !route.parish) { const p = parishBySlug(h); if (p) route.parish = p.id; }
+    // greek.orthodoxy.au is /greek, where the path names no jurisdiction of its own.
+    const sub = location.hostname.match(/^([a-z]+)\.orthodoxy\.au$/);
+    if (sub && JURIS[sub[1]] && !route.juris) route.juris = sub[1];
     S.juris = route.juris;
     S.f = route.f;
     S.from = route.parish ? null : route.from;
@@ -2316,9 +2596,8 @@
     applyRoute(route, { animate: false });
     // A collection's link opens its card, over the page its filters make, as
     // the shelf's card does: a step back is that page.
-    if (!route.parish && !route.eventId) {
-      const meant = window.AgoraCollections.collectionFor(window.AgoraUrlState.classifyPath(location.pathname, { today: todayKey() }));
-      const c = meant && COLL.get(meant.id);
+    if (!route.parish && !route.eventId && !route.donate) {
+      const c = collectionAt(location.pathname);
       if (c) openCollection(c);
     }
     // A card painted for a link this page did not open (a parish since gone).

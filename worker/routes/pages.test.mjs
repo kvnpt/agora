@@ -250,11 +250,30 @@ test('an event link — projected or stored — is its card, never indexed', asy
     VALUES (?, 'manual', 'Feast of St George', '2026-10-10T23:00:00Z', '2026-10-11T01:00:00Z',
       'feast', 'approved', 'headless', '/posters/x.jpg', 'Vespers, then a meal.') RETURNING id`).get(PARISH).id;
   const stored = (await get(`/${id}`)).html;
-  assert.match(card(stored), /<div class="ev-poster"><img src="\/posters\/x\.jpg" alt=""><\/div>/);
+  assert.match(card(stored), /<a class="ev-poster" href="\/posters\/x\.jpg" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="\/posters\/x\.jpg" alt=""><\/a>/,
+    'the poster opens full size');
   assert.match(card(stored), /<h1>Feast of St George<\/h1>\s*<p class="ev-when">Sunday 11 Oct · 10am–12pm/);
   assert.match(card(stored), /<div class="ev-desc">Vespers, then a meal\.<\/div>/);
   assert.equal(meta(stored, 'property', 'og:image'), 'https://orthodoxy.au/posters/x.jpg', 'the poster previews');
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
+});
+
+test('a parish\'s stream, its Donate and its own links are buttons on its card, and a date\'s card has the stream unless it hides it', async () => {
+  const { raw, get } = fresh();
+  raw.prepare("UPDATE parishes SET live_url = 'https://youtube.com/@sgr', donation_url = 'https://give.example/sgr' WHERE id = ?").run(PARISH);
+  raw.prepare("INSERT INTO parish_links (parish_id, slug, label, url) VALUES (?, 'fund', 'Building fund', 'https://give.example/fund')").run(PARISH);
+  const c = card((await get('/sgr')).html);
+  const acts = between(c, '<div class="actions">', '<div class="summary">');
+  assert.match(acts, /<a class="abtn" href="https:\/\/youtube\.com\/@sgr" target="_blank" rel="noopener"><svg[^]*?<span>Watch live<\/span><\/a>/);
+  assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/sgr" target="_blank" rel="noopener"><svg[^]*?<span>Donate<\/span><\/a>/);
+  assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/fund" target="_blank" rel="noopener"><svg[^]*?<span>Building fund<\/span><\/a>/);
+  assert.ok(acts.indexOf('Watch live') < acts.indexOf('Donate') && acts.indexOf('Donate') < acts.indexOf('Building fund'));
+
+  const sid = raw.prepare('SELECT id FROM schedules WHERE parish_id = ? LIMIT 1').get(PARISH).id;
+  assert.match(card((await get(`/${sid}:2026-10-04`)).html), /<span>Watch live<\/span>/);
+  const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type, hide_live)
+    VALUES (?, 'manual', 'Parish picnic', '2026-10-10T23:00:00Z', 'social', 'approved', 'headless', 1) RETURNING id`).get(PARISH).id;
+  assert.doesNotMatch(card((await get(`/${id}`)).html), /Watch live/, 'hide_live hides the stream');
 });
 
 test('a cancelled occurrence previews as cancelled, and its card says so', async () => {

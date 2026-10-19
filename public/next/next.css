@@ -415,6 +415,8 @@ body.map-full .parish-row {
 .kind-subs:has(.kind-sub.on) .kind-sub:not(.on) { opacity: .45; }
 .fpanel-foot { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
 .fpill-ghost { background: transparent; }
+.fpanel-end { display: flex; align-items: center; gap: 8px; }
+.fpill-saved { color: var(--accent); border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .filter-panel, .fpill-only, .kind-subs { animation: none; }
   .kind-sub { transition: none; }
@@ -495,6 +497,8 @@ body.map-full .parish-row {
 .ccard.wide .cart { aspect-ratio: 16 / 9; }
 .cglyph { font-size: 44px; font-weight: 800; letter-spacing: -.03em; text-shadow: 0 2px 12px rgba(0, 0, 0, .18); }
 .ccard.sm .cglyph { font-size: 34px; }
+.cglyph svg { display: block; width: 40px; height: 40px; }
+.ccard.sm .cglyph svg { width: 34px; height: 34px; }
 .ccross { width: 34px; height: 54px; opacity: .92; }
 .ccross svg { width: 100%; height: 100%; }
 /* A jurisdiction's logo, from /admin: on a white tile, so a crest drawn on
@@ -630,9 +634,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
 /* How far, beside where (app.css .distance-blue). */
 .ph-dist { margin-left: 3px; color: #2196f3; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.actions { display: flex; gap: 10px; padding: 16px 18px 4px; }
+/* As many as fit at a readable width; more scroll sideways, as Maps' do.
+   The padding under them is room for their shadow, which a scroller clips. */
+.actions {
+  display: flex; gap: 10px; padding: 16px 18px 22px; margin-bottom: -18px;
+  overflow-x: auto; scrollbar-width: none; scroll-padding: 0 18px;
+}
+.actions::-webkit-scrollbar { display: none; }
 .abtn {
-  flex: 1; min-width: 0; min-height: 64px; border-radius: 16px;
+  flex: 1 0 0; min-width: 96px; padding: 0 8px; min-height: 64px; border-radius: 16px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   background: var(--card); color: var(--accent); font-weight: 650; font-size: 15px; box-shadow: var(--shadow);
 }
@@ -724,6 +734,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .floatbar button { width: 58px; height: 46px; border-radius: 23px; display: grid; place-items: center; }
 .floatbar button:active { background: var(--line); }
 .floatbar button.on { color: #f5a400; }
+.floatbar button.bm.on { color: var(--accent); }
 
 /* A collection's card. */
 .collection .sheet-scroll { padding-top: 0; }
@@ -750,10 +761,23 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   display: grid; place-items: center; background: var(--card-2); color: var(--accent);
 }
 .citem .tt { margin: 12px 0 0; }
+/* Donate: a parish's page for giving, beside its name. */
+.cgive {
+  position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--card-2); color: #db2777;
+}
+.donate-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 18px 0; }
 
 /* An event. */
 .event .sheet-scroll { padding-top: 0; }
-.ev-poster { background: #000; }
+.ev-poster { display: block; width: 100%; padding: 0; border: 0; background: #000; cursor: zoom-in; }
+/* A poster full size, over everything. */
+.poster-view {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); background: rgba(0, 0, 0, .94); cursor: zoom-out;
+}
+.poster-view img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.poster-view .gbtn { position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 14px; }
 .ev-poster img { display: block; width: 100%; max-height: 62vh; object-fit: contain; }
 .ev-band { height: 150px; display: grid; place-items: center; background: linear-gradient(135deg, var(--j), color-mix(in srgb, var(--j) 55%, #000)); padding-top: 40px; }
 .ev-head { padding: 18px 18px 4px; }

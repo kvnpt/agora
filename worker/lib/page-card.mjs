@@ -52,6 +52,9 @@ const I = {
   phone: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>',
   globe: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>',
   cross: '<svg viewBox="0 0 40 64" aria-hidden="true" fill="currentColor"><rect x="17" y="0" width="6" height="64" rx="1"/><rect x="9" y="9" width="22" height="5" rx="1"/><rect x="2" y="21" width="36" height="6" rx="1"/><rect x="9" y="44" width="22" height="5" rx="1" transform="rotate(20 20 46.5)"/></svg>',
+  live: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none"/><path d="M8.3 8.3a5.2 5.2 0 0 0 0 7.4M15.7 8.3a5.2 5.2 0 0 1 0 7.4M5.4 5.4a9.3 9.3 0 0 0 0 13.2M18.6 5.4a9.3 9.3 0 0 1 0 13.2"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>',
+  link: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>',
 };
 const MOON = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg>';
 const EVENING = `<div class="eve">${MOON}<span>Evening</span></div>`;
@@ -180,6 +183,9 @@ function summaryHTML(m, today) {
 }
 
 /** A parish's card, as next.js's openParish draws it. */
+/** One of a card's buttons that leaves the site: a website, a stream, a page to give on. */
+const outBtn = (href, icon, label) => `<a class="abtn" href="${esc(href)}" target="_blank" rel="noopener">${icon}<span>${esc(label)}</span></a>`;
+
 export function parishCardHTML(m) {
   const p = m.parish;
   const today = localDateOf(m.zone, m.now);
@@ -194,7 +200,10 @@ export function parishCardHTML(m) {
       <div class="actions">
         ${dirs ? `<a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>` : ''}
         ${p.phone ? `<a class="abtn" href="tel:${esc(tel(p.phone))}">${I.phone}<span>Call</span></a>` : ''}
-        ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}
+        ${p.website ? outBtn(p.website, I.globe, 'Website') : ''}
+        ${p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
+        ${p.donation_url ? outBtn(p.donation_url, I.heart, 'Donate') : ''}
+        ${(m.links || []).filter(l => l.url).map(l => outBtn(l.url, I.link, l.label || l.slug)).join('')}
       </div>
       <div class="summary">${summaryHTML(m, today)}</div>
       <h2 class="sec">Service times</h2>
@@ -232,7 +241,7 @@ export function eventCardHTML(m) {
   const off = TOMB[e.status] || (e.status === 'hidden' ? 'Suppressed' : null);
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
-      ${e.poster_path ? `<div class="ev-poster"><img src="${esc(e.poster_path)}" alt=""></div>` : `<div class="ev-band" style="--j:${m.color}">${roundel(e.event_type, true)}</div>`}
+      ${e.poster_path ? `<a class="ev-poster" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt=""></a>` : `<div class="ev-band" style="--j:${m.color}">${roundel(e.event_type, true)}</div>`}
       <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
         <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(eventTypes.eventTypeLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
         <h1>${esc(e.title)}</h1>
@@ -242,6 +251,7 @@ export function eventCardHTML(m) {
       ${linkChipHTML(m.origin, `/${e.id}`)}
       <div class="actions">
         ${lat && lng ? `<a class="abtn primary" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>` : ''}
+        ${!e.hide_live && p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>Parish</span></a>
       </div>
       ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
