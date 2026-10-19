@@ -498,7 +498,10 @@ body.map-full .parish-row {
   padding: 11px 18px; min-height: 60px;
 }
 .erow + .erow { border-top: 1px solid var(--line); }
-#today .erow + .erow, #today .see-all { border-top-color: var(--line-strong); }
+.today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
+/* A collection's own Today, above its timetables. */
+.ctoday { margin: 14px 18px 0; }
+.sheet .cu .sday, .sheet .cu-band { scroll-margin-top: 72px; }
 .etime { width: 58px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
 .erow.now .etime { color: var(--live); flex-direction: row; align-items: center; gap: 6px; }

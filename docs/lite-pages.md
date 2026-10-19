@@ -102,7 +102,8 @@ aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, 
 in `public/shared/collections.js`) opens its card, painted from the model
 (`collectionCardHTML`): the parishes, those with times first, each with its times,
 folded to the first few lines until Show timetables (a checkbox in its label, so it
-opens with no script); the page adds what is coming up at them underneath. Any
+opens with no script); the page adds a Today box of theirs above the timetables and
+what is coming up at them underneath. Any
 other mix of filters is the page itself, filtered, and gets only its head.
 
 `worker/lib/lite-timetable.mjs` (`timetableModel`), pure like the card's:

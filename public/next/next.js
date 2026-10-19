@@ -1059,8 +1059,15 @@
   }
 
   function renderToday() {
-    const el = $('#today');
-    const all = feedFor(2).filter(e => eventPasses(e) && inViewEvent(e));
+    $('#today').innerHTML = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)), { where: ' in view' });
+  }
+  /**
+   * Today, from the rows given: on now, later today, and once the day is
+   * done, tomorrow. The page's box is what is in view; a collection's card
+   * has one of its own, of its parishes (openCollection). Its button goes
+   * on to the days after, in the Events feed or the card's Coming up.
+   */
+  function todayHTML(all, { where = '' } = {}) {
     const now = Date.now();
     const t = todayKey();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
@@ -1071,15 +1078,15 @@
     if (later.length) body += `<div class="tsub">Later today</div>${later.slice(0, live.length ? 3 : 5).map(e => eventRow(e)).join('')}`;
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
     if (!live.length && !later.length) {
-      body += `<div class="tempty">Nothing more today in view.</div>`;
+      body += `<div class="tempty">Nothing more today${esc(where)}.</div>`;
       if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${tomorrow.slice(0, 4).map(e => eventRow(e)).join('')}`;
     }
     const d = new Date(t + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
-    el.innerHTML = `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div></header>
+    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div></header>
       ${body}
-      <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : 'Tomorrow'} ${I.chev}</button>`;
+      <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
@@ -1830,13 +1837,18 @@
   // in its label (next.css .ctimes), so the Worker's first paint of the card
   // opens the same way with no script (worker/lib/page-card.mjs).
 
+  /** Is this event at one of a collection's parishes, and does it answer its filters? */
+  function inCollection(c) {
+    const ids = new Set(c.ids);
+    const f = { ...blankFilters(), ...(c.f || {}) };
+    return (e) => eventParishIds(e).some(id => ids.has(id)) && eventMatches(e, f, c.juris || null);
+  }
   /** What is on at a collection's parishes, by its filters, a fortnight at a time. */
   function collFeedHTML(c, days) {
     const start = todayKey();
     const now = Date.now();
-    const ids = new Set(c.ids);
     const f = { ...blankFilters(), ...(c.f || {}) };
-    const list = feedRange(start, days).filter(e => endMs(e) > now && eventParishIds(e).some(id => ids.has(id)) && eventMatches(e, f, c.juris || null));
+    const list = feedRange(start, days).filter(e => endMs(e) > now).filter(inCollection(c));
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
     const body = daysHTML(list, { start, days, linkFor });
@@ -1877,6 +1889,7 @@
           <p>${esc(c.blurb || '')}</p>
         </div>
         ${c.segs ? `<div class="sheet-link">${linkChip(c.segs)}</div>` : ''}
+        ${ps.length ? `<section class="today card ctoday" aria-label="Today">${todayHTML(feedFor(2).filter(inCollection(c)))}</section>` : ''}
         <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
           <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
           ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
@@ -2645,8 +2658,11 @@
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow, in the Events feed; the feed itself when it starts later.
-      const day = b.dataset.jump === 'tomorrow' && $(`#stream-days [data-date="${addDays(todayKey(), 1)}"]`);
-      (day || $('#stream')).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // A card's Today goes on in the card's own Coming up.
+      const sheet = b.closest('.sheet');
+      const k = addDays(todayKey(), 1);
+      const day = sheet ? $(`.cu [data-date="${k}"]`, sheet) : $(`#stream-days [data-date="${k}"]`);
+      (day || (sheet ? $('.cu-band', sheet) : $('#stream'))).scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
 
