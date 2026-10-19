@@ -1132,6 +1132,86 @@ body.dialog-open { overflow: hidden; }
 .cb-ask { margin: 12px 0 0; padding: 12px; border-radius: 12px; background: color-mix(in srgb, #b45309 10%, transparent); }
 .cb-ask p { margin: 0 0 8px; font-size: 14px; line-height: 1.4; }
 
+/* The Details heading's pencil, for whoever may change them. */
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sec-row .tt-edit { margin: -6px -6px -6px 0; }
+/* A parish's details (next/editing.js editDetails): the logo beside the full
+   name, then the card's lines as fields. */
+.pd-head { display: flex; align-items: flex-end; gap: 14px; }
+.pd-head > .av { flex: none; margin-bottom: 14px; }
+.pd-names { flex: 1; min-width: 0; }
+.pd-logo { position: relative; flex: none; margin-bottom: 14px; border-radius: 50%; }
+.pd-logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.pd-logo-pen {
+  position: absolute; right: -2px; bottom: -2px; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--text); color: var(--card); box-shadow: 0 0 0 2px var(--card);
+}
+.pd-pin { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pin-status { margin-top: 6px; font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+/* The only thing saying the dot has moved and nothing is saved yet, so it does not whisper. */
+.pin-status .staged { color: var(--accent); font-weight: 600; }
+.pin-status .bad { color: var(--danger); font-weight: 600; }
+.pd-maps-now { margin-bottom: 8px; font-size: 14px; color: var(--text-2); }
+.pd-find { display: flex; gap: 8px; margin-bottom: 8px; }
+.detail-edit-form .pd-find input { flex: 1; min-width: 0; }
+.pd-find .rf-btn { flex: none; min-height: 44px; }
+.pd-results { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.pd-results:empty { display: none; }
+.pd-result {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px;
+  text-align: left; color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+}
+.pd-result b { font-size: 14.5px; font-weight: 600; }
+.pd-result small { font-size: 12.5px; color: var(--text-2); }
+.pd-result.chosen { border-color: var(--success); box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 30%, transparent); }
+.pd-note { font-size: 13px; color: var(--text-2); }
+.pd-usepin, .pd-ask { margin-top: 8px; }
+.detail-edit-form input:disabled { color: var(--text-2); opacity: 1; }
+.pd-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; color: var(--text-2); }
+.pd-links .rf-btn { flex: none; }
+.pd-form .src-line { margin: 0 0 4px; }
+.pd-delete { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+/* A pin on a map of its own: a crosshair dead centre, the map moving under it. */
+.pin-stage { position: relative; height: 320px; margin-bottom: 10px; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); }
+.pin-map { position: absolute; inset: 0; }
+.pin-cross {
+  position: absolute; top: 50%; left: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px;
+  pointer-events: none; border: 2px solid #fff; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0, 0, 0, .45);
+}
+/* Hairlines, so the exact pixel reads over a busy roof. */
+.pin-cross::before, .pin-cross::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .6); }
+.pin-cross::before { left: 50%; top: -10px; bottom: -10px; width: 1px; margin-left: -.5px; }
+.pin-cross::after { top: 50%; left: -10px; right: -10px; height: 1px; margin-top: -.5px; }
+.pin-readout { margin-bottom: 6px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); }
+.pin-hint, .lg-hint { margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
+/* A logo: as it stands, then a square stage under a round mask. */
+.lg-preview { display: flex; justify-content: center; margin: 4px 0 16px; }
+.lg-preview .av { --s: 108px; font-size: 28px; }
+.lg-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.lg-stage {
+  position: relative; width: 100%; max-width: 320px; aspect-ratio: 1; margin: 4px auto 14px;
+  overflow: hidden; border-radius: 12px; background: var(--card-2); touch-action: none; cursor: grab;
+}
+.lg-stage:active { cursor: grabbing; }
+.lg-canvas { display: block; }
+.lg-mask { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); pointer-events: none; }
+.lg-zoom { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+.lg-zoom input { flex: 1; accent-color: var(--accent); }
+.lg-form [hidden] { display: none !important; }
+/* Short links: each row with the link it makes. */
+.lk-slug { float: right; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-3); }
+.lk-row { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid var(--line); }
+.lk-row:last-child { margin-bottom: 8px; }
+.lk-head { display: flex; align-items: center; gap: 8px; }
+.detail-edit-form .lk-name { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lk-del { flex: none; width: 36px; height: 36px; border-radius: 50%; font-size: 22px; line-height: 1; color: var(--text-3); }
+.lk-del:hover { color: var(--danger); background: var(--card-2); }
+.lk-preview { font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.lk-preview b { color: var(--text); font-weight: 600; }
+
 /* ── The gum-tree loader (public/shared/loading-screen.js; app.css) ─────
    Over the map alone, while it loads, and gone once it has drawn. */
 #loading-screen {

@@ -1487,7 +1487,11 @@
       ${addBox(SUGGEST.service, 'Add a service time')}`;
   }
   function detailsHTML(p) {
-    return `<div class="details">
+    // For whoever may change them, the heading's pencil (next/editing.js editDetails).
+    const pen = may('parish.edit', p.id)
+      ? `<button class="tt-edit" type="button" data-edit-details="${esc(p.id)}" aria-label="Edit details">${I.pencil}</button>` : '';
+    return `<h2 class="sec${pen ? ' sec-row' : ''}"><span>Details</span>${pen}</h2>
+      <div class="details">
         ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a></div>` : ''}
         ${p.website ? `<div class="drow"><small>Website</small><a href="${esc(p.website)}" target="_blank" rel="noopener">${esc(p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a></div>` : ''}
         ${p.email ? `<div class="drow"><small>Email</small><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}
@@ -1507,10 +1511,39 @@
       `<div class="sum"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}</b></div>`,
     ].join('');
   }
-  /** An open card again, from the bundle as it now is, where it was scrolled to. */
+  /** The card's top: its logo, its names and where it is. */
+  function parishTopHTML(p) {
+    const d = distOf(p);
+    return `${avatar(p, 'xl')}
+      <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist">${esc(fmtKm(d))}</span>` : ''}</p></div>`;
+  }
+  function actionsHTML(p) {
+    const dirs = p.maps_url || `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+    return `<a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>
+      ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
+      ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}`;
+  }
+  /**
+   * An open card again, from the bundle as it now is, where it was scrolled
+   * to. A parish that has gone (deleted) takes its card with it.
+   */
   function repaintParish(el) {
     const p = S.byId.get(el.dataset.pid);
-    if (!p) return;
+    if (!p) {
+      if (stack[stack.length - 1] === el) popSheet();
+      return;
+    }
+    // Its names, logo, link and buttons, which an edit to its details changes.
+    const bar = el.querySelector('.gtitle');
+    if (bar) bar.innerHTML = `<b>${esc(p.name)}</b>${JURIS[p.jurisdiction]?.long ? `<small>${esc(JURIS[p.jurisdiction].long)}</small>` : ''}`;
+    const top = el.querySelector('.ph');
+    if (top) top.innerHTML = parishTopHTML(p);
+    const acts = el.querySelector('.actions');
+    if (acts) acts.innerHTML = actionsHTML(p);
+    el._segs = segsFor({ parish: p, from: el._from });
+    const link = el.querySelector('.sheet-link');
+    if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
+    el.style.setProperty('--j', jColor(p.jurisdiction));
     const sum = el.querySelector('.summary');
     if (sum) sum.innerHTML = summaryHTML(p);
     const times = el.querySelector('.p-times'), details = el.querySelector('.p-details');
@@ -1525,24 +1558,14 @@
     const p = S.byId.get(pid);
     if (!p) return;
     const segs = segsFor({ parish: p, from });
-    const d = distOf(p);
-    const dirs = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
       <div class="sheet-scroll">
-        <div class="ph">
-          ${avatar(p, 'xl')}
-          <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist">${esc(fmtKm(d))}</span>` : ''}</p></div>
-        </div>
+        <div class="ph">${parishTopHTML(p)}</div>
         <div class="sheet-link">${linkChip(segs)}</div>
-        <div class="actions">
-          <a class="abtn primary" href="${esc(dirs)}" target="_blank" rel="noopener">${I.car}<span>Directions</span></a>
-          ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
-          ${p.website ? `<a class="abtn" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span>Website</span></a>` : ''}
-        </div>
+        <div class="actions">${actionsHTML(p)}</div>
         <div class="summary">${summaryHTML(p)}</div>
         <h2 class="sec">Service times</h2>
         <div class="p-times">${timesHTML(p)}</div>
-        <h2 class="sec">Details</h2>
         <div class="p-details">${detailsHTML(p)}</div>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
@@ -2139,6 +2162,7 @@
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
     if ((b = t.closest('[data-edit-rules]'))) { window.NextEdit.editLine(b.dataset.editRules.split(',')); return; }
     if ((b = t.closest('[data-edit-event]'))) { window.NextEdit.editEvent(b.dataset.editEvent); return; }
+    if ((b = t.closest('[data-edit-details]'))) { window.NextEdit.editDetails(b.dataset.editDetails); return; }
     if ((b = t.closest('[data-suggest]'))) {
       const under = stack.filter(x => x.dataset.pid).pop();
       const pid = b.dataset.pid || (under && under.dataset.pid);
@@ -2309,6 +2333,7 @@
       may,
       reload,
       openParish: (id) => openParish(id),
+      avatar,
       toast,
       recheck: checkSignIn,
     });

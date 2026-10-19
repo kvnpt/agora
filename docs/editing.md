@@ -121,6 +121,17 @@ nobody opens a parish's timetable meaning to read it as an admin. No form is
 in the DOM behind `display:none` either way: a rule's form is built when its
 pencil is pressed.
 
+In `/next` the details open from a pencil on the card's **Details** heading
+(`editDetails`, `public/next/editing.js`), for whoever has `parish.edit` there:
+the logo (with the app's cropper), the names and jurisdiction, then each line
+of Details as its field (phone, website, email, address), the pin (Locate, or
+Move on a map of its own, which every venue's "Move the pin" uses too), the
+Google Maps place Directions opens, languages, the short link, the live
+stream, the links (their own dialog), and where the parish is read from. The
+short link is an owner's (`parish.acronym`); anybody else sees it with **Ask
+an owner to change it**, which files the same ask /admin's does. Delete parish
+is at the foot of the form, for `parish.delete`.
+
 **A new parish is finished in that dialog.** /admin's **New parish** asks only
 what the row needs to exist — the names, the short link, the jurisdiction, the
 time zone, the pin — and on Add goes to the parish in the app with its edit

@@ -14,6 +14,7 @@
 //
 // next.js hands this its page through init(host):
 //   parish(id)   the parish row
+//   avatar(p, size)  a parish's round logo, as the card draws it
 //   parishes()   every parish
 //   may(cap, id) the signed-in account's answer
 //   rule(id)     a rule
@@ -193,6 +194,7 @@
       openPoster: (url) => window.open(url, '_blank', 'noopener'),
       // A sign writes to the parish itself, and asks first like any hand edit.
       keepByHand: (pid) => keepByHand(pid),
+      pickPin,
       onChanged: () => host.reload(),
       onPublished: async ({ events, proposals }) => {
         editor = null;
@@ -271,6 +273,7 @@
       host: host.parish(parishId) || { id: parishId },
       parishes: host.parishes(),
       geocode,
+      pickPin,
       posterNow,
       openPoster: (url) => window.open(url, '_blank', 'noopener'),
     });
@@ -779,7 +782,7 @@
       const value = {};
       for (const k of VENUE) value[k] = e[k] != null && e[k] !== '' ? e[k] : null;
       root.AgoraVenuePicker.mount(mount, {
-        value, host: parish || { id: e.parish_id }, parishes: host.parishes(), geocode,
+        value, host: parish || { id: e.parish_id }, parishes: host.parishes(), geocode, pickPin,
         onChange: (v) => { for (const k of VENUE) q(k).value = v[k] == null ? '' : v[k]; },
       });
     }
@@ -1186,8 +1189,651 @@
     });
   }
 
+
+  // ── A pin, on a map of its own ────────────────────────────────────────
+  //
+  // The app's pin mover (app.js openPinPicker): a crosshair fixed dead centre
+  // and a map that moves under it, so the thumb never covers the spot being
+  // aimed at, and a live readout of exactly what will be kept. A second
+  // MapLibre map on the page map's basemap alone (the parish layers' images
+  // belong to the other map), made when it opens and removed when it closes.
+  // For a parish's pin, and for "Move the pin" wherever a venue is picked.
+
+  const coord = (n) => Number(n).toFixed(6);
+  function basemapStyle() {
+    let style = null;
+    try { style = root.agoraMap && root.agoraMap.getStyle(); } catch { return null; }
+    if (!style || !style.sources || !style.sources.protomaps) return null;
+    return {
+      ...style,
+      sources: { protomaps: style.sources.protomaps },
+      layers: (style.layers || []).filter(l => l.type === 'background' || l.source === 'protomaps'),
+    };
+  }
+  /** Opens on `lat`/`lng` (Sydney if none); `done({lat, lng})` on "Use this spot". */
+  function pickPin({ lat = null, lng = null, title = '' } = {}, done) {
+    let m = null;
+    const f = frame({ title: 'Move the pin', sub: title, cls: 'pin-backdrop', onClose: () => { if (m) m.remove(); m = null; } });
+    f.body.innerHTML = `<div class="pin-form">
+        <div class="pin-stage"><div class="pin-map"></div><div class="pin-cross" aria-hidden="true"></div></div>
+        <div class="pin-readout" aria-live="polite"></div>
+        <p class="pin-hint">Drag the map until the circle sits on the church door. It is the dot people tap for directions.</p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-pin-use>Use this spot</button>
+          <button class="btn-outline" type="button" data-frame-close>Back</button>
+        </div>
+      </div>`;
+    const readout = f.body.querySelector('.pin-readout');
+    const use = f.body.querySelector('[data-pin-use]');
+    const style = basemapStyle();
+    if (!style || !root.maplibregl) {
+      readout.textContent = 'The map is still loading. Close this and try again.';
+      use.disabled = true;
+      return;
+    }
+    const at = lat != null && lng != null && Number.isFinite(+lat) ? [+lng, +lat] : null;
+    m = new root.maplibregl.Map({
+      container: f.body.querySelector('.pin-map'), style,
+      center: at || [151.21, -33.87], zoom: at ? 18 : 12,
+      attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, boxZoom: false,
+    });
+    m.touchZoomRotate.disableRotation();
+    const sync = () => { const c = m.getCenter(); readout.textContent = `${coord(c.lat)}, ${coord(c.lng)}`; };
+    m.on('move', sync);
+    sync();
+    use.addEventListener('click', () => {
+      const c = m.getCenter();
+      f.close();
+      done({ lat: c.lat, lng: c.lng });
+    });
+  }
+
+  // ── A parish's details ────────────────────────────────────────────────
+  //
+  // The app's "Edit details" (app.js openParishDetailsDialog), behind the
+  // pencil on the card's Details: the logo and names, each line of Details
+  // as the field that edits it, the address with its pin and the Google Maps
+  // place Directions opens, and where the parish is read from. Save is one
+  // PATCH, which works out from what changed whose edit it is
+  // (worker/lib/provenance.mjs). The logo and the links are dialogs of their
+  // own over it, each kept by its own button, as in the app.
+
+  // Mirrors the jurisdiction CHECK in d1/schema.sql.
+  const JURISDICTIONS = ['antiochian', 'greek', 'macedonian', 'romanian', 'russian', 'serbian', 'other'];
+  const PD = 'data-pd';
+  const PENCIL = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
+  const PAY_LINKS = [['donate', 'donation_url', 'Donate'], ['payment', 'payment_url', 'Payment'], ['raffle', 'raffle_url', 'Raffle'], ['gala', 'gala_url', 'Gala']];
+  const linksOf = (pid) => ((root.agoraBundle && root.agoraBundle.raw && root.agoraBundle.raw.parish_links) || [])
+    .filter(l => l.parish_id === pid);
+  /** "Donate, Raffle and 2 more", or "None yet". */
+  function linksSummary(pid) {
+    const p = host.parish(pid) || {};
+    const names = [...PAY_LINKS.filter(([, col]) => p[col]).map(([, , label]) => label), ...linksOf(pid).map(l => l.label || l.slug)];
+    if (!names.length) return 'None yet';
+    return names.length > 3 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ').replace(/, ([^,]*)$/, ' and $1');
+  }
+  const slugOf = (p) => (p.acronym || '').toLowerCase().replace(/\s+/g, '') || p.id;
+  const langsOf = (v) => { try { const l = JSON.parse(v || '[]'); return Array.isArray(l) ? l : [String(l)]; } catch { return v ? [String(v)] : []; } };
+
+  function editDetails(pid) {
+    const p = host.parish(pid);
+    if (!p || !host.may('parish.edit', pid)) return;
+    const RFrom = root.AgoraReadFrom;
+    const mayAcronym = host.may('parish.acronym', pid);
+    const v = (k) => esc(p[k] == null ? '' : p[k]);
+    const fld = (name) => `${PD}="${name}"`;
+    const cap = (j) => j.charAt(0).toUpperCase() + j.slice(1);
+    const suburb = String(p.address || '').split(',').slice(-2, -1)[0] || '';
+    const rfNow = RFrom ? RFrom.readFrom(p) : null;
+    const logoHTML = () => `${host.avatar(host.parish(pid) || p, 'xl')}<span class="pd-logo-pen">${PENCIL}</span>`;
+
+    const f = frame({ title: 'Edit details', sub: p.full_name || p.name, cls: 'details-backdrop' });
+    f.body.innerHTML = `<div class="detail-edit-form pd-form">
+        <div class="pd-head">
+          ${host.may('logo.edit', pid) ? `<button type="button" class="pd-logo" data-pd-logo aria-label="Change the logo">${logoHTML()}</button>` : host.avatar(p, 'xl')}
+          <div class="edit-row pd-names"><label>Full name</label><input ${fld('full_name')} value="${v('full_name')}" placeholder="St Nicholas Orthodox Church" autocomplete="off"></div>
+        </div>
+        <div class="edit-row edit-pair">
+          <div><label>Short name</label><input ${fld('name')} value="${v('name')}" autocomplete="off"></div>
+          <div><label>Jurisdiction</label><select ${fld('jurisdiction')}>${JURISDICTIONS.map(j =>
+            `<option value="${j}"${p.jurisdiction === j ? ' selected' : ''}>${cap(j)}</option>`).join('')}</select></div>
+        </div>
+        <div class="edit-row"><label>Phone</label><input type="tel" ${fld('phone')} value="${v('phone')}" placeholder="02 9000 0000" autocomplete="off"></div>
+        <div class="edit-row"><label>Website</label><input type="url" ${fld('website')} value="${v('website')}" placeholder="https://" autocomplete="off"></div>
+        <div class="edit-row"><label>Email</label><input type="email" ${fld('email')} value="${v('email')}" placeholder="office@…" autocomplete="off"></div>
+        <div class="edit-row"><label>Address</label>
+          <input ${fld('address')} value="${v('address')}" placeholder="Where the service is: the door somebody walks through" autocomplete="off">
+          <div class="pd-pin">
+            <button class="rf-btn" type="button" data-pd-locate>Locate pin</button>
+            <button class="rf-btn" type="button" data-pd-move>Move pin</button>
+          </div>
+          <div class="pin-status" data-pd-pin></div>
+        </div>
+        <div class="edit-row"><label>Directions open</label>
+          <div class="pd-maps-now" data-pd-maps-now></div>
+          <div class="pd-find">
+            <input data-pd-q value="${esc(`${p.full_name || p.name || ''} ${suburb}`.trim())}" aria-label="Search Google Maps" autocomplete="off">
+            <button class="rf-btn" type="button" data-pd-find>Find</button>
+          </div>
+          <div class="pd-results" data-pd-results></div>
+          <input ${fld('maps_url')} value="${v('maps_url')}" placeholder="Or paste its Google Maps link" aria-label="Google Maps link" autocomplete="off">
+          <button class="ev-link pd-usepin" type="button" data-pd-usepin>Use the pin instead</button>
+        </div>
+        <div class="edit-row"><label>Languages</label><input ${fld('languages')} value="${esc(langsOf(p.languages).join(', '))}" placeholder="English, Greek" autocomplete="off"></div>
+        <div class="edit-row"><label>Short link</label>
+          <input ${fld('acronym')} value="${v('acronym')}" placeholder="acronym" autocomplete="off" autocapitalize="none" spellcheck="false"${mayAcronym ? '' : ' disabled'}>
+          <div class="edit-row-hint" data-pd-acro></div>
+          ${mayAcronym ? '<div class="edit-row-hint" data-pd-suggested hidden>Suggested from the names. Keep it, change it, or clear it.</div>'
+            : '<button class="ev-link pd-ask" type="button" data-pd-ask>Ask an owner to change it</button>'}
+        </div>
+        <div class="edit-row"><label>Live stream</label><input type="url" ${fld('live_url')} value="${v('live_url')}" placeholder="https://youtube.com/…" autocomplete="off"></div>
+        ${host.may('links.edit', pid) ? `<div class="edit-row"><label>Donate and short links</label>
+          <div class="pd-links"><span data-pd-links-now>${esc(linksSummary(pid))}</span><button class="rf-btn" type="button" data-pd-links>Edit links…</button></div>
+        </div>` : ''}
+        ${RFrom ? `<div class="edit-row"><label>Details and service times</label>
+          <select ${fld('read_from')}>${RFrom.READ_FROM.map(x => `<option value="${x}"${x === rfNow ? ' selected' : ''}>${esc(RFrom.LABELS[x])}</option>`).join('')}</select>
+          <div class="edit-row-hint" data-pd-rf-hint>${esc(RFrom.HINTS[rfNow])}</div>
+        </div>` : ''}
+        ${root.AgoraSourceLine ? root.AgoraSourceLine.detailsSourceHTML(p, { cls: 'src-line' }) : ''}
+        ${host.may('parish.delete', pid) ? '<div class="pd-delete"><button class="rf-btn danger" type="button" data-pd-delete>Delete parish</button></div>' : ''}
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-pd-save>Save</button>
+          <button class="btn-outline" type="button" data-frame-close>Close</button>
+        </div>
+      </div>`;
+    const form = f.body.firstElementChild;
+    const q = (name) => form.querySelector(`[${PD}="${name}"]`);
+    const on = (sel, fn) => { const el = form.querySelector(sel); if (el) el.addEventListener('click', fn); };
+    const err = form.querySelector('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
+
+    // The pin. Nothing here writes: a pin located or placed is kept in the
+    // dialog until Save, which sends it as lat/lng (the route re-geocodes only
+    // an address that comes without them).
+    let pin = null;
+    const pinBox = form.querySelector('[data-pd-pin]');
+    const paintPin = (problem = '') => {
+      const now = host.parish(pid) || p;
+      pinBox.innerHTML = problem ? `<span class="bad">${esc(problem)}</span>`
+        : pin ? `<span class="staged">New pin: ${coord(pin.lat)}, ${coord(pin.lng)}</span>, ${pin.manual ? 'placed by hand' : 'from the address'}. Save to keep it.`
+          : now.lat == null || now.lng == null ? 'No pin yet. Locate it from the address, or place it by hand.'
+            : `Pin: ${coord(now.lat)}, ${coord(now.lng)}`;
+    };
+    paintPin();
+    // A pin read from the address no longer describes an address that changed;
+    // one placed by hand stays, since tidying the street's wording has not moved the church.
+    q('address').addEventListener('input', () => { if (pin && !pin.manual) pin = null; paintPin(); });
+    on('[data-pd-locate]', async (ev) => {
+      const address = q('address').value.trim();
+      if (!address) return paintPin('Type an address first.');
+      ev.currentTarget.disabled = true;
+      pinBox.textContent = 'Looking that address up…';
+      const res = await fetch('/api/admin/geocode', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }),
+      }).catch(() => null);
+      form.querySelector('[data-pd-locate]').disabled = false;
+      if (!res || !res.ok) {
+        return paintPin(res && res.status === 404 ? 'No match for that address. Place the pin by hand instead.'
+          : res ? await errorText(res) : 'The lookup did not go through.');
+      }
+      const c = await res.json();
+      pin = { lat: c.lat, lng: c.lng, manual: false };
+      paintPin();
+    });
+    on('[data-pd-move]', () => {
+      const now = pin || host.parish(pid) || p;
+      pickPin({ lat: now.lat, lng: now.lng, title: p.name }, (c) => { pin = { ...c, manual: true }; paintPin(); });
+    });
+
+    // What Directions opens: a place chosen on Google Maps, or the pin.
+    const mapsNow = form.querySelector('[data-pd-maps-now]');
+    const usePin = form.querySelector('[data-pd-usepin]');
+    const paintMaps = (text) => {
+      mapsNow.textContent = text || (q('maps_url').value.trim() ? 'A place on Google Maps.' : 'The pin, from the address.');
+      usePin.hidden = !q('maps_url').value.trim();
+    };
+    paintMaps();
+    q('maps_url').addEventListener('input', () => paintMaps(q('maps_url').value.trim() ? 'This link. Save to keep it.' : ''));
+    usePin.addEventListener('click', () => {
+      q('maps_url').value = '';
+      form.querySelectorAll('.pd-result').forEach(x => x.classList.remove('chosen'));
+      paintMaps('The pin, from the address. Save to keep it.');
+    });
+    const results = form.querySelector('[data-pd-results]');
+    // Through the Worker, which holds the key. A deployment whose key cannot
+    // search Places says so, and the pasted link and the pin are right there.
+    async function findPlace() {
+      const query = form.querySelector('[data-pd-q]').value.trim();
+      if (!query) return;
+      results.innerHTML = '<div class="pd-note">Searching…</div>';
+      const now = host.parish(pid) || p;
+      const res = await fetch('/api/admin/places', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, lat: now.lat, lng: now.lng }),
+      }).catch(() => null);
+      const body = res ? await res.json().catch(() => null) : null;
+      const places = (body && body.places) || [];
+      if (!places.length) {
+        results.innerHTML = `<div class="pd-note">${esc((body && body.error) || 'Nothing found. Try the church’s name and suburb, or paste its link below.')}</div>`;
+        return;
+      }
+      results.innerHTML = places.map((pl, i) => `<button type="button" class="pd-result" data-i="${i}"><b>${esc(pl.name || '')}</b><small>${esc(pl.address || '')}</small></button>`).join('');
+      results.onclick = (ev) => {
+        const b = ev.target.closest('.pd-result');
+        if (!b) return;
+        const pl = places[Number(b.dataset.i)];
+        q('maps_url').value = pl.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name || '')}&query_place_id=${encodeURIComponent(pl.id)}`;
+        results.querySelectorAll('.pd-result').forEach(x => x.classList.toggle('chosen', x === b));
+        paintMaps(`Chosen: ${pl.name}${pl.address ? `, ${pl.address}` : ''}. Save to keep it.`);
+      };
+    }
+    on('[data-pd-find]', findPlace);
+    form.querySelector('[data-pd-q]').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); findPlace(); } });
+
+    // The short link: what it will be, or why it cannot (app.js wireAcronymHint).
+    const acro = q('acronym');
+    const acroHint = form.querySelector('[data-pd-acro]');
+    const paintAcro = () => {
+      const S = root.AgoraSlugs;
+      const slug = S ? S.normaliseSlug(acro.value) : acro.value.trim().toLowerCase();
+      let problem = mayAcronym && S ? S.reservedSlugReason(slug) : null;
+      if (!problem && mayAcronym && slug && S) {
+        const clash = host.parishes().find(x => x.id !== pid && x.id !== '_unassigned' && S.normaliseSlug(x.acronym) === slug);
+        if (clash) problem = `“${slug}” is already the short link for ${clash.name}.`;
+      }
+      acroHint.classList.toggle('edit-row-hint-bad', !!problem);
+      acroHint.textContent = problem || (mayAcronym
+        ? (slug ? `orthodoxy.au/${slug}` : 'None. The parish has no short link.')
+        : `${slug ? `orthodoxy.au/${slug}. ` : ''}Changing it changes the parish’s link, so an owner does it.`);
+    };
+    acro.addEventListener('input', paintAcro);
+    paintAcro();
+    // A parish with no short link gets one suggested from its names, for
+    // whoever may set it. Nothing is kept until Save.
+    if (mayAcronym && root.AgoraAcronymSuggest && !String(p.acronym || '').trim()) {
+      const note = form.querySelector('[data-pd-suggested]');
+      acro.addEventListener('input', (ev) => { if (ev.isTrusted) note.hidden = true; });
+      root.AgoraAcronymSuggest.wire({
+        input: acro, parishId: pid,
+        names: () => ({ name: q('name').value, full_name: q('full_name').value, jurisdiction: q('jurisdiction').value }),
+        watch: [q('name'), q('full_name')],
+        onFill: () => { note.hidden = false; },
+        now: true,
+      });
+    }
+    on('[data-pd-ask]', () => askAcronym(pid));
+
+    const rf = q('read_from');
+    if (rf) rf.addEventListener('change', () => { form.querySelector('[data-pd-rf-hint]').textContent = RFrom.HINTS[rf.value]; });
+    on('[data-pd-logo]', () => editLogo(pid, {
+      onChange: () => { const b = form.querySelector('[data-pd-logo]'); if (b) b.innerHTML = logoHTML(); },
+    }));
+    on('[data-pd-links]', () => editLinks(pid, {
+      onSaved: () => { const s = form.querySelector('[data-pd-links-now]'); if (s) s.textContent = linksSummary(pid); },
+    }));
+
+    on('[data-pd-save]', async (ev) => {
+      fail('');
+      const save = ev.currentTarget;
+      const val = (k) => { const el = q(k); return el ? el.value.trim() : ''; };
+      if (!val('name')) { fail('The short name is what the card and the map call it, so it cannot be empty.'); q('name').focus(); return; }
+      const data = { name: val('name'), jurisdiction: val('jurisdiction') };
+      for (const k of ['full_name', 'phone', 'website', 'email', 'address', 'maps_url', 'live_url']) data[k] = val(k) || null;
+      if (mayAcronym) data.acronym = val('acronym') || null;
+      const langs = val('languages').split(',').map(x => x.trim()).filter(Boolean);
+      data.languages = langs.length ? JSON.stringify(langs) : null;
+      const now = host.parish(pid) || p;
+      if (rf && RFrom && rf.value !== RFrom.readFrom(now)) data.read_from = rf.value;
+      if (pin) { data.lat = pin.lat; data.lng = pin.lng; }
+      // Choosing where it is read from in this same save is the answer to the question.
+      if (data.read_from === undefined && !(await keepByHand(pid))) return;
+      save.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+        }).catch(() => null);
+        if (!res || !res.ok) { fail(res ? await errorText(res) : 'It did not go through. Check the connection.'); return; }
+        const out = (await res.json().catch(() => null)) || {};
+        f.close();
+        await host.reload();
+        host.toast(out.pin_errors && out.pin_errors.length
+          ? `Saved, but the pin could not be held: ${out.pin_errors.map(x => x.error).join(' ')}` : 'Saved');
+      } finally { save.disabled = false; }
+    });
+
+    on('[data-pd-delete]', async () => {
+      fail('');
+      const go = await askChoice({
+        title: `Delete ${p.name}?`,
+        body: '<p>Its card, its pin and its service times go. This cannot be undone.</p>',
+        choices: [{ value: 'yes', label: 'Delete it', danger: true }],
+      });
+      if (!go) return;
+      const send = (qs = '') => fetch(`/api/admin/parishes/${encodeURIComponent(pid)}${qs}`, { method: 'DELETE' }).catch(() => null);
+      let res = await send();
+      if (res && res.status === 400) {
+        const b = await res.clone().json().catch(() => ({}));
+        if (b.event_count) {
+          const also = await askChoice({
+            title: `${b.event_count} ${b.event_count === 1 ? 'event is' : 'events are'} on file at ${p.name}`,
+            choices: [{ value: 'yes', label: 'Delete them too', hint: 'The parish cannot go while they point at it.', danger: true }],
+          });
+          if (!also) return;
+          res = await send('?delete_events=1');
+        }
+      }
+      if (!res || !res.ok) { fail(res ? await errorText(res) : 'It did not go through. Check the connection.'); return; }
+      f.close();
+      await host.reload();
+      host.toast(`${p.name} deleted`);
+    });
+  }
+
+  /**
+   * A short link is an owner's to change, since it takes a link away from
+   * everybody holding it; anybody else who may edit the parish asks for one
+   * (/admin's offerProposal, worker/lib/proposals.mjs).
+   */
+  function askAcronym(pid) {
+    const p = host.parish(pid);
+    if (!p) return;
+    const f = frame({ title: 'Ask for a new short link', sub: p.name, cls: 'ask-backdrop' });
+    f.body.innerHTML = `<div class="detail-edit-form">
+        <p class="bk-lead">An owner decides, because it changes the parish’s public link. Leave it empty to ask for it to be taken away.</p>
+        <div class="edit-row"><label>The short link you want</label><input data-ak="acronym" value="${esc(p.acronym || '')}" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+        <div class="edit-row"><label>Why</label><textarea data-ak="reason" rows="2" placeholder="Optional"></textarea></div>
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-ak-send>Ask</button>
+          <button class="btn-outline" type="button" data-frame-close>Back</button>
+        </div>
+      </div>`;
+    const err = f.body.querySelector('.rf-error');
+    f.body.querySelector('[data-ak-send]').addEventListener('click', async (ev) => {
+      const val = (k) => f.body.querySelector(`[data-ak="${k}"]`).value.trim();
+      ev.currentTarget.disabled = true;
+      const res = await fetch('/api/admin/proposals', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capability: 'parish.acronym', subject: pid, payload: { acronym: val('acronym') }, reason: val('reason') || null }),
+      }).catch(() => null);
+      if (!res || !res.ok) {
+        err.textContent = res ? await errorText(res) : 'It did not go through. Check the connection.';
+        err.hidden = false;
+        f.body.querySelector('[data-ak-send]').disabled = false;
+        return;
+      }
+      f.close();
+      host.toast('Asked. An owner decides.');
+      host.recheck();
+    });
+  }
+
+  // ── A parish's logo ───────────────────────────────────────────────────
+  //
+  // The app's logo editor (app.js openParishLogoEditor): the logo as it
+  // stands, with Upload, Crop and Remove, and a cropper, a canvas the image is
+  // drawn into under a circular mask, dragged to pan and zoomed by a slider.
+  // The crop goes up square, AgoraLogo.LOGO_SIZE on a side, as WebP where the
+  // browser can (public/shared/logo-image.js). An SVG goes up as it is.
+
+  function editLogo(pid, { onChange = null } = {}) {
+    const p = host.parish(pid);
+    if (!p || !host.may('logo.edit', pid)) return;
+    const SIZE = (root.AgoraLogo && root.AgoraLogo.LOGO_SIZE) || 192;
+    const L = { img: null, scale: 1, fit: 1, x: 0, y: 0, side: 0, drag: null };
+    const f = frame({ title: 'Logo', sub: p.name, cls: 'logo-backdrop' });
+    f.body.innerHTML = `<div class="lg-form">
+        <div data-lg-pane="choose">
+          <div class="lg-preview"></div>
+          <div class="lg-actions"></div>
+        </div>
+        <div data-lg-pane="crop" hidden>
+          <div class="lg-stage"><canvas class="lg-canvas"></canvas><div class="lg-mask" aria-hidden="true"></div></div>
+          <label class="lg-zoom"><span>Zoom</span><input type="range" min="100" max="400" value="100" step="1" data-lg-zoom></label>
+          <p class="lg-hint">Drag the image to move it. What is inside the circle shows.</p>
+        </div>
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions" data-lg-crop-actions hidden>
+          <button class="btn-save" type="button" data-lg-save>Save logo</button>
+          <button class="btn-outline" type="button" data-lg-back>Back</button>
+        </div>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden data-lg-file>
+      </div>`;
+    const box = f.body.firstElementChild;
+    const $ = (sel) => box.querySelector(sel);
+    const err = $('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; };
+    const stage = $('.lg-stage'), canvas = $('.lg-canvas');
+
+    const pane = (which) => {
+      $('[data-lg-pane="choose"]').hidden = which !== 'choose';
+      $('[data-lg-pane="crop"]').hidden = which !== 'crop';
+      $('[data-lg-crop-actions]').hidden = which !== 'crop';
+    };
+    // Crop offers itself only when there is a logo to crop, and Remove only
+    // when there is one to remove.
+    function paintChoose() {
+      const now = host.parish(pid) || p;
+      $('.lg-preview').innerHTML = host.avatar(now, 'xl');
+      $('.lg-actions').innerHTML = `<button class="rf-btn" type="button" data-lg-upload>${now.logo_path ? 'Upload a new one' : 'Upload'}</button>
+        ${now.logo_path ? '<button class="rf-btn" type="button" data-lg-crop>Crop</button><button class="rf-btn danger" type="button" data-lg-remove>Remove</button>' : ''}`;
+      pane('choose');
+    }
+    paintChoose();
+
+    const draw = () => {
+      const ctx = canvas.getContext('2d');
+      const dpr = canvas.width / L.side;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, L.side, L.side);
+      ctx.drawImage(L.img, L.x, L.y, L.img.naturalWidth * L.scale, L.img.naturalHeight * L.scale);
+    };
+    // The image always covers the stage: a pan never drags an empty edge into the circle.
+    const clamp = () => {
+      L.x = Math.min(0, Math.max(L.side - L.img.naturalWidth * L.scale, L.x));
+      L.y = Math.min(0, Math.max(L.side - L.img.naturalHeight * L.scale, L.y));
+    };
+    const zoom = (z, centre = false) => {
+      const prev = L.scale, next = L.fit * z;
+      if (centre) {
+        L.x = (L.side - L.img.naturalWidth * next) / 2;
+        L.y = (L.side - L.img.naturalHeight * next) / 2;
+      } else {
+        // About the stage's centre, so the part being looked at stays put.
+        const cx = (L.side / 2 - L.x) / prev, cy = (L.side / 2 - L.y) / prev;
+        L.x = L.side / 2 - cx * next;
+        L.y = L.side / 2 - cy * next;
+      }
+      L.scale = next;
+      clamp();
+      draw();
+    };
+    function crop(src) {
+      fail('');
+      const img = new Image();
+      // Same-origin for a stored /logos/… path and a blob: alike, so the canvas stays clean to export.
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        L.img = img;
+        pane('crop');
+        const side = Math.round(stage.getBoundingClientRect().width);
+        const dpr = Math.min(window.devicePixelRatio || 1, 3);
+        L.side = side;
+        canvas.width = canvas.height = side * dpr;
+        canvas.style.width = canvas.style.height = `${side}px`;
+        // Cover, not contain: the circle never opens onto empty canvas.
+        L.fit = L.scale = Math.max(side / img.naturalWidth, side / img.naturalHeight);
+        $('[data-lg-zoom]').value = 100;
+        zoom(1, true);
+      };
+      img.onerror = () => fail('That image could not be opened.');
+      img.src = src;
+    }
+    $('[data-lg-zoom]').addEventListener('input', (ev) => { if (L.img) zoom(Number(ev.target.value) / 100); });
+    stage.addEventListener('pointerdown', (ev) => { stage.setPointerCapture(ev.pointerId); L.drag = { x: ev.clientX, y: ev.clientY }; });
+    stage.addEventListener('pointermove', (ev) => {
+      if (!L.drag || !L.img) return;
+      ev.preventDefault();
+      L.x += ev.clientX - L.drag.x;
+      L.y += ev.clientY - L.drag.y;
+      L.drag = { x: ev.clientX, y: ev.clientY };
+      clamp();
+      draw();
+    });
+    const up = () => { L.drag = null; };
+    stage.addEventListener('pointerup', up);
+    stage.addEventListener('pointercancel', up);
+
+    /** After a change: the page again, the map's own copy of the logo, and the dialog it came from. */
+    const after = async (msg) => {
+      await host.reload();
+      if (typeof root.agoraRefreshParishLogo === 'function') root.agoraRefreshParishLogo(pid);
+      if (onChange) onChange();
+      f.close();
+      host.toast(msg);
+    };
+    async function upload(body, type) {
+      const save = $('[data-lg-save]');
+      save.disabled = true;
+      const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/logo`, {
+        method: 'POST', headers: { 'Content-Type': type }, body,
+      }).catch(() => null);
+      save.disabled = false;
+      if (!res || !res.ok) return fail(res ? await errorText(res) : 'The logo did not go through. Check the connection.');
+      await after('Logo saved');
+    }
+
+    box.addEventListener('click', async (ev) => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      if (b.matches('[data-lg-upload]')) $('[data-lg-file]').click();
+      else if (b.matches('[data-lg-crop]')) crop((host.parish(pid) || p).logo_path);
+      else if (b.matches('[data-lg-back]')) { L.img = null; fail(''); paintChoose(); }
+      else if (b.matches('[data-lg-remove]')) {
+        const go = await askChoice({
+          title: 'Take the logo off?',
+          body: `<p>${esc(p.name)} shows its short name in its colour instead.</p>`,
+          choices: [{ value: 'yes', label: 'Take it off', danger: true }],
+        });
+        if (!go) return;
+        const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/logo`, { method: 'DELETE' }).catch(() => null);
+        if (!res || !res.ok) return fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        await after('Logo taken off');
+      } else if (b.matches('[data-lg-save]')) {
+        if (!L.img) return;
+        const out = document.createElement('canvas');
+        out.width = out.height = SIZE;
+        // The stage is the crop: the same framing, scaled to the export.
+        const k = SIZE / L.side;
+        out.getContext('2d').drawImage(L.img, L.x * k, L.y * k, L.img.naturalWidth * L.scale * k, L.img.naturalHeight * L.scale * k);
+        // Square, not round: everything that shows a logo rounds it already.
+        const blob = root.AgoraLogo ? await root.AgoraLogo.encodeCanvas(out) : await new Promise(r => out.toBlob(r, 'image/png'));
+        if (!blob) return fail('The crop could not be made.');
+        await upload(blob, blob.type || 'image/png');
+      }
+    });
+    $('[data-lg-file]').addEventListener('change', (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      // An SVG is already the right thing, sharp at any size: it goes up as it is.
+      if (file.type === 'image/svg+xml') { pane('crop'); return upload(file, file.type); }
+      crop(URL.createObjectURL(file));
+    });
+  }
+
+  // ── A parish's short links ────────────────────────────────────────────
+  //
+  // The app's links dialog (app.js openParishLinks). The four payment kinds
+  // are columns on `parishes`, anything else a row of `parish_links`; they
+  // are edited together, as "the links we hand out", and saved as the two
+  // writes they are, the columns first, so a refused slug does not lose those
+  // too. Each row shows the link it makes.
+
+  function editLinks(pid, { onSaved = null } = {}) {
+    const p = host.parish(pid);
+    if (!p || !host.may('links.edit', pid)) return;
+    const base = `orthodoxy.au/${slugOf(p)}/`;
+    const custom = linksOf(pid).map(l => ({ slug: l.slug, url: l.url, label: l.label || '' }));
+    const f = frame({ title: 'Donate and short links', sub: p.name, cls: 'links-backdrop' });
+    f.body.innerHTML = `<div class="detail-edit-form lk-form">
+        <p class="bk-lead">Short links to hand out. Each one opens the page it is set to.</p>
+        ${PAY_LINKS.map(([slug, col, label]) => `<div class="edit-row"><label>${esc(label)}<span class="lk-slug">${esc(base + slug)}</span></label>
+          <input type="url" data-lk-col="${col}" value="${esc(p[col] || '')}" placeholder="https://…" autocomplete="off"></div>`).join('')}
+        <div data-lk-custom></div>
+        <button class="rf-btn" type="button" data-lk-add>Add a link</button>
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-lk-save>Save</button>
+          <button class="btn-outline" type="button" data-frame-close>Close</button>
+        </div>
+      </div>`;
+    const form = f.body.firstElementChild;
+    const list = form.querySelector('[data-lk-custom]');
+    const err = form.querySelector('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
+    const paint = () => {
+      list.innerHTML = custom.map((l, i) => `<div class="lk-row" data-i="${i}">
+          <div class="lk-head">
+            <input class="lk-name" data-lk="slug" value="${esc(l.slug)}" placeholder="name" aria-label="Its name in the link" autocomplete="off" autocapitalize="none" spellcheck="false">
+            <button class="lk-del" type="button" data-lk-del aria-label="Remove">&times;</button>
+          </div>
+          <div class="lk-preview">${esc(base)}<b>${esc(l.slug || 'name')}</b></div>
+          <input type="url" data-lk="url" value="${esc(l.url)}" placeholder="https://…" aria-label="Where it goes" autocomplete="off">
+          <input data-lk="label" value="${esc(l.label)}" placeholder="What to call it" aria-label="What to call it" autocomplete="off">
+        </div>`).join('');
+    };
+    paint();
+    // Kept as it is typed, because adding or removing a row draws them all again.
+    list.addEventListener('input', (ev) => {
+      const row = ev.target.closest('.lk-row');
+      const k = ev.target.dataset.lk;
+      if (!row || !k) return;
+      const l = custom[Number(row.dataset.i)];
+      if (k === 'slug') {
+        l.slug = ev.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+        row.querySelector('.lk-preview b').textContent = l.slug || 'name';
+      } else l[k] = k === 'url' ? ev.target.value.trim() : ev.target.value;
+    });
+    list.addEventListener('click', (ev) => {
+      const row = ev.target.closest('[data-lk-del]') && ev.target.closest('.lk-row');
+      if (row) { custom.splice(Number(row.dataset.i), 1); paint(); }
+    });
+    form.querySelector('[data-lk-add]').addEventListener('click', () => {
+      custom.push({ slug: '', url: '', label: '' });
+      paint();
+      list.querySelector('.lk-row:last-child .lk-name').focus();
+    });
+    form.querySelector('[data-lk-save]').addEventListener('click', async (ev) => {
+      fail('');
+      const save = ev.currentTarget;
+      const cols = {};
+      form.querySelectorAll('[data-lk-col]').forEach(i => { cols[i.dataset.lkCol] = i.value.trim() || null; });
+      save.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cols),
+        }).catch(() => null);
+        if (!res || !res.ok) return fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        const res2 = await fetch(`/api/admin/parishes/${encodeURIComponent(pid)}/links`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ links: custom.filter(l => l.slug && l.url) }),
+        }).catch(() => null);
+        if (!res2 || !res2.ok) {
+          await host.reload();
+          return fail(`The four above are saved, but not the others: ${res2 ? await errorText(res2) : 'it did not go through.'}`);
+        }
+        f.close();
+        await host.reload();
+        if (onSaved) onSaved();
+        host.toast('Links saved');
+      } finally { save.disabled = false; }
+    });
+  }
+
   root.NextEdit = {
     init(h) { host = h; },
-    askChoice, keepByHand, errorText, frame, addEvent, addService, editService, editLine, editEvent, editBreak, combine,
+    askChoice, keepByHand, errorText, frame, pickPin, addEvent, addService, editService, editLine, editEvent, editBreak, combine,
+    editDetails, editLogo, editLinks,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
