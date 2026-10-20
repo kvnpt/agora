@@ -48,7 +48,7 @@ test('a parenthesis is languages only when it names languages', () => {
   assert.deepEqual(parseLanguages('Arabic'), ['Arabic']);
   assert.deepEqual(parseLanguages('Arabic and English'), ['Arabic', 'English']);
   assert.deepEqual(parseLanguages('English & Arabic'), ['English', 'Arabic']);
-  assert.deepEqual(parseLanguages('English/ Slavonic'), ['English', 'Slavonic']);
+  assert.deepEqual(parseLanguages('English/ Slavonic'), ['English', 'Church Slavonic']);
   // The qualifier is dropped rather than guessed at — this claims less than the
   // page does, never more.
   assert.deepEqual(parseLanguages('Mostly Arabic'), ['Arabic']);

@@ -23,6 +23,7 @@
   const dates = isCjs ? require('./dates.js') : (root && root.AgoraDates);
   const locations = isCjs ? require('./locations.js') : (root && root.AgoraLocations);
   const slugs = isCjs ? require('./slugs.js') : (root && root.AgoraSlugs);
+  const languages = isCjs ? require('./languages.js') : (root && root.AgoraLanguages);
 
   // The jurisdictions a path segment filters to. Not slugs.js's JURISDICTIONS,
   // which also holds 'other' — a value a parish can carry but not a view
@@ -52,10 +53,11 @@
   const ENGLISH = (slugs && slugs.ENGLISH_SEGMENTS) || ['en'];
   const ENGLISH_ONLY = (slugs && slugs.ENGLISH_ONLY_SEGMENTS) || ['en-only'];
 
-  /** 'Church Slavonic' → 'church-slavonic': a language as a path segment's tail. */
-  const langSlug = (name) => String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  /** 'church-slavonic' → 'Church Slavonic'. */
-  const langFromSlug = (slug) => String(slug || '').split('-').filter(Boolean)
+  /** 'Church Slavonic' → 'slavonic': a language as a path segment's tail (languages.js). */
+  const langSlug = (name) => (languages && languages.find(name) || {}).slug
+    || String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  /** 'slavonic', 'russian', 'church-slavonic' → 'Church Slavonic'. */
+  const langFromSlug = (slug) => (languages && languages.canonical(slug)) || String(slug || '').split('-').filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
   /**

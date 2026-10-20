@@ -164,9 +164,11 @@ export const eventTypeFor = (title) => TYPE_BY_TITLE.find(([re]) => re.test(Stri
 
 // Languages these parishes name. A whitelist for the same reason the Antiochian
 // one is: the words beside a service title are not always a language.
+// Names from the fixed list (public/shared/languages.js): Slavonic and
+// Russian are both Church Slavonic.
 const LANGUAGE = {
-  english: 'English', greek: 'Greek', slavonic: 'Slavonic', arabic: 'Arabic',
-  romanian: 'Romanian', serbian: 'Serbian', russian: 'Russian', ελληνικά: 'Greek', αγγλικά: 'English',
+  english: 'English', greek: 'Greek', slavonic: 'Church Slavonic', arabic: 'Arabic',
+  romanian: 'Romanian', serbian: 'Serbian', russian: 'Church Slavonic', ελληνικά: 'Greek', αγγλικά: 'English',
 };
 
 /** The languages a phrase names, or null. */

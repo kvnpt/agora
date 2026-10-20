@@ -663,7 +663,7 @@
         ${parishes.length > 1 ? `<div><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
           `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       </div>
-      <div class="edit-row"><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" placeholder="English, Arabic" autocomplete="off"></div>
+      <div class="edit-row"><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
       ${series ? '' : `<div class="edit-row"><label>Date</label>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', start.time, ' data-tf-label="Starts"')}</div>
@@ -1319,7 +1319,7 @@
           <input ${fld('maps_url')} value="${v('maps_url')}" placeholder="Or paste its Google Maps link" aria-label="Google Maps link" autocomplete="off">
           <button class="ev-link pd-usepin" type="button" data-pd-usepin>Use the pin instead</button>
         </div>
-        <div class="edit-row"><label>Languages</label><input ${fld('languages')} value="${esc(langsOf(p.languages).join(', '))}" placeholder="English, Greek" autocomplete="off"></div>
+        <div class="edit-row"><label>Languages</label><input ${fld('languages')} value="${esc(langsOf(p.languages).join(', '))}" data-lang-picker autocomplete="off"></div>
         <div class="edit-row"><label>Short link</label>
           <input ${fld('acronym')} value="${v('acronym')}" placeholder="acronym" autocomplete="off" autocapitalize="none" spellcheck="false"${mayAcronym ? '' : ' disabled'}>
           <div class="edit-row-hint" data-pd-acro></div>

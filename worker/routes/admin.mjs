@@ -36,6 +36,7 @@ import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import { jurisdictionLogos, jurisdictionLogoKey, LOGO_JURISDICTIONS } from '../lib/juris-logos.mjs';
 import slugs from '../../public/shared/slugs.js';
+import langList from '../../public/shared/languages.js';
 import timezones from '../../public/shared/timezones.js';
 import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
@@ -478,7 +479,7 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
   ).bind(
     parish_id, title, b.description || null, startUtc, endUtc,
     venue.location_override, pin.lat, pin.lng,
-    kind, b.languages || null,
+    kind, langList.clean(b.languages),
     b.hide_live ? 1 : 0, parishOnly ? 1 : 0, posterPath,
     venue.location_parish_id, venue.location_lat, venue.location_lng,
   ).first();
@@ -1372,6 +1373,8 @@ export function registerAdminRoutes(router) {
   router.patch('/api/admin/events/:id', guarded('event.edit', async (c) => {
     const { env, params, request } = c;
     const body = await readJson(request);
+    // Languages keep to the fixed list (public/shared/languages.js).
+    if (body.languages !== undefined) body.languages = langList.clean(body.languages);
 
     const inst = parseInstanceId(params.id);
     if (inst) {
@@ -2548,7 +2551,7 @@ export function registerAdminRoutes(router) {
         // Was accepted and dropped — the column was missing from the INSERT,
         // so a create that set an acronym came back without one.
         b.website || null, b.email || null, b.phone || null, b.acronym || null,
-        b.languages || '["English"]',
+        langList.clean(b.languages) || '["English"]',
         b.live_url || null, b.donation_url || null, b.raffle_url || null,
         b.payment_url || null, b.gala_url || null,
         // Who says so: the person adding it, as an edit would record them
@@ -2590,6 +2593,9 @@ export function registerAdminRoutes(router) {
     if (!parish) return json({ error: 'Parish not found' }, 404);
 
     const b = await readJson(request);
+    // Languages keep to the fixed list (public/shared/languages.js); the column
+    // is NOT NULL, so none is an empty list.
+    if (b.languages !== undefined) b.languages = langList.clean(b.languages) || '[]';
 
     const scoped = outOfScope(c, id);
     if (scoped) return scoped;
@@ -2856,7 +2862,7 @@ export function registerAdminRoutes(router) {
          VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
       ).bind(
         params.id, r.day_of_week, r.start_time, r.end_time || null, r.title,
-        r.event_type || 'liturgy', r.week_of_month || null, r.languages || null,
+        r.event_type || 'liturgy', r.week_of_month || null, langList.clean(r.languages),
         source.name, source.ref, checkedAt,
       ).first();
       created.push(row);
@@ -2960,7 +2966,7 @@ export function registerAdminRoutes(router) {
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
     ).bind(
       parish_id, day_of_week, start_time, b.end_time || null, title,
-      b.event_type || 'liturgy', b.languages || null, b.week_of_month || null,
+      b.event_type || 'liturgy', langList.clean(b.languages), b.week_of_month || null,
       b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, place.location_override,
       b.week_parity ? String(b.week_parity).toLowerCase() : null,
       b.effective_from || null, b.effective_to || null,
@@ -2997,6 +3003,7 @@ export function registerAdminRoutes(router) {
     const scoped = outOfScope(c, row.parish_id);
     if (scoped) return scoped;
     const b = await readJson(request);
+    if (b.languages !== undefined) b.languages = langList.clean(b.languages);
     if (b.poster_path !== undefined) {
       if (b.poster_path === '') b.poster_path = null;
       if (b.poster_path !== null && !isPosterPath(b.poster_path)) {

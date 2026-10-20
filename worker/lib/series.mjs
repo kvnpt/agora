@@ -23,6 +23,7 @@
 
 import { isValidOccurrence } from './expand.mjs';
 import { localPartsOf } from '../../public/shared/tz.mjs';
+import langList from '../../public/shared/languages.js';
 
 const DAY_MS = 86400000;
 export const dayBefore = (d) => new Date(Date.parse(d + 'T00:00:00Z') - DAY_MS).toISOString().slice(0, 10);
@@ -49,7 +50,7 @@ export function ruleChangesFrom(body, zone) {
   const out = {};
   if (body.title !== undefined && body.title) out.title = body.title;
   if (body.event_type !== undefined && body.event_type) out.event_type = body.event_type;
-  if (body.languages !== undefined) out.languages = body.languages || null;
+  if (body.languages !== undefined) out.languages = langList.clean(body.languages);
   // A place is a unit (lib/venues.mjs): the route has read all four, so a body
   // that names one names them all.
   for (const k of ['location_override', 'location_parish_id', 'location_lat', 'location_lng']) {

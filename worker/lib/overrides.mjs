@@ -12,6 +12,7 @@
 // webhook, which is gone.
 
 import { OffsetCache, offsetAt } from '../../public/shared/tz.mjs';
+import langList from '../../public/shared/languages.js';
 import { expandOne, isValidOccurrence } from './expand.mjs';
 
 const PATCH_COLS = [
@@ -50,7 +51,10 @@ function mergePatch(s, zone, body, cur) {
     cur.patch_end_time = (hhmm || null) !== (s.end_time || null) ? hhmm : null;
   }
   if ('event_type' in body) cur.patch_event_type = (body.event_type && body.event_type !== s.event_type) ? body.event_type : null;
-  if ('languages' in body) cur.patch_languages = ((body.languages || null) !== (s.languages || null)) ? (body.languages || null) : null;
+  if ('languages' in body) {
+    const langs = langList.clean(body.languages);
+    cur.patch_languages = (langs !== langList.clean(s.languages)) ? langs : null;
+  }
   if ('feast' in body) cur.patch_feast = body.feast || null;
   // Against the rule's own words, now that a rule can have some (migration
   // 021): a drawer saved with the inherited text unchanged writes nothing.

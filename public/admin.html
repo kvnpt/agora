@@ -1054,7 +1054,7 @@
           <div class="field"><label>Website</label><input name="website" placeholder="https://..."></div>
           <div class="field"><label>Email</label><input name="email" type="email" placeholder="parish@example.com"></div>
           <div class="field"><label>Phone</label><input name="phone" placeholder="02 1234 5678"></div>
-          <div class="field"><label>Languages</label><input name="languages" placeholder="English, Arabic"></div>
+          <div class="field"><label>Languages</label><input name="languages" data-lang-picker></div>
           <div class="field full"><label>Live URL</label><input name="live_url" placeholder="https://youtube.com/..."></div>
           <!-- Donate / payment / raffle / gala and any custom link live in the
                Links editor on the parish's own card, not here: a parish is
@@ -1100,7 +1100,7 @@
                prints it. -->
           <div class="field"><label>Start <span data-sched-tz>(Sydney)</span></label><input name="start_time" type="time" required></div>
           <div class="field"><label>End <span data-sched-tz>(Sydney)</span></label><input name="end_time" type="time"></div>
-          <div class="field full"><label>Languages</label><input name="languages" placeholder="English, Arabic, Greek"></div>
+          <div class="field full"><label>Languages</label><input name="languages" data-lang-picker></div>
           <div class="field full"><label>Address</label><input name="location_override" placeholder="Blank — meets at the parish's own address"></div>
         </div>
         <label class="check"><input type="checkbox" name="hide_live"> Never show live badge (e.g. Confession, in-person only)</label>
@@ -1287,6 +1287,7 @@
   <script src="/shared/locations.js"></script>
   <script src="/shared/services.js"></script>
   <script src="/shared/dates.js"></script>
+  <script src="/shared/languages.js"></script>
   <script src="/shared/slugs.js"></script>
   <script src="/shared/acronym-suggest.js"></script>
   <script src="/shared/suggest-dialog.js"></script>
@@ -1297,6 +1298,7 @@
        what it stands on. -->
   <script src="/shared/event-types.js"></script>
   <script src="/shared/kind-picker.js"></script>
+  <script src="/shared/lang-picker.js"></script>
   <script src="/shared/event-checks.js"></script>
   <script src="/shared/sse.js"></script>
   <script src="/shared/signs.js"></script>
@@ -2562,7 +2564,7 @@
                 <label>Short links</label>
                 <button type="button" class="btn btn-outline" onclick="openLinksEditor('${esc(p.id)}')">Donate, pay, raffle, gala &amp; custom${linkCountLabel(p.id)}</button>
               </div>
-              <div class="field"><label>Languages</label><input value="${langs}" data-field="languages"></div>
+              <div class="field"><label>Languages</label><input value="${langs}" data-field="languages" data-lang-picker></div>
               <div class="field"><label>Latitude</label><input type="number" step="any" value="${p.lat}" data-field="lat"></div>
               <div class="field"><label>Longitude</label><input type="number" step="any" value="${p.lng}" data-field="lng"></div>
               <div class="field full"><label>Timezone</label>
@@ -2984,7 +2986,7 @@
                   <div class="field"><label>Type</label>
                     <select data-field="event_type" data-kind-picker>${types.map(t => `<option value="${t}" ${s.event_type===t?'selected':''}>${t}</option>`).join('')}</select>
                   </div>
-                  <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages"></div>
+                  <div class="field"><label>Languages</label><input value="${esc(parseLangs(s.languages))}" data-field="languages" data-lang-picker></div>
                   <div class="field full"><label>Address</label><input value="${esc(s.location_override || '')}" data-field="location_override" placeholder="Blank — meets at the parish's own address"></div>
                 </div>
                 <!-- One control, three answers. week_of_month and week_parity
