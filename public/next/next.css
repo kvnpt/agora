@@ -229,6 +229,37 @@ body.map-full .map-fs .fs-open { display: none; }
 body.map-full .map-fs .fs-close { display: block; }
 .maplibregl-ctrl-attrib { display: none; }
 
+/* The only parish in view, popped from its dot into its logo (map.js,
+   popIn). The marker's transform is MapLibre's, so the bounce is on the face.
+   It grows out of the dot (a quarter of its size), overshoots, settles; and
+   shrinks back into the dot when another parish comes into view. */
+.map-pop { width: 32px; height: 32px; pointer-events: none; }
+.map-pop-face {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; box-sizing: border-box; overflow: hidden;
+  border-radius: 50%; background: #fff;
+  border: 2px solid var(--pop-ring);
+  box-shadow: 0 2px 4px var(--map-shadow);
+  animation: map-pop-in 560ms cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+.map-pop-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.map-pop-face.out { animation: map-pop-out 240ms cubic-bezier(0.5, 0, 0.75, 0) both; }
+@keyframes map-pop-in {
+  0% { transform: scale(0.25); }
+  42% { transform: scale(1.2); }
+  62% { transform: scale(0.9); }
+  80% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@keyframes map-pop-out {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.1); }
+  100% { transform: scale(0.25); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-pop-face, .map-pop-face.out { animation: none; }
+}
+
 /* Under the small map, what it holds in words: a stack of logos, the count
    and how many have times. Tapping opens them as a collection. */
 .inview {
