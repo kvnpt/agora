@@ -163,8 +163,12 @@
       const btn = df.querySelector('[data-df-open]');
       const clear = df.querySelector('[data-df-clear]');
       const native = df.querySelector('.df-native');
+      // On a phone the native field lies over the button and takes the tap
+      // itself (next.css), so it holds where the calendar opens all along.
+      native.value = hidden.value || today || '';
       const set = (iso) => {
         hidden.value = iso || '';
+        native.value = iso || today || '';
         btn.innerHTML = iso ? esc(dateLabel(iso)) : `<span class="df-empty">${esc(btn.dataset.dfEmpty || '')}</span>`;
         if (clear) clear.hidden = !iso;
         hidden.dispatchEvent(new Event('change', { bubbles: true }));

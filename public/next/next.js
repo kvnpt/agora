@@ -1411,9 +1411,8 @@
   function datePickHTML(scope, from) {
     const t = todayKey();
     return `<div class="date-pick">
-        <button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Pick a date'}</span></button>
+        <span class="date-btn"><button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Pick a date'}</span></button><input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date"></span>
         ${from ? `<button class="fpill" type="button" data-date-clear="${scope}">Today</button>` : ''}
-        <input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date">
       </div>`;
   }
   /** A day's own link, copied with a tap, as the app's day headers have. */
