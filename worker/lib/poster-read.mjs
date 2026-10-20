@@ -238,13 +238,17 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 /**
  * What the model needs to know that is not on the poster: whose parish, where,
- * what day it is there, and which services it holds every week anyway.
+ * what day it is there, and which services it holds every week anyway — and,
+ * from "Suggest edits", what the person who sent it wrote beside it, which can
+ * say which of a programme's events they mean.
  *
  * @param {{name, address, timezone}} parish
  * @param {string} today  the parish's own 'YYYY-MM-DD'
  * @param {Array<{day_of_week, start_time, title}>} rules  its active rules
+ * @param {string} [note]  the sender's own words, quoted as theirs
  */
-export function posterContext(parish, today, rules = []) {
+export function posterContext(parish, today, rules = [], note = '') {
+  const said = String(note || '').trim().slice(0, 2000);
   const [y, m, d] = today.split('-').map(Number);
   const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
   // The weeks too: "2nd and 4th Sundays 18:00" is the only way the reader can
@@ -260,6 +264,7 @@ export function posterContext(parish, today, rules = []) {
     `Today there is ${weekday} ${d} ${MONTHS[m - 1]} ${y}.`,
     `Its regular services:\n${regular}`,
     `Kinds of event:\n${kinds}`,
+    ...(said ? [`What the person sending this poster wrote beside it. Their words: they may say which event they mean, or add what the poster leaves out. What the poster prints is still read from the poster.\n"""\n${said}\n"""`] : []),
     'Read the image.',
   ].join('\n\n');
 }

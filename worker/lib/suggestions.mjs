@@ -100,9 +100,14 @@ export function validateSuggestion(body) {
   s.end_time = clean(b.end_time, 5) || null;
   s.place = clean(b.place, MAX.place) || null;
   s.body = clean(b.body, MAX.body) || null;
-  if (!s.title) return bad('title', 'What is the event called?');
-  if (!s.date) return bad('date', 'Which day is it?');
-  if (!isLocalDate(s.date)) return bad('date', 'That is not a date.');
+  // With its poster, the poster says what and when: an event sent from the
+  // dialog before the sign-in goes even when the read found neither, and
+  // whoever keeps the parish reads it off the image.
+  if (!s.poster_path) {
+    if (!s.title) return bad('title', 'What is the event called?');
+    if (!s.date) return bad('date', 'Which day is it?');
+  }
+  if (s.date && !isLocalDate(s.date)) return bad('date', 'That is not a date.');
   if (s.start_time && !isLocalTime(s.start_time)) return bad('start_time', 'Write the time like 19:30.');
   if (s.end_time && !isLocalTime(s.end_time)) return bad('end_time', 'Write the time like 21:00.');
   return { ok: true, suggestion: s };
@@ -114,7 +119,7 @@ export function describeSuggestion(s, parishName) {
   const at = parishName || s.parish_id;
   if (s.kind === 'event') {
     const when = [s.date, s.start_time].filter(Boolean).join(' ');
-    return `${who} suggests an event at ${at}: ${s.title}${when ? `, ${when}` : ''}.`;
+    return `${who} suggests an event at ${at}: ${s.title || 'see their poster'}${when ? `, ${when}` : ''}.`;
   }
   return `${who} suggests a change at ${at}${s.about ? ` — ${s.about}` : ''}.`;
 }

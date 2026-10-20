@@ -13,7 +13,7 @@ import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
 import { isProbePath, probeResponse } from './lib/probe.mjs';
-import { adminHostRedirect } from './lib/admin-host.mjs';
+import { adminHostRedirect, subdomainRedirect } from './lib/admin-host.mjs';
 import slugs from '../public/shared/slugs.js';
 
 const router = new Router();
@@ -115,6 +115,9 @@ export default {
     // guards it on (lib/admin-host.mjs).
     const toAdminHost = adminHostRedirect(request.url);
     if (toAdminHost) return toAdminHost;
+    // Everything else on greek.orthodoxy.au: orthodoxy.au/greek (the same file).
+    const toApex = subdomainRedirect(request);
+    if (toApex) return toApex;
     // /next/greek/en, from when v3 was a prototype under /next: /greek/en.
     const fromNext = nextRedirect(request);
     if (fromNext) return fromNext;
