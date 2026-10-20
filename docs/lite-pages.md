@@ -66,8 +66,9 @@ for a filter link. `page-head.mjs` writes them.
 `worker/lib/page-card.mjs`, pure (models in, markup out; covered by `node --test`).
 The same sheet next.js draws, in the same class names (`public/next/next.css`), with
 what a first paint needs: a parish's names and address, its buttons (Google Maps,
-Website, the stream, Donate), its Today (on now, later today, else
-tomorrow), its timetable, its own links as small buttons above its details, what is
+Website, the stream, Donate), its Today (as the page's: "Happening now" then
+"Later today", else the rest of the day under "This evening" when it is all the
+evening, else "Tomorrow"; the Evening divider where the day has both), its timetable, its own links as small buttons above its details, what is
 coming up and its details; an event's when and where, its poster and its description with its links
 as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing
 on it is a control that needs the page's script, except Close, which is a link home.
@@ -85,9 +86,11 @@ keep them saying the same thing.
 - the occurrences come from `expandFrom` + `buildFeed`, the same functions `bundle.js`
   runs in the browser, over one parish's rows (`fetchWindowRows({ parishId })`);
 - the pin follows the page's rules (`firstEventOnDay` in `url-state.js`): an id pins its
-  event, a day pins only an event ON that day, a service, weekday or part of the day
-  (`/sgr/evening`, split at 2pm on the parish's clock) pins the next of its kind; a
-  synthetic id lists the other dates of the same rule;
+  event, a day pins only an event ON that day, a service, weekday, part of the day
+  (`/sgr/evening`, split at 2pm on the parish's clock), kind (`/sgr/talks`) or
+  language (`/sgr/en`) pins the next that answers, which is the event the page
+  opens in front of the parish's card, and its head names it; the card painted is
+  still the parish's; a synthetic id lists the other dates of the same rule;
 - times in the parish's zone. An event over more than one day reads as its span ("Fri 13
   Nov 6pm – Sun 15 Nov 4pm"); one that only runs past midnight keeps its day ("Saturday
   14 Nov · 11pm–3am").

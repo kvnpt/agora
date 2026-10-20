@@ -484,7 +484,6 @@ body.map-full .parish-row {
 .card-head { padding: 14px 18px 4px; }
 .card-head h2 { font-size: 21px; font-weight: 700; letter-spacing: -.015em; }
 .card-head p { margin: 2px 0 0; color: var(--text-2); font-size: 14px; }
-.livetxt { color: var(--live); font-weight: 600; }
 .tsub { padding: 12px 18px 2px; font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .tempty { padding: 14px 18px 4px; color: var(--text-2); }
 .see-all {
@@ -499,6 +498,9 @@ body.map-full .parish-row {
 }
 .erow + .erow { border-top: 1px solid var(--line); }
 .today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
+/* A Today with the day and the evening divides them, as a day of the feed does. */
+.today .eve { padding: 10px 18px 2px; }
+.today .erow + .eve { border-top: 1px solid var(--line-strong); }
 /* A collection's own Today, above its timetables, and a parish's above its timetable. */
 .ctoday, .ptoday { margin: 14px 18px 0; }
 /* A parish card's focus (/sgr/talk): its next lit in the parish's colour, under
@@ -523,7 +525,15 @@ body.map-full .parish-row {
 .live { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 var(--live); animation: pulse 1.8s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 60%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .ebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.etitle { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A name has two lines, then an ellipsis. Its own languages lead the line under it. */
+.etitle {
+  min-width: 0; font-weight: 600; font-size: 16px; line-height: 1.25; overflow-wrap: break-word;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.esub .elang {
+  flex: none; overflow: visible; padding: 1px 5px; border-radius: 3px;
+  background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600; white-space: nowrap;
+}
 .esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
 .esub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* With your location on, how far: in blue, as on a parish's card. */
@@ -1263,7 +1273,8 @@ body.dialog-open { overflow: hidden; }
 /* A date that is off (public/next/next.js TOMB): struck through, its word
    beside it, in the app's badge colours (app.css .badge-cancelled and the
    rest). Warmer for a break, which is a stretch, not one service called off. */
-.etitle-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.etitle-row { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+.etitle-row .etomb { margin-top: 2px; }
 .erow.tomb .etitle { text-decoration: line-through; color: var(--text-2); }
 .erow.tomb .etime, .erow.tomb .roundel { opacity: .5; }
 .etomb, .ev-state {
