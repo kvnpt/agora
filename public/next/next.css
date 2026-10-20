@@ -740,6 +740,7 @@ body.map-full .parish-row {
 /* From today, or from a date: the filter pill, opening the calendar. */
 .date-pick { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .date-pick .fpill svg { flex: none; }
+.date-btn { position: relative; display: inline-flex; }
 .date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
 .stream-more { padding: 26px; text-align: center; color: var(--text-3); font-size: 14px; }
 
@@ -1318,6 +1319,17 @@ body.dialog-open { overflow: hidden; }
 }
 .df-clear[hidden] { display: none; }
 .df-native { position: absolute; left: 0; bottom: 0; width: 100%; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+/* On a phone the tap lands on the browser's own date field, laid unseen over
+   the button: some phone browsers ignore showPicker() on a hidden field (or
+   lack it), and a real tap on the field opens the calendar in every one.
+   16px keeps iOS from zooming in on it. */
+@media (pointer: coarse) {
+  .date-input, .df-native {
+    top: 0; bottom: auto; width: 100%; height: 100%; pointer-events: auto;
+    font-size: 16px; -webkit-appearance: none; appearance: none; background: transparent; color: transparent;
+  }
+  .df-clear { z-index: 1; }
+}
 /* The rule's own poster. */
 .rf-poster { display: flex; align-items: center; gap: 12px; }
 .rf-poster-thumb { width: 72px; max-height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
