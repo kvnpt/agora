@@ -162,10 +162,13 @@ twice — once against the estimate, once against the built file. R2's free tier
 
 ## Step 5 — Domain
 
-Agora serves the whole zone: `orthodoxy.au` plus every jurisdiction subdomain.
-The page (`public/next/next.js`) reads the hostname before it reads the path, so
-`greek.orthodoxy.au` opens pre-filtered to Greek parishes — a feature that only
-works if those hostnames reach the Worker.
+Agora answers the whole zone: `orthodoxy.au` plus every jurisdiction subdomain.
+A subdomain is a shortcut for a filter, so the Worker sends it to the apex
+(`worker/lib/admin-host.mjs`): `greek.orthodoxy.au` → `orthodoxy.au/greek`,
+`greek.orthodoxy.au/en` → `orthodoxy.au/greek/en`, and any other subdomain
+(`www`) to the same path on `orthodoxy.au`. One origin, so what the page keeps
+in the browser (a suggestion written before the sign-in, say) is still there
+after it. The redirect only works if those hostnames reach the Worker.
 
 That rules out Custom Domains, which cannot take a wildcard. Use **routes**:
 **the zone → Workers Routes → Connect Worker → `agora`**, then two patterns.

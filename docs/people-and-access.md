@@ -80,7 +80,22 @@ email and submit** goes to `/admin?suggest=`, through Access; what was typed
 waits in this browser's `localStorage` for two hours and the suggest page fills
 it in and sends it the moment it loads (`takeDraft`), so the person writes once.
 Going straight to the sign-in lost most people at an email box from a company
-they had not heard of, before they had said anything. The account menu's
+they had not heard of, before they had said anything.
+
+**A poster goes the same way.** The dialog takes one (pick, paste or drop) and
+shows it at once, as if it were on the suggestion already, but uploads nothing:
+the image waits in this browser's IndexedDB on the draft's two-hour clock
+(`savePoster`/`takePoster`). Once Access has confirmed the address the suggest
+page uploads it to `/api/admin/suggestions/poster` with what they wrote as
+`?note=` (the reader gets it beside the image, so a programme's event is
+theirs), fills the event from the read and sends it as an event with no step
+to check it (Kevin, 20 Oct 2026): an event with a poster needs no title or
+date, since whoever keeps the parish reads them off the image. Each step says
+what it is doing, and the thank-you shows what went: the poster, what was read,
+their words. A poster the site refuses (the day's limit) leaves what they wrote
+to go as a change, and the thank-you says why the poster did not. This only
+works because there is one origin: every subdomain redirects to `orthodoxy.au`
+(`worker/lib/admin-host.mjs`). The account menu's
 **Sign in** opens the same dialog while a parish's card is open and nothing on
 it is theirs to edit, with a plain sign-in link for whoever already keeps it.
 

@@ -83,8 +83,8 @@ function fresh(roles = [], { posters = false, key = 'test-key' } = {}) {
     body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' },
   });
   /** Add a poster to a suggestion form at `parish`. */
-  const poster = (parish = PARISH, bytes = jpeg(), type = 'image/jpeg') =>
-    send('POST', `/api/admin/suggestions/poster?parish=${encodeURIComponent(parish)}`, {
+  const poster = (parish = PARISH, bytes = jpeg(), type = 'image/jpeg', { note = '' } = {}) =>
+    send('POST', `/api/admin/suggestions/poster?parish=${encodeURIComponent(parish)}${note ? `&note=${encodeURIComponent(note)}` : ''}`, {
       body: bytes, headers: { 'Content-Type': type },
     });
   return { raw, call, poster, bucket: b };
@@ -478,4 +478,25 @@ test('a poster is an image, at a parish, from somebody who cannot already add th
 test('a read offers the form only events it can name', () => {
   assert.deepEqual(formFromRead({ events: [{ title: null, date: null }, { title: 'Vespers', date: null, location_override: 'Hall' }] }),
     [{ title: 'Vespers', date: '', start_time: '', end_time: '', place: 'Hall', body: '' }]);
+});
+
+test('a poster from the dialog is read with their words beside it, and goes even when the read names nothing', async () => {
+  const t = fresh([{ email: 'boss@example.org', role: 'owner' }], { posters: true });
+  const fetch = fakeFetch(haikuStream(TWO));
+  const words = 'The talk on the 21st — please add it';
+  const up = await withFetch(fetch, () => t.poster(PARISH, jpeg(), 'image/jpeg', { note: words }));
+  assert.equal(up.status, 201, JSON.stringify(up.body));
+  const context = fetch.calls[0].body.messages[0].content[1].text;
+  assert.ok(context.includes(words), 'the reader sees what they wrote');
+  assert.ok(context.indexOf(words) < context.indexOf('Read the image.'));
+
+  // Nothing read: the poster is enough, with or without their words.
+  const bare = await t.call('POST', '/api/admin/suggestions', { parish_id: PARISH, kind: 'event', body: words, poster_path: up.body.poster_path });
+  assert.equal(bare.status, 201, JSON.stringify(bare.body));
+  t.raw.prepare("INSERT INTO admin_roles (email, role) VALUES ('dev', 'editor')").run();
+  const list = await t.call('GET', '/api/admin/suggestions');
+  assert.match(list.body[0].summary, /suggests an event at .*: see their poster\./);
+  // And it still becomes a draft, with the poster to read again.
+  const d = await t.call('POST', `/api/admin/suggestions/${bare.body.id}/draft`);
+  assert.equal(d.status, 201, JSON.stringify(d.body));
 });

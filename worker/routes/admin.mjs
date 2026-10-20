@@ -877,12 +877,15 @@ export function registerAdminRoutes(router) {
     if (!apiKey) return json({ poster_path: posterPath, configured: false, events: [] }, 201);
 
     const { parish: at, zone, today, rules } = await readContext(env.DB, parish.id);
+    // What they wrote beside it (the dialog before the sign-in sends it), so
+    // the reader knows which event on a programme is theirs.
+    const note = (c.query.get('note') || '').slice(0, 2000);
     const read = await readPoster({
       apiKey,
       baseUrl: env.ANTHROPIC_BASE_URL,
       image: bytes,
       mediaType,
-      context: posterContext({ ...at, timezone: zone }, today, rules),
+      context: posterContext({ ...at, timezone: zone }, today, rules, note),
     });
     console.log(JSON.stringify({ poster_read: {
       suggestion: true, parish: parish.id, ok: read.ok, ms: read.ms,

@@ -45,3 +45,15 @@ test("the dialog's topics are the suggest page's, word for word", async () => {
     assert.ok(admin.includes(`<option>${html}</option>`), `admin.html offers "${t}"`);
   }
 });
+
+test('a poster from the dialog is enough on its own, and says it is coming', () => {
+  const d = S.draftFrom({ change_body: '', poster: true }).draft;
+  assert.equal(d.poster, true, 'the suggest page looks for it by this');
+  assert.equal(S.draftFrom({ change_body: 'x' }).draft.poster, undefined, 'no poster, no flag');
+});
+
+test('with no IndexedDB, a poster is not kept and none is found — and nothing throws', async () => {
+  assert.equal(await S.savePoster('p1', new Blob(['x']), { idb: null }), false);
+  assert.equal(await S.takePoster('p1', { idb: null }), null);
+  await S.dropPoster('p1', { idb: null });
+});
