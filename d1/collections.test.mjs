@@ -27,14 +27,15 @@ test('a collection is what a link means, in any order or spelling', () => {
   assert.equal(of('/liturgy/sun'), 'sunday');
   assert.equal(of('/sunday/liturgy'), 'sunday');
   assert.equal(of('/services/liturgy/sun'), 'sunday', 'Services with Liturgy chosen is /liturgy');
-  assert.equal(of('/english'), 'english');
+  assert.equal(of('/english/services'), 'english');
+  assert.equal(of('/en/services'), 'english', 'English services, either way round');
   assert.equal(of('/greek/timetables'), 'j-greek', 'the page is the timetable');
   assert.equal(of('/monastery'), 'monasteries');
   assert.equal(of('/evening/prayer/saturday'), 'vespers');
 });
 
 test('a hand-picked list, a mix of filters and a date are not collections', () => {
-  for (const p of ['/', '/sgr+snb', '/sgr', '/greek/qld', '/greek/en', '/en-only', '/in-greek-only', '/sun',
+  for (const p of ['/', '/sgr+snb', '/sgr', '/greek/qld', '/greek/en', '/en', '/en-only', '/in-greek-only', '/sun',
     '/en/monasteries', '/sun/liturgy/2026-11-01', '/greek/next-week', '/102']) {
     assert.equal(of(p), null, p);
   }

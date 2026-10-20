@@ -187,6 +187,9 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   }
   const fmtKm = (d) => d < 1 ? `${Math.round(d * 1000 / 50) * 50} m` : d < 10 ? `${d.toFixed(1)} km` : `${Math.round(d)} km`;
+  /** How far, in the app's blues: the nearer, the deeper (app.css .distance-near/-mid/-far). */
+  const distClass = (d) => (d <= 5 ? 'distance-near' : d <= 15 ? 'distance-mid' : 'distance-far');
+  const distHTML = (d, tag = 'em') => `<${tag} class="dist ${distClass(d)}">${esc(fmtKm(d))}</${tag}>`;
   /** Distance only in location mode, as the summary line asks. */
   const distOf = (p) => (S.loc && p && isFinite(p.lat)) ? km(S.loc, p) : null;
   const sortOrigin = () => S.loc || (map ? (({ lng, lat }) => ({ lat, lng }))(map.getCenter()) : null);
@@ -1019,8 +1022,7 @@
       let dist = '';
       if (S.loc && isFinite(p.lat) && p.lat != null) {
         const k = km(S.loc, p);
-        const cls = k <= 5 ? 'distance-near' : k <= 15 ? 'distance-mid' : 'distance-far';
-        dist = `<span class="pill-dist ${cls}">${esc(k < 10 ? k.toFixed(1) : String(Math.round(k)))}km</span>`;
+        dist = `<span class="pill-dist ${distClass(k)}">${esc(k < 10 ? k.toFixed(1) : String(Math.round(k)))}km</span>`;
       }
       return `<button class="parish-pill pill-${tone}" type="button" data-parish="${esc(p.id)}" style="--pill-ring:${shown(jColor(p.jurisdiction))}" title="${esc(p.name || '')}" aria-label="${esc(p.name || p.acronym || '')}">${pillLogo(p)}${star}${dist}</button>`;
     }).join('');
@@ -1081,14 +1083,20 @@
 
   // ── Today ─────────────────────────────────────────────────────────────
 
-  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false } = {}) {
+  /**
+   * A language badge says something only where the filters do not already:
+   * under a language filter (or a card lit by one), a row in that language
+   * alone wears none, and one in two languages still says both.
+   */
+  const langBadge = (langs, asked) => !!(langs && langs.length) && !(asked && langs.every(l => langIs(l, asked)));
+  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
     const title = e.feast ? `${e.title}` : e.title;
     // Its own languages, as its line in the timetable has them, first on the line under its name.
     const langs = parseLangs(e.languages);
-    const lang = langs && langs.length ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
+    const lang = langBadge(langs, asked || (focus && focus.lang)) ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
     // Held in another parish's church, each card says the other's part: the
     // venue's names its host, the host's names where it is.
@@ -1096,7 +1104,7 @@
     const sub = here && venue && here === venue.id ? `<span class="esub">${lang}${avatar(p, 'xs')}<span>Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
       : here && venue && e.parish_id === here ? `<span class="esub">${lang}${avatar(venue, 'xs')}<span>At ${esc(venue.name)}</span></span>`
       : here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
-      : `<span class="esub">${lang}${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
+      : `<span class="esub">${lang}${avatar(p, 'xs')}<span class="epar">${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? distHTML(d) : ''}</span>`;
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
@@ -1112,7 +1120,7 @@
   }
 
   function renderToday() {
-    const html = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)));
+    const html = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)), { lang: S.f.lang });
     $('#today').innerHTML = html;
     $('#today').hidden = !html;
   }
@@ -1132,7 +1140,7 @@
    * day where it is not; 'none' when there is none. `clear` names the focus
    * on the button that lets it go.
    */
-  function todayHTML(all, { here = null, focus = null, next = null, clear = '' } = {}) {
+  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null } = {}) {
     const now = Date.now();
     const t = todayKey();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
@@ -1147,7 +1155,7 @@
       let div = '';
       if (!isEvening(e)) day = true;
       else if (!eve) { eve = true; if (day) div = EVENING; }
-      return div + eventRow(e, { ...o, here, focus, lit: !!next && next.id === e.id });
+      return div + eventRow(e, { ...o, here, focus, lang, lit: !!next && next.id === e.id });
     }).join('');
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
@@ -1167,7 +1175,7 @@
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
       const nk = local(next).date;
-      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${eventRow(next, { here, lit: true })}`;
+      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${eventRow(next, { here, lang, focus, lit: true })}`;
     }
     const d = new Date(k + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
@@ -1284,7 +1292,7 @@
       const d = distOf(p);
       return `<button class="hrow" type="button" data-parish="${esc(p.id)}">${avatar(p, 'sm')}
           <span class="ht"><b>${esc(p.name)}</b><small>${nx ? `${roundel(nx.event_type)}<span>${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : '<span>No service times on file yet</span>'}</small></span>
-          ${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}${I.chev}</button>`;
+          ${d != null ? distHTML(d) : ''}${I.chev}</button>`;
     }).join('');
     const el = $('#favs');
     el.hidden = !rows;
@@ -1349,7 +1357,7 @@
       return `<button class="poster" type="button" data-event="${esc(e.id)}">
           <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
           <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
-            <span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}</span></span></span>
+            <span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span></span>
         </button>`;
     }).join('');
     shelf(el, "What's on", whatsOnWords(), cards);
@@ -1449,7 +1457,7 @@
     const now = Date.now();
     const list = feedRange(start, S.streamDays).filter(e => eventPasses(e) && inViewEvent(e) && endMs(e) > now);
     $('#stream-days').innerHTML = daysHTML(list, {
-      start, days: S.streamDays, empty: true,
+      start, days: S.streamDays, empty: true, row: { lang: S.f.lang },
       linkFor: (k) => pathOf(segsFor({ juris: S.juris, f: S.f, from: k })),
     });
     $('#stream-when').innerHTML = datePickHTML('page', S.from);
@@ -1519,7 +1527,7 @@
       requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
     }
     const scroller = el.querySelector('.sheet-scroll');
-    // A card or a collection scrolled a screen down has its way back up, by the toolbar.
+    // A card or a collection scrolled a screen down has its way back up, under its bar.
     const tall = scroller && /\b(parish|collection|event)\b/.test(cls);
     if (tall) el.insertAdjacentHTML('beforeend', `<button class="totop" type="button" data-act="totop" aria-label="Back to top" tabindex="-1">${I.up}</button>`);
     // Its bar takes its name once the card's own title has scrolled under it.
@@ -1677,11 +1685,12 @@
     const line = (l) => {
       const { q, range, off } = l;
       const langs = !compact && parseLangs(l.r.languages);
+      const asked = (only && only.lang) || (focus && focus.lang);
       const dim = focus && !l.ids.some(id => rowAnswers(byId.get(id), focus, true));
       return `<div class="tt-line${dim ? ' dim' : ''}">
           <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
-          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
+          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langBadge(langs, asked) ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
           ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };
@@ -1740,7 +1749,11 @@
     return [a && `${a} ${a === 1 ? 'ask' : 'asks'} waiting`, n && `${n} new at your ${n === 1 ? 'parish' : 'parishes'}`,
       g && `${g} ${g === 1 ? 'suggestion' : 'suggestions'}`].filter(Boolean).join(', ');
   }
-  /** The header's account button and the dock's. */
+  /**
+   * The header's account button and the dock's, with the red dot while
+   * something waits (the app's .account-dot), and the faint line at the
+   * header's left: who is signed in, or what the site is.
+   */
   function syncAccount() {
     const w = waiting();
     const label = !S.who.signedIn ? 'Sign in' : w ? `Account: ${w}` : 'Account';
@@ -1750,22 +1763,64 @@
       btn.setAttribute('aria-label', label);
       btn.title = label;
     }
+    const who = $('#top-who');
+    if (who) {
+      who.textContent = S.who.signedIn && S.who.identity ? S.who.identity : 'Eastern Orthodox events & parishes';
+      who.classList.toggle('signed-in', !!(S.who.signedIn && S.who.identity));
+    }
   }
   // Signing in is a redirect Cloudflare owns: /admin is behind Access, so going
   // there is what shows its sign-in, and signing out is its own logout path.
-  function openAccount() {
+  function openAccount(btn) {
     const w = waiting();
     const rows = S.who.signedIn
-      ? `<a class="lrow" href="/admin">${I.sliders}<span class="ln"><b>Admin panel</b>${w ? `<small>${esc(w)}</small>` : ''}</span></a>
-         <a class="lrow" href="/cdn-cgi/access/logout">${I.signOut}<span class="ln"><b>Sign out</b></span></a>`
-      : `<a class="lrow" href="/admin">${I.signIn}<span class="ln"><b>Sign in</b></span></a>`;
-    const html = `<div class="lay-head"><h2>${S.who.signedIn ? 'Account' : 'Sign in'}</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
-      <div class="sheet-scroll">
-        ${S.who.signedIn && S.who.identity ? `<p class="lay-note">${esc(S.who.identity)}</p>` : ''}
-        <div class="lists">${rows}</div>
-      </div>`;
-    pushSheet(html, 'mini');
+      ? `${S.who.identity ? `<div class="pm-note">${esc(S.who.identity)}</div>` : ''}
+         <a class="pm-row" role="menuitem" href="/admin">${I.sliders}<span class="pm-t"><b>Admin panel</b>${w ? `<small class="pm-wait">${esc(w)}</small>` : ''}</span></a>
+         <a class="pm-row" role="menuitem" href="/cdn-cgi/access/logout">${I.signOut}<span class="pm-t"><b>Sign out</b></span></a>`
+      : `<a class="pm-row" role="menuitem" href="/admin">${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
+    openMenu(btn, rows);
   }
+
+  // ── Menus ─────────────────────────────────────────────────────────────
+  //
+  // The account's and a card's ⋯: a little menu out of the button tapped,
+  // as Apple's are, not a card up from the bottom. A tap anywhere else, a
+  // scroll or Escape puts it away; a second tap on its button too.
+
+  let menu = null;
+  function closeMenu() {
+    if (!menu) return;
+    const el = menu;
+    menu = null;
+    el._btn.setAttribute('aria-expanded', 'false');
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 140);
+  }
+  /** A menu of `rows` out of `btn`: under it, or above it where it sits low (a card's toolbar). */
+  function openMenu(btn, rows) {
+    closeMenu();
+    const el = document.createElement('div');
+    el.className = 'popmenu';
+    el.setAttribute('role', 'menu');
+    el.innerHTML = rows;
+    document.body.appendChild(el);
+    const r = btn.getBoundingClientRect();
+    const up = r.top > window.innerHeight / 2;
+    // Its right edge on the button's, kept on the screen.
+    const right = Math.max(10, Math.min(window.innerWidth - r.right, window.innerWidth - el.offsetWidth - 10));
+    el.style.right = `${right}px`;
+    if (up) el.style.bottom = `${window.innerHeight - r.top + 8}px`;
+    else el.style.top = `${r.bottom + 8}px`;
+    // It grows out of the button: its origin at the button's middle.
+    const fromRight = window.innerWidth - right - (r.left + r.width / 2);
+    el.style.transformOrigin = `${Math.round(el.offsetWidth - Math.max(0, fromRight))}px ${up ? '100%' : '0'}`;
+    el._btn = btn;
+    btn.setAttribute('aria-expanded', 'true');
+    menu = el;
+  }
+  // Any scroll, the page's or a card's.
+  document.addEventListener('scroll', closeMenu, { capture: true, passive: true });
+  window.addEventListener('resize', closeMenu);
 
   // ── Contributing, and where things came from ───────────────────────────
   //
@@ -1874,7 +1929,7 @@
   function parishTopHTML(p) {
     const d = distOf(p);
     return `${avatar(p, 'xl')}
-      <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist">${esc(fmtKm(d))}</span>` : ''}</p></div>`;
+      <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist dist ${distClass(d)}">${esc(fmtKm(d))}</span>` : ''}</p></div>`;
   }
   /**
    * Where Google Maps opens: the parish's own place there, where somebody
@@ -2035,7 +2090,7 @@
     const days = daysBetween(start, local(list[list.length - 1]).date) + 1;
     return `<section class="cu-band ev-more">
         <h2 class="sec">More ${esc(/^Bible\b/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1))}</h2>
-        <div class="cu" style="--pc:${parishColor(S.byId.get(m.pid))}">${daysHTML(list, { start, days, row: { here: m.pid } })}</div>
+        <div class="cu" style="--pc:${parishColor(S.byId.get(m.pid))}">${daysHTML(list, { start, days, row: { here: m.pid, focus: m.focus } })}</div>
       </section>`;
   }
 
@@ -2068,7 +2123,7 @@
       <div class="floatbar" role="toolbar">
         <button type="button" data-act="addlist" aria-label="Add to a list">${I.plus}</button>
         <button type="button" data-act="fav" class="${isFav(pid) ? 'on' : ''}" aria-label="Favourite" aria-pressed="${isFav(pid)}">${isFav(pid) ? I.starOn : I.star}</button>
-        <button type="button" data-act="more" aria-label="More">${I.more}</button>
+        <button type="button" data-act="more" aria-label="More" aria-haspopup="menu" aria-expanded="false">${I.more}</button>
       </div>`;
     const el = pushSheet(html, 'parish', { segs, entry });
     el.dataset.pid = pid;
@@ -2106,7 +2161,7 @@
     const list = feedRange(start, days).filter(e => endMs(e) > now).filter(inCollection(c));
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
-    const body = daysHTML(list, { start, days, linkFor });
+    const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang } });
     return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
   }
@@ -2129,14 +2184,14 @@
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
-            <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}${parishLangs(p).length ? ` · ${esc(parishLangs(p).slice(0, 2).join(', '))}` : ''}</small>
+            <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}${parishLangs(p).length ? ` · ${esc(parishLangs(p).slice(0, 2).join(', '))}` : ''}</small>
               ${nx ? `<span class="citem-next">${roundel(nx.event_type)} Next: ${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : ''}</span>
           </button>
           <button class="cadd" type="button" data-quickadd="${esc(p.id)}" aria-label="Add to a list">${I.plus}</button>
           ${tt || `<div class="tt-none sm">${times ? 'Not on its timetable.' : 'No service times on file yet.'}</div>`}
         </article>`;
     };
-    const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c))) : '';
+    const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c)), { lang: cf.lang }) : '';
     const html = `${glassBar(c.title, `${ps.length} places`)}
       <div class="sheet-scroll">
         <div ${lookAttrs(c, 'chero')}>
@@ -2191,7 +2246,7 @@
       const d = distOf(p);
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">${avatar(p, 'md')}
-            <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}</small></span></button>
+            <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</small></span></button>
           <a class="cgive" href="${esc(p.donation_url)}" target="_blank" rel="noopener" aria-label="${esc(`Donate to ${p.name}`)}">${I.heart}</a>
         </article>`;
     };
@@ -2291,6 +2346,8 @@
     const edits = p && may('event.edit', p.id);
     // The parish's stream, unless this date hides it (hide_live).
     const live = !e.hide_live && (e.parish_live_url || p?.live_url);
+    // What it is said in: its own languages, else its parish's.
+    const langs = parseLangs(e.languages) || parseLangs(e.parish_languages) || (p && parseLangs(p.languages)) || [];
     return `${e.poster_path ? `<button class="ev-poster" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt=""></button>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
           <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
@@ -2306,7 +2363,7 @@
           ${live ? `<a class="abtn" href="${esc(live)}" target="_blank" rel="noopener">${I.live}<span>Watch live</span></a>` : ''}
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
         </div>
-        ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
+        ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
         ${e.description ? `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
         ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
           <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>` : ''}
@@ -2446,33 +2503,49 @@
   // The app's toolbar pills (app.css .mode-bar-pill), laid out in rows that
   // open under the button rather than on a screen of their own: the map and
   // the chips stay in sight, and every tap applies. Tapping a pill that is on
-  // turns it off, so no row needs an "Any". Kinds wear the app's roundels
-  // once one is chosen, and a language its "only".
+  // turns it off, so no row needs an "Any". A language wears its "only" once
+  // chosen.
+  //
+  // What: a line per kind, its name and then every type it holds, each in
+  // its roundel's colour, all in sight (no compact roundels to open). One of
+  // them at a time: Services lights everything it covers, as Prayer does the
+  // prayer services, so what a kind matches is plain before it is narrowed.
 
   const KIND_NAMES = { services: 'Services', talks: 'Talks', socials: 'Socials' };
   const KIND_SUBS = { services: ['liturgy', 'prayer', 'feast'], talks: ['bible-study'], socials: ['social', 'youth'] };
+  /** The type a sub-kind's colour is: Bible studies are a talk's. */
+  const subColorOf = (id) => (id === 'bible-study' ? 'talk' : id);
   /** A sub-kind's name. Bible studies are Talks' one, and a title, not a type. */
   const kindSubLabel = (id) => (id === 'bible-study' ? 'Bible Studies' : kindLabel(id));
-  // The services a link can name that are not a kind's own (those are roundels).
+  // The services a link can name that are not a kind's own: Services' prayers, by name.
   const PANEL_SERVICES = ['vespers', 'matins', 'paraklesis', 'compline', 'confession'];
   const REGIONS = ['nsw', 'vic', 'qld', 'wa', 'sa', 'tas', 'act', 'nt', 'nz'];
   const regionShort = (slug) => (REGIONS.includes(slug) ? slug.toUpperCase() : window.AgoraLocations.resolveLocation(slug)?.label || slug);
 
   const fpill = (set, val, on, label, cls = '', style = '') =>
     `<button class="fpill${cls}${on ? ' on' : ''}" type="button" data-set="${set}" data-val="${esc(val)}"${style ? ` style="${style}"` : ''} aria-pressed="${on}">${label}</button>`;
-  function kindSub(id, on) {
-    const c = window.AgoraEventTypes.kindColors(id === 'bible-study' ? 'talk' : id, dark());
-    const l = kindSubLabel(id);
-    return `<button class="kind-sub${on ? ' on' : ''}" type="button" data-set="kindSub" data-val="${id}" style="--k-bg:${c.bg};--k-fg:${c.fg}" aria-pressed="${on}" aria-label="${esc(l)}" title="${esc(l)}">${esc(on ? l : l[0])}</button>`;
+  /** A type's pill, in its colour: on, or lit as one of what the chosen kind covers (`match`). */
+  function typePill(set, val, color, label, on, match) {
+    const c = window.AgoraEventTypes.kindColors(color, dark());
+    return `<button class="fpill ftype${on ? ' on' : match ? ' match' : ''}" type="button" data-set="${set}" data-val="${esc(val)}" style="--k-bg:${c.bg};--k-fg:${c.fg}" aria-pressed="${on}">${esc(label)}</button>`;
+  }
+  /** What: a line per kind, its name first, then each type it holds. */
+  function kindLines(f, SV) {
+    return Object.entries(KIND_NAMES).map(([k, l]) => {
+      const whole = f.kind === k && !f.kindSub;
+      const head = `<button class="fpill fcat${whole ? ' on' : f.kind === k ? ' part' : ''}" type="button" data-set="kind" data-val="${k}" aria-pressed="${whole}">${esc(l)}</button>`;
+      const subs = KIND_SUBS[k].map(id => typePill('kindSub', `${k}:${id}`, subColorOf(id), kindSubLabel(id), f.kind === k && f.kindSub === id, whole));
+      // Services' prayers by name, lit by Services and by Prayer.
+      const prayers = k === 'services' ? PANEL_SERVICES.map(sv => typePill('service', sv, 'prayer', SV.serviceLabel(sv), f.service === sv,
+        f.kind === 'services' && (!f.kindSub || f.kindSub === 'prayer'))) : [];
+      return `<span class="fkind">${head}${subs.join('')}${prayers.join('')}</span>`;
+    });
   }
   function panelHTML() {
     const f = S.f, SV = window.AgoraServices;
     // A group of pills per question, as the app's toolbar has, with no label:
     // what, which language, when, where, which parishes. A break starts a line.
     const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
-    const kinds = Object.entries(KIND_NAMES).map(([k, l]) => fpill('kind', k, f.kind === k, esc(l))
-      + (f.kind === k ? `<span class="kind-subs">${KIND_SUBS[k].map(id => kindSub(id, f.kindSub === id)).join('')}</span>` : '')).join('');
-    const services = PANEL_SERVICES.map(sv => fpill('service', sv, f.service === sv, esc(SV.serviceLabel(sv)))).join('');
     const langs = LANGS.map(([l]) => l).map(l => fpill('lang', l, f.lang === l, esc(l))
       + (f.lang === l ? fpill('langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('');
     const days = `<span class="fdays">${WD.map((d, i) => fpill('day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
@@ -2486,7 +2559,7 @@
     const parishes = fpill('monasteries', '1', f.monasteries, 'Monasteries')
       + fpill('timesOnly', '1', f.timesOnly, 'With service times')
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
-    return group('What', kinds, services) + group('Language', langs) + group('When', days, spans, parts)
+    return group('What', ...kindLines(f, SV)) + group('Language', langs) + group('When', days, spans, parts)
       + group('Jurisdiction', juris) + group('Where', regions) + group('Parishes', parishes)
       + `<div class="fpanel-foot">${filterCount() ? '<button class="fpill fpill-ghost" type="button" data-act="clear-filters">Clear all</button>' : '<span></span>'}
           <span class="fpanel-end">${saveViewHTML()}<button class="fpill on" type="button" data-act="filters-done">Done</button></span></div>`;
@@ -2527,8 +2600,14 @@
   function setFilter(k, v) {
     const f = S.f;
     const flip = (key, val) => { f[key] = f[key] === val ? null : val; };
-    if (k === 'kind') { flip('kind', v); f.kindSub = null; }
-    else if (k === 'kindSub') flip('kindSub', v);
+    // One kind, type or service at a time: each replaces the others.
+    if (k === 'kind') { f.kind = f.kind === v && !f.kindSub ? null : v; f.kindSub = null; f.service = null; }
+    else if (k === 'kindSub') {
+      const [kind, sub] = v.split(':');
+      const was = f.kind === kind && f.kindSub === sub;
+      f.kind = was ? null : kind; f.kindSub = was ? null : sub; f.service = null;
+    }
+    else if (k === 'service') { flip('service', v); f.kind = null; f.kindSub = null; }
     else if (k === 'lang') { flip('lang', v); f.langStrict = false; }
     else if (k === 'langStrict') f.langStrict = !f.langStrict;
     // Days, as many as you like. A day and a span of the week are one
@@ -2543,7 +2622,7 @@
       S.juris = window.AgoraUrlState.jurisdictionValue(js.includes(v) ? js.filter(j => j !== v) : [...js, v]);
     }
     else if (k === 'dayGroup') { flip('dayGroup', v); f.day = null; }
-    else if (k === 'part' || k === 'service' || k === 'location') flip(k, v);
+    else if (k === 'part' || k === 'location') flip(k, v);
     else if (k === 'timesOnly' || k === 'monasteries') f[k] = !f[k];
     else if (k === 'list') {
       const l = f.listId === v ? null : listById(v);
@@ -2571,20 +2650,16 @@
     const el = pushSheet(html, 'mini');
     el.dataset.pid = pid;
   }
-  function openMore(pid) {
+  /** A parish card's ⋯: a menu out of the button, over the card. */
+  function openMore(pid, btn) {
     const p = S.byId.get(pid);
-    const html = `<div class="lay-head"><h2>${esc(p.name)}</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
-      <div class="sheet-scroll"><div class="lists">
-        <button class="lrow" type="button" data-act="share-parish">${I.share}<span class="ln"><b>Share</b></span></button>
-        ${mapsHref(p) ? `<a class="lrow" href="${esc(mapsHref(p))}" target="_blank" rel="noopener">${I.place}<span class="ln"><b>Google Maps</b></span></a>` : ''}
-        ${p.website ? `<a class="lrow" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span class="ln"><b>Website</b></span></a>` : ''}
-        <button class="lrow" type="button" data-act="juris-of">${jurisLogo(p.jurisdiction)
-          ? `<span class="lrow-ic"><img src="${esc(jurisLogo(p.jurisdiction))}" alt=""></span>`
-          : `<span class="lrow-ic">${I.cross.replace('<svg', '<svg width="14" height="22"')}</span>`}<span class="ln"><b>More ${esc(JURIS[p.jurisdiction]?.long || '')} parishes</b></span></button>
-        ${suggestsHere(pid) ? `<button class="lrow" type="button" data-suggest="">${I.pencil}<span class="ln"><b>Suggest an edit</b></span></button>` : ''}
-      </div></div>`;
-    const el = pushSheet(html, 'mini');
-    el.dataset.pid = pid;
+    openMenu(btn, `<button class="pm-row" role="menuitem" type="button" data-act="share-parish">${I.share}<span class="pm-t"><b>Share</b></span></button>
+        ${mapsHref(p) ? `<a class="pm-row" role="menuitem" href="${esc(mapsHref(p))}" target="_blank" rel="noopener">${I.place}<span class="pm-t"><b>Google Maps</b></span></a>` : ''}
+        ${p.website ? `<a class="pm-row" role="menuitem" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span class="pm-t"><b>Website</b></span></a>` : ''}
+        <button class="pm-row" role="menuitem" type="button" data-act="juris-of">${jurisLogo(p.jurisdiction)
+          ? `<span class="pm-ic"><img src="${esc(jurisLogo(p.jurisdiction))}" alt=""></span>`
+          : `<span class="pm-ic">${I.cross.replace('<svg', '<svg width="14" height="22"')}</span>`}<span class="pm-t"><b>More ${esc(JURIS[p.jurisdiction]?.short || '')} parishes</b></span></button>
+        ${suggestsHere(pid) ? `<button class="pm-row" role="menuitem" type="button" data-suggest="">${I.pencil}<span class="pm-t"><b>Suggest an edit</b></span></button>` : ''}`);
   }
 
   // ── Search ────────────────────────────────────────────────────────────
@@ -2752,7 +2827,7 @@
     const nx = nextOf(p.id);
     return `<button class="sr-row" type="button" data-parish="${esc(p.id)}">
         ${avatar(p, 'sm')}
-        <span class="sr-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}${nx ? ` · Next: ${esc(nx.title)} ${esc(whenShort(nx))}` : ' · No times on file'}</small></span>
+        <span class="sr-t"><b>${esc(p.name)}</b><small>${esc(JURIS[p.jurisdiction]?.short || '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}${nx ? ` · Next: ${esc(nx.title)} ${esc(whenShort(nx))}` : ' · No times on file'}</small></span>
       </button>`;
   }
   function placeResult(pl, i) {
@@ -2808,16 +2883,19 @@
     const input = el.querySelector('#sr-input');
     let t = null;
     input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { el.querySelector('#sr-results').innerHTML = searchResultsHTML(input.value); }, 70); });
+    // Enter searches and puts the keyboard away, so the results are in sight; a result opens with a tap.
     input.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       clearTimeout(t);
       el.querySelector('#sr-results').innerHTML = searchResultsHTML(input.value);
-      const first = el.querySelector('#sr-results [data-parish], #sr-results [data-place], #sr-results [data-event], #sr-results [data-coll]');
-      if (first) first.click();
+      rememberQuery(input.value);
       input.blur();
     });
-    setTimeout(() => input.focus(), 60);
+    // Ready to type: focused inside the tap that opened it, which is the only
+    // focus a phone brings its keyboard up for; again once the card is up.
+    try { input.focus({ preventScroll: true }); } catch { /* not focusable yet */ }
+    setTimeout(() => { if (document.activeElement !== input) input.focus({ preventScroll: true }); }, 340);
   }
   function setSearch(q) {
     const el = stack[stack.length - 1];
@@ -2861,13 +2939,21 @@
     const top = stack[stack.length - 1];
     let b;
 
+    // An open menu goes with any tap: off it, that is all the tap does (on
+    // its own button, it closes it); on one of its rows, the row does its part.
+    if (menu) {
+      const own = menu._btn.contains(t), inside = menu.contains(t);
+      closeMenu();
+      if (own || !inside) return;
+    }
+
     // Search: a tap on any result remembers what was typed.
     if (top && top.classList.contains('search') && t.closest('[data-parish],[data-event],[data-coll],[data-place]')) {
       rememberQuery(top.querySelector('#sr-input').value);
     }
     if ((b = t.closest('[data-copy]'))) { copyLink(b); return; }
     if (t.closest('[data-search]')) { openSearch(); return; }
-    if (t.closest('[data-account]')) { openAccount(); return; }
+    if ((b = t.closest('[data-account]'))) { openAccount(b); return; }
     if ((b = t.closest('[data-q]'))) {
       setSearch(b.dataset.q);
       if (/near me/i.test(b.dataset.q) && !S.loc) locate();
@@ -3033,7 +3119,7 @@
         return;
       }
       if (a === 'addlist') return openAddToList(top.dataset.pid);
-      if (a === 'more') return openMore(top.dataset.pid);
+      if (a === 'more') return openMore(top.dataset.pid, b);
       if (a === 'juris-of') { const p = S.byId.get(top.dataset.pid); const c = COLL.get('j-' + p.jurisdiction); if (c) openCollection(c); return; }
       if (a === 'newlist') {
         const name = prompt('Name your list', 'Parishes to visit');
@@ -3075,7 +3161,8 @@
   $('#scrim').addEventListener('click', () => popSheet());
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (stack.length) popSheet();
+    if (menu) closeMenu();
+    else if (stack.length) popSheet();
     else if (document.body.classList.contains('map-full')) setFullscreen(false);
     else if (panelOpen()) setPanel(false);
   });
