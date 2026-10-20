@@ -519,6 +519,7 @@ body.map-full .parish-row {
 .erow + .erow { border-top: 1px solid var(--line); }
 .today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
 /* A Today with the day and the evening divides them, as a day of the feed does. */
+.today[hidden] { display: none; }
 .today .eve { padding: 10px 18px 2px; }
 .today .erow + .eve { border-top: 1px solid var(--line-strong); }
 /* A collection's own Today, above its timetables, and a parish's above its timetable. */

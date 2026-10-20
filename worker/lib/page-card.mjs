@@ -181,7 +181,8 @@ function comingUpHTML(m, start, today) {
  * with something on now, "Happening now" and then "Later today"; with nothing
  * on now, the rest of the day under the box's title, "This evening" when it
  * all is; once the day is done, tomorrow, titled so. A day with both has the
- * Evening divider. Its button goes on to the card's Coming up.
+ * Evening divider. Its button goes on to the card's Coming up. Nothing today
+ * or tomorrow is no box.
  */
 function todayBoxHTML(m, today) {
   const all = (m.feed || []).filter(shown);
@@ -198,6 +199,7 @@ function todayBoxHTML(m, today) {
   }).join('');
   let title = 'Today', k = today, body = '';
   const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
+  if (!live.length && !later.length && !showsTomorrow) return '';
   if (live.length) {
     body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), true)}`;
     if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
@@ -208,29 +210,29 @@ function todayBoxHTML(m, today) {
     title = 'Tomorrow';
     k = addDays(today, 1);
     body += rows(tomorrow.slice(0, 4));
-  } else body += '<div class="tempty">Nothing more today.</div>';
+  }
   const d = new Date(`${k}T00:00:00Z`);
   return `<section class="today card ptoday" aria-label="Today" style="--pc:${m.color}">
       <header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div></header>
       ${body}
-      <a class="see-all" href="#coming-up">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</a>
+      <a class="see-all" href="#coming-up">${showsTomorrow ? 'This week' : 'Tomorrow'} ${I.chev}</a>
     </section>`;
 }
 
-/** The line under a parish's buttons: next Liturgy (or anything), languages, jurisdiction. */
+/** The line under a parish's buttons: next Liturgy (or anything; nothing, no Next), languages, jurisdiction. */
 function summaryHTML(m, today) {
   const ahead = (m.feed || []).filter(e => shown(e) && Date.parse(e.start_utc) > m.now);
   const next = ahead.find(e => e.event_type === 'liturgy') || ahead[0] || null;
-  let when = '—';
+  let nextCell = '';
   if (next) {
     const k = next._local.date;
     const d = new Date(`${k}T00:00:00Z`);
     const near = Date.parse(k) - Date.parse(today) < 6 * DAY;
-    when = `${esc(k === today ? 'Today' : near ? WD[d.getUTCDay()] : `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`)}<br>${esc(hm12(next._local.time))}`;
+    const when = `${esc(k === today ? 'Today' : near ? WD[d.getUTCDay()] : `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`)}<br>${esc(hm12(next._local.time))}`;
+    nextCell = `<div class="sum"><small>Next ${esc(eventTypes.eventTypeLabel(next.event_type))}</small><b class="ok">${when}</b></div>\n      `;
   }
   const langs = [...new Set([...m.rules.flatMap(r => langsOf(r.languages)), ...langsOf(m.parish.languages)])];
-  return `<div class="sum"><small>${next ? `Next ${esc(eventTypes.eventTypeLabel(next.event_type))}` : 'Next'}</small><b class="${next ? 'ok' : ''}">${when}</b></div>
-      <div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>
+  return `${nextCell}<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>
       <a class="sum sum-link" href="/${esc(m.parish.jurisdiction || '')}"><small>Jurisdiction</small><b style="color:${m.color}">${esc(JURIS_SHORT(m.parish.jurisdiction) || m.parish.jurisdiction || '')}</b></a>`;
 }
 
