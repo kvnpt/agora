@@ -12,6 +12,13 @@
 // (admin.html, suggestPage). Nothing is posted before then, because nothing
 // can be: the suggestion is filed under the address Access verified.
 //
+// A poster too (Kevin, 20 Oct 2026). It shows in the dialog the moment it is
+// picked, as if it were already on the suggestion, but nothing is uploaded:
+// the image waits in this browser's IndexedDB (too big for localStorage, and
+// a Blob there stays a Blob) and the suggest page uploads it once Access has
+// confirmed the address, has it read with what they wrote beside it, and
+// sends the suggestion as an event with its poster.
+//
 // Few words on purpose: the fields say what they are as placeholders, and
 // the one box says what it asks (Kevin's markup of 19 Oct 2026).
 //
@@ -32,7 +39,7 @@
   ];
   const FIELDS = ['about', 'change_body', 'name', 'relation'];
 
-  /** What is worth keeping from the dialog, or an error to show instead. */
+  /** What is worth keeping from the dialog, or an error to show instead. A poster says enough on its own. */
   function draftFrom(v) {
     const out = {
       kind: 'change',
@@ -42,7 +49,8 @@
       contact: !!v.contact,
       relation: v.contact ? String(v.relation || '').trim() : '',
     };
-    if (!out.contact && !out.change_body) return { error: 'Say what should change.', field: 'change_body' };
+    if (v.poster) out.poster = true;
+    if (!out.contact && !out.change_body && !out.poster) return { error: 'Say what should change.', field: 'change_body' };
     if (out.contact && !out.name) return { error: 'Tell us your name, so the owner knows who is asking.', field: 'name' };
     return { draft: out };
   }
@@ -62,7 +70,59 @@
     try { storage.setItem(KEY(parishId), JSON.stringify({ ...draft, submit: true, at: now })); return true; } catch { return false; }
   }
 
-  const api = { KEY, MAX_AGE_MS, OTHER_TOPICS, draftFrom, takeDraft, saveDraft };
+  // ── the poster, held in this browser until the sign-in ──
+  //
+  // One per parish, like the draft, and forgotten on the same clock. Every
+  // call fails quietly to "no poster": a private window may have no
+  // IndexedDB, and the suggestion still goes with what they wrote.
+
+  const DB_NAME = 'agora-suggest';
+  const STORE = 'posters';
+
+  function posterStore(mode, idb = root.indexedDB) {
+    return new Promise((resolve, reject) => {
+      if (!idb) return reject(new Error('no IndexedDB'));
+      const req = idb.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(STORE, mode);
+        tx.oncomplete = tx.onabort = () => db.close();
+        resolve(tx.objectStore(STORE));
+      };
+    });
+  }
+  const done = (req) => new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
+  /** Keep a picked poster for a parish. True if it was kept. */
+  async function savePoster(parishId, blob, { idb, now = Date.now() } = {}) {
+    try {
+      const store = await posterStore('readwrite', idb);
+      await done(store.put({ blob, type: blob.type || '', at: now }, parishId));
+      return true;
+    } catch { return false; }
+  }
+
+  /** Read and forget the poster for a parish: null if there is none, or it went stale. */
+  async function takePoster(parishId, { idb, now = Date.now() } = {}) {
+    try {
+      const store = await posterStore('readwrite', idb);
+      const v = await done(store.get(parishId));
+      store.delete(parishId);
+      if (!v || !v.blob || !(now - Number(v.at) < MAX_AGE_MS)) return null;
+      return v.blob;
+    } catch { return null; }
+  }
+
+  async function dropPoster(parishId, { idb } = {}) {
+    try { (await posterStore('readwrite', idb)).delete(parishId); } catch { /* nothing kept */ }
+  }
+
+  const api = { KEY, MAX_AGE_MS, OTHER_TOPICS, draftFrom, takeDraft, saveDraft, savePoster, takePoster, dropPoster };
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.AgoraSuggest = api;
   if (typeof document === 'undefined') return;
@@ -73,9 +133,11 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   let current = null;
+  const PICTURE = '<svg class="sg-poster-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.75"/><path d="m21 15-5-5L5 21"/></svg>';
 
   function close() {
     if (!current) return;
+    if (current._preview) URL.revokeObjectURL(current._preview);
     current.remove();
     current = null;
     document.removeEventListener('keydown', onKey, true);
@@ -113,6 +175,15 @@
             </select></div>
           <div class="edit-row">
             <textarea id="sg-body" name="change_body" rows="4" maxlength="2000" placeholder="Details" aria-label="Details"></textarea></div>
+          <div class="edit-row sg-poster">
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden data-sg-file>
+            <button type="button" class="sg-poster-pick" data-sg-pick>${PICTURE}<span><b>Add a poster</b><small>Or paste one, or drop it here</small></span></button>
+            <div class="sg-poster-card" data-sg-card hidden>
+              <img class="sg-poster-thumb" alt="Your poster">
+              <span class="sg-poster-side"><b>Poster added</b><small>It goes with your suggestion.</small>
+                <button type="button" class="sg-poster-remove" data-sg-remove>Remove</button></span>
+            </div>
+          </div>
           <div class="edit-row">
             <input id="sg-name" name="name" maxlength="120" autocomplete="name" placeholder="Name" aria-label="Name"></div>
           <label class="edit-check sg-check"><input type="checkbox" name="contact">
@@ -142,11 +213,55 @@
     wrap.addEventListener('click', (e) => {
       if (e.target === wrap || e.target.closest('[data-sg-close]')) close();
     });
-    form.addEventListener('submit', (e) => {
+
+    // The poster: on the dialog at once, from the file itself. It is not
+    // shrunk or sent here; the suggest page does both, after the sign-in.
+    let poster = null;
+    const fileInput = wrap.querySelector('[data-sg-file]');
+    const pick = wrap.querySelector('[data-sg-pick]');
+    const card = wrap.querySelector('[data-sg-card]');
+    const thumb = card.querySelector('img');
+    const setPoster = (file) => {
+      if (wrap._preview) { URL.revokeObjectURL(wrap._preview); wrap._preview = null; }
+      poster = file || null;
+      if (poster) thumb.src = wrap._preview = URL.createObjectURL(poster);
+      else { thumb.removeAttribute('src'); fileInput.value = ''; }
+      card.hidden = !poster;
+      pick.hidden = !!poster;
+    };
+    const addPoster = (file) => {
+      if (!file) return;
+      if (!/^image\//.test(file.type || '')) {
+        err.textContent = 'That is not an image. Add a photo or a scan of the poster.';
+        err.hidden = false;
+        return;
+      }
+      err.hidden = true;
+      setPoster(file);
+    };
+    pick.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => addPoster(fileInput.files[0]));
+    card.querySelector('[data-sg-remove]').addEventListener('click', () => setPoster(null));
+    wrap.addEventListener('dragover', (e) => { e.preventDefault(); pick.classList.add('is-dragging'); });
+    wrap.addEventListener('dragleave', (e) => { if (e.target === wrap) pick.classList.remove('is-dragging'); });
+    wrap.addEventListener('drop', (e) => {
+      e.preventDefault();
+      pick.classList.remove('is-dragging');
+      addPoster(e.dataTransfer && e.dataTransfer.files[0]);
+    });
+    form.addEventListener('paste', (e) => {
+      const img = e.clipboardData && [...(e.clipboardData.files || [])].find(x => /^image\//.test(x.type));
+      if (!img) return;
+      e.preventDefault();
+      addPoster(img);
+    });
+
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const v = {};
       for (const n of FIELDS) v[n] = f[n] ? f[n].value : '';
       v.contact = f.contact.checked;
+      v.poster = !!poster;
       const r = draftFrom(v);
       if (r.error) {
         err.textContent = r.error;
@@ -154,11 +269,20 @@
         if (f[r.field]) f[r.field].focus();
         return;
       }
-      // Kept in this browser — the same origin the suggest page is on — and
-      // read back there once Access has let them through.
-      saveDraft(parishId, r.draft);
       const btn = wrap.querySelector('.sg-submit');
       btn.disabled = true;
+      // Kept in this browser — the same origin the suggest page is on — and
+      // read back there once Access has let them through. A poster that
+      // cannot be kept (no IndexedDB here) is said plainly, rather than lost
+      // on the way through the sign-in.
+      if (poster && !(await savePoster(parishId, poster))) {
+        btn.disabled = false;
+        err.textContent = 'This browser could not keep the poster through the sign-in. Remove it and send what you wrote, then add the poster on the next page.';
+        err.hidden = false;
+        return;
+      }
+      if (!poster) dropPoster(parishId);
+      saveDraft(parishId, r.draft);
       btn.textContent = 'Going to confirm your email…';
       root.location.href = target;
     });

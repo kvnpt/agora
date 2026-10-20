@@ -3132,9 +3132,7 @@
     const route = readPath(location.pathname);
     const h = decodeURIComponent(location.hash.slice(1));
     if (h && !route.parish) { const p = parishBySlug(h); if (p) route.parish = p.id; }
-    // greek.orthodoxy.au is /greek, where the path names no jurisdiction of its own.
-    const sub = location.hostname.match(/^([a-z]+)\.orthodoxy\.au$/);
-    if (sub && JURIS[sub[1]] && !route.juris) route.juris = sub[1];
+    // greek.orthodoxy.au never gets here: the Worker sends it to /greek (lib/admin-host.mjs).
     S.juris = route.juris;
     S.f = route.f;
     S.from = route.parish ? null : route.from;

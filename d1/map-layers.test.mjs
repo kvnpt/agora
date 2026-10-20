@@ -154,6 +154,20 @@ function evaluate(expr, props) {
     }
     case 'has': return Object.prototype.hasOwnProperty.call(props, args[0]);
     case 'get': return props[args[0]];
+    // The camera's zoom, which a test passes as `$zoom` among the props.
+    case 'zoom': return props.$zoom ?? 0;
+    case 'interpolate': {
+      const [, input, ...stops] = args;
+      const z = evaluate(input, props);
+      if (z <= stops[0]) return evaluate(stops[1], props);
+      for (let i = 2; i < stops.length; i += 2) {
+        if (z <= stops[i]) {
+          const z0 = stops[i - 2], v0 = evaluate(stops[i - 1], props), v1 = evaluate(stops[i + 1], props);
+          return v0 + (v1 - v0) * (z - z0) / (stops[i] - z0);
+        }
+      }
+      return evaluate(stops[stops.length - 1], props);
+    }
     default: throw new Error('unhandled expression: ' + op);
   }
 }
@@ -184,14 +198,39 @@ test('the dot shadow reaches past the halo ring the dot draws', () => {
     ['the focused dot', { focused: true }, null],
     ['the focused parish\'s logo', { focused: true, focus_icon_id: 'focus_x' }, 16],
   ];
-  for (const [what, props, spriteEdge] of STATES) {
-    const edge = spriteEdge != null
-      ? spriteEdge
-      : evaluate(dot['circle-radius'], props) + evaluate(dot['circle-stroke-width'], props);
-    const cast = evaluate(shadow['circle-radius'], props);
-    assert.ok(cast > edge,
-      `${what}: shadow radius ${cast} does not clear its ${edge} px edge`);
+  // At the whole country, at the suburbs where dots start to grow, and
+  // closer in than they grow.
+  for (const $zoom of [4, 12, 13, 14, 15, 16, 18]) {
+    for (const [what, state, spriteEdge] of STATES) {
+      const props = { ...state, $zoom };
+      const edge = spriteEdge != null
+        ? spriteEdge
+        : evaluate(dot['circle-radius'], props) + evaluate(dot['circle-stroke-width'], props);
+      const cast = evaluate(shadow['circle-radius'], props);
+      assert.ok(cast > edge,
+        `${what} at zoom ${$zoom}: shadow radius ${cast} does not clear its ${edge} px edge`);
+    }
   }
+});
+
+test('a dot keeps its size down to the suburbs, then grows a little', () => {
+  const r = (props) => evaluate(byId['parish-circle'].paint['circle-radius'], props);
+  assert.equal(r({ $zoom: 4 }), 3.75, 'the dot is not its old size across the country');
+  assert.equal(r({ $zoom: 12 }), 3.75, 'the dot grows before the suburbs');
+  assert.ok(r({ $zoom: 14 }) > 3.75, 'the dot does not grow closing in on a suburb');
+  assert.ok(r({ $zoom: 18 }) <= 3.75 * 1.75, 'the dot grows more than slightly');
+  assert.equal(r({ $zoom: 16, focused: true, focus_icon_id: 'focus_x' }), 0,
+    'the focused parish\'s logo grew a circle behind it');
+  // The halo loop sizes a dot's ring by the same table, as a number.
+  assert.equal(vm.runInContext('dotScale(13)', CTX), 1.15);
+});
+
+test('the only parish in view takes the big halo and the name above it', () => {
+  const solo = { solo: true, $zoom: 14 };
+  assert.ok(evaluate(byId['parish-label-above'].filter, solo), 'the solo parish has no name above its logo');
+  assert.ok(!evaluate(byId['parish-label'].filter, solo), 'the solo parish keeps its name beside the dot too');
+  assert.ok(evaluate(byId['parish-halo-now-big'].filter, { ...solo, now: true }), 'the solo parish rings its dot, not its logo');
+  assert.ok(!evaluate(byId['parish-halo-now-dot'].filter, { ...solo, now: true }), 'the solo parish rings its dot as well as its logo');
 });
 
 test('both schemes get a shadow colour, from CSS rather than from here', () => {

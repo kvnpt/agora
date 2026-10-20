@@ -300,6 +300,13 @@
     .suggest-fine { margin: 0; font-size: 12px; color: var(--muted); }
     .suggest-note { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--accent-bg); font-size: 14px; }
     .suggest-done p { margin: 0 0 10px; }
+    .suggest-sending { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--success) 12%, transparent); font-size: 14px; }
+    .suggest-sending[hidden] { display: none; }
+    .suggest-sent-card { display: flex; gap: 14px; align-items: flex-start; margin: 4px 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+    .suggest-sent-card .suggest-thumb { width: 84px; max-height: 120px; }
+    .suggest-sent-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 14px; line-height: 1.45; }
+    .suggest-sent-body small { font-size: 13px; color: var(--muted); }
+    .suggest-sent-words { white-space: pre-line; }
     .suggest-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px !important; }
     .suggest-sent { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-light); font-size: 14px; }
     .suggest-sent-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
@@ -4452,6 +4459,10 @@
       // read once and forgotten: filled in below and sent, since pressing
       // "Confirm email and submit" there was the send.
       const fromDialog = window.AgoraSuggest ? AgoraSuggest.takeDraft(parishId) : null;
+      // Its poster, if one was added there: held in this browser, never sent
+      // until now (suggest-dialog.js). Taken once, like the draft.
+      const heldPoster = fromDialog && fromDialog.poster && AgoraSuggest.takePoster
+        ? await AgoraSuggest.takePoster(parishId) : null;
       const parishes = await fetch('/api/parishes').then(r => r.ok ? r.json() : []).catch(() => []);
       const parish = parishes.find(p => p.id === parishId);
       const name = parish ? (parish.full_name || parish.name) : parishId;
@@ -4535,6 +4546,7 @@
       page(`
         <p class="suggest-lead">Spotted something wrong on this parish's page, or know of something coming up that it does not show? Tell the people who keep it.</p>
         ${claim ? `<div class="suggest-note">Your request to become a parish contact is with the site owner. ${awaitIt} <button type="button" class="suggest-link" id="claim-withdraw">Withdraw the request</button></div>` : ''}
+        <div class="suggest-sending" id="suggest-sending" role="status" aria-live="polite" hidden></div>
         <form id="suggest-form" class="suggest-form" novalidate>
           <div class="suggest-kinds" role="radiogroup" aria-label="What is it?">
             <label><input type="radio" name="kind" value="change" checked>Fix something</label>
@@ -4615,13 +4627,17 @@
       let suggested = false;
       // The poster on the form: { path, events } once the Worker has it.
       let poster = null;
+      // What went, for the thank-you to show back to them.
+      let sentWhat = null;
+      // Why a poster from the dialog did not go with it, if it did not.
+      let posterMissed = '';
       let posterBusy = false;
 
       const kind = () => f.kind.value;
       const contact = () => !!(f.contact && f.contact.checked);
       const said = () => kind() === 'change'
         ? !!f.change_body.value.trim()
-        : !!(f.title.value.trim() || f.date.value || f.place.value.trim() || f.event_body.value.trim());
+        : !!(f.title.value.trim() || f.date.value || f.place.value.trim() || f.event_body.value.trim() || poster);
       const sync = () => {
         form.querySelectorAll('[data-kind]').forEach(g => { g.hidden = g.dataset.kind !== kind(); });
         if (contactFields) contactFields.hidden = !contact();
@@ -4636,6 +4652,7 @@
       sync();
 
       const fail = (msg, field) => {
+        document.getElementById('suggest-sending').hidden = true;
         err.textContent = msg;
         err.hidden = false;
         if (field && f[field] && f[field].focus) f[field].focus();
@@ -4674,6 +4691,7 @@
               return;
             }
             suggested = true;
+            sentWhat = { ...body, poster_path: body.poster_path || null };
           }
           if (wantsClaim) {
             const r = await fetch('/api/admin/claims', {
@@ -4689,7 +4707,7 @@
               return;
             }
           }
-          thanks(suggested, wantsClaim);
+          thanks(suggested, wantsClaim, sentWhat);
         } finally {
           submit.disabled = posterBusy;
         }
@@ -4712,6 +4730,7 @@
       const FILLS = { title: 'title', date: 'date', start_time: 'start_time', end_time: 'end_time', place: 'place', body: 'event_body' };
       let filled = {};
       let lastBlob = null;
+      let lastNote = '';
       let preview = null;
 
       const posterStatus = (html, tone) => {
@@ -4748,7 +4767,7 @@
         sync();
       }
 
-      async function addPoster(file) {
+      async function addPoster(file, note = '') {
         if (!card || posterBusy) return;
         if (!file || !/^image\//.test(file.type)) { fail('That is not an image — add a photo or a scan of the poster.'); return; }
         err.hidden = true;
@@ -4764,7 +4783,9 @@
           if (window.AgoraEventEditor && AgoraEventEditor.shrinkPoster) blob = await AgoraEventEditor.shrinkPoster(file);
         } catch { blob = file; }
         lastBlob = blob;
-        const r = await fetch(`/api/admin/suggestions/poster?parish=${encodeURIComponent(parishId)}`, {
+        lastNote = note;
+        const said = String(note || '').trim().slice(0, 2000);
+        const r = await fetch(`/api/admin/suggestions/poster?parish=${encodeURIComponent(parishId)}${said ? `&note=${encodeURIComponent(said)}` : ''}`, {
           method: 'POST', headers: { 'Content-Type': blob.type || 'image/jpeg' }, body: blob,
         }).catch(() => null);
         posterBusy = false;
@@ -4831,7 +4852,7 @@
         });
         pickOne.addEventListener('change', () => fillFrom(poster.events[Number(pickOne.value)] || {}));
         document.getElementById('suggest-poster-remove').addEventListener('click', takeOff);
-        retryBtn.addEventListener('click', () => { if (lastBlob) addPoster(lastBlob); });
+        retryBtn.addEventListener('click', () => { if (lastBlob) addPoster(lastBlob, lastNote); });
       }
 
       // ── a sign-in that ran out ──
@@ -4858,34 +4879,92 @@
           location.reload();
         });
       }
-      (() => {
+      (async () => {
         let v = null;
         try { v = JSON.parse(sessionStorage.getItem(SAVED) || 'null'); sessionStorage.removeItem(SAVED); } catch { /* none */ }
         if (!v) v = fromDialog;
         if (!v) return;
+        const dialog = v === fromDialog;
         if (v.kind) f.kind.value = v.kind;
         for (const n of KEEP) if (f[n] && typeof v[n] === 'string') f[n].value = v[n];
         if (f.contact) f.contact.checked = !!v.contact;
-        if (v.poster && card) {
+        // A poster kept through a lapsed sign-in is already on the site, by its path.
+        if (typeof v.poster === 'string' && card) {
           poster = { path: v.poster, events: [] };
           showCard(v.poster);
           posterStatus('Your poster is still attached.', 'done');
         }
         sync();
-        // From the dialog: its button said submit, so this sends. Anything
-        // the form refuses (a request with no name) stays on screen, filled
-        // in, with the form's own words for what is missing.
-        if (v === fromDialog && v.submit) {
-          if (typeof form.requestSubmit === 'function') form.requestSubmit();
-          else submit.click();
+        if (!(dialog && v.submit)) return;
+        // From the dialog: its button said submit, so this sends — and says
+        // so at each step, since they pressed it on another page.
+        const sending = document.getElementById('suggest-sending');
+        const step = (html) => { sending.innerHTML = html; sending.hidden = false; };
+        if (heldPoster && card) {
+          // Their poster is an event now: what they wrote is its details, and
+          // goes to the reader beside the image, so a programme's event is
+          // theirs and not its first. The read fills the rest; nobody is asked
+          // to check it first (Kevin, 20 Oct 2026) — the keeper reads the poster.
+          // A service time it is about says which; "An event" and the like say nothing here.
+          const topic = v.about && !(AgoraSuggest.OTHER_TOPICS || []).includes(v.about) ? v.about : '';
+          const words = [topic, v.change_body || '']
+            .map(x => String(x).trim()).filter(Boolean).join(': ');
+          f.kind.value = 'event';
+          f.event_body.value = words;
+          sync();
+          step(`<b>Email confirmed.</b> Adding your poster to your suggestion…`);
+          await addPoster(heldPoster, words);
+          if (!poster) {
+            // It did not go on (the day's limit, say: the status says why).
+            // What they wrote still goes, as the change it was, and the
+            // thank-you says what became of the poster. With nothing written,
+            // the form stays on the event, where the poster's status is.
+            posterMissed = status.textContent.trim() || 'It could not be added.';
+            if (!String(v.change_body || '').trim()) {
+              fail('Your poster could not be added, so there is nothing to send yet. Say what the event is, then send.', 'title');
+              return;
+            }
+            f.kind.value = 'change';
+            sync();
+          }
         }
+        // Posters not taken on this site: what they wrote goes alone, and says so.
+        step(`<b>Email confirmed.</b> Sending to whoever keeps ${esc(parish.name)}…${heldPoster && !card
+          ? ' This site is not taking posters just now, so what you wrote goes without it.' : ''}`);
+        // Anything the form refuses (a request with no name) stays on screen,
+        // filled in, with the form's own words for what is missing (fail()
+        // takes this line down).
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else submit.click();
       })();
 
-      function thanks(didSuggest, didClaim) {
+      /** What they sent, as it now waits: their poster, what it says, their words. */
+      function sentCard(s) {
+        if (!s) return '';
+        const ev = s.kind === 'event';
+        const time = [s.start_time, s.end_time].filter(Boolean).join('–');
+        const when = ev ? [s.date ? draftDate(s.date) : '', time, s.place || ''].filter(Boolean).join(' · ') : (s.about || '');
+        const head = ev ? (s.title || 'Your event') : 'Your suggestion';
+        return `
+          <div class="suggest-sent-card">
+            ${s.poster_path ? `<a href="${esc(s.poster_path)}" target="_blank" rel="noopener"><img class="suggest-thumb" src="${esc(s.poster_path)}" alt="Your poster"></a>` : ''}
+            <div class="suggest-sent-body">
+              <span class="suggest-status">Waiting</span>
+              <b>${esc(head)}</b>
+              ${when ? `<small>${esc(when)}</small>` : ''}
+              ${s.body ? `<span class="suggest-sent-words">“${esc(s.body)}”</span>` : ''}
+              ${s.poster_path ? `<small>With your poster${ev && !s.title ? ', which they will read the details from' : ''}.</small>` : ''}
+            </div>
+          </div>`;
+      }
+
+      function thanks(didSuggest, didClaim, what) {
         page(`
           <div class="suggest-done">
             <p><b>Thank you — sent.</b></p>
-            ${didSuggest ? `<p>Whoever keeps ${esc(parish.name)} will see your suggestion. Come back to this page to see what became of it.</p>` : ''}
+            ${didSuggest ? sentCard(what) : ''}
+            ${didSuggest && posterMissed ? `<p class="suggest-fine">Your poster did not go with it: ${esc(posterMissed)} Add it with <b>Suggest something else</b>, as an event.</p>` : ''}
+            ${didSuggest ? `<p>It is with whoever keeps ${esc(parish.name)} now. ${what && what.poster_path ? 'Once they add it, it shows on the parish’s page with your poster. ' : ''}Come back to this page to see what became of it.</p>` : ''}
             ${didClaim ? `<p>Your request to become a parish contact is with the site owner. ${awaitIt}</p>` : ''}
             <p class="suggest-actions">
               <a class="suggest-btn" href="${esc(link)}">Back to the parish</a>
