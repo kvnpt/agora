@@ -111,9 +111,20 @@ is a chip in its colour.
 Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
 or `/feast`; `/talks` is talks, with Bible studies as `/bible-study`;
 `/social` is socials and youth, `/social-gatherings` or `/social-youth` one of
-the two. `/liturgy`, `/feast` and `/bible-study` are service slugs as well
-(services.js): beside a parish they focus its timetable, and across the page
-they read as the kind (`kindOfService`). The timetable is
+the two. `/talk` and `/socials` are read as people type them and never written
+(`KIND_ALIASES`); `/youth` is not, because `/smg/youth` is a parish's own link.
+`/liturgy`, `/feast` and `/bible-study` are service slugs as well
+(services.js), and across the page they read as the kind (`kindOfService`).
+
+**Beside one parish, a filter is that card's focus, not the page's.**
+`/sgr/talk`, `/sgr/wed/liturgy`, `/sgr/evening` and `/sgr/en` open St George's card
+with every line and date still on it: what answers the focus is lit, the next of it
+in the card's Today under its day's name, and the rest is dimmed, never hidden. The
+link keeps it (`segsFor({ parish, focus })`); its × in Today lets it go, back to
+`/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML` in next.js). A collection's
+timetables do the opposite: they keep only the lines that answer what it asks
+(`/services` its services, `/sun/liturgy` its Sunday Liturgies), as its head counts
+them, and a collection that asks nothing of them (`/greek`) shows each whole week. The timetable is
 `/timetables` (or `/parishes`), because it lists more than services; a lone
 `/services` is the timetable page of services for a crawler. The old
 `/worship…`, `/services-liturgy…` and `/studies` links get a 301 to their name
@@ -146,7 +157,7 @@ cards it lands on agree. `partOfDayOf` in `public/shared/services.js` is the one
 reading; the cards use it too (they used to read Sydney's clock, which put a 1pm
 Perth liturgy under Evening). Like a day or a service, a part of the day is a feed
 filter on its own (`/antiochian/evening`, written day–part–service:
-`/wed/evening/vespers`) and a schedule focus beside one parish (`/sgr/evening`).
+`/wed/evening/vespers`) and a card's focus beside one parish (`/sgr/evening`).
 The page's day lists split there too (`isEvening` in
 `public/shared/timetable-lines.js`).
 

@@ -499,8 +499,23 @@ body.map-full .parish-row {
 }
 .erow + .erow { border-top: 1px solid var(--line); }
 .today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
-/* A collection's own Today, above its timetables. */
-.ctoday { margin: 14px 18px 0; }
+/* A collection's own Today, above its timetables, and a parish's above its timetable. */
+.ctoday, .ptoday { margin: 14px 18px 0; }
+/* A parish card's focus (/sgr/talk): its next lit in the parish's colour, under
+   its day; what does not answer it dimmed, never hidden; and a way to let it go. */
+.erow.lit { background: color-mix(in srgb, var(--pc, var(--accent)) 11%, transparent); }
+.erow.lit .etitle { color: var(--text); }
+.erow.dim, .tt-line.dim { opacity: .38; }
+.tsub.tnext { color: var(--pc, var(--accent)); }
+.card-head:has(.tfocus) { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.tfocus {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; max-width: 55%;
+  margin-top: 2px; padding: 5px 8px 5px 11px; border-radius: 16px;
+  background: color-mix(in srgb, var(--pc, var(--accent)) 12%, transparent); color: var(--pc, var(--accent));
+  font-size: 13.5px; font-weight: 650;
+}
+.tfocus span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tfocus svg { flex: none; width: 14px; height: 14px; }
 .sheet .cu .sday, .sheet .cu-band { scroll-margin-top: 72px; }
 .etime { width: 58px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
@@ -823,6 +838,21 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .wide-btn.ghost { background: transparent; box-shadow: none; }
 .toolbar-space { height: 90px; }
 .toolbar-space.sm { height: 20px; }
+
+/* Back to the top of a card scrolled a screen down, beside its toolbar. */
+.totop {
+  position: absolute; right: 16px; bottom: calc(25px + env(safe-area-inset-bottom)); z-index: 3;
+  width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--glass-solid); border: 1px solid var(--glass-line); box-shadow: var(--shadow-lift); color: var(--text);
+  opacity: 0; transform: translateY(12px) scale(.9); pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .totop { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+}
+.sheet.deep .totop { opacity: 1; transform: none; pointer-events: auto; }
+.totop:active { background: var(--line); }
+@media (prefers-reduced-motion: reduce) { .totop { transition: none; } }
 
 /* Apple's little floating toolbar: + ☆ … */
 .floatbar {

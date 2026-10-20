@@ -66,8 +66,8 @@ for a filter link. `page-head.mjs` writes them.
 `worker/lib/page-card.mjs`, pure (models in, markup out; covered by `node --test`).
 The same sheet next.js draws, in the same class names (`public/next/next.css`), with
 what a first paint needs: a parish's names and address, its buttons (Google Maps,
-Website, the stream, Donate, its own links), its service times, what is coming up and
-its details; an event's when and where, its poster and its description with its links
+Website, the stream, Donate, its own links), its Today (on now, later today, else
+tomorrow), its timetable, what is coming up and its details; an event's when and where, its poster and its description with its links
 as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing
 on it is a control that needs the page's script, except Close, which is a link home.
 While it is up the page's scrim shows under it (`.ssr` in `next.css`), and next.js
@@ -100,8 +100,9 @@ OKLab dark-mode lift in `public/shared/jurisdiction-colors.js` (`liftForDark`).
 `/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/timetables` — the
 aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, the list
 in `public/shared/collections.js`) opens its card, painted from the model
-(`collectionCardHTML`): the parishes, those with times first, each with its times,
-folded to the first few lines until Show timetables (a checkbox in its label, so it
+(`collectionCardHTML`): the parishes, those with times first, each with the lines of
+its timetable that answer the link (all of them, for a link that asks nothing of a
+parish's services), folded to the first few lines until Show timetables (a checkbox in its label, so it
 opens with no script); the page adds a Today box of theirs above the timetables and
 what is coming up at them underneath. Any
 other mix of filters is the page itself, filtered, and gets only its head.

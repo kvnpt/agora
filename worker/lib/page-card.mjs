@@ -138,11 +138,11 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
 
 // ── a parish ─────────────────────────────────────────────────────────────
 
-function eventRowHTML(e, here) {
+function eventRowHTML(e, here, now = false) {
   const tomb = TOMB[e.status] || null;
   const away = e.parish_id !== here ? `<span class="esub"><span>${esc(e.parish_name || '')}</span></span>` : '';
-  return `<a class="erow${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
-      <span class="etime">${timeHTML(e._local.time)}</span>
+  return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
+      <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
       ${roundel(e.event_type)}
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
         ${away}
@@ -170,6 +170,33 @@ function comingUpHTML(m, start, today) {
     return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${morning.map(e => eventRowHTML(e, m.parish.id)).join('')}${evening.length ? EVENING + evening.map(e => eventRowHTML(e, m.parish.id)).join('') : ''}</section>`;
   });
   return days.join('') || '<div class="tt-none sm">Nothing on file for these days.</div>';
+}
+
+/**
+ * A parish's Today, above its timetable, as next.js's todayHTML draws it: on
+ * now, later today, and once the day is done, tomorrow. Its button goes on
+ * to the card's Coming up.
+ */
+function todayBoxHTML(m, today) {
+  const all = (m.feed || []).filter(shown);
+  const live = all.filter(e => Date.parse(e.start_utc) <= m.now && endMs(e) > m.now);
+  const later = all.filter(e => Date.parse(e.start_utc) > m.now && e._local.date === today);
+  const tomorrow = all.filter(e => e._local.date === addDays(today, 1));
+  const rows = (es, now) => es.map(e => eventRowHTML(e, m.parish.id, now)).join('');
+  let body = '';
+  if (live.length) body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), true)}`;
+  if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, live.length ? 3 : 5))}`;
+  const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
+  if (!live.length && !later.length) {
+    body += '<div class="tempty">Nothing more today.</div>';
+    if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${rows(tomorrow.slice(0, 4))}`;
+  }
+  const d = new Date(`${today}T00:00:00Z`);
+  return `<section class="today card ptoday" aria-label="Today" style="--pc:${m.color}">
+      <header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div></header>
+      ${body}
+      <a class="see-all" href="#coming-up">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</a>
+    </section>`;
 }
 
 /** The line under a parish's buttons: next Liturgy (or anything), languages, jurisdiction. */
@@ -213,7 +240,8 @@ export function parishCardHTML(m) {
         ${(m.links || []).filter(l => l.url).map(l => outBtn(l.url, I.link, l.label || l.slug)).join('')}
       </div>
       <div class="summary">${summaryHTML(m, today)}</div>
-      <h2 class="sec">Service times</h2>
+      ${todayBoxHTML(m, today)}
+      <h2 class="sec">Timetable</h2>
       <div class="p-times">${times || `<div class="tt-none">No service times on file yet.${p.website ? ' The parish website is the best place to check.' : ''}</div>`}
         ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
         ${addBox(p.id, 'Add a service time')}</div>
@@ -225,7 +253,7 @@ export function parishCardHTML(m) {
           ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
         </div>
         ${sourceLine.detailsSourceHTML(p, { cls: 'src-line', now: m.now })}</div>
-      <section class="cu-band">
+      <section class="cu-band" id="coming-up">
         <h2 class="sec">Coming up</h2>
         <div class="cu" style="--pc:${m.color}">${comingUpHTML(m, start, today)}</div>
         ${addBox(p.id, 'Add an event')}
@@ -284,8 +312,12 @@ export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
   const c = m.collection;
   const colorOf = (j) => jurisColors.jurisdictionColorFrom(m.overrides, j);
   const look = collections.lookOf(c, colorOf);
+  // A link that narrows the rules (/sun/liturgy, /en) shows the lines that
+  // answer it, as the page's card does (next.js timetable's `only`); one that
+  // does not (/greek, /monasteries) each parish's whole week.
   const byParish = new Map();
-  for (const r of rules) {
+  const shown = m.listsAll ? rules : m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.flatMap(x => x.rules)));
+  for (const r of shown) {
     if (!byParish.has(r.parish_id)) byParish.set(r.parish_id, []);
     byParish.get(r.parish_id).push(r);
   }

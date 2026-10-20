@@ -93,6 +93,10 @@
     'social-gatherings': ['socials', 'social'],
     'social-youth': ['socials', 'youth'],
   };
+  // Other words for those, as people type them: read, never written. Not
+  // /youth, which a parish's own link already is (/smg/youth, parish_links).
+  const KIND_ALIASES = { talk: 'talks', socials: 'social' };
+  const kindOfSegment = (seg) => KIND_SEGMENTS[seg] || KIND_SEGMENTS[KIND_ALIASES[seg]] || null;
   // The sub-kinds that are services.js's services too, and what they choose.
   const SERVICE_KINDS = {
     liturgy: ['services', 'liturgy'],
@@ -238,10 +242,10 @@
         juris.push(...xs);
       } else if ((xs = plus(seg)) && allDays(xs)) {
         days.push(...xs.map(x => services.resolveDay(x)));
-      } else if (KIND_SEGMENTS[seg]) {
+      } else if (kindOfSegment(seg)) {
         // The feed's kind (/services, /prayer, /talks…), perhaps with one
         // sub-kind.
-        [out.kind, out.kindSub] = KIND_SEGMENTS[seg];
+        [out.kind, out.kindSub] = kindOfSegment(seg);
       } else if (TIMETABLE_SEGMENTS.includes(seg)) {
         out.timetable = true;
       } else if (MONASTERY_SEGMENTS.includes(seg)) {
@@ -360,7 +364,7 @@
     return names ? 'timetable' : null;
   }
 
-  const api = { JURISDICTION_KEYS, jurisdictionsOf, jurisdictionValue, jurisdictionMatches, jurisdictionSegment, KIND_SEGMENTS, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, MONASTERY_SEGMENTS,
+  const api = { JURISDICTION_KEYS, jurisdictionsOf, jurisdictionValue, jurisdictionMatches, jurisdictionSegment, KIND_SEGMENTS, KIND_ALIASES, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, MONASTERY_SEGMENTS,
     renamedPath,
     weekOffsetOf, weekSegment, isEventId, classifyPath, firstEventOnDay, pageKind,
     englishSegment, kindSegment, langSlug, langFromSlug };

@@ -130,6 +130,11 @@ test('the kind filter: Services and its three, Talks and Bible studies, Socials 
   assert.deepEqual(k('/social'), ['socials', null, null]);
   assert.deepEqual(k('/social-gatherings'), ['socials', 'social', null]);
   assert.deepEqual(k('/social-youth'), ['socials', 'youth', null]);
+  // As people type them, read and never written.
+  assert.deepEqual(k('/talk'), ['talks', null, null]);
+  assert.deepEqual(k('/socials'), ['socials', null, null]);
+  assert.deepEqual(U.classifyPath('/sgr/talk').parishSlugs, ['sgr'], '/sgr/talk is St George, with its talks');
+  assert.deepEqual(U.classifyPath('/smg/youth').parishSlugs, ['youth'], "/youth is a parish's own link (/smg/youth), not a kind");
   assert.deepEqual(k('/'), [null, null, null]);
   assert.deepEqual(k('/talks/timetables'), [null, null, null], 'the timetable wins');
   for (const old of ['/worship', '/services-liturgy', '/studies']) {
