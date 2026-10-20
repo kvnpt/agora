@@ -50,6 +50,35 @@ const DOT_MIN_DISTANCE_PX = 12;
 // Under this much movement a dot is still on its parish, so it keeps its label.
 const DOT_SHIFT_EPSILON_PX = 0.5;
 
+// ── How big a dot is at each zoom ──────────────────────────────────────
+// Its size from the whole country down to the suburbs (zoom 12), then a
+// little bigger with every step in: 30% by zoom 14, 60% by 16 and closer.
+// The prototype at /next grew them from zoom 10 and doubled them by 14; the
+// owner (October 2026) wanted today's size kept until the suburbs, and the
+// growth slight. One table, read by the layers (as a zoom expression) and by
+// the halo loop (as a number), so a ring stays the same distance off its dot.
+const DOT_ZOOM_STOPS = [[12, 1], [14, 1.3], [16, 1.6]];
+
+/** The dot's scale at `zoom`, as MapLibre's linear interpolate would give it. */
+function dotScale(zoom) {
+  const s = DOT_ZOOM_STOPS;
+  if (!(zoom > s[0][0])) return s[0][1];
+  for (let i = 1; i < s.length; i++) {
+    if (zoom <= s[i][0]) {
+      const [z0, k0] = s[i - 1], [z1, k1] = s[i];
+      return k0 + (k1 - k0) * (zoom - z0) / (z1 - z0);
+    }
+  }
+  return s[s.length - 1][1];
+}
+
+/** A paint value by zoom: `at(k)` is the value at scale k, at each stop. */
+function dotByZoom(at) {
+  const expr = ['interpolate', ['linear'], ['zoom']];
+  for (const [z, k] of DOT_ZOOM_STOPS) expr.push(z, at(k));
+  return expr;
+}
+
 function markerMode() {
   try {
     const q = new URLSearchParams(location.search).get('markers');
@@ -254,6 +283,7 @@ async function initMap(state) {
     setupClickHandlers();
     setupViewportPhases();
     setupDeclutterOnZoom();
+    setupSolo();
 
     // Register sprites BEFORE any layer tries to render them — otherwise the
     // symbol layers report "image missing" and skip drawing for the first
@@ -371,19 +401,27 @@ function addParishSourceAndLayers() {
   // the focused parish is still visible. Active state has no size delta —
   // active is purely a sort-key for label priority (matches the pre-migration
   // behaviour where active dots had higher z-index but identical visuals).
-  const DOT_RADIUS = [
+  // A dot keeps its size from the whole country down to the suburbs, then
+  // grows a little as the map closes in (dotByZoom), the way the first /next
+  // prototype's did — which doubled them, from zoom 10; this is gentler, and
+  // starts later, so a city's worth of dots never crowds. The logo case
+  // (focused, with a sprite) is the sprite's own size and does not grow.
+  //
+  // A solo parish (the only one in view, see setSolo) keeps its dot: the pop
+  // is a DOM element over it, and the dot under it is what a tap still finds.
+  const DOT_RADIUS = dotByZoom((k) => [
     'case',
     ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 0,
-    ['==', ['get', 'focused'], true], 6,
-    ['==', ['get', 'selected'], true], 6,
-    3.75
-  ];
-  const DOT_STROKE_WIDTH = [
+    ['==', ['get', 'focused'], true], 6 * k,
+    ['==', ['get', 'selected'], true], 6 * k,
+    3.75 * k
+  ]);
+  const DOT_STROKE_WIDTH = dotByZoom((k) => [
     'case',
     ['==', ['get', 'focused'], true], 2.5,
     ['==', ['get', 'selected'], true], 2.5,
-    1.5
-  ];
+    1.5 * Math.min(k, 4 / 3)
+  ]);
   // What the reader actually sees the edge of: the fill plus the halo ring
   // around it, and for the focused parish with a logo the sprite instead —
   // that case draws no circle at all (DOT_RADIUS is 0) and the sprite is
@@ -391,13 +429,13 @@ function addParishSourceAndLayers() {
   //
   // Plus a pixel, so the blur has somewhere to fall outside the ring. Without
   // it the shadow is entirely under the marker and the marker is opaque.
-  const DOT_SHADOW_RADIUS = [
+  const DOT_SHADOW_RADIUS = dotByZoom((k) => [
     'case',
     ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']], 17,
-    ['==', ['get', 'focused'], true], 9.5,
-    ['==', ['get', 'selected'], true], 9.5,
-    6.25
-  ];
+    ['==', ['get', 'focused'], true], 9.5 * k,
+    ['==', ['get', 'selected'], true], 9.5 * k,
+    6.25 * k
+  ]);
 
   // parish-circle-shadow: the dots' drop shadow, and the focused parish's
   // logo sprite's too — a circle layer is the only thing MapLibre will blur,
@@ -492,6 +530,7 @@ function addParishSourceAndLayers() {
     ['!', ['has', 'point_count']],
     ['!=', ['get', 'focused'], true],
     ['!=', ['get', 'selected'], true],
+    ['!=', ['get', 'solo'], true],
     // Set by the declutter on any dot it had to move. The focused and
     // selected labels below deliberately do NOT check it: the reader asked
     // for that parish by name, so it is named even in a crowd.
@@ -512,12 +551,13 @@ function addParishSourceAndLayers() {
 
   const ABOVE_LABEL_FILTER = ['all',
     ['!', ['has', 'point_count']],
-    ['any', ['==', ['get', 'focused'], true], ['==', ['get', 'selected'], true]]
+    ['any', ['==', ['get', 'focused'], true], ['==', ['get', 'selected'], true],
+      ['==', ['get', 'solo'], true]]
   ];
   const ABOVE_LABEL_LAYOUT = {
     'text-field': ['get', 'label'],
     'text-font': FONT_MEDIUM,
-    'text-size': ['case', ['==', ['get', 'focused'], true], 15, 14],
+    'text-size': ['case', ['any', ['==', ['get', 'focused'], true], ['==', ['get', 'solo'], true]], 15, 14],
     'text-anchor': 'bottom',
     'text-offset': [0, -1.4],
     'text-padding': 2,
@@ -687,7 +727,7 @@ const HALO_FRAME_MS = 33;        // ~30fps is plenty for a glow
 // a place's square with its ring.
 const HALO_EDGE = { dot: 5.25, big: 16, venue: 6.5 };
 
-const HALO_BIG = ['any', ['has', 'point_count'],
+const HALO_BIG = ['any', ['has', 'point_count'], ['==', ['get', 'solo'], true],
   ['all', ['==', ['get', 'focused'], true], ['has', 'focus_icon_id']]];
 const HALO_IS_NOW = ['any', ['==', ['get', 'now'], true],
   ['>', ['coalesce', ['get', 'now_count'], 0], 0]];
@@ -911,9 +951,9 @@ function haloFrame(t) {
 // from nothing at the marker's centre, under it, so it comes out of the dot
 // rather than appearing already around it.
 const HALO_LAYERS = [
-  { id: 'parish-halo-now-dot', edge: HALO_EDGE.dot, move: 'breath' },
-  { id: 'parish-halo-away-dot', edge: HALO_EDGE.dot, move: 'breath' },
-  { id: 'parish-halo-toll-dot', edge: HALO_EDGE.dot, move: 'toll', ring: 9 },
+  { id: 'parish-halo-now-dot', edge: HALO_EDGE.dot, move: 'breath', grows: true },
+  { id: 'parish-halo-away-dot', edge: HALO_EDGE.dot, move: 'breath', grows: true },
+  { id: 'parish-halo-toll-dot', edge: HALO_EDGE.dot, move: 'toll', ring: 9, grows: true },
   { id: 'parish-halo-now-big', edge: HALO_EDGE.big, move: 'breath' },
   { id: 'parish-halo-away-big', edge: HALO_EDGE.big, move: 'breath' },
   { id: 'parish-halo-toll-big', edge: HALO_EDGE.big, move: 'toll', ring: 10 },
@@ -932,17 +972,20 @@ function paintHalos(t) {
   const life = t == null ? 0.35 : Math.min(1, (t % HALO_TOLL_MS) / HALO_RING_MS);
   const spread = 1 - Math.pow(1 - life, 1.35);
   const fade = life >= 1 ? 0 : Math.cos(life * Math.PI / 2);
+  // A dot grows as the map closes in (dotScale), so its ring moves out with it.
+  const k = dotScale(typeof map.getZoom === 'function' ? map.getZoom() : 0);
   for (const h of HALO_LAYERS) {
     if (!map.getLayer(h.id)) continue;
+    const edge = h.grows ? h.edge * k : h.edge;
     let r, fill, ring;
     if (h.move === 'breath') {
       // A tight ring hugging the marker; the fill only tints, so a cluster
       // of green parishes does not wash the map.
-      r = h.edge + 3 + 1.5 * breath;
+      r = edge + 3 + 1.5 * breath;
       fill = 0.05 + 0.07 * breath;
       ring = 0.6 + 0.35 * breath;
     } else {
-      r = (h.edge + 2 + h.ring) * spread;
+      r = (edge + 2 + h.ring) * spread;
       fill = 0.05 * fade;
       ring = 0.7 * fade;
     }
@@ -1360,6 +1403,123 @@ function setupDeclutterOnZoom() {
   map.on('zoomend', paintParishSource);
 }
 
+// ── One parish in view: its dot pops into its logo ─────────────────────
+// When the map holds a single parish, its dot bounces up into the parish's
+// logo — the logo, or its acronym in its colour on white, as the parish row
+// draws it — and shrinks back into the dot the moment another parish comes
+// into view. The owner's ask, October 2026: "nice and playfully".
+//
+// A DOM marker, not a layer, and the one exception to the rule at the top of
+// this file. A bounce is a size that overshoots and settles, and a symbol's
+// size is a LAYOUT property: stepping it per frame re-lays the source out in
+// the worker every frame. A paint transition cannot overshoot. One element,
+// alive only while one parish is in view, with a CSS animation on its face,
+// costs nothing; the marker's own transform is MapLibre's, set in the same
+// frame as the canvas, so it does not drift from the dot under it.
+//
+// The dot stays drawn underneath (covered), so a tap still finds it and opens
+// the parish as any dot does; the element itself takes no pointer events.
+// The feature carries `solo` meanwhile, which moves its name above it and
+// gives it the big halo, as the focused parish's logo has. A focused parish
+// is already its logo, so it never pops.
+let soloId = null;
+let soloPop = null;                // { id, marker, face } on the map now
+let soloRaf = 0;
+
+function reducedMotion() {
+  return matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** The one parish in view, or null: none, several, or the one is focused. */
+function soloCandidate() {
+  if (!map || !styleLoaded || !trueFeatures.length) return null;
+  const b = map.getBounds();
+  let only = null;
+  for (const f of trueFeatures) {
+    if (!b.contains(f.geometry.coordinates)) continue;
+    if (only) return null;
+    only = f;
+  }
+  return only && !only.properties.focused ? only : null;
+}
+
+function syncSolo() {
+  const f = soloCandidate();
+  const id = f ? f.properties.parish_id : null;
+  if (id === soloId) return;
+  soloId = id;
+  let changed = false;
+  for (const t of trueFeatures) {
+    const solo = t.properties.parish_id === id;
+    if (!!t.properties.solo !== solo) { t.properties = { ...t.properties, solo }; changed = true; }
+  }
+  if (changed) paintParishSource();
+  popOut();
+  if (f) popIn(f);
+}
+
+function popIn(f) {
+  const p = parishesById.get(f.properties.parish_id) || {};
+  const el = document.createElement('div');
+  el.className = 'map-pop';
+  el.setAttribute('aria-hidden', 'true');
+  el.style.setProperty('--pop-ring', f.properties.color || '#64748b');
+  const face = document.createElement('span');
+  face.className = 'map-pop-face';
+  if (p.logo_path) {
+    face.classList.add('avatar-logo');
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = p.logo_path;
+    face.appendChild(img);
+  } else {
+    const text = String(p.acronym || (p.name || '?')[0]).toUpperCase();
+    face.classList.add('avatar-acronym');
+    face.style.setProperty('--avatar-ink', f.properties.color || '#555');
+    const t = document.createElement('span');
+    t.className = 'avatar-acronym-text';
+    t.dataset.len = String(Math.min(text.length, 5));
+    t.textContent = text;
+    face.appendChild(t);
+  }
+  el.appendChild(face);
+  const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+    .setLngLat(f.geometry.coordinates)
+    .addTo(map);
+  soloPop = { id: f.properties.parish_id, marker, face };
+}
+
+/** Shrink the pop back into its dot, and take it off the map once it has. */
+function popOut() {
+  const pop = soloPop;
+  if (!pop) return;
+  soloPop = null;
+  if (reducedMotion()) { pop.marker.remove(); return; }
+  pop.face.classList.add('out');
+  let gone = false;
+  const done = () => { if (!gone) { gone = true; pop.marker.remove(); } };
+  pop.face.addEventListener('animationend', done, { once: true });
+  setTimeout(done, 600);         // in case the animation never runs (hidden tab)
+}
+
+// Checked on every frame of a move, as the map's own markers are: a pinch in
+// on a suburb pops the last parish left the moment the others leave the view.
+// Cheap — one bounds test per parish, and nothing else unless the answer
+// changes. The halos are re-sized here too when they stand still (reduced
+// motion), since the loop that normally sizes them is not running.
+function setupSolo() {
+  map.on('move', () => {
+    if (soloRaf) return;
+    soloRaf = requestAnimationFrame(() => {
+      soloRaf = 0;
+      syncSolo();
+    });
+  });
+  map.on('zoomend', () => {
+    if (reducedMotion() && haloAny && map.getLayer('parish-halo-now-dot')) paintHalos(null);
+  });
+}
+
 // ── updateMap: rebuild GeoJSON, apply feature state ────────────────────
 /** Frame every parish. False when there are none yet to frame. */
 function fitToAllParishes(state) {
@@ -1469,6 +1629,7 @@ function updateMap(state, opts = {}) {
       color: isDark() ? liftParishColor(baseColor) : baseColor,
       jurisdiction: p.jurisdiction || '',
       focused: p.id === focusId,
+      solo: p.id === soloId,
       selected: selectedSet ? selectedSet.has(p.id) : false,
       active: activeSet.has(p.id),
       now: (timeFlags.get(p.id) || {}).flag === 'now',
@@ -1495,6 +1656,8 @@ function updateMap(state, opts = {}) {
   paintVenueSource(state);
   haloState = state;
   syncHalos();
+  // A filter, a focus or a first load can each leave one parish in view.
+  syncSolo();
 
   if (opts.fit) {
     // Prefer the parishes actually in scope — a region with three parishes in
