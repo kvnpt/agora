@@ -227,6 +227,8 @@ export function parishCardHTML(m) {
   const gmaps = mapsHref(p);
   const times = timetableHTML(m.rules, { today, color: m.color });
   const website = p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : '';
+  // Its own links, a festival or a youth group's page, small above its details; Donate stays on top.
+  const own = (m.links || []).filter(l => l.url);
   return sheet('parish', p.name, `--j:${m.color}`, `${glassBar(p.name, JURIS_LONG[p.jurisdiction])}
     <div class="sheet-scroll">
       <div class="ph">${avatar(p, 'xl', m.color)}<div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}</p></div></div>
@@ -237,7 +239,6 @@ export function parishCardHTML(m) {
         ${p.website ? outBtn(p.website, I.globe, 'Website') : ''}
         ${p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         ${p.donation_url ? outBtn(p.donation_url, I.heart, 'Donate') : ''}
-        ${(m.links || []).filter(l => l.url).map(l => outBtn(l.url, I.link, l.label || l.slug)).join('')}
       </div>
       <div class="summary">${summaryHTML(m, today)}</div>
       ${todayBoxHTML(m, today)}
@@ -245,6 +246,7 @@ export function parishCardHTML(m) {
       <div class="p-times">${times || `<div class="tt-none">No service times on file yet.${p.website ? ' The parish website is the best place to check.' : ''}</div>`}
         ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
         ${addBox(p.id, 'Add a service time')}</div>
+      ${own.length ? `<div class="p-links">${own.map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('')}</div>` : ''}
       <div class="p-details"><h2 class="sec"><span>Details</span></h2>
         <div class="details">
           ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(tel(p.phone))}">${esc(p.phone)}</a></div>` : ''}

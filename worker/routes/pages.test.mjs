@@ -264,7 +264,7 @@ test('an event link — projected or stored — is its card, never indexed', asy
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
 });
 
-test('a parish\'s stream, its Donate and its own links are buttons on its card, and a date\'s card has the stream unless it hides it', async () => {
+test('a parish\'s stream and its Donate are buttons on its card, its own links smaller above its details, and a date\'s card has the stream unless it hides it', async () => {
   const { raw, get } = fresh();
   raw.prepare("UPDATE parishes SET live_url = 'https://youtube.com/@sgr', donation_url = 'https://give.example/sgr' WHERE id = ?").run(PARISH);
   raw.prepare("INSERT INTO parish_links (parish_id, slug, label, url) VALUES (?, 'fund', 'Building fund', 'https://give.example/fund')").run(PARISH);
@@ -272,8 +272,11 @@ test('a parish\'s stream, its Donate and its own links are buttons on its card, 
   const acts = between(c, '<div class="actions">', '<div class="summary">');
   assert.match(acts, /<a class="abtn" href="https:\/\/youtube\.com\/@sgr" target="_blank" rel="noopener"><svg[^]*?<span>Watch live<\/span><\/a>/);
   assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/sgr" target="_blank" rel="noopener"><svg[^]*?<span>Donate<\/span><\/a>/);
-  assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/fund" target="_blank" rel="noopener"><svg[^]*?<span>Building fund<\/span><\/a>/);
-  assert.ok(acts.indexOf('Watch live') < acts.indexOf('Donate') && acts.indexOf('Donate') < acts.indexOf('Building fund'));
+  assert.ok(acts.indexOf('Watch live') < acts.indexOf('Donate'));
+  assert.doesNotMatch(acts, /Building fund/, 'its own links are not among the big buttons');
+  assert.match(between(c, '<div class="p-times">', '<div class="p-details">'),
+    /<div class="p-links"><a class="lbtn" href="https:\/\/give\.example\/fund" target="_blank" rel="noopener"><svg[^]*?<span>Building fund<\/span><\/a><\/div>\s*$/,
+    'but small, just above its details');
 
   const sid = raw.prepare('SELECT id FROM schedules WHERE parish_id = ? LIMIT 1').get(PARISH).id;
   assert.match(card((await get(`/${sid}:2026-10-04`)).html), /<span>Watch live<\/span>/);

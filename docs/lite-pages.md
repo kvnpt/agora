@@ -66,8 +66,9 @@ for a filter link. `page-head.mjs` writes them.
 `worker/lib/page-card.mjs`, pure (models in, markup out; covered by `node --test`).
 The same sheet next.js draws, in the same class names (`public/next/next.css`), with
 what a first paint needs: a parish's names and address, its buttons (Google Maps,
-Website, the stream, Donate, its own links), its Today (on now, later today, else
-tomorrow), its timetable, what is coming up and its details; an event's when and where, its poster and its description with its links
+Website, the stream, Donate), its Today (on now, later today, else
+tomorrow), its timetable, its own links as small buttons above its details, what is
+coming up and its details; an event's when and where, its poster and its description with its links
 as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing
 on it is a control that needs the page's script, except Close, which is a link home.
 While it is up the page's scrim shows under it (`.ssr` in `next.css`), and next.js

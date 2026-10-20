@@ -534,6 +534,16 @@
       day: r.day == null ? null : r.day, dayGroup: r.dayGroup || null, part: r.part || null, lang: r.lang || null, langStrict: !!r.langStrict };
     return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang ? x : null;
   }
+  /**
+   * The focus a card opened by a tap takes from where it was: the collection
+   * it was in (Sunday Liturgy, the services in view), else the page's filters
+   * (/talks, /wed/evening). Every parish card answers every filter one way,
+   * however it was reached: /talks, then St George, is /sgr/talks.
+   */
+  function focusAround() {
+    const top = stack[stack.length - 1];
+    return focusOf((top && top._coll && top._coll.f) || S.f || {});
+  }
 
   // The history. Every card is one entry; a filter changed with no card open
   // is one more, as at /. Closing a card is a step back, which lands later
@@ -1802,8 +1812,8 @@
   const parishLinks = (pid) => ((window.agoraBundle.raw && window.agoraBundle.raw.parish_links) || []).filter(l => l.parish_id === pid && l.url);
   /**
    * Google Maps, then whatever the parish has: a phone, a website, a live
-   * stream, a way to donate, and links of its own. More than fit scroll
-   * sideways, as Maps' do.
+   * stream, a way to donate. More than fit scroll sideways, as Maps' do. Its
+   * own links are smaller, above its details (linksHTML).
    */
   function actionsHTML(p) {
     const gmaps = mapsHref(p);
@@ -1812,8 +1822,11 @@
       ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
       ${p.website ? out(p.website, I.globe, 'Website') : ''}
       ${p.live_url ? out(p.live_url, I.live, 'Watch live') : ''}
-      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}
-      ${parishLinks(p.id).map(l => out(l.url, I.link, l.label || l.slug)).join('')}`;
+      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}`;
+  }
+  /** A parish's own links (a festival, a youth group's Instagram), as small buttons, or ''. */
+  function linksHTML(p) {
+    return parishLinks(p.id).map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('');
   }
   /**
    * An open card again, from the bundle as it now is, where it was scrolled
@@ -1832,6 +1845,8 @@
     if (top) top.innerHTML = parishTopHTML(p);
     const acts = el.querySelector('.actions');
     if (acts) acts.innerHTML = actionsHTML(p);
+    const own = el.querySelector('.p-links');
+    if (own) { own.innerHTML = linksHTML(p); own.hidden = !own.innerHTML; }
     el._segs = segsFor({ parish: p, focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
@@ -1882,8 +1897,9 @@
   function focusLabel(x) {
     const SV = window.AgoraServices;
     const sub = { youth: 'Youth groups', social: 'Social gatherings', 'bible-study': 'Bible studies' };
+    // A sub-kind that is a service too (/sun/liturgy's Liturgy) is said as one: "Liturgies".
     const noun = (x.service && SV.servicePlural(x.service))
-      || (x.kindSub ? sub[x.kindSub] || `${kindLabel(x.kindSub)} services` : null)
+      || (x.kindSub ? sub[x.kindSub] || (SV.resolveService(x.kindSub) ? SV.servicePlural(x.kindSub) : `${kindLabel(x.kindSub)} services`) : null)
       || KIND_NAMES[x.kind] || 'Services';
     const text = (x.part ? `${x.part} ${noun.toLowerCase()}` : noun) + window.AgoraLinkWords.daysPhrase(x)
       + (x.lang ? (x.langStrict ? ` in ${x.lang} only` : ` in ${x.lang}`) : '');
@@ -1899,9 +1915,11 @@
     repaintParish(el);
   }
 
-  function openParish(pid, { entry = true, from = null, focus = null } = {}) {
+  function openParish(pid, { entry = true, from = null, focus } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
+    // A link says its own (/sgr/talk, or none at /sgr); a tap takes where it was.
+    if (focus === undefined) focus = focusAround();
     const segs = segsFor({ parish: p, focus, from });
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
       <div class="sheet-scroll">
@@ -1912,6 +1930,7 @@
         <section class="today card ptoday" aria-label="Today" style="--pc:${parishColor(p)}"></section>
         <h2 class="sec">Timetable</h2>
         <div class="p-times">${timesHTML(p, focus)}</div>
+        <div class="p-links"${linksHTML(p) ? '' : ' hidden'}>${linksHTML(p)}</div>
         <div class="p-details">${detailsHTML(p)}</div>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">

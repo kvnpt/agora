@@ -762,6 +762,17 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 }
 .abtn.primary { min-width: 124px; background: var(--accent); color: #fff; }
 .abtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* A parish's own links (a festival, a youth group's page): smaller than its
+   buttons, above its details. */
+.p-links { display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 18px 0; }
+.p-links[hidden] { display: none; }
+.lbtn {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 36px; padding: 0 13px 0 10px;
+  border-radius: 18px; background: var(--card); color: var(--accent); font-weight: 600; font-size: 14px; box-shadow: var(--shadow);
+}
+.lbtn svg { flex: none; width: 16px; height: 16px; }
+.lbtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet a.lbtn { color: var(--accent); }
 .summary { display: flex; margin: 14px 18px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .sum { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 0 8px; }
 .sum + .sum { border-left: 1px solid var(--line); }

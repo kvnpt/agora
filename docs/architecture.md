@@ -110,9 +110,9 @@ is a chip in its colour.
 **What kind of event, and in what language, are segments too.** `/services` is
 Services (liturgy, prayer, feast), with one of them as `/liturgy`, `/prayer`
 or `/feast`; `/talks` is talks, with Bible studies as `/bible-study`;
-`/social` is socials and youth, `/social-gatherings` or `/social-youth` one of
-the two. `/talk` and `/socials` are read as people type them and never written
-(`KIND_ALIASES`); `/youth` is not, because `/smg/youth` is a parish's own link.
+`/social` is socials and youth, `/social-gatherings` or `/youth` one of
+the two. `/talk`, `/socials` and the older `/social-youth` are read as people type
+them and never written (`KIND_ALIASES`).
 `/liturgy`, `/feast` and `/bible-study` are service slugs as well
 (services.js), and across the page they read as the kind (`kindOfService`).
 
@@ -121,7 +121,9 @@ the two. `/talk` and `/socials` are read as people type them and never written
 with every line and date still on it: what answers the focus is lit, the next of it
 in the card's Today under its day's name, and the rest is dimmed, never hidden. The
 link keeps it (`segsFor({ parish, focus })`); its × in Today lets it go, back to
-`/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML` in next.js). A collection's
+`/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML` in next.js). A card opened by a
+tap takes the same focus from where it was (`focusAround`): the collection it was
+in, else the page's filters, so `/talks` then St George is `/sgr/talks`. A collection's
 timetables do the opposite: they keep only the lines that answer what it asks
 (`/services` its services, `/sun/liturgy` its Sunday Liturgies), as its head counts
 them, and a collection that asks nothing of them (`/greek`) shows each whole week. The timetable is

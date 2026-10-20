@@ -91,11 +91,11 @@
     talks: ['talks', null],
     social: ['socials', null],
     'social-gatherings': ['socials', 'social'],
-    'social-youth': ['socials', 'youth'],
+    youth: ['socials', 'youth'],
   };
-  // Other words for those, as people type them: read, never written. Not
-  // /youth, which a parish's own link already is (/smg/youth, parish_links).
-  const KIND_ALIASES = { talk: 'talks', socials: 'social' };
+  // Other words for those, as people type them or as links once had them:
+  // read, never written.
+  const KIND_ALIASES = { talk: 'talks', socials: 'social', 'social-youth': 'youth' };
   const kindOfSegment = (seg) => KIND_SEGMENTS[seg] || KIND_SEGMENTS[KIND_ALIASES[seg]] || null;
   // The sub-kinds that are services.js's services too, and what they choose.
   const SERVICE_KINDS = {

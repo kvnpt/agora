@@ -35,7 +35,7 @@
 
   // Path segments detectUrlState gives a meaning of their own.
   const PATH_KEYWORDS = ['social', 'social-gatherings', 'social-youth', 'services', 'prayer', 'talks',
-    'talk', 'socials',
+    'talk', 'socials', 'youth',
     'worship', 'worship-liturgy', 'worship-prayer', 'worship-feast', 'services-liturgy', 'services-prayer',
     'services-feast', 'studies', 'this-week', 'last-week', 'this-month', 'timetables', 'timetable', 'parishes',
     'monasteries', 'monastery',
