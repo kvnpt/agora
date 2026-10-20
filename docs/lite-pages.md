@@ -68,7 +68,8 @@ The same sheet next.js draws, in the same class names (`public/next/next.css`), 
 what a first paint needs: a parish's names and address, its buttons (Google Maps,
 Website, the stream, Donate), its Today (as the page's: "Happening now" then
 "Later today", else the rest of the day under "This evening" when it is all the
-evening, else "Tomorrow"; the Evening divider where the day has both), its timetable, its own links as small buttons above its details, what is
+evening, else "Tomorrow"; the Evening divider where the day has both; nothing today or
+tomorrow, no box), its timetable, its own links as small buttons above its details, what is
 coming up and its details; an event's when and where, its poster and its description with its links
 as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing
 on it is a control that needs the page's script, except Close, which is a link home.

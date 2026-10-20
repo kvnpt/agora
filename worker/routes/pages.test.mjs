@@ -147,9 +147,10 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
     'Google Maps, at the place, never directions to it');
   assert.doesNotMatch(c, /maps\/dir\//);
   assert.match(c, /<a class="sum sum-link" href="\/antiochian"><small>Jurisdiction<\/small>/, 'the jurisdiction opens its collection');
-  assert.match(c, /<div class="summary">[\s\S]*?<\/div>\s*<section class="today card ptoday" aria-label="Today" style="--pc:[^"]+">\s*<header class="card-head"><div><h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<div class="tempty">Nothing more today\.<\/div>\s*<a class="see-all" href="#coming-up">Coming up/,
-    'Today, above the timetable, going on to Coming up');
-  assert.match(c, /<\/section>\s*<h2 class="sec">Timetable<\/h2>\s*<div class="p-times">/, 'the timetable, by that name: it holds every kind');
+  assert.match(c, /<div class="summary"><div class="sum"><small>Next Liturgy<\/small><b class="ok">Sun<br>10am<\/b><\/div>/, 'what is next, a Liturgy first');
+  // Nothing today or tomorrow, nothing to say: no Today box, the timetable straight after.
+  assert.doesNotMatch(c, /class="today card|Nothing more today/);
+  assert.match(c, /<a class="sum sum-link"[^]*?<\/a><\/div>\s*<h2 class="sec">Timetable<\/h2>\s*<div class="p-times">/, 'the timetable, by that name: it holds every kind');
   assert.match(timesOf(html), /<span class="tt-days">Sun<\/span>\s*<span class="t-time">10<span class="t-mer">am<\/span><\/span>[\s\S]*<span class="tt-title">Sunday Divine Liturgy/);
   assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><a class="erow" href="\/\d+:2026-10-04">/,
     'the next fortnight, day by day, each date its own link');
@@ -255,6 +256,12 @@ test('a painted Today: no count, Later today only under Happening now, This even
   assert.match(c, /<h2>Tomorrow<\/h2><p>Thursday 1 Oct<\/p><\/div><\/header>\s*<a class="erow"[\s\S]*Matins/);
   assert.doesNotMatch(c, /Nothing more today|class="tsub"/);
   assert.match(c, /<a class="see-all" href="#coming-up">This week/);
+  // Nothing at all ahead: no Today, and no Next on the line above it.
+  const { raw, get } = fresh();
+  raw.prepare('DELETE FROM schedules WHERE parish_id = ?').run(PARISH);
+  c = card((await get('/sgr')).html);
+  assert.doesNotMatch(c, /class="today card|<small>Next/);
+  assert.match(c, /<div class="summary"><div class="sum"><small>Languages<\/small>/);
 });
 
 test('an old /worship, /services-liturgy or /studies link is sent to its name for good, keeping the rest', async () => {

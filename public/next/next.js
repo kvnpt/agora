@@ -1107,7 +1107,9 @@
   }
 
   function renderToday() {
-    $('#today').innerHTML = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)), { where: ' in view' });
+    const html = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)));
+    $('#today').innerHTML = html;
+    $('#today').hidden = !html;
   }
   /**
    * Today, from the rows given. With something on now, "Happening now" and
@@ -1117,14 +1119,15 @@
    * box is what is in view; a collection's card has one of its own, of its
    * parishes (openCollection), and a parish's card its own (parishTodayHTML).
    * Its button goes on to the days after, in the Events feed or the card's
-   * Coming up.
+   * Coming up. Nothing today or tomorrow, and no focus to say, is no box:
+   * '', and its place goes with it.
    *
    * At a parish, `here` is it. A `focus` dims what does not answer it, and
    * `next` is the next that does, lit where it already is and under its own
    * day where it is not; 'none' when there is none. `clear` names the focus
    * on the button that lets it go.
    */
-  function todayHTML(all, { where = '', here = null, focus = null, next = null, clear = '' } = {}) {
+  function todayHTML(all, { here = null, focus = null, next = null, clear = '' } = {}) {
     const now = Date.now();
     const t = todayKey();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
@@ -1143,6 +1146,7 @@
     }).join('');
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
+    if (!live.length && !later.length && !showsTomorrow && !next && !clear) return '';
     if (live.length) {
       body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), { now: true })}`;
       if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
@@ -1153,7 +1157,7 @@
       title = 'Tomorrow';
       k = addDays(t, 1);
       body += rows(tomorrow.slice(0, 4));
-    } else body += `<div class="tempty">Nothing more today${esc(where)}.</div>`;
+    } else body += '<div class="tempty">Nothing more today.</div>';
     // The next that answers the focus, by its day, where the rows above do not have it.
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
@@ -1325,8 +1329,12 @@
       if (seen.has(k)) return false; seen.add(k); return true;
     });
     let list = uniq.filter(inViewEvent);
-    let far = false;
-    if (list.length < 2) { list = uniq; far = true; }
+    // Too few in view: the nearest a dozen, wherever they are.
+    if (list.length < 2) {
+      const o = sortOrigin();
+      const away = (e) => { const at = e.lat != null ? e : S.byId.get(e.parish_id); return o && at && at.lat != null ? km(o, at) : Infinity; };
+      list = uniq.map(e => [e, away(e)]).sort((a, b) => a[1] - b[1]).slice(0, 12).map(x => x[0]);
+    }
     list = list.sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
     if (!list.length) { el.innerHTML = ''; return; }
     // The poster whole, and what it is under it: its own words are on it already.
@@ -1339,7 +1347,33 @@
             <span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${esc(fmtKm(d))}` : ''}</span></span></span>
         </button>`;
     }).join('');
-    shelf(el, "What's on", far ? 'Nothing with a poster in view, so from further afield' : null, cards);
+    shelf(el, "What's on", whatsOnWords(), cards);
+  }
+  // The feed's kinds, as What's on says them.
+  const ON_KINDS = { services: 'services', talks: 'talks and Bible studies', socials: 'youth groups and socials' };
+  const ON_SUBS = { 'bible-study': 'Bible studies', youth: 'youth groups', social: 'social gatherings', feast: 'feasts' };
+  /**
+   * What's on, said as the filters ask it: "Nearby events", "Nearby talks and
+   * Bible studies in Greek", "Nearby Greek Orthodox evening events on
+   * Saturdays"; where the filters say where, there instead: "Events in
+   * Queensland", "Events at St Savvas".
+   */
+  function whatsOnWords() {
+    const f = S.f, W = window.AgoraLinkWords, SV = window.AgoraServices;
+    const full = f.lang && f.langStrict ? (/^english$/i.test(f.lang) ? 'fully-English' : `${f.lang}-only`) : '';
+    let noun = f.service ? SV.servicePlural(f.service)
+      : f.kindSub ? ON_SUBS[f.kindSub] || `${kindLabel(f.kindSub).toLowerCase()} events`
+      : ON_KINDS[f.kind] || 'events';
+    if (f.monasteries) noun += ' at monasteries';
+    const what = [S.juris ? W.jurisLabel(S.juris) : '', full, f.part || '', noun].filter(Boolean).join(' ')
+      + W.daysPhrase(f) + (f.lang && !full ? ` in ${f.lang}` : '');
+    const loc = regionOf(f);
+    const list = f.listId && listById(f.listId);
+    const named = !list && f.parishIds ? [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : [];
+    const where = loc ? ` in ${loc.label}` : list ? ` from ${list.name}` : S.focus ? ` from ${S.focus.title}`
+      : named.length > 3 ? ` at ${named.length} parishes` : named.length ? ` at ${named.map(p => p.name).join(', ').replace(/, ([^,]*)$/, ' and $1')}` : '';
+    const line = where ? what + where : `nearby ${what}`;
+    return line.charAt(0).toUpperCase() + line.slice(1);
   }
 
   // ── Days: the stream's, and a parish's Coming up ───────────────────────
@@ -1820,12 +1854,12 @@
       </div>
       ${detailsSource(p)}`;
   }
-  /** Next, languages, jurisdiction: the line under a parish's buttons. */
+  /** Next, languages, jurisdiction: the line under a parish's buttons. Nothing next, no Next. */
   function summaryHTML(p) {
     const nextLit = nextOf(p.id, e => e.event_type === 'liturgy') || nextOf(p.id);
     const langs = parishLangs(p);
     return [
-      `<div class="sum"><small>${nextLit ? `Next ${esc(kindLabel(nextLit.event_type))}` : 'Next'}</small><b class="${nextLit ? 'ok' : ''}">${nextLit ? summaryWhen(nextLit) : '—'}</b></div>`,
+      nextLit ? `<div class="sum"><small>Next ${esc(kindLabel(nextLit.event_type))}</small><b class="ok">${summaryWhen(nextLit)}</b></div>` : '',
       `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>`,
       // The jurisdiction says itself in its colour, as its tab does, and opens
       // its collection, as More's "More … parishes" does.
@@ -1923,6 +1957,7 @@
     if (!box) return;
     const pid = el.dataset.pid, focus = el._focus;
     box.innerHTML = parishTodayHTML(pid, focus, null);
+    box.hidden = !box.innerHTML;
     if (!focus) return;
     const ask = el._todayAsk = {};
     nextLit(pid, focus).then(next => {
@@ -2097,6 +2132,7 @@
           ${tt || `<div class="tt-none sm">${times ? 'Not on its timetable.' : 'No service times on file yet.'}</div>`}
         </article>`;
     };
+    const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c))) : '';
     const html = `${glassBar(c.title, `${ps.length} places`)}
       <div class="sheet-scroll">
         <div ${lookAttrs(c, 'chero')}>
@@ -2110,7 +2146,7 @@
           <p>${esc(c.blurb || '')}</p>
         </div>
         ${c.segs ? `<div class="sheet-link">${linkChip(c.segs)}</div>` : ''}
-        ${ps.length ? `<section class="today card ctoday" aria-label="Today">${todayHTML(feedFor(2).filter(inCollection(c)))}</section>` : ''}
+        ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
         <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
           <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
           ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
@@ -3151,6 +3187,7 @@
     console.error(err);
     if (window.lsHide) window.lsHide();
     $('#today').innerHTML = `<div class="tempty">Couldn’t load the parishes. ${esc(err.message)}</div>`;
+    $('#today').hidden = false;
   });
   // map.js rebuilds its own style on a scheme change; the colours this page
   // stamps inline are lifted for the dark scheme, so they are stamped again.
