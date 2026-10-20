@@ -25,7 +25,8 @@ import slugs from '../../public/shared/slugs.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
-import { liteModel, liteWindow, liteStartDate } from '../lib/lite-page.mjs';
+import { liteModel, liteWindow, liteStartDate, parishSlug } from '../lib/lite-page.mjs';
+import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { timetableModel, timetableIndexable } from '../lib/lite-timetable.mjs';
 import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, headHTML, withPage } from '../lib/page-head.mjs';
 import { parishCardHTML, eventCardHTML, collectionCardHTML } from '../lib/page-card.mjs';
@@ -153,7 +154,10 @@ async function findEvent(db, id) {
   ).bind(id).first();
   if (!ev) return null;
   const { updated_by, ...rest } = ev;   // eslint-disable-line no-unused-vars
-  return { event: rest, parishId: ev.parish_id };
+  // The parishes a combine added, which the card names beside its host.
+  const cross = await db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?')
+    .bind(ev.id).all().catch(() => ({ results: [] }));
+  return { event: { ...rest, combined_parishes: (cross.results || []).map(r => r.parish_id) }, parishId: ev.parish_id };
 }
 
 /** A parish's or an event's head and card, from the card's model; a 404 when it is not here. */
@@ -191,15 +195,18 @@ async function parishPage(env, url, page, now) {
   ]);
 
   // The parishes this page's events and rules are held at, when not here —
-  // named on the card (venueLite). One read, whatever the count.
+  // named on the card (venueLite) — and those taking part in the pinned
+  // event. One read, whatever the count.
   const venueIds = [...new Set([
     ...(rows.schedules || []).map(r => r.location_parish_id),
     ...(rows.overrides || []).map(o => o.patch_location_parish_id),
     ...(events.results || []).map(e => e.location_parish_id),
     pinnedEvent && pinnedEvent.location_parish_id,
+    ...((pinnedEvent && pinnedEvent.combined_parishes) || []),
   ].filter(Boolean))];
   const venueRows = venueIds.length
-    ? await db.prepare('SELECT id, name, address FROM parishes WHERE id IN (SELECT value FROM json_each(?))')
+    ? await db.prepare(`SELECT id, name, address, acronym, logo_path, jurisdiction FROM parishes
+                        WHERE id IN (SELECT value FROM json_each(?))`)
       .bind(JSON.stringify(venueIds)).all().catch(() => ({ results: [] }))
     : { results: [] };
 
@@ -209,7 +216,10 @@ async function parishPage(env, url, page, now) {
     cross: cross.results || [],
     links: links.results || [],
     route, pinnedEvent, now, origin: url.origin, overrides,
-    venues: Object.fromEntries((venueRows.results || []).map(p => [p.id, { name: p.name, address: p.address }])),
+    venues: Object.fromEntries((venueRows.results || []).map(p => [p.id, {
+      name: p.name, address: p.address, acronym: p.acronym, logo_path: p.logo_path, slug: parishSlug(p),
+      color: jurisColors.jurisdictionColorFrom(overrides, p.jurisdiction),
+    }])),
   });
   return {
     status: 200, head: headHTML(parishMeta(model, { indexable: page.kind === 'parish' && page.indexable })),

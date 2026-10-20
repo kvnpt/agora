@@ -357,11 +357,29 @@ test('an event and a rule held at another parish, or a place, say where', async 
       mutation_type, location_override, location_lat, location_lng)
     VALUES (?, 'manual', 'Youth retreat', '2026-10-04T00:00:00Z', 'youth', 'approved', 'headless',
       'Antiochian Village, Kangaroo Valley', -34.75, 150.53) RETURNING id`).get(PARISH).id;
-  assert.ok(card((await get(`/${at}`)).html).includes(`<small>Where</small><span>${venue.name} — ${venue.address}</span>`.replace(/&/g, '&amp;')),
+  const atPage = await get(`/${at}`);
+  assert.ok(card(atPage.html).includes(`<small>Where</small><span>${venue.name} — ${venue.address}</span>`.replace(/&/g, '&amp;')),
     "the parish it is at, by that parish's own address");
+  assert.ok(meta(atPage.html, 'name', 'description').includes(venue.address), 'and its preview says that address, not the host\'s');
+  assert.match(card(atPage.html), /<h2 class="sec">Parishes<\/h2>[\s\S]*<small>Hosting<\/small>[\s\S]*<small>Held here<\/small>/,
+    'both parishes are named, each with its part');
   const place = card((await get(`/${away}`)).html);
   assert.match(place, /<small>Where<\/small><span>Antiochian Village, Kangaroo Valley<\/span>/);
   assert.match(place, /maps\/search\/\?api=1&amp;query=-34\.75,150\.53"[^>]*>.*<span>Google Maps<\/span>/, 'and Google Maps opens there, not directions to it');
+});
+
+test("an event's card names the parishes taking part in it", async () => {
+  const { raw, get } = fresh();
+  const others = raw.prepare(`SELECT id, name FROM parishes WHERE id NOT IN (?, '_unassigned') ORDER BY id LIMIT 2`).all(PARISH);
+  const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Festival', '2026-10-10T23:00:00Z', 'social', 'approved', 'headless') RETURNING id`).get(PARISH).id;
+  for (const o of others) raw.prepare('INSERT INTO event_parishes (event_id, parish_id) VALUES (?, ?)').run(id, o.id);
+  const c = card((await get(`/${id}`)).html);
+  for (const o of others) assert.ok(c.includes(`<b>${o.name.replace(/&/g, '&amp;')}</b><small>Taking part</small>`), o.name);
+  // A lone host needs no list.
+  const alone = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Picnic', '2026-10-11T23:00:00Z', 'social', 'approved', 'headless') RETURNING id`).get(PARISH).id;
+  assert.doesNotMatch(card((await get(`/${alone}`)).html), /Parishes<\/h2>/);
 });
 
 test('the home page is the site, indexable; anything else is the page with its words, noindex', async () => {

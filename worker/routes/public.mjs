@@ -178,9 +178,11 @@ export function registerPublicRoutes(router) {
     }
     const row = await env.DB.prepare(
       `SELECT e.*, p.name AS parish_name, p.jurisdiction, p.address AS parish_address,
-              p.timezone, p.live_url AS parish_live_url
+              p.timezone, p.live_url AS parish_live_url,
+              (SELECT json_group_array(parish_id) FROM event_parishes WHERE event_id = e.id) AS combined_parishes
        FROM events e JOIN parishes p ON e.parish_id = p.id WHERE e.id = ?`
     ).bind(params.id).first();
+    if (row) row.combined_parishes = JSON.parse(row.combined_parishes || '[]');
     return row ? json(row) : json({ error: 'Event not found' }, 404);
   });
 

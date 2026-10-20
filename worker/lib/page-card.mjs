@@ -296,8 +296,16 @@ export function eventCardHTML(m) {
   const end = last ? last.time : null;
   // Over days (a weekend camp), each end says its day. A vigil past midnight is one night.
   const overDays = last && e.end_utc && last.date > e._local.date && Date.parse(e.end_utc) - Date.parse(e.start_utc) >= 12 * 3600000;
-  const venue = e.location_parish_id && m.venues[e.location_parish_id];
+  const venue = e.location_parish_id && e.location_parish_id !== e.parish_id && m.venues[e.location_parish_id];
   const where = e.location_override || (venue ? `${venue.name} — ${venue.address || ''}` : p.address) || '';
+  // Every parish it is at, once each, as next.js's eventParishes lists them.
+  const seen = new Set([p.id]);
+  const parishes = [{ ...p, slug: m.slug, color: m.color, role: 'Hosting' }];
+  for (const [id, role] of [[venue && e.location_parish_id, 'Held here'], ...(e.combined_parishes || []).map(id => [id, 'Taking part'])]) {
+    if (!id || seen.has(id) || !m.venues[id]) continue;
+    seen.add(id);
+    parishes.push({ ...m.venues[id], role });
+  }
   const lat = e.location_lat ?? e.lat ?? p.lat, lng = e.location_lng ?? e.lng ?? p.lng;
   const off = TOMB[e.status] || (e.status === 'hidden' ? 'Suppressed' : null);
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
@@ -318,6 +326,8 @@ export function eventCardHTML(m) {
       </div>
       ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
       ${e.description ? `<div class="ev-desc">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+      ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(x => `<a class="lrow" href="/${esc(x.slug)}">${avatar(x, 'sm', x.color)}
+        <span class="ln"><b>${esc(x.name)}</b><small>${esc(x.role)}</small></span>${I.chev}</a>`).join('')}</div>` : ''}
     </div>`);
 }
 
