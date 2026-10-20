@@ -144,7 +144,8 @@ function eventRowHTML(e, here, now = false) {
   // Its own languages first on the line under its name, then another parish's name.
   const langs = langsOf(e.languages);
   const lang = langs.length ? `<span class="elang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : '';
-  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${esc(e.parish_name || '')}</span></span>`
+  // Held here for another parish, it names its host.
+  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
       <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>

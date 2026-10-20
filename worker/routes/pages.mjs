@@ -186,8 +186,8 @@ async function parishPage(env, url, page, now) {
               p.jurisdiction, p.timezone
        FROM events e JOIN parishes p ON e.parish_id = p.id
        WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?
-         AND (e.parish_id = ? OR e.id IN (SELECT event_id FROM event_parishes WHERE parish_id = ?))`
-    ).bind(fromUtc, toUtc, parish.id, parish.id).all(),
+         AND (e.parish_id = ? OR e.location_parish_id = ? OR e.id IN (SELECT event_id FROM event_parishes WHERE parish_id = ?))`
+    ).bind(fromUtc, toUtc, parish.id, parish.id, parish.id).all(),
     db.prepare('SELECT event_id, parish_id FROM event_parishes WHERE parish_id = ?').bind(parish.id).all(),
     db.prepare('SELECT slug, label, url FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug')
       .bind(parish.id).all().catch(() => ({ results: [] })),

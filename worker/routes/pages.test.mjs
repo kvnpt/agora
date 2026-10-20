@@ -363,6 +363,10 @@ test('an event and a rule held at another parish, or a place, say where', async 
   assert.ok(meta(atPage.html, 'name', 'description').includes(venue.address), 'and its preview says that address, not the host\'s');
   assert.match(card(atPage.html), /<h2 class="sec">Parishes<\/h2>[\s\S]*<small>Hosting<\/small>[\s\S]*<small>Held here<\/small>/,
     'both parishes are named, each with its part');
+  // And it is on the venue's own card, naming its host.
+  const vslug = raw.prepare('SELECT acronym FROM parishes WHERE id = ?').get(venue.id).acronym || venue.id;
+  assert.match(comingUp((await get(`/${String(vslug).toLowerCase().replace(/\s+/g, '')}/2026-10-03`)).html),
+    new RegExp(`href="/${at}"[\\s\\S]*?Hosted by `), "the venue's Coming up lists it, hosted by its parish");
   const place = card((await get(`/${away}`)).html);
   assert.match(place, /<small>Where<\/small><span>Antiochian Village, Kangaroo Valley<\/span>/);
   assert.match(place, /maps\/search\/\?api=1&amp;query=-34\.75,150\.53"[^>]*>.*<span>Google Maps<\/span>/, 'and Google Maps opens there, not directions to it');

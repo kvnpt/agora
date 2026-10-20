@@ -737,7 +737,7 @@
     const raw = window.agoraBundle.raw;
     if (!raw) return [];
     const now = Date.now();
-    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid))
+    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || e.location_parish_id === pid || (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid))
       && endMs(e) >= now).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
 
@@ -1090,7 +1090,12 @@
     const langs = parseLangs(e.languages);
     const lang = langs && langs.length ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
-    const sub = here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
+    // Held in another parish's church, each card says the other's part: the
+    // venue's names its host, the host's names where it is.
+    const venue = e.location_parish_id && e.location_parish_id !== e.parish_id ? S.byId.get(e.location_parish_id) : null;
+    const sub = here && venue && here === venue.id ? `<span class="esub">${lang}${avatar(p, 'xs')}<span>Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
+      : here && venue && e.parish_id === here ? `<span class="esub">${lang}${avatar(venue, 'xs')}<span>At ${esc(venue.name)}</span></span>`
+      : here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
       : `<span class="esub">${lang}${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
@@ -1815,7 +1820,7 @@
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
   }
   async function refreshComingUp(el) {
     const box = el.querySelector('.cu');
@@ -2104,7 +2109,7 @@
     const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
     const body = daysHTML(list, { start, days, linkFor });
     return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
   }
   const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
 
