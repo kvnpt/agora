@@ -45,6 +45,11 @@ test('path keywords, payment kinds and site paths are reserved', () => {
   }
 });
 
+test('every word for a kind of event is reserved, the ones only read too', () => {
+  const U = require('../public/shared/url-state.js');
+  for (const s of [...Object.keys(U.KIND_SEGMENTS), ...Object.keys(U.KIND_ALIASES)]) assert.ok(S.reservedSlugReason(s), s);
+});
+
 test('the spans of the week are reserved in every spelling', () => {
   for (const s of ['weeknights', 'weeknight', 'weekends', 'weekend', 'WEEKENDS']) assert.ok(S.reservedSlugReason(s), s);
 });

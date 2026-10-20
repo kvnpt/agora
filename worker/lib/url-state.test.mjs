@@ -129,7 +129,14 @@ test('the kind filter: Services and its three, Talks and Bible studies, Socials 
   assert.deepEqual(k('/talks'), ['talks', null, null]);
   assert.deepEqual(k('/social'), ['socials', null, null]);
   assert.deepEqual(k('/social-gatherings'), ['socials', 'social', null]);
+  assert.deepEqual(k('/youth'), ['socials', 'youth', null]);
+  assert.equal(U.kindSegment('socials', 'youth'), 'youth');
+  // As people type them, or as links once had them: read and never written.
   assert.deepEqual(k('/social-youth'), ['socials', 'youth', null]);
+  assert.deepEqual(k('/talk'), ['talks', null, null]);
+  assert.deepEqual(k('/socials'), ['socials', null, null]);
+  assert.deepEqual(U.classifyPath('/sgr/talk').parishSlugs, ['sgr'], '/sgr/talk is St George, with its talks');
+  assert.deepEqual(U.classifyPath('/smg/youth').parishSlugs, ['smg'], '/smg/youth is SMG, with its youth groups');
   assert.deepEqual(k('/'), [null, null, null]);
   assert.deepEqual(k('/talks/timetables'), [null, null, null], 'the timetable wins');
   for (const old of ['/worship', '/services-liturgy', '/studies']) {
@@ -142,7 +149,7 @@ test('the kind filter: Services and its three, Talks and Bible studies, Socials 
   assert.equal(U.kindSegment('services', 'liturgy'), 'liturgy', 'a sub-kind is its own word');
   assert.equal(U.kindSegment('services', 'feast'), 'feast');
   assert.equal(U.kindSegment('talks', 'bible-study'), 'bible-study');
-  for (const p of ['/talks', '/social-youth', '/this-week']) assert.equal(U.pageKind(U.classifyPath(p)), null, `${p} is the app's`);
+  for (const p of ['/talks', '/youth', '/social-youth', '/this-week']) assert.equal(U.pageKind(U.classifyPath(p)), null, `${p} is the app's`);
 });
 
 test('a language filter is any language: English keeps its spellings, the rest are /in-<language>', () => {

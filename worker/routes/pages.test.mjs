@@ -72,7 +72,7 @@ const card = (html) => {
 };
 const between = (html, from, to) => html.slice(html.indexOf(from), to ? html.indexOf(to, html.indexOf(from)) : undefined);
 const timesOf = (html) => between(card(html), '<div class="p-times">', '<div class="p-details">');
-const comingUp = (html) => between(card(html), '<section class="cu-band">');
+const comingUp = (html) => between(card(html), '<section class="cu-band"');
 // A Saturday 6pm Vespers beside the seed's Sunday 10am Liturgy: one evening rule, one morning.
 const VESPERS = `INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
                  VALUES (?, 6, '18:00', 'Vespers', 'prayer')`;
@@ -147,6 +147,9 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
     'Google Maps, at the place, never directions to it');
   assert.doesNotMatch(c, /maps\/dir\//);
   assert.match(c, /<a class="sum sum-link" href="\/antiochian"><small>Jurisdiction<\/small>/, 'the jurisdiction opens its collection');
+  assert.match(c, /<div class="summary">[\s\S]*?<\/div>\s*<section class="today card ptoday" aria-label="Today" style="--pc:[^"]+">\s*<header class="card-head"><div><h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<div class="tempty">Nothing more today\.<\/div>\s*<a class="see-all" href="#coming-up">Coming up/,
+    'Today, above the timetable, going on to Coming up');
+  assert.match(c, /<\/section>\s*<h2 class="sec">Timetable<\/h2>\s*<div class="p-times">/, 'the timetable, by that name: it holds every kind');
   assert.match(timesOf(html), /<span class="tt-days">Sun<\/span>\s*<span class="t-time">10<span class="t-mer">am<\/span><\/span>[\s\S]*<span class="tt-title">Sunday Divine Liturgy/);
   assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><a class="erow" href="\/\d+:2026-10-04">/,
     'the next fortnight, day by day, each date its own link');
@@ -198,7 +201,7 @@ test('a relative date settles on its day, starts the card there, and stays out o
   assert.equal(robots(html), 'noindex,follow');
   assert.match(title(html), /^Sunday Divine Liturgy — Sunday 4 October, 10am/);
   const cu = comingUp(html);
-  assert.match(cu, /^<section class="cu-band">[\s\S]*?<h3 class="dh sun"><span>Sunday 4 Oct<\/span>/, 'from that day');
+  assert.match(cu, /^<section class="cu-band"[^>]*>[\s\S]*?<h3 class="dh sun"><span>Sunday 4 Oct<\/span>/, 'from that day');
 });
 
 test('a service link previews its next occurrence', async () => {
@@ -261,7 +264,7 @@ test('an event link — projected or stored — is its card, never indexed', asy
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
 });
 
-test('a parish\'s stream, its Donate and its own links are buttons on its card, and a date\'s card has the stream unless it hides it', async () => {
+test('a parish\'s stream and its Donate are buttons on its card, its own links smaller above its details, and a date\'s card has the stream unless it hides it', async () => {
   const { raw, get } = fresh();
   raw.prepare("UPDATE parishes SET live_url = 'https://youtube.com/@sgr', donation_url = 'https://give.example/sgr' WHERE id = ?").run(PARISH);
   raw.prepare("INSERT INTO parish_links (parish_id, slug, label, url) VALUES (?, 'fund', 'Building fund', 'https://give.example/fund')").run(PARISH);
@@ -269,8 +272,11 @@ test('a parish\'s stream, its Donate and its own links are buttons on its card, 
   const acts = between(c, '<div class="actions">', '<div class="summary">');
   assert.match(acts, /<a class="abtn" href="https:\/\/youtube\.com\/@sgr" target="_blank" rel="noopener"><svg[^]*?<span>Watch live<\/span><\/a>/);
   assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/sgr" target="_blank" rel="noopener"><svg[^]*?<span>Donate<\/span><\/a>/);
-  assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/fund" target="_blank" rel="noopener"><svg[^]*?<span>Building fund<\/span><\/a>/);
-  assert.ok(acts.indexOf('Watch live') < acts.indexOf('Donate') && acts.indexOf('Donate') < acts.indexOf('Building fund'));
+  assert.ok(acts.indexOf('Watch live') < acts.indexOf('Donate'));
+  assert.doesNotMatch(acts, /Building fund/, 'its own links are not among the big buttons');
+  assert.match(between(c, '<div class="p-times">', '<div class="p-details">'),
+    /<div class="p-links"><a class="lbtn" href="https:\/\/give\.example\/fund" target="_blank" rel="noopener"><svg[^]*?<span>Building fund<\/span><\/a><\/div>\s*$/,
+    'but small, just above its details');
 
   const sid = raw.prepare('SELECT id FROM schedules WHERE parish_id = ? LIMIT 1').get(PARISH).id;
   assert.match(card((await get(`/${sid}:2026-10-04`)).html), /<span>Watch live<\/span>/);
@@ -534,7 +540,7 @@ test('several parishes by name are their maker\'s list: named in the title, noin
 });
 
 test('a collection is indexed, under its own name, with its own preview and its card', async () => {
-  const { get } = fresh();
+  const { raw, get } = fresh();
   const en = (await get('/en')).html;
   assert.equal(robots(en), 'index,follow');
   assert.equal(canonical(en), 'https://orthodoxy.au/en');
@@ -551,6 +557,12 @@ test('a collection is indexed, under its own name, with its own preview and its 
 
   const sun = (await get('/liturgy/sunday')).html;
   assert.equal(canonical(sun), 'https://orthodoxy.au/sun/liturgy', 'however the link spells it');
+  raw.prepare(VESPERS).run(PARISH);
+  const times = (h) => between(card(h), '<a class="citem-head" href="/sgr">', '</article>');
+  const sunTimes = times((await get('/sun/liturgy')).html);
+  assert.match(sunTimes, /Sunday Divine Liturgy/);
+  assert.doesNotMatch(sunTimes, /Vespers/, "a collection's timetables are the lines that answer it");
+  assert.match(times((await get('/antiochian')).html), /Sunday Divine Liturgy[\s\S]*Vespers/, 'and a jurisdiction asks nothing of them');
   assert.equal(robots(sun), 'index,follow');
   assert.equal(meta(sun, 'property', 'og:image'), 'https://orthodoxy.au/og/c-sunday.jpg');
 

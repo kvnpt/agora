@@ -411,16 +411,25 @@
     if (loc && !ps.some(p => window.AgoraLocations.locationMatchesParish(loc, p))) return false;
     if (f.monasteries && !ps.some(p => window.AgoraTimetable.isMonastery(p))) return false;
     if (f.parishIds && !pids.some(id => f.parishIds.has(id))) return false;
-    if (!whatMatches(e, f, false)) return false;
-    if (f.lang) {
-      const own = parseLangs(e.languages);
-      const ls = own || parseLangs(e.parish_languages) || [];
-      const ok = f.langStrict ? onlyIn(own, f.lang)
-        : f.lang === 'English' ? (ls.includes('English') && (own || ls[0] === 'English'))
-        : ls.some(l => langIs(l, f.lang));
-      if (!ok) return false;
-    }
-    return true;
+    return rowAnswers(e, f, false);
+  }
+  /** Do a row's languages, its own or else its parish's, answer the language asked? */
+  function langAnswers(own, parishLs, f) {
+    if (!f.lang) return true;
+    const ls = own || parishLs || [];
+    return f.langStrict ? onlyIn(own, f.lang)
+      : f.lang === 'English' ? (ls.includes('English') && (own || ls[0] === 'English'))
+      : ls.some(l => langIs(l, f.lang));
+  }
+  /**
+   * Does a rule or an event answer what the filters ask of it: its kind,
+   * service, day, part of the day and language? A collection's timetables
+   * keep the lines that do, and a parish's card lights them (its focus).
+   */
+  function rowAnswers(row, f, isRule) {
+    if (!whatMatches(row, f, isRule)) return false;
+    const p = isRule && S.byId.get(row.parish_id);
+    return langAnswers(parseLangs(row.languages), parseLangs(isRule ? p && p.languages : row.parish_languages), f);
   }
   function inViewEvent(e) {
     if (!S.bounds) return true;
@@ -448,11 +457,16 @@
       || S.parishes.find(p => p.id.toLowerCase() === k) || null;
   }
   /** The path segments for a set of filters, or for one parish or one event. */
-  function segsFor({ juris = null, f = blankFilters(), parish = null, eventId = null, from = null } = {}) {
-    // A date is where a list of days starts, never one day (/sgr/2026-10-25).
-    if (parish) return from ? [acronymOf(parish), from] : [acronymOf(parish)];
-    if (eventId) return [String(eventId)];
+  function segsFor({ juris = null, f = blankFilters(), parish = null, focus = null, eventId = null, from = null } = {}) {
     const U = window.AgoraUrlState, SV = window.AgoraServices;
+    // A date is where a list of days starts, never one day (/sgr/2026-10-25).
+    // What a card lights is the link's too (/sgr/talk, /sgr/wed/liturgy).
+    if (parish) {
+      const x = focus || {};
+      return [acronymOf(parish), x.day != null ? SV.daySegment(x.day) : null, x.dayGroup, x.part, x.service,
+        x.kind ? U.kindSegment(x.kind, x.kindSub) : null, from, U.englishSegment(x)].filter(Boolean);
+    }
+    if (eventId) return [String(eventId)];
     const segs = [];
     if (juris) segs.push(U.jurisdictionSegment(juris));
     if (f.location) segs.push(f.location);
@@ -479,8 +493,6 @@
   function readPath(pathname) {
     const r = window.AgoraUrlState.classifyPath(pathname, { today: todayKey() });
     const f = blankFilters();
-    if (r.kind) { f.kind = r.kind; f.kindSub = r.kindSub || null; }
-    if (r.lang) { f.lang = r.lang; f.langStrict = !!r.langStrict; }
     if (r.location) f.location = r.location;
     if (r.monasteries) f.monasteries = true;
     const named = (r.parishSlugs || []).map(parishBySlug).filter(Boolean);
@@ -489,10 +501,12 @@
       f.parishIds = new Set(named.map(p => p.id));
       f.listId = listMatching(f.parishIds);
     }
-    // A day, a part of the day or a service beside one parish is that card's,
-    // as at /. Across the page, /liturgy is the kind filter with Liturgy
-    // chosen, and /vespers a service of its own.
+    // A kind, a service, a day, a part of the day or a language beside one
+    // parish is that card's (focusOf). Across the page, /liturgy is the kind
+    // filter with Liturgy chosen, and /vespers a service of its own.
     if (!parish) {
+      if (r.kind) { f.kind = r.kind; f.kindSub = r.kindSub || null; }
+      if (r.lang) { f.lang = r.lang; f.langStrict = !!r.langStrict; }
       const asKind = r.service && window.AgoraUrlState.kindOfService(r.service);
       if (asKind && !r.kind) [f.kind, f.kindSub] = asKind;
       else if (r.service) f.service = r.service;
@@ -508,7 +522,27 @@
     // One jurisdiction's donations; a link to several is everybody's.
     const one = typeof r.jurisdiction === 'string' ? r.jurisdiction : null;
     if (r.donate) return { juris: one, f, parish: null, eventId: null, from: null, donate: (parish && parish.jurisdiction) || one || 'all' };
-    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, eventId: r.eventId || null, from };
+    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, focus: parish ? focusOf(r) : null, eventId: r.eventId || null, from };
+  }
+  /**
+   * What a link asks of one parish, as filters: /sgr/talk, /sgr/wed/liturgy,
+   * /sgr/evening, /sgr/en. Its card lights what answers and dims the rest,
+   * hiding nothing; null when the link asks nothing of it.
+   */
+  function focusOf(r) {
+    const x = { ...blankFilters(), kind: r.kind || null, kindSub: r.kindSub || null, service: r.service || null,
+      day: r.day == null ? null : r.day, dayGroup: r.dayGroup || null, part: r.part || null, lang: r.lang || null, langStrict: !!r.langStrict };
+    return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang ? x : null;
+  }
+  /**
+   * The focus a card opened by a tap takes from where it was: the collection
+   * it was in (Sunday Liturgy, the services in view), else the page's filters
+   * (/talks, /wed/evening). Every parish card answers every filter one way,
+   * however it was reached: /talks, then St George, is /sgr/talks.
+   */
+  function focusAround() {
+    const top = stack[stack.length - 1];
+    return focusOf((top && top._coll && top._coll.f) || S.f || {});
   }
 
   // The history. Every card is one entry; a filter changed with no card open
@@ -597,7 +631,7 @@
     if (S.from) ensureLoaded(addDays(S.from, S.streamDays)).then(() => renderStream());
     if (route.f.location) frameRegion(route.f.location, animate);
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
-    if (route.parish) openParish(route.parish, { entry, from: route.from });
+    if (route.parish) openParish(route.parish, { entry, from: route.from, focus: route.focus });
     else if (route.eventId) return openEvent(route.eventId, { entry });
     else if (route.donate) openDonate(route.donate === 'all' ? null : route.donate, { entry });
   }
@@ -717,6 +751,7 @@
 
   const I = {
     x: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    up: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
     share: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     pencil: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
@@ -1038,7 +1073,7 @@
 
   // ── Today ─────────────────────────────────────────────────────────────
 
-  function eventRow(e, { showDay = false, now = false, here = null } = {}) {
+  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
@@ -1047,7 +1082,9 @@
     const sub = here && e.parish_id === here ? ''
       : `<span class="esub">${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
     const tomb = tombOf(e);
-    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}" type="button" data-event="${esc(e.id)}">
+    // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
+    const dim = focus && !rowAnswers(e, focus, false);
+    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}">
         <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
@@ -1064,27 +1101,41 @@
   /**
    * Today, from the rows given: on now, later today, and once the day is
    * done, tomorrow. The page's box is what is in view; a collection's card
-   * has one of its own, of its parishes (openCollection). Its button goes
-   * on to the days after, in the Events feed or the card's Coming up.
+   * has one of its own, of its parishes (openCollection), and a parish's
+   * card its own (parishTodayHTML). Its button goes on to the days after, in
+   * the Events feed or the card's Coming up.
+   *
+   * At a parish, `here` is it. A `focus` dims what does not answer it, and
+   * `next` is the next that does, lit where it already is and under its own
+   * day where it is not; 'none' when there is none. `clear` names the focus
+   * on the button that lets it go.
    */
-  function todayHTML(all, { where = '' } = {}) {
+  function todayHTML(all, { where = '', here = null, focus = null, next = null, clear = '' } = {}) {
     const now = Date.now();
     const t = todayKey();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
     const later = all.filter(e => Date.parse(e.start_utc) > now && local(e).date === t);
     const tomorrow = all.filter(e => local(e).date === addDays(t, 1));
+    const seen = [];
+    const rows = (es, o = {}) => es.map(e => { seen.push(e.id); return eventRow(e, { ...o, here, focus, lit: !!next && next.id === e.id }); }).join('');
     let body = '';
-    if (live.length) body += `<div class="tsub">Happening now</div>${live.slice(0, 4).map(e => eventRow(e, { now: true })).join('')}`;
-    if (later.length) body += `<div class="tsub">Later today</div>${later.slice(0, live.length ? 3 : 5).map(e => eventRow(e)).join('')}`;
+    if (live.length) body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), { now: true })}`;
+    if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, live.length ? 3 : 5))}`;
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
     if (!live.length && !later.length) {
       body += `<div class="tempty">Nothing more today${esc(where)}.</div>`;
-      if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${tomorrow.slice(0, 4).map(e => eventRow(e)).join('')}`;
+      if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${rows(tomorrow.slice(0, 4))}`;
+    }
+    // The next that answers the focus, by its day, where the rows above do not have it.
+    if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
+    else if (next && !seen.includes(next.id)) {
+      const k = local(next).date;
+      body += `<div class="tsub tnext">Next · ${esc(k === addDays(t, 1) ? 'Tomorrow' : dayLabel(k, true))}</div>${eventRow(next, { here, lit: true })}`;
     }
     const d = new Date(t + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
-    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div></header>
+    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}</header>
       ${body}
       <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</button>`;
   }
@@ -1402,7 +1453,13 @@
       requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
     }
     const scroller = el.querySelector('.sheet-scroll');
-    if (scroller) scroller.addEventListener('scroll', () => el.classList.toggle('scrolled', scroller.scrollTop > 40), { passive: true });
+    // A card or a collection scrolled a screen down has its way back up, by the toolbar.
+    const tall = scroller && /\b(parish|collection|event)\b/.test(cls);
+    if (tall) el.insertAdjacentHTML('beforeend', `<button class="totop" type="button" data-act="totop" aria-label="Back to top" tabindex="-1">${I.up}</button>`);
+    if (scroller) scroller.addEventListener('scroll', () => {
+      el.classList.toggle('scrolled', scroller.scrollTop > 40);
+      if (tall) el.classList.toggle('deep', scroller.scrollTop > scroller.clientHeight);
+    }, { passive: true });
     swipeToClose(el);
     if (entry) syncURL({ push: true, step: true });
     else writeURL();
@@ -1528,16 +1585,25 @@
   /** A parish's colour where it marks the parish: its jurisdiction's, lifted in the dark. */
   const parishColor = (p) => shown(jColor(p ? p.jurisdiction : null));
 
-  /** `edit`: whoever may change the timetable gets a pencil on each line. */
-  function timetable(pid, { compact = false, edit = false } = {}) {
+  /**
+   * A parish's week. `edit`: whoever may change the timetable gets a pencil
+   * on each line. `only` keeps the lines that answer those filters, as a
+   * collection's card has them (/services is its services); `focus` dims the
+   * ones that do not, as a parish's own card has them (/sgr/talk).
+   */
+  function timetable(pid, { compact = false, edit = false, only = null, focus = null } = {}) {
     // One week, as the app's timetable reads: the morning's services, then
     // the evening's under the moon, each from Sunday; the roundels say which kind.
-    const ls = TL.linesOf(rulesOf(pid).filter(liveRule), { today: todayKey(), offOf: ruleBreak });
+    const rules = rulesOf(pid).filter(r => liveRule(r) && (!only || rowAnswers(r, only, true)));
+    if (!rules.length) return '';
+    const byId = new Map(rules.map(r => [r.id, r]));
+    const ls = TL.linesOf(rules, { today: todayKey(), offOf: ruleBreak });
     const eve = ls.findIndex(l => l.evening);
     const line = (l) => {
       const { q, range, off } = l;
       const langs = !compact && parseLangs(l.r.languages);
-      return `<div class="tt-line">
+      const dim = focus && !l.ids.some(id => rowAnswers(byId.get(id), focus, true));
+      return `<div class="tt-line${dim ? ' dim' : ''}">
           <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
           <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
@@ -1670,12 +1736,12 @@
   // Coming up: this parish's days, from today or from a date picked, a
   // fortnight at a time. The date is in the card's link.
   const CU_DAYS = 14;
-  function comingUpHTML(pid, from, days) {
+  function comingUpHTML(pid, from, days, focus = null) {
     const p = S.byId.get(pid);
     const start = from || todayKey();
     const now = Date.now();
     const list = feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
-    const body = daysHTML(list, { start, days, row: { here: pid }, linkFor: (k) => pathOf(segsFor({ parish: p, from: k })) });
+    const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
@@ -1684,22 +1750,22 @@
     const box = el.querySelector('.cu');
     if (!box) return;
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
-    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days) : comingUpHTML(el.dataset.pid, el._from, el._days);
+    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
   function setCardDate(el, k) {
     el._from = k && k > todayKey() ? k : null;
     el._days = CU_DAYS;
-    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), from: el._from });
+    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     syncURL();
     refreshComingUp(el);
   }
 
-  function timesHTML(p) {
+  function timesHTML(p, focus = null) {
     const hasTimes = rulesOf(p.id).some(liveRule);
-    return `${hasTimes ? timetable(p.id, { edit: may('schedule.edit', p.id) }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
+    return `${hasTimes ? timetable(p.id, { edit: may('schedule.edit', p.id), focus }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
       ${timesSource(p.id)}
       ${addBox(SUGGEST.service, 'Add a service time')}`;
   }
@@ -1746,8 +1812,8 @@
   const parishLinks = (pid) => ((window.agoraBundle.raw && window.agoraBundle.raw.parish_links) || []).filter(l => l.parish_id === pid && l.url);
   /**
    * Google Maps, then whatever the parish has: a phone, a website, a live
-   * stream, a way to donate, and links of its own. More than fit scroll
-   * sideways, as Maps' do.
+   * stream, a way to donate. More than fit scroll sideways, as Maps' do. Its
+   * own links are smaller, above its details (linksHTML).
    */
   function actionsHTML(p) {
     const gmaps = mapsHref(p);
@@ -1756,8 +1822,11 @@
       ${p.phone ? `<a class="abtn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${I.phone}<span>Call</span></a>` : ''}
       ${p.website ? out(p.website, I.globe, 'Website') : ''}
       ${p.live_url ? out(p.live_url, I.live, 'Watch live') : ''}
-      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}
-      ${parishLinks(p.id).map(l => out(l.url, I.link, l.label || l.slug)).join('')}`;
+      ${p.donation_url ? out(p.donation_url, I.heart, 'Donate') : ''}`;
+  }
+  /** A parish's own links (a festival, a youth group's Instagram), as small buttons, or ''. */
+  function linksHTML(p) {
+    return parishLinks(p.id).map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('');
   }
   /**
    * An open card again, from the bundle as it now is, where it was scrolled
@@ -1776,37 +1845,97 @@
     if (top) top.innerHTML = parishTopHTML(p);
     const acts = el.querySelector('.actions');
     if (acts) acts.innerHTML = actionsHTML(p);
-    el._segs = segsFor({ parish: p, from: el._from });
+    const own = el.querySelector('.p-links');
+    if (own) { own.innerHTML = linksHTML(p); own.hidden = !own.innerHTML; }
+    el._segs = segsFor({ parish: p, focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     el.style.setProperty('--j', jColor(p.jurisdiction));
     const sum = el.querySelector('.summary');
     if (sum) sum.innerHTML = summaryHTML(p);
+    paintParishToday(el);
     const times = el.querySelector('.p-times'), details = el.querySelector('.p-details');
-    if (times) times.innerHTML = timesHTML(p);
+    if (times) times.innerHTML = timesHTML(p, el._focus);
     if (details) details.innerHTML = detailsHTML(p);
     const sug = el.querySelector('.p-suggest');
     if (sug) sug.innerHTML = suggestEditHTML(p.id);
     refreshComingUp(el);
   }
 
-  function openParish(pid, { entry = true, from = null } = {}) {
+  /**
+   * A parish's Today, above its timetable: what is on there now and later,
+   * as the page's. With a focus (/sgr/talk) it lights the next that answers
+   * it, under that day's name when it is not today, and dims the rest.
+   */
+  function parishTodayHTML(pid, focus, next) {
+    const all = feedFor(2).filter(e => eventParishIds(e).includes(pid) && visible(e));
+    return todayHTML(all, { here: pid, focus, next, clear: focus ? focusLabel(focus) : '' });
+  }
+  /** The next event at a parish that answers its card's focus, a season ahead at most. */
+  async function nextLit(pid, focus) {
+    const now = Date.now();
+    const find = (days) => feedRange(todayKey(), days).find(e => Date.parse(e.start_utc) > now && eventParishIds(e).includes(pid) && visible(e) && rowAnswers(e, focus, false)) || null;
+    const near = find(CU_DAYS);
+    if (near) return near;
+    try { await ensureLoaded(addDays(todayKey(), 120)); } catch (err) { console.warn(err); }
+    return find(120);
+  }
+  /** A card's Today again: its focus's next, which may be further out than the bundle had. */
+  function paintParishToday(el) {
+    const box = el.querySelector('.ptoday');
+    if (!box) return;
+    const pid = el.dataset.pid, focus = el._focus;
+    box.innerHTML = parishTodayHTML(pid, focus, null);
+    if (!focus) return;
+    const ask = el._todayAsk = {};
+    nextLit(pid, focus).then(next => {
+      if (el._todayAsk !== ask || !el.isConnected) return;
+      box.innerHTML = parishTodayHTML(pid, focus, next || 'none');
+    });
+  }
+  /** "Talks", "Liturgies on Wednesdays", "Evening services in English": what a focus asks. */
+  function focusLabel(x) {
+    const SV = window.AgoraServices;
+    const sub = { youth: 'Youth groups', social: 'Social gatherings', 'bible-study': 'Bible studies' };
+    // A sub-kind that is a service too (/sun/liturgy's Liturgy) is said as one: "Liturgies".
+    const noun = (x.service && SV.servicePlural(x.service))
+      || (x.kindSub ? sub[x.kindSub] || (SV.resolveService(x.kindSub) ? SV.servicePlural(x.kindSub) : `${kindLabel(x.kindSub)} services`) : null)
+      || KIND_NAMES[x.kind] || 'Services';
+    const text = (x.part ? `${x.part} ${noun.toLowerCase()}` : noun) + window.AgoraLinkWords.daysPhrase(x)
+      + (x.lang ? (x.langStrict ? ` in ${x.lang} only` : ` in ${x.lang}`) : '');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  /** Light everything at a card again: /sgr/talk becomes /sgr. */
+  function unfocusCard(el) {
+    el._focus = null;
+    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), from: el._from });
+    const link = el.querySelector('.sheet-link');
+    if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
+    syncURL();
+    repaintParish(el);
+  }
+
+  function openParish(pid, { entry = true, from = null, focus } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
-    const segs = segsFor({ parish: p, from });
+    // A link says its own (/sgr/talk, or none at /sgr); a tap takes where it was.
+    if (focus === undefined) focus = focusAround();
+    const segs = segsFor({ parish: p, focus, from });
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
       <div class="sheet-scroll">
         <div class="ph">${parishTopHTML(p)}</div>
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">${actionsHTML(p)}</div>
         <div class="summary">${summaryHTML(p)}</div>
-        <h2 class="sec">Service times</h2>
-        <div class="p-times">${timesHTML(p)}</div>
+        <section class="today card ptoday" aria-label="Today" style="--pc:${parishColor(p)}"></section>
+        <h2 class="sec">Timetable</h2>
+        <div class="p-times">${timesHTML(p, focus)}</div>
+        <div class="p-links"${linksHTML(p) ? '' : ' hidden'}>${linksHTML(p)}</div>
         <div class="p-details">${detailsHTML(p)}</div>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
           <h2 class="sec">Coming up</h2>
-          <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS)}</div>
+          <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
         <div class="p-suggest">${suggestEditHTML(pid)}</div>
@@ -1820,7 +1949,9 @@
     const el = pushSheet(html, 'parish', { segs, entry });
     el.dataset.pid = pid;
     el._from = from;
+    el._focus = focus;
     el._days = CU_DAYS;
+    paintParishToday(el);
     // A date further out than the bundle holds fills in once it has it.
     if (from) refreshComingUp(el);
     el.style.setProperty('--j', jColor(p.jurisdiction));
@@ -1862,10 +1993,15 @@
     const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
       .sort((a, b) => (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule)) || (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
     const LIMIT = 30;
+    // What the collection asks of a parish's services (/services, /sun/liturgy,
+    // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
+    const cf = { ...blankFilters(), ...(c.f || {}) };
+    const only = asksWhat(cf) || cf.lang ? cf : null;
     const item = (p) => {
       const d = distOf(p);
-      const nx = nextOf(p.id, e => !c.kind || groupOf(e.event_type) === groupOf(c.kind)) || nextOf(p.id);
+      const nx = only ? nextOf(p.id, e => rowAnswers(e, only, false)) : nextOf(p.id);
       const times = rulesOf(p.id).some(liveRule);
+      const tt = times ? timetable(p.id, { compact: true, only }) : '';
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
@@ -1873,7 +2009,7 @@
               ${nx ? `<span class="citem-next">${roundel(nx.event_type)} Next: ${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : ''}</span>
           </button>
           <button class="cadd" type="button" data-quickadd="${esc(p.id)}" aria-label="Add to a list">${I.plus}</button>
-          ${times ? timetable(p.id, { compact: true }) : `<div class="tt-none sm">No service times on file yet.</div>`}
+          ${tt || `<div class="tt-none sm">${times ? 'Not on its timetable.' : 'No service times on file yet.'}</div>`}
         </article>`;
     };
     const html = `${glassBar(c.title, `${ps.length} places`)}
@@ -2700,6 +2836,12 @@
     if ((b = t.closest('[data-act]'))) {
       const a = b.dataset.act;
       if (a === 'close') return popSheet();
+      if (a === 'totop' && top) {
+        const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        top.querySelector('.sheet-scroll').scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+        return;
+      }
+      if (a === 'unfocus' && top) return unfocusCard(top);
       if (a === 'search-coll' && searchState) {
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, tint: '#475569', ids: searchState.ps.map(p => p.id) });
