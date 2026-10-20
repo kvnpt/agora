@@ -1814,7 +1814,7 @@
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View More</button>` : ''}`;
   }
   async function refreshComingUp(el) {
     const box = el.querySelector('.cu');
@@ -2103,7 +2103,7 @@
     const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
     const body = daysHTML(list, { start, days, linkFor });
     return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View More</button>` : ''}`;
   }
   const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
 
