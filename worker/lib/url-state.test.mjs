@@ -160,7 +160,10 @@ test('a language filter is any language: English keeps its spellings, the rest a
   assert.deepEqual(l('/in-church-slavonic-only'), ['Church Slavonic', true, false]);
   assert.equal(U.englishSegment({ lang: 'English' }), 'en');
   assert.equal(U.englishSegment({ lang: 'English', langStrict: true }), 'en-only');
-  assert.equal(U.englishSegment({ lang: 'Church Slavonic', langStrict: true }), 'in-church-slavonic-only');
+  assert.equal(U.englishSegment({ lang: 'Church Slavonic', langStrict: true }), 'in-slavonic-only');
+  // Slavonic and Russian are Church Slavonic (languages.js), so the old links land there.
+  assert.deepEqual(l('/in-slavonic'), ['Church Slavonic', false, false]);
+  assert.deepEqual(l('/in-russian'), ['Church Slavonic', false, false]);
   assert.equal(U.englishSegment({ englishOnly: true, englishStrict: false }), 'en', 'the older names still mean English');
   assert.equal(U.englishSegment({}), null);
   assert.equal(U.pageKind(U.classifyPath('/sgr/in-greek')), null, 'a language beside a parish is the app\'s');

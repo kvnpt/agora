@@ -18,6 +18,7 @@
 (function (root) {
   const isCjs = typeof module === 'object' && !!module.exports;
   const types = isCjs ? require('./event-types.js') : (root && root.AgoraEventTypes);
+  const languages = isCjs ? require('./languages.js') : (root && root.AgoraLanguages);
 
   /** The source line a rule or a parish read off a sign shows. */
   const SIGN_SOURCE = 'Church signage';
@@ -71,8 +72,10 @@
       if (s.effective_from && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_from))) return bad('Write the start date like 2026-11-03.');
       if (s.effective_to && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_to))) return bad('Write the last date like 2026-12-24.');
       if (s.effective_from && s.effective_to && s.effective_to < s.effective_from) return bad('It ends before it starts.');
-      const langs = Array.isArray(s.languages)
-        ? [...new Set(s.languages.map(l => String(l).trim().slice(0, 40)).filter(Boolean))].slice(0, 6) : [];
+      // Keeps to the fixed list (languages.js), where /admin has it loaded.
+      const langs = !Array.isArray(s.languages) ? []
+        : languages ? languages.names(s.languages)
+          : [...new Set(s.languages.map(l => String(l).trim().slice(0, 40)).filter(Boolean))].slice(0, 6);
       const notes = (Array.isArray(s.read_notes) ? s.read_notes : [])
         .filter(n => n && typeof n.text === 'string')
         .map(n => ({ field: String(n.field || '').slice(0, 30), text: n.text.slice(0, 300) })).slice(0, 6);

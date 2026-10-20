@@ -11,6 +11,7 @@
 // public/shared/tz.mjs); nothing in this file needs a zone.
 
 import eventTypes from '../../public/shared/event-types.js';
+import langList from '../../public/shared/languages.js';
 import checks from '../../public/shared/event-checks.js';
 import { isOwnVenue, matchParish } from './parish-match.mjs';
 import { isValidOccurrence } from '../../public/shared/project.mjs';
@@ -169,7 +170,7 @@ export function validateCard(body) {
       const list = [...new Set(v.map(x => String(x).trim()).filter(Boolean))];
       if (f === 'replaces' && !list.every(isReplaceId)) return bad(f, 'That is not something an event can replace.');
       if (list.length > 400) return bad(f, 'That list is too long.');
-      patch[f] = list.length ? JSON.stringify(f === 'languages' ? list.map(l => l.slice(0, 40)) : list) : null;
+      patch[f] = f === 'languages' ? langList.clean(list) : (list.length ? JSON.stringify(list) : null);
       continue;
     }
     if (v != null && typeof v !== 'string') return bad(f, `${f} must be text.`);
@@ -336,7 +337,7 @@ const isEmpty = (v) => v == null || v === '' || v === '[]';
 /** A read event's value in the column's shape. */
 function readColumn(f, v) {
   if (v == null) return null;
-  if (f === 'languages') return Array.isArray(v) && v.length ? JSON.stringify(v) : null;
+  if (f === 'languages') return Array.isArray(v) ? langList.clean(v) : null;
   return v;
 }
 

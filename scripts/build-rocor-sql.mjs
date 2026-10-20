@@ -20,11 +20,12 @@ import { reconcile, buildUpsert } from './parish-import.mjs';
 const DIRECTORY = 'https://rocor.org.au/2-directories/directory/';
 const LIVE = 'https://agora.orthodoxy.au/api/parishes';
 
-// ROCOR serves in Church Slavonic and Russian alongside English. The directory
+// ROCOR serves in Church Slavonic alongside English (public/shared/
+// languages.js has no Russian: it reads as Church Slavonic). The directory
 // does not publish languages, so this is the jurisdiction's answer rather than
 // each parish's; `languages` is excluded from the upsert's refreshable columns
 // precisely so a person can correct one and no later scrape will undo it.
-const LANGUAGES = '["Russian", "English"]';
+const LANGUAGES = '["Church Slavonic", "English"]';
 
 // What to CALL each source, because `info_source_ref` is a URL and a URL is not
 // a name — a hundred characters of orthodox-world.org path answers "where did

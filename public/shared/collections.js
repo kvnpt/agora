@@ -24,6 +24,7 @@
 (function (root) {
   const isCjs = typeof module === 'object' && !!module.exports;
   const urlState = isCjs ? require('./url-state.js') : (root && root.AgoraUrlState);
+  const languages = isCjs ? require('./languages.js') : (root && root.AgoraLanguages);
 
   const CURATED = [
     { id: 'english', path: '/en', title: 'English services', kicker: 'Language',
@@ -42,12 +43,8 @@
       blurb: 'Monasteries, convents and sketes, with their service times.' },
   ].map(c => ({ ...c, group: 'curated', image: `/og/c-${c.id}.jpg` }));
 
-  // The languages a parish prays in besides English, by how many parishes do.
-  // 'Slavonic' finds Church Slavonic (timetable.langIs reads both ways round).
-  const LANGUAGES = [
-    ['greek', 'Greek'], ['arabic', 'Arabic'], ['serbian', 'Serbian'], ['slavonic', 'Church Slavonic', 'Slavonic'],
-    ['romanian', 'Romanian'], ['macedonian', 'Macedonian'],
-  ].map(([key, title, lang = title]) => ({
+  // The languages a parish prays in besides English: languages.js's list.
+  const LANGUAGES = languages.LANGUAGES.filter(l => l.name !== 'English').map(({ slug: key, name: title, name: lang }) => ({
     id: `lang-${key}`, group: 'language', lang, path: `/in-${key}`, title, kicker: 'Language',
     blurb: `Parishes with services in ${title}.`, image: `/og/c-lang-${key}.jpg`,
   }));
@@ -80,11 +77,7 @@
     monasteries: { tint: '#57534e', glyph: '☦' },
   };
   // A language's: its first letters in its own script, and a colour.
-  const LANGUAGE_LOOK = {
-    English: ['En', '#1d4ed8'],
-    Greek: ['Ελ', '#0061fe'], Arabic: ['عر', '#7c3bc1'], Serbian: ['Ср', '#cc2234'], Slavonic: ['Сл', '#d38301'],
-    Romanian: ['Ro', '#4e7a27'], Macedonian: ['Мк', '#b92d5d'],
-  };
+  const LANGUAGE_LOOK = Object.fromEntries(languages.LANGUAGES.map(l => [l.name, [l.glyph, l.tint]]));
   /** A colour lighter (amt > 0) or darker (amt < 0), as a fraction of the way. */
   function shade(hex, amt) {
     const n = parseInt(String(hex).slice(1), 16);

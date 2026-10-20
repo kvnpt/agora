@@ -31,6 +31,7 @@
 import { Buffer } from 'node:buffer';
 import { createJsonScanner } from './json-stream.mjs';
 import sse from '../../public/shared/sse.js';
+import langList from '../../public/shared/languages.js';
 import eventTypes from '../../public/shared/event-types.js';
 import checks from '../../public/shared/event-checks.js';
 
@@ -121,7 +122,7 @@ export const POSTER_SCHEMA = {
           end_time: nullable({ type: 'string', description: '24-hour HH:MM, local time' }),
           end_date: { type: 'string', description: 'YYYY-MM-DD of the last day, for one event over several days; empty otherwise' },
           event_type: { type: 'string', enum: EVENT_TYPES },
-          languages: { type: 'array', items: { type: 'string' } },
+          languages: { type: 'array', items: { type: 'string', enum: langList.NAMES } },
           venue: nullable({ type: 'string' }),
           description: nullable({ type: 'string' }),
           notes: {
@@ -151,7 +152,7 @@ export const POSTER_SCHEMA = {
           start_time: { type: 'string', description: '24-hour HH:MM, local time' },
           end_time: { type: 'string', description: '24-hour HH:MM, local time; empty if none printed' },
           weeks: { type: 'array', items: { type: 'string', enum: WEEKS } },
-          languages: { type: 'array', items: { type: 'string' } },
+          languages: { type: 'array', items: { type: 'string', enum: langList.NAMES } },
           event_type: { type: 'string', enum: EVENT_TYPES },
           description: { type: 'string', description: 'From a poster, what someone deciding whether to come needs to know; empty for a sign' },
           starts: { type: 'string', description: 'YYYY-MM-DD it begins, only if the image says it starts on a date; empty otherwise' },
@@ -210,7 +211,7 @@ For each event:
 - start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note.
 - end_date: YYYY-MM-DD of the last day, only for one event that runs over several days; empty otherwise.
 - event_type: the closest kind from the list below.
-- languages: only languages the image says the event is held in, as English names ("Greek", "Arabic", "Church Slavonic"). Empty if it does not say; do not guess from the language the image is written in.
+- languages: only languages the image says the event is held in, from the list ("Greek", "Arabic", "Church Slavonic"; Russian is Church Slavonic). Empty if it does not say; do not guess from the language the image is written in.
 - venue: only when the event is somewhere other than the parish's own church, such as a hall, a park or another church. The name and address as printed. Not the parish's own address (it is given below), even when the image prints it.
 - description: one to three short sentences with what someone deciding whether to come needs to know: what it is, who is speaking, what to bring, the cost, how to RSVP. No exclamation marks, no emojis, nothing the image does not say. null if there is nothing beyond the title and feast.
 - notes: a short note for any field you were unsure of, naming that field. Usually empty.
@@ -220,7 +221,7 @@ For each regular service:
 - day: the weekday it is held on.
 - start_time, end_time: 24-hour HH:MM; end_time empty when none is printed ("8.00 - 10.00 am" is "08:00" to "10:00").
 - weeks: only when it is held on some weeks of the month and not others: "every 2nd and 4th Sunday" is ["second", "fourth"]. Empty for every week.
-- languages: languages the sign says it is held in, as English names. Empty if it does not say.
+- languages: languages the sign says it is held in, from the list (Russian is Church Slavonic). Empty if it does not say.
 - event_type: the closest kind from the list below.
 - description: from a poster, one to three short sentences with what someone deciding whether to come needs to know: who leads it, who it is for, what to bring, the cost, who to contact. No exclamation marks, no emojis, nothing the image does not say. Empty for a sign.
 - starts: YYYY-MM-DD, only when the image says it begins on a date ("starting 3 November", "from 18 February"); empty otherwise.
@@ -489,8 +490,7 @@ function normalizeService(v) {
   // "Sundays" with no time, or a time with no day, is not a rule anybody can add.
   if (day < 0 || !start) return null;
   const weeks = WEEKS.filter(w => Array.isArray(sv.weeks) && sv.weeks.includes(w));
-  const languages = (Array.isArray(sv.languages) ? sv.languages : [])
-    .map(l => clean(l, 40)).filter(Boolean).slice(0, 6);
+  const languages = langList.names(Array.isArray(sv.languages) ? sv.languages : []);
   const notes = (Array.isArray(sv.notes) ? sv.notes : [])
     .filter(n => n && typeof n.text === 'string' && n.text.trim())
     .map(n => ({ field: String(n.field || ''), text: n.text.trim().slice(0, 300) }));
@@ -562,8 +562,7 @@ function normalizeEvent(e) {
   // One event over several days: its last day, only after its first.
   const endDate = date && isLocalDate(ev.end_date) && ev.end_date > date ? ev.end_date : null;
 
-  const languages = (Array.isArray(ev.languages) ? ev.languages : [])
-    .map(l => clean(l, 40)).filter(Boolean).slice(0, 6);
+  const languages = langList.names(Array.isArray(ev.languages) ? ev.languages : []);
   return {
     title: unshout(clean(ev.title, 200)),
     feast: clean(ev.feast, 200),

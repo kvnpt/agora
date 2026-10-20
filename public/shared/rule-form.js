@@ -238,7 +238,7 @@
         <div><label>Ends</label>${time('end_time', rule.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
       </div>
       <div class="edit-row"><label>Runs</label>${cadenceHTML(rule, ctx)}</div>
-      <div class="edit-row"><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" placeholder="English, Arabic" autocomplete="off"></div>
+      <div class="edit-row"><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${field('description')} rows="2" placeholder="Shown on every date (optional)">${esc(rule.description || '')}</textarea></div>
       <div class="edit-row"><label>Where</label>
         <div class="vp-mount" data-venue-mount></div>

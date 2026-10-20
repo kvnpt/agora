@@ -27,6 +27,7 @@ import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import sourceLine from '../../public/shared/source-line.js';
 import lines from '../../public/shared/timetable-lines.js';
 import collections from '../../public/shared/collections.js';
+import languages from '../../public/shared/languages.js';
 import linkify from '../../public/shared/linkify.js';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 import { mapsHref } from './lite-page.mjs';
@@ -130,7 +131,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
     return `${i === eve ? EVENING : ''}<div class="tt-line">
         <span class="tt-days">${esc((l.q ? `${l.q} ` : '') + lines.dayList(l.days))}</span>
         ${timeHTML(l.r.start_time)}
-        <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${l.range ? `<span class="tt-range">${esc(l.range)}</span>` : ''}</span></span>
+        <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs.length ? `<span class="tt-lang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : ''}${l.range ? `<span class="tt-range">${esc(l.range)}</span>` : ''}</span></span>
       </div>`;
   });
   return `<div class="tt${compact ? ' compact' : ''}" style="--pc:${color}">${out.join('')}</div>`;
@@ -142,7 +143,7 @@ function eventRowHTML(e, here, now = false) {
   const tomb = TOMB[e.status] || null;
   // Its own languages first on the line under its name, then another parish's name.
   const langs = langsOf(e.languages);
-  const lang = langs.length ? `<span class="elang">${esc(langs.join(', '))}</span>` : '';
+  const lang = langs.length ? `<span class="elang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : '';
   const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">

@@ -230,7 +230,7 @@
   }
   function hasLang(p, lang) {
     if (lang === 'English') return speaksEnglish(p);
-    return parishLangs(p).some(l => l === lang || (lang === 'Slavonic' && /slavonic|russian/i.test(l)));
+    return parishLangs(p).some(l => l === lang || (lang === 'Church Slavonic' && /slavonic|russian/i.test(l)));
   }
 
   // ── Lists: collections first, filters second ──────────────────────────
@@ -362,7 +362,7 @@
     return true;
   }
   const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.dayGroup || f.part);
-  const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Slavonic' && /slavonic|russian/i.test(l));
+  const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Church Slavonic' && /slavonic|russian/i.test(l));
   /** English only, Greek only: a service in that language and no other. */
   const onlyIn = (langs, want) => !!langs && langs.length > 0 && langs.every(l => langIs(l, want));
   const regionOf = (f) => (f.location && window.AgoraLocations ? window.AgoraLocations.resolveLocation(f.location) : null);
@@ -1088,7 +1088,7 @@
     const title = e.feast ? `${e.title}` : e.title;
     // Its own languages, as its line in the timetable has them, first on the line under its name.
     const langs = parseLangs(e.languages);
-    const lang = langs && langs.length ? `<span class="elang">${esc(langs.join(', '))}</span>` : '';
+    const lang = langs && langs.length ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
     const sub = here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
       : `<span class="esub">${lang}${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
@@ -1677,7 +1677,7 @@
       return `<div class="tt-line${dim ? ' dim' : ''}">
           <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
-          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
+          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs && langs.length ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
           ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };
@@ -2580,7 +2580,7 @@
   };
   // Prayer services are asked for by name; these stay as text, and also mean "a service".
   const PRAYER_WORDS = ['vespers', 'vigil', 'matins', 'orthros', 'paraklesis', 'akathist', 'akatist', 'compline', 'confession', 'supplication', 'prayer', 'prayers'];
-  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Slavonic', slavonic: 'Slavonic', romanian: 'Romanian', macedonian: 'Macedonian' };
+  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Church Slavonic', slavonic: 'Church Slavonic', romanian: 'Romanian', macedonian: 'Macedonian' };
   const FILLER = new Set(['the', 'a', 'an', 'in', 'at', 'on', 'of', 'for', 'this', 'next', 'service', 'services', 'church', 'parish', 'parishes', 'orthodox', 'and', 'with', 'times', 'time', 'whats', 'what', 'is', 'near', 'me', 'nearby', 'around', 'week']);
 
   function parseQuery(q) {

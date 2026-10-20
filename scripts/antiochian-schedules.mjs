@@ -29,6 +29,8 @@
 // Friday. Compline Service" — and a rule invented for it would put a card on
 // the map at an hour nobody said. Those are reported and dropped.
 
+import langList from '../public/shared/languages.js';
+
 // Sunday = 0, matching schedules.day_of_week.
 const DAY_INDEX = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
@@ -66,13 +68,11 @@ export function parseTime(text) {
   return `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
-// Languages these parishes actually name. A whitelist, not a split on commas,
-// because the parenthesis after a title is not always a language list —
-// "Sisterhood of Saints Mary and Martha (Paraklesis Service)" names the service.
-const LANGUAGE = {
-  arabic: 'Arabic', english: 'English', greek: 'Greek', slavonic: 'Slavonic',
-  romanian: 'Romanian', serbian: 'Serbian', russian: 'Russian', french: 'French',
-};
+// Languages these parishes actually name: the fixed list (public/shared/
+// languages.js), not a split on commas, because the parenthesis after a title
+// is not always a language list — "Sisterhood of Saints Mary and Martha
+// (Paraklesis Service)" names the service. Slavonic and Russian are both
+// Church Slavonic there.
 
 /**
  * The languages a parenthesis names, or null if it does not name languages.
@@ -91,7 +91,7 @@ export function parseLanguages(inside, parishLanguages = null) {
   const out = [];
   for (const part of parts) {
     const word = part.replace(/^(mostly|mainly|primarily|some)\s+/i, '').trim().toLowerCase();
-    const hit = LANGUAGE[word];
+    const hit = langList.canonical(word);
     if (!hit) return null;          // not a language list at all
     if (!out.includes(hit)) out.push(hit);
   }
