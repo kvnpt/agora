@@ -737,7 +737,7 @@
     const raw = window.agoraBundle.raw;
     if (!raw) return [];
     const now = Date.now();
-    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid))
+    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || e.location_parish_id === pid || (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid))
       && endMs(e) >= now).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
 
@@ -1090,7 +1090,12 @@
     const langs = parseLangs(e.languages);
     const lang = langs && langs.length ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
-    const sub = here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
+    // Held in another parish's church, each card says the other's part: the
+    // venue's names its host, the host's names where it is.
+    const venue = e.location_parish_id && e.location_parish_id !== e.parish_id ? S.byId.get(e.location_parish_id) : null;
+    const sub = here && venue && here === venue.id ? `<span class="esub">${lang}${avatar(p, 'xs')}<span>Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
+      : here && venue && e.parish_id === here ? `<span class="esub">${lang}${avatar(venue, 'xs')}<span>At ${esc(venue.name)}</span></span>`
+      : here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
       : `<span class="esub">${lang}${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
@@ -1815,7 +1820,7 @@
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
   }
   async function refreshComingUp(el) {
     const box = el.querySelector('.cu');
@@ -2104,7 +2109,7 @@
     const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
     const body = daysHTML(list, { start, days, linkFor });
     return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>The ${CU_DAYS} days after ${esc(shortDate(addDays(start, days - 1)))}</button>` : ''}`;
+      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
   }
   const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
 
@@ -2244,6 +2249,27 @@
    * write. Opened by a parish link (`match`), its link is that one, and the
    * others that answer it follow.
    */
+  /**
+   * Every parish an event is at, once each, with its part in it: the host,
+   * the parish whose church it is held in when that is another's
+   * (location_parish_id), then the parishes a combine added (event_parishes).
+   */
+  function eventParishes(e) {
+    const venueId = e.location_parish_id && e.location_parish_id !== e.parish_id ? e.location_parish_id : null;
+    // A feed event carries its combine's parishes; one read from the bundle or
+    // /api/events does not, and the bundle's rows say the same.
+    const added = e.combined_parishes || (window.agoraBundle.raw?.event_parishes || [])
+      .filter(x => String(x.event_id) === String(e.id)).map(x => x.parish_id);
+    const seen = new Set();
+    const out = [];
+    for (const [id, role] of [[e.parish_id, 'Hosting'], [venueId, 'Held here'], ...added.map(id => [id, 'Taking part'])]) {
+      const p = id && !seen.has(id) && S.byId.get(id);
+      if (!p) continue;
+      seen.add(id);
+      out.push({ p, role });
+    }
+    return out;
+  }
   function eventBodyHTML(e, match = null) {
     const segs = match ? matchSegs(match) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
@@ -2252,8 +2278,11 @@
     const end = last ? last.hm : null;
     // Over days (a weekend camp), each end says its day. A vigil past midnight is one night.
     const overDays = last && last.date > l.date && endMs(e) - Date.parse(e.start_utc) >= 12 * 3600000;
-    const where = e.location_override || p?.address || '';
-    const lat = e.lat ?? p?.lat, lng = e.lng ?? p?.lng;
+    const venue = e.location_parish_id && e.location_parish_id !== e.parish_id ? S.byId.get(e.location_parish_id) : null;
+    const where = e.location_override || (venue ? `${venue.name}${venue.address ? ` — ${venue.address}` : ''}` : p?.address) || '';
+    const lat = e.location_lat ?? e.lat ?? venue?.lat ?? p?.lat, lng = e.location_lng ?? e.lng ?? venue?.lng ?? p?.lng;
+    // The host alone needs no list: its button is in the actions.
+    const parishes = eventParishes(e);
     // A service's date is about its rule, which the dialog lists by name.
     const rule = e.schedule_id != null ? S.rules.find(r => String(r.id) === String(e.schedule_id)) : null;
     // What the date is, when it is not on: in its kicker, and the title struck through.
@@ -2280,6 +2309,8 @@
         </div>
         ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
         ${e.description ? `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+        ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
+          <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>` : ''}
         ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
           : p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
         ${match ? matchFeedHTML(match, e.id) : ''}
