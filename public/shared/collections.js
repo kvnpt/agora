@@ -27,7 +27,7 @@
   const languages = isCjs ? require('./languages.js') : (root && root.AgoraLanguages);
 
   const CURATED = [
-    { id: 'english', path: '/en', title: 'English services', kicker: 'Language',
+    { id: 'english', path: '/services/en', title: 'English services', kicker: 'Language',
       blurb: 'Parishes with services in English.' },
     { id: 'sunday', path: '/sun/liturgy', title: 'Sunday Liturgy', kicker: 'Services',
       blurb: 'Every parish with a Sunday Liturgy on its timetable.' },

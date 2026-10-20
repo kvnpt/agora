@@ -309,6 +309,9 @@ export function eventCardHTML(m) {
   }
   const lat = e.location_lat ?? e.lat ?? p.lat, lng = e.location_lng ?? e.lng ?? p.lng;
   const off = TOMB[e.status] || (e.status === 'hidden' ? 'Suppressed' : null);
+  // What it is said in: its own languages, else its parish's.
+  const own = langsOf(e.languages);
+  const langs = own.length ? own : langsOf(e.parish_languages).length ? langsOf(e.parish_languages) : langsOf(p.languages);
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
       ${e.poster_path ? `<a class="ev-poster" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt=""></a>` : `<div class="ev-band" style="--j:${m.color}">${roundel(e.event_type, true)}</div>`}
@@ -325,7 +328,7 @@ export function eventCardHTML(m) {
         ${!e.hide_live && p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>Parish</span></a>
       </div>
-      ${where ? `<div class="details"><div class="drow"><small>Where</small><span>${esc(where)}</span></div></div>` : ''}
+      ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
       ${e.description ? `<div class="ev-desc">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
       ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(x => `<a class="lrow" href="/${esc(x.slug)}">${avatar(x, 'sm', x.color)}
         <span class="ln"><b>${esc(x.name)}</b><small>${esc(x.role)}</small></span>${I.chev}</a>`).join('')}</div>` : ''}

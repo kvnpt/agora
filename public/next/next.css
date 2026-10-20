@@ -103,10 +103,15 @@ main { padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
 /* ── Header ──────────────────────────────────────────────────────────── */
 
 .top {
-  display: flex; align-items: center; justify-content: flex-end;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: calc(8px + env(safe-area-inset-top)) var(--pad) 6px;
 }
-.top-actions { display: flex; gap: 10px; }
+.top-actions { display: flex; gap: 10px; flex: none; }
+/* Who is signed in, or what the site is: faint, at the left, where there was nothing. */
+.top-who {
+  min-width: 0; margin: 0; color: var(--text-3); font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .round-btn {
   position: relative;
   width: 40px; height: 40px; border-radius: 50%;
@@ -199,10 +204,14 @@ body.docked .dock { transform: none; visibility: visible; }
   isolation: isolate;
 }
 #map { position: absolute; inset: 0; touch-action: none; }
-/* Its frame: a dark hairline, and inside it the faintest white glow, at half. */
+/* Its frame: a dark hairline, and inside it a white glow you can see. The
+   dark scheme has the hairline alone: a white glow there is a smudge. */
 .viewport::after {
   content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5), inset 0 0 6px 1px rgba(255, 255, 255, .5);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5), inset 0 0 12px 3px rgba(255, 255, 255, .9);
+}
+@media (prefers-color-scheme: dark) {
+  .viewport::after { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5); }
 }
 body.map-full .viewport::after { display: none; }
 .map-fs {
@@ -341,9 +350,18 @@ body.map-full .map-fs .fs-close { display: block; }
   border-radius: 999px;
   pointer-events: none;
 }
+/* How far, in the app's blues: the nearer, the deeper (app.css). On the dark
+   scheme, the nearer the brighter. Wherever a distance is said. */
 .distance-near { color: #1565c0; }
 .distance-mid { color: #42a5f5; }
 .distance-far { color: #90caf9; }
+@media (prefers-color-scheme: dark) {
+  .distance-near { color: #8cc8ff; }
+  .distance-mid { color: #4f9be6; }
+  .distance-far { color: #3f6f9e; }
+}
+.dist { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dist.distance-near { font-weight: 700; }
 /* A parish with no logo: its acronym in its colour on white (app.css). */
 .avatar-acronym {
   background: linear-gradient(155deg, #ffffff 0%, #f1f2f5 100%);
@@ -505,28 +523,26 @@ body.map-full .parish-row {
 .fpill-j { color: var(--j); }
 .fpill-j.on { background: var(--j); border-color: var(--j); color: #fff; }
 .fpill.on .fstar { color: inherit; }
-/* "only" arrives beside its language, and a kind's roundels beside it. */
-.fpill-only, .kind-subs { animation: f-in .18s ease-out; }
+/* "only" arrives beside its language. */
+.fpill-only { animation: f-in .18s ease-out; }
 @keyframes f-in { from { opacity: 0; transform: scale(.85); } }
-.kind-subs { display: inline-flex; align-items: center; gap: 4px; }
-.kind-sub {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  min-width: 28px; height: 28px; padding: 0;
-  background: var(--card); color: var(--k-fg);
-  border: 1px solid color-mix(in srgb, var(--k-fg) 35%, transparent); border-radius: 999px;
-  font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
-  transition: padding .18s ease, opacity .18s ease;
-}
-/* Only the one chosen is filled in its colour, and spells its name out. */
-.kind-sub.on { padding: 0 11px; background: var(--k-bg); border-color: var(--k-fg); }
-.kind-subs:has(.kind-sub.on) .kind-sub:not(.on) { opacity: .45; }
+/* What: a line per kind, its name, then each type in its roundel's colour.
+   The type chosen is filled in its colour; what a chosen kind covers is
+   tinted with it; a kind narrowed to one of its types keeps an outline. */
+.fkind { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fcat { color: var(--text); font-weight: 700; }
+.fcat.part { border-color: var(--text); }
+.ftype { color: var(--k-fg); border-color: color-mix(in srgb, var(--k-fg) 35%, transparent); transition: background-color .15s, border-color .15s; }
+.ftype:hover { color: var(--k-fg); }
+.ftype.match { background: color-mix(in srgb, var(--k-bg) 75%, var(--card)); border-color: color-mix(in srgb, var(--k-fg) 45%, transparent); }
+.fpill.ftype.on { background: var(--k-fg); color: var(--card); border-color: var(--k-fg); font-weight: 700; }
 .fpanel-foot { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); }
 .fpill-ghost { background: transparent; }
 .fpanel-end { display: flex; align-items: center; gap: 8px; }
 .fpill-saved { color: var(--accent); border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
-  .filter-panel, .fpill-only, .kind-subs { animation: none; }
-  .kind-sub { transition: none; }
+  .filter-panel, .fpill-only { animation: none; }
+  .ftype { transition: none; }
 }
 
 /* ── Cards, Today ────────────────────────────────────────────────────── */
@@ -588,8 +604,13 @@ body.map-full .parish-row {
 }
 .esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
 .esub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* With your location on, how far: in blue, as on a parish's card. */
-.esub em { font-style: normal; margin-left: auto; padding-left: 6px; flex: none; color: var(--dist); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Its parish's name: two lines, then an ellipsis. */
+.esub .epar {
+  white-space: normal; line-height: 1.25; overflow-wrap: break-word;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+/* With your location on, how far: in its blue, as on a parish's card. */
+.esub em { font-style: normal; margin-left: auto; padding-left: 6px; flex: none; }
 .efeast { font-size: 12.5px; color: var(--text-2); font-style: italic; }
 
 /* The app's time (app.css .event-time): sans, tabular, then a small ":30"
@@ -637,7 +658,7 @@ body.map-full .parish-row {
 .ht small { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: 13px; }
 .ht small span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ht small .roundel { width: 16px; height: 16px; font-size: 8.5px; }
-.hrow em { flex: none; font-style: normal; color: var(--dist); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.hrow em { flex: none; font-style: normal; font-size: 13px; }
 .hrow > svg { flex: none; color: var(--text-3); }
 .hic { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--card-2); color: var(--accent); font-size: 15px; font-weight: 700; }
 .hic svg { width: 16px; height: 16px; }
@@ -819,7 +840,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .ph-text h1 { font-size: 22px; line-height: 1.2; font-weight: 750; letter-spacing: -.015em; }
 .ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
 /* How far, beside where (app.css .distance-blue). */
-.ph-dist { margin-left: 3px; color: var(--dist); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ph-dist { margin-left: 3px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* As many as fit at a readable width; more scroll sideways, as Maps' do.
    The padding under them is room for their shadow, which a scroller clips. */
 .actions {
@@ -922,18 +943,20 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .toolbar-space { height: 90px; }
 .toolbar-space.sm { height: 20px; }
 
-/* Back to the top of a card scrolled a screen down, beside its toolbar. */
+/* Back to the top of a card scrolled a screen down: under its bar, at the
+   middle, clear of the toolbar at its foot. */
 .totop {
-  position: absolute; right: 16px; bottom: calc(25px + env(safe-area-inset-bottom)); z-index: 3;
-  width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--glass-solid); border: 1px solid var(--glass-line); box-shadow: var(--shadow-lift); color: var(--text);
-  opacity: 0; transform: translateY(12px) scale(.9); pointer-events: none;
+  position: absolute; left: 50%; top: 76px; z-index: 3;
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--glass-solid); border: 1px solid var(--glass-line); box-shadow: 0 4px 16px rgba(0, 0, 0, .16); color: var(--text);
+  opacity: 0; transform: translate(-50%, -10px) scale(.9); pointer-events: none;
   transition: opacity .2s, transform .2s;
 }
+.totop svg { width: 18px; height: 18px; }
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .totop { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
 }
-.sheet.deep .totop { opacity: 1; transform: none; pointer-events: auto; }
+.sheet.deep .totop { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .totop:active { background: var(--line); }
 @media (prefers-reduced-motion: reduce) { .totop { transition: none; } }
 
@@ -941,13 +964,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .floatbar {
   position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 3;
   transform: translateX(-50%);
-  display: flex; gap: 6px; padding: 6px 10px; border-radius: 30px;
+  display: flex; gap: 0; padding: 3px; border-radius: 24px;
   background: var(--glass-solid); border: 1px solid var(--glass-line); box-shadow: var(--shadow-lift);
 }
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .floatbar { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
 }
-.floatbar button { width: 58px; height: 46px; border-radius: 23px; display: grid; place-items: center; }
+.floatbar button { width: 46px; height: 40px; border-radius: 20px; display: grid; place-items: center; }
+/* Less bar, more icon. */
+.floatbar button svg { width: 25px; height: 25px; }
 .floatbar button:active { background: var(--line); }
 .floatbar button.on { color: #f5a400; }
 .floatbar button.bm.on { color: var(--accent); }
@@ -1045,6 +1070,30 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .lck { color: var(--accent); opacity: 0; }
 .lrow.on .lck { opacity: 1; }
 .lrow.new { color: var(--accent); }
+
+/* A menu out of the button tapped (next.js openMenu): the account's, a card's ⋯. */
+.popmenu {
+  position: fixed; z-index: 55; min-width: 210px; max-width: calc(100vw - 20px); padding: 5px;
+  background: var(--glass-solid); border: 1px solid var(--hair); border-radius: 16px; box-shadow: var(--shadow-lift);
+  animation: pm-in .16s cubic-bezier(.2, .8, .2, 1);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .popmenu { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
+}
+.popmenu.out { opacity: 0; transform: scale(.92); transition: opacity .12s, transform .12s; }
+@keyframes pm-in { from { opacity: 0; transform: scale(.85); } }
+.pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 9px 12px; border-radius: 11px; color: var(--text); text-align: left; }
+.pm-row:hover, .pm-row:active { background: var(--line); }
+.pm-row > svg { flex: none; width: 19px; height: 19px; color: var(--text-2); }
+.popmenu a.pm-row { color: var(--text); }
+.pm-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pm-t b { font-size: 15.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-t small { font-size: 12.5px; color: var(--text-2); }
+.pm-t .pm-wait { color: var(--danger); font-weight: 600; }
+.pm-ic { width: 19px; height: 22px; flex: none; display: grid; place-items: center; color: var(--text-2); }
+.pm-ic img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
+.pm-note { padding: 8px 12px 6px; font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+@media (prefers-reduced-motion: reduce) { .popmenu, .popmenu.out { animation: none; transition: none; } }
 
 #toast {
   position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 60;

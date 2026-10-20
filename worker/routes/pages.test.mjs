@@ -497,7 +497,7 @@ test('the sitemap lists every parish, and the collections that list somebody', a
   assert.ok(locs.includes('https://orthodoxy.au/sgr'), 'by acronym where there is one');
   assert.ok(locs.every(l => !/\d+:\d{4}/.test(l)), 'no events');
   const inMap = locs.filter(l => COLLECTION_PATHS.has(l.slice('https://orthodoxy.au'.length)));
-  for (const p of ['/en', '/sun/liturgy', '/greek', '/antiochian']) {
+  for (const p of ['/services/en', '/sun/liturgy', '/greek', '/antiochian']) {
     assert.ok(inMap.includes(`https://orthodoxy.au${p}`), `${p}: a collection with parishes in it`);
   }
   for (const p of ['/serbian', '/monasteries', '/talks', '/social']) {
@@ -612,9 +612,9 @@ test('several parishes by name are their maker\'s list: named in the title, noin
 
 test('a collection is indexed, under its own name, with its own preview and its card', async () => {
   const { raw, get } = fresh();
-  const en = (await get('/en')).html;
+  const en = (await get('/en/services')).html;
   assert.equal(robots(en), 'index,follow');
-  assert.equal(canonical(en), 'https://orthodoxy.au/en');
+  assert.equal(canonical(en), 'https://orthodoxy.au/services/en');
   assert.match(meta(en, 'name', 'description'), /^Parishes with services in English\. \d+ parish/, 'what it holds, then who');
   assert.equal(meta(en, 'property', 'og:image'), 'https://orthodoxy.au/og/c-english.jpg');
   const c = card(en);

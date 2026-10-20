@@ -30,16 +30,18 @@
   <link rel="stylesheet" href="/next/next.css">
 </head>
 <body>
-  <!-- Search and the account, and nothing else: where the map is looking
-       is said under it, in the parish chip. -->
+  <!-- Search and the account, and at the left, faint, who is signed in or
+       what the site is (next.js, syncAccount): where the map is looking is
+       said under it, in the parish chip. -->
   <header class="top">
+    <p class="top-who" id="top-who">Eastern Orthodox events &amp; parishes</p>
     <div class="top-actions">
       <button class="round-btn" type="button" data-search aria-label="Search" title="Search">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
       </button>
       <!-- The account: a way in when nobody is signed in, the panel and the
            way out when somebody is (next.js, checkSignIn). -->
-      <button class="round-btn" type="button" id="btn-account" data-account aria-label="Sign in" title="Sign in">
+      <button class="round-btn" type="button" id="btn-account" data-account aria-haspopup="menu" aria-expanded="false" aria-label="Sign in" title="Sign in">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3.3"/><path d="M6.2 18.6a7 7 0 0 1 11.6 0"/></svg>
         <span class="account-dot" aria-hidden="true" hidden></span>
       </button>
@@ -61,7 +63,7 @@
         <button class="round-btn sm" type="button" data-search aria-label="Search" title="Search">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
         </button>
-        <button class="round-btn sm" type="button" data-account aria-label="Sign in" title="Sign in">
+        <button class="round-btn sm" type="button" data-account aria-haspopup="menu" aria-expanded="false" aria-label="Sign in" title="Sign in">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3.3"/><path d="M6.2 18.6a7 7 0 0 1 11.6 0"/></svg>
           <span class="account-dot" aria-hidden="true" hidden></span>
         </button>
