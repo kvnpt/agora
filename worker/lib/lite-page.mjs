@@ -283,13 +283,16 @@ export function liteMeta(m) {
   if (m.pinned) {
     const e = m.pinned;
     const when = `${longDate(e._local.date, year)}, ${time12(e._local.time)}`;
+    // Held in another parish's church: that church is where, and its address.
+    const venue = e.location_parish_id && e.location_parish_id !== e.parish_id && m.venues[e.location_parish_id];
+    const at = venue || p;
     return {
       title: `${e.title} — ${when} · ${p.name}`,
       description: [
         e.is_tombstone ? (e.status === 'cancelled' ? 'CANCELLED.' : 'Not running.') : null,
         e.feast || null,
-        `${when} at ${p.full_name || p.name}.`,
-        p.address || null,
+        `${when} at ${at.full_name || at.name}.`,
+        e.location_override || at.address || null,
       ].filter(Boolean).join(' '),
     };
   }
