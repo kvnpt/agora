@@ -199,6 +199,12 @@ body.docked .dock { transform: none; visibility: visible; }
   isolation: isolate;
 }
 #map { position: absolute; inset: 0; touch-action: none; }
+/* Its frame: a dark hairline, and inside it the faintest white glow, at half. */
+.viewport::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5), inset 0 0 6px 1px rgba(255, 255, 255, .5);
+}
+body.map-full .viewport::after { display: none; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
@@ -327,6 +333,20 @@ body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0;
 body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
 body.map-full .inview { display: none; }
+/* The filters float on it, under the tabs: the button and its chips at the
+   top left, clear of the close button, and the panel under them
+   (--fbar-h is the bar's height, next.js). */
+body.map-full #page > .filter-bar {
+  position: fixed; z-index: 31; left: 0; right: 64px; top: calc(41px + 10px + env(safe-area-inset-top));
+  padding: 0 0 0 10px;
+}
+body.map-full #page > .filter-bar :is(.fpill, .afchip) { min-height: 36px; box-shadow: 0 1px 4px rgba(0, 0, 0, .18); }
+body.map-full #page > .filter-panel {
+  position: fixed; z-index: 31; left: 10px; right: 10px; margin: 0;
+  top: calc(41px + 18px + var(--fbar-h, 36px) + env(safe-area-inset-top));
+  max-height: calc(100dvh - 41px - 18px - var(--fbar-h, 36px) - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-lift);
+}
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
@@ -484,7 +504,6 @@ body.map-full .parish-row {
 .card-head { padding: 14px 18px 4px; }
 .card-head h2 { font-size: 21px; font-weight: 700; letter-spacing: -.015em; }
 .card-head p { margin: 2px 0 0; color: var(--text-2); font-size: 14px; }
-.livetxt { color: var(--live); font-weight: 600; }
 .tsub { padding: 12px 18px 2px; font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .tempty { padding: 14px 18px 4px; color: var(--text-2); }
 .see-all {
@@ -499,6 +518,9 @@ body.map-full .parish-row {
 }
 .erow + .erow { border-top: 1px solid var(--line); }
 .today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
+/* A Today with the day and the evening divides them, as a day of the feed does. */
+.today .eve { padding: 10px 18px 2px; }
+.today .erow + .eve { border-top: 1px solid var(--line-strong); }
 /* A collection's own Today, above its timetables, and a parish's above its timetable. */
 .ctoday, .ptoday { margin: 14px 18px 0; }
 /* A parish card's focus (/sgr/talk): its next lit in the parish's colour, under
@@ -523,7 +545,15 @@ body.map-full .parish-row {
 .live { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 var(--live); animation: pulse 1.8s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 60%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .ebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.etitle { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A name has two lines, then an ellipsis. Its own languages lead the line under it. */
+.etitle {
+  min-width: 0; font-weight: 600; font-size: 16px; line-height: 1.25; overflow-wrap: break-word;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.esub .elang {
+  flex: none; overflow: visible; padding: 1px 5px; border-radius: 3px;
+  background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600; white-space: nowrap;
+}
 .esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
 .esub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* With your location on, how far: in blue, as on a parish's card. */
@@ -730,6 +760,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   }
 }
 .sheet.scrolled .glassbar { border-bottom-color: var(--line); }
+/* A card with a title of its own (a parish's, an event's, a collection's)
+   has a bare bar, its buttons alone, until that title scrolls under it; then
+   the bar's glass and the card's name fade in (pushSheet, .titled). */
+.glassbar { transition: border-color .2s, background-color .2s; }
+.gtitle { transition: opacity .2s; }
+.sheet:is(.parish, .event, .collection, .donate):not(.titled) .glassbar {
+  background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom-color: transparent;
+}
+.sheet:is(.parish, .event, .collection, .donate):not(.titled) .gtitle { opacity: 0; }
 .gbtn {
   flex: none; width: 44px; height: 44px; border-radius: 50%;
   display: grid; place-items: center;
@@ -1263,7 +1302,8 @@ body.dialog-open { overflow: hidden; }
 /* A date that is off (public/next/next.js TOMB): struck through, its word
    beside it, in the app's badge colours (app.css .badge-cancelled and the
    rest). Warmer for a break, which is a stretch, not one service called off. */
-.etitle-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.etitle-row { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+.etitle-row .etomb { margin-top: 2px; }
 .erow.tomb .etitle { text-decoration: line-through; color: var(--text-2); }
 .erow.tomb .etime, .erow.tomb .roundel { opacity: .5; }
 .etomb, .ev-state {

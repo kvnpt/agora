@@ -23,6 +23,7 @@ import services from '../../public/shared/services.js';
 import dates from '../../public/shared/dates.js';
 import urlState from '../../public/shared/url-state.js';
 import linkWords from '../../public/shared/link-words.js';
+import ruleFilters from '../../public/shared/timetable.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
@@ -111,12 +112,18 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // "the other dates of this service" is what somebody who was sent one wants
   // next — and a stored one-off shows the parish's whole list.
   const synth = pinnedEvent && pinnedEvent.schedule_id != null && /:/.test(String(route.eventId || ''));
+  // A kind (/sgr/talks) and a language (/sgr/en) ask it as much as a service
+  // does: the page opens the first that answers, in front of the parish.
+  const lf = ruleFilters.langFilterOf(route);
+  const asks = isNarrowed(route) || !!route.kind || !!lf;
   const matches = (e) => {
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
     if (route.service && !services.serviceMatches(route.service, e)) return false;
     if (!services.dayMatches(route.day, e._local.dow)) return false;
     if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
     if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
+    if (!ruleFilters.kindMatches(e, route)) return false;
+    if (lf && !ruleFilters.langsMatch(ruleFilters.langsOf(e.languages) || ruleFilters.langsOf(parish.languages), lf)) return false;
     return true;
   };
   const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + LITE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -142,7 +149,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
       ? { ...pinnedEvent, id: String(pinnedEvent.id), _local: localOf(pinnedEvent, zone),
         is_tombstone: pinnedEvent.is_tombstone || TOMB_STATUSES.has(pinnedEvent.status) ? 1 : 0 }
       : null;
-  } else if (isNarrowed(route)) {
+  } else if (asks) {
     const pool = list.filter(e => !e.is_tombstone);
     pinned = route.dateFocus && route.precision === 'day'
       ? urlState.firstEventOnDay(pool, route.dateFocus, 'day', e => e._local.date)

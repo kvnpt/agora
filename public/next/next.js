@@ -631,7 +631,10 @@
     if (S.from) ensureLoaded(addDays(S.from, S.streamDays)).then(() => renderStream());
     if (route.f.location) frameRegion(route.f.location, animate);
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
-    if (route.parish) openParish(route.parish, { entry, from: route.from, focus: route.focus });
+    // A link that asks something of one parish (/sgr/talks) opens the first
+    // that answers it, in front of the parish's own card.
+    if (route.parish && route.focus) return openMatch(route.parish, route.focus, { entry, from: route.from });
+    if (route.parish) openParish(route.parish, { entry, from: route.from, focus: null });
     else if (route.eventId) return openEvent(route.eventId, { entry });
     else if (route.donate) openDonate(route.donate === 'all' ? null : route.donate, { entry });
   }
@@ -876,6 +879,8 @@
   // ── Full screen ───────────────────────────────────────────────────────
 
   function setFullscreen(on) {
+    // The filters float on the full-screen map, so a panel open in the dock comes down to them.
+    if (on && panelInDock()) setPanel(true);
     document.body.classList.toggle('map-full', on);
     $('#btn-fullscreen').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
     syncDock();
@@ -905,6 +910,9 @@
   }).observe($('#page > .filter-bar'));
   new ResizeObserver(() => document.documentElement.style.setProperty('--dock-h', `${$('#dock .dock-head').offsetHeight}px`))
     .observe($('#dock .dock-head'));
+  // On the full-screen map the panel sits under the filters' button and its chips, however many rows they make.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--fbar-h', `${$('#page > .filter-bar').offsetHeight}px`))
+    .observe($('#page > .filter-bar'), { box: 'border-box' });
 
   // ── Jurisdiction tabs (above the viewport) ────────────────────────────
   //
@@ -991,10 +999,10 @@
     chip.innerHTML = one
       ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
       : ps.length
-        ? `${logos(7)}<span class="inview-text"><span><b>${ps.length} parishes</b> in view</span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+        ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} parishes</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
         : `<span class="inview-text"><b>No parishes here</b><small>${place ? `${place} · ` : ''}Pan or zoom out</small></span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
-    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `${ps.length} in view` : 'None in view'}</b><small>${place}</small></span>`;
+    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${place}</small></span>`;
   }
   function renderParishRow() {
     const o = S.loc || (map ? map.getCenter() : null);
@@ -1078,9 +1086,12 @@
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
     const title = e.feast ? `${e.title}` : e.title;
+    // Its own languages, as its line in the timetable has them, first on the line under its name.
+    const langs = parseLangs(e.languages);
+    const lang = langs && langs.length ? `<span class="elang">${esc(langs.join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
-    const sub = here && e.parish_id === here ? ''
-      : `<span class="esub">${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
+    const sub = here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
+      : `<span class="esub">${lang}${avatar(p, 'xs')}<span>${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? `<em>${esc(fmtKm(d))}</em>` : ''}</span>`;
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
@@ -1099,11 +1110,14 @@
     $('#today').innerHTML = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)), { where: ' in view' });
   }
   /**
-   * Today, from the rows given: on now, later today, and once the day is
-   * done, tomorrow. The page's box is what is in view; a collection's card
-   * has one of its own, of its parishes (openCollection), and a parish's
-   * card its own (parishTodayHTML). Its button goes on to the days after, in
-   * the Events feed or the card's Coming up.
+   * Today, from the rows given. With something on now, "Happening now" and
+   * then "Later today"; with nothing on now, the rest of the day under the
+   * box's own title, "This evening" when it all is; once the day is done,
+   * tomorrow, titled so. A day with both has the Evening divider. The page's
+   * box is what is in view; a collection's card has one of its own, of its
+   * parishes (openCollection), and a parish's card its own (parishTodayHTML).
+   * Its button goes on to the days after, in the Events feed or the card's
+   * Coming up.
    *
    * At a parish, `here` is it. A `focus` dims what does not answer it, and
    * `next` is the next that does, lit where it already is and under its own
@@ -1117,25 +1131,39 @@
     const later = all.filter(e => Date.parse(e.start_utc) > now && local(e).date === t);
     const tomorrow = all.filter(e => local(e).date === addDays(t, 1));
     const seen = [];
-    const rows = (es, o = {}) => es.map(e => { seen.push(e.id); return eventRow(e, { ...o, here, focus, lit: !!next && next.id === e.id }); }).join('');
-    let body = '';
-    if (live.length) body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), { now: true })}`;
-    if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, live.length ? 3 : 5))}`;
+    // The rows come in order, so the evening starts once: the divider goes
+    // there when the morning or afternoon came before it.
+    let day = false, eve = false;
+    const rows = (es, o = {}) => es.map(e => {
+      seen.push(e.id);
+      let div = '';
+      if (!isEvening(e)) day = true;
+      else if (!eve) { eve = true; if (day) div = EVENING; }
+      return div + eventRow(e, { ...o, here, focus, lit: !!next && next.id === e.id });
+    }).join('');
+    let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
-    if (!live.length && !later.length) {
-      body += `<div class="tempty">Nothing more today${esc(where)}.</div>`;
-      if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${rows(tomorrow.slice(0, 4))}`;
-    }
+    if (live.length) {
+      body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), { now: true })}`;
+      if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
+    } else if (later.length) {
+      if (later.every(isEvening)) title = 'This evening';
+      body += rows(later.slice(0, 5));
+    } else if (showsTomorrow) {
+      title = 'Tomorrow';
+      k = addDays(t, 1);
+      body += rows(tomorrow.slice(0, 4));
+    } else body += `<div class="tempty">Nothing more today${esc(where)}.</div>`;
     // The next that answers the focus, by its day, where the rows above do not have it.
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
-      const k = local(next).date;
-      body += `<div class="tsub tnext">Next · ${esc(k === addDays(t, 1) ? 'Tomorrow' : dayLabel(k, true))}</div>${eventRow(next, { here, lit: true })}`;
+      const nk = local(next).date;
+      body += `<div class="tsub tnext">Next · ${esc(nk === addDays(t, 1) ? 'Tomorrow' : dayLabel(nk, true))}</div>${eventRow(next, { here, lit: true })}`;
     }
-    const d = new Date(t + 'T00:00:00Z');
+    const d = new Date(k + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
-    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}</header>
+    return `<header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}</header>
       ${body}
       <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</button>`;
   }
@@ -1456,10 +1484,19 @@
     // A card or a collection scrolled a screen down has its way back up, by the toolbar.
     const tall = scroller && /\b(parish|collection|event)\b/.test(cls);
     if (tall) el.insertAdjacentHTML('beforeend', `<button class="totop" type="button" data-act="totop" aria-label="Back to top" tabindex="-1">${I.up}</button>`);
-    if (scroller) scroller.addEventListener('scroll', () => {
-      el.classList.toggle('scrolled', scroller.scrollTop > 40);
-      if (tall) el.classList.toggle('deep', scroller.scrollTop > scroller.clientHeight);
-    }, { passive: true });
+    // Its bar takes its name once the card's own title has scrolled under it.
+    const titled = () => {
+      const h = scroller.querySelector('.ph h1, .ev-head h1, .chero h1'), bar = el.querySelector('.glassbar');
+      el.classList.toggle('titled', !h || !bar || h.getBoundingClientRect().bottom <= bar.getBoundingClientRect().bottom);
+    };
+    if (scroller) {
+      scroller.addEventListener('scroll', () => {
+        el.classList.toggle('scrolled', scroller.scrollTop > 40);
+        if (tall) el.classList.toggle('deep', scroller.scrollTop > scroller.clientHeight);
+        titled();
+      }, { passive: true });
+      titled();
+    }
     swipeToClose(el);
     if (entry) syncURL({ push: true, step: true });
     else writeURL();
@@ -1915,6 +1952,54 @@
     repaintParish(el);
   }
 
+  // ── A parish link that asks something (/sgr/talks, /sgr/wed/liturgy) ──
+  //
+  // It opens the first that answers, an event's card in front of the
+  // parish's own, plain card, so a step back (or the card's Parish) is the
+  // parish. Under the event, the others that answer, a season ahead at most.
+  // The card's link is the one followed. With none on file, the parish's
+  // card is all there is, as if the link had named only the parish.
+
+  const MATCH_DAYS = 120;
+  const MATCH_CAP = 10;
+  const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+  /** What answers a parish link, from its date to as far as the bundle holds, a season at most. */
+  function matchesAt({ pid, focus, from }) {
+    const start = from || todayKey();
+    const last = [addDays(start, MATCH_DAYS), S.loadedTo || todayKey()].sort()[0];
+    if (last < start) return [];
+    const now = Date.now();
+    return feedRange(start, daysBetween(start, last) + 1).filter(e => eventParishIds(e).includes(pid)
+      && (visible(e) || tombOf(e)) && endMs(e) > now && rowAnswers(e, focus, false));
+  }
+  const matchSegs = (m) => segsFor({ parish: S.byId.get(m.pid), focus: m.focus, from: m.from });
+  async function openMatch(pid, focus, { entry = true, from = null } = {}) {
+    openParish(pid, { entry, from, focus: null });
+    const under = stack[stack.length - 1];
+    if (!under || under.dataset.pid !== pid) return;
+    const match = { pid, focus, from };
+    let e = matchesAt(match).find(visible);
+    if (!e) {
+      try { await ensureLoaded(addDays(from || todayKey(), MATCH_DAYS)); } catch (err) { console.warn(err); }
+      // Closed meanwhile, or something opened over it.
+      if (stack[stack.length - 1] !== under) return;
+      e = matchesAt(match).find(visible);
+    }
+    if (e) openEvent(e.id, { entry, match });
+  }
+  /** "More talks", "More liturgies on Wednesdays": what else answers, under the first. */
+  function matchFeedHTML(m, id) {
+    const list = matchesAt(m).filter(e => String(e.id) !== String(id)).slice(0, MATCH_CAP);
+    if (!list.length) return '';
+    const label = focusLabel(m.focus);
+    const start = local(list[0]).date;
+    const days = daysBetween(start, local(list[list.length - 1]).date) + 1;
+    return `<section class="cu-band ev-more">
+        <h2 class="sec">More ${esc(/^Bible\b/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1))}</h2>
+        <div class="cu" style="--pc:${parishColor(S.byId.get(m.pid))}">${daysHTML(list, { start, days, row: { here: m.pid } })}</div>
+      </section>`;
+  }
+
   function openParish(pid, { entry = true, from = null, focus } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
@@ -2118,9 +2203,13 @@
     S.fetched.set(String(e.id), e);
     return e;
   }
-  /** An event's card, inside its bar: drawn when it opens, and again after a write. */
-  function eventBodyHTML(e) {
-    const segs = segsFor({ eventId: e.id });
+  /**
+   * An event's card, inside its bar: drawn when it opens, and again after a
+   * write. Opened by a parish link (`match`), its link is that one, and the
+   * others that answer it follow.
+   */
+  function eventBodyHTML(e, match = null) {
+    const segs = match ? matchSegs(match) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const last = e.end_local ? { date: e.end_local.slice(0, 10), hm: e.end_local.slice(11, 16) } : (e.end_utc ? partsIn(e.timezone || TZ, Date.parse(e.end_utc)) : null);
@@ -2157,20 +2246,22 @@
         ${e.description ? `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
         ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
           : p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
+        ${match ? matchFeedHTML(match, e.id) : ''}
         <div class="toolbar-space"></div>`;
   }
-  function openEvent(id, { entry = true } = {}) {
+  function openEvent(id, { entry = true, match = null } = {}) {
     const e = findEvent(id);
     if (!e) {
       if (S.fetched.has(String(id))) return null;
-      return fetchEvent(id).then(x => (x ? openEvent(id, { entry }) : null));
+      return fetchEvent(id).then(x => (x ? openEvent(id, { entry, match }) : null));
     }
     const p = S.byId.get(e.parish_id);
     // Its bookmark floats, as a parish's star does.
-    const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e)}</div>
+    const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e, match)}</div>
       <div class="floatbar" role="toolbar">${bookmarkButton(e)}</div>`;
-    const el = pushSheet(html, 'event', { segs: segsFor({ eventId: e.id }), entry });
+    const el = pushSheet(html, 'event', { segs: match ? matchSegs(match) : segsFor({ eventId: e.id }), entry });
     el._event = e;
+    el._match = match;
   }
   /**
    * An open event card again, from the bundle as it now is. A date that has
@@ -2183,13 +2274,13 @@
       return;
     }
     el._event = e;
-    el._segs = segsFor({ eventId: e.id });
+    el._segs = el._match ? matchSegs(el._match) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const bar = el.querySelector('.gtitle');
     if (bar) bar.innerHTML = `<b>${esc(e.title)}</b>${p ? `<small>${esc(p.name)}</small>` : ''}`;
     const scroller = el.querySelector('.sheet-scroll');
     const top = scroller.scrollTop;
-    scroller.innerHTML = eventBodyHTML(e);
+    scroller.innerHTML = eventBodyHTML(e, el._match);
     scroller.scrollTop = top;
     fitLinks(el);
   }
@@ -2790,7 +2881,13 @@
       return;
     }
     if ((b = t.closest('[data-view]'))) { go(b.dataset.view); return; }
-    if ((b = t.closest('[data-parish]'))) { openParish(b.dataset.parish); return; }
+    if ((b = t.closest('[data-parish]'))) {
+      // An event's Parish, over that parish's own card, is a step back to it.
+      const top = stack[stack.length - 1], under = stack[stack.length - 2];
+      if (top && top._event && b.closest('.sheet') === top && under && under.dataset.pid === b.dataset.parish) { popSheet(); return; }
+      openParish(b.dataset.parish);
+      return;
+    }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow, in the Events feed; the feed itself when it starts later.
@@ -2991,6 +3088,7 @@
     const step = (line, p) => { if (window.lsLog) window.lsLog(line); if (window.lsProgress) window.lsProgress(p); };
     step('GET /api/bundle …', 0.15);
     await window.agoraBundle.load({ from: new Date().toISOString(), to: new Date(Date.parse(addDays(t, 60) + 'T14:00:00Z')).toISOString() });
+    S.loadedTo = addDays(t, 60);
     adopt();
     step(`✓ ${S.parishes.length} parishes, ${S.rules.length} service times`, 0.6);
     if (S.loc) document.body.classList.add('located');

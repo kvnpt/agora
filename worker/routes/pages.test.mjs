@@ -171,6 +171,8 @@ test('a rule’s languages sit on its line; a timetable is the morning, then the
   raw.prepare(`UPDATE schedules SET languages = '["Arabic","English"]' WHERE parish_id = ? AND title != 'Vespers'`).run(PARISH);
   const times = timesOf((await get('/sgr')).html);
   assert.match(times, /Sunday Divine Liturgy<span class="tt-lang">Arabic, English<\/span>/);
+  assert.match(comingUp((await get('/sgr')).html), /<span class="etitle">Sunday Divine Liturgy<\/span><\/span>\s*<span class="esub"><span class="elang">Arabic, English<\/span><\/span>/,
+    'and on its dates');
   assert.ok(times.indexOf('Divine Liturgy') < times.indexOf('<div class="eve">'), 'the morning first');
   assert.ok(times.indexOf('<div class="eve">') < times.indexOf('Vespers'), 'then the evening');
 });
@@ -213,6 +215,46 @@ test('a service link previews its next occurrence', async () => {
   const eve = (await get('/sgr/evening')).html;
   assert.equal(canonical(eve), 'https://orthodoxy.au/sgr/evening');
   assert.match(title(eve), /^Vespers — Saturday 3 October, 6pm/);
+});
+
+test('a kind or a language beside a parish previews the first that answers it, as the page opens it', async () => {
+  const { raw, get } = fresh();
+  rule(raw, PARISH, 2, '19:00', 'Bible Study', { event_type: 'talk' });
+  raw.prepare(`UPDATE schedules SET languages = '["Arabic"]' WHERE parish_id = ? AND title = 'Sunday Divine Liturgy'`).run(PARISH);
+  rule(raw, PARISH, 5, '18:00', 'Vespers', { languages: '["English"]' });
+  const talks = (await get('/sgr/talks')).html;
+  assert.match(title(talks), /^Bible Study — Tuesday 6 October, 7pm · St George Cathedral, Redfern/);
+  assert.equal(robots(talks), 'noindex,follow');
+  assert.match(card(talks), /^<section class="sheet parish open ssr"/, "the parish's card, which the event opens in front of");
+  assert.match(title((await get('/sgr/en')).html), /^Vespers — Friday 2 October, 6pm/, 'its own English, not the parish’s');
+});
+
+test('a painted Today: no count, Later today only under Happening now, This evening, Tomorrow, and the evening divided off', async () => {
+  const today = async (setup) => {
+    const { raw, get } = fresh();
+    raw.prepare('DELETE FROM schedules WHERE parish_id = ?').run(PARISH);
+    setup(raw);
+    return between(card((await get('/sgr')).html), '<section class="today card ptoday"', '<h2 class="sec">Timetable');
+  };
+  // Nothing till the evening: this evening, under its own title.
+  let c = await today(raw => rule(raw, PARISH, 3, '18:00', 'Vespers'));
+  assert.match(c, /<h2>This evening<\/h2><p>Wednesday 30 Sep<\/p>/);
+  assert.doesNotMatch(c, /class="tsub"|class="eve"/);
+  assert.match(c, /Vespers[\s\S]*<a class="see-all" href="#coming-up">Tomorrow/);
+  // The day and the evening (from 2pm, as everywhere): Today, the evening under its divider.
+  c = await today(raw => { rule(raw, PARISH, 3, '13:00', 'Paraklesis'); rule(raw, PARISH, 3, '18:00', 'Vespers'); });
+  assert.match(c, /<h2>Today<\/h2>/);
+  assert.doesNotMatch(c, /class="tsub"/, 'no Later today with nothing on now');
+  assert.match(c, /Paraklesis[\s\S]*<div class="eve">[\s\S]*Vespers/);
+  // On now: Happening now, uncounted, then Later today.
+  c = await today(raw => { rule(raw, PARISH, 3, '11:00', 'Divine Liturgy'); rule(raw, PARISH, 3, '18:00', 'Vespers'); });
+  assert.match(c, /<h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<div class="tsub">Happening now<\/div>[\s\S]*Divine Liturgy[\s\S]*<div class="tsub">Later today<\/div><div class="eve">[\s\S]*Vespers/);
+  assert.doesNotMatch(c, /on now/);
+  // The day done: tomorrow, by its title and date, going on to the week.
+  c = await today(raw => rule(raw, PARISH, 4, '07:00', 'Matins'));
+  assert.match(c, /<h2>Tomorrow<\/h2><p>Thursday 1 Oct<\/p><\/div><\/header>\s*<a class="erow"[\s\S]*Matins/);
+  assert.doesNotMatch(c, /Nothing more today|class="tsub"/);
+  assert.match(c, /<a class="see-all" href="#coming-up">This week/);
 });
 
 test('an old /worship, /services-liturgy or /studies link is sent to its name for good, keeping the rest', async () => {

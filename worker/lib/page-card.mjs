@@ -140,7 +140,11 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
 
 function eventRowHTML(e, here, now = false) {
   const tomb = TOMB[e.status] || null;
-  const away = e.parish_id !== here ? `<span class="esub"><span>${esc(e.parish_name || '')}</span></span>` : '';
+  // Its own languages first on the line under its name, then another parish's name.
+  const langs = langsOf(e.languages);
+  const lang = langs.length ? `<span class="elang">${esc(langs.join(', '))}</span>` : '';
+  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${esc(e.parish_name || '')}</span></span>`
+    : lang ? `<span class="esub">${lang}</span>` : '';
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
       <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
       ${roundel(e.event_type)}
@@ -173,27 +177,41 @@ function comingUpHTML(m, start, today) {
 }
 
 /**
- * A parish's Today, above its timetable, as next.js's todayHTML draws it: on
- * now, later today, and once the day is done, tomorrow. Its button goes on
- * to the card's Coming up.
+ * A parish's Today, above its timetable, as next.js's todayHTML draws it:
+ * with something on now, "Happening now" and then "Later today"; with nothing
+ * on now, the rest of the day under the box's title, "This evening" when it
+ * all is; once the day is done, tomorrow, titled so. A day with both has the
+ * Evening divider. Its button goes on to the card's Coming up.
  */
 function todayBoxHTML(m, today) {
   const all = (m.feed || []).filter(shown);
+  const isEvening = (e) => services.partOfDayOf(e, m.zone) === 'evening';
   const live = all.filter(e => Date.parse(e.start_utc) <= m.now && endMs(e) > m.now);
   const later = all.filter(e => Date.parse(e.start_utc) > m.now && e._local.date === today);
   const tomorrow = all.filter(e => e._local.date === addDays(today, 1));
-  const rows = (es, now) => es.map(e => eventRowHTML(e, m.parish.id, now)).join('');
-  let body = '';
-  if (live.length) body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), true)}`;
-  if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, live.length ? 3 : 5))}`;
+  let day = false, eve = false;
+  const rows = (es, now) => es.map(e => {
+    let div = '';
+    if (!isEvening(e)) day = true;
+    else if (!eve) { eve = true; if (day) div = EVENING; }
+    return div + eventRowHTML(e, m.parish.id, now);
+  }).join('');
+  let title = 'Today', k = today, body = '';
   const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
-  if (!live.length && !later.length) {
-    body += '<div class="tempty">Nothing more today.</div>';
-    if (showsTomorrow) body += `<div class="tsub">Tomorrow</div>${rows(tomorrow.slice(0, 4))}`;
-  }
-  const d = new Date(`${today}T00:00:00Z`);
+  if (live.length) {
+    body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), true)}`;
+    if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
+  } else if (later.length) {
+    if (later.every(isEvening)) title = 'This evening';
+    body += rows(later.slice(0, 5));
+  } else if (showsTomorrow) {
+    title = 'Tomorrow';
+    k = addDays(today, 1);
+    body += rows(tomorrow.slice(0, 4));
+  } else body += '<div class="tempty">Nothing more today.</div>';
+  const d = new Date(`${k}T00:00:00Z`);
   return `<section class="today card ptoday" aria-label="Today" style="--pc:${m.color}">
-      <header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${live.length ? ` · <span class="livetxt">${live.length} on now</span>` : ''}</p></div></header>
+      <header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div></header>
       ${body}
       <a class="see-all" href="#coming-up">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</a>
     </section>`;

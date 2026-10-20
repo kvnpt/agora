@@ -116,14 +116,19 @@ them and never written (`KIND_ALIASES`).
 `/liturgy`, `/feast` and `/bible-study` are service slugs as well
 (services.js), and across the page they read as the kind (`kindOfService`).
 
-**Beside one parish, a filter is that card's focus, not the page's.**
-`/sgr/talk`, `/sgr/wed/liturgy`, `/sgr/evening` and `/sgr/en` open St George's card
-with every line and date still on it: what answers the focus is lit, the next of it
-in the card's Today under its day's name, and the rest is dimmed, never hidden. The
-link keeps it (`segsFor({ parish, focus })`); its × in Today lets it go, back to
-`/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML` in next.js). A card opened by a
-tap takes the same focus from where it was (`focusAround`): the collection it was
-in, else the page's filters, so `/talks` then St George is `/sgr/talks`. A collection's
+**Beside one parish, a filter is about that parish, not the page.** A link
+(`/sgr/talk`, `/sgr/wed/liturgy`, `/sgr/evening`, `/sgr/en`) opens the first that
+answers it as an event's card, in front of St George's own plain card (`openMatch`
+in next.js): a step back, or the event's Parish, is the parish. Under the event,
+the others that answer ("More talks"), a season ahead at most (`matchFeedHTML`).
+The event's card keeps the link followed (`segsFor({ parish, focus })`), so sharing
+it shares that. With none on file, the parish's plain card is all there is, at
+`/sgr`, as if the link had named only the parish. A card opened by a
+tap is the parish's, with the focus of where it was (`focusAround`): the collection it was
+in, else the page's filters, so `/talks` then St George is `/sgr/talks`, St George's
+card with every line and date still on it, what answers lit (the next of it in
+Today under its day's name) and the rest dimmed, never hidden; its × in Today lets
+it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`). A collection's
 timetables do the opposite: they keep only the lines that answer what it asks
 (`/services` its services, `/sun/liturgy` its Sunday Liturgies), as its head counts
 them, and a collection that asks nothing of them (`/greek`) shows each whole week. The timetable is
