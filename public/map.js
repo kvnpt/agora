@@ -407,7 +407,7 @@ function addParishSourceAndLayers() {
   // starts later, so a city's worth of dots never crowds. The logo case
   // (focused, with a sprite) is the sprite's own size and does not grow.
   //
-  // A solo parish (the only one in view, see setSolo) keeps its dot: the pop
+  // A solo parish (the only one in view, see syncSolo) keeps its dot: the pop
   // is a DOM element over it, and the dot under it is what a tap still finds.
   const DOT_RADIUS = dotByZoom((k) => [
     'case',
