@@ -122,8 +122,8 @@ answers it as an event's card, in front of St George's own plain card (`openMatc
 in next.js): a step back, or the event's Parish, is the parish. Under the event,
 the others that answer ("More talks"), a season ahead at most (`matchFeedHTML`).
 The event's card keeps the link followed (`segsFor({ parish, focus })`), so sharing
-it shares that. With none on file, the parish's card takes the focus instead and
-its Today says "None on file in the next few months". A card opened by a
+it shares that. With none on file, the parish's plain card is all there is, at
+`/sgr`, as if the link had named only the parish. A card opened by a
 tap is the parish's, with the focus of where it was (`focusAround`): the collection it was
 in, else the page's filters, so `/talks` then St George is `/sgr/talks`, St George's
 card with every line and date still on it, what answers lit (the next of it in

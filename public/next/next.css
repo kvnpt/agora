@@ -199,6 +199,12 @@ body.docked .dock { transform: none; visibility: visible; }
   isolation: isolate;
 }
 #map { position: absolute; inset: 0; touch-action: none; }
+/* Its frame: a dark hairline, and inside it the faintest white glow, at half. */
+.viewport::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5), inset 0 0 6px 1px rgba(255, 255, 255, .5);
+}
+body.map-full .viewport::after { display: none; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
@@ -327,6 +333,20 @@ body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0;
 body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
 body.map-full .inview { display: none; }
+/* The filters float on it, under the tabs: the button and its chips at the
+   top left, clear of the close button, and the panel under them
+   (--fbar-h is the bar's height, next.js). */
+body.map-full #page > .filter-bar {
+  position: fixed; z-index: 31; left: 0; right: 64px; top: calc(41px + 10px + env(safe-area-inset-top));
+  padding: 0 0 0 10px;
+}
+body.map-full #page > .filter-bar :is(.fpill, .afchip) { min-height: 36px; box-shadow: 0 1px 4px rgba(0, 0, 0, .18); }
+body.map-full #page > .filter-panel {
+  position: fixed; z-index: 31; left: 10px; right: 10px; margin: 0;
+  top: calc(41px + 18px + var(--fbar-h, 36px) + env(safe-area-inset-top));
+  max-height: calc(100dvh - 41px - 18px - var(--fbar-h, 36px) - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-lift);
+}
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
@@ -740,6 +760,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   }
 }
 .sheet.scrolled .glassbar { border-bottom-color: var(--line); }
+/* A card with a title of its own (a parish's, an event's, a collection's)
+   has a bare bar, its buttons alone, until that title scrolls under it; then
+   the bar's glass and the card's name fade in (pushSheet, .titled). */
+.glassbar { transition: border-color .2s, background-color .2s; }
+.gtitle { transition: opacity .2s; }
+.sheet:is(.parish, .event, .collection, .donate):not(.titled) .glassbar {
+  background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom-color: transparent;
+}
+.sheet:is(.parish, .event, .collection, .donate):not(.titled) .gtitle { opacity: 0; }
 .gbtn {
   flex: none; width: 44px; height: 44px; border-radius: 50%;
   display: grid; place-items: center;

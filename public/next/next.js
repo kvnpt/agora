@@ -879,6 +879,8 @@
   // ── Full screen ───────────────────────────────────────────────────────
 
   function setFullscreen(on) {
+    // The filters float on the full-screen map, so a panel open in the dock comes down to them.
+    if (on && panelInDock()) setPanel(true);
     document.body.classList.toggle('map-full', on);
     $('#btn-fullscreen').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
     syncDock();
@@ -908,6 +910,9 @@
   }).observe($('#page > .filter-bar'));
   new ResizeObserver(() => document.documentElement.style.setProperty('--dock-h', `${$('#dock .dock-head').offsetHeight}px`))
     .observe($('#dock .dock-head'));
+  // On the full-screen map the panel sits under the filters' button and its chips, however many rows they make.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--fbar-h', `${$('#page > .filter-bar').offsetHeight}px`))
+    .observe($('#page > .filter-bar'), { box: 'border-box' });
 
   // ── Jurisdiction tabs (above the viewport) ────────────────────────────
   //
@@ -994,10 +999,10 @@
     chip.innerHTML = one
       ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
       : ps.length
-        ? `${logos(7)}<span class="inview-text"><span><b>${ps.length} parishes</b> in view</span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+        ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} parishes</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
         : `<span class="inview-text"><b>No parishes here</b><small>${place ? `${place} · ` : ''}Pan or zoom out</small></span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
-    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `${ps.length} in view` : 'None in view'}</b><small>${place}</small></span>`;
+    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${place}</small></span>`;
   }
   function renderParishRow() {
     const o = S.loc || (map ? map.getCenter() : null);
@@ -1479,10 +1484,19 @@
     // A card or a collection scrolled a screen down has its way back up, by the toolbar.
     const tall = scroller && /\b(parish|collection|event)\b/.test(cls);
     if (tall) el.insertAdjacentHTML('beforeend', `<button class="totop" type="button" data-act="totop" aria-label="Back to top" tabindex="-1">${I.up}</button>`);
-    if (scroller) scroller.addEventListener('scroll', () => {
-      el.classList.toggle('scrolled', scroller.scrollTop > 40);
-      if (tall) el.classList.toggle('deep', scroller.scrollTop > scroller.clientHeight);
-    }, { passive: true });
+    // Its bar takes its name once the card's own title has scrolled under it.
+    const titled = () => {
+      const h = scroller.querySelector('.ph h1, .ev-head h1, .chero h1'), bar = el.querySelector('.glassbar');
+      el.classList.toggle('titled', !h || !bar || h.getBoundingClientRect().bottom <= bar.getBoundingClientRect().bottom);
+    };
+    if (scroller) {
+      scroller.addEventListener('scroll', () => {
+        el.classList.toggle('scrolled', scroller.scrollTop > 40);
+        if (tall) el.classList.toggle('deep', scroller.scrollTop > scroller.clientHeight);
+        titled();
+      }, { passive: true });
+      titled();
+    }
     swipeToClose(el);
     if (entry) syncURL({ push: true, step: true });
     else writeURL();
@@ -1928,16 +1942,15 @@
       + (x.lang ? (x.langStrict ? ` in ${x.lang} only` : ` in ${x.lang}`) : '');
     return text.charAt(0).toUpperCase() + text.slice(1);
   }
-  /** A card's focus, and its link with it: × lights everything again (/sgr/talks becomes /sgr). */
-  function setCardFocus(el, focus) {
-    el._focus = focus;
-    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), focus, from: el._from });
+  /** Light everything at a card again: /sgr/talk becomes /sgr. */
+  function unfocusCard(el) {
+    el._focus = null;
+    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     syncURL();
     repaintParish(el);
   }
-  const unfocusCard = (el) => setCardFocus(el, null);
 
   // ── A parish link that asks something (/sgr/talks, /sgr/wed/liturgy) ──
   //
@@ -1945,7 +1958,7 @@
   // parish's own, plain card, so a step back (or the card's Parish) is the
   // parish. Under the event, the others that answer, a season ahead at most.
   // The card's link is the one followed. With none on file, the parish's
-  // card takes the focus instead, and its Today says so.
+  // card is all there is, as if the link had named only the parish.
 
   const MATCH_DAYS = 120;
   const MATCH_CAP = 10;
@@ -1972,8 +1985,7 @@
       if (stack[stack.length - 1] !== under) return;
       e = matchesAt(match).find(visible);
     }
-    if (e) return openEvent(e.id, { entry, match });
-    setCardFocus(under, focus);
+    if (e) openEvent(e.id, { entry, match });
   }
   /** "More talks", "More liturgies on Wednesdays": what else answers, under the first. */
   function matchFeedHTML(m, id) {
