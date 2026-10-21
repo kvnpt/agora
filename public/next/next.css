@@ -1181,6 +1181,8 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   background: rgba(0, 0, 0, 0.45);
 }
 .choice-backdrop { z-index: 3100; }
+/* A dialog over another: the one under is dimmed already. */
+.escalate-backdrop.open ~ .combine-backdrop { background: rgba(0, 0, 0, 0.2); }
 .suggest-dialog { z-index: 3200; }
 body.dialog-open { overflow: hidden; }
 .escalate-modal {
@@ -1337,7 +1339,7 @@ body.dialog-open { overflow: hidden; }
 .cad-week-dates { font-size: 14px; font-variant-numeric: tabular-nums; }
 /* A time (public/shared/time-field.js): quarter-hours in a list, or typed. */
 .tf { position: relative; }
-.detail-edit-form .tf .tf-text { padding-right: 40px; cursor: pointer; }
+.detail-edit-form .tf .tf-text, .ee .tf .tf-text { padding-right: 40px; cursor: pointer; }
 .tf.tf-bad .tf-text { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
 .tf-btn { position: absolute; top: 0; right: 0; bottom: 0; width: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
 .tf.open .tf-btn svg { transform: rotate(180deg); }

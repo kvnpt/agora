@@ -501,6 +501,7 @@
 .vp-pane[hidden] { display: none; }
 .vp-pane { display: flex; flex-direction: column; gap: 6px; }
 .vp-search, .vp-text { width: 100%; box-sizing: border-box; }
+.vp, .vp-search { scroll-margin-top: 12px; }
 .vp-list {
   display: flex; flex-direction: column;
   border: 1px solid var(--border-light, var(--border, #e5e7eb));
