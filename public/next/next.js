@@ -3129,8 +3129,10 @@
       const ids = viewParishes().map(p => p.id);
       // One parish in view is that parish.
       if (ids.length === 1) { openParish(ids[0]); return; }
-      // Its events are the page's filters' too.
-      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, ...viewWords(ids.length) });
+      // Its events are the page's filters' too. Shared, it is those parishes
+      // by name under the same filters (/sgr+snb/en-only), not the page's link.
+      const shareSegs = segsFor({ juris: S.juris, f: { ...S.f, parishIds: new Set(ids), listId: null } });
+      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) });
       return;
     }
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(c); return; }
@@ -3240,7 +3242,7 @@
       if (a === 'bookmarks') return openBookmarks();
       if (a === 'share') {
         if (top && top._segs) return share(top._coll ? top._coll.title : top._event ? top._event.title : S.byId.get(top.dataset.pid)?.name || '', pathOf(top._segs));
-        if (top && top._coll) return share(top._coll.title, pathOf(pageSegs()));
+        if (top && top._coll) return share(top._coll.title, pathOf(top._coll.shareSegs || pageSegs()));
         return;
       }
       if (a === 'share-parish') { const p = S.byId.get(top.dataset.pid); return share(p.name, pathOf(segsFor({ parish: p }))); }
