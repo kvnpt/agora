@@ -61,9 +61,12 @@ test('merge is everything in either, an item in both keeping when it was first a
   assert.deepEqual(m.bookmarks.map(b => `${b.kind}:${b.id}`).sort(), ['event:1', 'rule:1']);
   assert.deepEqual(m.views, [{ path: '/greek', at: 3 }, { path: '/talks', at: 2 }]);
   assert.deepEqual(m.lists, [
-    { id: 'l1', name: 'Sydney', ids: ['a', 'b', 'c'], at: 2, about: 'Near work' },
+    { id: 'l1', name: 'Sydney', ids: ['a', 'b'], at: 4 },
+    { id: 'l9', name: 'sydney', ids: ['b', 'c'], at: 2, about: 'Near work' },
     { id: 'l8', name: 'Melbourne', ids: ['m'], at: 1 },
-  ]);
+  ], 'two lists of one name are two lists');
+  const again = SV.merge({ lists: [{ id: 'l1', name: 'Sydney', ids: ['a'], at: 4 }] }, { lists: [{ id: 'l1', name: 'Sydney', ids: ['b'], at: 3, about: 'x' }] });
+  assert.deepEqual(again.lists, [{ id: 'l1', name: 'Sydney', ids: ['a', 'b'], at: 3, about: 'x' }], 'one list by id holds both');
   assert.ok(SV.same(SV.merge(m, m), m), 'merging a copy with itself changes nothing');
 });
 

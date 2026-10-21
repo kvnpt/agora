@@ -63,13 +63,12 @@
     const id = str(l && l.id, 40);
     if (!id || id === 'fav') return null;
     const ids = [...new Set(arr(l.ids).map(x => str(x, 200)).filter(Boolean))].slice(0, LIMITS.listIds);
-    const out = { id, name: str(l.name, 40) || 'My list', ids, at: time(l.at) };
+    const out = { id, name: str(l.name, 80) || 'My list', ids, at: time(l.at) };
     const about = str(l.about, 300);
     if (about) out.about = about;
     return out;
   }
   const markKey = (b) => `${b.kind}:${b.id}`;
-  const nameKey = (l) => l.name.toLowerCase();
 
   /** A copy as it may be stored: the four parts, each item checked, capped. */
   function clean(doc) {
@@ -87,8 +86,10 @@
 
   /**
    * Two copies as one: everything in either. An item in both keeps the time it
-   * was first added. A list is the same list by its id, or else by its name —
-   * "Sydney" made on the phone and on the laptop is one list holding both.
+   * was first added. A list is the same list only by its id: two lists of one
+   * name can hold different parishes ("Sydney" saved from two different
+   * views), so both are kept, and the page tells them apart by name
+   * (freeName in next.js).
    */
   function merge(a, b) {
     const x = clean(a), y = clean(b);
@@ -102,7 +103,7 @@
     };
     const lists = [];
     for (const l of [...x.lists, ...y.lists]) {
-      const same = lists.find(o => o.id === l.id) || lists.find(o => nameKey(o) === nameKey(l));
+      const same = lists.find(o => o.id === l.id);
       if (!same) { lists.push({ ...l, ids: l.ids.slice() }); continue; }
       for (const id of l.ids) if (!same.ids.includes(id)) same.ids.push(id);
       same.at = first(same.at, l.at);

@@ -69,7 +69,7 @@ test('a PUT replaces the copy; merge adds to it; neither bumps the data version'
 
   const merged = await t.call('PUT', '/api/admin/saved', { merge: true, saved: { favourites: [{ id: 'b', at: 2 }], lists: [{ id: 'l2', name: 'sydney', ids: ['b'], at: 2 }] } });
   assert.deepEqual(merged.body.saved.favourites.map(f => f.id), ['b', 'a']);
-  assert.deepEqual(merged.body.saved.lists, [{ id: 'l1', name: 'Sydney', ids: ['a', 'b'], at: 1 }]);
+  assert.deepEqual(merged.body.saved.lists.map(l => l.id), ['l2', 'l1'], 'two lists of one name stay two');
 
   const replaced = await t.call('PUT', '/api/admin/saved', { saved: { favourites: [{ id: 'b', at: 2 }] } });
   assert.deepEqual(replaced.body.saved.favourites.map(f => f.id), ['b'], 'an unstar on one device is an unstar');

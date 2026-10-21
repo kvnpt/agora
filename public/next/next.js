@@ -290,12 +290,36 @@
     const l = allLists().find(x => x.ids.length === ids.size && x.ids.every(id => ids.has(id)));
     return l ? l.id : null;
   }
+  /** A name no other list has: "Parishes to visit", then "Parishes to visit (2)". */
+  function freeName(name, exceptId = null) {
+    const base = name.trim().slice(0, 80) || 'My list';
+    const taken = new Set(allLists().filter(l => l.id !== exceptId).map(l => l.name.toLowerCase()));
+    let out = base;
+    for (let i = 2; taken.has(out.toLowerCase()); i++) out = `${base} (${i})`;
+    return out;
+  }
   function newList(name, firstPid) {
     const ls = userLists();
-    const l = { id: 'l' + Date.now().toString(36), name: name.trim().slice(0, 40) || 'My list', ids: firstPid ? [firstPid] : [], at: Date.now() };
+    const l = { id: 'l' + Date.now().toString(36), name: freeName(name), ids: firstPid ? [firstPid] : [], at: Date.now() };
     writeLS(LISTS, [l, ...ls]);
     renderLists();
     return l;
+  }
+  function renameList(id, name) {
+    const ls = userLists();
+    const l = ls.find(x => x.id === id);
+    if (!l) return null;
+    l.name = freeName(name, id);
+    writeLS(LISTS, ls);
+    renderLists();
+    if (S.f.listId === id) refilter({ url: 'replace' });
+    return l;
+  }
+  /** A list, gone: only the list — its parishes, and anything starred, stay as they are. */
+  function deleteList(id) {
+    writeLS(LISTS, userLists().filter(x => x.id !== id));
+    renderLists();
+    followList();
   }
 
   // Bookmarks are the current app's too (agora-bookmarks, [{ id, kind, at }]):
@@ -1063,10 +1087,15 @@
     let what = window.AgoraLinkWords.headingOf(r, { loc, named: named && named.length <= 3 ? named : null });
     if (list) what += ` from ${list.name}`;
     else if (named && named.length > 3) what += ` at ${named.length} parishes`;
+    // Saved as a list, it is named for what it holds, not how many.
+    let name = window.AgoraLinkWords.listNameOf(r, { loc, place: S.place });
+    if (list) name += ` from ${list.name}`;
+    else if (named) name = named.map(p => p.acronym || p.name).join(' + ');
     return {
       title: `${n} ${n === 1 ? 'parish' : 'parishes'}${place ? ` ${place}` : ''}`,
       // A region or the parishes named say where already.
       blurb: loc || named ? what : [what, place].filter(Boolean).join(' '),
+      name,
     };
   }
   function pillLogo(p) {
@@ -2299,6 +2328,8 @@
             <button class="hbtn" type="button" data-act="showmap">${I.map}<span>Show on map</span></button>
             ${c.listId ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Save as list</span></button>`}
             <button class="hbtn" type="button" data-act="share">${I.share}<span>Share</span></button>
+            ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
+            <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
           </div>
           <p>${esc(c.blurb || '')}</p>
         </div>
@@ -3244,11 +3275,33 @@
       }
       if (a === 'savelist') {
         const c = top._coll;
-        const l = newList(c.title);
+        // Named for what it holds ("English Antiochian parishes in Sydney"),
+        // never "64 parishes in Sydney" twice over for two different views.
+        const l = newList(c.name || c.title);
         // Its parishes, and what they were: "Orthodox youth groups in Sydney".
         const ls = userLists(); const mine = ls.find(x => x.id === l.id); mine.ids = c.ids.slice(); mine.about = c.blurb || ''; writeLS(LISTS, ls);
         renderLists();
-        toast(`Saved “${c.title}” to your lists`);
+        toast(`Saved “${l.name}” to your lists`);
+        return;
+      }
+      if (a === 'renamelist') {
+        const l = listById(top._coll.listId);
+        if (!l) return;
+        const name = prompt('Rename your list', l.name);
+        if (!name || !name.trim() || name.trim() === l.name) return;
+        const now = renameList(l.id, name);
+        if (!now) return;
+        top._coll = { ...top._coll, title: now.name };
+        $$('h1, .gtitle b', top).forEach(h => { if (h.textContent === l.name) h.textContent = now.name; });
+        toast(`Renamed to “${now.name}”`);
+        return;
+      }
+      if (a === 'deletelist') {
+        const l = listById(top._coll.listId);
+        if (!l || !confirm(`Delete “${l.name}”? The parishes in it are not touched.`)) return;
+        deleteList(l.id);
+        popSheet();
+        toast(`Deleted “${l.name}”`);
         return;
       }
       if (a === 'more-items') { top.querySelector('.clist').insertAdjacentHTML('beforeend', top._rest()); b.remove(); return; }
