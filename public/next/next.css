@@ -1429,6 +1429,22 @@ body.dialog-open { overflow: hidden; }
 .ev-off { color: var(--danger); }
 .ev-head.break .ev-off, .ev-head.combined .ev-off { color: var(--text-2); }
 .ev-note { margin: 6px 0 0; color: var(--text-2); font-size: 14.5px; }
+/* Off, the poster and the words under a quiet veil that says so, so nobody
+   reads the date off a poster that still says it is on. */
+.ev-poster.off, .ev-band.off, .ev-desc.off { position: relative; }
+.ev-desc.off { min-height: 96px; overflow: hidden; }
+.off-veil {
+  position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center;
+  padding: 16px; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--bg, #fff) 70%, transparent);
+  -webkit-backdrop-filter: grayscale(1) blur(1px); backdrop-filter: grayscale(1) blur(1px);
+}
+.off-veil > span {
+  padding: 8px 14px; border-radius: 999px; background: var(--card); color: var(--text-2);
+  font-size: 15px; font-weight: 650; text-align: center; box-shadow: var(--shadow);
+}
+.ev-poster .off-veil > span { font-size: 17px; padding: 10px 18px; }
+.ev-desc .off-veil { align-items: flex-start; padding-top: 28px; }
 @media (prefers-color-scheme: dark) {
   .etomb, .ev-state { background: #26272c; color: #8a8a8a; }
   .erow.combined .etomb, .ev-state.combined { background: #1a3434; color: #9ad4d4; }

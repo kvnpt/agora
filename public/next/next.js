@@ -399,6 +399,8 @@
   // is the one that goes without notice; only its own link still opens it.
   const TOMB = { cancelled: 'Cancelled', combined: 'Combined', break: 'Break' };
   const tombOf = (e) => (e && TOMB[e.status]) || null;
+  // What the veil over an off event's poster and words says (worker/lib/page-card.mjs).
+  const OFF_SAYS = { cancelled: 'This event has been cancelled', combined: 'Combined with another event', break: 'On a break', hidden: 'Suppressed' };
   function eventParishIds(e) { return [e.parish_id, ...(e.extra_parishes || []).map(x => x.id || x.parish_id || x)].filter(Boolean); }
   /** Does an event answer the page's filters, and the collection on the map if there is one? */
   function eventPasses(e, opts) {
@@ -2351,7 +2353,10 @@
     const live = !e.hide_live && (e.parish_live_url || p?.live_url);
     // What it is said in: its own languages, else its parish's.
     const langs = parseLangs(e.languages) || parseLangs(e.parish_languages) || (p && parseLangs(p.languages)) || [];
-    return `${e.poster_path ? `<button class="ev-poster" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt=""></button>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
+    // Off, a quiet veil over the poster and the words, which still say it is on.
+    const offCls = off ? ` off ${esc(e.status)}` : '';
+    const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
+    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : `<div class="ev-band${offCls}" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}${stamp}</div>`}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
           <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
           <h1>${esc(e.title)}</h1>
@@ -2367,7 +2372,8 @@
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
         </div>
         ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
-        ${e.description ? `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+        ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
+          : `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}
         ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
           <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>` : ''}
         ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
