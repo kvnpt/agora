@@ -629,8 +629,14 @@
       const node = document.createElement('div');
       node.className = 'ee-card';
       node.dataset.eeCard = card.key;
+      node.dataset.tfScope = '';
       const kinds = (window.AgoraEventTypes ? window.AgoraEventTypes.KINDS : [])
         .map(k => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join('');
+      // A time is the app's quarter-hours (time-field.js), as the edit dialog
+      // has it, wherever that is loaded; /admin keeps the system's picker.
+      const timeInput = (f, label, extra) => (root.AgoraTimeField && root.AgoraTimeField.dress
+        ? `<input type="hidden" id="${fieldId(card, f)}" data-ee-field="${f}" data-time-field data-tf-name="${f}" data-tf-label="${label}"${extra}>`
+        : `<input type="time" id="${fieldId(card, f)}" data-ee-field="${f}">`);
       const row = (f, label, input, extra = '') =>
         `<div class="ee-row" data-row="${f}"><label for="${fieldId(card, f)}">${label}<span class="ee-mark" hidden>from poster</span></label>${input}<div class="ee-notes"></div>${extra}</div>`;
       node.innerHTML = `
@@ -643,21 +649,21 @@
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
           ${row('feast', 'Commemoration', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
+          ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="2" placeholder="Optional"></textarea>`)}
+          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker><option value="">Choose a kind</option>${kinds}</select>`)}
+          ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker autocomplete="off">`)}
           ${row('date', 'Date', `<input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">`)}
           <div class="ee-grid">
-            ${row('start_time', 'Starts', `<input type="time" id="${fieldId(card, 'start_time')}" data-ee-field="start_time">`)}
-            ${row('end_time', '<span data-ends-label>Ends</span>', `<input type="time" id="${fieldId(card, 'end_time')}" data-ee-field="end_time">`)}
+            ${row('start_time', 'Starts', timeInput('start_time', 'Starts', ''))}
+            ${row('end_time', '<span data-ends-label>Ends</span>', timeInput('end_time', 'Ends', ' data-tf-optional data-tf-none="No end time" data-tf-near="start_time"'))}
           </div>
           <!-- One event over several days: the tick brings out its last day,
                and the end time above is the time it ends on that day. -->
-          <label class="ee-check ee-multiday"><input type="checkbox" data-ee-multiday> Multi-day</label>
+          <label class="ee-check ee-multiday"><input type="checkbox" data-ee-multiday> Over several days</label>
           <div class="ee-multiday-row" hidden>
             ${row('end_date', 'Last day', `<input type="date" id="${fieldId(card, 'end_date')}" data-ee-field="end_date">`)}
           </div>
           <div class="ee-hint" data-hint="zone">${esc(tzHint())}</div>
-          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker><option value="">Choose a kind</option>${kinds}</select>`)}
-          ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="3" placeholder="Optional"></textarea>`)}
-          ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker autocomplete="off">`)}
           ${row('location_override', 'Where', `<input type="hidden" id="${fieldId(card, 'location_override')}" data-ee-field="location_override"><div data-ee-venue></div>`,
             '<div class="ee-hint">Another parish, or a place of its own with a pin — it shows on the map where it is held. The parish’s own address and pin are untouched.</div>')}
           <div class="ee-occ" hidden>

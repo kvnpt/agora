@@ -148,7 +148,13 @@
           location_lng: st.v.location_parish_id ? null : st.v.location_lng };
         render();
         emit();
-        if (st.mode === 'parish') $('.vp-search').focus({ preventScroll: true });
+        // On a phone the list itself is the answer, nearest first: no
+        // keyboard over it until the search is tapped.
+        const touch = root.matchMedia && root.matchMedia('(pointer: coarse)').matches;
+        if (st.mode === 'parish') {
+          if (touch) lift(el);
+          else $('.vp-search').focus({ preventScroll: true });
+        }
         if (st.mode === 'custom') $('.vp-text').focus({ preventScroll: true });
         return;
       }
@@ -190,6 +196,20 @@
       }
     });
 
+    // The search to the top of the dialog, so its list sits above the
+    // on-screen keyboard rather than under it; again once the keyboard has
+    // finished opening, since that moves things.
+    function lift(target) {
+      const go = () => target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      requestAnimationFrame(go);
+      const vv = root.visualViewport;
+      if (!vv) return;
+      let t = null;
+      const again = () => { clearTimeout(t); t = setTimeout(go, 60); };
+      vv.addEventListener('resize', again);
+      setTimeout(() => vv.removeEventListener('resize', again), 1000);
+    }
+    $('.vp-search').addEventListener('focus', (e) => lift(e.target));
     $('.vp-search').addEventListener('input', (e) => { st.q = e.target.value; renderList(); });
     $('.vp-text').addEventListener('input', (e) => {
       const words = e.target.value.trim() || null;

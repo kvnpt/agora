@@ -138,7 +138,8 @@
       closed = true;
       document.removeEventListener('keydown', onKey);
       back.remove();
-      document.body.classList.remove('dialog-open');
+      // A dialog under this one keeps the page held still.
+      if (!document.querySelector('.escalate-backdrop.open')) document.body.classList.remove('dialog-open');
       if (onClose) onClose();
     };
     const onKey = (e) => { if (e.key === 'Escape' && top()) { e.stopPropagation(); close(); } };
@@ -800,10 +801,11 @@
     form.querySelector('.ev-tools').addEventListener('click', async (ev) => {
       const b = ev.target.closest('button');
       if (!b) return;
-      // Each its own dialog, in place of this one: what it changes is the
-      // card's, which is drawn again when it is done.
+      // A break is its own dialog, in place of this one: what it changes is
+      // the card's, which is drawn again when it is done. Include other
+      // parishes opens over this form and closes back to it.
       if (b.matches('[data-ev-break]')) { f.close(); return editBreak(e.id); }
-      if (b.matches('[data-ev-combine]')) { f.close(); return combine(e.id); }
+      if (b.matches('[data-ev-combine]')) return combine(e.id);
       if (b.matches('[data-ev-delete]')) {
         const go = await askChoice({
           title: `Delete ${e.title}?`,
