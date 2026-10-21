@@ -1591,3 +1591,89 @@ body.dialog-open { overflow: hidden; }
 @media (prefers-color-scheme: dark) {
   .soft { --ink: color-mix(in srgb, var(--c) 45%, #fff); background: color-mix(in srgb, var(--c) 26%, var(--card)); }
 }
+
+/* ── Wide ────────────────────────────────────────────────────────────────
+   A screen wide enough is laid out as a page rather than a phone's column:
+   the map across it, rounded, its tabs above it and what it holds under it
+   as the page's heading; then two columns, Today and your own lists at the
+   left, the collections, what's on and the feed at the right. A card comes
+   in from the right beside the map rather than up from the foot. Narrower,
+   the two columns are nothing (display: contents) and none of this applies. */
+.col-side, .col-main { display: contents; }
+
+@media (min-width: 1080px) {
+  main, .top { max-width: 1480px; }
+  .top { padding: 14px 40px 8px; }
+  .dock-head { max-width: 1480px; padding: 8px 40px 8px; }
+  .dock .filter-panel { max-width: min(760px, calc(100% - 80px)); width: auto; margin: 0 40px 12px; }
+  @media (min-width: 1560px) { .dock .filter-panel { margin-left: calc((100% - 1480px) / 2 + 40px); } }
+
+  /* Every --pad inset lands 40px in; the columns' own insets make the gap. */
+  main {
+    display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); column-gap: 8px; align-items: start;
+    padding: 0 24px 64px;
+  }
+  main > :is(.viewport-card, .filter-bar, .filter-panel, .page-link) { grid-column: 1 / -1; }
+  .col-side { display: block; grid-column: 1; }
+  .col-main { display: block; grid-column: 2; min-width: 0; }
+  /* The left column rides along under the dock, scrolling on its own if it
+     is ever taller than the screen. */
+  .col-side {
+    position: sticky; top: calc(var(--dock-h, 60px) + 4px);
+    max-height: calc(100dvh - var(--dock-h, 60px) - 4px); overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: none; padding-bottom: 24px;
+  }
+  .col-side::-webkit-scrollbar { display: none; }
+  .col-main > .shelf:first-child { margin-top: 16px; }
+
+  /* The map: across the page, rounded, its tabs above it on the page. */
+  .viewport-card { margin: 6px 0 0; background: none; border: 0; border-radius: 0; overflow: visible; }
+  .jurisdiction-banner { margin: 0 var(--pad); background: none; }
+  body.map-full .jurisdiction-banner { margin: 0; background: var(--card); }
+  .viewport { height: clamp(420px, 62vh, 720px); margin: 14px var(--pad) 0; border-radius: 28px; }
+  .map-fs { top: 16px; right: 16px; }
+  .map-locate { right: 16px; bottom: 16px; }
+
+  /* What it holds, under it, as the page's heading. */
+  .inview { min-height: 0; gap: 16px; padding: 20px var(--pad) 6px; }
+  .inview .stackrow .av { --s: 40px; margin-left: -11px; box-shadow: var(--av-ring), 0 0 0 2.5px var(--bg); }
+  .inview .stackrow .av:first-child { margin-left: 0; }
+  .inview-text { font-size: 30px; letter-spacing: -.02em; line-height: 1.15; }
+  .inview-text b { font-weight: 700; }
+  .inview-text small { margin-top: 2px; font-size: 16px; letter-spacing: 0; }
+  .inview.one .inview-text b { line-height: 1.15; }
+  .inview-go svg { width: 22px; height: 22px; }
+  .filter-bar { padding-top: 12px; }
+  .filter-panel { max-width: 760px; }
+
+  /* The right column's shelves: laid out, not scrolled sideways. */
+  #shelf-collections .shelf-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; overflow: visible; }
+  #shelf-collections .ccard { width: auto; max-width: none; }
+  /* What's on stays a row, fading at its end, its scrollbar there for a mouse. */
+  .poster { width: 200px; }
+  #shelf-whatson .shelf-row {
+    scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+  }
+  #shelf-whatson .shelf-row::-webkit-scrollbar { display: block; height: 6px; }
+  #shelf-whatson .shelf-row::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+  .juris-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+
+  /* The feed, framed as a card is. Clipped, not hidden, so its days' headers still stick. */
+  #stream-days { margin: 0 var(--pad); border: 1px solid var(--hair); border-radius: var(--radius); overflow: clip; }
+  #stream-days > .sday:first-child { border-top: 0; }
+
+  /* A card, from the right: the page's height less a margin, rounded all round. */
+  .sheet {
+    top: 12px; right: 12px; bottom: 12px; left: auto; margin: 0;
+    width: 460px; max-width: calc(100vw - 24px); height: auto;
+    border-radius: 22px;
+    transform: translateX(calc(100% + 24px));
+  }
+  .sheet + .sheet { height: auto; }
+  .sheet.mini { bottom: auto; height: auto; max-height: calc(100% - 24px); }
+  .sheet::before { display: none; }
+  .sheet-scroll { padding-bottom: 24px; }
+  .scrim { background: rgba(0, 0, 0, .18); }
+}

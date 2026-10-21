@@ -132,6 +132,10 @@
       <button class="url-chip" type="button" id="page-link" data-copy="/" aria-label="Copy this view's link"><span class="url-text"></span><svg class="url-copy" viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M216 32H88a8 8 0 0 0-8 8v40H40a8 8 0 0 0-8 8v128a8 8 0 0 0 8 8h128a8 8 0 0 0 8-8v-40h40a8 8 0 0 0 8-8V40a8 8 0 0 0-8-8m-56 176H48V96h112Zm48-48h-32V88a8 8 0 0 0-8-8H96V48h112Z"/></svg></button>
     </div>
 
+    <!-- Wide, the page under the map is two columns (next.css, the wide
+         layout): Today and your own lists at the left, everything else at
+         the right. Narrower, these two are nothing, and it all runs on. -->
+    <div class="col-side">
     <!-- Today, before anything else. -->
     <section class="today card" id="today" aria-label="Today"></section>
 
@@ -140,6 +144,8 @@
     <section class="favs" id="favs"></section>
     <section class="shelf" id="shelf-lists"></section>
 
+    </div>
+    <div class="col-main">
     <!-- Curated: the slices of the data, as collections of parishes. -->
     <section class="shelf" id="shelf-collections"></section>
 
@@ -161,6 +167,7 @@
       <div id="stream-days"></div>
       <div class="stream-more" id="stream-more">Loading…</div>
     </section>
+    </div>
   </main>
 
   <!-- Sheets: a collection, a parish, an event, lists. A link that opens one
