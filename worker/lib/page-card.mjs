@@ -288,6 +288,8 @@ export function parishCardHTML(m) {
 // ── an event ─────────────────────────────────────────────────────────────
 
 /** An event's card, as next.js's openEvent draws it: the pinned event of the model. */
+// What the veil over an off event's poster and words says (public/next/next.js).
+const OFF_SAYS = { cancelled: 'This event has been cancelled', combined: 'Combined with another event', break: 'On a break', hidden: 'Suppressed' };
 export function eventCardHTML(m) {
   const e = m.pinned;
   const p = m.parish;
@@ -309,9 +311,9 @@ export function eventCardHTML(m) {
   }
   const lat = e.location_lat ?? e.lat ?? p.lat, lng = e.location_lng ?? e.lng ?? p.lng;
   const off = TOMB[e.status] || (e.status === 'hidden' ? 'Suppressed' : null);
-  // Off, its word is stamped over the poster and the words, which still say it is on.
+  // Off, a quiet veil over the poster and the words, which still say it is on.
   const offCls = off ? ` off ${esc(e.status)}` : '';
-  const stamp = off ? `<span class="off-stamp">${esc(off)}</span>` : '';
+  const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
   // What it is said in: its own languages, else its parish's.
   const own = langsOf(e.languages);
   const langs = own.length ? own : langsOf(e.parish_languages).length ? langsOf(e.parish_languages) : langsOf(p.languages);

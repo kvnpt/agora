@@ -345,15 +345,15 @@ test('a cancelled occurrence previews as cancelled, and its card says so', async
   assert.match(comingUp((await get('/sgr')).html), /<a class="erow tomb cancelled" href="\/\d+:2026-10-04">[\s\S]*?<span class="etomb">Cancelled<\/span>/);
 });
 
-test('a cancelled event is stamped Cancelled over its poster and its words', async () => {
+test('a cancelled event is veiled over its poster and its words', async () => {
   const { raw, get } = fresh();
   const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc,
       event_type, status, mutation_type, poster_path, description)
     VALUES (?, 'manual', 'Youth Retreat', '2026-10-10T23:00:00Z', '2026-10-11T01:00:00Z',
       'youth', 'cancelled', 'headless', '/posters/x.jpg', 'Register below.') RETURNING id`).get(PARISH).id;
   const c = card((await get(`/${id}`)).html);
-  assert.match(c, /<a class="ev-poster off cancelled" href="\/posters\/x\.jpg"[^>]*><img src="\/posters\/x\.jpg" alt=""><span class="off-stamp">Cancelled<\/span><\/a>/);
-  assert.match(c, /<div class="ev-desc off cancelled"><span class="off-stamp">Cancelled<\/span><div class="ev-desc-text">Register below\.<\/div><\/div>/);
+  assert.match(c, /<a class="ev-poster off cancelled" href="\/posters\/x\.jpg"[^>]*><img src="\/posters\/x\.jpg" alt=""><span class="off-veil"><span>This event has been cancelled<\/span><\/span><\/a>/);
+  assert.match(c, /<div class="ev-desc off cancelled"><span class="off-veil"><span>This event has been cancelled<\/span><\/span><div class="ev-desc-text">Register below\.<\/div><\/div>/);
 });
 
 test('an event and a rule held at another parish, or a place, say where', async () => {

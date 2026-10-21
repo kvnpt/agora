@@ -1429,27 +1429,22 @@ body.dialog-open { overflow: hidden; }
 .ev-off { color: var(--danger); }
 .ev-head.break .ev-off, .ev-head.combined .ev-off { color: var(--text-2); }
 .ev-note { margin: 6px 0 0; color: var(--text-2); font-size: 14.5px; }
-/* Off, the poster and the words under a stamp of its word (Cancelled), so
-   nobody reads the date off a poster that still says it is on. */
+/* Off, the poster and the words under a quiet veil that says so, so nobody
+   reads the date off a poster that still says it is on. */
 .ev-poster.off, .ev-band.off, .ev-desc.off { position: relative; }
-.ev-poster.off img, .ev-band.off .roundel { filter: grayscale(1) brightness(.55); }
-.ev-band.off { background: #6b6b70; }
-.ev-desc.off { min-height: 96px; }
-.ev-desc.off .ev-desc-text { color: var(--text-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
-.off-stamp {
-  position: absolute; left: 50%; top: 50%; z-index: 1; transform: translate(-50%, -50%) rotate(-8deg);
-  padding: 6px 16px; border: 3px solid var(--danger); border-radius: 10px;
-  background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--danger);
-  font-size: 26px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; line-height: 1.1;
-  white-space: nowrap; pointer-events: none; box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+.ev-desc.off { min-height: 96px; overflow: hidden; }
+.off-veil {
+  position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center;
+  padding: 16px; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--bg, #fff) 70%, transparent);
+  -webkit-backdrop-filter: grayscale(1) blur(1px); backdrop-filter: grayscale(1) blur(1px);
 }
-.ev-band .off-stamp { top: calc(50% + 20px); }
-.ev-poster .off-stamp { font-size: clamp(26px, 9vw, 40px); padding: 8px 22px; border-width: 4px; }
-.ev-desc .off-stamp { top: min(50%, 64px); font-size: 20px; padding: 4px 12px; }
-.ev-poster.combined .off-stamp, .ev-poster.break .off-stamp, .ev-band.combined .off-stamp, .ev-band.break .off-stamp,
-.ev-desc.combined .off-stamp, .ev-desc.break .off-stamp { border-color: var(--text-2); color: var(--text-2); }
-.erow.tomb .ethumb { opacity: .5; filter: grayscale(1); }
-.erow.cancelled .etomb { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
+.off-veil > span {
+  padding: 8px 14px; border-radius: 999px; background: var(--card); color: var(--text-2);
+  font-size: 15px; font-weight: 650; text-align: center; box-shadow: var(--shadow);
+}
+.ev-poster .off-veil > span { font-size: 17px; padding: 10px 18px; }
+.ev-desc .off-veil { align-items: flex-start; padding-top: 28px; }
 @media (prefers-color-scheme: dark) {
   .etomb, .ev-state { background: #26272c; color: #8a8a8a; }
   .erow.combined .etomb, .ev-state.combined { background: #1a3434; color: #9ad4d4; }
