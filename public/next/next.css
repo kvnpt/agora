@@ -351,14 +351,15 @@ body.map-full .map-fs .fs-close { display: block; }
   pointer-events: none;
 }
 /* How far, in the app's blues: the nearer, the deeper (app.css). On the dark
-   scheme, the nearer the brighter. Wherever a distance is said. */
+   scheme, the nearer the brighter and more saturated; far fades toward grey.
+   Wherever a distance is said. */
 .distance-near { color: #1565c0; }
 .distance-mid { color: #42a5f5; }
 .distance-far { color: #90caf9; }
 @media (prefers-color-scheme: dark) {
-  .distance-near { color: #8cc8ff; }
-  .distance-mid { color: #4f9be6; }
-  .distance-far { color: #3f6f9e; }
+  .distance-near { color: #47adff; }
+  .distance-mid { color: #5b95cc; }
+  .distance-far { color: #6c8399; }
 }
 .dist { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dist.distance-near { font-weight: 700; }
@@ -587,30 +588,32 @@ body.map-full .parish-row {
 .tfocus span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tfocus svg { flex: none; width: 14px; height: 14px; }
 .sheet .cu .sday, .sheet .cu-band { scroll-margin-top: 72px; }
-.etime { width: 58px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
+.etime { width: 50px; margin-right: -4px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
+/* Search results say the day under the time ("Sat 25 Oct"): room for it. */
+.sr-group .etime { width: 62px; margin-right: 0; }
 .erow.now .etime { color: var(--live); flex-direction: row; align-items: center; gap: 6px; }
 .live { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 var(--live); animation: pulse 1.8s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 60%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .ebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-/* A name has two lines, then an ellipsis. Its own languages lead the line under it. */
+/* A name and its own languages share two lines, then an ellipsis. */
 .etitle {
   min-width: 0; font-weight: 600; font-size: 16px; line-height: 1.25; overflow-wrap: break-word;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
 }
-.esub .elang {
-  flex: none; overflow: visible; padding: 1px 5px; border-radius: 3px;
-  background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600; white-space: nowrap;
+.etitle .elang {
+  display: inline-block; vertical-align: 2px; margin-left: 2px; padding: 1px 5px; border-radius: 3px;
+  background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600; line-height: 1.4; white-space: nowrap;
 }
 .esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
 .esub span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Its parish's name: two lines, then an ellipsis. */
+/* Its parish's name and how far: two lines, then an ellipsis. */
 .esub .epar {
   white-space: normal; line-height: 1.25; overflow-wrap: break-word;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
 }
-/* With your location on, how far: in its blue, as on a parish's card. */
-.esub em { font-style: normal; margin-left: auto; padding-left: 6px; flex: none; }
+/* With your location on, how far: run on after the name, at its size, in its blue. */
+.esub em { font-style: normal; font-size: inherit; }
 .efeast { font-size: 12.5px; color: var(--text-2); font-style: italic; }
 
 /* The app's time (app.css .event-time): sans, tabular, then a small ":30"
