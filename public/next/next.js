@@ -246,7 +246,7 @@
 
   const FAV = 'agora-favourites', LISTS = 'agora-lists';
   function readLS(k) { try { const v = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
-  function writeLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* this page only */ } }
+  function writeLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* this page only */ } savedChanged(k); }
   const favIds = () => readLS(FAV).map(f => f.id).filter(id => S.byId.has(id));
   const isFav = (pid) => readLS(FAV).some(f => f.id === pid);
   function toggleFav(pid) {
@@ -346,6 +346,94 @@
     const rest = readLS(SAVED).filter(x => x && x.path !== path);
     writeLS(SAVED, had ? rest : [{ url: location.origin + path, path, at: Date.now() }, ...rest]);
     return !had;
+  }
+
+  // ── Kept on the account ───────────────────────────────────────────────
+  //
+  // Signed in, favourites, lists, bookmarks and saved views are the account's
+  // too (public/shared/saved.js, worker/lib/saved-items.mjs). The first time
+  // this browser signs in as somebody, what it kept as a visitor joins their
+  // account; after that the account is the copy — the page loads it, and every
+  // change here sends the whole of it back. A change the send could not take
+  // stays marked, and goes next time rather than being overwritten.
+
+  const SV = window.AgoraSaved;
+  const SYNCED_AS = 'agora-saved-account', UNSENT = 'agora-saved-unsent';
+  const SYNC_KEYS = new Set(Object.values(SV.KEYS));
+  let syncAs = null, sendTimer = null, edits = 0;
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const lsSet = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* this page only */ } };
+  function localSaved() {
+    const d = {};
+    for (const p of SV.PARTS) d[p] = readLS(SV.KEYS[p]);
+    return d;
+  }
+  /** The account's copy into this browser. True when it changed anything. */
+  function adoptSaved(doc) {
+    const d = SV.clean(doc);
+    if (SV.same(d, localSaved())) return false;
+    for (const p of SV.PARTS) {
+      const v = p === 'views' ? d.views.map(x => ({ url: location.origin + x.path, ...x })) : d[p];
+      try { localStorage.setItem(SV.KEYS[p], JSON.stringify(v)); } catch { /* this page only */ }
+    }
+    return true;
+  }
+  function savedChanged(k) {
+    if (!SYNC_KEYS.has(k)) return;
+    edits++;
+    lsSet(UNSENT, '1');
+    if (!syncAs) return;
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(sendSaved, 800);
+  }
+  async function putSaved(merge) {
+    const res = await fetch('/api/admin/saved', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saved: SV.clean(localSaved()), merge }),
+    }).catch(() => null);
+    return res && res.ok ? res.json().catch(() => null) : null;
+  }
+  async function sendSaved() {
+    const at = edits;
+    const out = await putSaved(false);
+    if (out && at === edits) lsSet(UNSENT, null);
+    return out;
+  }
+  /**
+   * Bring this browser and the account level: on load, and on coming back to
+   * the tab. Answers who is signed in, or null for a visitor.
+   */
+  async function syncSaved() {
+    const res = await fetch('/api/admin/saved', { cache: 'no-store' }).catch(() => null);
+    const got = res && res.ok ? await res.json().catch(() => null) : null;
+    if (!got || typeof got.identity !== 'string') return null;
+    const who = got.identity.toLowerCase();
+    const was = lsGet(SYNCED_AS);
+    let doc = null;
+    if (was == null) {
+      // The first sign-in here: what this browser kept joins the account.
+      const out = await putSaved(true);
+      if (!out) return got;
+      doc = out.saved;
+    } else if (was !== who) {
+      // Somebody else signed in here before: theirs is on their account.
+      doc = got.saved || {};
+    } else if (lsGet(UNSENT) || !got.saved) {
+      // Changed here while the account could not hear, or the account has
+      // nothing: this browser's copy is the newer one.
+      await sendSaved();
+    } else doc = got.saved;
+    lsSet(SYNCED_AS, who);
+    syncAs = who;
+    if (doc) lsSet(UNSENT, null);
+    if (doc && adoptSaved(doc)) {
+      renderLists();
+      renderInView();
+      syncMap();
+      followList();
+      repaintSheets();
+    }
+    return got;
   }
 
   // ── Filters ───────────────────────────────────────────────────────────
@@ -1721,6 +1809,10 @@
   async function checkSignIn() {
     const ping = await fetch('/api/admin/ping', { cache: 'no-store' }).catch(() => null);
     const who = ping && ping.ok ? await ping.json().catch(() => null) : null;
+    // A 403 is Access letting the request through and admin_roles not: signed
+    // in, with no role. Favourites still go to the account (syncSaved), which
+    // also says who it is.
+    const noRole = !!ping && ping.status === 403;
     S.who = who ? {
       signedIn: true,
       identity: typeof who.identity === 'string' ? who.identity : null,
@@ -1736,6 +1828,7 @@
     syncAccount();
     // A card drawn before the answer came was drawn for a visitor.
     if (S.who.signedIn) repaintSheets();
+    return who || noRole;
   }
   /**
    * May this account do `capability`, at this parish? The Worker's two
@@ -1780,7 +1873,7 @@
     const w = waiting();
     const rows = S.who.signedIn
       ? `${S.who.identity ? `<div class="pm-note">${esc(S.who.identity)}</div>` : ''}
-         <a class="pm-row" role="menuitem" href="/admin">${I.sliders}<span class="pm-t"><b>Admin panel</b>${w ? `<small class="pm-wait">${esc(w)}</small>` : ''}</span></a>
+         ${S.who.role ? `<a class="pm-row" role="menuitem" href="/admin">${I.sliders}<span class="pm-t"><b>Admin panel</b>${w ? `<small class="pm-wait">${esc(w)}</small>` : ''}</span></a>` : ''}
          <a class="pm-row" role="menuitem" href="/cdn-cgi/access/logout">${I.signOut}<span class="pm-t"><b>Sign out</b></span></a>`
       : `<a class="pm-row" role="menuitem" href="/admin">${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
     openMenu(btn, rows);
@@ -3275,6 +3368,13 @@
     try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + (q.toString() ? `?${q}` : '')); } catch { /* sandboxed */ }
     renderLink();
     step('✓ page drawn', 0.7);
+    // Signed in, role or not: the account's favourites and lists, once the
+    // parishes they name are here to draw.
+    signedIn.then(any => any && syncSaved()).then(got => {
+      if (!got) return;
+      if (!S.who.signedIn) { S.who = { ...NOBODY, signedIn: true, identity: got.identity }; syncAccount(); }
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncSaved(); });
+    }).catch(() => {});
     await mapStarted;
     const opening = applyRoute(route, { animate: false });
     // A collection's link opens its card, over the page its filters make, as

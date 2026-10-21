@@ -198,5 +198,7 @@ export function isDataWrite(request, response) {
   // at all; it is a POST only because it carries the names.
   if (/^\/api\/admin\/(drafts|draft-events|suggestions)(\/|$)/.test(path) && !path.endsWith('/publish')) return false;
   if (path === '/api/admin/acronym-suggestion') return false;
+  // A person's favourites and lists are theirs, and the bundle never reads them.
+  if (path === '/api/admin/saved') return false;
   return true;
 }
