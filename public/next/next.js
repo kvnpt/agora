@@ -1215,24 +1215,25 @@
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
     const title = e.feast ? `${e.title}` : e.title;
-    // Its own languages, as its line in the timetable has them, first on the line under its name.
+    // Its own languages, as its line in the timetable has them, run on after its name.
     const langs = parseLangs(e.languages);
     const lang = langBadge(langs, asked || (focus && focus.lang)) ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
     // Held in another parish's church, each card says the other's part: the
     // venue's names its host, the host's names where it is.
     const venue = e.location_parish_id && e.location_parish_id !== e.parish_id ? S.byId.get(e.location_parish_id) : null;
-    const sub = here && venue && here === venue.id ? `<span class="esub">${lang}${avatar(p, 'xs')}<span>Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
-      : here && venue && e.parish_id === here ? `<span class="esub">${lang}${avatar(venue, 'xs')}<span>At ${esc(venue.name)}</span></span>`
-      : here && e.parish_id === here ? (lang ? `<span class="esub">${lang}</span>` : '')
-      : `<span class="esub">${lang}${avatar(p, 'xs')}<span class="epar">${esc(p ? p.name : e.parish_name || '')}</span>${d != null ? distHTML(d) : ''}</span>`;
+    // The second block: whose it is, with how far, all one line that may run to two.
+    const sub = here && venue && here === venue.id ? `<span class="esub">${avatar(p, 'xs')}<span class="epar">Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
+      : here && venue && e.parish_id === here ? `<span class="esub">${avatar(venue, 'xs')}<span class="epar">At ${esc(venue.name)}</span></span>`
+      : here && e.parish_id === here ? ''
+      : `<span class="esub">${avatar(p, 'xs')}<span class="epar">${esc(p ? p.name : e.parish_name || '')}${d != null ? ` ${distHTML(d)}` : ''}</span></span>`;
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
     return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}">
         <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
-        <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
+        <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${sub}
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
