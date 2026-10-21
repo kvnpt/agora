@@ -142,11 +142,9 @@ other mix of filters is the page itself, filtered, and gets only its head.
   spellings live in `public/shared/slugs.js` (an acronym may not take one); a link
   writes, and a canonical names, only `/en` and `/en-only`. Any other language is
   `/in-greek`, or `/in-greek-only` for nothing but Greek, and its heading says
-  "Greek-only". The server and the page do not yet count `/en` alike: for a rule
-  that names no language the server takes English anywhere in the parish's languages,
-  the page only English first there or on a rule (`speaksEnglish` in `next.js`, since
-  English is on nearly every parish's list). So `/en` paints more parishes than the
-  page then draws (8 and 4 locally, October 2026); one of the two should give way.
+  "Greek-only". The server and the page count `/en` alike: a rule or event that
+  names no language takes its parish's, and English anywhere on that list counts,
+  in any order (Kevin, 21 Oct 2026: the order of a parish's languages means nothing).
 
 ## Caching
 
