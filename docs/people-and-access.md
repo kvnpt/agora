@@ -171,6 +171,20 @@ A newly approved contact sees a one-time guide on their own parish's sheet —
 details, service times, one-week changes, one-offs, a monthly bulletin — kept
 per browser in localStorage, since it is a convenience.
 
+**What a person keeps follows the account.** Favourites, lists of parishes,
+bookmarks and saved views are written to localStorage as they always were, and
+for anybody signed in — role or not — also to `saved_items`, one row per
+verified address (`/api/admin/saved`, `worker/lib/saved-items.mjs`). The first
+time a browser signs in as somebody, what it kept as a visitor is merged into
+the account (`public/shared/saved.js`: everything in either, a list matched by
+id or name); after that the account is the copy, so an unstar on the phone is
+an unstar on the laptop. A change made while the account could not be reached
+is marked and sent next time rather than overwritten. A browser that was signed
+in as somebody else takes the new account's copy instead of merging, since the
+last person's things are already on theirs. The page tells a person with no role
+from a visitor by `/api/admin/ping`'s 403 (Access let the request through,
+`admin_roles` did not); their account menu has no Admin panel, only Sign out.
+
 ## Emails about claims
 
 Without them a claimant learned the outcome only by signing in again, and an

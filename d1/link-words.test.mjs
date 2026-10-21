@@ -25,3 +25,13 @@ test('several jurisdictions and days are said together', () => {
   assert.equal(W.jurisLabel('russian'), 'Russian Orthodox (ROCOR)');
   assert.equal(W.jurisLabel(null), 'Orthodox');
 });
+
+test('a list saved from a view is named for what it holds', () => {
+  const name = (path, opts) => W.listNameOf(U.classifyPath(path), opts);
+  assert.equal(name('/antiochian/en', { place: 'Sydney' }), 'English Antiochian parishes in Sydney');
+  assert.equal(name('/greek/sun/liturgy', { place: 'Near you' }), 'Greek Liturgies on Sundays near you');
+  assert.equal(name('/monasteries'), 'Monasteries');
+  assert.equal(name('/en-only', { place: 'Sydney' }), 'Fully-English parishes in Sydney');
+  assert.equal(name('/antiochian+greek/services'), 'Antiochian and Greek services');
+  assert.equal(name('/timetables', { place: 'Sydney' }), 'Parishes in Sydney');
+});

@@ -73,10 +73,30 @@
     return [who, full, r.part || '', noun].filter(Boolean).join(' ') + daysPhrase(r) + lang + where;
   }
 
+  /**
+   * A list's name, for a list saved from a view: what it holds, shortest first.
+   * "English Antiochian parishes in Sydney", "Greek Liturgies on Sundays near
+   * you", "Monasteries in Victoria". No count: the list's row says how many,
+   * and stays right as parishes are added to it. `place` is where the map is
+   * ("Sydney", "Near you") when no region is asked for.
+   */
+  function listNameOf(r, { loc = null, place = null } = {}) {
+    const js = (r.jurisdiction == null ? [] : [].concat(r.jurisdiction)).filter(x => JURIS_SHORT[x]);
+    const lang = r.lang ? (r.langStrict ? (/^english$/i.test(r.lang) ? 'Fully-English' : `${r.lang}-only`) : r.lang) : '';
+    const sub = r.kind === 'services' && r.kindSub
+      ? `${eventTypes.eventTypeLabel(r.kindSub).toLowerCase()} services` : (r.kindSub && OTHER_SUBS[r.kindSub]) || null;
+    let noun = (r.service ? services.servicePlural(r.service) : null) || sub || OTHER_KINDS[r.kind]
+      || (r.kind === 'services' || isNarrowed(r) ? 'services' : 'parishes');
+    if (r.monasteries) noun = noun === 'parishes' ? 'monasteries' : `${noun} at monasteries`;
+    const where = loc ? ` in ${loc.label}` : !place ? '' : /^near you$/i.test(place) ? ' near you' : ` in ${place}`;
+    const name = [lang, and(js.map(x => JURIS_SHORT[x])), r.part || '', noun].filter(Boolean).join(' ') + daysPhrase(r) + where;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
   /** Does the link ask anything of a parish or its services, beyond where it is? */
   const asksAnything = (r) => !!(r.jurisdiction || r.monasteries || r.kind || r.lang || isNarrowed(r));
 
-  const api = { JURIS_LABEL, JURIS_SHORT, jurisLabel, isNarrowed, daysPhrase, headingOf, asksAnything };
+  const api = { JURIS_LABEL, JURIS_SHORT, jurisLabel, isNarrowed, daysPhrase, headingOf, listNameOf, asksAnything };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraLinkWords = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

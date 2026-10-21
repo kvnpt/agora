@@ -36,6 +36,8 @@ import { JURISDICTION_SOURCES, getJurisdiction, isRerunnable, automationNote,
 import { jurisdictionColorOverrides, JURISDICTIONS, HEX } from '../lib/juris-colors.mjs';
 import { jurisdictionLogos, jurisdictionLogoKey, LOGO_JURISDICTIONS } from '../lib/juris-logos.mjs';
 import slugs from '../../public/shared/slugs.js';
+import savedShared from '../../public/shared/saved.js';
+import { readSaved, writeSaved } from '../lib/saved-items.mjs';
 import langList from '../../public/shared/languages.js';
 import timezones from '../../public/shared/timezones.js';
 import eventChecks from '../../public/shared/event-checks.js';
@@ -774,6 +776,27 @@ export function registerAdminRoutes(router) {
       // promises it when it is true.
       mail: canMail(c.env),
     });
+  }));
+
+  // ── What a person keeps: favourites, lists, bookmarks, saved views ──
+  //
+  // lib/saved-items.mjs has the why. Anybody signed in, role or not: starring
+  // a parish is not administering one.
+  router.get('/api/admin/saved', signedIn(async (c) => {
+    const had = await readSaved(c.env.DB, c.who.identity);
+    return json({ identity: c.who.identity, saved: had ? had.saved : null, updated_at: had ? had.updated_at : null });
+  }));
+
+  // The whole copy, every time. `merge: true` is a browser's first sign-in:
+  // what it kept as a visitor joins the account rather than replacing it.
+  router.put('/api/admin/saved', signedIn(async (c) => {
+    const text = await c.request.text();
+    if (text.length > savedShared.MAX_BYTES) return json({ error: 'Too much to save' }, 413);
+    let body;
+    try { body = JSON.parse(text); } catch { return json({ error: 'Not JSON' }, 400); }
+    if (!body || typeof body.saved !== 'object' || body.saved === null) return json({ error: 'Nothing to save' }, 400);
+    const out = await writeSaved(c.env.DB, c.who.identity, body.saved, { merge: body.merge === true });
+    return json({ identity: c.who.identity, ...out });
   }));
 
   router.post('/api/admin/suggestions', signedIn(async (c) => {

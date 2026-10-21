@@ -1158,3 +1158,19 @@ CREATE TABLE draft_events (
   location_lng      REAL
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- saved_items — what a signed-in person keeps
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Migration 029. Favourites, lists of parishes, bookmarks and saved views: the
+-- page keeps them in localStorage, and signed in, here too, so every device
+-- shows the same ones. One row per account, keyed by the address Access
+-- verified (lower-cased, as admin_roles is); `data` is the JSON document
+-- public/shared/saved.js defines. Nothing the bundle reads, so a write here
+-- never bumps the data version. See worker/lib/saved-items.mjs.
+CREATE TABLE saved_items (
+  email      TEXT PRIMARY KEY,
+  data       TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);

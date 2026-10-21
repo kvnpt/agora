@@ -44,3 +44,4 @@ CREATE TABLE drafts ( id INTEGER PRIMARY KEY AUTOINCREMENT, parish_id TEXT NOT N
 CREATE INDEX idx_drafts_parish ON drafts(parish_id);
 CREATE TABLE draft_events ( id INTEGER PRIMARY KEY AUTOINCREMENT, draft_id INTEGER NOT NULL REFERENCES drafts(id) ON DELETE CASCADE, position INTEGER NOT NULL DEFAULT 0, title TEXT, date TEXT, start_time TEXT, end_time TEXT, event_type TEXT, description TEXT, languages TEXT, location_override TEXT, also_at TEXT, replaces TEXT, ask_reason TEXT, printed_weekday TEXT, year_printed INTEGER, read_notes TEXT, read_fields TEXT, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), occurrence TEXT, feast TEXT, end_date TEXT, location_parish_id TEXT, location_lat REAL, location_lng REAL );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
+CREATE TABLE saved_items ( email TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')) );

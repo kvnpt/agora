@@ -57,13 +57,14 @@ CI catches the two files disagreeing. It cannot catch production being behind,
 so check it: `npx wrangler d1 execute agora --remote --command "SELECT …"`
 before the merge.
 
-Three features also create their tables on first use, with the same DDL, so a
+Four features also create their tables on first use, with the same DDL, so a
 deploy that beats its migration does not take them down: `parish_claims`
 (016, `worker/lib/claims.mjs`), `drafts` / `draft_events` (018,
 `worker/lib/drafts.mjs` — the add-event editor depends on them),
 `parish_suggestions` (024, `worker/lib/suggestions.mjs`) and
 `suggestion_posters` (025, the same file — a table rather than a column on
-`parish_suggestions` so that it could be made on first use). A test compares
+`parish_suggestions` so that it could be made on first use), and
+`saved_items` (029, `worker/lib/saved-items.mjs`). A test compares
 each DDL with the baseline. `CREATE TABLE IF NOT EXISTS` cannot add a
 column to a table that exists, so the later columns — `drafts.read_parish`
 (019), and what a sign or a programme is read into (020: `drafts.read_language`,
