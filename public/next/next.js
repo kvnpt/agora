@@ -35,6 +35,8 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;
+  // The wide layout (next.css): cards come in from the right, not up from the foot.
+  const WIDE = matchMedia('(min-width: 1080px)');
   const DAY = 86400000;
   const TZ = 'Australia/Sydney';
 
@@ -1555,6 +1557,7 @@
    * enough down (or flicked) it closes, a step back like its X. Short of
    * that it springs back. A sideways drag is the row under the finger's
    * (the buttons, a link), and an upward one the card's own scroll.
+   * Wide, a card stands at the right and has its X alone.
    */
   function swipeToClose(el) {
     const scroller = el.querySelector('.sheet-scroll');
@@ -1562,7 +1565,7 @@
     const reset = () => { el.style.transform = ''; $('#scrim').style.opacity = ''; el.classList.remove('dragging'); };
     el.addEventListener('touchstart', (e) => {
       g = null;
-      if (e.touches.length !== 1 || el !== stack[stack.length - 1]) return;
+      if (WIDE.matches || e.touches.length !== 1 || el !== stack[stack.length - 1]) return;
       if (e.target.closest('input, textarea, select, [contenteditable]')) return;
       const y = e.touches[0].clientY;
       const onBar = y - el.getBoundingClientRect().top < 64;
