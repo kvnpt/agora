@@ -406,8 +406,8 @@
     return eventMatches(e, S.f, S.juris, opts);
   }
   /** Does an event answer these filters? A collection asks it of its own. */
-  function eventMatches(e, f, juris, { scoped = true } = {}) {
-    if (!visible(e)) return false;
+  function eventMatches(e, f, juris, { scoped = true, cancelled = false } = {}) {
+    if (!visible(e) && !(cancelled && e.status === 'cancelled')) return false;
     if (scoped && e.parish_scoped) return false;
     const pids = eventParishIds(e);
     const ps = pids.map(id => S.byId.get(id)).filter(Boolean);
@@ -1457,7 +1457,8 @@
   function renderStream() {
     const start = S.from || todayKey();
     const now = Date.now();
-    const list = feedRange(start, S.streamDays).filter(e => eventPasses(e) && inViewEvent(e) && endMs(e) > now);
+    // A cancelled date stays in the stream, struck through: people planned on it.
+    const list = feedRange(start, S.streamDays).filter(e => eventPasses(e, { cancelled: true }) && inViewEvent(e) && endMs(e) > now);
     $('#stream-days').innerHTML = daysHTML(list, {
       start, days: S.streamDays, empty: true, row: { lang: S.f.lang },
       linkFor: (k) => pathOf(segsFor({ juris: S.juris, f: S.f, from: k })),
@@ -2351,7 +2352,10 @@
     const live = !e.hide_live && (e.parish_live_url || p?.live_url);
     // What it is said in: its own languages, else its parish's.
     const langs = parseLangs(e.languages) || parseLangs(e.parish_languages) || (p && parseLangs(p.languages)) || [];
-    return `${e.poster_path ? `<button class="ev-poster" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt=""></button>` : `<div class="ev-band" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}</div>`}
+    // Off, its word is stamped over the poster and the words, which still say it is on.
+    const offCls = off ? ` off ${esc(e.status)}` : '';
+    const stamp = off ? `<span class="off-stamp">${esc(off)}</span>` : '';
+    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : `<div class="ev-band${offCls}" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}${stamp}</div>`}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
           <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
           <h1>${esc(e.title)}</h1>
@@ -2367,7 +2371,8 @@
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
         </div>
         ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
-        ${e.description ? `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>` : ''}
+        ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
+          : `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}
         ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
           <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>` : ''}
         ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
