@@ -227,14 +227,8 @@
     for (const l of parseLangs(p.languages) || []) add(l);
     return set;
   }
-  /** English is on every parish's list; English *first*, or on a service, is the signal. */
-  function speaksEnglish(p) {
-    const pl = parseLangs(p.languages) || [];
-    if (pl[0] === 'English') return true;
-    return rulesOf(p.id).some(r => (parseLangs(r.languages) || []).includes('English'));
-  }
+  /** A language anywhere on a parish's list or its services; the order says nothing. */
   function hasLang(p, lang) {
-    if (lang === 'English') return speaksEnglish(p);
     return parishLangs(p).some(l => l === lang || (lang === 'Church Slavonic' && /slavonic|russian/i.test(l)));
   }
 
@@ -464,8 +458,8 @@
   //
   // The app's own readers, where it has them: timetable.js decides a kind,
   // services.js a service and a part of the day, locations.js a region. What
-  // is this page's own is the language test (English is on every parish's
-  // list, so English first or on a service is the signal) and "with times".
+  // is this page's own is the language test (a language anywhere on the list,
+  // in any order) and "with times".
 
   const weekdayOf = (key) => new Date(key + 'T00:00:00Z').getUTCDay();
   /** Does a rule or an event answer what the filters ask: its kind, service, day and part of the day? */
@@ -536,9 +530,7 @@
   function langAnswers(own, parishLs, f) {
     if (!f.lang) return true;
     const ls = own || parishLs || [];
-    return f.langStrict ? onlyIn(own, f.lang)
-      : f.lang === 'English' ? (ls.includes('English') && (own || ls[0] === 'English'))
-      : ls.some(l => langIs(l, f.lang));
+    return f.langStrict ? onlyIn(own, f.lang) : ls.some(l => langIs(l, f.lang));
   }
   /**
    * Does a rule or an event answer what the filters ask of it: its kind,
