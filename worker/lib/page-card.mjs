@@ -28,6 +28,7 @@ import sourceLine from '../../public/shared/source-line.js';
 import lines from '../../public/shared/timetable-lines.js';
 import collections from '../../public/shared/collections.js';
 import languages from '../../public/shared/languages.js';
+import ruleFilters from '../../public/shared/timetable.js';
 import linkify from '../../public/shared/linkify.js';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 import { mapsHref } from './lite-page.mjs';
@@ -95,7 +96,6 @@ function avatar(p, cls, color) {
   const tag = esc(String(p.acronym || p.name || '?').slice(0, 3));
   return `<span class="av ${cls}" style="--j:${color}">${p.logo_path ? `<img src="${esc(p.logo_path)}" alt="">` : ''}<b>${tag}</b></span>`;
 }
-const langsOf = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
 const tel = (s) => String(s).replace(/[^\d+]/g, '');
 const TOMB = { cancelled: 'Cancelled', combined: 'Combined', break: 'Break' };
 const shown = (e) => !e.is_tombstone && (!e.status || e.status === 'approved') && !e.break_from && !e.combined_into_event_id;
@@ -127,7 +127,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
   if (!ls.length) return '';
   const eve = ls.findIndex(l => l.evening);
   const out = ls.map((l, i) => {
-    const langs = compact ? [] : langsOf(l.r.languages);
+    const langs = compact ? [] : ruleFilters.serviceLangs(l.r) || [];
     return `${i === eve ? EVENING : ''}<div class="tt-line">
         <span class="tt-days">${esc((l.q ? `${l.q} ` : '') + lines.dayList(l.days))}</span>
         ${timeHTML(l.r.start_time)}
@@ -142,7 +142,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
 function eventRowHTML(e, here, now = false) {
   const tomb = TOMB[e.status] || null;
   // Its own languages first on the line under its name, then another parish's name.
-  const langs = langsOf(e.languages);
+  const langs = ruleFilters.serviceLangs(e) || [];
   const lang = langs.length ? `<span class="elang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : '';
   // Held here for another parish, it names its host.
   const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
@@ -233,8 +233,9 @@ function summaryHTML(m, today) {
     const when = `${esc(k === today ? 'Today' : near ? WD[d.getUTCDay()] : `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`)}<br>${esc(hm12(next._local.time))}`;
     nextCell = `<div class="sum"><small>Next ${esc(eventTypes.eventTypeLabel(next.event_type))}</small><b class="ok">${when}</b></div>\n      `;
   }
-  const langs = [...new Set([...m.rules.flatMap(r => langsOf(r.languages)), ...langsOf(m.parish.languages)])];
-  return `${nextCell}<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>
+  // What its services are tagged with; none tagged, no box.
+  const langs = ruleFilters.parishLangsOf(m.rules.filter(r => lines.isLive(r, today)));
+  return `${nextCell}${langs.length ? `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · '))}</b></div>` : ''}
       <a class="sum sum-link" href="/${esc(m.parish.jurisdiction || '')}"><small>Jurisdiction</small><b style="color:${m.color}">${esc(JURIS_SHORT(m.parish.jurisdiction) || m.parish.jurisdiction || '')}</b></a>`;
 }
 
@@ -314,9 +315,8 @@ export function eventCardHTML(m) {
   // Off, a quiet veil over the poster and the words, which still say it is on.
   const offCls = off ? ` off ${esc(e.status)}` : '';
   const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
-  // What it is said in: its own languages, else its parish's.
-  const own = langsOf(e.languages);
-  const langs = own.length ? own : langsOf(e.parish_languages).length ? langsOf(e.parish_languages) : langsOf(p.languages);
+  // What it is said in: a service's own tags, never its parish's.
+  const langs = ruleFilters.serviceLangs(e) || [];
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
       ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : `<div class="ev-band${offCls}" style="--j:${m.color}">${roundel(e.event_type, true)}${stamp}</div>`}
@@ -371,7 +371,7 @@ export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
   const item = (p) => {
     const color = colorOf(p.jurisdiction);
     const tt = timetableHTML(byParish.get(p.id) || [], { today: todayOf(p), color, compact: true });
-    const langs = [...new Set([...(byParish.get(p.id) || []).flatMap(r => langsOf(r.languages)), ...langsOf(p.languages)])];
+    const langs = ruleFilters.parishLangsOf((byParish.get(p.id) || []).filter(r => lines.isLive(r, todayOf(p))));
     const slug = String(p.acronym || p.id).toLowerCase().replace(/\s+/g, '');
     return `<article class="citem">
         <a class="citem-head" href="/${esc(slug)}">${avatar(p, 'md', color)}

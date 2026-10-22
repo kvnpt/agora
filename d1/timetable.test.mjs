@@ -27,13 +27,29 @@ test('a rule answers the service, day, part of the day and language asked for', 
   assert.ok(!T.ruleMatches(vespers, { part: 'morning' }));
   assert.ok(!T.ruleMatches(vespers, { day: 0 }));
   assert.ok(!T.ruleMatches(vespers, { service: 'liturgy' }));
-  // Its own languages first, the parish's after — as the app's rows carry them, or passed in.
+  // A service by its own tags alone: never its parish's.
   assert.ok(!T.ruleMatches(vespers, { englishOnly: true }), 'no languages anywhere is not English');
-  assert.ok(T.ruleMatches({ ...vespers, parish_languages: '["English"]' }, { englishOnly: true, englishStrict: true }));
-  assert.ok(T.ruleMatches(vespers, { englishOnly: true }, { parishLanguages: '["Arabic","English"]' }));
-  assert.ok(!T.ruleMatches(vespers, { englishOnly: true, englishStrict: true }, { parishLanguages: '["Arabic","English"]' }));
-  assert.ok(T.ruleMatches({ ...vespers, languages: '["English"]' }, { englishOnly: true, englishStrict: true },
-    { parishLanguages: '["Arabic"]' }), 'a rule in English is English whatever the parish speaks');
+  assert.ok(!T.ruleMatches({ ...vespers, parish_languages: '["English"]' }, { englishOnly: true }), 'the parish column is not read');
+  assert.ok(!T.ruleMatches(vespers, { englishOnly: true }, { parishOk: true }), 'an untagged service is in no language');
+  assert.ok(T.ruleMatches({ ...vespers, languages: '["Greek","English"]' }, { englishOnly: true }));
+  assert.ok(!T.ruleMatches({ ...vespers, languages: '["Greek","English"]' }, { englishOnly: true, englishStrict: true }));
+  assert.ok(T.ruleMatches({ ...vespers, languages: '["English"]' }, { englishOnly: true, englishStrict: true }));
+});
+
+test('only a service carries a language; anything else goes with its parish', () => {
+  const talk = { parish_id: 'snb', day_of_week: 3, start_time: '19:15', title: 'Bible Study', event_type: 'talk', languages: '["Arabic"]' };
+  const lit = { parish_id: 'snb', day_of_week: 0, start_time: '09:00', title: 'Divine Liturgy', event_type: 'liturgy', languages: '["Greek","English"]' };
+  const vespers = { parish_id: 'snb', day_of_week: 6, start_time: '18:00', title: 'Vespers', event_type: 'vespers', languages: '["English"]' };
+  assert.ok(T.isService(lit) && T.isService(vespers) && !T.isService(talk));
+  assert.deepEqual(T.parishLangsOf([talk, lit, vespers]), ['Greek', 'English'], "a talk's tag is not read");
+  assert.equal(T.serviceLangs(talk), null);
+  const en = T.langFilterOf({ lang: 'English' });
+  const ar = T.langFilterOf({ lang: 'Arabic' });
+  assert.ok(T.parishAnswersLang([talk, lit], en));
+  assert.ok(!T.parishAnswersLang([talk, lit], ar), 'a tagged talk does not make an Arabic parish');
+  assert.ok(T.ruleMatches(talk, { lang: 'English' }, { parishOk: T.parishAnswersLang([talk, lit], en) }));
+  assert.ok(!T.ruleMatches(talk, { lang: 'Arabic' }, { parishOk: T.parishAnswersLang([talk, lit], ar) }));
+  assert.equal(T.parishLangsOf([]).length, 0, 'no services, no languages');
 });
 
 test('weeknights are Monday to Friday evenings; weekends are Saturday and Sunday, all day', () => {

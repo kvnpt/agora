@@ -211,7 +211,7 @@ For each event:
 - start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note.
 - end_date: YYYY-MM-DD of the last day, only for one event that runs over several days; empty otherwise.
 - event_type: the closest kind from the list below.
-- languages: only languages the image says the event is held in, from the list ("Greek", "Arabic", "Church Slavonic"; Russian is Church Slavonic). Empty if it does not say; do not guess from the language the image is written in.
+- languages: only languages the image says the event is held in, from the list ("Greek", "Arabic", "Church Slavonic"; Russian is Church Slavonic). A service named for its language says it: "English Vigil", "Greek Liturgy" and "Liturgy in English and Greek" are held in those languages. Empty if it does not say; do not guess from the language the image is written in.
 - venue: only when the event is somewhere other than the parish's own church, such as a hall, a park or another church. The name and address as printed. Not the parish's own address (it is given below), even when the image prints it.
 - description: one to three short sentences with what someone deciding whether to come needs to know: what it is, who is speaking, what to bring, the cost, how to RSVP. No exclamation marks, no emojis, nothing the image does not say. null if there is nothing beyond the title and feast.
 - notes: a short note for any field you were unsure of, naming that field. Usually empty.

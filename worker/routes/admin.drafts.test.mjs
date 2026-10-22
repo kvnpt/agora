@@ -242,7 +242,8 @@ test('a read streams into the cards: empty fields filled, the rest appended, a t
   assert.ok(!cards[0].read_fields.includes('title') && cards[0].read_fields.includes('date'));
   assert.deepEqual(cards[0].read_notes, [{ field: 'start_time', text: 'Doors 6:30.' }]);
   assert.deepEqual([cards[0].printed_weekday, cards[0].year_printed], ['Saturday', 0]);
-  assert.deepEqual([cards[1].title, cards[1].location_override, cards[1].languages], ['Talk on prayer', 'Church hall', ['Greek']]);
+  // A talk carries no language, whatever the poster says: only a service is held in one.
+  assert.deepEqual([cards[1].title, cards[1].location_override, cards[1].languages], ['Talk on prayer', 'Church hall', []]);
   assert.equal(frames[frames.length - 1].draft.read_status, 'read');
   assert.equal(frames[frames.length - 1].draft.read_kind, 'poster');
 });
@@ -297,7 +298,7 @@ test('publishing turns local wall-clock into instants, puts the poster on, and s
   const second = (await f.call('POST', `/api/admin/drafts/${d.id}/events`, { title: 'Vigil' })).body;
   // Sydney's clocks go forward at 02:00 on 4 Oct 2026: 01:30 is +10, 03:30 is +11.
   await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`,
-    { title: 'Early', date: '2026-10-04', start_time: '01:30', end_time: '03:30', event_type: 'prayer' });
+    { title: 'Early', date: '2026-10-04', start_time: '01:30', end_time: '03:30', event_type: 'prayer', languages: ['English'] });
   await f.call('PATCH', `/api/admin/draft-events/${second.id}`,
     { date: '2026-11-14', start_time: '23:00', end_time: '02:00' });
 
@@ -641,11 +642,31 @@ test('publishing a matched card writes onto that occurrence: its saint and the p
   assert.equal(events(), before, 'no event written beside the services');
 
   // A service not on the timetable is an event, and says its saint in its title.
+  // It must say its language first: a one-off service has no timetable to go by.
+  const bare = await f.call('POST', `/api/admin/draft-events/${draft.cards[3].id}/publish`, {});
+  assert.equal(bare.status, 400);
+  assert.match(bare.body.error, /Needs a language/);
+  await f.call('PATCH', `/api/admin/draft-events/${draft.cards[3].id}`, { languages: ['Greek'] });
   const vespers = await f.call('POST', `/api/admin/draft-events/${draft.cards[3].id}/publish`, {});
   assert.equal(vespers.status, 201);
   assert.equal(vespers.body.event.title, 'Great Vespers — Luke the Evangelist');
   assert.equal(vespers.body.event.poster_path, poster);
   assert.equal(events(), before + 1);
+});
+
+test('a one-off service the poster gives no language for is suggested the parish\'s usual, unmarked', async () => {
+  const f = fresh({ role: 'editor' });
+  addRookwood(f.raw);
+  f.raw.prepare(`UPDATE schedules SET languages = '["Greek","English"]' WHERE parish_id = ?`).run(ROOKWOOD);
+  f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, languages)
+    VALUES (?, 6, '17:00', 'Vespers', 'prayer', '["English"]')`).run(ROOKWOOD);
+  const draft = await readAt(f, ROOKWOOD, PROGRAMME);
+  const vespers = draft.cards[3];
+  assert.equal(vespers.occurrence, null);
+  assert.deepEqual(vespers.languages, ['English'], 'its kind first: the parish\'s prayers are in English');
+  assert.ok(!(vespers.read_fields || []).includes('languages'), 'not from the poster');
+  assert.ok((vespers.read_notes || []).some(n => n.field === 'languages' && /Suggested/.test(n.text)));
+  assert.deepEqual(draft.cards[1].languages, [], 'a date of a regular service has its service\'s');
 });
 
 test('a matched card whose date moved, or whose service is gone, is not written onto it', async () => {
@@ -660,7 +681,7 @@ test('a matched card whose date moved, or whose service is gone, is not written 
   assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM schedule_overrides WHERE schedule_id = ?').get(sun).n, 0);
 
   // Unlinked, it is an event of its own.
-  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${card.id}`, { occurrence: '' })).status, 200);
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${card.id}`, { occurrence: '', languages: ['Greek'] })).status, 200);
   assert.equal((await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {})).status, 201);
 
   // Only a rule's occurrence can be linked, and only this parish's.

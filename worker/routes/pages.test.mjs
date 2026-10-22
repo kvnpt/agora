@@ -261,7 +261,9 @@ test('a painted Today: no count, Later today only under Happening now, This even
   raw.prepare('DELETE FROM schedules WHERE parish_id = ?').run(PARISH);
   c = card((await get('/sgr')).html);
   assert.doesNotMatch(c, /class="today card|<small>Next/);
-  assert.match(c, /<div class="summary"><div class="sum"><small>Languages<\/small>/);
+  // And no services, no languages: the box is what its services are tagged with.
+  assert.doesNotMatch(c, /<small>Languages<\/small>/);
+  assert.match(c, /<div class="summary">\s*<a class="sum sum-link"/);
 });
 
 test('an old /worship, /services-liturgy or /studies link is sent to its name for good, keeping the rest', async () => {
@@ -499,6 +501,7 @@ test("the card wears the parish's colour: its jurisdiction's, as /admin set it",
 
 test('the sitemap lists every parish, and the collections that list somebody', async () => {
   const { raw, get } = fresh();
+  raw.prepare(`UPDATE schedules SET languages = '["Arabic","English"]' WHERE parish_id = ?`).run(PARISH);
   const { res, html } = await get('/sitemap.xml');
   assert.match(res.headers.get('content-type'), /xml/);
   const locs = [...html.matchAll(/<loc>([^<]*)<\/loc>/g)].map(m => m[1]);
@@ -585,10 +588,14 @@ test('a service, a day and a part of the day narrow the rules', async () => {
   assert.equal(title((await get('/prayer')).html), 'Orthodox prayer services | orthodoxy.au');
 });
 
-test('a language narrows to the rules served in it, falling back to the parish', async () => {
+test('a language narrows to the services tagged with it, never the parish\'s own claim', async () => {
   const { raw, get } = fresh();
   raw.prepare(`UPDATE schedules SET languages = '["English"]' WHERE parish_id = ?`).run(PARISH);
-  raw.prepare(`UPDATE parishes SET languages = '["Arabic","English"]' WHERE id = 'antiochian-stelias-wollongong'`).run();
+  rule(raw, 'antiochian-stelias-wollongong', 0, '09:00', 'Divine Liturgy', { languages: '["Arabic","English"]' });
+  // A parish that says English and has no service tagged so is not under /en.
+  raw.prepare(`UPDATE parishes SET languages = '["English"]' WHERE id = 'antiochian-stmichaelgabriel-ryde'`).run();
+  rule(raw, 'antiochian-stmichaelgabriel-ryde', 0, '09:00', 'Divine Liturgy');
+  assert.ok(!listed(raw, '/en').includes('Sts Michael & Gabriel, Ryde'));
   const full = listed(raw, '/en-only');
   assert.ok(full.includes('St George Cathedral, Redfern'));
   assert.ok(!full.includes('St Elias, Wollongong'), 'Arabic and English is not English only');
@@ -623,6 +630,7 @@ test('several parishes by name are their maker\'s list: named in the title, noin
 
 test('a collection is indexed, under its own name, with its own preview and its card', async () => {
   const { raw, get } = fresh();
+  raw.prepare(`UPDATE schedules SET languages = '["Arabic","English"]'`).run();
   const en = (await get('/en/services')).html;
   assert.equal(robots(en), 'index,follow');
   assert.equal(canonical(en), 'https://orthodoxy.au/services/en');
