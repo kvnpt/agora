@@ -118,6 +118,13 @@
    * mounted in. Escape and a tap outside close it, unless a dialog opened
    * over it is the one on top. Returns { el, body, setTitle, close }.
    */
+  /**
+   * A phone or a tablet: a field focused on opening brings the keyboard up
+   * over the form before anybody asked to type, so a form there opens with
+   * nothing focused.
+   */
+  const touchFirst = () => !!(root.matchMedia && root.matchMedia('(pointer: coarse)').matches);
+
   function frame({ title, sub = '', cls = '', onClose = null }) {
     const back = document.createElement('div');
     back.className = `escalate-backdrop open ${cls}`;
@@ -137,6 +144,7 @@
       if (closed) return;
       closed = true;
       document.removeEventListener('keydown', onKey);
+      unfit();
       back.remove();
       // A dialog under this one keeps the page held still.
       if (!document.querySelector('.escalate-backdrop.open')) document.body.classList.remove('dialog-open');
@@ -149,6 +157,18 @@
     document.addEventListener('keydown', onKey);
     document.body.appendChild(back);
     document.body.classList.add('dialog-open');
+    // With the keyboard up, iOS scrolls the page under a fixed dialog: the
+    // form ran past the top of the screen and then dragged the card behind.
+    // So the backdrop keeps to the part of the screen the keyboard leaves,
+    // and the form scrolls inside it and no further.
+    const vv = root.visualViewport;
+    const fit = () => {
+      back.style.top = `${vv.offsetTop}px`;
+      back.style.height = `${vv.height}px`;
+      back.style.bottom = 'auto';
+    };
+    if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit(); }
+    const unfit = () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } };
     return {
       el: back,
       body: back.querySelector('.frame-body'),
@@ -366,7 +386,7 @@
 
     endedServices(parishId, d.form);
     const first = d.form.querySelector('[data-rf="title"]');
-    if (first) first.focus({ preventScroll: true });
+    if (first && !touchFirst()) first.focus({ preventScroll: true });
   }
 
   /**
@@ -640,6 +660,9 @@
     paint();
   }
 
+  /** Only a service (a Liturgy, prayers, a feast) is held in a language (timetable.js). */
+  const isService = (type) => !!root.AgoraTimetable && root.AgoraTimetable.isService({ event_type: type });
+
   /** The form's fields, from the event as it is now. */
   function eventFieldsHTML(e, { series, parish, start, end, multi, parishes }) {
     const langs = (() => { try { return JSON.parse(e.languages || '[]'); } catch { return []; } })();
@@ -664,7 +687,7 @@
         ${parishes.length > 1 ? `<div><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
           `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       </div>
-      <div class="edit-row"><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
+      <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
       ${series ? '' : `<div class="edit-row"><label>Date</label>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', start.time, ' data-tf-label="Starts"')}</div>
@@ -777,7 +800,11 @@
       form.querySelector('[data-ev-lastday]').hidden = !multiBox.checked;
       form.querySelector('[data-ev-endlabel]').textContent = multiBox.checked ? 'Ends, last day' : 'Ends';
     });
-    q('event_type').addEventListener('change', () => { if (q('event_type').value === 'other') q('parish_scoped').checked = true; });
+    q('event_type').addEventListener('change', () => {
+      if (q('event_type').value === 'other') q('parish_scoped').checked = true;
+      // Only a service is held in a language.
+      form.querySelector('[data-ev-langrow]').hidden = !isService(q('event_type').value);
+    });
     const mount = form.querySelector('[data-venue-mount]');
     if (mount && root.AgoraVenuePicker) {
       const value = {};
@@ -889,7 +916,18 @@
       }
       const pid = v('parish_id') || e.parish_id;
       const span = localSpanToUtc(series ? zone : zoneOf(pid), date, st, et, last);
-      const langs = String(v('languages') || '').split(',').map(s => s.trim()).filter(Boolean);
+      // A service says its language (a one-off must: it has no timetable to
+      // go by); anything else carries none.
+      const langs = isService(v('event_type')) ? String(v('languages') || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+      const langErr = form.querySelector('[data-ev-langerr]');
+      langErr.hidden = true;
+      if (!series && isService(v('event_type')) && !langs.length) {
+        // Said where it is answered, which on a phone is well above the button.
+        langErr.textContent = 'Which language is it in? Pick at least one.';
+        langErr.hidden = false;
+        form.querySelector('[data-ev-langrow]').scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
       const body = {
         title: v('title'),
         description: v('description') || null,
@@ -929,7 +967,7 @@
       await done('Saved', { through: isMulti ? last : date });
     }
     const first = q('title');
-    if (first) first.focus({ preventScroll: true });
+    if (first && !touchFirst()) first.focus({ preventScroll: true });
   }
 
   // ── A break ───────────────────────────────────────────────────────────
@@ -1275,7 +1313,6 @@
     return names.length > 3 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ').replace(/, ([^,]*)$/, ' and $1');
   }
   const slugOf = (p) => (p.acronym || '').toLowerCase().replace(/\s+/g, '') || p.id;
-  const langsOf = (v) => { try { const l = JSON.parse(v || '[]'); return Array.isArray(l) ? l : [String(l)]; } catch { return v ? [String(v)] : []; } };
 
   function editDetails(pid) {
     const p = host.parish(pid);
@@ -1321,7 +1358,6 @@
           <input ${fld('maps_url')} value="${v('maps_url')}" placeholder="Or paste its Google Maps link" aria-label="Google Maps link" autocomplete="off">
           <button class="ev-link pd-usepin" type="button" data-pd-usepin>Use the pin instead</button>
         </div>
-        <div class="edit-row"><label>Languages</label><input ${fld('languages')} value="${esc(langsOf(p.languages).join(', '))}" data-lang-picker autocomplete="off"></div>
         <div class="edit-row"><label>Short link</label>
           <input ${fld('acronym')} value="${v('acronym')}" placeholder="acronym" autocomplete="off" autocapitalize="none" spellcheck="false"${mayAcronym ? '' : ' disabled'}>
           <div class="edit-row-hint" data-pd-acro></div>
@@ -1482,8 +1518,6 @@
       const data = { name: val('name'), jurisdiction: val('jurisdiction') };
       for (const k of ['full_name', 'phone', 'website', 'email', 'address', 'maps_url', 'live_url']) data[k] = val(k) || null;
       if (mayAcronym) data.acronym = val('acronym') || null;
-      const langs = val('languages').split(',').map(x => x.trim()).filter(Boolean);
-      data.languages = langs.length ? JSON.stringify(langs) : null;
       const now = host.parish(pid) || p;
       if (rf && RFrom && rf.value !== RFrom.readFrom(now)) data.read_from = rf.value;
       if (pin) { data.lat = pin.lat; data.lng = pin.lng; }

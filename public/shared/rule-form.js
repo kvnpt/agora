@@ -77,6 +77,9 @@
    * they had swapped away from. No week ticked is every week, and is null,
    * not '' (which the route refuses).
    */
+  // The kinds that are services, the only ones held in a language (timetable.js isService).
+  const SERVICE_TYPES = ['liturgy', 'prayer', 'feast', 'vespers', 'matins'];
+
   function cadence(mode, weeks = [], parity = 'a') {
     if (mode === 'wom') return { week_of_month: weeks.length ? weeks.join(',') : null, week_parity: null };
     if (mode === 'fortnight') return { week_of_month: null, week_parity: parity === 'b' ? 'b' : 'a' };
@@ -85,7 +88,9 @@
 
   /** A form's values as the schedule routes take them; every empty is null. */
   function requestBody(v) {
-    const langs = String(v.languages || '').split(',').map(s => s.trim()).filter(Boolean);
+    // Only a service is held in a language; anything else carries none.
+    const langs = SERVICE_TYPES.includes(v.event_type || 'liturgy')
+      ? String(v.languages || '').split(',').map(s => s.trim()).filter(Boolean) : [];
     const text = (x) => String(x == null ? '' : x).trim() || null;
     const num = (x) => (x === '' || x == null || !Number.isFinite(Number(x)) ? null : Number(x));
     return {
@@ -242,7 +247,7 @@
         <div><label>Ends</label>${time('end_time', rule.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
       </div>
       <div class="edit-row"><label>Runs</label>${cadenceHTML(rule, ctx)}</div>
-      <div class="edit-row"><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
+      <div class="edit-row" data-rf-langrow${SERVICE_TYPES.includes(kind) ? '' : ' hidden'}><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${field('description')} rows="2" placeholder="Shown on every date (optional)">${esc(rule.description || '')}</textarea></div>
       <div class="edit-row"><label>Where</label>
         <div class="vp-mount" data-venue-mount></div>
@@ -298,6 +303,8 @@
       }
     };
     cad.addEventListener('change', () => { paint(); repaintDates(); });
+    const kindSel = q('event_type'), langRow = form.querySelector('[data-rf-langrow]');
+    if (kindSel && langRow) kindSel.addEventListener('change', () => { langRow.hidden = !SERVICE_TYPES.includes(kindSel.value); });
     day.addEventListener('change', repaintDates);
 
     // An Other is the parish's own business (a working bee) until somebody

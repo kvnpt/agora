@@ -112,8 +112,9 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
     const own = (rulesOf.get(p.id) || []).filter(r => !r.effective_to || r.effective_to >= today);
     if (!own.length) withoutTimes++;
     if (!own.length && !listsAll) continue;
+    const parishOk = timetable.parishAnswersLang(own, timetable.langFilterOf(f));
     const matching = own
-      .filter(r => timetable.ruleMatches(r, f, { parishLanguages: p.languages }))
+      .filter(r => timetable.ruleMatches(r, f, { parishOk }))
       .map(r => ({ ...r, _today: today }))
       .sort(weekFrom(today));
     if (!matching.length && !listsAll) continue;

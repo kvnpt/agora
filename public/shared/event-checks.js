@@ -68,10 +68,22 @@
 
   /**
    * @param {object} f  a draft event: title, date, start_time, end_time,
-   *                    printed_weekday, year_printed
+   *                    printed_weekday, year_printed, event_type, languages, occurrence
    * @param {{today?: string}} ctx  the parish's own 'YYYY-MM-DD'
    * @returns {Array<{field: string, level: 'block'|'warn'|'info', text: string}>}
    */
+  // The kinds that are services (timetable.js KIND_TYPES.services, and the
+  // two that read as prayer).
+  const SERVICE_TYPES = new Set(['liturgy', 'prayer', 'feast', 'vespers', 'matins']);
+  /** A languages value as the editor ("English, Greek"), a row ('["English"]') or a list has it: any? */
+  function hasLangs(v) {
+    if (Array.isArray(v)) return v.length > 0;
+    const t = String(v == null ? '' : v).trim();
+    if (!t) return false;
+    if (t[0] === '[') { try { const a = JSON.parse(t); return Array.isArray(a) && a.length > 0; } catch { return false; } }
+    return true;
+  }
+
   function checkDraftEvent(f, ctx = {}) {
     const out = [];
     const add = (field, level, text) => out.push({ field, level, text });
@@ -87,6 +99,13 @@
     else if (!isLocalTime(f.start_time)) add('start_time', 'block', 'Write the time like 19:30.');
 
     if (!blank(f.end_time) && !isLocalTime(f.end_time)) add('end_time', 'block', 'Write the time like 21:00.');
+
+    // A one-off service says what language it is in: it has no timetable to
+    // go by, and the language filters read nothing else. A date of a regular
+    // service (occurrence) has its service's. Nothing but a service has one.
+    if (SERVICE_TYPES.has(f.event_type) && blank(f.occurrence) && !hasLangs(f.languages)) {
+      add('languages', 'block', 'Needs a language.');
+    }
 
     // One event over several days: a last day after the first, and the time
     // it ends on it — without one, nobody can say when it is over.

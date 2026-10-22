@@ -44,7 +44,7 @@ import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
-  placeRead, moveDraft, matchOccurrences, occurrenceBody } from '../lib/drafts.mjs';
+  placeRead, moveDraft, matchOccurrences, suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
@@ -611,7 +611,7 @@ async function readContext(db, parishId) {
   // are matched to their occurrences (matchOccurrences) — which needs the
   // weeks and the dates a rule runs between, not just its day and time.
   const rules = (await db.prepare(
-    `SELECT id, day_of_week, start_time, end_time, title, event_type, active, week_of_month,
+    `SELECT id, day_of_week, start_time, end_time, title, event_type, languages, active, week_of_month,
             week_parity, effective_from, effective_to FROM schedules
      WHERE parish_id = ? AND active = 1 AND (effective_to IS NULL OR effective_to >= ?)
      ORDER BY day_of_week, start_time`
@@ -1975,6 +1975,12 @@ export function registerAdminRoutes(router) {
       // A dated regular service — a programme's Sunday and its saint — is a
       // change to that Sunday, not an event beside it.
       matchOccurrences(read.read, rules);
+      // A one-off service the poster gives no language for: the parish's
+      // usual, as a suggestion to check (publishing needs one).
+      const past = (await env.DB.prepare(
+        `SELECT event_type, languages FROM events WHERE parish_id = ? AND languages IS NOT NULL
+         ORDER BY start_utc DESC LIMIT 40`).bind(draft.parish_id).all()).results || [];
+      suggestLanguages(read.read, rules, past);
       // Null when the draft was discarded while it was being read.
       const merged = await mergeRead(env.DB, draft.id, read.read);
       send('result', { draft: merged });

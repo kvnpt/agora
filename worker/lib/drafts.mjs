@@ -376,9 +376,11 @@ export async function mergeRead(db, draftId, read) {
       set.printed_weekday = ev.printed_weekday;
       set.year_printed = ev.year_printed;
     }
+    // A suggestion (suggestLanguages) is not "from poster": the poster did not say it.
+    const read = filled.filter(f => !(ev.suggested || []).includes(f));
     if (card) {
       if (!filled.length) return;
-      const marks = [...new Set([...parseList(card.read_fields), ...filled])];
+      const marks = [...new Set([...parseList(card.read_fields), ...read])];
       const allNotes = [...parseList(card.read_notes), ...notes];
       set.read_fields = JSON.stringify(marks);
       set.read_notes = allNotes.length ? JSON.stringify(allNotes) : null;
@@ -387,7 +389,7 @@ export async function mergeRead(db, draftId, read) {
         `UPDATE draft_events SET ${cols.map(c => `${c} = ?`).join(', ')}, updated_at = ${NOW} WHERE id = ?`
       ).bind(...Object.values(set), card.id));
     } else {
-      set.read_fields = filled.length ? JSON.stringify(filled) : null;
+      set.read_fields = read.length ? JSON.stringify(read) : null;
       set.read_notes = notes.length ? JSON.stringify(notes) : null;
       stmts.push(insertStatement(db, draftId, nextPos++, set));
     }
@@ -474,6 +476,51 @@ export function matchOccurrences(read, rules) {
     ev.occurrence = `${hit.id}:${ev.date}`;
     if (same(hit)) ev.title = hit.title;
     if (hit.event_type) ev.event_type = hit.event_type;
+  }
+  return read;
+}
+
+// The kinds that are services: only a service is held in a language
+// (public/shared/timetable.js isService).
+const SERVICE_TYPES = new Set(['liturgy', 'prayer', 'feast', 'vespers', 'matins']);
+
+/**
+ * A language for each one-off service the poster gives none for.
+ *
+ * A one-off service must say its language to be published (event-checks.js),
+ * and posters often do not ("Vespers and Liturgy, 6pm"). So the read suggests
+ * one from the parish itself: the languages most of its services of the same
+ * kind are tagged with, else most of its tagged services, its timetable first
+ * and then its past one-offs. Said as a note on the field and never marked
+ * "from poster", so the person sees it is a guess and checks it. Not for a date
+ * of a regular service (`occurrence`), which has its service's, and nothing
+ * for what is not a service: a talk or a social carries no language.
+ *
+ * @param {object} read   normalizeRead()'s answer, after matchOccurrences; changed in place
+ * @param {Array} rules   the parish's active rules, with `languages`
+ * @param {Array} past    the parish's past one-off events, with `languages`
+ */
+export function suggestLanguages(read, rules = [], past = []) {
+  const tagged = [...(rules || []), ...(past || [])]
+    .filter(r => SERVICE_TYPES.has(r.event_type))
+    .map(r => ({ type: r.event_type, langs: langList.names(parseList(r.languages)) }))
+    .filter(r => r.langs.length);
+  const commonest = (rows) => {
+    const n = new Map();
+    for (const r of rows) { const k = JSON.stringify(r.langs); n.set(k, (n.get(k) || 0) + 1); }
+    let best = null;
+    for (const [k, c] of n) if (!best || c > best[1]) best = [k, c];
+    return best ? JSON.parse(best[0]) : null;
+  };
+  for (const ev of read.events || []) {
+    if (!SERVICE_TYPES.has(ev.event_type)) { ev.languages = null; continue; }
+    if ((ev.languages && ev.languages.length) || ev.occurrence) continue;
+    const pick = commonest(tagged.filter(r => r.type === ev.event_type)) || commonest(tagged);
+    if (!pick) continue;
+    ev.languages = pick;
+    ev.suggested = [...(ev.suggested || []), 'languages'];
+    ev.read_notes = [...(ev.read_notes || []),
+      { field: 'languages', text: 'The poster does not say. Suggested from the parish’s other services: check it.' }];
   }
   return read;
 }

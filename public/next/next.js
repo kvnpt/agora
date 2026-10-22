@@ -220,16 +220,17 @@
     const t = todayKey();
     return !(r.effective_to && r.effective_to < t);
   }
-  function parishLangs(p) {
-    const set = [];
-    const add = (l) => { if (l && !set.includes(l)) set.push(l); };
-    for (const r of rulesOf(p.id)) for (const l of parseLangs(r.languages) || []) add(l);
-    for (const l of parseLangs(p.languages) || []) add(l);
-    return set;
-  }
-  /** A language anywhere on a parish's list or its services; the order says nothing. */
-  function hasLang(p, lang) {
-    return parishLangs(p).some(l => l === lang || (lang === 'Church Slavonic' && /slavonic|russian/i.test(l)));
+  /** A parish's services that say what language they are in: its timetable, and its one-offs ahead. */
+  const langRows = (pid) => [...rulesOf(pid).filter(liveRule), ...upcomingOneOffs(pid)];
+  /**
+   * A parish's languages: what its services are tagged with, in any order,
+   * and never the parish's own column (a directory's "Greek, English" at
+   * every Greek parish). No tagged services, no languages (timetable.js).
+   */
+  function parishLangs(p) { return window.AgoraTimetable.parishLangsOf(langRows(p.id)); }
+  /** Does a parish hold a service in this language (only in it, when strict)? */
+  function hasLang(p, lang, strict = false) {
+    return !!p && window.AgoraTimetable.parishAnswersLang(langRows(p.id), { lang, strict });
   }
 
   // ── Lists: collections first, filters second ──────────────────────────
@@ -458,8 +459,8 @@
   //
   // The app's own readers, where it has them: timetable.js decides a kind,
   // services.js a service and a part of the day, locations.js a region. What
-  // is this page's own is the language test (a language anywhere on the list,
-  // in any order) and "with times".
+  // is this page's own is "with times". A language is timetable.js's: a
+  // service by its own tags, anything else by its parish's services.
 
   const weekdayOf = (key) => new Date(key + 'T00:00:00Z').getUTCDay();
   /** Does a rule or an event answer what the filters ask: its kind, service, day and part of the day? */
@@ -474,8 +475,6 @@
   }
   const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.dayGroup || f.part);
   const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Church Slavonic' && /slavonic|russian/i.test(l));
-  /** English only, Greek only: a service in that language and no other. */
-  const onlyIn = (langs, want) => !!langs && langs.length > 0 && langs.every(l => langIs(l, want));
   const regionOf = (f) => (f.location && window.AgoraLocations ? window.AgoraLocations.resolveLocation(f.location) : null);
 
   /** One jurisdiction or several (url-state.js), as a list. */
@@ -487,8 +486,7 @@
     if (loc && !window.AgoraLocations.locationMatchesParish(loc, p)) return false;
     if (f.monasteries && !window.AgoraTimetable.isMonastery(p)) return false;
     if (f.parishIds && !f.parishIds.has(p.id)) return false;
-    if (f.lang && !hasLang(p, f.lang)) return false;
-    if (f.lang && f.langStrict && !rulesOf(p.id).some(r => liveRule(r) && onlyIn(parseLangs(r.languages), f.lang))) return false;
+    if (f.lang && !hasLang(p, f.lang, f.langStrict)) return false;
     if (f.timesOnly && !rulesOf(p.id).some(liveRule)) return false;
     if (asksWhat(f) && !rulesOf(p.id).some(r => liveRule(r) && !r.parish_scoped && whatMatches(r, f, true))
       && !upcomingOneOffs(p.id).some(e => whatMatches(e, f, false))) return false;
@@ -526,21 +524,20 @@
     if (f.parishIds && !pids.some(id => f.parishIds.has(id))) return false;
     return rowAnswers(e, f, false);
   }
-  /** Do a row's languages, its own or else its parish's, answer the language asked? */
-  function langAnswers(own, parishLs, f) {
-    if (!f.lang) return true;
-    const ls = own || parishLs || [];
-    return f.langStrict ? onlyIn(own, f.lang) : ls.some(l => langIs(l, f.lang));
-  }
   /**
    * Does a rule or an event answer what the filters ask of it: its kind,
    * service, day, part of the day and language? A collection's timetables
    * keep the lines that do, and a parish's card lights them (its focus).
+   * A service answers a language by its own tags; a talk or a social by its
+   * parish holding a service in it.
    */
   function rowAnswers(row, f, isRule) {
     if (!whatMatches(row, f, isRule)) return false;
-    const p = isRule && S.byId.get(row.parish_id);
-    return langAnswers(parseLangs(row.languages), parseLangs(isRule ? p && p.languages : row.parish_languages), f);
+    if (!f.lang) return true;
+    const T = window.AgoraTimetable;
+    const pids = isRule ? [row.parish_id] : eventParishIds(row);
+    return T.rowAnswersLang(row, { lang: f.lang, strict: !!f.langStrict },
+      !T.isService(row) && pids.some(id => hasLang(S.byId.get(id), f.lang, f.langStrict)));
   }
   function inViewEvent(e) {
     if (!S.bounds) return true;
@@ -1207,8 +1204,8 @@
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
     const title = e.feast ? `${e.title}` : e.title;
-    // Its own languages, as its line in the timetable has them, run on after its name.
-    const langs = parseLangs(e.languages);
+    // Its own languages, as its line in the timetable has them, run on after its name. Services only.
+    const langs = window.AgoraTimetable.serviceLangs(e);
     const lang = langBadge(langs, asked || (focus && focus.lang)) ? `<span class="elang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : '';
     // On a parish's own card its name is the card's; another parish's is said.
     // Held in another parish's church, each card says the other's part: the
@@ -1799,7 +1796,7 @@
     const eve = ls.findIndex(l => l.evening);
     const line = (l) => {
       const { q, range, off } = l;
-      const langs = !compact && parseLangs(l.r.languages);
+      const langs = !compact && window.AgoraTimetable.serviceLangs(l.r);
       const asked = (only && only.lang) || (focus && focus.lang);
       const dim = focus && !l.ids.some(id => rowAnswers(byId.get(id), focus, true));
       return `<div class="tt-line${dim ? ' dim' : ''}">
@@ -2039,7 +2036,8 @@
     const langs = parishLangs(p);
     return [
       nextLit ? `<div class="sum"><small>Next ${esc(kindLabel(nextLit.event_type))}</small><b class="ok">${summaryWhen(nextLit)}</b></div>` : '',
-      `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · ') || '—')}</b></div>`,
+      // What its services are tagged with; none tagged, no box.
+      langs.length ? `<div class="sum"><small>Languages</small><b>${esc(langs.slice(0, 2).join(' · '))}</b></div>` : '',
       // The jurisdiction says itself in its colour, as its tab does, and opens
       // its collection, as More's "More … parishes" does.
       `<button class="sum sum-link" type="button" data-act="juris-of"><small>Jurisdiction</small><b style="color:${parishColor(p)}">${esc(JURIS[p.jurisdiction]?.short || p.jurisdiction)}${I.chev}</b></button>`,
@@ -2468,8 +2466,8 @@
     const edits = p && may('event.edit', p.id);
     // The parish's stream, unless this date hides it (hide_live).
     const live = !e.hide_live && (e.parish_live_url || p?.live_url);
-    // What it is said in: its own languages, else its parish's.
-    const langs = parseLangs(e.languages) || parseLangs(e.parish_languages) || (p && parseLangs(p.languages)) || [];
+    // What it is said in: a service's own tags, never its parish's.
+    const langs = window.AgoraTimetable.serviceLangs(e) || [];
     // Off, a quiet veil over the poster and the words, which still say it is on.
     const offCls = off ? ` off ${esc(e.status)}` : '';
     const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
@@ -2602,16 +2600,63 @@
     return el;
   }
 
-  /** A poster, as big as the screen allows: a tap, or Escape, puts it away. */
+  /**
+   * A poster, as big as the screen allows: a tap, or Escape, puts it away.
+   * Copy and Share hand over the picture itself. Safari's own long press on
+   * the image often hands over its address instead, and pasting that gives a
+   * link, so these two are the sure way to the image.
+   */
   function openPoster(src) {
     const el = document.createElement('div');
     el.className = 'poster-view';
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', 'Poster');
-    el.innerHTML = `<img src="${esc(src)}" alt=""><button class="gbtn" type="button" aria-label="Close">${I.x}</button>`;
+    const canCopy = !!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
+    el.innerHTML = `<img src="${esc(src)}" alt=""><button class="gbtn" type="button" aria-label="Close">${I.x}</button>
+      <div class="poster-acts">
+        ${canCopy ? '<button class="pbtn" type="button" data-pv="copy">Copy image</button>' : ''}
+        ${navigator.share ? `<button class="pbtn" type="button" data-pv="share">${I.share}<span>Share</span></button>` : ''}
+      </div>`;
+    // Fetched now, so Share has the file at the tap: Safari lets a share go
+    // only straight from the tap, not after a wait for the network.
+    let file = null;
+    const blob = fetch(src).then(r => (r.ok ? r.blob() : null)).catch(() => null);
+    blob.then(b => { if (b) file = new File([b], `poster.${/png/.test(b.type) ? 'png' : 'jpg'}`, { type: b.type || 'image/jpeg' }); });
+    // A clipboard takes PNG everywhere; a JPEG only in some browsers.
+    const png = () => blob.then(b => new Promise((ok, no) => {
+      if (!b) return no(new Error('no image'));
+      const img = new Image();
+      const url = URL.createObjectURL(b);
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        c.toBlob(x => (x ? ok(x) : no(new Error('no png'))), 'image/png');
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); no(new Error('no image')); };
+      img.src = url;
+    }));
     const close = () => { el.remove(); document.removeEventListener('keydown', onKey, true); };
     const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
-    el.addEventListener('click', close);
+    el.addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-pv]');
+      if (!b) return close();
+      ev.stopPropagation();
+      try {
+        if (b.dataset.pv === 'copy') {
+          // The item is made in the tap, its picture filled in after (Safari's rule).
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]);
+          toast('Image copied');
+        } else if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+        } else {
+          await navigator.share({ url: new URL(src, location.href).href });
+        }
+      } catch (e) {
+        if (b.dataset.pv === 'copy') toast('Could not copy the image');
+      }
+    });
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(el);
   }
@@ -2844,7 +2889,7 @@
         name: norm(`${x.name} ${x.full_name || ''}`),
         acr: norm(x.acronym || ''),
         addr: norm(x.address || ''),
-        rest: norm(`${JURIS[x.jurisdiction]?.long || ''} ${(parseLangs(x.languages) || []).join(' ')}`),
+        rest: norm(`${JURIS[x.jurisdiction]?.long || ''} ${parishLangs(x).join(' ')}`),
       }]));
     }
     return parishHay.get(p.id);
@@ -2874,7 +2919,7 @@
           && (!Q.kind || r.event_type === Q.kind)
           && (!Q.prayer || r.event_type === 'prayer')
           && (!Q.days || [...Q.days].some(k => new Date(k + 'T00:00:00Z').getUTCDay() === r.day_of_week))
-          && (!Q.lang || (r.languages ? (parseLangs(r.languages) || []).includes(Q.lang) : hasLang(p, Q.lang))));
+          && (!Q.lang || window.AgoraTimetable.rowAnswersLang(r, { lang: Q.lang }, hasLang(p, Q.lang))));
         if (!ok && !(Q.lang && !Q.kind && !Q.prayer && !Q.days && hasLang(p, Q.lang))) continue;
         score = 10;
       } else if (Q.nearMe) {
@@ -2915,8 +2960,8 @@
       if (Q.tonight && l.hm < '16:00') return false;
       if (Q.kind && e.event_type !== Q.kind && !(Q.kind === 'social' && e.event_type === 'youth')) return false;
       if (Q.lang) {
-        const ls = parseLangs(e.languages) || parseLangs(e.parish_languages) || [];
-        if (!ls.includes(Q.lang) || (Q.lang === 'English' && !parseLangs(e.languages) && ls[0] !== 'English')) return false;
+        if (!window.AgoraTimetable.rowAnswersLang(e, { lang: Q.lang },
+          eventParishIds(e).some(id => hasLang(S.byId.get(id), Q.lang)))) return false;
       }
       const words = Q.text.filter(w => !(w in LANG_WORDS));
       if (!words.length) return !Q.prayer || e.event_type === 'prayer';

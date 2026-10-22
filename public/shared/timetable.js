@@ -63,6 +63,32 @@
   // after vespers and matins have been read as prayer.
   const DISPLAY_TYPE = { vespers: 'prayer', matins: 'prayer', festival: 'social', fundraiser: 'social' };
   const KIND_TYPES = { services: ['liturgy', 'prayer', 'feast'], talks: ['talk'], socials: ['social', 'youth'] };
+  /**
+   * Is a rule or an event a service (a Liturgy, prayers, a feast)? Only a
+   * service is held in a language: a talk, a social or a youth night carries
+   * none (Kevin, 22 Oct 2026), and a tag one has is not read.
+   */
+  const isService = (row) => !!row && KIND_TYPES.services.includes(DISPLAY_TYPE[row.event_type] || row.event_type);
+  /** A service's own languages, or null: never its parish's, and never a non-service's. */
+  const serviceLangs = (row) => (isService(row) ? langsOf(row.languages) : null);
+  /**
+   * A parish's languages: what its services are tagged with, and nothing it
+   * claims for itself. The parish's own column was a directory's boilerplate
+   * ("Greek, English" at every Greek parish) and is no longer read.
+   */
+  function parishLangsOf(rows) {
+    const out = [];
+    for (const r of rows || []) for (const l of serviceLangs(r) || []) if (!out.includes(l)) out.push(l);
+    return out;
+  }
+  /** Does a parish hold a service in the language asked (only in it, when strict)? */
+  const parishAnswersLang = (rows, lf) => !lf || (rows || []).some(r => !!serviceLangs(r) && langsMatch(serviceLangs(r), lf));
+  /**
+   * Does a row answer a language filter? A service by its own tags; anything
+   * else by its parish (`parishOk`, parishAnswersLang): the talk at a parish
+   * that holds services in English is there under /en.
+   */
+  const rowAnswersLang = (row, lf, parishOk) => !lf || (isService(row) ? langsMatch(serviceLangs(row), lf) : !!parishOk);
   /** Is this row a Bible study, by its title? Talks' one sub-kind is read that way. */
   const isBibleStudy = (row) => !!services && services.serviceOf(row) === 'bible-study';
   /** Is an event or a rule of the kind (and sub-kind) asked for? Any, with none asked. */
@@ -107,15 +133,15 @@
    * Does this rule answer the link: its service, day, part of the day and
    * language?
    *
-   * `parishLanguages` is the parish's own column, which a rule without
-   * languages of its own falls back to — the app's rows carry it as
-   * `parish_languages`, the Worker passes it.
+   * A service answers a language by its own tags; any other rule by
+   * `parishOk`, whether its parish holds a service in that language
+   * (parishAnswersLang over the parish's rules).
    *
    * A parish_scoped rule shows only on its own parish's card, never in a list
    * of many (docs/editing.md), so it answers only when the link names that
    * one parish — the rule the events feed already keeps.
    */
-  function ruleMatches(rule, f, { parishLanguages } = {}) {
+  function ruleMatches(rule, f, { parishOk = false } = {}) {
     if (!rule) return false;
     if (rule.parish_scoped) {
       const one = f.parishIds && f.parishIds.size === 1 && f.parishIds.has(rule.parish_id);
@@ -126,13 +152,7 @@
     if (f.dayGroup && services && !services.dayGroupMatches(f.dayGroup, rule.day_of_week, rule)) return false;
     if (f.part && services && services.partOfDayOf(rule) !== f.part) return false;
     if (!kindMatches(rule, f)) return false;
-    const lf = langFilterOf(f);
-    if (lf) {
-      const langs = langsOf(rule.languages)
-        || langsOf(parishLanguages !== undefined ? parishLanguages : rule.parish_languages);
-      return langsMatch(langs, lf);
-    }
-    return true;
+    return rowAnswersLang(rule, langFilterOf(f), parishOk);
   }
 
   /**
@@ -147,7 +167,7 @@
     return !!(f.service || f.day != null || f.dayGroup || f.part || langFilterOf(f) || f.kind);
   }
 
-  const api = { langsOf, langIs, langFilterOf, langsMatch, kindMatches, KIND_TYPES, isMonastery, parishInScope, ruleMatches, narrowsRules };
+  const api = { langsOf, langIs, langFilterOf, langsMatch, isService, serviceLangs, parishLangsOf, parishAnswersLang, rowAnswersLang, kindMatches, KIND_TYPES, isMonastery, parishInScope, ruleMatches, narrowsRules };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraTimetable = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

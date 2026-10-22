@@ -890,6 +890,12 @@
 
     // ── showing a card ──
 
+    // The kinds that are services (timetable.js isService): the ones a
+    // language is asked of, and must be for a one-off (event-checks.js).
+    const SERVICE_KINDS = new Set(['liturgy', 'prayer', 'feast', 'vespers', 'matins']);
+    // A phone or a tablet: no field focused unasked, which would bring the keyboard up over the form.
+    const touchFirst = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
     function checksFor(card) {
       if (!C) return [];
       return C.checkDraftEvent({ ...card.fields, ...card.hints }, { today: today() });
@@ -923,6 +929,9 @@
         card.els.err.textContent = card.publish.message;
         card.els.err.hidden = false;
       }
+      // Only a service is held in a language; for any other kind the row goes.
+      const langRow = card.els.root.querySelector('[data-row="languages"]');
+      if (langRow) langRow.hidden = !!card.fields.event_type && !SERVICE_KINDS.has(card.fields.event_type);
       refreshOccurrence(card);
       refreshMultiday(card);
       const single = !state.multi;
@@ -1026,7 +1035,7 @@
         renderSign();
         sync();
         const t = state.cards[0] && state.cards[0].els.inputs.title;
-        if (t) requestAnimationFrame(() => t.focus());
+        if (t && !touchFirst()) requestAnimationFrame(() => t.focus());
         return;
       }
       enterMulti();
@@ -1039,7 +1048,7 @@
         if (r.ok) card.id = r.body.id;
         if (Object.keys(card.pending).length) schedule(card, 0);
       }
-      requestAnimationFrame(() => card.els.inputs.title.focus());
+      if (!touchFirst()) requestAnimationFrame(() => card.els.inputs.title.focus());
     });
 
     // ── the combine, per card ──
@@ -2067,14 +2076,14 @@
       newCard();
       loadRules();
       refreshStrip();
-      requestAnimationFrame(() => { const t = state.cards[0] && state.cards[0].els.inputs.title; if (t) t.focus(); });
+      if (!touchFirst()) requestAnimationFrame(() => { const t = state.cards[0] && state.cards[0].els.inputs.title; if (t) t.focus(); });
       sync();
     }
 
     renderPicker();
     if (opts.draftId) loadDraft(opts.draftId);
     else if (state.parish) begin();
-    else requestAnimationFrame(() => $('parish').focus());
+    else if (!touchFirst()) requestAnimationFrame(() => $('parish').focus());
     sync();
 
     return {

@@ -116,6 +116,11 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // does: the page opens the first that answers, in front of the parish.
   const lf = ruleFilters.langFilterOf(route);
   const asks = isNarrowed(route) || !!route.kind || !!lf;
+  // A service answers a language by its own tags; a talk or a social by its
+  // parish holding a service in it (timetable.js rowAnswersLang).
+  const today0 = localDateOf(zone, now);
+  const parishOk = ruleFilters.parishAnswersLang(rows.schedules.filter(r => r.parish_id === parish.id
+    && r.active !== 0 && (!r.effective_to || r.effective_to >= today0)), lf);
   const matches = (e) => {
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
     if (route.service && !services.serviceMatches(route.service, e)) return false;
@@ -123,7 +128,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
     if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
     if (!ruleFilters.kindMatches(e, route)) return false;
-    if (lf && !ruleFilters.langsMatch(ruleFilters.langsOf(e.languages) || ruleFilters.langsOf(parish.languages), lf)) return false;
+    if (!ruleFilters.rowAnswersLang(e, lf, parishOk)) return false;
     return true;
   };
   const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + LITE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);

@@ -71,3 +71,15 @@ test('one event over several days: a last day after the first, and the time it e
   assert.deepStrictEqual(levels(C.checkDraftEvent({ ...festival, end_date: '2026-11-13' }, { today: '2026-10-08' })), ['end_date:block']);
   assert.deepStrictEqual(levels(C.checkDraftEvent({ ...festival, end_date: 'Sunday' }, { today: '2026-10-08' })), ['end_date:block']);
 });
+
+test('a one-off service needs a language; a date of a regular service and anything else do not', () => {
+  const at = { today: '2026-10-08' };
+  const vigil = { ...ok, title: 'Vigil', event_type: 'liturgy' };
+  assert.deepStrictEqual(levels(C.checkDraftEvent(vigil, at)), ['languages:block']);
+  for (const languages of [['English'], '["English"]', 'English, Greek']) {
+    assert.deepStrictEqual(C.checkDraftEvent({ ...vigil, languages }, at), [], JSON.stringify(languages));
+  }
+  assert.deepStrictEqual(levels(C.checkDraftEvent({ ...vigil, languages: '[]' }, at)), ['languages:block']);
+  assert.deepStrictEqual(C.checkDraftEvent({ ...vigil, occurrence: '12:2026-11-14' }, at), [], 'its service has one');
+  assert.deepStrictEqual(C.checkDraftEvent({ ...ok, event_type: 'talk' }, at), [], 'a talk carries none');
+});

@@ -142,9 +142,13 @@ other mix of filters is the page itself, filtered, and gets only its head.
   spellings live in `public/shared/slugs.js` (an acronym may not take one); a link
   writes, and a canonical names, only `/en` and `/en-only`. Any other language is
   `/in-greek`, or `/in-greek-only` for nothing but Greek, and its heading says
-  "Greek-only". The server and the page count `/en` alike: a rule or event that
-  names no language takes its parish's, and English anywhere on that list counts,
-  in any order (Kevin, 21 Oct 2026: the order of a parish's languages means nothing).
+  "Greek-only". The server and the page count it alike (`public/shared/timetable.js`):
+  only a service (a Liturgy, prayers, a feast) carries a language, by its own tags,
+  in any order; a talk or a social answers when its parish holds a service in that
+  language. A parish's languages are what its services are tagged with: its own
+  `languages` column (a directory's boilerplate) is no longer read, and a parish
+  with no tagged services shows no Languages box (Kevin, 22 Oct 2026). A one-off
+  service cannot be published without a language (`event-checks.js`).
 
 ## Caching
 
