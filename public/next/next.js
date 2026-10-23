@@ -708,8 +708,13 @@
 
   /** The collection a link names (/en, /greek, /talks), as the page has it, or null. */
   function collectionAt(path) {
-    const meant = window.AgoraCollections.collectionFor(window.AgoraUrlState.classifyPath(path, { today: todayKey() }));
-    return (meant && COLL.get(meant.id)) || null;
+    const r = window.AgoraUrlState.classifyPath(path, { today: todayKey() });
+    const meant = window.AgoraCollections.collectionFor(r);
+    if (meant) return COLL.get(meant.id) || null;
+    // /greek/sun/liturgy: Sunday Liturgy under a jurisdiction, as its shelf opens it on /greek.
+    const bare = r.jurisdiction && window.AgoraCollections.collectionFor({ ...r, jurisdiction: null });
+    const c = bare && COLL.get(bare.id);
+    return c ? underJuris(c, readPath(path).juris) : null;
   }
   /**
    * Follow one of this site's links from inside the page, as if it had been
@@ -1343,6 +1348,15 @@
   }
   let COLL = new Map();
   function remember(cs) { cs.forEach(c => COLL.set(c.id, c)); return cs; }
+  /**
+   * A collection opened under the page's jurisdiction keeps to it: on /greek
+   * (greek.orthodoxy.au), Sunday Liturgy is /greek/sun/liturgy. A
+   * jurisdiction's own, a list and a search keep to themselves.
+   */
+  function underJuris(c, juris = S.juris) {
+    if (!juris || c.juris || c.listId || !c.segs) return c;
+    return byFilters({ ...c, ids: null, juris });
+  }
 
   /** A collection's sign: a logo, its letters, its kind's roundel, or the cross. */
   function signOf(c) {
@@ -1600,7 +1614,7 @@
     renderStream();
     // Counts on the shelves move with the view.
     $$('.ccard[data-coll]').forEach(b => {
-      const c = COLL.get(b.dataset.coll);
+      const c = COLL.get(b.dataset.coll) && underJuris(COLL.get(b.dataset.coll));
       if (!c || !S.inView) return;
       const n = c.ids.length, v = c.ids.filter(id => S.inView.has(id)).length;
       const s = b.querySelector('.csub');
@@ -3173,7 +3187,7 @@
       openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) });
       return;
     }
-    if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(c); return; }
+    if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(underJuris(c)); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
       if (name) { const l = newList(name); toast(`Made “${l.name}”`); }
