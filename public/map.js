@@ -151,6 +151,7 @@ let styleLoaded = false;
 let pendingUpdate = null;          // queued updateMap call if style not ready
 let parishesById = new Map();      // populated at initMap; fast lookup for click handler
 let initStarted = false;           // initMap is async; a second call mid-await must not build a second map
+let handlersBound = false;         // map.on listeners outlive setStyle: bind them once, not per style.load
 // The first "fit to every parish" is owed until the parishes are here. The map
 // is created before /api/bundle answers now (the basemap needs nothing from
 // it), so on a first load the style is often ready while the list is empty.
@@ -280,10 +281,16 @@ async function initMap(state) {
     addParishSourceAndLayers();
     addVenueSourceAndLayers();
     addUserLocSourceAndLayer(state);
-    setupClickHandlers();
-    setupViewportPhases();
-    setupDeclutterOnZoom();
-    setupSolo();
+    // Once per map. A scheme switch rebuilds the style, not these listeners —
+    // re-binding them there stacked one more click handler per light/dark
+    // flip, and every tap on a parish then opened that many cards.
+    if (!handlersBound) {
+      handlersBound = true;
+      setupClickHandlers();
+      setupViewportPhases();
+      setupDeclutterOnZoom();
+      setupSolo();
+    }
 
     // Register sprites BEFORE any layer tries to render them — otherwise the
     // symbol layers report "image missing" and skip drawing for the first
@@ -350,8 +357,6 @@ async function initMap(state) {
         addParishSourceAndLayers();
         addVenueSourceAndLayers();
         addUserLocSourceAndLayer(st);
-        setupClickHandlers();
-        setupDeclutterOnZoom();
         await Promise.allSettled([
           registerGrapeSprites(),
           registerParishLogos(st.parishes || [])
