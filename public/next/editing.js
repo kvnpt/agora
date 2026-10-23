@@ -41,7 +41,7 @@
    * One question with two or more answers, each a button that says what it
    * does; Back, Escape or a tap outside answers null. The app's askChoice.
    */
-  function askChoice({ title, body = '', choices }) {
+  function askChoice({ title, body = '', choices, back: backLabel = 'Back' }) {
     return new Promise((resolve) => {
       const back = document.createElement('div');
       back.className = 'escalate-backdrop open choice-backdrop';
@@ -56,7 +56,7 @@
                 ${c.hint ? `<span class="choice-hint">${esc(c.hint)}</span>` : ''}
               </button>`).join('')}
           </div>
-          <div class="form-actions"><button type="button" class="btn-outline" data-back>Back</button></div>
+          <div class="form-actions"><button type="button" class="btn-outline" data-back>${esc(backLabel)}</button></div>
         </div>`;
       const done = (v) => {
         document.removeEventListener('keydown', onKey, true);
@@ -114,67 +114,24 @@
   }
 
   /**
-   * A dialog over the page: a heading, a close, and a body for a form to be
-   * mounted in. Escape and a tap outside close it, unless a dialog opened
-   * over it is the one on top. Returns { el, body, setTitle, close }.
-   */
-  /**
    * A phone or a tablet: a field focused on opening brings the keyboard up
    * over the form before anybody asked to type, so a form there opens with
    * nothing focused.
    */
   const touchFirst = () => !!(root.matchMedia && root.matchMedia('(pointer: coarse)').matches);
 
-  function frame({ title, sub = '', cls = '', onClose = null }) {
-    const back = document.createElement('div');
-    back.className = `escalate-backdrop open ${cls}`;
-    back.innerHTML = `
-      <div class="escalate-modal form-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-        <button class="donate-close" type="button" aria-label="Close" data-frame-close>&times;</button>
-        <h2>${esc(title)}</h2>
-        ${sub ? `<div class="escalate-modal-sub">${esc(sub)}</div>` : ''}
-        <div class="frame-body"></div>
-      </div>`;
-    let closed = false;
-    const top = () => {
-      const open = [...document.querySelectorAll('.escalate-backdrop.open')];
-      return open[open.length - 1] === back;
-    };
-    const close = () => {
-      if (closed) return;
-      closed = true;
-      document.removeEventListener('keydown', onKey);
-      unfit();
-      back.remove();
-      // A dialog under this one keeps the page held still.
-      if (!document.querySelector('.escalate-backdrop.open')) document.body.classList.remove('dialog-open');
-      if (onClose) onClose();
-    };
-    const onKey = (e) => { if (e.key === 'Escape' && top()) { e.stopPropagation(); close(); } };
-    back.addEventListener('click', (e) => {
-      if (e.target === back || e.target.closest('[data-frame-close]')) close();
-    });
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(back);
-    document.body.classList.add('dialog-open');
-    // With the keyboard up, iOS scrolls the page under a fixed dialog: the
-    // form ran past the top of the screen and then dragged the card behind.
-    // So the backdrop keeps to the part of the screen the keyboard leaves,
-    // and the form scrolls inside it and no further.
-    const vv = root.visualViewport;
-    const fit = () => {
-      back.style.top = `${vv.offsetTop}px`;
-      back.style.height = `${vv.height}px`;
-      back.style.bottom = 'auto';
-    };
-    if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit(); }
-    const unfit = () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } };
-    return {
-      el: back,
-      body: back.querySelector('.frame-body'),
-      setTitle: (t) => { back.querySelector('h2').textContent = t; },
-      close,
-    };
+  /**
+   * A form, as a card that slides up over the page (public/shared/form-sheet.js).
+   * Its bar is Cancel, the title, and the form's own Save or Publish, which
+   * the bar carries for it, so it never sits under the keyboard.
+   *
+   * Cancel, Escape, a tap beside it or a pull down on its bar turns Cancel
+   * into Discard when something was changed (`guard: false` for a form that
+   * saves as it goes), or into `leave()`'s ways out. The form's own Save
+   * closes it with `close()`, which never asks.
+   */
+  function frame(opts) {
+    return root.AgoraFormSheet.open(opts);
   }
 
   // ── Add an event ──────────────────────────────────────────────────────
@@ -194,6 +151,16 @@
     const f = frame({
       title: HEADINGS[intent === 'timetable' ? 'sign' : 'event'],
       cls: 'new-event-backdrop',
+      // No foot (Kevin, 23 Oct 2026): Close, which asks Save draft or
+      // Discard in its place; a draft with nothing in it just goes.
+      label: 'Close',
+      leave: () => (!editor || !editor.hasAnything ? null : editor.busy ? false : [
+        { label: 'Save draft', run: () => editor.saveDraft() },
+        { label: 'Discard', danger: true, run: () => editor.discard() },
+      ]),
+      // Publish, then Done for a sign, in the bar.
+      primary: (body) => body.querySelector('.ee-actions [data-ee="done"]:not([hidden])')
+        || body.querySelector('.ee-actions [data-ee="publish"]:not([hidden])'),
       // Closing saves whatever was still waiting to save; the draft is there next time.
       onClose: () => { if (editor) { const e = editor; editor = null; e.close(); } },
     });
@@ -774,7 +741,7 @@
     f.body.innerHTML = `<div class="detail-edit-form ev-form">
         <div class="ev-tools">
           ${state ? `<span class="ev-state ${esc(e.status)}">${esc(state)}</span>` : ''}
-          <button class="rf-btn" type="button" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel' : 'Cancel'}</button>
+          <button class="rf-btn" type="button" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel event' : 'Cancel event'}</button>
           ${series && host.may('override.edit', series.rule.parish_id) ? `<button class="rf-btn" type="button" data-ev-break>${e.status === 'break' ? 'Edit the break' : 'Break…'}</button>` : ''}
           ${series ? `<button class="rf-btn" type="button" data-ev-status="${hidden ? 'approved' : 'hidden'}">${hidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
           ${series ? '' : '<button class="rf-btn" type="button" data-ev-combine>Include other parishes…</button>'}

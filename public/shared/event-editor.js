@@ -2028,34 +2028,44 @@
       sync();
     });
 
-    $('save-draft').addEventListener('click', async () => {
+    /** Saved and closed, or false (and said why) when something did not save. */
+    async function saveDraft() {
       await flushAll();
       if (state.cards.some(c => c.saveState === 'error')) {
-        return showError('Some changes have not been saved — check the connection, or fix what is marked.');
+        showError('Some changes have not been saved — check the connection, or fix what is marked.');
+        return false;
       }
       close();
       if (opts.onClose) opts.onClose();
-    });
+      return true;
+    }
+    $('save-draft').addEventListener('click', () => saveDraft());
 
-    async function discard() {
-      const hasAnything = state.draft || state.cards.some(c => Object.values(c.fields).some(v => v && v.length));
+    const hasAnything = () => !!(state.draft || state.cards.some(c => Object.values(c.fields).some(v => v && v.length)));
+
+    /** `asked`: the person already chose Discard (the app's card bar), so no second question. */
+    async function discard({ asked = false } = {}) {
       const poster = state.draft && state.draft.poster_path;
       const question = state.cards.length > 1
         ? `Discard these ${state.cards.length} events${poster ? ' and the poster' : ''}? Nothing is published.`
         : `Discard this event${poster ? ' and its poster' : ''}? Nothing is published.`;
-      if (hasAnything && !confirm(question)) return;
+      if (!asked && hasAnything() && !confirm(question)) return false;
       abortRead();
       for (const c of state.cards) clearTimeout(c.timer);
       if (state.creating) await state.creating;
       if (state.draft) {
         const r = await http('DELETE', `/api/admin/drafts/${state.draft.id}`);
-        if (!r.ok && r.status !== 404) return showError((r.body && r.body.error) || 'It could not be discarded — check the connection.');
+        if (!r.ok && r.status !== 404) {
+          showError((r.body && r.body.error) || 'It could not be discarded — check the connection.');
+          return false;
+        }
         state.draft = null;
       }
       close();
       if (opts.onClose) opts.onClose();
+      return true;
     }
-    $('discard').addEventListener('click', discard);
+    $('discard').addEventListener('click', () => discard());
 
     function close() {
       if (state.closed) return;
@@ -2089,6 +2099,12 @@
     return {
       close,
       dropFile,
+      saveDraft: () => saveDraft(),
+      discard: () => discard({ asked: true }),
+      /** Typed in, read, or saved: something Close would lose or keep. */
+      get hasAnything() { return hasAnything(); },
+      /** Publishing, or moving parish: not the moment to leave. */
+      get busy() { return !!(state.publishing || state.moving); },
       get draftId() { return state.draft && state.draft.id; },
       get parishId() { return state.parish && state.parish.id; },
     };
