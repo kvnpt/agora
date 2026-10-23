@@ -1197,6 +1197,11 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .choice-backdrop { z-index: 3100; }
 /* A dialog over another: the one under is dimmed already. */
 .escalate-backdrop.open ~ .combine-backdrop { background: rgba(0, 0, 0, 0.2); }
+/* A form opened from a form: a card on top, the one under it stepped back
+   and its top still showing, so a person can see where Back goes. */
+.form-sheet-back.fs-nested.in { background: rgba(0, 0, 0, 0.25); }
+.form-sheet-back.in.fs-under .form-sheet { transform: scale(.94); transform-origin: 50% 0; filter: brightness(.94); }
+.fs-cancel { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
 .suggest-dialog { z-index: 3200; }
 body.dialog-open { overflow: hidden; }
 .escalate-modal {
@@ -1272,6 +1277,7 @@ body.dialog-open { overflow: hidden; }
     transform: translateY(100%);
   }
   .form-sheet-back.in .form-sheet { transform: translateY(0); }
+  .escalate-backdrop.form-sheet-back.fs-nested { padding-top: calc(max(10px, env(safe-area-inset-top)) + 26px); }
   /* The grabber, as the cards have. */
   .fs-bar { position: relative; padding-top: 16px; }
   .fs-bar::before {
@@ -1282,6 +1288,7 @@ body.dialog-open { overflow: hidden; }
 @media (min-width: 1080px) {
   .form-sheet-back .form-sheet { opacity: 0; transform: translateY(12px); }
   .form-sheet-back.in .form-sheet { opacity: 1; transform: none; }
+  .form-sheet-back.fs-nested.in .form-sheet { transform: translateY(24px); }
 }
 @media (prefers-reduced-motion: reduce) { .form-sheet-back .form-sheet, .form-sheet-back { transition: none; } .fs-ways { animation: none; } }
 .escalate-modal-sub { margin: -10px 0 14px; font-size: 13px; color: var(--text-2); }

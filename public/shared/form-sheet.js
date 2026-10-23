@@ -19,13 +19,19 @@
    * button becomes: [{ label, danger, run }], nothing to just close, or false
    * to stay put (it is busy). Left
    * out, a form a person has typed in offers Discard (when `guard`). `close`
-   * label is what that button says ('Cancel'). The returned `body` is where
+   * label is what that button says ('Cancel', or '‹ ' and the form under it). The returned `body` is where
    * the form goes; its Save (`.form-actions .btn-save`, or `primary()`'s
    * button) is carried in the bar, and a `[data-frame-close]` in it is Cancel.
    */
-  function open({ title, sub = '', cls = '', label = 'Cancel', guard = true, leave = null, primary: findPrimary = null, onClose = null }) {
+  function open({ title, sub = '', cls = '', label = null, guard = true, leave = null, primary: findPrimary = null, onClose = null }) {
+    // A form opened from another (an event's "Include other parishes") is a
+    // card on top of that one, which steps back behind it, and its way back
+    // names it: "‹ Edit event", so a person knows where they will land.
+    const under = [...document.querySelectorAll('.form-sheet-back.open')].pop() || null;
+    const underTitle = under ? (under.querySelector('.fs-title b') || {}).textContent || '' : '';
+    if (!label) label = underTitle ? `‹ ${underTitle}` : 'Cancel';
     const back = document.createElement('div');
-    back.className = `escalate-backdrop open form-sheet-back ${cls}`;
+    back.className = `escalate-backdrop open form-sheet-back ${under ? 'fs-nested ' : ''}${cls}`;
     back.innerHTML = `
       <div class="escalate-modal form-modal form-sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
         <div class="fs-bar">
@@ -62,6 +68,7 @@
         if (!document.querySelector('.escalate-backdrop.open')) document.body.classList.remove('dialog-open');
       };
       back.classList.remove('open');
+      if (under) under.classList.remove('fs-under');
       if (matchMedia('(prefers-reduced-motion: reduce)').matches) gone(); else setTimeout(gone, 220);
       if (onClose) onClose();
     };
@@ -166,6 +173,7 @@
 
     document.addEventListener('keydown', onKey);
     document.body.appendChild(back);
+    if (under) under.classList.add('fs-under');
     document.body.classList.add('dialog-open');
     requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add('in')));
     // With the keyboard up, iOS scrolls the page under anything fixed. So
