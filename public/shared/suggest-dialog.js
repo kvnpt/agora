@@ -19,6 +19,9 @@
 // confirmed the address, has it read with what they wrote beside it, and
 // sends the suggestion as an event with its poster.
 //
+// A card that slides up, like the editors' (form-sheet.js, 23 Oct 2026),
+// its Submit in the bar and Cancel turning into Discard once typed in.
+//
 // Few words on purpose: the fields say what they are as placeholders, and
 // the one box says what it asks (Kevin's markup of 19 Oct 2026).
 //
@@ -136,34 +139,34 @@
   const PICTURE = '<svg class="sg-poster-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.75"/><path d="m21 15-5-5L5 21"/></svg>';
 
   function close() {
-    if (!current) return;
-    if (current._preview) URL.revokeObjectURL(current._preview);
-    current.remove();
-    current = null;
-    document.removeEventListener('keydown', onKey, true);
-  }
-  function onKey(e) {
-    if (e.key === 'Escape' && current) { e.stopPropagation(); close(); }
+    if (current) current.close();
   }
 
   /**
-   * Open the dialog for one parish. `services` are its service times as the
-   * suggest page lists them ("Sunday 9:30am · Divine Liturgy"); `href` is
-   * where Confirm goes, the link that was tapped. `signInHref`, when given,
-   * offers a plain sign-in to somebody who already keeps the parish. `about`
-   * picks "What is it about?" for them when the tap already said (an Add +
-   * under the service times is 'A service time not listed').
+   * Open the card for one parish (a form card, public/shared/form-sheet.js).
+   * `services` are its service times as the suggest page lists them
+   * ("Sunday 9:30am · Divine Liturgy"); `href` is where Confirm goes, the
+   * link that was tapped. `signInHref`, when given, offers a plain sign-in to
+   * somebody who already keeps the parish. `about` picks "What is it about?"
+   * for them when the tap already said (an Add + under the service times is
+   * 'A service time not listed').
    */
   function open({ parishId, parishName = '', services = [], href = null, signInHref = null, about = '' }) {
     close();
     const target = href || `/admin?suggest=${encodeURIComponent(parishId)}`;
-    const wrap = document.createElement('div');
-    wrap.className = 'escalate-backdrop open suggest-dialog';
-    wrap.innerHTML = `
-      <div class="escalate-modal form-modal" role="dialog" aria-modal="true" aria-labelledby="sg-title">
-        <button class="donate-close" type="button" aria-label="Close" data-sg-close>&times;</button>
-        <h2 id="sg-title">Suggest an edit</h2>
-        ${parishName ? `<div class="escalate-modal-sub">${esc(parishName)}</div>` : ''}
+    let preview = null;
+    const sheet = root.AgoraFormSheet.open({
+      title: 'Suggest an edit',
+      sub: parishName,
+      cls: 'suggest-dialog',
+      onClose: () => {
+        if (preview) URL.revokeObjectURL(preview);
+        if (current === sheet) current = null;
+      },
+    });
+    current = sheet;
+    const wrap = sheet.el;
+    sheet.body.innerHTML = `
         <form class="detail-edit-form sg-form" novalidate>
           <div class="edit-row">
             <select id="sg-about" name="about" aria-label="What is it about? (optional)">
@@ -192,16 +195,11 @@
             <input id="sg-rel" name="relation" maxlength="120" placeholder="Your role at the parish" aria-label="Your role at the parish"></div>
           <div class="sg-error" role="alert" hidden></div>
           <div class="form-actions">
-            <button type="submit" class="btn-save sg-submit">Confirm email and submit</button>
-            <button type="button" class="btn-outline" data-sg-close>Cancel</button>
+            <button type="submit" class="btn-save sg-submit" data-fs-label="Submit">Confirm email and submit</button>
           </div>
           <p class="edit-row-hint sg-next">Next, our sign-in (Cloudflare) emails you a one-time code to confirm the address is yours. What you wrote here is sent the moment you are confirmed, and whoever keeps the parish can write back to you. Nothing on the page changes until one of them has looked.</p>
           ${signInHref ? `<p class="edit-row-hint sg-signin">Already keep this parish? <a href="${esc(signInHref)}">Just sign in</a>.</p>` : ''}
-        </form>
-      </div>`;
-    document.body.appendChild(wrap);
-    current = wrap;
-    document.addEventListener('keydown', onKey, true);
+        </form>`;
 
     const form = wrap.querySelector('form');
     const f = form.elements;
@@ -210,9 +208,6 @@
     const sync = () => { contactRow.hidden = !f.contact.checked; };
     if (about && [...f.about.options].some(o => o.value === about)) f.about.value = about;
     form.addEventListener('change', sync);
-    wrap.addEventListener('click', (e) => {
-      if (e.target === wrap || e.target.closest('[data-sg-close]')) close();
-    });
 
     // The poster: on the dialog at once, from the file itself. It is not
     // shrunk or sent here; the suggest page does both, after the sign-in.
@@ -222,9 +217,9 @@
     const card = wrap.querySelector('[data-sg-card]');
     const thumb = card.querySelector('img');
     const setPoster = (file) => {
-      if (wrap._preview) { URL.revokeObjectURL(wrap._preview); wrap._preview = null; }
+      if (preview) { URL.revokeObjectURL(preview); preview = null; }
       poster = file || null;
-      if (poster) thumb.src = wrap._preview = URL.createObjectURL(poster);
+      if (poster) thumb.src = preview = URL.createObjectURL(poster);
       else { thumb.removeAttribute('src'); fileInput.value = ''; }
       card.hidden = !poster;
       pick.hidden = !!poster;
@@ -286,7 +281,8 @@
       btn.textContent = 'Going to confirm your email…';
       root.location.href = target;
     });
-    setTimeout(() => f.change_body.focus({ preventScroll: true }), 50);
+    // Not on a phone: the keyboard would come up over the card before they chose to type.
+    if (!root.AgoraFormSheet.touchFirst()) setTimeout(() => f.change_body.focus({ preventScroll: true }), 50);
     return wrap;
   }
 
@@ -302,7 +298,8 @@
     const a = e.target.closest && e.target.closest('a.ps-contribute');
     if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const parishId = parishOfLink(a);
-    if (!parishId) return;
+    // Without the form card (a page that does not load it), the link itself.
+    if (!parishId || !root.AgoraFormSheet) return;
     e.preventDefault();
     const services = typeof api.servicesFor === 'function' ? (api.servicesFor(parishId) || []) : [];
     open({ parishId, parishName: a.dataset.parishName || '', services, href: a.href });
