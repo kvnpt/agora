@@ -41,7 +41,7 @@
    * One question with two or more answers, each a button that says what it
    * does; Back, Escape or a tap outside answers null. The app's askChoice.
    */
-  function askChoice({ title, body = '', choices }) {
+  function askChoice({ title, body = '', choices, back: backLabel = 'Back' }) {
     return new Promise((resolve) => {
       const back = document.createElement('div');
       back.className = 'escalate-backdrop open choice-backdrop';
@@ -56,7 +56,7 @@
                 ${c.hint ? `<span class="choice-hint">${esc(c.hint)}</span>` : ''}
               </button>`).join('')}
           </div>
-          <div class="form-actions"><button type="button" class="btn-outline" data-back>Back</button></div>
+          <div class="form-actions"><button type="button" class="btn-outline" data-back>${esc(backLabel)}</button></div>
         </div>`;
       const done = (v) => {
         document.removeEventListener('keydown', onKey, true);
@@ -125,17 +125,35 @@
    */
   const touchFirst = () => !!(root.matchMedia && root.matchMedia('(pointer: coarse)').matches);
 
-  function frame({ title, sub = '', cls = '', onClose = null }) {
+  /**
+   * A form, as a card that slides up over the page (Kevin, 23 Oct 2026: the
+   * dialogs had too many moving parts with a keyboard up). Its bar is the
+   * form's: Cancel, the title, and the form's own Save or Publish, which the
+   * bar carries for it (`hoist`), so it never sits under the keyboard. The
+   * form scrolls under the bar and no further; the card keeps to the part of
+   * the screen the keyboard leaves. On a wide screen it is a card in the
+   * middle, the same bar on top.
+   *
+   * Cancel, Escape, a tap beside it or a pull down on its bar asks first when
+   * something was changed (`guard: false` for a form that saves as it goes).
+   * The form's own Save closes it with `close()`, which never asks.
+   */
+  function frame({ title, sub = '', cls = '', onClose = null, guard = true }) {
     const back = document.createElement('div');
-    back.className = `escalate-backdrop open ${cls}`;
+    back.className = `escalate-backdrop open form-sheet-back ${cls}`;
     back.innerHTML = `
-      <div class="escalate-modal form-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-        <button class="donate-close" type="button" aria-label="Close" data-frame-close>&times;</button>
-        <h2>${esc(title)}</h2>
-        ${sub ? `<div class="escalate-modal-sub">${esc(sub)}</div>` : ''}
+      <div class="escalate-modal form-modal form-sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="fs-bar">
+          <button class="fs-btn fs-cancel" type="button" data-frame-cancel>Cancel</button>
+          <div class="fs-title"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+          <button class="fs-btn fs-primary" type="button" data-frame-primary hidden></button>
+        </div>
         <div class="frame-body"></div>
       </div>`;
-    let closed = false;
+    const sheet = back.querySelector('.form-sheet');
+    const body = back.querySelector('.frame-body');
+    const primary = back.querySelector('[data-frame-primary]');
+    let closed = false, dirty = false;
     const top = () => {
       const open = [...document.querySelectorAll('.escalate-backdrop.open')];
       return open[open.length - 1] === back;
@@ -145,22 +163,89 @@
       closed = true;
       document.removeEventListener('keydown', onKey);
       unfit();
-      back.remove();
-      // A dialog under this one keeps the page held still.
-      if (!document.querySelector('.escalate-backdrop.open')) document.body.classList.remove('dialog-open');
+      watch.disconnect();
+      back.classList.remove('in');
+      const gone = () => {
+        back.remove();
+        // A form under this one keeps the page held still.
+        if (!document.querySelector('.escalate-backdrop.open')) document.body.classList.remove('dialog-open');
+      };
+      back.classList.remove('open');
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) gone(); else setTimeout(gone, 220);
       if (onClose) onClose();
     };
-    const onKey = (e) => { if (e.key === 'Escape' && top()) { e.stopPropagation(); close(); } };
+    // Typed in and not saved: say so before it goes.
+    const cancel = async () => {
+      if (closed) return;
+      if (guard && dirty) {
+        const go = await askChoice({
+          title: 'Discard your changes?',
+          choices: [{ value: 'discard', label: 'Discard changes', danger: true }],
+          back: 'Keep editing',
+        });
+        if (go !== 'discard') { sheet.style.transform = ''; return; }
+      }
+      close();
+    };
+    // A person's typing or picking, not a field the form sets up itself.
+    body.addEventListener('input', (e) => { if (e.isTrusted) dirty = true; });
+    body.addEventListener('change', (e) => { if (e.isTrusted) dirty = true; });
+    const onKey = (e) => { if (e.key === 'Escape' && top()) { e.stopPropagation(); cancel(); } };
     back.addEventListener('click', (e) => {
-      if (e.target === back || e.target.closest('[data-frame-close]')) close();
+      if (e.target === back || e.target.closest('[data-frame-cancel]')) return cancel();
+      // A form's own Close or Cancel in its foot is the bar's Cancel.
+      if (e.target.closest('[data-frame-close]')) return cancel();
     });
+
+    // The form's Save (or the add-event editor's Publish, then Done), carried
+    // in the bar: the same button, pressed for it, saying what it says.
+    const hoisted = () => body.querySelector('.form-actions:not([hidden]) .btn-save:not([hidden])')
+      || body.querySelector('.ee-actions [data-ee="done"]:not([hidden])')
+      || body.querySelector('.ee-actions [data-ee="publish"]:not([hidden])');
+    const hoist = () => {
+      const b = hoisted();
+      body.querySelectorAll('.fs-hoisted').forEach(x => { if (x !== b) x.classList.remove('fs-hoisted'); });
+      primary.hidden = !b;
+      if (!b) return;
+      b.classList.add('fs-hoisted');
+      if (primary.textContent !== b.textContent.trim()) primary.textContent = b.textContent.trim();
+      primary.disabled = !!b.disabled;
+    };
+    primary.addEventListener('click', () => { const b = hoisted(); if (b && !b.disabled) b.click(); });
+    const watch = new MutationObserver(hoist);
+    watch.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'disabled'], characterData: true });
+
+    // Pulled down by its bar, it goes (asking first, as Cancel does).
+    const bar = back.querySelector('.fs-bar');
+    let drag = null;
+    bar.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1 || e.target.closest('button')) return;
+      drag = { y: e.touches[0].clientY, dy: 0 };
+      sheet.classList.add('dragging');
+    }, { passive: true });
+    bar.addEventListener('touchmove', (e) => {
+      if (!drag) return;
+      drag.dy = Math.max(0, e.touches[0].clientY - drag.y);
+      sheet.style.transform = `translateY(${drag.dy}px)`;
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    const endDrag = () => {
+      if (!drag) return;
+      const far = drag.dy > 90;
+      drag = null;
+      sheet.classList.remove('dragging');
+      if (far) cancel(); else sheet.style.transform = '';
+    };
+    bar.addEventListener('touchend', endDrag);
+    bar.addEventListener('touchcancel', endDrag);
+
     document.addEventListener('keydown', onKey);
     document.body.appendChild(back);
     document.body.classList.add('dialog-open');
-    // With the keyboard up, iOS scrolls the page under a fixed dialog: the
-    // form ran past the top of the screen and then dragged the card behind.
-    // So the backdrop keeps to the part of the screen the keyboard leaves,
-    // and the form scrolls inside it and no further.
+    requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add('in')));
+    // With the keyboard up, iOS scrolls the page under anything fixed. So
+    // the card keeps to the part of the screen the keyboard leaves, its bar
+    // at the top of that, and the form scrolls inside it and no further.
     const vv = root.visualViewport;
     const fit = () => {
       back.style.top = `${vv.offsetTop}px`;
@@ -171,8 +256,8 @@
     const unfit = () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } };
     return {
       el: back,
-      body: back.querySelector('.frame-body'),
-      setTitle: (t) => { back.querySelector('h2').textContent = t; },
+      body,
+      setTitle: (t) => { back.querySelector('.fs-title b').textContent = t; },
       close,
     };
   }
@@ -194,6 +279,8 @@
     const f = frame({
       title: HEADINGS[intent === 'timetable' ? 'sign' : 'event'],
       cls: 'new-event-backdrop',
+      // It saves as it goes, so Cancel loses nothing and need not ask.
+      guard: false,
       // Closing saves whatever was still waiting to save; the draft is there next time.
       onClose: () => { if (editor) { const e = editor; editor = null; e.close(); } },
     });
@@ -774,7 +861,7 @@
     f.body.innerHTML = `<div class="detail-edit-form ev-form">
         <div class="ev-tools">
           ${state ? `<span class="ev-state ${esc(e.status)}">${esc(state)}</span>` : ''}
-          <button class="rf-btn" type="button" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel' : 'Cancel'}</button>
+          <button class="rf-btn" type="button" data-ev-status="${cancelled ? 'approved' : 'cancelled'}">${cancelled ? 'Uncancel event' : 'Cancel event'}</button>
           ${series && host.may('override.edit', series.rule.parish_id) ? `<button class="rf-btn" type="button" data-ev-break>${e.status === 'break' ? 'Edit the break' : 'Break…'}</button>` : ''}
           ${series ? `<button class="rf-btn" type="button" data-ev-status="${hidden ? 'approved' : 'hidden'}">${hidden ? 'Unsuppress' : 'Suppress'}</button>` : ''}
           ${series ? '' : '<button class="rf-btn" type="button" data-ev-combine>Include other parishes…</button>'}

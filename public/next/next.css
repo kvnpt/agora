@@ -1221,6 +1221,59 @@ body.dialog-open { overflow: hidden; }
 .new-event-modal { padding-bottom: 0; }
 @media (min-width: 900px) { .new-event-modal:has(.ee.has-poster) { max-width: 940px; } }
 .escalate-modal h2 { margin: 0 0 12px; padding-right: 36px; font-size: 17px; font-weight: 700; }
+
+/* A form (editing.js frame()): a card with its own bar, Cancel · title ·
+   Save, and the form scrolling under it. Below the wide layout it slides up
+   from the foot and fills the screen the keyboard leaves; wide, it sits in
+   the middle. */
+.form-sheet-back { transition: background .22s ease; }
+.form-sheet-back:not(.in) { background: rgba(0, 0, 0, 0); }
+.escalate-modal.form-sheet {
+  display: flex; flex-direction: column; padding: 0; overflow: hidden; max-width: 560px;
+}
+.fs-bar {
+  flex: none; display: grid; grid-template-columns: minmax(72px, auto) 1fr minmax(72px, auto); align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--card); touch-action: none;
+}
+.fs-title { min-width: 0; text-align: center; display: flex; flex-direction: column; }
+.fs-title b { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-title small { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-btn { min-height: 36px; padding: 0 12px; border-radius: 999px; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.fs-cancel { justify-self: start; color: var(--text-2); }
+.fs-primary { justify-self: end; background: var(--success); color: #fff; }
+.fs-primary:disabled { opacity: .55; }
+.fs-primary[hidden] { display: none; }
+@media (prefers-color-scheme: dark) { .fs-primary { color: #052e16; } }
+.form-sheet .frame-body {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
+}
+.new-event-modal .frame-body { padding-bottom: 0; }
+/* What the bar now does, the foot no longer shows. */
+.form-sheet .fs-hoisted { display: none !important; }
+.form-sheet .form-actions [data-frame-close] { display: none; }
+.form-sheet .form-actions:not(:has(> :not([data-frame-close]):not(.fs-hoisted):not([hidden]))) { display: none; }
+.form-sheet-back .form-sheet { transition: transform .22s ease, opacity .22s ease; }
+.form-sheet.dragging { transition: none; }
+@media (max-width: 1079px) {
+  .escalate-backdrop.form-sheet-back { align-items: flex-end; padding: max(10px, env(safe-area-inset-top)) 0 0; }
+  .escalate-modal.form-sheet {
+    max-width: none; height: 100%; max-height: none; border-radius: 18px 18px 0 0;
+    transform: translateY(100%);
+  }
+  .form-sheet-back.in .form-sheet { transform: translateY(0); }
+  /* The grabber, as the cards have. */
+  .fs-bar { position: relative; padding-top: 16px; }
+  .fs-bar::before {
+    content: ''; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px;
+    border-radius: 2px; background: var(--line);
+  }
+}
+@media (min-width: 1080px) {
+  .form-sheet-back .form-sheet { opacity: 0; transform: translateY(12px); }
+  .form-sheet-back.in .form-sheet { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .form-sheet-back .form-sheet, .form-sheet-back { transition: none; } }
 .escalate-modal-sub { margin: -10px 0 14px; font-size: 13px; color: var(--text-2); }
 .donate-close {
   position: absolute; top: 12px; right: 14px; width: 28px; height: 28px;
