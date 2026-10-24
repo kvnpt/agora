@@ -17,6 +17,7 @@ import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-color
 import { jurisdictionLogos } from '../lib/juris-logos.mjs';
 import { coverageState, coverageMessage } from '../lib/coverage.mjs';
 import { cachedJson } from '../lib/data-version.mjs';
+import { favouriteCount } from '../lib/saved-items.mjs';
 
 // A generous default. The client picks the window it actually renders; this only
 // bounds how many rows travel, and rows are far cheaper than instances.
@@ -128,6 +129,14 @@ export function registerPublicRoutes(router) {
       'SELECT slug, label, url FROM parish_links WHERE parish_id = ? ORDER BY sort_order, slug'
     ).bind(params.id).all().catch(() => ({ results: [] }));
     return json(r.results || []);
+  });
+
+  // GET /api/parishes/:id/favourites — how many signed-in people starred it,
+  // for the star beside the card's distance. Never the bundle's: a star is not
+  // a data write, so it must not wait on the data version to show.
+  router.get('/api/parishes/:id/favourites', async ({ env, params }) => {
+    const count = await favouriteCount(env.DB, params.id).catch(() => 0);
+    return json({ count }, 200, { 'cache-control': 'no-store' });
   });
 
   // GET /api/parishes/:id

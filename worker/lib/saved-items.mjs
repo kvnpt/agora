@@ -65,3 +65,19 @@ export async function writeSaved(db, identity, doc, { merge = false } = {}) {
   ).bind(keyOf(identity), JSON.stringify(next)).first();
   return { saved: next, updated_at: row ? row.updated_at : null };
 }
+
+/**
+ * How many accounts have starred a parish: a count across every row's
+ * favourites, read straight from the JSON, so a star needs no table of its
+ * own and no migration. A scan, which is fine while accounts are counted in
+ * the hundreds; past that, a counts table the PUT keeps would replace it.
+ */
+export async function favouriteCount(db, parishId) {
+  await ensureSavedTable(db);
+  const row = await db.prepare(
+    `SELECT COUNT(DISTINCT s.email) AS n
+     FROM saved_items s, json_each(s.data, '$.favourites') f
+     WHERE json_extract(f.value, '$.id') = ?`
+  ).bind(String(parishId)).first();
+  return row ? row.n || 0 : 0;
+}

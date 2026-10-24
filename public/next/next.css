@@ -838,6 +838,9 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
 /* How far, beside where (app.css .distance-blue). */
 .ph-dist { margin-left: 3px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* How many signed-in people starred it, in the star's own yellow (.parish-fav-fab). */
+.ph-favs { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; color: #e0a315; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: -1px; }
+.ph-favs svg { width: 13px; height: 13px; }
 /* As many as fit at a readable width; more scroll sideways, as Maps' do.
    The padding under them is room for their shadow, which a scroller clips. */
 .actions {

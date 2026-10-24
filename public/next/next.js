@@ -242,8 +242,10 @@
   const favIds = () => readLS(FAV).map(f => f.id).filter(id => S.byId.has(id));
   const isFav = (pid) => readLS(FAV).some(f => f.id === pid);
   function toggleFav(pid) {
-    const l = readLS(FAV);
-    writeLS(FAV, isFav(pid) ? l.filter(f => f.id !== pid) : [{ id: pid, at: Date.now() }, ...l]);
+    const l = readLS(FAV), was = isFav(pid);
+    writeLS(FAV, was ? l.filter(f => f.id !== pid) : [{ id: pid, at: Date.now() }, ...l]);
+    // Signed in, this star is one of the count; a visitor's is this browser's alone.
+    if (syncAs && favCounts.has(pid)) { favCounts.set(pid, Math.max(0, favCounts.get(pid) + (was ? -1 : 1))); paintFavCount(pid); }
     toast(isFav(pid) ? 'Added to Favourites' : 'Removed from Favourites');
     renderLists();
     renderInView();
@@ -2062,7 +2064,31 @@
   function parishTopHTML(p) {
     const d = distOf(p);
     return `${avatar(p, 'xl')}
-      <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist dist ${distClass(d)}">${esc(fmtKm(d))}</span>` : ''}</p></div>`;
+      <div class="ph-text"><h1>${esc(p.full_name || p.name)}</h1><p>${esc(p.address || '')}${d != null ? ` <span class="ph-dist dist ${distClass(d)}">${esc(fmtKm(d))}</span>` : ''}${favCountHTML(p.id)}</p></div>`;
+  }
+  // How many signed-in people starred a parish (worker saved-items.mjs
+  // favouriteCount), beside its distance. Asked once per parish a visit and
+  // kept; this browser's own star moves it at once rather than waiting on the
+  // send. Nobody yet, no star.
+  const favCounts = new Map();
+  function favCountHTML(pid) {
+    const n = favCounts.get(pid);
+    return n ? ` <span class="ph-favs" title="Favourited by ${n} ${n === 1 ? 'person' : 'people'}" aria-label="Favourited by ${n} ${n === 1 ? 'person' : 'people'}">${I.starOn}<b>${n}</b></span>` : '';
+  }
+  async function loadFavCount(pid) {
+    if (favCounts.has(pid)) return;
+    favCounts.set(pid, 0);
+    const res = await fetch(`/api/parishes/${encodeURIComponent(pid)}/favourites`, { cache: 'no-store' }).catch(() => null);
+    const got = res && res.ok ? await res.json().catch(() => null) : null;
+    if (!got || !(got.count > 0)) return;
+    favCounts.set(pid, got.count);
+    paintFavCount(pid);
+  }
+  function paintFavCount(pid) {
+    for (const el of document.querySelectorAll(`[data-pid="${CSS.escape(pid)}"] .ph`)) {
+      const p = S.byId.get(pid);
+      if (p) el.innerHTML = parishTopHTML(p);
+    }
   }
   /**
    * Where Google Maps opens: the parish's own place there, where somebody
@@ -2265,6 +2291,7 @@
     el._days = CU_DAYS;
     watchMore(el);
     paintParishToday(el);
+    loadFavCount(pid);
     // A date further out than the bundle holds fills in once it has it.
     if (from) refreshComingUp(el);
     el.style.setProperty('--j', jColor(p.jurisdiction));
