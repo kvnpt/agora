@@ -57,8 +57,9 @@ v3 replaced both ([history.md](history.md)).
 `42:2026-09-06`. It is stable and addressable, so a deep link to a service that has never
 existed as a row resolves — client-side, from rules the browser already holds.
 
-**The feed has no last page.** The stream at the foot of the page grows a
-fortnight at a time as it is scrolled (`growStream` in `next.js`, to a year), and
+**The feed has no last page.** The page has no feed of its own: Today's button
+opens the In view card (or the one parish in view), and a card's Coming up grows a
+fortnight at a time as it is scrolled (`moreIO` in `next.js`, to a year), and
 nothing takes it away. The step
 costs a request only for what is genuinely window-bound — the overrides and
 stored one-offs in the new stretch — because the rules that produce the
@@ -73,8 +74,9 @@ them, and a focus is a *from*, never a single day: a parish does not publish a
 month at a time, and a picked day with nothing on it should show the next thing
 that is. A month-shaped slug keeps its shape through the round trip (`2026-07`
 does not read back as `2026-07-01`); a relative one resolves to the day it meant
-and the URL settles on that. A date beside a parish is that card's; across the page,
-the stream's (`applyRoute`), because the URL carries one date segment and two
+and the URL settles on that. A date beside a parish is that card's; beside a
+collection, that collection card's; on its own (`/2026-11-05`), the In view
+card's (`openPageCard`), because the URL carries one date segment and two
 would immediately disagree. Three-letter month abbreviations are deliberately NOT slugs — `sep` is
 a parish, the acronym resolves last, and reserving it would not raise a clash but
 silently take that parish's link away.
