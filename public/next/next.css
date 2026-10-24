@@ -842,7 +842,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* Inline, not flex, so the count sits on the line's baseline beside the distance. */
 .ph-favs { margin-left: 6px; color: #e0a315; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ph-favs b { font-weight: inherit; }
-.ph-favs svg { width: 12px; height: 12px; margin-right: 2px; vertical-align: -1px; }
+.ph-favs svg { width: 14px; height: 14px; margin-right: 0; vertical-align: -2px; }
 /* As many as fit at a readable width; more scroll sideways, as Maps' do.
    The padding under them is room for their shadow, which a scroller clips. */
 .actions {
