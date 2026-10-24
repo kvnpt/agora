@@ -734,15 +734,10 @@ body.map-full .parish-row {
 .jt b { font-size: 15px; font-weight: 650; color: var(--j); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jt small { font-size: 12.5px; color: var(--text-2); }
 
-/* ── The stream ──────────────────────────────────────────────────────── */
+/* ── Days: a card's Coming up ───────────────────────────────────────── */
 
-.stream { margin-top: 30px; scroll-margin-top: var(--dock-h, 0px); }
-.stream-head { padding: 0 var(--pad) 6px; }
-.stream-head h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
-.stream-head p { margin: 3px 0 0; color: var(--text-2); font-size: 14px; }
 /* A day: the app's header (app.css .day-hdr) with its link, then its rows;
    framed in hairlines, not lifted on a shadow. */
-#stream-days { border-bottom: 1px solid var(--hair); }
 .sday { background: var(--card); border-top: 1px solid var(--hair); scroll-margin-top: var(--dock-h, 0px); }
 /* A day's header sticks under the dock, which is there whenever one does. */
 .dh {
@@ -766,8 +761,6 @@ body.map-full .parish-row {
 .date-pick .fpill svg { flex: none; }
 .date-btn { position: relative; display: inline-flex; }
 .date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
-/* The week's end: the rest is in the In view card. */
-.stream-more { margin-top: 14px; }
 
 /* ── Sheets ──────────────────────────────────────────────────────────── */
 
@@ -930,7 +923,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .cu .erow { padding: 8px 0; min-height: 0; }
 .cu .erow + .erow { border-top: 0; }
 .cu .sday .eve, .cu .sday .erow + .eve { padding: 8px 0 0; border: 0; }
-.more-days { margin: 12px 0 0 13px; color: var(--accent); font-size: 14px; font-weight: 600; }
+.more-days { padding: 18px 0 6px; text-align: center; color: var(--text-3); font-size: 13px; }
 .tt-none { margin: 0 18px; padding: 16px; border-radius: 16px; background: var(--card); color: var(--text-2); font-size: 14.5px; }
 .tt-none.sm { margin: 0; padding: 4px 0 0; background: none; font-size: 13.5px; }
 .details { margin: 0 18px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); }
@@ -1765,10 +1758,6 @@ body.dialog-open { overflow: hidden; }
   #shelf-whatson .shelf-row::-webkit-scrollbar { display: block; height: 6px; }
   #shelf-whatson .shelf-row::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
   .juris-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
-
-  /* The feed, framed as a card is. Clipped, not hidden, so its days' headers still stick. */
-  #stream-days { margin: 0 var(--pad); border: 1px solid var(--hair); border-radius: var(--radius); overflow: clip; }
-  #stream-days > .sday:first-child { border-top: 0; }
 
   /* A card, from the right: the page's height less a margin, rounded all round. */
   .sheet {

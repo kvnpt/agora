@@ -86,8 +86,6 @@
     juris: null,             // a jurisdiction, or several from the filters: url-state.js's shape
     f: null,                 // the filters, in the app's shape (blankFilters)
     focus: null,             // { title, ids:Set } — a collection no link can name, on the map
-    streamDays: 7,           // the page's feed is a week; the rest is in the In view card
-    from: null,              // the date the stream starts from, when one is picked
     loadedTo: null,          // the last day the bundle holds
     loads: 0,                // bumped as the bundle widens
     panel: null,             // the filters open under their button: { pushed }
@@ -594,7 +592,7 @@
     return segs;
   }
   const pathOf = (segs) => '/' + (segs && segs.length ? segs.join('/') : '');
-  const pageSegs = () => segsFor({ juris: S.juris, f: S.f, from: S.from });
+  const pageSegs = () => segsFor({ juris: S.juris, f: S.f });
 
   /** What an address asks for: { juris, f, parish, eventId }. Needs the parishes. */
   function readPath(pathname) {
@@ -725,8 +723,7 @@
     applyRoute(route);
     if (!route.parish && !route.eventId && !route.donate) {
       syncURL({ push: true });
-      const c = collectionAt(path);
-      if (c) openCollection(c);
+      openPageCard(route, path);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -736,10 +733,7 @@
     S.juris = route.juris;
     S.f = route.f;
     S.focus = null;
-    // A date beside a parish is that card's; across the page, the stream's.
-    S.from = route.parish ? null : route.from;
     refilter({ url: 'none' });
-    if (S.from) ensureLoaded(addDays(S.from, S.streamDays)).then(() => renderStream());
     if (route.f.location) frameRegion(route.f.location, animate);
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
     // A link that asks something of one parish (/sgr/talks) opens the first
@@ -1456,7 +1450,7 @@
     const now = Date.now();
     const horizon = now + 60 * DAY;
     // One-offs with posters first, then rule occurrences that carry their own.
-    const pool = feedFor(Math.max(S.streamDays, 21))
+    const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
       // Regular services are the timetable's; this shelf is for the things that happen once.
       .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
@@ -1574,53 +1568,38 @@
     return out.join('');
   }
 
-  // ── The stream: every service and event, for as long as you scroll ────
-
-  function renderStream() {
-    const start = S.from || todayKey();
-    const now = Date.now();
-    const list = feedRange(start, S.streamDays).filter(e => eventPasses(e) && inViewEvent(e) && endMs(e) > now);
-    $('#stream-days').innerHTML = daysHTML(list, {
-      start, days: S.streamDays, empty: true, row: { lang: S.f.lang },
-      linkFor: (k) => pathOf(segsFor({ juris: S.juris, f: S.f, from: k })),
-    });
-    $('#stream-when').innerHTML = datePickHTML('page', S.from);
-  }
   /**
-   * The rest of the feed: the In view card, under the page's filters, at the
-   * day after the page's week. One parish in view is that parish's card.
+   * The days after Today: the In view card, under the page's filters, at its
+   * Coming up from `k` (a date from a link, or tomorrow). One parish in view
+   * is that parish's card. The page has no feed of its own.
    */
-  async function openInView({ rest = false } = {}) {
+  function openInView({ at = null, from = null } = {}) {
     const ids = viewParishes().map(p => p.id);
-    if (ids.length === 1) openParish(ids[0]);
+    if (ids.length === 1) openParish(ids[0], { from });
     else {
       // Its events are the page's filters' too. Shared, it is those parishes
       // by name under the same filters (/sgr+snb/en-only), not the page's link.
       const shareSegs = segsFor({ juris: S.juris, f: { ...S.f, parishIds: new Set(ids), listId: null } });
-      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) });
+      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) }, { from });
     }
-    if (!rest) return;
-    const el = stack[stack.length - 1];
+    if (at || from) toDay(stack[stack.length - 1], at || from);
+  }
+  /** A card's Coming up, scrolled to the first day from `k` on. */
+  function toDay(el, k) {
     if (!el || !el.querySelector('.cu')) return;
-    const k = addDays(S.from || todayKey(), S.streamDays);
-    // A card's days start today: enough of them to show a fortnight past the week.
-    const need = Math.round((Date.parse(k) - Date.parse(todayKey())) / 864e5) + CU_DAYS;
-    if (el._days < need) { el._days = need; await refreshComingUp(el); }
     const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
     (day || el.querySelector('.cu-band')).scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  /** The stream from a date, or from today again; a step back undoes it. */
-  async function setPageDate(k) {
-    S.from = k && k > todayKey() ? k : null;
-    if (S.from) await ensureLoaded(addDays(S.from, S.streamDays)).catch(err => console.warn(err));
-    refilter();
-    $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  /** A link that names a collection opens its card; a bare date, the In view card from it. */
+  function openPageCard(route, path) {
+    const c = collectionAt(path);
+    if (c) openCollection(c, { from: route.from });
+    else if (route.from) openInView({ from: route.from });
   }
 
   function renderFeeds() {
     renderToday();
     renderWhatsOn();
-    renderStream();
     // Counts on the shelves move with the view.
     $$('.ccard[data-coll]').forEach(b => {
       const c = COLL.get(b.dataset.coll) && underJuris(COLL.get(b.dataset.coll));
@@ -1834,7 +1813,7 @@
   }
   function nextOf(pid, pred = () => true) {
     const now = Date.now();
-    return feedFor(Math.max(S.streamDays, 14)).find(e => Date.parse(e.start_utc) > now && eventParishIds(e).includes(pid) && visible(e) && pred(e)) || null;
+    return feedFor(14).find(e => Date.parse(e.start_utc) > now && eventParishIds(e).includes(pid) && visible(e) && pred(e)) || null;
   }
 
   // ── Signed in ─────────────────────────────────────────────────────────
@@ -2014,19 +1993,32 @@
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
+      ${MORE(days)}`;
+  }
+  // The foot of a Coming up, which brings the next fortnight as it scrolls into view.
+  const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days>Loading…</div>' : '';
+  /** A card's Coming up grows as its foot comes into view (moreIO). */
+  function watchMore(el) {
+    const m = el.querySelector('[data-more-days]');
+    if (m) moreIO.observe(m);
   }
   async function refreshComingUp(el) {
     const box = el.querySelector('.cu');
     if (!box) return;
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
-    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
+    const m = box.querySelector('[data-more-days]');
+    if (m) moreIO.unobserve(m);
+    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
+    watchMore(el);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
   function setCardDate(el, k) {
     el._from = k && k > todayKey() ? k : null;
     el._days = CU_DAYS;
-    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), focus: el._focus, from: el._from });
+    const c = el._coll;
+    // A collection with no link of its own (In view) has no date to put in one.
+    if (c && !c.segs) { refreshComingUp(el); return; }
+    el._segs = c ? collSegs(c, el._from) : segsFor({ parish: S.byId.get(el.dataset.pid), focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     syncURL();
@@ -2271,6 +2263,7 @@
     el._from = from;
     el._focus = focus;
     el._days = CU_DAYS;
+    watchMore(el);
     paintParishToday(el);
     // A date further out than the bundle holds fills in once it has it.
     if (from) refreshComingUp(el);
@@ -2294,21 +2287,24 @@
     const f = { ...blankFilters(), ...(c.f || {}) };
     return (e) => eventParishIds(e).some(id => ids.has(id)) && eventMatches(e, f, c.juris || null);
   }
-  /** What is on at a collection's parishes, by its filters, a fortnight at a time. */
-  function collFeedHTML(c, days) {
-    const start = todayKey();
+  /** A collection's link, from a date when one is picked. */
+  const collSegs = (c, from) => from ? segsFor({ juris: c.juris || null, f: { ...blankFilters(), ...(c.f || {}) }, from }) : c.segs;
+  /** What is on at a collection's parishes, by its filters, from today or a date, a fortnight at a time. */
+  function collFeedHTML(c, days, from = null) {
+    const start = from || todayKey();
     const now = Date.now();
     const f = { ...blankFilters(), ...(c.f || {}) };
     const list = feedRange(start, days).filter(e => endMs(e) > now).filter(inCollection(c));
     // A day's link, where the collection has one of its own.
-    const linkFor = c.segs ? (k) => pathOf(segsFor({ juris: c.juris || null, f, from: k })) : null;
+    const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
     const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang } });
-    return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
-      ${days < 365 ? `<button class="more-days" type="button" data-more-days>View more</button>` : ''}`;
+    return `${datePickHTML('card', from)}
+      ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
+      ${MORE(days)}`;
   }
   const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
 
-  function openCollection(c, { entry = true } = {}) {
+  function openCollection(c, { entry = true, from = null } = {}) {
     const o = sortOrigin();
     const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
       .sort((a, b) => (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule)) || (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
@@ -2347,7 +2343,7 @@
           </div>
           <p>${esc(c.blurb || '')}</p>
         </div>
-        ${c.segs ? `<div class="sheet-link">${linkChip(c.segs)}</div>` : ''}
+        ${c.segs ? `<div class="sheet-link">${linkChip(collSegs(c, from))}</div>` : ''}
         ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
         <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
           <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
@@ -2356,13 +2352,17 @@
         </section>
         ${ps.length ? `<section class="cu-band">
           <h2 class="sec">Coming up</h2>
-          <div class="cu">${collFeedHTML(c, CU_DAYS)}</div>
+          <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
       </div>`;
-    const el = pushSheet(html, 'collection', { segs: c.segs || null, entry });
+    const el = pushSheet(html, 'collection', { segs: (c.segs && collSegs(c, from)) || null, entry });
     el._coll = c;
+    el._from = from;
     el._days = CU_DAYS;
+    watchMore(el);
+    // A date further out than the bundle holds fills in once it has it.
+    if (from) refreshComingUp(el);
     // Folded to the first parish's first few lines, however tall its name.
     const tt = el.querySelector('.ctimes.folded .citem .tt');
     if (tt) {
@@ -2423,7 +2423,7 @@
 
   function findEvent(id) {
     const s = String(id);
-    return feedFor(S.streamDays).find(e => String(e.id) === s)
+    return feedFor(14).find(e => String(e.id) === s)
       || (window.agoraBundle.raw?.events || []).find(e => String(e.id) === s)
       || window.agoraBundle.resolveEvent(s)
       || S.fetched.get(s);
@@ -2978,7 +2978,7 @@
     const now = Date.now();
     const pids = Q.text.length ? new Set(searchParishes({ ...Q, kind: null, prayer: false, days: null })
       .filter(p => { const h = hayOf(p); return Q.text.every(w => hasWord(`${h.name} ${h.acr} ${h.addr}`, w)); }).map(p => p.id)) : null;
-    const res = feedFor(Math.max(S.streamDays, 42)).filter(e => {
+    const res = feedFor(42).filter(e => {
       if (!visible(e) || e.parish_scoped || endMs(e) < now) return false;
       const l = local(e);
       if (Q.days && !Q.days.has(l.date)) return false;
@@ -3189,7 +3189,6 @@
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
     if (t.closest('#inview, [data-inview]')) { openInView(); return; }
-    if (t.closest('#stream-more')) { openInView({ rest: true }); return; }
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(underJuris(c)); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
@@ -3232,12 +3231,11 @@
     }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) {
-      // Tomorrow, in the Events feed; the feed itself when it starts later.
-      // A card's Today goes on in the card's own Coming up.
+      // Tomorrow on: a card's Today goes on in the card's own Coming up, the
+      // page's in the In view card's.
       const sheet = b.closest('.sheet');
       const k = addDays(todayKey(), 1);
-      const day = sheet ? $(`.cu [data-date="${k}"]`, sheet) : $(`#stream-days [data-date="${k}"]`);
-      (day || (sheet ? $('.cu-band', sheet) : $('#stream'))).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (sheet) toDay(sheet, k); else openInView({ at: k });
       return;
     }
 
@@ -3248,11 +3246,10 @@
       return;
     }
     if ((b = t.closest('[data-date-clear]'))) {
-      if (b.dataset.dateClear === 'page') setPageDate(null); else if (top) setCardDate(top, null);
+      if (top) setCardDate(top, null);
       return;
     }
     if ((b = t.closest('[data-copy-day]'))) { copyDay(b); return; }
-    if ((b = t.closest('[data-more-days]')) && top) { top._days = Math.min(365, top._days + CU_DAYS); refreshComingUp(top); return; }
 
     // The filters apply as you tap; the map is above them.
     // From the page's button or the dock's: a second tap on the same one puts it away.
@@ -3369,8 +3366,8 @@
   document.addEventListener('change', (e) => {
     const input = e.target.closest && e.target.closest('[data-date-input]');
     if (!input || !input.value) return;
-    if (input.dataset.dateInput === 'page') setPageDate(input.value);
-    else { const top = stack[stack.length - 1]; if (top) setCardDate(top, input.value); }
+    const top = stack[stack.length - 1];
+    if (top) setCardDate(top, input.value);
   });
   $('#scrim').addEventListener('click', () => popSheet());
   document.addEventListener('keydown', (e) => {
@@ -3387,11 +3384,16 @@
   });
   $('#btn-locate').addEventListener('click', locate);
 
-  // The feed sits under Today on a phone; wide, Today is the left column's
-  // and the feed ends the right one.
-  const placeStream = () => { if (WIDE.matches) $('.col-main').append($('#stream')); else $('#today').after($('#stream')); };
-  placeStream();
-  WIDE.addEventListener('change', placeStream);
+  // A card's Coming up goes on as it is scrolled, a fortnight at a time, to a year.
+  const moreIO = new IntersectionObserver((ents) => {
+    for (const en of ents) {
+      const el = en.isIntersecting && en.target.closest('.sheet');
+      if (!el || el._growing || el._days >= 365) continue;
+      el._growing = true;
+      el._days = Math.min(365, el._days + CU_DAYS);
+      refreshComingUp(el).finally(() => { el._growing = false; });
+    }
+  }, { rootMargin: '400px' });
 
   // ── The bundle, held and re-read ──────────────────────────────────────
 
@@ -3470,7 +3472,6 @@
     // greek.orthodoxy.au never gets here: the Worker sends it to /greek (lib/admin-host.mjs).
     S.juris = route.juris;
     S.f = route.f;
-    S.from = route.parish ? null : route.from;
     renderJurisChips();
     renderInView();
     renderActive();
@@ -3495,10 +3496,7 @@
     const opening = applyRoute(route, { animate: false });
     // A collection's link opens its card, over the page its filters make, as
     // the shelf's card does: a step back is that page.
-    if (!route.parish && !route.eventId && !route.donate) {
-      const c = collectionAt(location.pathname);
-      if (c) openCollection(c);
-    }
+    if (!route.parish && !route.eventId && !route.donate) openPageCard(route, location.pathname);
     // A card painted for a link this page did not open (a parish since gone),
     // once an event the bundle did not hold has been read.
     Promise.resolve(opening).catch(() => {}).then(() => $$('#sheets > .ssr').forEach(x => x.remove()));
