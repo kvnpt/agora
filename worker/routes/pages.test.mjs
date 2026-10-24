@@ -71,7 +71,7 @@ const card = (html) => {
     ? html.slice(at, html.indexOf('</div>\n\n  <script src="/shared/jurisdiction-colors.js"', at)) : '';
 };
 const between = (html, from, to) => html.slice(html.indexOf(from), to ? html.indexOf(to, html.indexOf(from)) : undefined);
-const timesOf = (html) => between(card(html), '<div class="p-times">', '<div class="p-details">');
+const timesOf = (html) => between(card(html), '<div class="p-times">', '<section class="cu-band"');
 const comingUp = (html) => between(card(html), '<section class="cu-band"');
 // A Saturday 6pm Vespers beside the seed's Sunday 10am Liturgy: one evening rule, one morning.
 const VESPERS = `INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
@@ -150,7 +150,7 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
   assert.match(c, /<div class="summary"><div class="sum"><small>Next Liturgy<\/small><b class="ok">Sun<br>10am<\/b><\/div>/, 'what is next, a Liturgy first');
   // Nothing today or tomorrow, nothing to say: no Today box, the timetable straight after.
   assert.doesNotMatch(c, /class="today card|Nothing more today/);
-  assert.match(c, /<a class="sum sum-link"[^]*?<\/a><\/div>\s*<h2 class="sec">Timetable<\/h2>\s*<div class="p-times">/, 'the timetable, by that name: it holds every kind');
+  assert.match(c, /<a class="sum sum-link"[^]*?<\/a><\/div>\s*<div class="p-details">[^]*?<\/div>\s*<h2 class="sec">Timetable<\/h2>\s*<div class="p-times">/, 'the details, then the timetable, by that name: it holds every kind');
   assert.match(timesOf(html), /<span class="tt-days">Sun<\/span>\s*<span class="t-time">10<span class="t-mer">am<\/span><\/span>[\s\S]*<span class="tt-title">Sunday Divine Liturgy/);
   assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><a class="erow" href="\/\d+:2026-10-04">/,
     'the next fortnight, day by day, each date its own link');
@@ -315,19 +315,19 @@ test('an event link — projected or stored — is its card, never indexed', asy
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
 });
 
-test('a parish\'s stream and its Donate are buttons on its card, its own links smaller above its details, and a date\'s card has the stream unless it hides it', async () => {
+test('a parish\'s stream and its Donate are buttons on its card, its own links smaller under them, and a date\'s card has the stream unless it hides it', async () => {
   const { raw, get } = fresh();
   raw.prepare("UPDATE parishes SET live_url = 'https://youtube.com/@sgr', donation_url = 'https://give.example/sgr' WHERE id = ?").run(PARISH);
   raw.prepare("INSERT INTO parish_links (parish_id, slug, label, url) VALUES (?, 'fund', 'Building fund', 'https://give.example/fund')").run(PARISH);
   const c = card((await get('/sgr')).html);
-  const acts = between(c, '<div class="actions">', '<div class="summary">');
+  const acts = between(c, '<div class="actions">', '<div class="p-links">');
   assert.match(acts, /<a class="abtn" href="https:\/\/youtube\.com\/@sgr" target="_blank" rel="noopener"><svg[^]*?<span>Watch live<\/span><\/a>/);
   assert.match(acts, /<a class="abtn" href="https:\/\/give\.example\/sgr" target="_blank" rel="noopener"><svg[^]*?<span>Donate<\/span><\/a>/);
   assert.ok(acts.indexOf('Watch live') < acts.indexOf('Donate'));
   assert.doesNotMatch(acts, /Building fund/, 'its own links are not among the big buttons');
-  assert.match(between(c, '<div class="p-times">', '<div class="p-details">'),
+  assert.match(between(c, '<div class="actions">', '<div class="summary">'),
     /<div class="p-links"><a class="lbtn" href="https:\/\/give\.example\/fund" target="_blank" rel="noopener"><svg[^]*?<span>Building fund<\/span><\/a><\/div>\s*$/,
-    'but small, just above its details');
+    'but small, just under them');
 
   const sid = raw.prepare('SELECT id FROM schedules WHERE parish_id = ? LIMIT 1').get(PARISH).id;
   assert.match(card((await get(`/${sid}:2026-10-04`)).html), /<span>Watch live<\/span>/);

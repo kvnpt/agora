@@ -877,6 +877,7 @@
     plusSm: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
     starOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
+    list: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg>',
     more: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
     phone: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>',
     globe: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>',
@@ -2075,7 +2076,7 @@
   /**
    * Google Maps, then whatever the parish has: a phone, a website, a live
    * stream, a way to donate. More than fit scroll sideways, as Maps' do. Its
-   * own links are smaller, above its details (linksHTML).
+   * own links are smaller, under these (linksHTML).
    */
   function actionsHTML(p) {
     const gmaps = mapsHref(p);
@@ -2237,12 +2238,12 @@
         <div class="ph">${parishTopHTML(p)}</div>
         <div class="sheet-link">${linkChip(segs)}</div>
         <div class="actions">${actionsHTML(p)}</div>
+        <div class="p-links"${linksHTML(p) ? '' : ' hidden'}>${linksHTML(p)}</div>
         <div class="summary">${summaryHTML(p)}</div>
         <section class="today card ptoday" aria-label="Today" style="--pc:${parishColor(p)}"></section>
+        <div class="p-details">${detailsHTML(p)}</div>
         <h2 class="sec">Timetable</h2>
         <div class="p-times">${timesHTML(p, focus)}</div>
-        <div class="p-links"${linksHTML(p) ? '' : ' hidden'}>${linksHTML(p)}</div>
-        <div class="p-details">${detailsHTML(p)}</div>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
           <h2 class="sec">Coming up</h2>
@@ -2253,7 +2254,7 @@
         <div class="toolbar-space"></div>
       </div>
       <div class="floatbar" role="toolbar">
-        <button type="button" data-act="addlist" aria-label="Add to a list">${I.plus}</button>
+        <button type="button" data-act="addevent" aria-label="${may('event.edit', pid) ? 'Add an event' : 'Suggest an event'}">${I.plus}</button>
         <button type="button" data-act="fav" class="${isFav(pid) ? 'on' : ''}" aria-label="Favourite" aria-pressed="${isFav(pid)}">${isFav(pid) ? I.starOn : I.star}</button>
         <button type="button" data-act="more" aria-label="More" aria-haspopup="menu" aria-expanded="false">${I.more}</button>
       </div>`;
@@ -2839,11 +2840,13 @@
   function openMore(pid, btn) {
     const p = S.byId.get(pid);
     openMenu(btn, `<button class="pm-row" role="menuitem" type="button" data-act="share-parish">${I.share}<span class="pm-t"><b>Share</b></span></button>
+        <button class="pm-row" role="menuitem" type="button" data-act="addlist">${I.list}<span class="pm-t"><b>Add to list</b></span></button>
         ${mapsHref(p) ? `<a class="pm-row" role="menuitem" href="${esc(mapsHref(p))}" target="_blank" rel="noopener">${I.place}<span class="pm-t"><b>Google Maps</b></span></a>` : ''}
         ${p.website ? `<a class="pm-row" role="menuitem" href="${esc(p.website)}" target="_blank" rel="noopener">${I.globe}<span class="pm-t"><b>Website</b></span></a>` : ''}
         <button class="pm-row" role="menuitem" type="button" data-act="juris-of">${jurisLogo(p.jurisdiction)
           ? `<span class="pm-ic"><img src="${esc(jurisLogo(p.jurisdiction))}" alt=""></span>`
           : `<span class="pm-ic">${I.cross.replace('<svg', '<svg width="14" height="22"')}</span>`}<span class="pm-t"><b>More ${esc(JURIS[p.jurisdiction]?.short || '')} parishes</b></span></button>
+        ${may('parish.edit', pid) ? `<button class="pm-row" role="menuitem" type="button" data-edit-details="${esc(pid)}">${I.pencil}<span class="pm-t"><b>Edit</b></span></button>` : ''}
         ${suggestsHere(pid) ? `<button class="pm-row" role="menuitem" type="button" data-suggest="">${I.pencil}<span class="pm-t"><b>Suggest an edit</b></span></button>` : ''}`);
   }
 
@@ -3306,6 +3309,8 @@
         return;
       }
       if (a === 'addlist') return openAddToList(top.dataset.pid);
+      // The bar's +: whoever may add an event adds one; anybody else suggests one.
+      if (a === 'addevent') return may('event.edit', top.dataset.pid) ? window.NextEdit.addEvent(top.dataset.pid) : suggest(top.dataset.pid, SUGGEST.event);
       if (a === 'more') return openMore(top.dataset.pid, b);
       if (a === 'juris-of') { const p = S.byId.get(top.dataset.pid); const c = COLL.get('j-' + p.jurisdiction); if (c) openCollection(c); return; }
       if (a === 'newlist') {
