@@ -11,7 +11,8 @@ import { createRequire } from 'node:module';
 import { Router } from '../lib/router.mjs';
 import { registerAdminRoutes } from './admin.mjs';
 import { isDataWrite } from '../lib/data-version.mjs';
-import { SAVED_DDL } from '../lib/saved-items.mjs';
+import { SAVED_DDL, favouriteCount } from '../lib/saved-items.mjs';
+import { registerPublicRoutes } from './public.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -99,4 +100,19 @@ test('the table made on first use is the baseline\'s', () => {
   for (const sql of SAVED_DDL) lazy.exec(sql);
   const cols = (db) => db.prepare('PRAGMA table_info(saved_items)').all();
   assert.deepEqual(cols(lazy), cols(base));
+});
+
+test("a parish's favourite count is the accounts that starred it, and needs no table to answer", async () => {
+  const t = fresh();
+  const router = new Router();
+  registerPublicRoutes(router);
+  const env = { DB: new D1(t.raw) };
+  const count = async (pid) => (await (await router.handle(new Request(`https://orthodoxy.au/api/parishes/${pid}/favourites`), env, {})).json()).count;
+  assert.equal(await count('a'), 0, 'before migration 029, nobody');
+  await t.call('PUT', '/api/admin/saved', { saved: { favourites: [{ id: 'a', at: 1 }, { id: 'b', at: 2 }] } });
+  t.raw.prepare('INSERT INTO saved_items (email, data) VALUES (?, ?)').run('x@example.org', JSON.stringify({ favourites: [{ id: 'a', at: 3 }], lists: [{ id: 'l', name: 'L', ids: ['c'] }] }));
+  assert.equal(await count('a'), 2);
+  assert.equal(await count('b'), 1);
+  assert.equal(await count('c'), 0, 'a list is not a star');
+  assert.equal(await favouriteCount(env.DB, 'a'), 2);
 });
