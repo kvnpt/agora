@@ -2908,7 +2908,7 @@
   };
   // Prayer services are asked for by name; these stay as text, and also mean "a service".
   const PRAYER_WORDS = ['vespers', 'vigil', 'matins', 'orthros', 'paraklesis', 'akathist', 'akatist', 'compline', 'confession', 'supplication', 'prayer', 'prayers'];
-  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Church Slavonic', slavonic: 'Church Slavonic', romanian: 'Romanian', macedonian: 'Macedonian' };
+  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Church Slavonic', slavonic: 'Church Slavonic', romanian: 'Romanian', macedonian: 'Macedonian', ukrainian: 'Ukrainian' };
   const FILLER = new Set(['the', 'a', 'an', 'in', 'at', 'on', 'of', 'for', 'this', 'next', 'service', 'services', 'church', 'parish', 'parishes', 'orthodox', 'and', 'with', 'times', 'time', 'whats', 'what', 'is', 'near', 'me', 'nearby', 'around', 'week']);
 
   function parseQuery(q) {
