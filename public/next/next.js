@@ -86,11 +86,10 @@
     juris: null,             // a jurisdiction, or several from the filters: url-state.js's shape
     f: null,                 // the filters, in the app's shape (blankFilters)
     focus: null,             // { title, ids:Set } — a collection no link can name, on the map
-    streamDays: 14,          // how far the stream has grown
+    streamDays: 7,           // the page's feed is a week; the rest is in the In view card
     from: null,              // the date the stream starts from, when one is picked
     loadedTo: null,          // the last day the bundle holds
     loads: 0,                // bumped as the bundle widens
-    streamBusy: false,
     panel: null,             // the filters open under their button: { pushed }
   };
 
@@ -739,7 +738,6 @@
     S.focus = null;
     // A date beside a parish is that card's; across the page, the stream's.
     S.from = route.parish ? null : route.from;
-    S.streamDays = 14;
     refilter({ url: 'none' });
     if (S.from) ensureLoaded(addDays(S.from, S.streamDays)).then(() => renderStream());
     if (route.f.location) frameRegion(route.f.location, animate);
@@ -1588,22 +1586,32 @@
     });
     $('#stream-when').innerHTML = datePickHTML('page', S.from);
   }
-  async function growStream() {
-    if (S.streamBusy || S.streamDays >= 365) return;
-    S.streamBusy = true;
-    const next = S.streamDays + 14;
-    try {
-      await ensureLoaded(addDays(S.from || todayKey(), next));
-      S.streamDays = next;
-      renderStream();
-    } catch (err) { console.warn(err); }
-    S.streamBusy = false;
-    if (S.streamDays >= 365) $('#stream-more').textContent = 'That’s a year. Come back closer to the time.';
+  /**
+   * The rest of the feed: the In view card, under the page's filters, at the
+   * day after the page's week. One parish in view is that parish's card.
+   */
+  async function openInView({ rest = false } = {}) {
+    const ids = viewParishes().map(p => p.id);
+    if (ids.length === 1) openParish(ids[0]);
+    else {
+      // Its events are the page's filters' too. Shared, it is those parishes
+      // by name under the same filters (/sgr+snb/en-only), not the page's link.
+      const shareSegs = segsFor({ juris: S.juris, f: { ...S.f, parishIds: new Set(ids), listId: null } });
+      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) });
+    }
+    if (!rest) return;
+    const el = stack[stack.length - 1];
+    if (!el || !el.querySelector('.cu')) return;
+    const k = addDays(S.from || todayKey(), S.streamDays);
+    // A card's days start today: enough of them to show a fortnight past the week.
+    const need = Math.round((Date.parse(k) - Date.parse(todayKey())) / 864e5) + CU_DAYS;
+    if (el._days < need) { el._days = need; await refreshComingUp(el); }
+    const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
+    (day || el.querySelector('.cu-band')).scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   /** The stream from a date, or from today again; a step back undoes it. */
   async function setPageDate(k) {
     S.from = k && k > todayKey() ? k : null;
-    S.streamDays = 14;
     if (S.from) await ensureLoaded(addDays(S.from, S.streamDays)).catch(err => console.warn(err));
     refilter();
     $('#stream').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3180,16 +3188,8 @@
       return;
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
-    if (t.closest('#inview, [data-inview]')) {
-      const ids = viewParishes().map(p => p.id);
-      // One parish in view is that parish.
-      if (ids.length === 1) { openParish(ids[0]); return; }
-      // Its events are the page's filters' too. Shared, it is those parishes
-      // by name under the same filters (/sgr+snb/en-only), not the page's link.
-      const shareSegs = segsFor({ juris: S.juris, f: { ...S.f, parishIds: new Set(ids), listId: null } });
-      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) });
-      return;
-    }
+    if (t.closest('#inview, [data-inview]')) { openInView(); return; }
+    if (t.closest('#stream-more')) { openInView({ rest: true }); return; }
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(underJuris(c)); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
@@ -3387,7 +3387,11 @@
   });
   $('#btn-locate').addEventListener('click', locate);
 
-  new IntersectionObserver((ents) => { if (ents.some(e => e.isIntersecting)) growStream(); }, { rootMargin: '600px' }).observe($('#stream-more'));
+  // The feed sits under Today on a phone; wide, Today is the left column's
+  // and the feed ends the right one.
+  const placeStream = () => { if (WIDE.matches) $('.col-main').append($('#stream')); else $('#today').after($('#stream')); };
+  placeStream();
+  WIDE.addEventListener('change', placeStream);
 
   // ── The bundle, held and re-read ──────────────────────────────────────
 

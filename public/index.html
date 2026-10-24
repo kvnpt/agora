@@ -139,6 +139,19 @@
     <!-- Today, before anything else. -->
     <section class="today card" id="today" aria-label="Today"></section>
 
+    <!-- The week ahead, every service and event, under Today (next.js moves
+         it to the foot of the right column when wide). The rest is in the
+         In view card, under the same filters. -->
+    <section class="stream" id="stream" aria-label="Events feed">
+      <header class="stream-head">
+        <h2>Events feed</h2>
+        <!-- From today, or from a date picked: /2026-10-25. -->
+        <div id="stream-when"></div>
+      </header>
+      <div id="stream-days"></div>
+      <button class="wide-btn stream-more" type="button" id="stream-more">More events in view</button>
+    </section>
+
     <!-- Favourites, open on the page: each starred parish and what is next
          there. Then the other lists, bookmarks and saved views, small. -->
     <section class="favs" id="favs"></section>
@@ -156,17 +169,6 @@
     <section class="shelf" id="shelf-languages"></section>
     <section class="shelf" id="shelf-jurisdictions"></section>
 
-    <!-- And always waiting underneath, like reviews at the bottom of a place:
-         every service and event, day after day, for as long as you scroll. -->
-    <section class="stream" id="stream" aria-label="Events feed">
-      <header class="stream-head">
-        <h2>Events feed</h2>
-        <!-- From today, or from a date picked: /2026-10-25. -->
-        <div id="stream-when"></div>
-      </header>
-      <div id="stream-days"></div>
-      <div class="stream-more" id="stream-more">Loading…</div>
-    </section>
     </div>
   </main>
 

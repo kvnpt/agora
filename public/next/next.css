@@ -766,7 +766,8 @@ body.map-full .parish-row {
 .date-pick .fpill svg { flex: none; }
 .date-btn { position: relative; display: inline-flex; }
 .date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
-.stream-more { padding: 26px; text-align: center; color: var(--text-3); font-size: 14px; }
+/* The week's end: the rest is in the In view card. */
+.stream-more { margin-top: 14px; }
 
 /* ── Sheets ──────────────────────────────────────────────────────────── */
 
