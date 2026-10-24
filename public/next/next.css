@@ -837,10 +837,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .ph-text h1 { font-size: 22px; line-height: 1.2; font-weight: 750; letter-spacing: -.015em; }
 .ph-text p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
 /* How far, beside where (app.css .distance-blue). */
-.ph-dist { margin-left: 3px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ph-text .ph-dist { margin-left: 3px; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* How many signed-in people starred it, in the star's own yellow (.parish-fav-fab). */
-.ph-favs { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; color: #e0a315; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: -1px; }
-.ph-favs svg { width: 13px; height: 13px; }
+/* Inline, not flex, so the count sits on the line's baseline beside the distance. */
+.ph-favs { margin-left: 6px; color: #e0a315; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ph-favs b { font-weight: inherit; }
+.ph-favs svg { width: 12px; height: 12px; margin-right: 2px; vertical-align: -1px; }
 /* As many as fit at a readable width; more scroll sideways, as Maps' do.
    The padding under them is room for their shadow, which a scroller clips. */
 .actions {

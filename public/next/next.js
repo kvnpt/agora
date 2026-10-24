@@ -185,7 +185,7 @@
     const x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(x));
   }
-  const fmtKm = (d) => d < 1 ? `${Math.round(d * 1000 / 50) * 50} m` : d < 10 ? `${d.toFixed(1)} km` : `${Math.round(d)} km`;
+  const fmtKm = (d) => d < 1 ? `${Math.round(d * 1000 / 50) * 50}m` : d < 10 ? `${d.toFixed(1)}km` : `${Math.round(d)}km`;
   /** How far, in the app's blues: the nearer, the deeper (app.css .distance-near/-mid/-far). */
   const distClass = (d) => (d <= 5 ? 'distance-near' : d <= 15 ? 'distance-mid' : 'distance-far');
   const distHTML = (d, tag = 'em') => `<${tag} class="dist ${distClass(d)}">${esc(fmtKm(d))}</${tag}>`;
