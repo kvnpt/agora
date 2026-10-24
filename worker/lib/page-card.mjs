@@ -250,7 +250,7 @@ export function parishCardHTML(m) {
   const gmaps = mapsHref(p);
   const times = timetableHTML(m.rules, { today, color: m.color });
   const website = p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : '';
-  // Its own links, a festival or a youth group's page, small above its details; Donate stays on top.
+  // Its own links, a festival or a youth group's page, small under the buttons; Donate stays among them.
   const own = (m.links || []).filter(l => l.url);
   return sheet('parish', p.name, `--j:${m.color}`, `${glassBar(p.name, JURIS_LONG[p.jurisdiction])}
     <div class="sheet-scroll">
@@ -263,13 +263,9 @@ export function parishCardHTML(m) {
         ${p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         ${p.donation_url ? outBtn(p.donation_url, I.heart, 'Donate') : ''}
       </div>
+      ${own.length ? `<div class="p-links">${own.map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('')}</div>` : ''}
       <div class="summary">${summaryHTML(m, today)}</div>
       ${todayBoxHTML(m, today)}
-      <h2 class="sec">Timetable</h2>
-      <div class="p-times">${times || `<div class="tt-none">No service times on file yet.${p.website ? ' The parish website is the best place to check.' : ''}</div>`}
-        ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
-        ${addBox(p.id, 'Add a service time')}</div>
-      ${own.length ? `<div class="p-links">${own.map(l => `<a class="lbtn" href="${esc(l.url)}" target="_blank" rel="noopener">${I.link}<span>${esc(l.label || l.slug)}</span></a>`).join('')}</div>` : ''}
       <div class="p-details"><h2 class="sec"><span>Details</span></h2>
         <div class="details">
           ${p.phone ? `<div class="drow"><small>Phone</small><a href="tel:${esc(tel(p.phone))}">${esc(p.phone)}</a></div>` : ''}
@@ -278,6 +274,10 @@ export function parishCardHTML(m) {
           ${p.address ? `<div class="drow"><small>Address</small><span>${esc(p.address)}</span></div>` : ''}
         </div>
         ${sourceLine.detailsSourceHTML(p, { cls: 'src-line', now: m.now })}</div>
+      <h2 class="sec">Timetable</h2>
+      <div class="p-times">${times || `<div class="tt-none">No service times on file yet.${p.website ? ' The parish website is the best place to check.' : ''}</div>`}
+        ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
+        ${addBox(p.id, 'Add a service time')}</div>
       <section class="cu-band" id="coming-up">
         <h2 class="sec">Coming up</h2>
         <div class="cu" style="--pc:${m.color}">${comingUpHTML(m, start, today)}</div>

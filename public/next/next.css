@@ -859,8 +859,8 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .abtn.primary { min-width: 124px; background: var(--accent); color: #fff; }
 .abtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 /* A parish's own links (a festival, a youth group's page): smaller than its
-   buttons, above its details. */
-.p-links { display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 18px 0; }
+   buttons, under them. */
+.p-links { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 0; }
 .p-links[hidden] { display: none; }
 .lbtn {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 36px; padding: 0 13px 0 10px;
@@ -1098,13 +1098,14 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 @keyframes pm-in { from { opacity: 0; transform: scale(.85); } }
 .pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 9px 12px; border-radius: 11px; color: var(--text); text-align: left; }
 .pm-row:hover, .pm-row:active { background: var(--line); }
-.pm-row > svg { flex: none; width: 19px; height: 19px; color: var(--text-2); }
+/* Every row's icon in the same 22px box, so their words start on one line. */
+.pm-row > svg { flex: none; width: 19px; height: 19px; margin: 0 1.5px; color: var(--text-2); }
 .popmenu a.pm-row { color: var(--text); }
 .pm-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pm-t b { font-size: 15.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-t small { font-size: 12.5px; color: var(--text-2); }
 .pm-t .pm-wait { color: var(--danger); font-weight: 600; }
-.pm-ic { width: 19px; height: 22px; flex: none; display: grid; place-items: center; color: var(--text-2); }
+.pm-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--text-2); }
 .pm-ic img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
 .pm-note { padding: 8px 12px 6px; font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 @media (prefers-reduced-motion: reduce) { .popmenu, .popmenu.out { animation: none; transition: none; } }
