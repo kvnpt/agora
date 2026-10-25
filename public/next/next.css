@@ -1777,3 +1777,10 @@ body.dialog-open { overflow: hidden; }
   .sheet-scroll { padding-bottom: 24px; }
   .scrim { background: rgba(0, 0, 0, .18); }
 }
+
+/* The way to the lite version (public/lite.html), small, at the foot. */
+.lite-switch {
+  margin: 0; padding: 28px var(--pad) calc(28px + env(safe-area-inset-bottom));
+  text-align: center; font-size: 13px; color: var(--text-3);
+}
+.lite-switch a { color: var(--text-2); text-decoration: underline; }

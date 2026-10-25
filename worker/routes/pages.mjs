@@ -27,13 +27,14 @@ import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
 import { liteModel, liteWindow, liteStartDate, parishSlug } from '../lib/lite-page.mjs';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
-import { timetableModel, timetableIndexable } from '../lib/lite-timetable.mjs';
+import { timetableModel, timetableIndexable, timetableMeta } from '../lib/lite-timetable.mjs';
 import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, headHTML, withPage } from '../lib/page-head.mjs';
 import { parishCardHTML, eventCardHTML, collectionCardHTML } from '../lib/page-card.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
 import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
 import { jurisdictionLogos } from '../lib/juris-logos.mjs';
 import collections from '../../public/shared/collections.js';
+import { liteSwitch, wantsLite, liteIndex, liteHomeHTML, readerPlace, withLite } from '../lib/lite-mode.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 
@@ -47,6 +48,8 @@ const SITE_PATHS = new Set(slugs.SITE_PATHS);
 
 /** The page the Worker wraps every link in: v3, as deployed. */
 export const SHELL = '/';
+/** The lite version's (public/lite.html; the asset router drops the .html). */
+export const LITE_SHELL = '/lite';
 
 /**
  * Which kind of page is this path, or null when it is not a page at all (a
@@ -100,12 +103,20 @@ async function timetableRows(env) {
  * A filter link's head, from its timetable, and a collection's card; a 404
  * when it names parishes none of which are here.
  */
-async function timetablePage(env, url, page, now) {
+async function timetablePage(env, url, page, now, { lite = false } = {}) {
   const rows = await timetableRows(env);
   const m = timetableModel({ ...rows, route: page.route, now, origin: url.origin });
   if (!m) return missing(url);
+  const head = headHTML(timetableHeadMeta(m));
+  if (lite) {
+    // The lite version has no page to filter, so every filter link is a
+    // card: a collection's own, any other mix under its heading, and all of
+    // its parishes rather than the first 30.
+    const as = m.collection || { id: 'link', title: timetableMeta(m).title, path: new URL(m.canonical).pathname };
+    return { status: 200, head, card: m.groups.length ? collectionCardHTML({ ...m, collection: as }, { rules: rows.rules, limit: Infinity }) : '' };
+  }
   return {
-    status: 200, head: headHTML(timetableHeadMeta(m)),
+    status: 200, head,
     // A collection's link opens its card (next.js); any other mix of filters is the page itself.
     card: m.collection && m.groups.length ? collectionCardHTML(m, { rules: rows.rules }) : '',
   };
@@ -271,32 +282,64 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
 
   const page = pageOf(url.pathname, now);
   if (!page) return null;
-  const shell = await env.ASSETS.fetch(new Request(new URL(SHELL, url)));
+  // ?lite=1 / ?lite=0: the reader's choice, kept, and the link without it.
+  const toggled = liteSwitch(request);
+  if (toggled) return toggled;
+  const lite = wantsLite(request);
+  const shell = await env.ASSETS.fetch(new Request(new URL(lite ? LITE_SHELL : SHELL, url)));
   if (!shell.ok) return null;
   const html = await shell.text();
 
   let built = null, version;
-  if (page.kind === 'home') built = { status: 200, head: headHTML(homeMeta(url.origin)) };
+  const hour = new Date(now).toISOString().slice(0, 13);
+  if (page.kind === 'home' && !lite) built = { status: 200, head: headHTML(homeMeta(url.origin)) };
   else {
     try {
-      const hour = new Date(now).toISOString().slice(0, 13);
-      const kept = await cachedText({
+      // The lite version's own copy of a filter link: its card differs (timetablePage).
+      const own = lite && page.kind === 'timetable' ? 'lite-' : '';
+      const kept = page.kind === 'home' ? null : await cachedText({
         request, env, ctx,
-        name: `page${encodeURI(url.pathname.toLowerCase())}@${hour}`,
+        name: `${own}page${encodeURI(url.pathname.toLowerCase())}@${hour}`,
         build: async () => JSON.stringify(page.kind === 'other' ? { status: 200, head: headHTML(otherMeta(url.origin)) }
-          : await (page.kind === 'timetable' ? timetablePage : parishPage)(env, url, page, now)),
+          : page.kind === 'timetable' ? await timetablePage(env, url, page, now, { lite })
+          : await parishPage(env, url, page, now)),
       });
-      built = JSON.parse(kept.text);
-      version = kept.version;
+      built = kept ? JSON.parse(kept.text) : { status: 200, head: headHTML(homeMeta(url.origin)) };
+      version = kept && kept.version;
     } catch (err) {
       console.error(`[page] ${url.pathname}: ${err && err.message}`);
     }
+  }
+  if (lite) {
+    // The lite home page (and a link that is no card): search and what is
+    // near. A failure to read it is the search box alone.
+    let main = '';
+    if (page.kind === 'home' || page.kind === 'other' || (built && !built.card)) {
+      try {
+        const kept = await cachedText({
+          request, env, ctx, name: `lite-index@${hour}`,
+          build: async () => JSON.stringify(liteIndex({ ...(await timetableRows(env)), now })),
+        });
+        main = liteHomeHTML({ index: JSON.parse(kept.text), q: url.searchParams.get('q') || '', at: readerPlace(url, request.cf) });
+        version = version || kept.version;
+      } catch (err) {
+        console.error(`[lite] ${url.pathname}: ${err && err.message}`);
+      }
+    }
+    const body = withLite(built ? withPage(html, built) : html, {
+      q: url.searchParams.get('q') || '', main, path: `${url.pathname}${url.search}`,
+    });
+    return revalidated(request, {
+      body, etag: await hashEtag(body), version, type: 'text/html; charset=utf-8',
+      status: built ? built.status : 200,
+      headers: { 'x-agora-page': `lite-${built ? page.kind : 'failed-open'}`, vary: 'cookie' },
+    });
   }
   // Failed open: the page as deployed, its own head and all.
   const body = built ? withPage(html, built) : html;
   return revalidated(request, {
     body, etag: await hashEtag(body), version, type: 'text/html; charset=utf-8',
     status: built ? built.status : 200,
-    headers: { 'x-agora-page': built ? page.kind : 'failed-open' },
+    headers: { 'x-agora-page': built ? page.kind : 'failed-open', vary: 'cookie' },
   });
 }

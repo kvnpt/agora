@@ -1,0 +1,72 @@
+/* The lite version (public/lite.html, worker/lib/lite-mode.mjs): next.css's
+   tokens and its cards, laid out as a plain page. The card the Worker paints
+   is a sheet over the map in the full page; here it is the page, in the flow,
+   with nothing that floats, blurs or slides. Nothing to edit: the dotted Add
+   and the ways into /admin are not shown. */
+
+body.lite { max-width: 600px; margin: 0 auto; }
+
+.lite-bar {
+  display: flex; justify-content: space-between; gap: 12px;
+  margin: 0; padding: 6px var(--pad);
+  font-size: 13px; color: var(--text-2); background: var(--card-2);
+}
+.lite-bar a { font-weight: 600; }
+
+.lite-top { padding: 10px var(--pad) 12px; border-bottom: 1px solid var(--line); }
+.lite-home { display: inline-block; font-weight: 700; font-size: 18px; color: var(--text); margin-bottom: 8px; }
+.lite-search { display: flex; gap: 8px; }
+.lite-search input {
+  flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--card-2);
+  border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px 12px;
+}
+.lite-search button {
+  flex: none; font-weight: 600; color: #fff; background: var(--accent);
+  border-radius: 10px; padding: 10px 14px;
+}
+
+.lite-main { padding-bottom: 32px; }
+.lite-sec { padding: 16px var(--pad) 4px; }
+.lite-sec h1 { font-size: 22px; margin-bottom: 8px; }
+.lite-sec h2 { font-size: 18px; margin-bottom: 6px; }
+.lite-sec h2 span { color: var(--text-2); font-weight: 500; }
+.lite-note { color: var(--text-2); margin: 6px 0; }
+
+.lite-row {
+  display: flex; gap: 12px; align-items: flex-start; padding: 10px 0;
+  color: var(--text); border-bottom: 1px solid var(--line);
+}
+.lite-av {
+  flex: none; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  color: var(--j); border: 2px solid var(--j);
+}
+.lite-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lite-t b { font-weight: 600; }
+.lite-t small { color: var(--text-2); font-size: 14px; }
+.lite-t small.lite-langs { color: var(--text); }
+
+.lite-links { display: flex; flex-direction: column; }
+.lite-link { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.lite-link b { font-weight: 600; }
+.lite-link small { color: var(--text-2); font-size: 14px; }
+
+.lite-near {
+  margin: 12px 0 4px; padding: 10px 14px; border-radius: 10px;
+  font-weight: 600; color: var(--accent); border: 1px solid var(--line-strong);
+}
+
+/* The painted card, as the page. */
+.lite-card:empty { display: none; }
+.lite .sheet {
+  position: static; height: auto; max-width: none; transform: none; transition: none;
+  border-radius: 0; box-shadow: none; overflow: visible;
+}
+.lite .sheet::before { display: none; }
+.lite .sheet-scroll { overflow: visible; }
+/* No bar over it: the page's own header is the way home. */
+.lite .glassbar { display: none; }
+.lite .sheet .sheet-scroll { padding-top: 16px; }
+.lite .chero { padding-top: 28px; }
+.lite .add-box,
+.lite a[href^="/admin"] { display: none; }

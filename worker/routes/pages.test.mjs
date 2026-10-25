@@ -724,3 +724,99 @@ test('a timetable reads from today round the week', async () => {
   assert.deepEqual([...rules].sort(weekFrom('2026-10-14')).map(r => `${r.day_of_week} ${r.start_time}`),
     ['3 07:00', '3 18:00', '6 17:00', '0 09:00', '1 10:00'], 'Wednesday first, then the week as it comes');
 });
+
+// ── the lite version (lib/lite-mode.mjs) ──────────────────────────────────
+
+const LITE = fs.readFileSync('public/lite.html', 'utf8');
+/** fresh(), with the asset router answering /lite with the lite shell, and a reader who chose it. */
+function freshLite() {
+  const f = fresh();
+  f.env.ASSETS = { fetch: async (req) => new Response(new URL(req.url).pathname === '/lite' ? LITE : SHELL) };
+  const lite = (p, cf) => {
+    const req = new Request(`https://orthodoxy.au${p}`, { headers: { cookie: 'x=1; agora_lite=1' } });
+    if (cf) Object.defineProperty(req, 'cf', { value: cf });
+    return servePage(req, f.env, {}, { now: NOW }).then(async res => ({ res, html: await res.clone().text() }));
+  };
+  return { ...f, lite };
+}
+
+test('?lite=1 and ?lite=0 keep the choice in a cookie and go on to the link without it', async () => {
+  const { get } = freshLite();
+  for (const v of ['1', '0']) {
+    const { res } = await get(`/sgr?lite=${v}&x=2`);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), '/sgr?x=2');
+    assert.match(res.headers.get('set-cookie'), new RegExp(`^agora_lite=${v}; Path=/; Max-Age=\\d+`));
+  }
+  // Not a page: left to the assets, choice or not.
+  assert.equal(await get('/admin?lite=1'), null);
+});
+
+test('without the cookie, or with it at 0, a link is the full page', async () => {
+  const { env } = freshLite();
+  for (const cookie of [null, 'agora_lite=0']) {
+    const res = await servePage(new Request('https://orthodoxy.au/sgr', cookie ? { headers: { cookie } } : {}), env, {}, { now: NOW });
+    const html = await res.text();
+    assert.match(html, /<div id="map"><\/div>/);
+    assert.equal(res.headers.get('x-agora-page'), 'parish');
+    assert.equal(res.headers.get('vary'), 'cookie');
+  }
+});
+
+test('the lite version of a parish link: its head and its card, no map, no script, nothing to edit', async () => {
+  const { lite } = freshLite();
+  const { res, html } = await lite('/sgr');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-agora-page'), 'lite-parish');
+  assert.equal(res.headers.get('vary'), 'cookie');
+  assert.equal(canonical(html), 'https://orthodoxy.au/sgr', 'the same head as the full page');
+  assert.equal(robots(html), 'index,follow');
+  assert.match(html, /<div class="lite-card"><!--page:card--><section class="sheet parish/);
+  assert.doesNotMatch(html, /<script src=|id="map"|maplibre/);
+  assert.match(html, /href="\/sgr\?lite=0"/, 'the way back to the full version of this link');
+  assert.match(html, /<link rel="stylesheet" href="\/next\/lite\.css">/);
+  assert.doesNotMatch(html, /<!--lite:/, 'every mark filled');
+});
+
+test('the lite home page: the parishes nearest the reader, and the collections as links', async () => {
+  const { lite } = freshLite();
+  // Cloudflare places the reader in Redfern.
+  const { res, html } = await lite('/', { latitude: '-33.893', longitude: '151.204', city: 'Sydney' });
+  assert.equal(res.headers.get('x-agora-page'), 'lite-home');
+  assert.match(html, /<h1>Nearest to Sydney<\/h1>/);
+  const first = /<a class="lite-row" href="\/([^"]+)">/.exec(html)[1];
+  assert.equal(first, 'sgr', 'Redfern first');
+  assert.match(html, /<a class="lite-link" href="\/services\/en"><b>English services<\/b>/);
+  assert.match(html, /class="lite-near"/, 'Near me, for a better place than the connection\'s');
+  // Near me's own place wins over the connection's, and needs no button.
+  const near = await lite('/?near=-27.47,153.02', { latitude: '-33.893', longitude: '151.204', city: 'Sydney' });
+  assert.match(near.html, /<h1>Nearest to you<\/h1>/);
+  assert.doesNotMatch(near.html, /class="lite-near"/);
+});
+
+test('the lite search: parishes by name, initials or suburb, a language word as their services', async () => {
+  const { lite, raw } = freshLite();
+  const { html } = await lite('/?q=redfern');
+  assert.match(html, /value="redfern"/);
+  assert.match(html, /<a class="lite-row" href="\/sgr">/);
+  assert.equal((await lite('/?q=SGR')).html.match(/class="lite-row"/g).length >= 1, true);
+  const none = await lite('/?q=zzqx');
+  assert.match(none.html, /Nothing for “zzqx”/);
+  // "english redfern": Redfern only once it holds a service in English.
+  assert.doesNotMatch((await lite('/?q=english+redfern')).html, /href="\/sgr"/);
+  raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, languages)
+               VALUES (?, 0, '08:00', 'Orthros', 'prayer', '["English"]')`).run(PARISH);
+  const { html: en } = await lite('/?q=english+redfern');
+  assert.match(en, /href="\/sgr"/);
+  // A collection by its name.
+  assert.match((await lite('/?q=monasteries')).html, /href="\/monasteries"/);
+});
+
+test('the lite version paints every filter link as a card, all of its parishes', async () => {
+  const { lite } = freshLite();
+  const { html } = await lite('/antiochian/nsw');
+  assert.match(html, /<section class="sheet collection/, 'a mix of filters is a card here, not the page filtered');
+  assert.doesNotMatch(html, /class="lite-row"/);
+  const { html: coll } = await lite('/antiochian');
+  assert.equal((coll.match(/<article class="citem">/g) || []).length, 9, 'every Antiochian parish in the seed');
+});

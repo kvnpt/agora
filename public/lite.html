@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <!-- The lite version (worker/lib/lite-mode.mjs): the card the Worker paints
+       for every link, with no map, no app script and nothing to edit, for a
+       phone the full page is too much for. The head is the same link's head
+       as the full page's (worker/lib/page-head.mjs). -->
+  <!--page:head-->
+  <title>Orthodox Services &amp; Events — orthodoxy.au</title>
+  <meta name="robots" content="noindex,follow">
+  <!--/page:head-->
+  <link rel="stylesheet" href="/next/next.css">
+  <link rel="stylesheet" href="/next/lite.css">
+</head>
+<body class="lite">
+  <p class="lite-bar">Lite version<a href="<!--lite:full-->" rel="nofollow">Full version</a></p>
+  <header class="lite-top">
+    <a class="lite-home" href="/">orthodoxy.au</a>
+    <!-- Answered by the Worker: /?q=redfern (lite-mode.mjs liteHomeHTML). -->
+    <form class="lite-search" action="/" method="get" role="search">
+      <input type="search" name="q" value="<!--lite:q-->" placeholder="Suburb or parish" aria-label="Search" enterkeyhint="search">
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  <main class="lite-main">
+    <!--lite:main-->
+    <div class="lite-card"><!--page:card--></div>
+  </main>
+  <!-- The one script: Near me, which asks for the phone's location and
+       hands it to the home page as ?near=lat,lng. -->
+  <script>
+    (function () {
+      var b = document.querySelector('.lite-near');
+      if (!b || !navigator.geolocation) return;
+      b.hidden = false;
+      b.onclick = function () {
+        b.textContent = 'Finding you…';
+        navigator.geolocation.getCurrentPosition(function (p) {
+          location.href = '/?near=' + p.coords.latitude.toFixed(3) + ',' + p.coords.longitude.toFixed(3);
+        }, function () { b.textContent = 'Location not available'; }, { timeout: 20000, maximumAge: 600000 });
+      };
+    })();
+  </script>
+</body>
+</html>
