@@ -145,7 +145,7 @@ function eventRowHTML(e, here, now = false) {
   const langs = ruleFilters.serviceLangs(e) || [];
   const lang = langs.length ? `<span class="elang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : '';
   // Held here for another parish, it names its host.
-  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
+  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${here && e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
       <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
@@ -403,7 +403,9 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
  * collectionFeed): its days, morning then evening, each row naming its parish.
  */
 function collectionComingUpHTML(feed, now) {
-  const list = feed.filter(e => (shown(e) || TOMB[e.status]) && endMs(e) > now);
+  // By each parish's own clock: 8:30 in Perth comes before 9 in Sydney.
+  const list = feed.filter(e => (shown(e) || TOMB[e.status]) && endMs(e) > now)
+    .sort((a, b) => a._local.time.localeCompare(b._local.time));
   const byDay = new Map();
   for (const e of list) {
     if (!byDay.has(e._local.date)) byDay.set(e._local.date, []);

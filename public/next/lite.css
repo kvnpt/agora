@@ -73,5 +73,8 @@ body.lite { max-width: 600px; margin: 0 auto; }
 .lite .ctimes.folded .clist,
 .lite .ctimes.folded:not(:has(input:checked)) .clist { max-height: none; overflow: visible; -webkit-mask-image: none; mask-image: none; }
 .lite .ctimes-open { display: none; }
+/* A row's languages and parish wrap rather than cut off, on a narrow screen. */
+.lite .esub { flex-wrap: wrap; row-gap: 0; }
+.lite .esub span { white-space: normal; overflow: visible; }
 .lite .add-box,
 .lite a[href^="/admin"] { display: none; }

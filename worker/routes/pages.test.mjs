@@ -831,6 +831,7 @@ test('the lite version of a collection lists what is on at its parishes this wee
   assert.match(cu, /Sunday Divine Liturgy/);
   assert.match(cu, /St George Cathedral, Redfern/);
   assert.doesNotMatch(cu, /Vespers/);
+  assert.doesNotMatch(cu, /Hosted by/, 'at its own parish, a row names it plainly');
   // The full page's card has none: next.js draws its own.
   const { html: full } = await freshLite().get('/sun/liturgy');
   assert.doesNotMatch(full, /id="coming-up"/);
