@@ -68,5 +68,8 @@ body.lite { max-width: 600px; margin: 0 auto; }
 .lite .glassbar { display: none; }
 .lite .sheet .sheet-scroll { padding-top: 16px; }
 .lite .chero { padding-top: 28px; }
+/* A collection's timetables open: one tap fewer, and no :has() to rely on. */
+.lite .ctimes.folded .clist { max-height: none; overflow: visible; -webkit-mask-image: none; mask-image: none; }
+.lite .ctimes-open { display: none; }
 .lite .add-box,
 .lite a[href^="/admin"] { display: none; }
