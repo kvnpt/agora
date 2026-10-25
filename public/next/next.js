@@ -2268,6 +2268,7 @@
         <div class="summary">${summaryHTML(p)}</div>
         <section class="today card ptoday" aria-label="Today" style="--pc:${parishColor(p)}"></section>
         <div class="p-details">${detailsHTML(p)}</div>
+        <div class="p-suggest">${suggestEditHTML(pid)}</div>
         <h2 class="sec">Timetable</h2>
         <div class="p-times">${timesHTML(p, focus)}</div>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
@@ -2276,7 +2277,6 @@
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
-        <div class="p-suggest">${suggestEditHTML(pid)}</div>
         <div class="toolbar-space"></div>
       </div>
       <div class="floatbar" role="toolbar">
