@@ -8,8 +8,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const L = require('../../public/shared/languages.js');
 
-test('seven languages, and no Russian: the Russian parishes pray in Church Slavonic', () => {
-  assert.deepEqual(L.NAMES, ['English', 'Greek', 'Arabic', 'Serbian', 'Church Slavonic', 'Romanian', 'Macedonian']);
+test('eight languages, and no Russian: the Russian parishes pray in Church Slavonic', () => {
+  assert.deepEqual(L.NAMES, ['English', 'Greek', 'Arabic', 'Serbian', 'Church Slavonic', 'Romanian', 'Macedonian', 'Ukrainian']);
   for (const v of ['Russian', 'russian', 'Slavonic', 'church slavonic', 'church-slavonic']) {
     assert.equal(L.canonical(v), 'Church Slavonic', v);
   }

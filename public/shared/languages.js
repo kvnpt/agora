@@ -26,6 +26,7 @@
       aliases: ['slavonic', 'russian', 'church-slavonic', 'old church slavonic'] },
     { name: 'Romanian', short: 'Romanian', slug: 'romanian', glyph: 'Ro', tint: '#4e7a27' },
     { name: 'Macedonian', short: 'Macedonian', slug: 'macedonian', glyph: 'Мк', tint: '#b92d5d' },
+    { name: 'Ukrainian', short: 'Ukrainian', slug: 'ukrainian', glyph: 'Ук', tint: '#0e7490' },
   ];
   const NAMES = LANGUAGES.map(l => l.name);
 

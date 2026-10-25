@@ -49,7 +49,7 @@ const COLLECTION_COLORS = {
   english: '#1d4ed8', sunday: '#9a3412', vespers: '#312e81', weeknights: '#0f766e', talks: '#92400e',
   socials: '#9d174d', monasteries: '#3f3f46',
   'lang-greek': '#0061fe', 'lang-arabic': '#7c3bc1', 'lang-serbian': '#cc2234', 'lang-slavonic': '#d38301',
-  'lang-romanian': '#4e7a27', 'lang-macedonian': '#b92d5d',
+  'lang-romanian': '#4e7a27', 'lang-macedonian': '#b92d5d', 'lang-ukrainian': '#0e7490',
 };
 for (const c of CURATED) CARDS.push({ file: `c-${c.id}`, label: c.title, sub: c.blurb, color: COLLECTION_COLORS[c.id] });
 for (const c of LANGUAGES) CARDS.push({ file: `c-${c.id}`, label: `Services in ${c.title}`, color: COLLECTION_COLORS[c.id] });
