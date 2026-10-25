@@ -25,7 +25,7 @@ import slugs from '../../public/shared/slugs.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
-import { liteModel, liteWindow, liteStartDate, parishSlug } from '../lib/lite-page.mjs';
+import { liteModel, liteWindow, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS } from '../lib/lite-page.mjs';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { timetableModel, timetableIndexable, timetableMeta } from '../lib/lite-timetable.mjs';
 import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, headHTML, withPage } from '../lib/page-head.mjs';
@@ -113,13 +113,40 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
     // card: a collection's own, any other mix under its heading, and all of
     // its parishes rather than the first 30.
     const as = m.collection || { id: 'link', title: timetableMeta(m).title, path: new URL(m.canonical).pathname };
-    return { status: 200, head, card: m.groups.length ? collectionCardHTML({ ...m, collection: as }, { rules: rows.rules, limit: Infinity }) : '' };
+    if (!m.groups.length) return { status: 200, head, card: '' };
+    // And what is on at them this week, which the full page projects itself.
+    const feed = await collectionFeedOf(env, m, page.route, now).catch((err) => {
+      console.error(`[lite] coming up ${url.pathname}: ${err && err.message}`);
+      return null;
+    });
+    return { status: 200, head, card: collectionCardHTML({ ...m, collection: as }, { rules: rows.rules, limit: Infinity, feed }) };
   }
   return {
     status: 200, head,
     // A collection's link opens its card (next.js); any other mix of filters is the page itself.
     card: m.collection && m.groups.length ? collectionCardHTML(m, { rules: rows.rules }) : '',
   };
+}
+
+/** A collection's week, for the lite version's card (lite-page.mjs collectionFeed). */
+async function collectionFeedOf(env, m, route, now) {
+  const parishIds = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.map(x => x.parish.id)));
+  const start = localDateOf(DEFAULT_ZONE, now);
+  const { fromUtc } = liteWindow(start);
+  const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (COLLECTION_FEED_DAYS + 1) * 86400000).toISOString();
+  const [rows, events, cross] = await Promise.all([
+    fetchWindowRows(env.DB, fromUtc, toUtc),
+    env.DB.prepare(
+      `SELECT e.*, p.name AS parish_name, p.acronym AS parish_acronym, p.jurisdiction, p.timezone
+       FROM events e JOIN parishes p ON e.parish_id = p.id
+       WHERE e.source_adapter != 'schedule' AND e.start_utc >= ? AND e.start_utc <= ?`
+    ).bind(fromUtc, toUtc).all(),
+    env.DB.prepare('SELECT event_id, parish_id FROM event_parishes').all().catch(() => ({ results: [] })),
+  ]);
+  return collectionFeed({
+    rows, events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
+    cross: cross.results || [], parishIds, route, now,
+  });
 }
 
 /** A link to something that is not here: the home page's words, noindex. */

@@ -820,3 +820,18 @@ test('the lite version paints every filter link as a card, all of its parishes',
   const { html: coll } = await lite('/antiochian');
   assert.equal((coll.match(/<article class="citem">/g) || []).length, 9, 'every Antiochian parish in the seed');
 });
+
+test('the lite version of a collection lists what is on at its parishes this week', async () => {
+  const { lite } = freshLite();
+  const { html } = await lite('/sun/liturgy');
+  const cu = between(html, '<section class="cu-band" id="coming-up">');
+  assert.match(cu, /<h2 class="sec">Coming up<\/h2>/);
+  // Sunday 4 October: the seed's Sunday Liturgies, each naming its parish; no Vespers.
+  assert.match(cu, /<section class="sday" data-date="2026-10-04">/);
+  assert.match(cu, /Sunday Divine Liturgy/);
+  assert.match(cu, /St George Cathedral, Redfern/);
+  assert.doesNotMatch(cu, /Vespers/);
+  // The full page's card has none: next.js draws its own.
+  const { html: full } = await freshLite().get('/sun/liturgy');
+  assert.doesNotMatch(full, /id="coming-up"/);
+});
