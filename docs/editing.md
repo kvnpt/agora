@@ -120,7 +120,7 @@ the form, for `parish.delete`.
 
 The TIMETABLE has no mode: for whoever may change it, each line carries a small
 pencil at its right edge, always there, that opens its rule's form (`editLine`; a
-line that is two rules asks which), and the dotted **Add +** under it opens **Add
+line that is several rules offers all its days together first, or one of them), and the dotted **Add +** under it opens **Add
 schedule** (`addService`, for `schedule.create`) — every field a rule has, the
 poster included (times from quarter-hours or typed, `public/shared/time-field.js`,
 and dates from a month grid, never the system pickers). The line itself still
@@ -343,9 +343,20 @@ where the pin moves with it.
 The timetable has its own way in: **Add schedule** (the dotted **Add +**
 under the service times) opens a dialog with **From a photo of the sign** above
 the fields for typing a service. The fields are `public/shared/rule-form.js`,
-and the pencil is on each line of the grouped timetable: a line that is several rules ("Tue, Wed 6pm
-Vespers") asks which one first, since each is edited on its own. It
-is the same editor and the same read, opened expecting a timetable (`intent:
+and the pencil is on each line of the grouped timetable.
+
+A rule is one weekday, but the form's **Days** are ticked, with **Every day**
+and **Mon–Fri** beside them: Compline every night was seven forms until 26 Oct
+2026. Add sends them as `days`, and the route writes a rule for each (skipping
+any already there). A line that is several rules ("Tue, Wed 6pm Vespers")
+offers **All N days together** first, which is one form for every rule of it
+(`editRules`): Save sends each rule only the fields that changed, so one day's
+own description or poster stays; a day ticked is a new rule, a day moved to
+another moves its rule, and a day unticked is asked about and then ended the
+day before today (deleted, if it had not started), so it waits under Ended
+services. One day of the line can still be picked and edited on its own.
+
+**From a photo of the sign** is the add-event editor and the same read, opened expecting a timetable (`intent:
 'timetable'`): its empty event card stays out of the way and the dialog says
 "Add to the timetable". A photo that turns out not to be a sign is **caught**
 rather than trusted — a poster for a one-off, or a month's programme, says so in

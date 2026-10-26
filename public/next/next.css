@@ -1411,6 +1411,18 @@ body.dialog-open { overflow: hidden; }
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
 }
 .escalate-modal .btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* Days: seven to tick (rule-form.js), a row of them even on a phone. */
+.rf-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.detail-edit-form label.rf-day { position: relative; margin: 0; cursor: pointer; }
+.rf-day input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.rf-day span {
+  display: flex; align-items: center; justify-content: center; min-height: 40px; border-radius: 10px;
+  border: 1px solid var(--border); font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text);
+}
+.rf-day input:checked + span { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; }
+.rf-day input:focus-visible + span { box-shadow: 0 0 0 3px var(--accent-ring); }
+.rf-days-quick { display: flex; gap: 16px; margin-top: 8px; }
+.rf-link { padding: 2px 0; font-size: 13px; font-weight: 600; color: var(--accent); background: none; border: 0; cursor: pointer; }
 /* How often: one control, three answers. */
 .cad-modes { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .detail-edit-form label.cad-mode, .detail-edit-form label.wom-check, .detail-edit-form label.cad-week {

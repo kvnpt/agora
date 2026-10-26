@@ -343,11 +343,19 @@
         if (file && made && made.id) {
           btn.textContent = 'Adding the poster…';
           const up = await rulePoster(made.id, file);
+          // A service on several days is a rule for each, and each shows it.
+          for (const r of (made.rules || []).slice(1)) {
+            if (up.error) break;
+            await fetch(`/api/admin/schedules/${encodeURIComponent(r.id)}`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ poster_path: up.poster_path }),
+            }).catch(() => null);
+          }
           if (up.error) host.toast(`Added, but not its poster: ${up.error}`);
         }
         d.f.close();
         await host.reload();
-        host.toast(made && made.duplicate ? 'That service was already there' : 'Service added');
+        const n = made && made.rules ? made.rules.length : 1;
+        host.toast(made && made.duplicate ? 'That service was already there' : n > 1 ? `Service added on ${n} days` : 'Service added');
       } finally { btn.disabled = false; btn.textContent = 'Add service'; }
     });
 
@@ -394,37 +402,114 @@
     });
   }
 
+  /** "Every day 9pm · Compline", rules of one line as a person names them. */
+  const linesName = (rules) => {
+    if (rules.length === 1) return ruleName(rules[0]);
+    const TL = root.AgoraTimetableLines;
+    const days = TL ? TL.dayList(rules.map(r => r.day_of_week)) : rules.map(r => DAY_NAMES[r.day_of_week].slice(0, 3)).join(', ');
+    return `${days} ${clock(rules[0].start_time)} · ${rules[0].title}`;
+  };
+  const dayBefore = (iso) => new Date(Date.parse(iso + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+
   /** A rule's pencil: its form, Save, Delete. */
-  function editService(id) {
-    const rule = host.rule(id);
-    if (!rule || !RF() || !host.may('schedule.edit', rule.parish_id)) return;
-    const parish = host.parish(rule.parish_id);
+  function editService(id) { editRules([id]); }
+
+  /**
+   * One form for the rules of a line: "Every day 9pm Compline" is seven, and
+   * is edited as the one service it is (rule-form.js). Save sends each rule
+   * only what changed, so a description or a poster one day has of its own
+   * stays. A day ticked is a new rule; a day unticked is a rule that stops,
+   * ended before today (or deleted, if it never ran) after asking. With one
+   * day moved to another, the rule moves, as the old Day picker did.
+   */
+  function editRules(ids) {
+    const rules = ids.map(id => host.rule(id)).filter(Boolean);
+    if (!rules.length || !RF()) return;
+    const first = rules[0];
+    if (!host.may('schedule.edit', first.parish_id)) return;
+    const parish = host.parish(first.parish_id);
+    const patchEach = async (list, body) => {
+      for (const r of list) {
+        const res = await fetch(`/api/admin/schedules/${encodeURIComponent(r.id)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        }).catch(() => null);
+        if (!res || !res.ok) return res ? await errorText(res) : 'It did not go through. Check the connection.';
+      }
+      return null;
+    };
     const d = ruleDialog({
       title: 'Edit service',
-      sub: [ruleName(rule), parish && parish.name].filter(Boolean).join(' · '),
-      rule,
-      parishId: rule.parish_id,
+      sub: [linesName(rules), parish && parish.name].filter(Boolean).join(' · '),
+      rule: { ...first, days: rules.map(r => r.day_of_week) },
+      parishId: first.parish_id,
       actions: `<button class="btn-save" type="button" data-rf-save>Save</button>
         <button class="btn-outline" type="button" data-frame-close>Cancel</button>
-        ${host.may('schedule.delete', rule.parish_id) ? '<button class="btn-danger" type="button" data-rf-delete>Delete</button>' : ''}`,
-      // Outside Save, as the app's: it goes on as it is picked.
+        ${host.may('schedule.delete', first.parish_id) ? '<button class="btn-danger" type="button" data-rf-delete>Delete</button>' : ''}`,
+      // Outside Save, as the app's: it goes on as it is picked, on every day.
       posterNow: async (file) => {
-        const r = await rulePoster(rule.id, file);
+        const r = await rulePoster(first.id, file);
+        if (!r.error && rules.length > 1) {
+          const err = await patchEach(rules.slice(1), { poster_path: file ? r.poster_path : null });
+          if (err) return { error: err };
+        }
         if (!r.error) host.reload();
         return r;
       },
     });
+    // What the form said when it opened: Save sends only what moved from it.
+    const before = d.live.body();
     d.form.querySelector('[data-rf-save]').addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       if (btn.disabled) return;
       btn.disabled = true;
       try {
         const body = await d.ready();
-        if (!body || !(await keepByHand(rule.parish_id))) return;
-        const res = await fetch(`/api/admin/schedules/${encodeURIComponent(rule.id)}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-        }).catch(() => null);
-        if (!res || !res.ok) return d.fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+        if (!body) return;
+        const changes = {};
+        for (const k of Object.keys(body)) {
+          if (k === 'days' || k === 'day_of_week') continue;
+          if (JSON.stringify(body[k]) !== JSON.stringify(before[k])) changes[k] = body[k];
+        }
+        // How often is both columns, every time (rule-form.js cadence).
+        if ('week_of_month' in changes || 'week_parity' in changes) {
+          changes.week_of_month = body.week_of_month;
+          changes.week_parity = body.week_parity;
+        }
+        const had = rules.map(r => r.day_of_week);
+        const added = body.days.filter(x => !had.includes(x));
+        let gone = rules.filter(r => !body.days.includes(r.day_of_week));
+        const kept = rules.filter(r => body.days.includes(r.day_of_week));
+        // A day swapped for another moves its rule.
+        const moved = [];
+        while (gone.length && added.length) moved.push({ r: gone.shift(), day: added.shift() });
+        if (gone.length) {
+          const go = await askChoice({
+            title: `Stop it on ${gone.map(r => DAY_NAMES[r.day_of_week]).join(', ')}?`,
+            body: `<p>${gone.length === 1 ? 'That day ends' : 'Those days end'} before today and ${gone.length === 1 ? 'goes' : 'go'} to Ended services, where Add can bring ${gone.length === 1 ? 'it' : 'them'} back.</p>`,
+            choices: [{ value: 'stop', label: gone.length === 1 ? 'Stop that day' : 'Stop those days' }],
+          });
+          if (go !== 'stop') return;
+        }
+        if (!(await keepByHand(first.parish_id))) return;
+        let err = null;
+        if (Object.keys(changes).length) err = await patchEach(kept, changes);
+        for (const m of moved) if (!err) err = await patchEach([m.r], { ...changes, day_of_week: m.day });
+        if (!err && added.length) {
+          const res = await fetch('/api/admin/schedules', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parish_id: first.parish_id, ...body, days: added, poster_path: first.poster_path || null }),
+          }).catch(() => null);
+          if (!res || !res.ok) err = res ? await errorText(res) : 'It did not go through. Check the connection.';
+        }
+        const today = host.today();
+        for (const r of gone) {
+          if (err) break;
+          if (r.effective_from && r.effective_from >= today) {
+            const res = await fetch(`/api/admin/schedules/${encodeURIComponent(r.id)}`, { method: 'DELETE' }).catch(() => null);
+            if (!res || !res.ok) err = res ? await errorText(res) : 'It did not go through. Check the connection.';
+          } else err = await patchEach([r], { effective_to: dayBefore(today) });
+        }
+        if (err) { await host.reload(); return d.fail(err); }
         d.f.close();
         await host.reload();
         host.toast('Saved');
@@ -433,13 +518,15 @@
     const del = d.form.querySelector('[data-rf-delete]');
     if (del) del.addEventListener('click', async () => {
       const go = await askChoice({
-        title: `Delete ${rule.title}?`,
+        title: rules.length > 1 ? `Delete ${first.title} on all ${rules.length} days?` : `Delete ${first.title}?`,
         body: '<p>Every date of it goes from the timetable. A service that has stopped can end instead: give it a last date.</p>',
         choices: [{ value: 'delete', label: 'Delete the service', danger: true }],
       });
-      if (go !== 'delete' || !(await keepByHand(rule.parish_id))) return;
-      const res = await fetch(`/api/admin/schedules/${encodeURIComponent(rule.id)}`, { method: 'DELETE' }).catch(() => null);
-      if (!res || !res.ok) return d.fail(res ? await errorText(res) : 'It did not go through. Check the connection.');
+      if (go !== 'delete' || !(await keepByHand(first.parish_id))) return;
+      for (const r of rules) {
+        const res = await fetch(`/api/admin/schedules/${encodeURIComponent(r.id)}`, { method: 'DELETE' }).catch(() => null);
+        if (!res || !res.ok) { await host.reload(); return d.fail(res ? await errorText(res) : 'It did not go through. Check the connection.'); }
+      }
       d.f.close();
       await host.reload();
       host.toast('Deleted');
@@ -448,8 +535,8 @@
 
   /**
    * A timetable line's pencil. A line can be several rules ("Mon–Fri 6pm
-   * Vespers" is five), and each is edited on its own, so a line of more
-   * than one asks which.
+   * Vespers" is five), edited together as the one service, or one day of it
+   * on its own.
    */
   async function editLine(ids) {
     const rules = ids.map(id => host.rule(id)).filter(Boolean)
@@ -457,9 +544,11 @@
     if (rules.length === 1) return editService(rules[0].id);
     const pick = await askChoice({
       title: 'Which one?',
-      choices: rules.map(r => ({ value: String(r.id), label: ruleName(r) })),
+      choices: [{ value: 'all', label: `All ${rules.length} days together`, hint: linesName(rules) },
+        ...rules.map(r => ({ value: String(r.id), label: ruleName(r) }))],
     });
-    if (pick) editService(pick);
+    if (pick === 'all') editRules(rules.map(r => r.id));
+    else if (pick) editService(pick);
   }
 
   // ── An event, or one date of a service ────────────────────────────────
