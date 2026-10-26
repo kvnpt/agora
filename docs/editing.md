@@ -366,6 +366,18 @@ kinds of poster, and St John the Baptist, Croydon Park's "Church Choir Practice,
 7:00 pm every Tuesday" fitted none — read as one event with no date, which
 nobody could publish, and caught at the timetable as "a poster for an event".
 
+**Regular means the image says it repeats.** For each service the reader gives
+`every`, the words that say so ("every Tuesday", "Sundays", "2nd Wednesday of
+the month"). A weekday beside a time does not: Archangel Michael, Crows Nest's
+feast-day poster ("Sunday November 8 … Vespers 7pm Sat, Matins 7.30am Sun,
+Divine Liturgy 9am Sun, Paniyiri 11am onwards") was read as that Sunday's
+schedule and then offered as four weekly services. Now a poster's service with
+no such words is dated from the poster's own occasion — its dated events, all
+within a week — on the nearest day of its weekday (the Saturday before a
+Sunday), and becomes an event with a note saying so. With no occasion to date
+it from it stays a service, with a note that the poster does not say it is
+weekly. A sign's services are regular by being on the sign.
+
 The kind decides one thing: how a regular service is added. A sign's name the
 sign as the timetable's source ("Church signage"). A poster's carry the poster
 as the rule's own and their description, with the period it gives (**From** /

@@ -231,10 +231,10 @@ test('a flyer for something held every week: a rule with its words and its perio
   // poster for an event".
   const r = normalizeRead({
     kind: 'poster', written_in: 'English', other_parish: null, events: [], notes: [],
-    services: [{ title: 'CHURCH CHOIR PRACTICE', day: 'Tuesday', start_time: '19:00', end_time: '',
+    services: [{ title: 'CHURCH CHOIR PRACTICE', every: 'every Tuesday', day: 'Tuesday', start_time: '19:00', end_time: '',
       weeks: [], languages: ['Arabic', 'English'], event_type: 'other',
       description: ' Led by Simon Yazbek. No prior experience needed; all are welcome. ', starts: '2026-11-03', until: '', notes: [] },
-    { title: 'Bible study', day: 'Wednesday', start_time: '19:30', end_time: '', weeks: ['second'],
+    { title: 'Bible study', every: '2nd Wednesday of the month', day: 'Wednesday', start_time: '19:30', end_time: '', weeks: ['second'],
       languages: [], event_type: 'talk', description: '', starts: 'next week', until: '2026-12-09', notes: [] }],
     details: { address: '', phone: '', email: '', website: '' },
   });
@@ -280,4 +280,56 @@ test('one event over several days keeps its last day; one that is not after the 
     { ...base, end_date: '2026-11-13' }, { ...base, end_date: '' }] });
   assert.deepStrictEqual(r.events.map(e => e.end_date), ['2026-11-15', null, null]);
   assert.match(SYSTEM_PROMPT, /One event that runs over several days .* is ONE entry with its last day in end_date/);
+});
+
+test('a feast day’s schedule: its weekday-and-time items are events on its dates, not weekly services', () => {
+  // Archangel Michael, Crows Nest: "Sunday November 8 … Schedule of events:
+  // Great Hierarchical Vespers 7pm Sat, Matins 7.30am Sun, Divine Liturgy 9am
+  // Sun, Paniyiri 11am onwards". The reader said the schedule was that
+  // Sunday's, and then offered all four as every week's.
+  const svc = (title, day, start_time, event_type, every = '') => ({ title, every, day, start_time, end_time: '',
+    weeks: [], languages: [], event_type, description: '', starts: '', until: '', notes: [] });
+  const r = normalizeRead({
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [],
+    events: [{ title: 'Archangel Michael Feast Day Celebrations', feast: '', date: '2026-11-08', weekday_printed: 'Sunday',
+      year_printed: false, start_time: null, end_time: null, end_date: '', event_type: 'feast', languages: [],
+      venue: null, description: 'Music, food, dancing and family entertainment, all day.', notes: [] }],
+    services: [
+      svc('Great Hierarchical Vespers', 'Saturday', '19:00', 'prayer', 'SAT'),
+      svc('Matins', 'Sunday', '07:30', 'liturgy'),
+      svc('Divine Liturgy', 'Sunday', '09:00', 'liturgy', 'Sun'),
+      svc('Paniyiri', 'Sunday', '11:00', 'social'),
+      svc('Paraklesis', 'Friday', '19:00', 'prayer', 'every Friday in November'),
+    ],
+    details: { address: '', phone: '', email: '', website: '' },
+  });
+  assert.deepStrictEqual(r.services.map(s => s.title), ['Paraklesis'], 'what the poster says repeats stays a rule');
+  assert.deepStrictEqual(r.events.map(e => [e.title, e.date, e.start_time, e.event_type, e.printed_weekday]), [
+    ['Archangel Michael Feast Day Celebrations', '2026-11-08', null, 'feast', 'Sunday'],
+    ['Great Hierarchical Vespers', '2026-11-07', '19:00', 'prayer', 'Saturday'],
+    ['Matins', '2026-11-08', '07:30', 'liturgy', 'Sunday'],
+    ['Divine Liturgy', '2026-11-08', '09:00', 'liturgy', 'Sunday'],
+    ['Paniyiri', '2026-11-08', '11:00', 'social', 'Sunday'],
+  ]);
+  assert.strictEqual(r.events[1].year_printed, 0);
+  assert.deepStrictEqual(r.events[1].read_notes,
+    [{ field: 'date', text: 'Printed as “Saturday”, not every Saturday; dated from the poster’s 8 November.' }]);
+  assert.match(SYSTEM_PROMPT, /"Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion/);
+  assert.match(SYSTEM_PROMPT, /If you cannot point to such words, it is not a regular service/);
+});
+
+test('a service the poster does not call regular, with no date to put it on, stays — with a note; a sign’s always stay', () => {
+  const sv = { title: 'Vespers', every: '', day: 'Saturday', start_time: '18:00', end_time: '', weeks: [],
+    languages: [], event_type: 'prayer', description: '', starts: '', until: '', notes: [] };
+  const empty = { address: '', phone: '', email: '', website: '' };
+  const undated = normalizeRead({ kind: 'poster', events: [], services: [sv], details: empty });
+  assert.deepStrictEqual(undated.events, []);
+  assert.deepStrictEqual(undated.services[0].read_notes, [{ field: 'day',
+    text: 'The poster does not say this is held every week. If it is for one date, add it as an event instead.' }]);
+  // A month's programme is not one occasion either.
+  const month = normalizeRead({ kind: 'poster', services: [sv], details: empty,
+    events: [{ title: 'A', date: '2026-11-01' }, { title: 'B', date: '2026-11-29' }] });
+  assert.deepStrictEqual([month.events.length, month.services.length], [2, 1]);
+  const sign = normalizeRead({ kind: 'timetable', services: [sv], details: empty, events: [{ title: 'A', date: '2026-11-08' }] });
+  assert.deepStrictEqual([sign.services.length, sign.services[0].read_notes], [1, []]);
 });
