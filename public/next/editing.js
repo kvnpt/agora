@@ -486,7 +486,7 @@
         if (gone.length) {
           const go = await askChoice({
             title: `Stop it on ${gone.map(r => DAY_NAMES[r.day_of_week]).join(', ')}?`,
-            body: `<p>${first.title} will no longer show on ${gone.map(r => DAY_NAMES[r.day_of_week] + 's').join(' or ')}. Past dates stay as they were. To restart ${gone.length === 1 ? 'it' : 'them'}, use Bring back under Ended services in Add a service.</p>`,
+            body: `<p>${first.title} will no longer show on ${gone.map(r => DAY_NAMES[r.day_of_week] + 's').join(' or ')}. Past dates stay as they were. Tick ${gone.length === 1 ? 'it' : 'them'} again here to restart.</p>`,
             choices: [{ value: 'stop', label: gone.length === 1 ? 'Stop that day' : 'Stop those days' }],
           });
           if (go !== 'stop') return;

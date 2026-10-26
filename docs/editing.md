@@ -354,7 +354,8 @@ offers **All N days together** first, which is one form for every rule of it
 own description or poster stays; a day ticked is a new rule, a day moved to
 another moves its rule, and a day unticked is asked about and then ended the
 day before today (deleted, if it had not started), so it waits under Ended
-services. One day of the line can still be picked and edited on its own.
+services. Ticking it again later adds a fresh rule for the day (Bring back
+instead revives the old one, with what its later dates held). One day of the line can still be picked and edited on its own.
 
 **From a photo of the sign** is the add-event editor and the same read, opened expecting a timetable (`intent:
 'timetable'`): its empty event card stays out of the way and the dialog says
