@@ -145,7 +145,7 @@ function eventRowHTML(e, here, now = false) {
   const langs = ruleFilters.serviceLangs(e) || [];
   const lang = langs.length ? `<span class="elang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : '';
   // Held here for another parish, it names its host.
-  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
+  const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${here && e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
       <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
@@ -351,7 +351,7 @@ export function eventCardHTML(m) {
  * card shows a parish's whole week. What is coming up under them is the
  * page's to add, once it holds the occurrences.
  */
-export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
+export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
   const c = m.collection;
   const colorOf = (j) => jurisColors.jurisdictionColorFrom(m.overrides, j);
   const look = collections.lookOf(c, colorOf);
@@ -391,5 +391,33 @@ export function collectionCardHTML(m, { rules, limit = 30 } = {}) {
         <div class="clist">${ps.slice(0, limit).map(item).join('') || '<div class="tt-none">Nothing here yet.</div>'}</div>
         ${ps.length > 1 ? `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>` : ''}
       </section>
+      ${feed ? `<section class="cu-band" id="coming-up">
+        <h2 class="sec">Coming up</h2>
+        <div class="cu">${collectionComingUpHTML(feed, m.now)}</div>
+      </section>` : ''}
     </div>`);
+}
+
+/**
+ * A collection's Coming up, for the lite version (lite-page.mjs
+ * collectionFeed): its days, morning then evening, each row naming its parish.
+ */
+function collectionComingUpHTML(feed, now) {
+  // By each parish's own clock: 8:30 in Perth comes before 9 in Sydney.
+  const list = feed.filter(e => (shown(e) || TOMB[e.status]) && endMs(e) > now)
+    .sort((a, b) => a._local.time.localeCompare(b._local.time));
+  const byDay = new Map();
+  for (const e of list) {
+    if (!byDay.has(e._local.date)) byDay.set(e._local.date, []);
+    byDay.get(e._local.date).push(e);
+  }
+  const today = localDateOf('Australia/Sydney', now);
+  const days = [...byDay.keys()].sort().map(k => {
+    const es = byDay.get(k);
+    const evening = es.filter(e => services.partOfDayOf(e, e.timezone || 'Australia/Sydney') === 'evening');
+    const morning = es.filter(e => !evening.includes(e));
+    const sun = new Date(`${k}T00:00:00Z`).getUTCDay() === 0;
+    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${morning.map(e => eventRowHTML(e, null)).join('')}${evening.length ? EVENING + evening.map(e => eventRowHTML(e, null)).join('') : ''}</section>`;
+  });
+  return days.join('') || '<div class="tt-none sm">Nothing on file this week.</div>';
 }

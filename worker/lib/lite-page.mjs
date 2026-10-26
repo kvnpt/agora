@@ -360,3 +360,56 @@ export function weekFrom(today) {
   return (a, b) => from(a.day_of_week) - from(b.day_of_week)
     || String(a.start_time).localeCompare(String(b.start_time));
 }
+
+/** The days a collection's Coming up lists in the lite version: a week, so a long list stays light. */
+export const COLLECTION_FEED_DAYS = 7;
+
+/**
+ * What is on at a collection's parishes, as next.js's collFeedHTML lists it,
+ * for the lite version, which has no page script to project it: every
+ * occurrence from today for COLLECTION_FEED_DAYS, at one of `parishIds`, that
+ * answers the link's filters (its service, day, part of the day, kind and
+ * language). Each in its own parish's zone. A parish_scoped rule stays on its
+ * own card.
+ */
+export function collectionFeed({ rows, events = [], cross = [], parishIds, route, now, zone = DEFAULT_ZONE }) {
+  const start = localDateOf(zone, now);
+  const { fromUtc } = liteWindow(start);
+  const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (COLLECTION_FEED_DAYS + 1) * DAY_MS).toISOString();
+  const end = new Date(Date.parse(`${start}T00:00:00Z`) + COLLECTION_FEED_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const ids = new Set(parishIds);
+  const instances = rows.schedules.length ? expandFrom(rows, fromUtc, toUtc) : [];
+  const oneOffs = events.filter(e => { const t = Date.parse(e.start_utc); return t >= Date.parse(fromUtc) && t <= Date.parse(toUtc); });
+  const extra = new Map();
+  for (const c of cross) {
+    if (!extra.has(c.event_id)) extra.set(c.event_id, []);
+    extra.get(c.event_id).push(c.parish_id);
+  }
+  const lf = ruleFilters.langFilterOf(route);
+  const rulesBy = new Map();
+  for (const r of rows.schedules) {
+    if (!rulesBy.has(r.parish_id)) rulesBy.set(r.parish_id, []);
+    rulesBy.get(r.parish_id).push(r);
+  }
+  const answersLang = new Map();
+  const parishOk = (id) => {
+    if (!answersLang.has(id)) answersLang.set(id, ruleFilters.parishAnswersLang(rulesBy.get(id) || [], lf));
+    return answersLang.get(id);
+  };
+  return buildFeed({ instances, oneOffs, crossRows: cross })
+    .map(e => ({ ...e, id: String(e.id), _local: localOf(e, e.timezone || zone),
+      is_tombstone: e.is_tombstone || TOMB_STATUSES.has(e.status) ? 1 : 0 }))
+    .filter(e => {
+      const pids = [e.parish_id, ...(extra.get(e.id) || [])];
+      if (!pids.some(id => ids.has(id)) || e.parish_scoped) return false;
+      if (e._local.date < start || e._local.date >= end) return false;
+      const z = e.timezone || zone;
+      if (route.service && !services.serviceMatches(route.service, e)) return false;
+      if (!services.dayMatches(route.day, e._local.dow)) return false;
+      if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, z)) return false;
+      if (route.part && services.partOfDayOf(e, z) !== route.part) return false;
+      if (!ruleFilters.kindMatches(e, route)) return false;
+      return ruleFilters.rowAnswersLang(e, lf, pids.some(parishOk));
+    })
+    .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
+}

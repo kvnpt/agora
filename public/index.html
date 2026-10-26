@@ -6,6 +6,29 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#20232a" media="(prefers-color-scheme: dark)">
+  <!-- Too much for this phone? The lite version (worker/lib/lite-mode.mjs):
+       the same link's card with no map and no app script. Asked once, here,
+       before anything heavy loads: a phone that cannot draw the map (no
+       WebGL), says it has 2GB or less (Chrome on Android; Safari never says),
+       or has Data Saver on. The answer is the agora_lite cookie, and a choice
+       made by hand (?lite=0 or ?lite=1) is never asked again. Not for a
+       crawler, which reads the full page. Reloads only
+       when the cookie took, so a phone that refuses cookies is not looped. -->
+  <script>
+    (function () {
+      try {
+        if (/(?:^|;\s*)agora_lite=/.test(document.cookie)) return;
+        if (/bot|crawl|spider|preview/i.test(navigator.userAgent)) return;
+        var n = navigator, c = document.createElement('canvas'), gl = null;
+        try { gl = c.getContext('webgl2') || c.getContext('webgl'); } catch (e) {}
+        if (gl && gl.getExtension('WEBGL_lose_context')) gl.getExtension('WEBGL_lose_context').loseContext();
+        var weak = !gl || (n.deviceMemory && n.deviceMemory <= 2) || (n.connection && n.connection.saveData);
+        if (!weak) return;
+        document.cookie = 'agora_lite=1; path=/; max-age=31536000; samesite=lax; secure';
+        if (/(?:^|;\s*)agora_lite=1/.test(document.cookie)) location.replace(location.href);
+      } catch (e) {}
+    })();
+  </script>
   <!-- What this link is, for a reader that runs no JavaScript: a chat app's
        preview, a search engine. The Worker writes each link's own between
        the marks (worker/lib/page-head.mjs): a parish's name and Church data,
@@ -158,6 +181,9 @@
 
     </div>
   </main>
+
+  <!-- The way to the lite version by hand (worker/lib/lite-mode.mjs). -->
+  <p class="lite-switch"><a href="?lite=1" rel="nofollow">Lite version</a> for slow phones</p>
 
   <!-- Sheets: a collection, a parish, an event, lists. A link that opens one
        has it painted here by the Worker (worker/lib/page-card.mjs), until

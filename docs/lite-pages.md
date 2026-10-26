@@ -150,6 +150,38 @@ other mix of filters is the page itself, filtered, and gets only its head.
   with no tagged services shows no Languages box (Kevin, 22 Oct 2026). A one-off
   service cannot be published without a language (`event-checks.js`).
 
+## The lite version, for a phone the page is too much for
+
+The page is a map and a 3,500-line script, and a 2GB phone stalls on it (Kevin's
+RUIO Joy, October 2026). The lite version is every link's painted card in a
+shell of its own, `public/lite.html` with `public/next/lite.css`: no map, no app
+script, nothing to edit (the dotted Add and the ways into `/admin` are hidden), and
+a search box the Worker answers. `worker/lib/lite-mode.mjs` holds it, pure.
+
+- **Who gets it** is the `agora_lite` cookie: `1` lite, `0` full. `?lite=1` and
+  `?lite=0` on any page link set it and redirect to the link without it (the
+  "Lite version" link at the foot of the page, "Full version" at the top of
+  every lite one). With no cookie, the check at the top of `public/index.html`
+  sets `1` and reloads when the phone cannot draw the map (no WebGL), reports
+  2GB of memory or less (`navigator.deviceMemory`, Chrome on Android only;
+  Safari never reports it, so an iPhone is never switched), or has Data Saver
+  on. A crawler is never switched. A choice made by hand is never second-guessed.
+  Kevin chose the 2GB line (25 Oct 2026).
+- **Every link keeps its head**: a lite page says what the full one says to a
+  search engine; responses carry `Vary: cookie`.
+- **Every filter link is a card** in the lite version, not just a collection
+  (there is no page to filter), and lists all of its parishes, not the first 30.
+  It is cached apart from the full page's (`lite-page/…`).
+- **The home page** (and any link that is no card) is the search, the ten
+  parishes nearest the reader and the collections as links. Nearest is from
+  `?near=lat,lng` (Use my location, the shell's one script), else Cloudflare's
+  `request.cf` place for the connection; nobody is shown a list whose nearest
+  parish is over 1,000 km away. The parishes it reads (`liteIndex`) are kept
+  at the edge per data version and hour (`lite-index@…`).
+- **Search** (`/?q=`) is next.js's parish search cut down: every word in the
+  names, initials, address or jurisdiction; a language word ("english") as the
+  services a parish holds; and collections by name.
+
 ## Caching
 
 `cachedText` (beside `cachedJson` in `worker/lib/data-version.mjs`) keeps what D1 said
