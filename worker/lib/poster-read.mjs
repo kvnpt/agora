@@ -76,7 +76,7 @@ const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed
   'end_date', 'event_type', 'languages', 'venue', 'description', 'notes'];
 
 /** One weekly service off a sign or a flyer: a rule to be, not an event. */
-const SERVICE_FIELDS = ['title', 'day', 'start_time', 'end_time', 'weeks', 'languages', 'event_type',
+const SERVICE_FIELDS = ['title', 'every', 'day', 'start_time', 'end_time', 'weeks', 'languages', 'event_type',
   'description', 'starts', 'until', 'notes'];
 const WEEKS = ['first', 'second', 'third', 'fourth', 'last'];
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -148,6 +148,9 @@ export const POSTER_SCHEMA = {
         required: SERVICE_FIELDS,
         properties: {
           title: { type: 'string' },
+          // Before the day, so the reader says why it is regular before it
+          // writes one down; normalizeRead dates the ones it cannot say why.
+          every: { type: 'string', description: 'The words on the image that say it is held regularly ("every Tuesday", "Sundays", "2nd Wednesday of the month"), in English; empty if it says no such thing' },
           day: { type: 'string', enum: DAY_NAMES },
           start_time: { type: 'string', description: '24-hour HH:MM, local time' },
           end_time: { type: 'string', description: '24-hour HH:MM, local time; empty if none printed' },
@@ -192,6 +195,7 @@ Everything an image announces is one of two things, and an image can announce bo
 1. A REGULAR SERVICE: something the parish holds on a weekday every week, or on some weeks of every month — the Sunday Liturgy, Saturday Vespers, a choir practice every Tuesday, a Bible study on the second Wednesday. It belongs on the parish's timetable, in services. Some are regular only for a while ("every Friday in August", "Wednesdays in Lent from 18 February", "until Christmas"): give its first and last dates.
 2. A ONE-OFF EVENT: something on a particular date — a feast-day Liturgy, a talk, a fundraiser, a camp. It belongs in events. One event that runs over several days (a festival from Friday to Sunday, a retreat) is ONE entry with its last day in end_date; separate meetings on different dates are one entry per date.
 A regular service on one particular date is listed in events only when the image says something about that date: the saint or feast it commemorates, a different time, a guest, that it is cancelled or moved. The site already shows the rest.
+What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week.
 
 What to return:
 - kind: what the image is. "timetable" for a sign, board or notice giving the parish's regular services, such as the board out the front of the church, with or without its contact details; "poster" for any poster, flyer, programme, newsletter or bulletin; "not_an_event" when the image announces no event and no regular service.
@@ -218,6 +222,7 @@ For each event:
 
 For each regular service:
 - title: the service or activity as printed, in English and normal capitalisation ("Divine Liturgy", "Orthros and Divine Liturgy", "Church Choir Practice").
+- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date.
 - day: the weekday it is held on.
 - start_time, end_time: 24-hour HH:MM; end_time empty when none is printed ("8.00 - 10.00 am" is "08:00" to "10:00").
 - weeks: only when it is held on some weeks of the month and not others: "every 2nd and 4th Sunday" is ["second", "fourth"]. Empty for every week.
@@ -529,9 +534,26 @@ export function normalizeRead(doc) {
   const other = d.other_parish && typeof d.other_parish === 'object' ? d.other_parish : null;
   const otherName = other && clean(other.name, 200);
   const language = clean(d.written_in, 40);
-  const services = rawServices.slice(0, MAX_SERVICES).map(normalizeService).filter(Boolean);
+  const kind = readKind(d.kind);
+  const events = raw.slice(0, MAX_EVENTS).map(normalizeEvent);
+  const services = [];
+  // A day and a time off a poster for one occasion — "Vespers 7pm Sat" under
+  // "Sunday 8 November" — is that occasion's, not every week's. The reader
+  // says why each service is regular; one it cannot say why for is dated from
+  // the poster's own date, as an event (docs/editing.md "Two categories").
+  const occasion = occasionOf(events);
+  for (const sv of rawServices.slice(0, MAX_SERVICES)) {
+    const rule = normalizeService(sv);
+    if (!rule) continue;
+    if (kind === 'timetable' || saysRegular(sv.every)) services.push(rule);
+    else if (occasion && events.length < MAX_EVENTS) events.push(onTheDay(rule, occasion));
+    else {
+      services.push(rule);
+      rule.read_notes.push({ field: 'day', text: 'The poster does not say this is held every week. If it is for one date, add it as an event instead.' });
+    }
+  }
   return {
-    kind: readKind(d.kind),
+    kind,
     // What it was translated from, when it was: the editor says so beside the
     // poster, which stays attached in the original (docs/editing.md).
     language: language && !/^english$/i.test(language) ? language : null,
@@ -540,11 +562,82 @@ export function normalizeRead(doc) {
     // (lib/parish-match.mjs), not by the model.
     other_parish: otherName ? { name: otherName, place: clean(other.place, 100) } : null,
     notes,
-    events: raw.slice(0, MAX_EVENTS).map(normalizeEvent),
+    events,
     // A sign's weekly services and the parish's own details: proposals for
     // the timetable and the parish card, which a person adds one by one.
     services,
     details: normalizeDetails(d.details),
+  };
+}
+
+/**
+ * Words that say a service repeats: "every Tuesday", "Sundays", "2nd and 4th
+ * Sundays", "of the month". A weekday on its own ("Sat", "Sunday") does not.
+ * Not asked (a read from before `every`) is not a "no".
+ */
+function saysRegular(every) {
+  if (every === undefined) return true;
+  return /\b(every|each|weekly|fortnightly|monthly|daily|nightly|timetable)\b|\b(mon|tues|wednes|thurs|fri|satur|sun)days\b|\bof (the|each|every) month\b|\b(1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)\b/i
+    .test(String(every || ''));
+}
+
+const addDays = (date, n) => {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+};
+const dowOf = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
+
+/**
+ * The one occasion a poster is for, when its dated events all fall within a
+ * week: the date most of them are on (the earliest of a tie), and every date
+ * they cover. A month's programme is no one occasion, and a poster with no
+ * date gives none.
+ */
+function occasionOf(events) {
+  const days = [];
+  for (const e of events) {
+    if (!e.date) continue;
+    for (let at = e.date; at <= (e.end_date || e.date) && days.length < 60; at = addDays(at, 1)) days.push(at);
+  }
+  if (!days.length) return null;
+  const sorted = [...days].sort();
+  if (addDays(sorted[0], 6) < sorted[sorted.length - 1]) return null;
+  const count = new Map();
+  for (const at of days) count.set(at, (count.get(at) || 0) + 1);
+  let date = null;
+  for (const at of sorted) if (!date || count.get(at) > count.get(date)) date = at;
+  const first = events.find(e => e.date === date) || events.find(e => e.date);
+  return { date, days: sorted, year_printed: first.year_printed };
+}
+
+/**
+ * A service read off a poster for one occasion, as an event on that occasion's
+ * day with its weekday: a date the poster's events already cover, else the
+ * nearest — "7pm Sat" on a Sunday's poster is the Saturday before.
+ */
+function onTheDay(rule, occasion) {
+  const day = rule.day_of_week;
+  let date = occasion.days.find(at => dowOf(at) === day);
+  if (!date) {
+    const ahead = (day - dowOf(occasion.date) + 7) % 7;
+    date = addDays(occasion.date, ahead <= 3 ? ahead : ahead - 7);
+  }
+  const [, m, d] = occasion.date.split('-').map(Number);
+  return {
+    title: rule.title,
+    feast: null,
+    date,
+    start_time: rule.start_time,
+    end_time: rule.end_time,
+    end_date: null,
+    event_type: rule.event_type,
+    description: rule.description,
+    languages: rule.languages,
+    location_override: null,
+    printed_weekday: DAY_NAMES[day],
+    year_printed: occasion.year_printed,
+    read_notes: [...rule.read_notes, { field: 'date',
+      text: `Printed as “${DAY_NAMES[day]}”, not every ${DAY_NAMES[day]}; dated from the poster’s ${d} ${MONTHS[m - 1]}.` }],
   };
 }
 
