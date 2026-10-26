@@ -255,7 +255,8 @@
 
   /**
    * Every field of a rule, in the order a person thinks of a service.
-   * `ctx`: today (the parish's 'YYYY-MM-DD') and weekAbOf, for the fortnight.
+   * `ctx`: today (the parish's 'YYYY-MM-DD') and weekAbOf, for the fortnight;
+   * jurisdiction, for the languages shown first.
    */
   function fieldsHTML(rule = {}, ctx = {}) {
     const langs = (() => { try { return JSON.parse(rule.languages || '[]'); } catch { return []; } })();
@@ -268,14 +269,14 @@
       `<input type="hidden" ${field(name)} value="${esc(value || '')}" data-time-field data-tf-name="${name}"${extra}>`;
     return `
       <div class="edit-row"><label>Title</label><input ${field('title')} value="${esc(rule.title || '')}" placeholder="Divine Liturgy" autocomplete="off"></div>
-      <div class="edit-row"><label>Kind</label><select ${field('event_type')} data-kind-picker>${kinds}</select></div>
+      <div class="edit-row"><label>Kind</label><select ${field('event_type')} data-kind-picker="buttons">${kinds}</select></div>
       <div class="edit-row"><label>Days</label>${daysHTML(days)}</div>
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', rule.start_time || (rule.id ? '' : '09:00'), ' data-tf-label="Starts"')}</div>
         <div><label>Ends</label>${time('end_time', rule.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
       </div>
       <div class="edit-row"><label>Runs</label>${cadenceHTML(rule, ctx)}</div>
-      <div class="edit-row" data-rf-langrow${SERVICE_TYPES.includes(kind) ? '' : ' hidden'}><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
+      <div class="edit-row" data-rf-langrow${SERVICE_TYPES.includes(kind) ? '' : ' hidden'}><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc(ctx.jurisdiction || '')}" autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${field('description')} rows="2" placeholder="Shown on every date (optional)">${esc(rule.description || '')}</textarea></div>
       <div class="edit-row"><label>Where</label>
         <div class="vp-mount" data-venue-mount></div>

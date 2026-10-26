@@ -249,7 +249,8 @@
   /** A rule's form in a frame: the fields, a line for what stops it, its buttons. */
   function ruleDialog({ title, sub, rule, parishId, actions, posterNow }) {
     const f = frame({ title, sub, cls: 'rule-backdrop' });
-    const ctx = { today: host.today(), weekAbOf: window.agoraBundle && window.agoraBundle.weekAbOf };
+    const ctx = { today: host.today(), weekAbOf: window.agoraBundle && window.agoraBundle.weekAbOf,
+      jurisdiction: (host.parish(parishId) || {}).jurisdiction || '' };
     f.body.innerHTML = `<div class="detail-edit-form rule-form">
         ${RF().fieldsHTML(rule, ctx)}
         <p class="rf-error" role="alert" hidden></p>
@@ -485,7 +486,7 @@
         if (gone.length) {
           const go = await askChoice({
             title: `Stop it on ${gone.map(r => DAY_NAMES[r.day_of_week]).join(', ')}?`,
-            body: `<p>${gone.length === 1 ? 'That day ends' : 'Those days end'} before today and ${gone.length === 1 ? 'goes' : 'go'} to Ended services, where Add can bring ${gone.length === 1 ? 'it' : 'them'} back.</p>`,
+            body: `<p>${first.title} will no longer show on ${gone.map(r => DAY_NAMES[r.day_of_week] + 's').join(' or ')}. Past dates stay as they were. To restart ${gone.length === 1 ? 'it' : 'them'}, use Bring back under Ended services in Add a service.</p>`,
             choices: [{ value: 'stop', label: gone.length === 1 ? 'Stop that day' : 'Stop those days' }],
           });
           if (go !== 'stop') return;
@@ -738,12 +739,10 @@
       <div class="edit-row"><label>Title</label><input ${f('title')} value="${esc(e.title || '')}" autocomplete="off"></div>
       ${series ? `<div class="edit-row"><label>Commemoration</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="St Luke the Evangelist (optional)" autocomplete="off"></div>` : ''}
       <div class="edit-row"><label>Description</label><textarea ${f('description')} rows="2" placeholder="Optional">${esc(e.description || '')}</textarea></div>
-      <div class="edit-row${parishes.length > 1 ? ' edit-pair' : ''}">
-        <div><label>Kind</label><select ${f('event_type')} data-kind-picker>${kinds}</select></div>
-        ${parishes.length > 1 ? `<div><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
-          `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
-      </div>
-      <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
+      <div class="edit-row"><label>Kind</label><select ${f('event_type')} data-kind-picker="buttons">${kinds}</select></div>
+      ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
+        `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
+      <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
       ${series ? '' : `<div class="edit-row"><label>Date</label>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', start.time, ' data-tf-label="Starts"')}</div>

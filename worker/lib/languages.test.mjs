@@ -31,3 +31,13 @@ test('clean keeps the list, in the order given, each once, from any shape', () =
   assert.equal(L.clean(null), null);
   assert.equal(L.clean('["Klingon"]'), null);
 });
+
+test("a form shows English and the jurisdiction's own language first", () => {
+  const L = require('../../public/shared/languages.js');
+  assert.deepEqual(L.upFront('greek'), ['English', 'Greek']);
+  assert.deepEqual(L.upFront('antiochian'), ['English', 'Arabic']);
+  assert.deepEqual(L.upFront('russian'), ['English', 'Church Slavonic']);
+  assert.deepEqual(L.upFront('other'), ['English']);
+  assert.deepEqual(L.upFront(''), ['English']);
+  for (const n of Object.values(L.JURISDICTION_LANGUAGE)) assert.ok(L.NAMES.includes(n), `${n} is on the list`);
+});

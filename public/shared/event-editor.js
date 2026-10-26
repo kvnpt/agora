@@ -650,8 +650,8 @@
           ${row('feast', 'Commemoration', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
           ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="2" placeholder="Optional"></textarea>`)}
-          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker><option value="">Choose a kind</option>${kinds}</select>`)}
-          ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker autocomplete="off">`)}
+          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker="buttons"><option value="">Choose a kind</option>${kinds}</select>`)}
+          ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
           ${row('date', 'Date', `<input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">`)}
           <div class="ee-grid">
             ${row('start_time', 'Starts', timeInput('start_time', 'Starts', ''))}
@@ -1480,8 +1480,8 @@
             </div>
             <div class="ee-svc-weeks"><span>Weeks of the month</span>${S.WEEKS.map(w => `<label><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${weeks.includes(w) ? ' checked' : ''}> ${w === 'last' ? 'Last' : ({ first: '1st', second: '2nd', third: '3rd', fourth: '4th' })[w]}</label>`).join('')}<small>None ticked is every week.</small></div>
             <div class="ee-grid">
-              ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" data-lang-picker autocomplete="off">`)}
-              ${field('Kind', `<select data-sf="event_type" data-i="${i}" data-kind-picker>${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
+              ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
+              ${field('Kind', `<select data-sf="event_type" data-i="${i}" data-kind-picker="buttons">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
             </div>
             ${flyer ? `
             ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
@@ -1863,6 +1863,8 @@
     function setParish(next) {
       state.parish = next;
       parishRows = null;
+      // Its languages up front are its jurisdiction's (lang-picker.js).
+      if (root.AgoraLangPicker && root.AgoraLangPicker.setJurisdiction) root.AgoraLangPicker.setJurisdiction(el, next && next.jurisdiction);
       // Another parish, another timetable: what a sign is set beside, and what
       // a card can be a change to (the move unlinks them on the Worker).
       state.rules = null;
