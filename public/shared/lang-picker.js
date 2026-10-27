@@ -12,6 +12,10 @@
 // (a Greek parish with some English is not an English one with some Greek):
 // a chip turned on goes to the end, one turned off leaves. A value that is not
 // on the list (an old row's) shows as a chip of its own until it is tapped off.
+//
+// An input with `data-lp-jurisdiction` shows only English, that jurisdiction's
+// own language (languages.js upFront) and whatever is already chosen; the rest
+// wait behind a "…" chip. Without the attribute (/admin) every one shows.
 (function (root) {
   if (typeof document === 'undefined') return;
   const SEL = 'input[data-lang-picker]';
@@ -48,11 +52,16 @@
     const render = () => {
       const on = chosen(input);
       const extra = on.filter(n => !langs().NAMES.includes(n));
-      wrap.innerHTML = [...langs().NAMES, ...extra].map((n) => {
+      const j = input.getAttribute('data-lp-jurisdiction');
+      const front = j == null || wrap._lpAll ? null : langs().upFront(j);
+      const shown = langs().NAMES.filter(n => !front || front.includes(n) || on.includes(n));
+      const more = shown.length < langs().NAMES.length;
+      wrap.innerHTML = [...shown, ...extra].map((n) => {
         const i = on.indexOf(n);
         return `<button type="button" class="lp-chip${i >= 0 ? ' on' : ''}${extra.includes(n) ? ' lp-extra' : ''}" aria-pressed="${i >= 0}" data-lp-value="${esc(n)}">${esc(n)}</button>`;
-      }).join('');
+      }).join('') + (more ? '<button type="button" class="lp-chip lp-more" data-lp-more aria-label="More languages">…</button>' : '');
     };
+    wrap._lpRender = render;
 
     Object.defineProperty(input, 'value', {
       configurable: true,
@@ -61,6 +70,13 @@
     });
 
     wrap.addEventListener('click', (e) => {
+      if (e.target.closest('[data-lp-more]')) {
+        const before = wrap.querySelectorAll('[data-lp-value]').length;
+        wrap._lpAll = true;
+        render();
+        wrap.querySelectorAll('[data-lp-value]')[before]?.focus({ preventScroll: true });
+        return;
+      }
       const chip = e.target.closest('[data-lp-value]');
       if (!chip) return;
       const n = chip.dataset.lpValue;
@@ -89,5 +105,14 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 
-  root.AgoraLangPicker = { dress, dressAll };
+  /** A form whose parish changed (a draft moved): its pickers' languages up front follow. */
+  function setJurisdiction(scope, jurisdiction) {
+    scope.querySelectorAll(SEL).forEach((input) => {
+      input.setAttribute('data-lp-jurisdiction', jurisdiction || '');
+      const wrap = input.nextElementSibling;
+      if (wrap && wrap._lpRender) wrap._lpRender();
+    });
+  }
+
+  root.AgoraLangPicker = { dress, dressAll, setJurisdiction };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

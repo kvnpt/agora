@@ -9,6 +9,11 @@
 // from the select would — set the value and fire `input` and `change`. Code
 // that sets `.value` itself (a poster read filling a card) is followed too.
 //
+// `data-kind-picker="buttons"` lays every kind out as a button to tap instead
+// of a list to open (Kevin, 26 Oct 2026: "just a list of buttons to tap"), the
+// way the rule form's days are. /admin keeps the list: it dresses a picker in
+// every one of a hundred rule rows.
+//
 // Any select carrying the attribute is dressed as it appears — the forms are
 // rebuilt often (a refresh, a poster landing) and none of them has to call
 // anything. Colours from public/shared/event-types.js, so /admin, which has
@@ -29,8 +34,49 @@
 
   const labelOf = (opt) => (opt.value ? kinds().eventTypeLabel(opt.value) : opt.textContent);
 
+  /** The buttons form: every kind on show, the one picked in its colours. */
+  function dressButtons(select) {
+    const layout = [...select.classList];
+    select.classList.add('kp-native');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+    const wrap = document.createElement('div');
+    wrap.className = ['kp-row', ...layout].join(' ');
+    wrap.setAttribute('role', 'radiogroup');
+    const named = select.id && document.querySelector(`label[for="${CSS.escape(select.id)}"]`);
+    if (named) wrap.setAttribute('aria-label', named.textContent.trim());
+    select.after(wrap);
+    const render = () => {
+      wrap.innerHTML = [...select.options].filter(o => o.value && !o.disabled).map((o) => {
+        const on = o.value === select.value;
+        const { bg, fg } = kinds().kindColors(o.value, dark());
+        const label = labelOf(o);
+        return `<button type="button" class="kp-tap${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-kp-value="${esc(o.value)}"${on ? ` style="background:${bg};color:${fg};border-color:${fg}"` : ''}><span class="kp-dot" style="background:${fg};color:${bg}">${esc(String(label).trim()[0] || '?').toUpperCase()}</span>${esc(label)}</button>`;
+      }).join('');
+    };
+    const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    Object.defineProperty(select, 'value', {
+      configurable: true,
+      get() { return proto.get.call(this); },
+      set(v) { proto.set.call(this, v); render(); },
+    });
+    select.addEventListener('change', render);
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-kp-value]');
+      if (!b || b.dataset.kpValue === select.value) return;
+      proto.set.call(select, b.dataset.kpValue);
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      render();
+      wrap.querySelector(`[data-kp-value="${CSS.escape(b.dataset.kpValue)}"]`)?.focus({ preventScroll: true });
+    });
+    wrap._kpRender = render;
+    render();
+  }
+
   function dress(select) {
     if (!select || select.dataset.kpDressed) return;
+    if (select.dataset.kindPicker === 'buttons') { select.dataset.kpDressed = '1'; return dressButtons(select); }
     select.dataset.kpDressed = '1';
     // The wrapper takes the select's place in its grid, so it takes its
     // layout classes too (.sef-full spans the row).
@@ -138,7 +184,7 @@
     }, true);
     if (root.matchMedia) {
       root.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () =>
-        document.querySelectorAll('.kp').forEach(w => w._kpRender && w._kpRender()));
+        document.querySelectorAll('.kp, .kp-row').forEach(w => w._kpRender && w._kpRender()));
     }
     dressAll(document);
     new MutationObserver((records) => {

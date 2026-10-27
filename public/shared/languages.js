@@ -74,7 +74,18 @@
     return n.length ? JSON.stringify(n) : null;
   }
 
-  const api = { LANGUAGES, NAMES, find, canonical, shortOf, names, clean };
+  // The language a jurisdiction's services are mostly in besides English. A
+  // form offers English and this one up front, the rest behind "…" (Kevin,
+  // 26 Oct 2026): a Greek parish is not choosing between Macedonian and
+  // Ukrainian.
+  const JURISDICTION_LANGUAGE = {
+    greek: 'Greek', antiochian: 'Arabic', serbian: 'Serbian', russian: 'Church Slavonic',
+    romanian: 'Romanian', macedonian: 'Macedonian',
+  };
+  /** The languages a form shows first for a parish of this jurisdiction. */
+  const upFront = (jurisdiction) => ['English', ...(JURISDICTION_LANGUAGE[jurisdiction] ? [JURISDICTION_LANGUAGE[jurisdiction]] : [])];
+
+  const api = { LANGUAGES, NAMES, JURISDICTION_LANGUAGE, find, canonical, shortOf, names, clean, upFront };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraLanguages = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

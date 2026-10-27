@@ -2943,13 +2943,22 @@ export function registerAdminRoutes(router) {
     return json(r.results || []);
   }));
 
+  // A service held on several days is a rule for each day: `days` names them
+  // (Compline every night is seven), `day_of_week` the one. The timetable reads
+  // them back as one line (timetable-lines.js). The answer is the first day's
+  // rule, with every day's under `rules`.
   router.post('/api/admin/schedules', guarded('schedule.create', async (c) => {
     const { env, request } = c;
     const b = await readJson(request);
     const { parish_id, day_of_week, start_time, title } = b;
-    if (!parish_id || day_of_week == null || !start_time || !title) {
-      return json({ error: 'parish_id, day_of_week, start_time, and title are required' }, 400);
+    const days = Array.isArray(b.days) && b.days.length ? b.days : (day_of_week == null ? [] : [day_of_week]);
+    if (!parish_id || !days.length || !start_time || !title) {
+      return json({ error: 'parish_id, day_of_week (or days), start_time, and title are required' }, 400);
     }
+    if (!days.every(d => Number.isInteger(Number(d)) && Number(d) >= 0 && Number(d) <= 6)) {
+      return json({ error: 'A day is 0 (Sunday) to 6 (Saturday)' }, 400);
+    }
+    const dows = [...new Set(days.map(Number))];
     // Scoped on the parish being written TO, which for a create is the only
     // place the scope can be checked — there is no existing row to read it off.
     const scoped = outOfScope(c, parish_id);
@@ -2968,19 +2977,6 @@ export function registerAdminRoutes(router) {
     if (b.effective_from && b.effective_to && b.effective_to < b.effective_from) {
       return json({ error: 'The service ends before it starts' }, 400);
     }
-    // The same rule twice is one rule. A double-tapped Add made two Thursday
-    // Choir Practices at St George; deleting the spare with a reason then
-    // refused the slot the survivor sits in. Matching on everything that makes
-    // a rule distinct — week_of_month and parity included, since "1st" and
-    // "3rd Saturday 9am Liturgy" are two real rules — and answering with the
-    // one already there makes the second press harmless.
-    const same = await env.DB.prepare(
-      `SELECT * FROM schedules WHERE parish_id = ? AND day_of_week = ? AND start_time = ? AND title = ?
-         AND active = 1 AND effective_to IS NULL
-         AND IFNULL(week_of_month, '') = ? AND IFNULL(week_parity, '') = ?`
-    ).bind(parish_id, day_of_week, start_time, title, b.week_of_month || '',
-      b.week_parity ? String(b.week_parity).toLowerCase() : '').first();
-    if (same) return json({ ...same, duplicate: true }, 200);
     if (b.poster_path != null && b.poster_path !== '' && !isPosterPath(b.poster_path)) {
       return json({ error: 'poster_path must be a poster already uploaded (/posters/…)' }, 400);
     }
@@ -2988,24 +2984,44 @@ export function registerAdminRoutes(router) {
     const v = await readVenue(env.DB, b, { hostParishId: parish_id });
     if (v.error) return json({ error: v.error }, 400);
     const place = v.present ? v.venue : { location_parish_id: null, location_override: null, location_lat: null, location_lng: null };
-    const row = await env.DB.prepare(
-      `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
-        languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
-        effective_from, effective_to, poster_path, description, location_parish_id, location_lat, location_lng)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *`
-    ).bind(
-      parish_id, day_of_week, start_time, b.end_time || null, title,
-      b.event_type || 'liturgy', langList.clean(b.languages), b.week_of_month || null,
-      b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, place.location_override,
-      b.week_parity ? String(b.week_parity).toLowerCase() : null,
-      b.effective_from || null, b.effective_to || null,
-      b.poster_path || null, (b.description && String(b.description).trim()) || null,
-      place.location_parish_id, place.location_lat, place.location_lng,
-    ).first();
+    const parity = b.week_parity ? String(b.week_parity).toLowerCase() : null;
+    const rules = [];
+    let made = 0;
+    for (const dow of dows) {
+      // The same rule twice is one rule. A double-tapped Add made two Thursday
+      // Choir Practices at St George; deleting the spare with a reason then
+      // refused the slot the survivor sits in. Matching on everything that makes
+      // a rule distinct — week_of_month and parity included, since "1st" and
+      // "3rd Saturday 9am Liturgy" are two real rules — and answering with the
+      // one already there makes the second press harmless.
+      const same = await env.DB.prepare(
+        `SELECT * FROM schedules WHERE parish_id = ? AND day_of_week = ? AND start_time = ? AND title = ?
+           AND active = 1 AND effective_to IS NULL
+           AND IFNULL(week_of_month, '') = ? AND IFNULL(week_parity, '') = ?`
+      ).bind(parish_id, dow, start_time, title, b.week_of_month || '', parity || '').first();
+      if (same) { rules.push(same); continue; }
+      rules.push(await env.DB.prepare(
+        `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
+          languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
+          effective_from, effective_to, poster_path, description, location_parish_id, location_lat, location_lng)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`
+      ).bind(
+        parish_id, dow, start_time, b.end_time || null, title,
+        b.event_type || 'liturgy', langList.clean(b.languages), b.week_of_month || null,
+        b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, place.location_override,
+        parity, b.effective_from || null, b.effective_to || null,
+        b.poster_path || null, (b.description && String(b.description).trim()) || null,
+        place.location_parish_id, place.location_lat, place.location_lng,
+      ).first());
+      made++;
+    }
+    if (!made) return json({ ...rules[0], rules, duplicate: true }, 200);
     // A rule added from a church sign names the sign as its source ("Church
     // signage", linking to the photo), and that becomes the timetable's line.
     await stampTimetable(c, parish_id, b);
-    return json(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(row.id).first(), 201);
+    const rows = [];
+    for (const r of rules) rows.push(await env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(r.id).first());
+    return json({ ...rows[0], rules: rows }, 201);
   }));
 
   // `source_*` joins the list. A recurrence rule is a claim about the FUTURE

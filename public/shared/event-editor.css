@@ -583,6 +583,20 @@
 .kp-item:hover, .kp-item:focus-visible { outline: none; background: var(--surface-2, rgba(0, 0, 0, .05)); }
 .kp-item.on::after { content: '✓'; font-weight: 700; color: var(--accent, #2b6cb0); }
 
+/* The buttons form (data-kind-picker="buttons"): every kind on show. */
+.kp-row { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.kp-tap {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 36px; padding: 3px 12px 3px 4px;
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1.2; white-space: nowrap;
+  color: var(--text, #111);
+  background: var(--surface-2, var(--ee-field, #f3f4f6));
+  border: 1px solid var(--border, #d1d5db); border-radius: 999px;
+  cursor: pointer;
+}
+.kp-tap.on { box-shadow: inset 0 0 0 1px currentColor; }
+.kp-tap:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+
 /* ── The languages picker (public/shared/lang-picker.js) ─────────────────
    Every form's Languages field: the input stays, hidden, holding
    "Greek, English"; these are the fixed list's chips, tapped on and off. */
@@ -600,3 +614,4 @@
 }
 .lp-chip.lp-extra { text-decoration: line-through; }
 .lp-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.lp-chip.lp-more { min-width: 44px; letter-spacing: 1px; }

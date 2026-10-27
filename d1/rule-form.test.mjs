@@ -54,7 +54,7 @@ test("a form's values are the request the routes take, every empty a null", () =
     cadence: 'wom', weeks: ['last'], parity: 'a',
   });
   assert.deepEqual(body, {
-    title: 'Vespers', day_of_week: 6, start_time: '18:00', end_time: null, event_type: 'prayer',
+    title: 'Vespers', day_of_week: 6, days: [6], start_time: '18:00', end_time: null, event_type: 'prayer',
     languages: '["English","Arabic"]', description: null, hide_live: 1, parish_scoped: 0,
     effective_from: null, effective_to: '2026-12-31',
     location_override: null, location_parish_id: null, location_lat: null, location_lng: null,
@@ -75,4 +75,14 @@ test('what stops a save is said, and an end before the start is asked', () => {
   assert.deepEqual(R.problem({ ...ok, end_time: '17:30' }), { late: true });
   assert.deepEqual(R.problem({ ...ok, effective_from: '2026-12-01', effective_to: '2026-11-01' }),
     { error: 'Its last date is before its first.' });
+});
+
+test('the days ticked are the days sent, Sunday first, and none is asked for', () => {
+  const body = R.requestBody({ title: 'Compline', days: ['6', '1', '0', '1'], start_time: '21:00', cadence: 'weekly' });
+  assert.deepEqual(body.days, [0, 1, 6]);
+  assert.equal(body.day_of_week, 0);
+  const none = R.requestBody({ title: 'Compline', days: [], start_time: '21:00', cadence: 'weekly' });
+  assert.deepEqual(none.days, []);
+  assert.deepEqual(R.problem(none), { error: 'Tick the days it runs.' });
+  assert.deepEqual(R.daysOf({ day_of_week: 3 }), [3], 'a rule is its one day');
 });

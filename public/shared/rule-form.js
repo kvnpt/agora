@@ -1,5 +1,5 @@
-// One weekly service's form: what it is, when, how often, in what language,
-// where, between which dates, its poster. ONE form for adding a rule and for
+// One weekly service's form: what it is, which days, when, how often, in what
+// language, where, between which dates, its poster. ONE form for adding a rule and for
 // editing one, so a service is written whole the first time (docs/editing.md).
 //
 // HOW OFTEN is one control with three answers, because week_of_month and
@@ -7,6 +7,11 @@
 // "fortnightly" would look askable, and the Worker refuses the pair. The
 // fortnight is offered as its next DATES, never "week A": the only thing a
 // person cannot work out for themselves is which of the two weeks is theirs.
+//
+// DAYS are ticked, not picked: a rule is one weekday, but Compline every night
+// is one service to the person typing it, and seven forms was the price of
+// that (Kevin, 26 Oct 2026). Each ticked day becomes a rule of its own, and
+// the timetable reads them back as one line (timetable-lines.js).
 //
 // Times are time-field.js's quarter-hours, the kind kind-picker.js's chips and
 // where venue-picker.js's three answers, each dressing a field in this form.
@@ -20,6 +25,7 @@
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const WEEKS_OF_MONTH = ['first', 'second', 'third', 'fourth', 'last'];
+  const WEEKDAYS = [1, 2, 3, 4, 5];
   const VENUE_FIELDS = ['location_override', 'location_parish_id', 'location_lat', 'location_lng'];
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -86,8 +92,19 @@
     return { week_of_month: null, week_parity: null };
   }
 
-  /** A form's values as the schedule routes take them; every empty is null. */
+  /** The days a form's values name, Sunday first, each once. */
+  function daysOf(v) {
+    const raw = Array.isArray(v.days) ? v.days : (v.day_of_week == null || v.day_of_week === '' ? [] : [v.day_of_week]);
+    return [...new Set(raw.map(d => parseInt(d, 10)).filter(d => d >= 0 && d <= 6))].sort((a, b) => a - b);
+  }
+
+  /**
+   * A form's values as the schedule routes take them; every empty is null.
+   * `days` is every day ticked, `day_of_week` the first of them, for a route
+   * that writes one rule.
+   */
   function requestBody(v) {
+    const days = daysOf(v);
     // Only a service is held in a language; anything else carries none.
     const langs = SERVICE_TYPES.includes(v.event_type || 'liturgy')
       ? String(v.languages || '').split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -95,7 +112,8 @@
     const num = (x) => (x === '' || x == null || !Number.isFinite(Number(x)) ? null : Number(x));
     return {
       title: text(v.title),
-      day_of_week: parseInt(v.day_of_week, 10),
+      day_of_week: days.length ? days[0] : null,
+      days,
       start_time: v.start_time || null,
       end_time: v.end_time || null,
       event_type: v.event_type || 'liturgy',
@@ -120,6 +138,7 @@
    */
   function problem(body) {
     if (!body.title) return { error: 'Give the service a name.' };
+    if (body.days && !body.days.length) return { error: 'Tick the days it runs.' };
     if (!body.start_time) return { error: 'When does it start?' };
     if (body.effective_from && body.effective_to && body.effective_to < body.effective_from) {
       return { error: 'Its last date is before its first.' };
@@ -128,7 +147,7 @@
     return null;
   }
 
-  const api = { DAYS, WEEKS_OF_MONTH, fortnightDates, parityOrder, naturalFirstDate, fortnightPreview, cadence, requestBody, problem };
+  const api = { DAYS, WEEKS_OF_MONTH, WEEKDAYS, daysOf, fortnightDates, parityOrder, naturalFirstDate, fortnightPreview, cadence, requestBody, problem };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   root.AgoraRuleForm = api;
   if (typeof document === 'undefined') return;
@@ -187,12 +206,23 @@
     });
   }
 
+  /** Seven days to tick, and the two sets people ask for by name. */
+  function daysHTML(days) {
+    return `<div class="rf-days" data-rf-days role="group" aria-label="Days">
+        ${DAYS.map((d, i) => `<label class="rf-day"><input type="checkbox" value="${i}"${days.includes(i) ? ' checked' : ''}><span>${d.slice(0, 3)}</span></label>`).join('')}
+      </div>
+      <div class="rf-days-quick">
+        <button type="button" class="rf-link" data-rf-days-set="all">Every day</button>
+        <button type="button" class="rf-link" data-rf-days-set="weekdays">Mon–Fri</button>
+      </div>`;
+  }
+
   function cadenceHTML(rule, ctx) {
     const uid = `cad${Math.random().toString(36).slice(2, 8)}`;
     const wom = rule.week_of_month ? String(rule.week_of_month).split(',').map(w => w.trim()) : [];
     const parity = rule.week_parity ? String(rule.week_parity).toLowerCase() : null;
     const mode = parity ? 'fortnight' : (wom.length ? 'wom' : 'weekly');
-    const dow = Number.isInteger(rule.day_of_week) ? rule.day_of_week : 0;
+    const dow = daysOf(rule)[0] || 0;
     const radio = (value, label) =>
       `<label class="cad-mode"><input type="radio" name="${uid}" data-cad-mode value="${value}"${mode === value ? ' checked' : ''}> ${label}</label>`;
     const week = (value) =>
@@ -225,11 +255,12 @@
 
   /**
    * Every field of a rule, in the order a person thinks of a service.
-   * `ctx`: today (the parish's 'YYYY-MM-DD') and weekAbOf, for the fortnight.
+   * `ctx`: today (the parish's 'YYYY-MM-DD') and weekAbOf, for the fortnight;
+   * jurisdiction, for the languages shown first.
    */
   function fieldsHTML(rule = {}, ctx = {}) {
     const langs = (() => { try { return JSON.parse(rule.languages || '[]'); } catch { return []; } })();
-    const dow = Number.isInteger(rule.day_of_week) ? rule.day_of_week : 0;
+    const days = daysOf(rule);
     const kind = rule.event_type || 'liturgy';
     const T = root.AgoraEventTypes;
     const kinds = (T ? T.EVENT_TYPES : ['liturgy', 'prayer', 'feast', 'talk', 'youth', 'social', 'other'])
@@ -238,16 +269,14 @@
       `<input type="hidden" ${field(name)} value="${esc(value || '')}" data-time-field data-tf-name="${name}"${extra}>`;
     return `
       <div class="edit-row"><label>Title</label><input ${field('title')} value="${esc(rule.title || '')}" placeholder="Divine Liturgy" autocomplete="off"></div>
-      <div class="edit-row edit-pair">
-        <div><label>Day</label><select ${field('day_of_week')}>${DAYS.map((d, i) => `<option value="${i}"${dow === i ? ' selected' : ''}>${d}</option>`).join('')}</select></div>
-        <div><label>Kind</label><select ${field('event_type')} data-kind-picker>${kinds}</select></div>
-      </div>
+      <div class="edit-row"><label>Kind</label><select ${field('event_type')} data-kind-picker="buttons">${kinds}</select></div>
+      <div class="edit-row"><label>Days</label>${daysHTML(days)}</div>
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', rule.start_time || (rule.id ? '' : '09:00'), ' data-tf-label="Starts"')}</div>
         <div><label>Ends</label>${time('end_time', rule.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
       </div>
       <div class="edit-row"><label>Runs</label>${cadenceHTML(rule, ctx)}</div>
-      <div class="edit-row" data-rf-langrow${SERVICE_TYPES.includes(kind) ? '' : ' hidden'}><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker autocomplete="off"></div>
+      <div class="edit-row" data-rf-langrow${SERVICE_TYPES.includes(kind) ? '' : ' hidden'}><label>Languages</label><input ${field('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc(ctx.jurisdiction || '')}" autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${field('description')} rows="2" placeholder="Shown on every date (optional)">${esc(rule.description || '')}</textarea></div>
       <div class="edit-row"><label>Where</label>
         <div class="vp-mount" data-venue-mount></div>
@@ -283,16 +312,25 @@
     const ctx = o.ctx || {};
     const q = (name) => form.querySelector(`[${ATTR}="${name}"]`);
 
+    // Days: ticked, or set all at once.
+    const dayBox = form.querySelector('[data-rf-days]');
+    const ticked = () => [...dayBox.querySelectorAll('input:checked')].map(c => parseInt(c.value, 10));
+    form.querySelectorAll('[data-rf-days-set]').forEach(b => b.addEventListener('click', () => {
+      const want = b.dataset.rfDaysSet === 'all' ? [0, 1, 2, 3, 4, 5, 6] : WEEKDAYS;
+      dayBox.querySelectorAll('input').forEach(c => { c.checked = want.includes(parseInt(c.value, 10)); });
+      dayBox.dispatchEvent(new Event('change', { bubbles: true }));
+    }));
+
     // How often: the body its mode names, and the fortnight's dates kept
-    // honest when the weekday changes under it.
+    // honest when the weekday changes under it (the first ticked: a
+    // fortnight's weeks are the same weeks for every day of it).
     const cad = form.querySelector('[data-cadence]');
-    const day = q('day_of_week');
     const paint = () => {
       const mode = (cad.querySelector('input[data-cad-mode]:checked') || {}).value || 'weekly';
       cad.querySelectorAll('[data-cad-body]').forEach(b => { b.hidden = b.dataset.cadBody !== mode; });
     };
     const repaintDates = () => {
-      const dow = parseInt(day.value, 10) || 0;
+      const dow = ticked()[0] || 0;
       cad.querySelectorAll('[data-cad-dates]').forEach(span => {
         span.textContent = fortnightPreview(dow, span.dataset.cadDates, ctx.today, ctx.weekAbOf) || '…';
       });
@@ -305,7 +343,7 @@
     cad.addEventListener('change', () => { paint(); repaintDates(); });
     const kindSel = q('event_type'), langRow = form.querySelector('[data-rf-langrow]');
     if (kindSel && langRow) kindSel.addEventListener('change', () => { langRow.hidden = !SERVICE_TYPES.includes(kindSel.value); });
-    day.addEventListener('change', repaintDates);
+    dayBox.addEventListener('change', repaintDates);
 
     // An Other is the parish's own business (a working bee) until somebody
     // says otherwise: picking it ticks Parish only. Only on the change TO
@@ -377,7 +415,8 @@
       const mode = (cad.querySelector('input[data-cad-mode]:checked') || {}).value || 'weekly';
       const v = { cadence: mode,
         weeks: [...cad.querySelectorAll('[data-cad-body="wom"] input:checked')].map(c => c.value),
-        parity: (cad.querySelector('[data-cad-body="fortnight"] input:checked') || {}).value || 'a' };
+        parity: (cad.querySelector('[data-cad-body="fortnight"] input:checked') || {}).value || 'a',
+        days: ticked() };
       form.querySelectorAll(`[${ATTR}]`).forEach(el => {
         const k = el.getAttribute(ATTR);
         v[k] = el.type === 'checkbox' ? el.checked : el.value;
