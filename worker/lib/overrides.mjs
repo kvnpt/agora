@@ -55,7 +55,8 @@ function mergePatch(s, zone, body, cur) {
     const langs = langList.clean(body.languages);
     cur.patch_languages = (langs !== langList.clean(s.languages)) ? langs : null;
   }
-  if ('feast' in body) cur.patch_feast = body.feast || null;
+  // Against the rule's own subtitle (migration 030), as the description is.
+  if ('feast' in body) cur.patch_feast = (body.feast && body.feast !== (s.feast || null)) ? body.feast : null;
   // Against the rule's own words, now that a rule can have some (migration
   // 021): a drawer saved with the inherited text unchanged writes nothing.
   if ('description' in body) cur.patch_description = (body.description && body.description !== (s.description || null)) ? body.description : null;

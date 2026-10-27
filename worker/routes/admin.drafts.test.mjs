@@ -641,7 +641,8 @@ test('publishing a matched card writes onto that occurrence: its saint and the p
   assert.deepEqual([c.kind, c.patch_description, c.patch_feast], ['cancelled', 'The priest is away.', 'Hierotheos, Bishop of Athens']);
   assert.equal(events(), before, 'no event written beside the services');
 
-  // A service not on the timetable is an event, and says its saint in its title.
+  // A service not on the timetable is an event, with its saint as its subtitle
+  // (events.feast, migration 030), not glued onto its title.
   // It must say its language first: a one-off service has no timetable to go by.
   const bare = await f.call('POST', `/api/admin/draft-events/${draft.cards[3].id}/publish`, {});
   assert.equal(bare.status, 400);
@@ -649,7 +650,7 @@ test('publishing a matched card writes onto that occurrence: its saint and the p
   await f.call('PATCH', `/api/admin/draft-events/${draft.cards[3].id}`, { languages: ['Greek'] });
   const vespers = await f.call('POST', `/api/admin/draft-events/${draft.cards[3].id}/publish`, {});
   assert.equal(vespers.status, 201);
-  assert.equal(vespers.body.event.title, 'Great Vespers — Luke the Evangelist');
+  assert.deepEqual([vespers.body.event.title, vespers.body.event.feast], ['Great Vespers', 'Luke the Evangelist']);
   assert.equal(vespers.body.event.poster_path, poster);
   assert.equal(events(), before + 1);
 });
