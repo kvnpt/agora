@@ -1071,6 +1071,11 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .lay-head h2 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
 .mini .sheet-scroll { padding-top: 0; }
 .lay-note { margin: 4px 18px 10px; color: var(--text-2); font-size: 14.5px; }
+/* The Disclaimer's directories: a plain list, each jurisdiction and its site. */
+.disc-list { margin: 6px 18px 18px; padding-left: 18px; color: var(--text-2); font-size: 13.5px; line-height: 1.45; }
+.disc-list li { margin-bottom: 8px; }
+.disc-list a { display: block; color: var(--accent); }
+.disc-list small { display: block; color: var(--text-3); font-size: 12.5px; }
 
 .lists { margin: 6px 18px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
 .lrow { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; min-height: 58px; color: var(--text); }
@@ -1826,9 +1831,12 @@ body.dialog-open { overflow: hidden; }
 .foot p { margin: 0 0 10px; }
 .foot-rule {
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  margin: 0 0 18px; color: var(--text-3); opacity: .7;
+  margin: 0 0 18px;
 }
+.foot p + .foot-rule { margin-top: 18px; }
+/* Two hairlines with a small diamond between them. */
 .foot-rule::before, .foot-rule::after { content: ""; width: 44px; height: 1px; background: var(--line-strong); }
+.foot-rule span { width: 5px; height: 5px; background: var(--text-3); opacity: .7; transform: rotate(45deg); }
 .foot .foot-end { margin: 0; }
 .foot-link {
   padding: 0; border: 0; background: none; font: inherit; cursor: pointer;

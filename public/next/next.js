@@ -1995,11 +1995,27 @@
     ].filter(g => g.parishes.length);
     window.AgoraSuggest.open({ title: 'Become an editor', parishes, parishId: seen.length === 1 ? seen[0].id : null, about: 'Something else', editor: true });
   }
-  /** The foot's Disclaimer, a card of its own. */
+  // The directories the parishes were read from (docs/parish-ingestion.md),
+  // each by its jurisdiction, for the Disclaimer.
+  const DIRECTORIES = [
+    ['Greek Orthodox Archdiocese of Australia', 'https://greekorthodox.org.au/churches/'],
+    ['Antiochian Orthodox Archdiocese of Australia, New Zealand & the Philippines', 'https://www.antiochian.org.au/'],
+    ['Serbian Orthodox Metropolitanate of Australia & New Zealand', 'https://soc.org.au/web-links/parishes-of-the-metropolitanate-of-australia-and-new-zealand/'],
+    ['Russian Orthodox Church Outside Russia, Diocese of Australia & New Zealand', 'https://rocor.org.au/2-directories/directory/',
+      'Hard to reach at the moment. Addresses also from orthodox-world.org.'],
+    ['Romanian Orthodox Diocese of Australia & New Zealand', 'https://roeanz.com.au/harta-parohiilor'],
+    ['Macedonian Orthodox Diocese of Australia & New Zealand', 'https://www.mocdanz.org.au/'],
+    ['Macedonian Orthodox Diocese of Australia–Sydney', 'https://www.macedonianorthodoxdiocese.org.au/'],
+  ];
+  /** The foot's Disclaimer, a card of its own (Kevin's words, 27 Oct 2026). */
   function openDisclaimer() {
+    const site = (u) => new URL(u).host.replace(/^www\./, '');
     pushSheet(`<div class="lay-head"><h2>Disclaimer</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
       <div class="sheet-scroll">
-        <p class="lay-note">Best efforts have been made to aggregate canonical Eastern Orthodox parishes in Oceania based on archdiocese and other jurisdictional directory websites.</p>
+        <p class="lay-note">Best efforts have been made to aggregate canonical Eastern Orthodox parishes, groups, and associations in Oceania. I read from archdiocesan and jurisdictional directories. Call the parish if you’re unsure of times!</p>
+        <p class="lay-note">orthodoxy.au is run by volunteers and does not speak for any jurisdiction.</p>
+        <ul class="disc-list">${DIRECTORIES.map(([name, url, note]) => `<li>${esc(name)}
+          <a href="${esc(url)}" target="_blank" rel="noopener">${esc(site(url))}</a>${note ? `<small>${esc(note)}</small>` : ''}</li>`).join('')}</ul>
       </div>`, 'mini');
   }
 
