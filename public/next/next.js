@@ -1067,6 +1067,8 @@
   function viewParishes() {
     return S.parishes.filter(p => (!S.inView || S.inView.has(p.id)) && parishPasses(p));
   }
+  // What the places in view are called: monasteries under /monasteries.
+  const placeNoun = (n) => S.f.monasteries ? (n === 1 ? 'monastery' : 'monasteries') : (n === 1 ? 'parish' : 'parishes');
   /**
    * The parishes in view, named for what they are: "64 parishes in Sydney",
    * and the filters as a link's preview says them (shared/link-words.js):
@@ -1088,7 +1090,7 @@
     if (list) name += ` from ${list.name}`;
     else if (named) name = named.map(p => p.acronym || p.name).join(' + ');
     return {
-      title: `${n} ${n === 1 ? 'parish' : 'parishes'}${place ? ` ${place}` : ''}`,
+      title: `${n} ${placeNoun(n)}${place ? ` ${place}` : ''}`,
       // A region or the parishes named say where already.
       blurb: loc || named ? what : [what, place].filter(Boolean).join(' '),
       name,
@@ -1115,12 +1117,12 @@
     const one = ps.length === 1 ? ps[0] : null;
     const chip = $('#inview');
     chip.classList.toggle('one', !!one);
-    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : 'Parishes in view');
+    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
     chip.innerHTML = one
       ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
       : ps.length
-        ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} parishes</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-        : `<span class="inview-text"><b>No parishes here</b><small>${place ? `${place} · ` : ''}Pan or zoom out</small></span>`;
+        ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}Pan or zoom out</small></span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
     $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${place}</small></span>`;
   }
