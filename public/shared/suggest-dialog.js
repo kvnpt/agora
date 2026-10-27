@@ -149,15 +149,23 @@
    * link that was tapped. `signInHref`, when given, offers a plain sign-in to
    * somebody who already keeps the parish. `about` picks "What is it about?"
    * for them when the tap already said (an Add + under the service times is
-   * 'A service time not listed').
+   * 'A service time not listed'). `editor` ticks "Add me as a permanent
+   * editor" for them.
+   *
+   * Opened from no parish (the foot of the page's "Become an editor"), it
+   * asks which first: `parishes` are the groups to choose from, as
+   * [{ label, parishes: [{ id, name }] }], with `parishId`, if any, chosen
+   * already. A service time to pick comes with the parish picked, from
+   * `servicesFor` when the page gives it one.
    */
-  function open({ parishId, parishName = '', services = [], href = null, signInHref = null, about = '' }) {
+  function open({ parishId, parishName = '', services = [], href = null, signInHref = null, about = '', editor = false, parishes = null, title = 'Suggest an edit' }) {
     close();
-    const target = href || `/admin?suggest=${encodeURIComponent(parishId)}`;
+    const picking = Array.isArray(parishes) && parishes.length > 0;
+    let pid = parishId || '';
     let preview = null;
     const sheet = root.AgoraFormSheet.open({
-      title: 'Suggest an edit',
-      sub: parishName,
+      title,
+      sub: picking ? '' : parishName,
       cls: 'suggest-dialog',
       onClose: () => {
         if (preview) URL.revokeObjectURL(preview);
@@ -166,15 +174,23 @@
     });
     current = sheet;
     const wrap = sheet.el;
+    const aboutOptions = (list) => `
+              <option value="">What is it about?</option>
+              ${list.length ? `<optgroup label="Service times">${list.map(o => `<option>${esc(o)}</option>`).join('')}</optgroup>` : ''}
+              <optgroup label="${list.length ? 'Something else' : 'What part of the page'}">
+                ${OTHER_TOPICS.map(o => `<option>${esc(o)}</option>`).join('')}
+              </optgroup>`;
+    const servicesOf = (id) => (id && typeof api.servicesFor === 'function' ? (api.servicesFor(id) || []) : []);
+    if (picking) services = servicesOf(pid);
     sheet.body.innerHTML = `
         <form class="detail-edit-form sg-form" novalidate>
+          ${picking ? `<div class="edit-row">
+            <select id="sg-parish" name="parish" aria-label="Which parish?">
+              <option value="">Which parish?</option>
+              ${parishes.map(g => `<optgroup label="${esc(g.label)}">${g.parishes.map(p => `<option value="${esc(p.id)}"${p.id === pid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</optgroup>`).join('')}
+            </select></div>` : ''}
           <div class="edit-row">
-            <select id="sg-about" name="about" aria-label="What is it about? (optional)">
-              <option value="">What is it about?</option>
-              ${services.length ? `<optgroup label="Service times">${services.map(o => `<option>${esc(o)}</option>`).join('')}</optgroup>` : ''}
-              <optgroup label="${services.length ? 'Something else' : 'What part of the page'}">
-                ${OTHER_TOPICS.map(o => `<option>${esc(o)}</option>`).join('')}
-              </optgroup>
+            <select id="sg-about" name="about" aria-label="What is it about? (optional)">${aboutOptions(services)}
             </select></div>
           <div class="edit-row">
             <textarea id="sg-body" name="change_body" rows="4" maxlength="2000" placeholder="Details" aria-label="Details"></textarea></div>
@@ -207,7 +223,16 @@
     const contactRow = wrap.querySelector('[data-sg-contact]');
     const sync = () => { contactRow.hidden = !f.contact.checked; };
     if (about && [...f.about.options].some(o => o.value === about)) f.about.value = about;
+    f.contact.checked = !!editor;
+    sync();
     form.addEventListener('change', sync);
+    // Another parish, its own service times; what was chosen stays chosen where it can.
+    if (picking) f.parish.addEventListener('change', () => {
+      pid = f.parish.value;
+      const was = f.about.value;
+      f.about.innerHTML = aboutOptions(servicesOf(pid));
+      if ([...f.about.options].some(o => o.value === was)) f.about.value = was;
+    });
 
     // The poster: on the dialog at once, from the file itself. It is not
     // shrunk or sent here; the suggest page does both, after the sign-in.
@@ -253,6 +278,12 @@
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!pid) {
+        err.textContent = 'Choose the parish.';
+        err.hidden = false;
+        f.parish.focus();
+        return;
+      }
       const v = {};
       for (const n of FIELDS) v[n] = f[n] ? f[n].value : '';
       v.contact = f.contact.checked;
@@ -270,16 +301,16 @@
       // read back there once Access has let them through. A poster that
       // cannot be kept (no IndexedDB here) is said plainly, rather than lost
       // on the way through the sign-in.
-      if (poster && !(await savePoster(parishId, poster))) {
+      if (poster && !(await savePoster(pid, poster))) {
         btn.disabled = false;
         err.textContent = 'This browser could not keep the poster through the sign-in. Remove it and send what you wrote, then add the poster on the next page.';
         err.hidden = false;
         return;
       }
-      if (!poster) dropPoster(parishId);
-      saveDraft(parishId, r.draft);
+      if (!poster) dropPoster(pid);
+      saveDraft(pid, r.draft);
       btn.textContent = 'Going to confirm your email…';
-      root.location.href = target;
+      root.location.href = href || `/admin?suggest=${encodeURIComponent(pid)}`;
     });
     // Not on a phone: the keyboard would come up over the card before they chose to type.
     if (!root.AgoraFormSheet.touchFirst()) setTimeout(() => f.change_body.focus({ preventScroll: true }), 50);
