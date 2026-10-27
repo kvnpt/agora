@@ -179,14 +179,34 @@
     // With the keyboard up, iOS scrolls the page under anything fixed. So
     // the card keeps to the part of the screen the keyboard leaves, its bar
     // at the top of that, and the form scrolls inside it and no further.
+    // Behind the keyboard (glass, on iOS 26) the card carries on down
+    // (next.css .form-sheet-back::after), so the page never shows through or
+    // in the moment before this catches up; the form gets room below its
+    // end, and the field being typed in is brought up above the keyboard
+    // (Kevin, 27 Oct 2026).
     const vv = root.visualViewport;
+    const reveal = () => requestAnimationFrame(() => {
+      const el = document.activeElement;
+      if (!el || !body.contains(el) || !el.matches('input, textarea, select, [contenteditable]')) return;
+      const r = el.getBoundingClientRect(), b = body.getBoundingClientRect(), room = 24;
+      if (r.top < b.top + room || r.height > b.height - 2 * room) body.scrollTop -= b.top + room - r.top;
+      else if (r.bottom > b.bottom - room) body.scrollTop += r.bottom - b.bottom + room;
+    });
+    const keyboardUp = () => document.documentElement.clientHeight - vv.height * vv.scale > 120;
     const fit = () => {
       back.style.top = `${vv.offsetTop}px`;
       back.style.height = `${vv.height}px`;
       back.style.bottom = 'auto';
+      back.classList.toggle('fs-kb', keyboardUp());
     };
-    if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit(); }
-    const unfit = () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } };
+    // The keyboard coming up (or changing height), not a scroll: a person
+    // scrolling the form to read it is not pulled back to the field.
+    const refit = () => { fit(); if (keyboardUp()) reveal(); };
+    if (vv) {
+      vv.addEventListener('resize', refit); vv.addEventListener('scroll', fit); fit();
+      body.addEventListener('focusin', () => { if (keyboardUp()) reveal(); });
+    }
+    const unfit = () => { if (vv) { vv.removeEventListener('resize', refit); vv.removeEventListener('scroll', fit); } };
     hoist();
     return {
       el: back,

@@ -1060,7 +1060,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .ev-head { padding: 18px 18px 4px; }
 .ev-head h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.12; margin-top: 4px; }
 .ev-when { margin: 6px 0 0; color: var(--text-2); font-size: 16px; font-weight: 550; }
-.ev-desc { margin: 16px 18px 0; padding: 14px 16px; background: var(--card); border-radius: 16px; font-size: 15px; line-height: 1.45; box-shadow: var(--shadow); }
+.ev-desc { margin: 16px 18px 0; padding: 14px 16px; background: var(--card); border-radius: 16px; font-size: 15px; line-height: 1.45; box-shadow: var(--shadow); overflow-wrap: anywhere; }
 .event .details { margin-top: 14px; }
 
 /* A small sheet's head. */
@@ -1277,6 +1277,15 @@ body.dialog-open { overflow: hidden; }
     transform: translateY(100%);
   }
   .form-sheet-back.in .form-sheet { transform: translateY(0); }
+  /* Under the keyboard, the card goes on (form-sheet.js fit): iOS 26's
+     keyboard is glass, and the page showed through it and around its bar. */
+  .form-sheet-back.in::after {
+    content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 100vh;
+    background: var(--card); pointer-events: none;
+  }
+  /* Room below the form's end with the keyboard up, so its last fields can
+     come up into sight. */
+  .form-sheet-back.fs-kb .frame-body { padding-bottom: 30vh; }
   .escalate-backdrop.form-sheet-back.fs-nested { padding-top: calc(max(10px, env(safe-area-inset-top)) + 26px); }
   /* The grabber, as the cards have. */
   .fs-bar { position: relative; padding-top: 16px; }
@@ -1399,12 +1408,10 @@ body.dialog-open { overflow: hidden; }
 .edit-row-hint-bad { color: var(--danger); font-weight: 600; }
 .rf-dates-hint { margin: -8px 0 14px; }
 .rf-error { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--danger); }
-/* Save stays in sight however long the form: its row sticks to the dialog's foot. */
-.frame-body .form-actions {
-  position: sticky; bottom: -20px; z-index: 2;
-  margin: 14px -20px -20px; padding: 10px 20px calc(12px + env(safe-area-inset-bottom, 0px));
-  background: var(--card); border-top: 1px solid var(--line);
-}
+/* A form has no foot: Save is in its bar (form-sheet.js), and what is left
+   (Delete, the logo's Back) is the end of the form, not a row stuck over it
+   (Kevin, 27 Oct 2026: it covered the fields above the keyboard). */
+.frame-body .form-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .escalate-modal .btn-danger {
   margin-left: auto; min-height: 44px; padding: 11px 22px; border-radius: 999px;
   font-size: 15px; font-weight: 600; line-height: 1.2; color: var(--danger);
