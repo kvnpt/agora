@@ -1824,6 +1824,11 @@ body.dialog-open { overflow: hidden; }
   text-align: center; font-size: 12.5px; line-height: 1.6; color: var(--text-3);
 }
 .foot p { margin: 0 0 10px; }
+.foot-rule {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 0 0 18px; color: var(--text-3); opacity: .7;
+}
+.foot-rule::before, .foot-rule::after { content: ""; width: 44px; height: 1px; background: var(--line-strong); }
 .foot .foot-end { margin: 0; }
 .foot-link {
   padding: 0; border: 0; background: none; font: inherit; cursor: pointer;
