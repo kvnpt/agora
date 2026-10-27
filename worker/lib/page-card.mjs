@@ -92,6 +92,11 @@ function roundel(kind, big) {
   const l = eventTypes.eventTypeLabel(kind || 'other');
   return `<span class="roundel${big ? ' big' : ''}" style="--k-bg:${c.bg};--k-fg:${c.fg}" title="${esc(l)}" aria-label="${esc(l)}">${esc(l[0])}</span>`;
 }
+/** A kind in its roundel's colours, said in full, as next.js's kindPill. */
+function kindPill(kind) {
+  const c = eventTypes.kindColors(kind || 'other', false);
+  return `<span class="kpill" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(eventTypes.eventTypeLabel(kind || 'other'))}</span>`;
+}
 function avatar(p, cls, color) {
   const tag = esc(String(p.acronym || p.name || '?').slice(0, 3));
   return `<span class="av ${cls}" style="--j:${color}">${p.logo_path ? `<img src="${esc(p.logo_path)}" alt="">` : ''}<b>${tag}</b></span>`;
@@ -291,6 +296,11 @@ export function parishCardHTML(m) {
 /** An event's card, as next.js's openEvent draws it: the pinned event of the model. */
 // What the veil over an off event's poster and words says (public/next/next.js).
 const OFF_SAYS = { cancelled: 'This event has been cancelled', combined: 'Combined with another event', break: 'On a break', hidden: 'Suppressed' };
+// Past a few, an event's parishes fold under a fade until Show all, as next.js's parishFold.
+const PARISH_FOLD = 4;
+const parishFold = (n, list) => (n > PARISH_FOLD
+  ? `<section class="ev-parishes folded">${list}<label class="ctimes-open"><input type="checkbox" hidden><span>Show all ${n} parishes</span>${I.chev}</label></section>`
+  : list);
 export function eventCardHTML(m) {
   const e = m.pinned;
   const p = m.parish;
@@ -321,8 +331,9 @@ export function eventCardHTML(m) {
     <div class="sheet-scroll">
       ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : `<div class="ev-band${offCls}" style="--j:${m.color}">${roundel(e.event_type, true)}${stamp}</div>`}
       <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
-        <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(eventTypes.eventTypeLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
+        <div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kindPill(e.event_type)}</div>
         <h1>${esc(e.title)}</h1>
+        ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
         <p class="ev-when">${overDays ? `${esc(shortDay(e._local.date, today))} ${esc(hm12(e._local.time))} – ${esc(shortDay(last.date, today))} ${esc(hm12(end))}`
           : `${esc(dayLabel(e._local.date, today))} · ${esc(hm12(e._local.time))}${end ? `–${esc(hm12(end))}` : ''}`}</p>
         ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
@@ -336,8 +347,8 @@ export function eventCardHTML(m) {
       ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
       ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
         : `<div class="ev-desc">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}
-      ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(x => `<a class="lrow" href="/${esc(x.slug)}">${avatar(x, 'sm', x.color)}
-        <span class="ln"><b>${esc(x.name)}</b><small>${esc(x.role)}</small></span>${I.chev}</a>`).join('')}</div>` : ''}
+      ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2>${parishFold(parishes.length, `<div class="lists">${parishes.map(x => `<a class="lrow" href="/${esc(x.slug)}">${avatar(x, 'sm', x.color)}
+        <span class="ln"><b>${esc(x.name)}</b><small>${esc(x.role)}</small></span>${I.chev}</a>`).join('')}</div>`)}` : ''}
     </div>`);
 }
 

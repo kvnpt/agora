@@ -65,6 +65,11 @@
     const l = kindLabel(kind || 'other');
     return `<span class="roundel${big ? ' big' : ''}" style="--k-bg:${c.bg};--k-fg:${c.fg}" title="${esc(l)}" aria-label="${esc(l)}">${esc(l[0])}</span>`;
   }
+  /** A kind in its roundel's colours, said in full: the pill over an event card's title. */
+  function kindPill(kind) {
+    const c = window.AgoraEventTypes.kindColors(kind || 'other', dark());
+    return `<span class="kpill" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(kindLabel(kind || 'other'))}</span>`;
+  }
 
   const parseLangs = (v) => {
     if (!v) return null;
@@ -867,6 +872,8 @@
     pencil: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
     signIn: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l4-4-4-4M14 12H4"/></svg>',
     signOut: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M16 16l4-4-4-4M20 12H10"/></svg>',
+    // The page's Filters button's (index.html), for a card's.
+    filters: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
     sliders: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4v6M5 14v6M12 4v10M12 18v2M19 4v2M19 10v10"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="16" r="2"/><circle cx="19" cy="8" r="2"/></svg>',
     plusSm: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
@@ -1541,11 +1548,11 @@
   const CHECK = '<svg viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32"/></svg>';
   const CAL = '<svg viewBox="0 0 256 256" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M208 32h-24v-8a8 8 0 0 0-16 0v8H88v-8a8 8 0 0 0-16 0v8H48a16 16 0 0 0-16 16v160a16 16 0 0 0 16 16h160a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16M72 48v8a8 8 0 0 0 16 0v-8h80v8a8 8 0 0 0 16 0v-8h24v32H48V48Zm136 160H48V96h160z"/></svg>';
   /** Where a list of days starts: today, or a date picked from the calendar. */
-  function datePickHTML(scope, from) {
+  function datePickHTML(scope, from, beside = '') {
     const t = todayKey();
     return `<div class="date-pick">
         <span class="date-btn"><button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Pick a date'}</span></button><input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date"></span>
-        ${from ? `<button class="fpill" type="button" data-date-clear="${scope}">Today</button>` : ''}
+        ${from ? `<button class="fpill" type="button" data-date-clear="${scope}">Today</button>` : ''}${beside}
       </div>`;
   }
   /** A day's own link, copied with a tap, as the app's day headers have. */
@@ -1681,7 +1688,8 @@
       if (WIDE.matches || e.touches.length !== 1 || el !== stack[stack.length - 1]) return;
       if (e.target.closest('input, textarea, select, [contenteditable]')) return;
       const y = e.touches[0].clientY;
-      const onBar = y - el.getBoundingClientRect().top < 64;
+      const bar = el.querySelector('.glassbar');
+      const onBar = y - el.getBoundingClientRect().top < (bar ? bar.offsetHeight : 64);
       if (!onBar && scroller && scroller.scrollTop > 0) return;
       g = { y, x: e.touches[0].clientX, t: Date.now(), dy: 0, live: false };
     }, { passive: true });
@@ -2028,13 +2036,16 @@
   // Coming up: this parish's days, from today or from a date picked, a
   // fortnight at a time. The date is in the card's link.
   const CU_DAYS = 14;
-  function comingUpHTML(pid, from, days, focus = null) {
+  function comingUpHTML(pid, from, days, focus = null, panel = false) {
     const p = S.byId.get(pid);
     const start = from || todayKey();
     const now = Date.now();
     const list = feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
-    return `${datePickHTML('card', from)}
+    const n = focusCount(focus);
+    const filters = `<button class="fpill fbtn" type="button" data-card-filters aria-expanded="${panel}">${I.filters}<span>Filters</span>${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
+    return `${datePickHTML('card', from, filters)}
+      ${panel ? cardPanelHTML(pid, focus) : ''}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
@@ -2051,7 +2062,7 @@
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
     const m = box.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
-    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
+    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus, !!el._fpanel);
     watchMore(el);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
@@ -2073,6 +2084,35 @@
     return `${hasTimes ? timetable(p.id, { edit: may('schedule.edit', p.id), focus }) : `<div class="tt-none">No service times on file yet.${p.website ? ` The parish website is the best place to check.` : ''}</div>`}
       ${timesSource(p.id)}
       ${addBox(SUGGEST.service, 'Add a service time')}`;
+  }
+  /**
+   * What's on at a parish: the page's shelf (renderWhatsOn) kept to this
+   * parish, under its timetable. The things that happen once, poster first;
+   * its name is the card's, so a poster says whose only when it is another
+   * parish's. None, no section.
+   */
+  function parishWhatsOnHTML(pid) {
+    const raw = window.agoraBundle.raw;
+    if (!raw) return '';
+    const now = Date.now();
+    const pool = feedFor(21)
+      .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
+      .filter(e => e.poster_path && visible(e) && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventParishIds(e).includes(pid));
+    const seen = new Set();
+    const list = pool.filter(e => {
+      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
+      if (seen.has(k)) return false; seen.add(k); return true;
+    }).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
+    if (!list.length) return '';
+    const cards = list.map(e => {
+      const host = e.parish_id !== pid ? S.byId.get(e.parish_id) : null;
+      return `<button class="poster" type="button" data-event="${esc(e.id)}">
+          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
+          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
+            ${host ? `<span class="pfrom">${avatar(host, 'xs')}<span>${esc(host.name)}</span></span>` : ''}</span>
+        </button>`;
+    }).join('');
+    return `<h2 class="sec">What's on</h2><div class="shelf-row">${cards}</div>`;
   }
   function detailsHTML(p) {
     // For whoever may change them, the heading's pencil (next/editing.js editDetails).
@@ -2186,6 +2226,8 @@
     paintParishToday(el);
     const times = el.querySelector('.p-times'), details = el.querySelector('.p-details');
     if (times) times.innerHTML = timesHTML(p, el._focus);
+    const on = el.querySelector('.p-whatson');
+    if (on) { on.innerHTML = parishWhatsOnHTML(p.id); on.hidden = !on.innerHTML; }
     if (details) details.innerHTML = detailsHTML(p);
     const sug = el.querySelector('.p-suggest');
     if (sug) sug.innerHTML = suggestEditHTML(p.id);
@@ -2236,15 +2278,51 @@
       + (x.lang ? (x.langStrict ? ` in ${x.lang} only` : ` in ${x.lang}`) : '');
     return text.charAt(0).toUpperCase() + text.slice(1);
   }
-  /** Light everything at a card again: /sgr/talk becomes /sgr. */
-  function unfocusCard(el) {
-    el._focus = null;
-    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), from: el._from });
+  // ── A parish card's Filters, beside Pick a date ───────────────────────
+  //
+  // What the page's panel asks of a service (what, which language, when),
+  // asked of one parish: the card's focus, as a link to it would set it
+  // (/sgr/talks), lighting what answers and dimming the rest, its link
+  // following. Only what the parish has is offered.
+
+  /** How many things a focus asks: each day its own, as the page's count has them. */
+  const focusCount = (x) => (x ? window.AgoraServices.daysOf(x.day).length + [x.kind, x.service, x.dayGroup, x.part, x.lang].filter(Boolean).length : 0);
+  function cardPanelHTML(pid, focus) {
+    const f = { ...blankFilters(), ...(focus || {}) }, SV = window.AgoraServices;
+    const p = S.byId.get(pid);
+    // What it holds: its running services, and what is on file from today.
+    const rows = [...rulesOf(pid).filter(liveRule).map(r => [r, true]),
+      ...feedRange(todayKey(), CU_DAYS).filter(e => visible(e) && eventParishIds(e).includes(pid)).map(e => [e, false])];
+    const has = (x) => rows.some(([r, isRule]) => whatMatches(r, { ...blankFilters(), ...x }, isRule));
+    const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
+    const langs = parishLangs(p);
+    const langPills = langs.length > 1 ? langs.map(l => fpill('card:lang', l, f.lang === l, esc(l))
+      + (f.lang === l ? fpill('card:langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('') : '';
+    const days = `<span class="fdays">${WD.map((d, i) => fpill('card:day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
+    const spans = SV.DAY_GROUPS.map(g => fpill('card:dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
+    const parts = SV.PARTS_OF_DAY.map(pt => fpill('card:part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
+    return `<div class="filter-panel card-fpanel" role="group" aria-label="Filters">
+        ${group('What', ...kindLines(f, SV, 'card:', has))}${langPills ? group('Language', langPills) : ''}${group('When', days, spans, parts)}
+        <div class="fpanel-foot">${focusCount(focus) ? '<button class="fpill fpill-ghost" type="button" data-act="card-filters-clear">Clear all</button>' : '<span></span>'}
+          <button class="fpill on" type="button" data-act="card-filters-done">Done</button></div>
+      </div>`;
+  }
+  /** A card's focus as it now is: its link, its lit and dimmed rows, its Today. */
+  function setCardFocus(el, focus) {
+    el._focus = focus;
+    el._segs = segsFor({ parish: S.byId.get(el.dataset.pid), focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     syncURL();
     repaintParish(el);
   }
+  /** One of a card's pills tapped. */
+  function setCardFilter(el, k, v) {
+    const f = { ...blankFilters(), ...(el._focus || {}) };
+    if (flipWhat(f, k, v)) setCardFocus(el, focusOf(f));
+  }
+  /** Light everything at a card again: /sgr/talk becomes /sgr. */
+  function unfocusCard(el) { setCardFocus(el, null); }
 
   // ── A parish link that asks something (/sgr/talks, /sgr/wed/liturgy) ──
   //
@@ -2300,6 +2378,7 @@
     // A link says its own (/sgr/talk, or none at /sgr); a tap takes where it was.
     if (focus === undefined) focus = focusAround();
     const segs = segsFor({ parish: p, focus, from });
+    const won = parishWhatsOnHTML(pid);
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
       <div class="sheet-scroll">
         <div class="ph">${parishTopHTML(p)}</div>
@@ -2312,6 +2391,7 @@
         <div class="p-suggest">${suggestEditHTML(pid)}</div>
         <h2 class="sec">Timetable</h2>
         <div class="p-times">${timesHTML(p, focus)}</div>
+        <section class="p-whatson"${won ? '' : ' hidden'}>${won}</section>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
           <h2 class="sec">Coming up</h2>
@@ -2535,6 +2615,16 @@
     }
     return out;
   }
+  /**
+   * More parishes than a glance takes (a deanery's vespers has dozens) are
+   * folded to the first few under a fade, with Show all, as a collection's
+   * timetables are: a checkbox in its label (next.css .ev-parishes), so the
+   * Worker's first paint opens the same way with no script (page-card.mjs).
+   */
+  const PARISH_FOLD = 4;
+  const parishFold = (n, list) => (n > PARISH_FOLD
+    ? `<section class="ev-parishes folded">${list}<label class="ctimes-open"><input type="checkbox" hidden><span>Show all ${n} parishes</span>${I.chev}</label></section>`
+    : list);
   function eventBodyHTML(e, match = null) {
     const segs = match ? matchSegs(match) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
@@ -2564,8 +2654,9 @@
     const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
     return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : `<div class="ev-band${offCls}" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}${stamp}</div>`}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
-          <span class="ckicker">${off ? `<span class="ev-off">${esc(off)}</span> · ` : ''}${esc(kindLabel(e.event_type))}${e.feast ? ` · ${esc(e.feast)}` : ''}</span>
+          <div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kindPill(e.event_type)}</div>
           <h1>${esc(e.title)}</h1>
+          ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
           <p class="ev-when">${overDays ? `${esc(dayLabel(l.date))} ${esc(hm12(l.hm))} – ${esc(dayLabel(last.date))} ${esc(hm12(end))}`
             : `${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}`}</p>
           ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
@@ -2576,16 +2667,22 @@
           ${pinHref(lat, lng) ? `<a class="abtn primary" href="${esc(pinHref(lat, lng))}" target="_blank" rel="noopener">${I.place}<span>Google Maps</span></a>` : ''}
           ${live ? `<a class="abtn" href="${esc(live)}" target="_blank" rel="noopener">${I.live}<span>Watch live</span></a>` : ''}
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
+          ${edits ? `<button class="abtn" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>Edit</span></button>` : ''}
         </div>
         ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
         ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
           : `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}
-        ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2><div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
-          <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>` : ''}
-        ${edits ? `<button class="wide-btn ev-edit" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>${rule ? 'Edit this date' : 'Edit this event'}</span></button>`
-          : p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
+        ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2>${parishFold(parishes.length, `<div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
+          <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>`)}` : ''}
+        ${!edits && p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
         ${match ? matchFeedHTML(match, e.id) : ''}
         <div class="toolbar-space"></div>`;
+  }
+  /** An event card's toolbar: its bookmark, and its pencil for whoever may edit it. */
+  function eventTools(e) {
+    const rule = e.schedule_id != null;
+    return bookmarkButton(e) + (S.byId.has(e.parish_id) && may('event.edit', e.parish_id)
+      ? `<button type="button" data-edit-event="${esc(e.id)}" aria-label="${rule ? 'Edit this date' : 'Edit this event'}">${I.pencil}</button>` : '');
   }
   function openEvent(id, { entry = true, match = null } = {}) {
     const e = findEvent(id);
@@ -2594,9 +2691,9 @@
       return fetchEvent(id).then(x => (x ? openEvent(id, { entry, match }) : null));
     }
     const p = S.byId.get(e.parish_id);
-    // Its bookmark floats, as a parish's star does.
+    // Its bookmark floats, as a parish's star does, and its pencil beside it.
     const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e, match)}</div>
-      <div class="floatbar" role="toolbar">${bookmarkButton(e)}</div>`;
+      <div class="floatbar" role="toolbar">${eventTools(e)}</div>`;
     const el = pushSheet(html, 'event', { segs: match ? matchSegs(match) : segsFor({ eventId: e.id }), entry });
     el._event = e;
     el._match = match;
@@ -2620,6 +2717,8 @@
     const top = scroller.scrollTop;
     scroller.innerHTML = eventBodyHTML(e, el._match);
     scroller.scrollTop = top;
+    const tools = el.querySelector('.floatbar');
+    if (tools) tools.innerHTML = eventTools(e);
     fitLinks(el);
   }
   // ── Bookmarks ─────────────────────────────────────────────────────────
@@ -2791,14 +2890,19 @@
     const c = window.AgoraEventTypes.kindColors(color, dark());
     return `<button class="fpill ftype${on ? ' on' : match ? ' match' : ''}" type="button" data-set="${set}" data-val="${esc(val)}" style="--k-bg:${c.bg};--k-fg:${c.fg}" aria-pressed="${on}">${esc(label)}</button>`;
   }
-  /** What: a line per kind, its name first, then each type it holds. */
-  function kindLines(f, SV) {
-    return Object.entries(KIND_NAMES).map(([k, l]) => {
+  /**
+   * What: a line per kind, its name first, then each type it holds. A
+   * card's (`pre` 'card:') offers only what its parish has (`has`, asked of
+   * a filter of one kind, type or service).
+   */
+  function kindLines(f, SV, pre = '', has = () => true) {
+    return Object.entries(KIND_NAMES).filter(([k]) => has({ kind: k })).map(([k, l]) => {
       const whole = f.kind === k && !f.kindSub;
-      const head = `<button class="fpill fcat${whole ? ' on' : f.kind === k ? ' part' : ''}" type="button" data-set="kind" data-val="${k}" aria-pressed="${whole}">${esc(l)}</button>`;
-      const subs = KIND_SUBS[k].map(id => typePill('kindSub', `${k}:${id}`, subColorOf(id), kindSubLabel(id), f.kind === k && f.kindSub === id, whole));
+      const head = `<button class="fpill fcat${whole ? ' on' : f.kind === k ? ' part' : ''}" type="button" data-set="${pre}kind" data-val="${k}" aria-pressed="${whole}">${esc(l)}</button>`;
+      const subs = KIND_SUBS[k].filter(id => has({ kind: k, kindSub: id }))
+        .map(id => typePill(`${pre}kindSub`, `${k}:${id}`, subColorOf(id), kindSubLabel(id), f.kind === k && f.kindSub === id, whole));
       // Services' prayers by name, lit by Services and by Prayer.
-      const prayers = k === 'services' ? PANEL_SERVICES.map(sv => typePill('service', sv, 'prayer', SV.serviceLabel(sv), f.service === sv,
+      const prayers = k === 'services' ? PANEL_SERVICES.filter(sv => has({ service: sv })).map(sv => typePill(`${pre}service`, sv, 'prayer', SV.serviceLabel(sv), f.service === sv,
         f.kind === 'services' && (!f.kindSub || f.kindSub === 'prayer'))) : [];
       return `<span class="fkind">${head}${subs.join('')}${prayers.join('')}</span>`;
     });
@@ -2858,9 +2962,12 @@
   function renderPanel() {
     if (panelOpen()) $('#filter-panel').innerHTML = panelHTML();
   }
-  /** One pill tapped: on if it was off, off if it was on. */
-  function setFilter(k, v) {
-    const f = S.f;
+  /**
+   * One pill of what, which language or when, tapped on `f`: on if it was
+   * off, off if it was on. The page's filters and a parish card's (its
+   * focus) ask these alike. False for any other pill.
+   */
+  function flipWhat(f, k, v) {
     const flip = (key, val) => { f[key] = f[key] === val ? null : val; };
     // One kind, type or service at a time: each replaces the others.
     if (k === 'kind') { f.kind = f.kind === v && !f.kindSub ? null : v; f.kindSub = null; f.service = null; }
@@ -2879,12 +2986,21 @@
       f.day = SV.dayValue(ds.includes(+v) ? ds.filter(d => d !== +v) : [...ds, +v]);
       f.dayGroup = null;
     }
+    else if (k === 'dayGroup') { flip('dayGroup', v); f.day = null; }
+    else if (k === 'part') flip(k, v);
+    else return false;
+    return true;
+  }
+  /** One pill tapped: on if it was off, off if it was on. */
+  function setFilter(k, v) {
+    const f = S.f;
+    const flip = (key, val) => { f[key] = f[key] === val ? null : val; };
+    if (flipWhat(f, k, v)) { /* what, language, when */ }
     else if (k === 'juris') {
       const js = jList(S.juris);
       S.juris = window.AgoraUrlState.jurisdictionValue(js.includes(v) ? js.filter(j => j !== v) : [...js, v]);
     }
-    else if (k === 'dayGroup') { flip('dayGroup', v); f.day = null; }
-    else if (k === 'part' || k === 'location') flip(k, v);
+    else if (k === 'location') flip(k, v);
     else if (k === 'timesOnly' || k === 'monasteries') f[k] = !f[k];
     else if (k === 'list') {
       const l = f.listId === v ? null : listById(v);
@@ -3339,6 +3455,9 @@
       return;
     }
     if ((b = t.closest('[data-set="donate"]')) && top) { setDonate(top, b.dataset.val); return; }
+    // A parish card's own Filters, and its pills.
+    if ((b = t.closest('[data-card-filters]')) && top) { top._fpanel = !top._fpanel; refreshComingUp(top); return; }
+    if ((b = t.closest('[data-set^="card:"]')) && top) { setCardFilter(top, b.dataset.set.slice(5), b.dataset.val); return; }
     if ((b = t.closest('[data-set]'))) { setFilter(b.dataset.set, b.dataset.val); return; }
 
     if ((b = t.closest('[data-inlist]'))) {
@@ -3357,6 +3476,8 @@
         return;
       }
       if (a === 'unfocus' && top) return unfocusCard(top);
+      if (a === 'card-filters-done' && top) { top._fpanel = false; refreshComingUp(top); return; }
+      if (a === 'card-filters-clear' && top) return unfocusCard(top);
       if (a === 'search-coll' && searchState) {
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, tint: '#475569', ids: searchState.ps.map(p => p.id) });

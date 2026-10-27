@@ -342,7 +342,7 @@ test('a cancelled occurrence previews as cancelled, and its card says so', async
   raw.prepare(`INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind) VALUES (?, '2026-10-04', 'cancelled')`).run(sid);
   const { html } = await get(`/${sid}:2026-10-04`);
   assert.match(meta(html, 'name', 'description'), /^CANCELLED\./);
-  assert.match(card(html), /<div class="ev-head off cancelled">\s*<span class="ckicker"><span class="ev-off">Cancelled<\/span>/);
+  assert.match(card(html), /<div class="ev-head off cancelled">\s*<div class="ev-kind"><span class="ev-off">Cancelled<\/span><span class="kpill"[^>]*>Liturgy<\/span><\/div>/);
   // And on its parish's Coming up, struck through rather than gone.
   assert.match(comingUp((await get('/sgr')).html), /<a class="erow tomb cancelled" href="\/\d+:2026-10-04">[\s\S]*?<span class="etomb">Cancelled<\/span>/);
 });
@@ -397,6 +397,22 @@ test("an event's card names the parishes taking part in it", async () => {
   const alone = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
     VALUES (?, 'manual', 'Picnic', '2026-10-11T23:00:00Z', 'social', 'approved', 'headless') RETURNING id`).get(PARISH).id;
   assert.doesNotMatch(card((await get(`/${alone}`)).html), /Parishes<\/h2>/);
+  assert.doesNotMatch(c, /ev-parishes/, 'three parishes are not folded');
+  // Past four, the rest fold under a fade until Show all, with no script.
+  const many = raw.prepare(`SELECT id FROM parishes WHERE id NOT IN (?, '_unassigned') ORDER BY id LIMIT 6`).all(PARISH);
+  const big = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Deanery Vespers', '2026-10-12T07:00:00Z', 'prayer', 'approved', 'headless') RETURNING id`).get(PARISH).id;
+  for (const o of many) raw.prepare('INSERT INTO event_parishes (event_id, parish_id) VALUES (?, ?)').run(big, o.id);
+  assert.match(card((await get(`/${big}`)).html),
+    /<section class="ev-parishes folded"><div class="lists">[\s\S]*<\/div><label class="ctimes-open"><input type="checkbox" hidden><span>Show all 7 parishes<\/span>/);
+});
+
+test("an event's card says its kind in a pill, and its subtitle under its title", async () => {
+  const { raw, get } = fresh();
+  const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, feast, start_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', 'Men''s Group', 'St Joseph the Betrothed', '2026-10-10T08:00:00Z', 'talk', 'approved', 'headless') RETURNING id`).get(PARISH).id;
+  assert.match(card((await get(`/${id}`)).html),
+    /<div class="ev-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/div>\s*<h1>Men&#39;s Group<\/h1>\s*<p class="ev-sub">St Joseph the Betrothed<\/p>/);
 });
 
 test('the home page is the site, indexable; anything else is the page with its words, noindex', async () => {
