@@ -112,3 +112,12 @@ test('a programme’s card puts the day’s saint where the kind would be; a wee
       'Saturdays · 8:00–10:00 am · Orthros');
   } finally { delete globalThis.AgoraSigns; }
 });
+
+test('a collapsed card is drawn from its feed row’s parts, and what is missing is empty', () => {
+  assert.deepStrictEqual(E.summaryParts({ date: '2026-11-09', start_time: '07:30', title: ' Divine Liturgy ',
+    feast: 'Nektarios the Wonderworker' }, { thisYear: 2026 }),
+  { time: '7:30', ampm: 'am', day: 'Mon 9 Nov', title: 'Divine Liturgy', feast: 'Nektarios the Wonderworker' });
+  assert.deepStrictEqual(E.summaryParts({ date: '2026-11-13', end_date: '2026-11-15', start_time: '18:00' }, { thisYear: 2026 }),
+    { time: '6:00', ampm: 'pm', day: 'Fri 13 Nov – Sun 15 Nov', title: '', feast: '' });
+  assert.deepStrictEqual(E.summaryParts({}, { thisYear: 2026 }), { time: '', ampm: '', day: '', title: '', feast: '' });
+});

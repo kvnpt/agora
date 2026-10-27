@@ -1514,7 +1514,7 @@ body.dialog-open { overflow: hidden; }
 }
 .rf-btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
 .rf-btn[hidden] { display: none; }
-/* "From a photo of the sign", above the fields for typing one in. */
+/* "Add an image" (a photo of the sign), above the fields for typing one in. */
 .sap-drop {
   display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text);
   background: color-mix(in srgb, var(--accent) 6%, transparent);

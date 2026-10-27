@@ -146,11 +146,14 @@
 .ee-card.is-published { opacity: .5; }
 .ee-cards > .ee-card:only-child { border: 0; }
 .ee-cards > .ee-card:only-child .ee-body { padding: 0; }
+/* Collapsed, a card is drawn as its row in the feed will be (next.css .erow):
+   the time with its day under it, the kind's roundel, the title in bold and
+   its subtitle in italics, so a poster's worth can be run down for what is
+   wrong. What is missing says so in red where it would be. */
 .ee-sum {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 12px;
   width: 100%;
   padding: 11px 12px;
   text-align: left;
@@ -161,7 +164,29 @@
   border-radius: 12px;
   cursor: pointer;
 }
-.ee-sum-line { flex: 1 1 220px; min-width: 0; font-size: 13.5px; line-height: 1.4; }
+.ee-sum-when {
+  flex: none; width: 68px; display: flex; flex-direction: column; gap: 1px;
+  font-size: 14.5px; font-weight: 600; line-height: 1.2;
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+.ee-sum-mer { margin-left: 1px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ee-muted); }
+.ee-sum-day { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--ee-muted); }
+.ee-sum-kind {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: inline-grid; place-items: center;
+  background: var(--k-bg, var(--ee-field)); color: var(--k-fg, var(--ee-muted));
+  font-size: 11.5px; font-weight: 800;
+}
+.ee-sum-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ee-sum-title { font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: break-word; }
+.ee-sum-feast { font-size: 12.5px; line-height: 1.3; font-style: italic; color: var(--ee-muted); }
+.ee-sum-none { color: var(--danger); font-weight: 600; font-size: 12.5px; letter-spacing: 0; }
+.ee-sum-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.ee-sum-foot:has(.ee-chips:not(:empty)) { margin-top: 3px; }
+.ee-sum-foot .ee-saved { margin-left: 0; }
+/* Shut, a card says only that it is saving or could not be: a "Saved ✓" on
+   every row is a line apiece of nothing to check. */
+.ee-card:not(.is-open) .ee-saved-ok { display: none; }
 .ee-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .ee-chip { font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: 999px; white-space: nowrap; }
 .ee-chip-block { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
@@ -170,6 +195,22 @@
 .ee-saved { margin-left: auto; font-size: 11px; color: var(--ee-muted); white-space: nowrap; }
 .ee-saved-bad { color: var(--danger); }
 .ee-body { padding: 4px 12px 12px; }
+
+/* What a collapsed card keeps of its form (event-editor.js refreshPeek): the
+   fields still to answer and a service's first two languages, under the
+   title, with nothing else of the form. The chips above already say what is
+   missing, so the notes that say it again go. */
+.ee-card.is-peek .ee-body { padding: 0 12px 4px 92px; }
+.ee-card.is-peek .ee-body > :not(.ee-peek-on),
+.ee-card.is-peek .ee-grid > :not(.ee-peek-on) { display: none; }
+.ee-card.is-peek .ee-grid { grid-template-columns: minmax(0, 1fr); margin-bottom: 8px; }
+.ee-card.is-peek .ee-row { max-width: 360px; margin-bottom: 8px; }
+.ee-card.is-peek .ee-row[data-row="languages"] > label,
+.ee-card.is-peek .ee-mark,
+.ee-card.is-peek .ee-note-block,
+.ee-card.is-peek .ee-note-info,
+.ee-card.is-peek [data-row="languages"] .ee-note-read,
+.ee-card.is-peek .lp-more { display: none; }
 
 .ee-row { margin-bottom: 12px; }
 .ee-row label {

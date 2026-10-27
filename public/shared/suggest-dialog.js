@@ -196,7 +196,7 @@
             <textarea id="sg-body" name="change_body" rows="4" maxlength="2000" placeholder="Details" aria-label="Details"></textarea></div>
           <div class="edit-row sg-poster">
             <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden data-sg-file>
-            <button type="button" class="sg-poster-pick" data-sg-pick>${PICTURE}<span><b>Add a poster</b><small>Or paste one, or drop it here</small></span></button>
+            <button type="button" class="sg-poster-pick" data-sg-pick>${PICTURE}<span><b>Add an image</b><small>A poster or flyer. Or paste one, or drop it here</small></span></button>
             <div class="sg-poster-card" data-sg-card hidden>
               <img class="sg-poster-thumb" alt="Your poster">
               <span class="sg-poster-side"><b>Poster added</b><small>It goes with your suggestion.</small>

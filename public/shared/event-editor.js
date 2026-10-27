@@ -13,8 +13,10 @@
 // (a Worker has no image pipeline), stored once, and read by Claude; the read
 // streams back as Server-Sent Events and the cards fill in as it is written —
 // the title typing itself in, then the date, then the times. A poster with
-// several events becomes several cards, collapsed to one line each so they can
-// be checked at a glance. Nothing a person has typed is ever overwritten: the
+// several events becomes several cards, each collapsed to its row as the feed
+// will show it, so they can be checked at a glance — with what still needs a
+// person (a missing time, a doubtful date, a service's languages) left open
+// under it to answer there. Nothing a person has typed is ever overwritten: the
 // read only fills empty fields, here and on the server.
 //
 // A PROGRAMME'S SUNDAYS ARE THE SUNDAYS ALREADY ON FILE. A month's programme
@@ -92,6 +94,23 @@
       (f.title || '').trim() || 'Untitled',
       feast ? `✛ ${feast}` : kindLabel(f.event_type),
     ].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * A card in the parts of its row in the feed (next.js eventRow), for the
+   * collapsed card that is drawn like one: the start time and the day under
+   * it, the title, and the line under that. Empty where the card is.
+   */
+  function summaryParts(f, { thisYear } = {}) {
+    const t = isTime(f.start_time) ? clock(f.start_time) : null;
+    const last = f.end_date && f.end_date > f.date ? dateLabel(f.end_date, thisYear) : '';
+    return {
+      time: t ? t.text : '',
+      ampm: t ? t.ampm : '',
+      day: dateLabel(f.date, thisYear) ? dateLabel(f.date, thisYear) + (last ? ` – ${last}` : '') : '',
+      title: String(f.title || '').trim(),
+      feast: String(f.feast || '').trim(),
+    };
   }
 
   /**
@@ -332,7 +351,7 @@
    *   onChanged   ({parishId, what: 'timetable'|'details'}) — a sign changed the
    *               parish itself, which the host shows and the cards do not
    *   intent      'event' (the default) or 'timetable': opened from the
-   *               timetable's "From a photo of the sign", so a photo that
+   *               timetable's "Add an image" (under Add +), so a photo that
    *               turns out not to be a sign is said to be so (renderIntent)
    *   onRead      (draft) — a read has finished; the host can retitle itself
    */
@@ -393,8 +412,8 @@
       <div class="ee-poster">
         <input type="file" accept="image/*" data-ee="poster-input" hidden>
         <button type="button" class="ee-drop" data-ee="drop">
-          <span class="ee-drop-title">Start from a poster</span>
-          <span class="ee-drop-sub">Drop it here, paste it, or tap to choose one. The details are read into the form for you to check — nothing is published until you say so.</span>
+          <span class="ee-drop-title">Add an image</span>
+          <span class="ee-drop-sub">A poster, flyer or programme: drop it here, paste it, or tap to choose one. The details are read into the form for you to check — nothing is published until you say so.</span>
         </button>
         <div class="ee-poster-card" data-ee="poster" hidden>
           <button type="button" class="ee-thumb-btn" data-ee="thumb" aria-label="Look at the poster full size"><img class="ee-thumb" alt="The poster"></button>
@@ -428,8 +447,7 @@
     mount.appendChild(el);
     const $ = (name) => el.querySelector(`[data-ee="${name}"]`);
     if (state.intent === 'timetable') {
-      el.querySelector('.ee-drop-title').textContent = 'Start from a photo of the sign';
-      el.querySelector('.ee-drop-sub').textContent = 'The board out the front, or a printed timetable. Its services are read for you to check — nothing is added until you say so.';
+      el.querySelector('.ee-drop-sub').textContent = 'A photo of the board out the front, or a printed timetable. Its services are read for you to check — nothing is added until you say so.';
     }
     const fileInput = $('poster-input');
 
@@ -640,10 +658,14 @@
       const row = (f, label, input, extra = '') =>
         `<div class="ee-row" data-row="${f}"><label for="${fieldId(card, f)}">${label}<span class="ee-mark" hidden>from poster</span></label>${input}<div class="ee-notes"></div>${extra}</div>`;
       node.innerHTML = `
-        <button type="button" class="ee-sum" aria-expanded="false">
-          <span class="ee-sum-line"></span>
-          <span class="ee-chips"></span>
-          <span class="ee-saved"></span>
+        <button type="button" class="ee-sum" aria-expanded="false" aria-describedby="${fieldId(card, 'chips')}">
+          <span class="ee-sum-when"><span class="ee-sum-time"></span><span class="ee-sum-day"></span></span>
+          <span class="ee-sum-kind"></span>
+          <span class="ee-sum-body">
+            <span class="ee-sum-title"></span>
+            <span class="ee-sum-feast"></span>
+            <span class="ee-sum-foot"><span class="ee-chips" id="${fieldId(card, 'chips')}"></span><span class="ee-saved"></span></span>
+          </span>
         </button>
         <div class="ee-body">
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
@@ -688,7 +710,11 @@
       card.els = {
         root: node,
         sum: node.querySelector('.ee-sum'),
-        line: node.querySelector('.ee-sum-line'),
+        time: node.querySelector('.ee-sum-time'),
+        day: node.querySelector('.ee-sum-day'),
+        kind: node.querySelector('.ee-sum-kind'),
+        title: node.querySelector('.ee-sum-title'),
+        feast: node.querySelector('.ee-sum-feast'),
         chips: node.querySelector('.ee-chips'),
         saved: node.querySelector('.ee-saved'),
         body: node.querySelector('.ee-body'),
@@ -739,6 +765,9 @@
         } else refreshMultiday(card);
       });
       card.els.sum.addEventListener('click', () => toggleCard(card));
+      // A field shown on a collapsed card stays while it is being filled in,
+      // and goes once it is left with nothing more to say (refreshPeek).
+      card.els.body.addEventListener('focusout', () => setTimeout(() => refreshCard(card), 0));
       node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       node.querySelector('.ee-remove').addEventListener('click', () => removeCard(card));
@@ -847,7 +876,7 @@
       card.saveState = s;
       if (!card.els) return;
       card.els.saved.textContent = s === 'saving' ? 'Saving…' : s === 'saved' ? 'Saved ✓' : s === 'error' ? 'Not saved' : '';
-      card.els.saved.className = `ee-saved${s === 'error' ? ' ee-saved-bad' : ''}`;
+      card.els.saved.className = `ee-saved${s === 'error' ? ' ee-saved-bad' : s === 'saved' ? ' ee-saved-ok' : ''}`;
       card.els.err.textContent = message;
       card.els.err.hidden = !message;
     }
@@ -908,11 +937,28 @@
       if (!card.els) return;
       const checks = isPristine(card) ? [] : checksFor(card);
       const thisYear = +today().slice(0, 4);
-      card.els.line.textContent = summaryLine(card.fields, { thisYear });
+      const s = summaryParts(card.fields, { thisYear });
+      const none = (what) => `<span class="ee-sum-none">${what}</span>`;
+      card.els.sum.setAttribute('aria-label', summaryLine(card.fields, { thisYear }));
+      card.els.time.innerHTML = s.time ? `${esc(s.time)}<span class="ee-sum-mer">${s.ampm}</span>` : none('No time');
+      card.els.day.innerHTML = s.day ? esc(s.day) : none('No date');
+      card.els.title.innerHTML = s.title ? esc(s.title) : none('Untitled');
+      card.els.feast.textContent = s.feast;
+      card.els.feast.hidden = !s.feast;
+      const T = root.AgoraEventTypes;
+      const kind = card.fields.event_type;
+      const label = kind ? kindLabel(kind) : 'No kind yet';
+      const col = T && kind ? T.kindColors(kind, typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches) : null;
+      card.els.kind.textContent = kind ? label.charAt(0) : '?';
+      card.els.kind.title = label;
+      card.els.kind.style.cssText = col ? `--k-bg:${col.bg};--k-fg:${col.fg}` : '';
       card.els.chips.innerHTML = (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
         + checks
         .filter(c => c.level !== 'info' || c.field === 'date')
         .map(c => `<span class="ee-chip ee-chip-${c.level}">${esc(chipText(c))}</span>`).join('')
+        // A language the reader suggested, the poster saying none (drafts.mjs
+        // suggestLanguages): the note is on the field, the chip on the row.
+        + (card.notes.some(n => n.field === 'languages') ? '<span class="ee-chip ee-chip-warn">check the language</span>' : '')
         + (card.publish.state === 'refused' ? '<span class="ee-chip ee-chip-warn">needs an owner</span>' : '')
         + (card.publish.state === 'error' ? '<span class="ee-chip ee-chip-block">not published</span>' : '');
       for (const [f, inp] of Object.entries(card.els.inputs)) {
@@ -936,11 +982,41 @@
       refreshMultiday(card);
       const single = !state.multi;
       card.els.sum.hidden = single;
-      card.els.body.hidden = !single && !card.open;
       card.els.sum.setAttribute('aria-expanded', String(single || card.open));
       card.els.root.classList.toggle('is-open', single || card.open);
+      const peek = !single && !card.open && refreshPeek(card, checks);
+      card.els.root.classList.toggle('is-peek', peek);
+      card.els.body.hidden = !single && !card.open && !peek;
       card.els.root.classList.toggle('is-published', card.publish.state === 'done');
       refreshAsk(card);
+    }
+
+    /**
+     * What a collapsed card still shows of its form (Kevin, 27 Oct 2026): a
+     * one-off service's first two languages, to tap on and off without opening
+     * it, and every field its checks stop or doubt — a missing time, a date
+     * the poster's weekday disagrees with — and the kind while none is picked.
+     * A field shown stays while somebody is in it, so it does not vanish under
+     * the first letter typed; a field merely focused (the title is, on open)
+     * is not shown for that. True when there is any.
+     */
+    function refreshPeek(card, checks) {
+      const want = new Set(checks.filter(c => c.level === 'block' || c.level === 'warn').map(c => c.field));
+      if (!isPristine(card) && !card.fields.event_type) want.add('event_type');
+      if (SERVICE_KINDS.has(card.fields.event_type) && !card.fields.occurrence) want.add('languages');
+      const active = document.activeElement;
+      let any = false;
+      for (const [f, inp] of Object.entries(card.els.inputs)) {
+        const rowEl = inp.closest('.ee-row');
+        if (!rowEl || !card.els.body.contains(rowEl)) continue;
+        const on = !rowEl.hidden && (want.has(f) || (rowEl.classList.contains('ee-peek-on') && !!active && rowEl.contains(active)));
+        rowEl.classList.toggle('ee-peek-on', on);
+        any = any || on;
+      }
+      // A row inside a pair (the times) or the last day's box shows its box.
+      card.els.body.querySelectorAll('.ee-grid, .ee-multiday-row').forEach(w =>
+        w.classList.toggle('ee-peek-on', !!w.querySelector('.ee-row.ee-peek-on')));
+      return any;
     }
 
     /** The Multi-day tick: on while a last day is set or somebody ticked it. */
@@ -2114,7 +2190,7 @@
 
   // shrinkPoster too: "Suggest edits" adds a poster to a suggested event at
   // the same size the editor stores one (admin.html suggestPage).
-  const api = { open, summaryLine, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
+  const api = { open, summaryLine, summaryParts, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
     textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;

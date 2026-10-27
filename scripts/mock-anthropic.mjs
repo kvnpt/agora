@@ -19,6 +19,9 @@
 //                  festival_mixed: a poster with both categories — a parish festival over
 //                    a weekend (one event, three days) and a Paraklesis every Friday in
 //                    November (a regular service, for a period)
+//                  feasts_november: five services and a lunch, each with its saint —
+//                    for the collapsed cards: one with no time, one whose weekday
+//                    disagrees with its date, two that say no language
 //                  (each written from the photo by hand: what a good read of it says)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
@@ -119,6 +122,27 @@ const DOCS = {
       event_type: 'prayer', description: 'Every Friday in November.', starts: '2026-11-06', until: '2026-11-27', notes: [],
     }],
     details: { address: '', phone: '', email: '', website: '' },
+  },
+  // A Greek parish's November feasts, each service with its commemoration:
+  // what the collapsed cards are for (event-editor.js refreshPeek).
+  feasts_november: {
+    kind: 'poster', written_in: 'Greek', other_parish: null, notes: [], services: [],
+    details: { address: '', phone: '', email: '', website: '' },
+    events: [
+      { title: 'Great Vespers', feast: 'Synaxis of the Archangels', date: '2026-11-07', weekday_printed: 'Saturday', year_printed: false,
+        start_time: '19:00', end_time: '20:00', end_date: '', event_type: 'prayer', languages: ['Greek'], venue: null, description: null, notes: [] },
+      { title: 'Matins and Divine Liturgy', feast: 'Synaxis of the Archangels Michael and Gabriel', date: '2026-11-08', weekday_printed: 'Sunday', year_printed: false,
+        start_time: '07:30', end_time: '10:30', end_date: '', event_type: 'liturgy', languages: ['Greek', 'English'], venue: null, description: null, notes: [] },
+      { title: 'Divine Liturgy', feast: 'Nektarios the Wonderworker', date: '2026-11-09', weekday_printed: 'Tuesday', year_printed: false,
+        start_time: null, end_time: null, end_date: '', event_type: 'liturgy', languages: ['Greek'], venue: null, description: null,
+        notes: [{ field: 'start_time', text: 'The time is cut off at the edge of the poster.' }] },
+      { title: 'Paraklesis to the Theotokos', feast: '', date: '2026-11-13', weekday_printed: 'Friday', year_printed: false,
+        start_time: '19:00', end_time: null, end_date: '', event_type: 'prayer', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Divine Liturgy', feast: 'John Chrysostom', date: '2026-11-13', weekday_printed: 'Friday', year_printed: false,
+        start_time: '07:30', end_time: '09:30', end_date: '', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Parish lunch', feast: '', date: '2026-11-08', weekday_printed: 'Sunday', year_printed: false,
+        start_time: '12:00', end_time: '14:00', end_date: '', event_type: 'social', languages: [], venue: 'The church hall', description: 'After the Liturgy. Bring a plate to share.', notes: [] },
+    ],
   },
   // ΠΡΟΓΡΑΜΜΑ ΜΗΝΟΣ ΟΚΤΩΒΡΙΟΥ: every Saturday and Sunday of October 2026,
   // Orthros and Divine Liturgy, with the day's saint.
