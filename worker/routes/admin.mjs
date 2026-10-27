@@ -413,6 +413,12 @@ async function combineNames(db, payload) {
 }
 
 /**
+ * A subtitle as it is stored (migration 030): the line under the title — the
+ * saint or feast of the day, or the week's topic — trimmed, or null.
+ */
+const subtitle = (v) => (v == null ? null : String(v).trim().slice(0, 200) || null);
+
+/**
  * Write a one-off — the body of POST /api/admin/events, shared with publishing
  * a draft so that one-offs are made one way.
  *
@@ -476,14 +482,14 @@ async function createOneOff(c, b, { posterPath = null } = {}) {
   const row = await env.DB.prepare(
     `INSERT INTO events (parish_id, source_adapter, title, description, start_utc, end_utc,
        location_override, lat, lng, event_type, status, mutation_type, languages,
-       hide_live, parish_scoped, poster_path, location_parish_id, location_lat, location_lng)
-     VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?,?,?,?,?) RETURNING *`
+       hide_live, parish_scoped, poster_path, location_parish_id, location_lat, location_lng, feast)
+     VALUES (?,'manual',?,?,?,?,?,?,?,?,'approved','headless',?,?,?,?,?,?,?,?) RETURNING *`
   ).bind(
     parish_id, title, b.description || null, startUtc, endUtc,
     venue.location_override, pin.lat, pin.lng,
     kind, langList.clean(b.languages),
     b.hide_live ? 1 : 0, parishOnly ? 1 : 0, posterPath,
-    venue.location_parish_id, venue.location_lat, venue.location_lng,
+    venue.location_parish_id, venue.location_lat, venue.location_lng, subtitle(b.feast),
   ).first();
 
   // A place given in words and no pin: looked up. Best-effort — a geocoder
@@ -1422,7 +1428,7 @@ export function registerAdminRoutes(router) {
 
     const {
       status, parish_id, title, description, start_utc, end_utc, event_type,
-      languages, hide_live, parish_scoped,
+      languages, hide_live, parish_scoped, feast,
     } = body;
 
     if (status && !['approved', 'rejected', 'cancelled', 'hidden'].includes(status)) {
@@ -1434,6 +1440,7 @@ export function registerAdminRoutes(router) {
     if (status) put('status', status);
     if (title) put('title', title);
     if (description !== undefined) put('description', description || null);
+    if (feast !== undefined) put('feast', subtitle(feast));
     if (start_utc) put('start_utc', start_utc);
     if (end_utc !== undefined) put('end_utc', end_utc || null);
     if (event_type) put('event_type', event_type);
@@ -3003,15 +3010,15 @@ export function registerAdminRoutes(router) {
       rules.push(await env.DB.prepare(
         `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type,
           languages, week_of_month, hide_live, parish_scoped, location_override, week_parity,
-          effective_from, effective_to, poster_path, description, location_parish_id, location_lat, location_lng)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`
+          effective_from, effective_to, poster_path, description, location_parish_id, location_lat, location_lng, feast)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`
       ).bind(
         parish_id, dow, start_time, b.end_time || null, title,
         b.event_type || 'liturgy', langList.clean(b.languages), b.week_of_month || null,
         b.hide_live ? 1 : 0, b.parish_scoped ? 1 : 0, place.location_override,
         parity, b.effective_from || null, b.effective_to || null,
         b.poster_path || null, (b.description && String(b.description).trim()) || null,
-        place.location_parish_id, place.location_lat, place.location_lng,
+        place.location_parish_id, place.location_lat, place.location_lng, subtitle(b.feast),
       ).first());
       made++;
     }
@@ -3034,7 +3041,7 @@ export function registerAdminRoutes(router) {
     'active', 'languages', 'week_of_month', 'week_parity', 'concurrent', 'hide_live',
     'parish_scoped', 'effective_from', 'effective_to', 'location_override',
     'source_name', 'source_ref', 'source_checked_at', 'description', 'poster_path',
-    'location_parish_id', 'location_lat', 'location_lng'];
+    'location_parish_id', 'location_lat', 'location_lng', 'feast'];
   const BOOL_FIELDS = new Set(['active', 'concurrent', 'hide_live', 'parish_scoped']);
 
   /** A path naming a poster already in R2 under /posters/ — never a URL elsewhere. */
@@ -3056,6 +3063,7 @@ export function registerAdminRoutes(router) {
       }
     }
     if (b.description !== undefined) b.description = (b.description && String(b.description).trim()) || null;
+    if (b.feast !== undefined) b.feast = subtitle(b.feast);
     // A place is written whole: naming any part of it sets all four.
     const v = await readVenue(env.DB, b, { hostParishId: row.parish_id });
     if (v.error) return json({ error: v.error }, 400);
@@ -3237,17 +3245,19 @@ export function registerAdminRoutes(router) {
    * time would otherwise win over the change they just made — so the drawer's
    * fields are applied to that one date too, where applyAdminEdit drops any
    * patch that now equals the rule, and the description, which a rule does
-   * not have, lands here.
+   * not have, lands here. So does the subtitle: the drawer's is this date's
+   * saint as often as not, and one Sunday's saint is no rule's subtitle — the
+   * rule's own is the timetable pencil's (rule-form.js).
    */
   async function alignAnchor(db, scheduleId, date, b) {
     const s = await db.prepare('SELECT * FROM schedules WHERE id = ?').bind(scheduleId).first();
     if (!s || !isValidOccurrence(s, date)) return;
     const has = await db.prepare('SELECT 1 FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?')
       .bind(scheduleId, date).first();
-    if (!has && !b.description) return;
+    if (!has && !b.description && !b.feast) return;
     const body = {};
     for (const k of ['title', 'start_utc', 'end_utc', 'event_type', 'languages', 'location_override',
-      'location_parish_id', 'location_lat', 'location_lng', 'hide_live', 'parish_scoped', 'description']) {
+      'location_parish_id', 'location_lat', 'location_lng', 'hide_live', 'parish_scoped', 'description', 'feast']) {
       if (b[k] !== undefined) body[k] = b[k];
     }
     await applyAdminEdit(db, scheduleId, date, body);

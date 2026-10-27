@@ -1548,3 +1548,42 @@ test('a rule is created with a flyer’s poster and words, and only a poster pat
   assert.equal((await f.call('DELETE', `/api/admin/schedules/${second.body.id}`)).status, 200);
   assert.ok(b.deleted.includes('posters/draft-9.jpg'), b.deleted.join(','));
 });
+
+// ── the subtitle (migration 030) ──
+
+test('a one-off keeps its subtitle apart from its title, and an edit sets or clears it', async () => {
+  const { raw, call } = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(raw);
+  const r = await call('POST', '/api/admin/events', {
+    parish_id: parishId, title: 'Matins and Divine Liturgy', feast: '  Holy Protection of the Theotokos ',
+    start_utc: '2026-09-14T20:30:00.000Z', event_type: 'liturgy', languages: JSON.stringify(['Greek']),
+  });
+  assert.equal(r.status, 201, r.body && r.body.error);
+  const row = () => raw.prepare('SELECT title, feast FROM events WHERE id = ?').get(r.body.id);
+  assert.deepEqual({ ...row() }, { title: 'Matins and Divine Liturgy', feast: 'Holy Protection of the Theotokos' });
+  await call('PATCH', `/api/admin/events/${r.body.id}`, { feast: 'Anastasia of Rome' });
+  assert.equal(row().feast, 'Anastasia of Rome');
+  await call('PATCH', `/api/admin/events/${r.body.id}`, { feast: '' });
+  assert.equal(row().feast, null, 'an empty subtitle is none');
+  await call('PATCH', `/api/admin/events/${r.body.id}`, { title: 'Divine Liturgy' });
+  assert.equal(row().feast, null, 'an edit that does not name it leaves it');
+});
+
+test("a rule's subtitle is on every date, and a date's own wins over it", async () => {
+  const { raw, db, call } = fresh({ role: 'editor' });
+  const [parishId] = twoParishes(raw);
+  const inst = await firstInstance(db, parishId);
+  const [sid, date] = splitInstance(inst.id);
+  assert.equal(inst.feast, null);
+  const p = await call('PATCH', `/api/admin/schedules/${sid}`, { feast: ' St Joseph the Betrothed ' });
+  assert.equal(p.status, 200, p.body && p.body.error);
+  assert.equal(raw.prepare('SELECT feast FROM schedules WHERE id = ?').get(sid).feast, 'St Joseph the Betrothed');
+  assert.equal((await expandOne(db, sid, date)).feast, 'St Joseph the Betrothed');
+  // The drawer saved with the rule's subtitle as it stood writes no patch.
+  await call('PATCH', `/api/admin/events/${inst.id}`, { feast: 'St Joseph the Betrothed' });
+  const o = () => raw.prepare('SELECT patch_feast FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sid, date);
+  assert.equal(o() ? o().patch_feast : null, null);
+  await call('PATCH', `/api/admin/events/${inst.id}`, { feast: 'Luke the Evangelist' });
+  assert.equal(o().patch_feast, 'Luke the Evangelist');
+  assert.equal((await expandOne(db, sid, date)).feast, 'Luke the Evangelist');
+});

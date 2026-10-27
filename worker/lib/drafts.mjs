@@ -111,7 +111,7 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * `occurrence` is "sid:YYYY-MM-DD" when the card is a regular service on its
  * own date — a programme's Sunday with its saint — rather than an event of its
  * own: publishing writes it onto that occurrence (an override), not beside it.
- * `feast` is the commemoration such a card carries.
+ * `feast` is the subtitle such a card carries: the commemoration, or the topic.
  */
 export const CARD_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
   'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence',
@@ -592,22 +592,24 @@ export function draftPosterKey(parishId, ext) {
 }
 
 /**
- * A card's title as an event's. An event has no feast of its own — only an
- * occurrence of a rule does (`patch_feast`) — so a one-off that carries one
- * says it in its title, as the editor's hint tells the person.
+ * A card's subtitle as an event's (events.feast, migration 030): the line
+ * under the title. Until 030 a one-off had none, and publishing glued it on —
+ * "Matins and Divine Liturgy — Holy Protection of the Theotokos". A subtitle
+ * the title already says ("Feast of St Nicholas", "St Nicholas") is none.
  */
-export function oneOffTitle(card) {
+export function oneOffFeast(card) {
   const title = String(card.title || '').trim();
   const feast = String(card.feast || '').trim();
-  if (!feast || titleKey(title).includes(titleKey(feast))) return title;
-  return `${title} — ${feast}`.slice(0, 200);
+  if (!feast || titleKey(title).includes(titleKey(feast))) return null;
+  return feast.slice(0, 200);
 }
 
 /** What a card becomes as a POST /api/admin/events body, less the instants. */
 export function publishBody(card, parishId) {
   return {
     parish_id: parishId,
-    title: oneOffTitle(card),
+    title: String(card.title || '').trim(),
+    feast: oneOffFeast(card),
     event_type: card.event_type || 'other',
     description: card.description || null,
     languages: card.languages && card.languages !== '[]' ? card.languages : null,

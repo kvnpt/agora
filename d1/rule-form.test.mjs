@@ -54,7 +54,7 @@ test("a form's values are the request the routes take, every empty a null", () =
     cadence: 'wom', weeks: ['last'], parity: 'a',
   });
   assert.deepEqual(body, {
-    title: 'Vespers', day_of_week: 6, days: [6], start_time: '18:00', end_time: null, event_type: 'prayer',
+    title: 'Vespers', feast: null, day_of_week: 6, days: [6], start_time: '18:00', end_time: null, event_type: 'prayer',
     languages: '["English","Arabic"]', description: null, hide_live: 1, parish_scoped: 0,
     effective_from: null, effective_to: '2026-12-31',
     location_override: null, location_parish_id: null, location_lat: null, location_lng: null,

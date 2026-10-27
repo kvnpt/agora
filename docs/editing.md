@@ -319,9 +319,21 @@ the card leaves empty is not "clear it" — a note somebody put on that Sunday
 survives (`occurrenceBody`). The card says which service it changes where the
 combine would be, and **Make it a separate event instead** unlinks it; so does
 changing its date, and so does moving the draft, since the rule was the old
-parish's. A one-off with a feast says it in its title (`oneOffTitle`), because
-`events` has no feast column. Publish checks the link again — the date is still
-the occurrence's and the rule still the parish's — and refuses otherwise.
+parish's. Publish checks the link again — the date is still the occurrence's
+and the rule still the parish's — and refuses otherwise.
+
+**A subtitle is the line under the title** — the field is `feast` everywhere,
+for history, and the forms call it Subtitle. It is the saint or feast of the
+day, or a talk's topic: "Matins and Divine Liturgy" over "Holy Protection of
+the Theotokos", "Men's Group" over "St Joseph the Betrothed". A date of a rule
+has it as `patch_feast`; a one-off as `events.feast`, and a rule as
+`schedules.feast`, every date showing the rule's unless it has its own
+(migration 030, `project.mjs`). Until 030 a one-off had no such column, so
+publishing glued the two into one title with an em dash; `oneOffFeast` now
+writes it where it belongs, and leaves it out when the title already says it
+("Feast of St Nicholas"). A "this and every following" edit keeps the drawer's
+subtitle on its own date (`alignAnchor`): one Sunday's saint is no rule's
+subtitle, and the rule's own is edited behind the timetable's pencil.
 
 **A sign is read into the timetable, not into events.** The board out the front
 gives a parish's weekly services and its details. The reader calls that image a

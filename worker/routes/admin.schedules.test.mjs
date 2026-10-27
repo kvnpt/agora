@@ -89,3 +89,13 @@ test('a day that is not a weekday is refused, and one day still works the old wa
   assert.equal(one.status, 201);
   assert.equal(one.body.day_of_week, 2);
 });
+
+test('a service is added with its subtitle, on every day ticked', async () => {
+  const { raw, call, rule } = fresh();
+  const made = await call('POST', '/api/admin/schedules', {
+    parish_id: rule.parish_id, days: [2, 4], start_time: '19:13', title: 'Men’s Group', feast: 'St Joseph the Betrothed', event_type: 'social',
+  });
+  assert.equal(made.status, 201, made.body && made.body.error);
+  const rows = raw.prepare("SELECT title, feast FROM schedules WHERE parish_id = ? AND start_time = '19:13'").all(rule.parish_id);
+  assert.deepEqual(rows.map(r => [r.title, r.feast]), [['Men’s Group', 'St Joseph the Betrothed'], ['Men’s Group', 'St Joseph the Betrothed']]);
+});
