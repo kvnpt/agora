@@ -737,7 +737,7 @@
           ${host.may('schedule.edit', series.rule.parish_id) ? '<button type="button" class="ev-link" data-ev-series>Edit the service</button>' : ''}
         </div>` : ''}
       <div class="edit-row"><label>Title</label><input ${f('title')} value="${esc(e.title || '')}" autocomplete="off"></div>
-      ${series ? `<div class="edit-row"><label>Commemoration</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="St Luke the Evangelist (optional)" autocomplete="off"></div>` : ''}
+      <div class="edit-row"><label>Subtitle</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="The saint or feast, or the topic (optional)" autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${f('description')} rows="2" placeholder="Optional">${esc(e.description || '')}</textarea></div>
       <div class="edit-row"><label>Kind</label><select ${f('event_type')} data-kind-picker="buttons">${kinds}</select></div>
       ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
@@ -994,8 +994,8 @@
       };
       for (const k of VENUE) { const x = v(k); body[k] = x === '' || x == null ? null : (k.endsWith('_lat') || k.endsWith('_lng') ? Number(x) : x); }
       if (q('hide_live')) body.hide_live = v('hide_live');
-      if (series) body.feast = v('feast') || null;
-      else body.parish_id = pid;
+      body.feast = v('feast') || null;
+      if (!series) body.parish_id = pid;
 
       // A date of a service asks which dates: the earlier ones keep what
       // they were, and this card follows the date onto the new rule.

@@ -669,7 +669,7 @@
         </button>
         <div class="ee-body">
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
-          ${row('feast', 'Commemoration', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day" autocomplete="off">`,
+          ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
           ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="2" placeholder="Optional"></textarea>`)}
           ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker="buttons"><option value="">Choose a kind</option>${kinds}</select>`)}
@@ -1040,7 +1040,7 @@
       card.els.combine.hidden = !!occ;
       card.els.feastHint.textContent = occ
         ? 'Shown under the service’s name on that day.'
-        : 'A one-off event has no line for it, so it is added to the title when published.';
+        : 'Shown under the title.';
       card.els.feastHint.hidden = !String(card.fields.feast || '').trim();
       if (!occ) return;
       const rule = (state.rules || []).find(r => String(r.id) === occ.split(':')[0]);

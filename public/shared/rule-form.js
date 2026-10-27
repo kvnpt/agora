@@ -112,6 +112,7 @@
     const num = (x) => (x === '' || x == null || !Number.isFinite(Number(x)) ? null : Number(x));
     return {
       title: text(v.title),
+      feast: text(v.feast),
       day_of_week: days.length ? days[0] : null,
       days,
       start_time: v.start_time || null,
@@ -269,6 +270,7 @@
       `<input type="hidden" ${field(name)} value="${esc(value || '')}" data-time-field data-tf-name="${name}"${extra}>`;
     return `
       <div class="edit-row"><label>Title</label><input ${field('title')} value="${esc(rule.title || '')}" placeholder="Divine Liturgy" autocomplete="off"></div>
+      <div class="edit-row"><label>Subtitle</label><input ${field('feast')} value="${esc(rule.feast || '')}" placeholder="Shown under the title on every date (optional)" autocomplete="off"></div>
       <div class="edit-row"><label>Kind</label><select ${field('event_type')} data-kind-picker="buttons">${kinds}</select></div>
       <div class="edit-row"><label>Days</label>${daysHTML(days)}</div>
       <div class="edit-row edit-pair">

@@ -84,7 +84,9 @@ export function project(s, date, o, cache) {
     // The occurrence's own words, else the rule's (a weekly activity's flyer
     // text: "Led by Simon Yazbek. All are welcome").
     description: (o && o.patch_description) || s.description || null,
-    feast: (o && o.patch_feast) || null,
+    // The line under the title: this date's saint or topic, else the rule's
+    // own subtitle (migration 030) — "Men's Group" is under St Joseph.
+    feast: (o && o.patch_feast) || s.feast || null,
     start_utc: cache.toUtcISO(zone, date, startTime),
     end_utc: endTime ? cache.toUtcISO(zone, date, endTime) : null,
     // Local wall clock and zone, so the client renders parish-local time without

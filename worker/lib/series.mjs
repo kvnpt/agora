@@ -33,7 +33,7 @@ export const RULE_COLS = ['parish_id', 'day_of_week', 'start_time', 'end_time', 
   'active', 'languages', 'week_of_month', 'concurrent', 'hide_live', 'parish_scoped',
   'effective_from', 'effective_to', 'location_override', 'source_name', 'source_ref',
   'source_checked_at', 'week_parity', 'poster_path', 'description',
-  'location_parish_id', 'location_lat', 'location_lng'];
+  'location_parish_id', 'location_lat', 'location_lng', 'feast'];
 
 /**
  * The drawer's form, read as a change to the RULE.

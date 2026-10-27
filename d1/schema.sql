@@ -266,7 +266,12 @@ CREATE TABLE schedules (
   -- as a square marker of its own.
   location_parish_id TEXT,
   location_lat      REAL,
-  location_lng      REAL
+  location_lng      REAL,
+
+  -- The line under the title on every date (migration 030): "Men's Group" is
+  -- the title and "St Joseph the Betrothed" what it is under. A date's own
+  -- (schedule_overrides.patch_feast, that day's saint or topic) wins over it.
+  feast             TEXT
 );
 
 CREATE INDEX idx_schedules_parish ON schedules(parish_id);
@@ -316,7 +321,13 @@ CREATE TABLE events (
   -- there is one.
   location_parish_id TEXT,
   location_lat      REAL,
-  location_lng      REAL
+  location_lng      REAL,
+
+  -- The line under the title (migration 030): the saint or feast the date
+  -- commemorates, or a talk's topic. "Matins and Divine Liturgy" is the title
+  -- and "Holy Protection of the Theotokos" this. Before 030 a one-off had no
+  -- such line, so publishing glued it on: "Matins and Divine Liturgy — …".
+  feast             TEXT
 );
 
 -- Multiple NULLs are permitted by SQLite, so hand-entered events without a
@@ -1145,8 +1156,7 @@ CREATE TABLE draft_events (
   -- (matchOccurrences in worker/lib/drafts.mjs); a person can unlink it.
   occurrence        TEXT,
   -- The saint or feast the date commemorates: an occurrence's patch_feast,
-  -- the "✛" line under the service. A one-off has no feast column, so it says
-  -- it in its title when published.
+  -- the line under the service, or a one-off's own events.feast (030).
   feast             TEXT,
   -- Migration 022. The last day of one event over several days — a festival
   -- from Friday to Sunday — with end_time the time it ends on that day. NULL

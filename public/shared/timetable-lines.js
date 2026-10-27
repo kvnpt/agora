@@ -70,7 +70,7 @@
     const lines = new Map();
     for (const r of rules) {
       const q = qualifier(r), range = ruleRange(r, today), off = offOf(r) || '';
-      const key = [r.title, r.event_type, r.start_time, q, r.languages || '', range, off].join('|');
+      const key = [r.title, r.feast || '', r.event_type, r.start_time, q, r.languages || '', range, off].join('|');
       if (!lines.has(key)) lines.set(key, { r, days: [], ids: [], q, range, off, evening: isEvening(r) });
       lines.get(key).days.push(r.day_of_week);
       lines.get(key).ids.push(r.id);
