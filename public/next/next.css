@@ -37,6 +37,8 @@
   --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.18);
   --success: #16a34a;
   --danger: #dc3545;
+  /* The foot's heart. */
+  --heart: #e0566a;
   /* The gum-tree loader's (app.css). */
   --loading-bg: rgba(252, 250, 243, 0.82);
   --tree-fill: #4f6e41;
@@ -75,6 +77,7 @@
     --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
     --success: #4ade80;
     --danger: #f4677a;
+    --heart: #e86f80;
     --loading-bg: rgba(15, 15, 18, 0.92);
     --tree-fill: #6a8a5c;
     --tree-outline: #2a3526;
@@ -1812,3 +1815,18 @@ body.dialog-open { overflow: hidden; }
   text-align: center; font-size: 13px; color: var(--text-3);
 }
 .lite-switch a { color: var(--text-2); text-decoration: underline; }
+
+/* The foot under it (index.html): fainter still, its links only a shade
+   darker than its words, and the heart a quiet red. */
+.lite-switch:has(+ .foot) { padding-bottom: 0; }
+.foot {
+  padding: 22px var(--pad) calc(28px + env(safe-area-inset-bottom));
+  text-align: center; font-size: 12.5px; line-height: 1.6; color: var(--text-3);
+}
+.foot p { margin: 0 0 10px; }
+.foot .foot-end { margin: 0; }
+.foot-link {
+  padding: 0; border: 0; background: none; font: inherit; cursor: pointer;
+  color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 2px;
+}
+.foot-heart { color: var(--heart); vertical-align: -1px; }

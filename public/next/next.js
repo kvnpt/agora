@@ -1978,6 +1978,31 @@
     window.AgoraSuggest.open({ parishId: pid, parishName: p.full_name || p.name, services: window.AgoraSuggest.servicesFor(pid), about });
   }
 
+  // The foot of the page's "Become an editor" (index.html): the same form,
+  // asking which parish first (those in view, then each jurisdiction's),
+  // with "Add me as a permanent editor" ticked and "Something else" chosen
+  // (Kevin, 27 Oct 2026). The only parish in view is chosen already.
+  function becomeEditor() {
+    const ps = S.parishes.filter(p => p.id !== '_unassigned');
+    if (!ps.length || !window.AgoraSuggest) return;
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+    const seen = S.inView && S.inView.size < ps.length ? ps.filter(p => S.inView.has(p.id)).sort(byName) : [];
+    const rest = ps.filter(p => !seen.includes(p));
+    const parishes = [
+      { label: 'In view', parishes: seen },
+      ...JURIS_ORDER.map(j => ({ label: JURIS[j].long, parishes: rest.filter(p => p.jurisdiction === j).sort(byName) })),
+      { label: 'Other', parishes: rest.filter(p => !JURIS[p.jurisdiction]).sort(byName) },
+    ].filter(g => g.parishes.length);
+    window.AgoraSuggest.open({ title: 'Become an editor', parishes, parishId: seen.length === 1 ? seen[0].id : null, about: 'Something else', editor: true });
+  }
+  /** The foot's Disclaimer, a card of its own. */
+  function openDisclaimer() {
+    pushSheet(`<div class="lay-head"><h2>Disclaimer</h2><button class="gbtn" type="button" data-act="close" aria-label="Close">${I.x}</button></div>
+      <div class="sheet-scroll">
+        <p class="lay-note">Best efforts have been made to aggregate canonical Eastern Orthodox parishes in Oceania based on archdiocese and other jurisdictional directory websites.</p>
+      </div>`, 'mini');
+  }
+
   /** "Updated 3 months ago · Antiochian Archdiocese ↗", as the app has it. */
   const timesSource = (pid) => window.AgoraSourceLine.timetableSourceHTML(rulesOf(pid).filter(liveRule), { cls: 'src-line' });
   const detailsSource = (p) => window.AgoraSourceLine.detailsSourceHTML(p, { cls: 'src-line' });
@@ -3239,6 +3264,17 @@
         return;
       }
       suggest(pid, b.dataset.suggest);
+      return;
+    }
+    if (t.closest('[data-become-editor]')) { becomeEditor(); return; }
+    if (t.closest('[data-disclaimer]')) { openDisclaimer(); return; }
+    // A link on the page to one of the site's own (/smg), opened in place as
+    // a link inside it is; a new tab, or a parish not loaded yet, follows it.
+    if ((b = t.closest('a[data-go]'))) {
+      const path = b.getAttribute('href');
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || !readPath(path).parish) return;
+      ev.preventDefault();
+      go(path);
       return;
     }
     if ((b = t.closest('[data-poster]'))) { openPoster(b.dataset.poster); return; }
