@@ -1254,7 +1254,16 @@ body.dialog-open { overflow: hidden; }
 .fs-way:disabled { opacity: .55; }
 .fs-asking .fs-title { visibility: hidden; }
 @keyframes fs-ways-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
-.fs-primary { justify-self: end; background: var(--success); color: #fff; }
+.fs-right { justify-self: end; display: flex; align-items: center; gap: 6px; }
+.fs-primary { background: var(--success); color: #fff; }
+/* The form's Delete, a red bin beside Save (form-sheet.js hoist). */
+.fs-delete {
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; padding: 0;
+  color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.fs-delete:disabled { opacity: .55; }
+.fs-delete[hidden] { display: none; }
 .fs-primary:disabled { opacity: .55; }
 .fs-primary[hidden] { display: none; }
 @media (prefers-color-scheme: dark) { .fs-primary { color: #052e16; } }
@@ -1408,9 +1417,9 @@ body.dialog-open { overflow: hidden; }
 .edit-row-hint-bad { color: var(--danger); font-weight: 600; }
 .rf-dates-hint { margin: -8px 0 14px; }
 .rf-error { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: var(--danger); }
-/* A form has no foot: Save is in its bar (form-sheet.js), and what is left
-   (Delete, the logo's Back) is the end of the form, not a row stuck over it
-   (Kevin, 27 Oct 2026: it covered the fields above the keyboard). */
+/* A form has no foot: Save and Delete are in its bar (form-sheet.js), and
+   what is left (the logo's Back) is the end of the form, not a row stuck
+   over it (Kevin, 27 Oct 2026: it covered the fields above the keyboard). */
 .frame-body .form-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .escalate-modal .btn-danger {
   margin-left: auto; min-height: 44px; padding: 11px 22px; border-radius: 999px;
