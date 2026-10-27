@@ -200,15 +200,25 @@
     // in the moment before this catches up; the form gets room below its
     // end, and the field being typed in is brought up above the keyboard
     // (Kevin, 27 Oct 2026).
+    // Only for a field that takes typing: a time box (time-field.js) holds
+    // its keyboard back with inputmode="none", and iOS's bar for it alone
+    // is not a keyboard, so nothing here moves for it. "Custom time…" asks
+    // for the keyboard from that box while it is focused, and stopped
+    // getting one once the form moved under it (Kevin, 27 Oct 2026).
     const vv = root.visualViewport;
-    const reveal = () => requestAnimationFrame(() => {
+    const typingIn = () => {
       const el = document.activeElement;
-      if (!el || !body.contains(el) || !el.matches('input, textarea, select, [contenteditable]')) return;
+      return el && body.contains(el) && el.matches('input, textarea, select, [contenteditable]')
+        && el.getAttribute('inputmode') !== 'none' ? el : null;
+    };
+    const reveal = () => requestAnimationFrame(() => {
+      const el = typingIn();
+      if (!el) return;
       const r = el.getBoundingClientRect(), b = body.getBoundingClientRect(), room = 24;
       if (r.top < b.top + room || r.height > b.height - 2 * room) body.scrollTop -= b.top + room - r.top;
       else if (r.bottom > b.bottom - room) body.scrollTop += r.bottom - b.bottom + room;
     });
-    const keyboardUp = () => document.documentElement.clientHeight - vv.height * vv.scale > 120;
+    const keyboardUp = () => !!typingIn() && document.documentElement.clientHeight - vv.height * vv.scale > 150;
     const fit = () => {
       back.style.top = `${vv.offsetTop}px`;
       back.style.height = `${vv.height}px`;

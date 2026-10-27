@@ -1464,7 +1464,7 @@ body.dialog-open { overflow: hidden; }
 }
 .tf.tf-up .tf-list { top: auto; bottom: calc(100% + 4px); }
 .tf-list[hidden] { display: none; }
-.tf-head { flex: none; display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
+.tf-head { flex: none; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
 .tf-slots { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .tf-item {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%;
@@ -1472,10 +1472,7 @@ body.dialog-open { overflow: hidden; }
 }
 .tf-item:hover, .tf-item:focus-visible { background: var(--card-2); outline: none; }
 .tf-item.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
-/* "Custom time…" is a field of its own (time-field.js), the form's look and
-   at 16px so iOS does not zoom to it. */
-.tf-list .tf-custom::placeholder { color: var(--accent); font-weight: 600; opacity: 1; }
-.tf-list .tf-custom.tf-bad { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
+.tf-item.tf-custom { font-weight: 600; color: var(--accent); white-space: nowrap; }
 .tf-item.tf-none { color: var(--text-2); white-space: nowrap; }
 /* A date: a field-shaped button over the browser's own calendar. */
 .df { position: relative; }

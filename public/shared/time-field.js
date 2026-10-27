@@ -7,9 +7,9 @@
 // in the form, and every reader of `.value` keeps working untouched. The
 // visible box shows "9:30 am"; tapping it opens the quarter-hours, the first
 // entry of which is "Custom time", for the 6:05 Vespers nobody rounds. Typing
-// works too — straight away with a keyboard, and on a phone in "Custom
-// time", a field of its own at the top of the list (the box holds back the
-// on-screen keyboard, since most picks are a tap on the list).
+// works too — straight away with a keyboard, and on a phone once "Custom
+// time" has asked for one (the box holds back the on-screen keyboard until
+// then, since most picks are a tap on the list).
 //
 //   data-tf-optional     the field may be empty; the list offers "No time"
 //   data-tf-none="…"     what that entry says ("No end time")
@@ -136,13 +136,9 @@
 
     // "Custom time" (and "No end time") stay put above the quarter-hours,
     // which scroll: the way to type a time is never scrolled out of sight.
-    // It is a field a person taps, not a button that focuses the box for
-    // them: iOS brings its keyboard up for a tap on a field, and not
-    // reliably for a focus() from code (Kevin, 27 Oct 2026).
     const renderList = () => {
       const cur = proto.get.call(field);
-      list.innerHTML = `<div class="tf-head"><input type="text" class="tf-custom" data-tf-custom placeholder="Custom time…"
-          inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Custom time">`
+      list.innerHTML = `<div class="tf-head"><button type="button" class="tf-item tf-custom" data-tf-custom>Custom time…</button>`
         + (optional ? `<button type="button" class="tf-item tf-none${cur ? '' : ' on'}" data-tf-value="">${esc(noneLabel)}</button>` : '')
         + `</div><div class="tf-slots">`
         + slots().map(s => `<button type="button" class="tf-item${s === cur ? ' on' : ''}" role="option" aria-selected="${s === cur}" data-tf-value="${s}">${formatTime(s)}</button>`).join('')
@@ -169,21 +165,12 @@
       const target = pane.querySelector(`[data-tf-value="${nearestSlot(near || '09:00')}"]`);
       if (target) pane.scrollTop = target.offsetTop - pane.offsetTop - pane.clientHeight / 2 + target.offsetHeight / 2;
     };
-    // Closed with something in "Custom time", by a tap anywhere else, that
-    // is the time: one that will not read goes into the box, red, as a typed
-    // one does, so Save stops on it.
     const close = () => {
       if (list.hidden) return;
-      const custom = list.querySelector('[data-tf-custom]');
-      const typed = custom ? custom.value.trim() : '';
       list.hidden = true;
       list.innerHTML = '';
       wrap.classList.remove('open', 'tf-up');
       text.setAttribute('aria-expanded', 'false');
-      if (!typed) return;
-      const t = parseTime(typed);
-      if (t) set(t);
-      else { text.value = typed; wrap.classList.add('tf-bad'); }
     };
     // What was typed, taken when the box is left or Enter is pressed. A time
     // that will not read keeps the box red and the field as it was, so Save
@@ -199,6 +186,14 @@
       if (t) { set(t); return true; }
       wrap.classList.add('tf-bad');
       return false;
+    };
+    const typing = () => {
+      text.setAttribute('inputmode', 'text');
+      close();
+      // A fresh focus is what brings the on-screen keyboard up.
+      text.blur();
+      text.focus();
+      text.select();
     };
 
     text.addEventListener('focus', () => { if (text.getAttribute('inputmode') === 'none') open(); });
@@ -218,31 +213,12 @@
         text.setAttribute('inputmode', 'none');
       }, 0);
     });
-    // pointerdown, so a tap on the list does not first blur the box; the
-    // custom field takes its tap, and the keyboard with it.
-    list.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-tf-custom]')) e.preventDefault(); });
-    list.addEventListener('input', (e) => { if (e.target.closest('[data-tf-custom]')) e.target.classList.remove('tf-bad'); });
-    list.addEventListener('keydown', (e) => {
-      const custom = e.target.closest('[data-tf-custom]');
-      if (!custom) return;
-      if (e.key === 'Enter') {
-        // Done with one that will not read keeps it, red, to fix.
-        e.preventDefault();
-        const typed = custom.value.trim();
-        if (typed && !parseTime(typed)) { custom.classList.add('tf-bad'); return; }
-        close();
-      } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); custom.value = ''; close(); }
-    });
-    list.addEventListener('focusout', (e) => {
-      if (!e.target.closest('[data-tf-custom]')) return;
-      setTimeout(() => { if (!wrap.contains(document.activeElement)) close(); }, 0);
-    });
+    // pointerdown, so a tap on the list does not first blur the box.
+    list.addEventListener('pointerdown', (e) => e.preventDefault());
     list.addEventListener('click', (e) => {
+      if (e.target.closest('[data-tf-custom]')) { typing(); return; }
       const item = e.target.closest('[data-tf-value]');
       if (!item) return;
-      // A time picked from the list, not what was half typed above it.
-      const custom = list.querySelector('[data-tf-custom]');
-      if (custom) custom.value = '';
       set(item.dataset.tfValue);
       close();
       text.setAttribute('inputmode', 'none');
