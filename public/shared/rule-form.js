@@ -246,7 +246,7 @@
     return `<div class="rf-poster" data-rf-poster>
         <img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(rule.poster_path)}"` : ' hidden'} data-rf-poster-view>
         <div class="rf-poster-actions">
-          <button class="rf-btn" type="button" data-rf-poster-pick>${PICTURE}<span>${has ? 'Replace' : 'Add a poster'}</span></button>
+          <button class="rf-btn" type="button" data-rf-poster-pick>${PICTURE}<span>${has ? 'Replace' : 'Add an image'}</span></button>
           <button class="rf-btn danger" type="button" data-rf-poster-clear${has ? '' : ' hidden'}>Remove</button>
         </div>
         <input type="file" accept="image/*" hidden data-rf-poster-input>
@@ -385,7 +385,7 @@
       if (src) thumb.src = src; else thumb.removeAttribute('src');
       thumb.hidden = !src;
       clearBtn.hidden = !src;
-      pickBtn.querySelector('span').textContent = src ? 'Replace' : 'Add a poster';
+      pickBtn.querySelector('span').textContent = src ? 'Replace' : 'Add an image';
     };
     pickBtn.addEventListener('click', () => { input.value = ''; input.click(); });
     input.addEventListener('change', async () => {

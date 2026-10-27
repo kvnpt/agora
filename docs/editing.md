@@ -247,8 +247,13 @@ chosen, the image is shrunk in the browser to 2048px, stored once in R2 under a
 key of its own (one object for every event published from it, like a bulletin
 range), and read by Claude Haiku 4.5 (`worker/lib/poster-read.mjs`). The read
 streams back as Server-Sent Events and the cards fill as it is written; a
-poster with several events becomes several cards, collapsed to one line each so
-they can be checked at a glance. **The read fills only empty fields** — in the
+poster with several events becomes several cards, each collapsed to its row as
+the feed will draw it (time and day, the kind's roundel, title, subtitle) so
+they can be checked at a glance. A collapsed card still shows what needs a
+person (`refreshPeek`): a one-off service's first two languages, to tap, and
+every field its checks stop or doubt — a missing time, a date the poster's
+weekday disagrees with — answered right there without opening it.
+**The read fills only empty fields** — in the
 editor and again when the Worker merges it — so nothing a person typed, before
 the drop or during the read, is overwritten. It runs under `waitUntil`, so
 closing the dialog mid-read still leaves the cards filled next time. Without
@@ -353,7 +358,7 @@ differ, offer **Use the sign's**; an address is changed in the parish's details,
 where the pin moves with it.
 
 The timetable has its own way in: **Add schedule** (the dotted **Add +**
-under the service times) opens a dialog with **From a photo of the sign** above
+under the service times) opens a dialog with **Add an image** (a photo of the sign) above
 the fields for typing a service. The fields are `public/shared/rule-form.js`,
 and the pencil is on each line of the grouped timetable.
 
@@ -369,7 +374,7 @@ day before today (deleted, if it had not started), so it waits under Ended
 services. Ticking it again later adds a fresh rule for the day (Bring back
 instead revives the old one, with what its later dates held). One day of the line can still be picked and edited on its own.
 
-**From a photo of the sign** is the add-event editor and the same read, opened expecting a timetable (`intent:
+**Add an image** (a photo of the sign) is the add-event editor and the same read, opened expecting a timetable (`intent:
 'timetable'`): its empty event card stays out of the way and the dialog says
 "Add to the timetable". A photo that turns out not to be a sign is **caught**
 rather than trusted — a poster for a one-off, or a month's programme, says so in

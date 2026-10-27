@@ -303,8 +303,8 @@
     // one by one beside what is on file (event-editor.js, intent 'timetable').
     d.form.insertAdjacentHTML('afterbegin', `
       <button type="button" class="sap-drop" data-sign>
-        <span class="sap-title">From a photo of the sign</span>
-        <span class="sap-sub">The board out the front, or a printed timetable. Nothing is added until you say so.</span>
+        <span class="sap-title">Add an image</span>
+        <span class="sap-sub">A photo of the board out the front, or a printed timetable. Nothing is added until you say so.</span>
       </button>
       <input type="file" accept="image/*" hidden data-sign-input>
       <div class="schedule-add-or">or type it in</div>`);
@@ -606,7 +606,7 @@
       <div class="rf-poster">
         <img class="rf-poster-thumb" alt="The poster"${has ? ` src="${esc(e.poster_path)}"` : ' hidden'} data-evp-view>
         <div class="rf-poster-actions">
-          <button class="rf-btn" type="button" data-evp-pick>${PICTURE}<span>${has && !ruleOwn ? 'Replace' : 'Add a poster'}</span></button>
+          <button class="rf-btn" type="button" data-evp-pick>${PICTURE}<span>${has && !ruleOwn ? 'Replace' : 'Add an image'}</span></button>
           ${has && !ruleOwn ? `<button class="rf-btn danger" type="button" data-evp-clear>${shared ? 'Remove from this one' : 'Remove'}</button>` : ''}
           ${shared ? '<button class="rf-btn danger" type="button" data-evp-clear="everywhere">Remove everywhere</button>' : ''}
         </div>
