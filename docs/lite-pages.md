@@ -89,7 +89,8 @@ keep them saying the same thing.
 - the pin follows the page's rules (`firstEventOnDay` in `url-state.js`): an id pins its
   event, a day pins only an event ON that day, a service, weekday, part of the day
   (`/sgr/evening`, split at 2pm on the parish's clock), kind (`/sgr/talks`) or
-  language (`/sgr/en`) pins the next that answers, which is the event the page
+  language (`/sgr/en`) or a word nothing else claims (`/smmp/disco`, read as the
+  search box reads it, a season ahead, noindex) pins the next that answers, which is the event the page
   opens in front of the parish's card, and its head names it; the card painted is
   still the parish's; a synthetic id lists the other dates of the same rule;
 - times in the parish's zone. An event over more than one day reads as its span ("Fri 13

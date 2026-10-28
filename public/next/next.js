@@ -107,6 +107,8 @@
     // `day` is one weekday or several, as services.js holds them (null, 3, [3, 5]).
     kind: null, kindSub: null, lang: null, langStrict: false, day: null, dayGroup: null, part: null, service: null,
     location: null, monasteries: false, parishIds: null, listId: null, timesOnly: false,
+    // A parish link's own words (/smmp/disco): what is asked of its card, as the search box reads them.
+    words: null,
   });
   S.f = blankFilters();
 
@@ -469,6 +471,10 @@
   const weekdayOf = (key) => new Date(key + 'T00:00:00Z').getUTCDay();
   /** Does a rule or an event answer what the filters ask: its kind, service, day and part of the day? */
   function whatMatches(row, f, isRule) {
+    if (f.words) {
+      const Q = wordsQ(f.words);
+      if (Q && !window.AgoraSearch.answers(row, Q, whereWhen(row, isRule))) return false;
+    }
     if (!window.AgoraTimetable.kindMatches(row, f)) return false;
     if (f.service && !window.AgoraServices.serviceMatches(f.service, row)) return false;
     const dow = isRule ? row.day_of_week : weekdayOf(local(row).date);
@@ -478,6 +484,29 @@
     return true;
   }
   const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.dayGroup || f.part);
+  /**
+   * Where and when a row is, as search-words.js asks it: an event's date and
+   * time on its parish's clock, and whether its parishes hold a service in a
+   * language. A rule happens on a weekday, which it carries.
+   */
+  function whereWhen(row, isRule) {
+    const ids = isRule ? [row.parish_id] : eventParishIds(row);
+    const parishLang = (lang) => ids.some(id => hasLang(S.byId.get(id), lang));
+    if (isRule) return { parishLang };
+    const l = local(row);
+    return { date: l.date, hm: l.hm, parishLang };
+  }
+  const wordsQs = new Map();
+  /** What a link's words ask (/smmp/disco → "disco"), or null when they ask nothing ("the"). */
+  function wordsQ(words) {
+    if (!words || !words.length) return null;
+    const SW = window.AgoraSearch, t = todayKey(), k = `${t}|${words.join('/')}`;
+    if (!wordsQs.has(k)) {
+      const Q = SW.parseQuery(SW.phraseOf(words), t);
+      wordsQs.set(k, SW.asks(Q) ? Q : null);
+    }
+    return wordsQs.get(k);
+  }
   const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Church Slavonic' && /slavonic|russian/i.test(l));
   const regionOf = (f) => (f.location && window.AgoraLocations ? window.AgoraLocations.resolveLocation(f.location) : null);
 
@@ -575,7 +604,7 @@
     // What a card lights is the link's too (/sgr/talk, /sgr/wed/liturgy).
     if (parish) {
       const x = focus || {};
-      return [acronymOf(parish), x.day != null ? SV.daySegment(x.day) : null, x.dayGroup, x.part, x.service,
+      return [acronymOf(parish), ...(x.words || []), x.day != null ? SV.daySegment(x.day) : null, x.dayGroup, x.part, x.service,
         x.kind ? U.kindSegment(x.kind, x.kindSub) : null, from, U.englishSegment(x)].filter(Boolean);
     }
     if (eventId) return [String(eventId)];
@@ -603,7 +632,13 @@
 
   /** What an address asks for: { juris, f, parish, eventId }. Needs the parishes. */
   function readPath(pathname) {
-    const r = window.AgoraUrlState.classifyPath(pathname, { today: todayKey() });
+    let r = window.AgoraUrlState.classifyPath(pathname, { today: todayKey() });
+    // /disco/smmp: the parish may be any word nothing else claimed, and the
+    // rest are what is asked of it (focusOf), as at /smmp/disco.
+    if (r.parishSlugs && r.parishSlugs.length === 1 && !parishBySlug(r.parishSlugs[0])) {
+      const named = r.words.find(parishBySlug);
+      if (named) r = window.AgoraUrlState.parishNamed(r, named);
+    }
     const f = blankFilters();
     if (r.location) f.location = r.location;
     if (r.monasteries) f.monasteries = true;
@@ -643,8 +678,10 @@
    */
   function focusOf(r) {
     const x = { ...blankFilters(), kind: r.kind || null, kindSub: r.kindSub || null, service: r.service || null,
-      day: r.day == null ? null : r.day, dayGroup: r.dayGroup || null, part: r.part || null, lang: r.lang || null, langStrict: !!r.langStrict };
-    return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang ? x : null;
+      day: r.day == null ? null : r.day, dayGroup: r.dayGroup || null, part: r.part || null, lang: r.lang || null, langStrict: !!r.langStrict,
+      // Words that ask nothing ("the") are not kept: the link is the parish's.
+      words: wordsQ(r.words) ? [...r.words] : null };
+    return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang || x.words ? x : null;
   }
   /**
    * The focus a card opened by a tap takes from where it was: the collection
@@ -2278,7 +2315,10 @@
       || KIND_NAMES[x.kind] || 'Services';
     const text = (x.part ? `${x.part} ${noun.toLowerCase()}` : noun) + window.AgoraLinkWords.daysPhrase(x)
       + (x.lang ? (x.langStrict ? ` in ${x.lang} only` : ` in ${x.lang}`) : '');
-    return text.charAt(0).toUpperCase() + text.slice(1);
+    // A link's words, as typed: “disco”, or Saturday services matching “disco”.
+    const said = x.words ? `“${window.AgoraSearch.phraseOf(x.words)}”` : '';
+    if (said && !(x.kind || x.service || x.kindSub || x.day != null || x.dayGroup || x.part || x.lang)) return said;
+    return text.charAt(0).toUpperCase() + text.slice(1) + (said ? ` matching ${said}` : '');
   }
   // ── A parish card's Filters, beside Pick a date ───────────────────────
   //
@@ -2288,7 +2328,7 @@
   // following. Only what the parish has is offered.
 
   /** How many things a focus asks: each day its own, as the page's count has them. */
-  const focusCount = (x) => (x ? window.AgoraServices.daysOf(x.day).length + [x.kind, x.service, x.dayGroup, x.part, x.lang].filter(Boolean).length : 0);
+  const focusCount = (x) => (x ? window.AgoraServices.daysOf(x.day).length + [x.kind, x.service, x.dayGroup, x.part, x.lang, x.words].filter(Boolean).length : 0);
   function cardPanelHTML(pid, focus) {
     const f = { ...blankFilters(), ...(focus || {}) }, SV = window.AgoraServices;
     const p = S.byId.get(pid);
@@ -3052,46 +3092,11 @@
   // "english liturgy sunday" or "vespers tonight" ask the timetable a question
   // instead of looking for those words in titles.
 
-  const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-    .replace(/[’'`.]/g, '').replace(/\bsaints?\b|\bsts?\b/g, 'st')
-    .replace(/[^a-z0-9Ͱ-ϿЀ-ӿ؀-ۿ]+/g, ' ').trim();
-  const hasWord = (hay, tok) => (' ' + hay).includes(' ' + tok);
-
-  const DAY_WORDS = { sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6 };
-  const KIND_WORDS = {
-    liturgy: 'liturgy', liturgies: 'liturgy', mass: 'liturgy', eucharist: 'liturgy',
-    talk: 'talk', talks: 'talk', bible: 'talk', study: 'talk', catechism: 'talk', class: 'talk', classes: 'talk', lecture: 'talk',
-    youth: 'youth', young: 'youth', kids: 'youth', children: 'youth',
-    social: 'social', socials: 'social', festival: 'social', fete: 'social', dinner: 'social', picnic: 'social', fundraiser: 'social',
-    feast: 'feast', feasts: 'feast',
-  };
-  // Prayer services are asked for by name; these stay as text, and also mean "a service".
-  const PRAYER_WORDS = ['vespers', 'vigil', 'matins', 'orthros', 'paraklesis', 'akathist', 'akatist', 'compline', 'confession', 'supplication', 'prayer', 'prayers'];
-  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Church Slavonic', slavonic: 'Church Slavonic', romanian: 'Romanian', macedonian: 'Macedonian', ukrainian: 'Ukrainian' };
-  const FILLER = new Set(['the', 'a', 'an', 'in', 'at', 'on', 'of', 'for', 'this', 'next', 'service', 'services', 'church', 'parish', 'parishes', 'orthodox', 'and', 'with', 'times', 'time', 'whats', 'what', 'is', 'near', 'me', 'nearby', 'around', 'week']);
-
-  function parseQuery(q) {
-    const toks = norm(q).split(' ').filter(Boolean);
-    const out = { text: [], days: null, tonight: false, kind: null, prayer: false, lang: null, nearMe: /\bnear me\b|\bnearby\b|\baround me\b/.test(norm(q)), raw: toks };
-    const t = todayKey();
-    const addDay = (k) => { out.days = out.days || new Set(); out.days.add(k); };
-    for (let i = 0; i < toks.length; i++) {
-      const w = toks[i];
-      if (w === 'today') { addDay(t); continue; }
-      if (w === 'tonight') { addDay(t); out.tonight = true; continue; }
-      if (w === 'tomorrow') { addDay(addDays(t, 1)); continue; }
-      if (w === 'weekend') { for (let d = 0; d < 7; d++) { const k = addDays(t, d); const wd = new Date(k + 'T00:00:00Z').getUTCDay(); if (wd === 0 || wd === 6) addDay(k); } continue; }
-      if (w in DAY_WORDS) { for (let d = 0; d < 14; d++) { const k = addDays(t, d); if (new Date(k + 'T00:00:00Z').getUTCDay() === DAY_WORDS[w]) addDay(k); } continue; }
-      if (w in KIND_WORDS) { out.kind = KIND_WORDS[w]; if (w !== 'bible' && w !== 'study') continue; }
-      if (w in LANG_WORDS) { out.lang = LANG_WORDS[w]; }
-      if (PRAYER_WORDS.includes(w)) out.prayer = true;
-      if (FILLER.has(w)) continue;
-      out.text.push(w);
-    }
-    // A language word is both: "greek" is a language for services and a
-    // jurisdiction (and a word in names) for parishes. Keep it as text too.
-    return out;
-  }
+  // What words mean, and whether a row answers them, is search-words.js's: a
+  // link's own words (/smmp/disco) are read there too, so the two agree.
+  const SW = window.AgoraSearch;
+  const { norm, hasWord, DAY_WORDS, LANG_WORDS, FILLER } = SW;
+  const parseQuery = (q) => SW.parseQuery(q, todayKey());
 
   let parishHay = null;
   function hayOf(p) {
@@ -3166,20 +3171,11 @@
       .filter(p => { const h = hayOf(p); return Q.text.every(w => hasWord(`${h.name} ${h.acr} ${h.addr}`, w)); }).map(p => p.id)) : null;
     const res = feedFor(42).filter(e => {
       if (!visible(e) || e.parish_scoped || endMs(e) < now) return false;
-      const l = local(e);
-      if (Q.days && !Q.days.has(l.date)) return false;
-      if (Q.tonight && l.hm < '16:00') return false;
-      if (Q.kind && e.event_type !== Q.kind && !(Q.kind === 'social' && e.event_type === 'youth')) return false;
-      if (Q.lang) {
-        if (!window.AgoraTimetable.rowAnswersLang(e, { lang: Q.lang },
-          eventParishIds(e).some(id => hasLang(S.byId.get(id), Q.lang)))) return false;
-      }
-      const words = Q.text.filter(w => !(w in LANG_WORDS));
-      if (!words.length) return !Q.prayer || e.event_type === 'prayer';
-      const hay = norm(`${e.title} ${e.feast || ''} ${e.description || ''}`);
-      if (words.every(w => hasWord(hay, w))) return true;
-      // Or the words name the parish (or its suburb): its services.
-      return pids && eventParishIds(e).some(id => pids.has(id)) && (!Q.prayer || e.event_type === 'prayer');
+      const at = whereWhen(e);
+      if (SW.answers(e, Q, at)) return true;
+      // Or the words name the parish (or its suburb): its services, as the
+      // rest of the query asks.
+      return !!pids && eventParishIds(e).some(id => pids.has(id)) && SW.answers(e, { ...Q, text: [] }, at);
     });
     // By day; within a day, what is near you first (when we know where you
     // are), then by time. A Liturgy in Perth at 8 should not sit between two
