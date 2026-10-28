@@ -1455,20 +1455,19 @@
   // ── What's on: the one-offs, poster first ─────────────────────────────
 
   /**
-   * A feast: a Feast by its kind, or a liturgy or prayer service whose date
-   * carries a saint or feast of its own (its subtitle, `feast`) on a day
-   * other than Sunday. A Sunday's own words ("Fifth Sunday of Luke") are the
-   * Sunday's, and a rule's subtitle is on every date it holds: both stay the
-   * timetable's.
+   * Each thing once, at its soonest: a rule's dates as one card, and a
+   * poster's as one (a talk series' flyer, a feast's Vespers and Liturgy),
+   * since the poster says its own dates.
    */
-  function isFeast(e) {
-    if (e.event_type === 'feast') return true;
-    if (!e.feast || weekdayOf(local(e).date) === 0) return false;
-    const r = e.schedule_id && rulesOf(e.parish_id).find(x => String(x.id) === String(e.schedule_id));
-    return !(r && r.feast === e.feast);
+  function oncePerPoster(list) {
+    const seen = new Set();
+    return list.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).filter(e => {
+      const ks = [e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, `p${String(e.poster_path).split('?')[0]}`];
+      if (ks.some(k => seen.has(k))) return false;
+      ks.forEach(k => seen.add(k));
+      return true;
+    });
   }
-  /** Regular services are the timetable's; What's on is for the things that happen once, feasts among them. */
-  const whatsOnKind = (e) => !['liturgy', 'prayer'].includes(e.event_type) || isFeast(e);
   /** A poster on the shelf, and what it is under it: its own words are on it already. */
   const posterCard = (e, from) => `<button class="poster" type="button" data-event="${esc(e.id)}">
           <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
@@ -1485,12 +1484,9 @@
     // One-offs with posters first, then rule occurrences that carry their own.
     const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
-      .filter(e => e.poster_path && endMs(e) > now && whatsOnKind(e) && eventPasses(e));
-    const seen = new Set();
-    const uniq = pool.filter(e => {
-      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
-      if (seen.has(k)) return false; seen.add(k); return true;
-    });
+      // Regular services are the timetable's; this shelf is for the things that happen once.
+      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
+    const uniq = oncePerPoster(pool);
     let list = uniq.filter(inViewEvent);
     // Too few in view: the nearest a dozen, wherever they are.
     if (list.length < 2) {
@@ -2115,12 +2111,8 @@
     const now = Date.now();
     const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
-      .filter(e => e.poster_path && visible(e) && endMs(e) > now && whatsOnKind(e) && eventParishIds(e).includes(pid));
-    const seen = new Set();
-    const list = pool.filter(e => {
-      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
-      if (seen.has(k)) return false; seen.add(k); return true;
-    }).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
+      .filter(e => e.poster_path && visible(e) && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventParishIds(e).includes(pid));
+    const list = oncePerPoster(pool).slice(0, 12);
     if (!list.length) return '';
     const cards = list.map(e => {
       const host = e.parish_id !== pid ? S.byId.get(e.parish_id) : null;
