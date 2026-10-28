@@ -148,7 +148,10 @@ other mix of filters is the page itself, filtered, and gets only its head.
   in any order; a talk or a social answers when its parish holds a service in that
   language. A parish's languages are what its services are tagged with: its own
   `languages` column (a directory's boilerplate) is no longer read, and a parish
-  with no tagged services shows no Languages box (Kevin, 22 Oct 2026). A one-off
+  with no tagged services shows no Languages box (Kevin, 22 Oct 2026). Its
+  services are its timetable and the one-offs it holds or hosts, never one it
+  only takes part in (`event_parishes`): an English Vespers with 27 Greek
+  parishes along made 22 of them "English" until Kevin ruled it out (28 Oct 2026). A one-off
   service cannot be published without a language (`event-checks.js`).
 
 ## The lite version, for a phone the page is too much for
