@@ -224,8 +224,13 @@
     const t = todayKey();
     return !(r.effective_to && r.effective_to < t);
   }
-  /** A parish's services that say what language they are in: its timetable, and its one-offs ahead. */
-  const langRows = (pid) => [...rulesOf(pid).filter(liveRule), ...upcomingOneOffs(pid)];
+  /**
+   * A parish's services that say what language they are in: its timetable,
+   * and the one-offs ahead it holds or hosts. Not one it only takes part in:
+   * an English Vespers at Crows Nest with 27 Greek parishes along is not
+   * English at those 27 (Kevin, 28 Oct 2026).
+   */
+  const langRows = (pid) => [...rulesOf(pid).filter(liveRule), ...upcomingOneOffs(pid, { own: true })];
   /**
    * A parish's languages: what its services are tagged with, in any order,
    * and never the parish's own column (a directory's "Greek, English" at
@@ -882,11 +887,12 @@
     }
     return feedCache.list;
   }
-  function upcomingOneOffs(pid) {
+  /** A parish's one-offs ahead: its own, those held in its church and, unless `own`, those it takes part in. */
+  function upcomingOneOffs(pid, { own = false } = {}) {
     const raw = window.agoraBundle.raw;
     if (!raw) return [];
     const now = Date.now();
-    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || e.location_parish_id === pid || (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid))
+    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || e.location_parish_id === pid || (!own && (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid)))
       && endMs(e) >= now).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
 
