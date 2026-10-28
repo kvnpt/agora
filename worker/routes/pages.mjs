@@ -25,7 +25,7 @@ import slugs from '../../public/shared/slugs.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
-import { liteModel, liteWindow, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS } from '../lib/lite-page.mjs';
+import { liteModel, liteWindow, liteDays, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS } from '../lib/lite-page.mjs';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { timetableModel, timetableIndexable, timetableMeta } from '../lib/lite-timetable.mjs';
 import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, headHTML, withPage } from '../lib/page-head.mjs';
@@ -201,9 +201,16 @@ async function findEvent(db, id) {
 /** A parish's or an event's head and card, from the card's model; a 404 when it is not here. */
 async function parishPage(env, url, page, now) {
   const db = env.DB;
-  let parish, pinnedEvent = null;
+  let parish, pinnedEvent = null, namedBy = null;
   if (page.kind === 'parish') {
     parish = await findParish(db, page.slug);
+    // /disco/smmp: the parish may be any word nothing else claimed, and the
+    // rest are what is asked of it. A few at most, so a crawler's long path
+    // costs no more than a handful of reads.
+    for (const w of (parish ? [] : (page.route.words || []).slice(0, 3))) {
+      parish = await findParish(db, w);
+      if (parish) { namedBy = w; break; }
+    }
   } else {
     const found = await findEvent(db, page.route.eventId);
     if (!found) return missing(url);
@@ -214,8 +221,9 @@ async function parishPage(env, url, page, now) {
   if (!parish) return missing(url);
 
   const zone = parish.timezone || DEFAULT_ZONE;
-  const route = urlState.classifyPath(url.pathname, { today: localDateOf(zone, now) });
-  const { fromUtc, toUtc } = liteWindow(liteStartDate(route, zone, now));
+  const read = urlState.classifyPath(url.pathname, { today: localDateOf(zone, now) });
+  const route = namedBy ? urlState.parishNamed(read, namedBy) : read;
+  const { fromUtc, toUtc } = liteWindow(liteStartDate(route, zone, now), liteDays(route));
 
   const [rows, events, cross, links, overrides] = await Promise.all([
     fetchWindowRows(db, fromUtc, toUtc, { parishId: parish.id }),

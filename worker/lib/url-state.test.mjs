@@ -229,3 +229,16 @@ test('several jurisdictions or days: /antiochian+greek, /wed+fri, or one segment
   assert.ok(!U.jurisdictionMatches('greek', 'serbian'));
   assert.ok(U.jurisdictionMatches(null, 'serbian'));
 });
+
+test('a word nothing claims, after a parish, is what is asked of it: /smmp/disco keeps St Mary’s', () => {
+  const r = U.classifyPath('/smmp/disco', { today });
+  assert.deepEqual([r.parishSlugs, r.words], [['smmp'], ['disco']]);
+  assert.equal(U.pageKind(r), 'parish');
+  assert.deepEqual(U.classifyPath('/smmp/disco-night/sat', { today }).words, ['disco-night']);
+  assert.equal(U.classifyPath('/smmp/disco-night/sat', { today }).day, 6, 'a word the grammar knows keeps its meaning');
+  assert.deepEqual(U.classifyPath('/sgr/youth', { today }).words, [], '/youth is a kind, never a search');
+  assert.deepEqual(U.classifyPath('/sgr', { today }).words, []);
+  // The reader finds which word is the parish; the rest are its words, in order.
+  const back = U.parishNamed(U.classifyPath('/disco/night/smmp', { today }), 'smmp');
+  assert.deepEqual([back.parishSlugs, back.words], [['smmp'], ['disco', 'night']]);
+});

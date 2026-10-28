@@ -24,6 +24,7 @@ import dates from '../../public/shared/dates.js';
 import urlState from '../../public/shared/url-state.js';
 import linkWords from '../../public/shared/link-words.js';
 import ruleFilters from '../../public/shared/timetable.js';
+import search from '../../public/shared/search-words.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
@@ -32,6 +33,11 @@ import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 const DAY_MS = 86400000;
 /** How far a link's card looks ahead. The page's own stream is where the rest of the year lives. */
 export const LITE_WINDOW_DAYS = 56;
+/**
+ * How far a link with words of its own looks (/smmp/disco): a season, as the
+ * app's matchesAt does, so a flyer for Christmas sent in October finds it.
+ */
+export const WORDS_WINDOW_DAYS = 120;
 /** The most occurrences a card lists. Enough for two months of a busy parish. */
 export const LITE_LIST_CAP = 40;
 
@@ -49,16 +55,29 @@ export function parishSlug(parish) {
 
 /**
  * The window a card reads, as UTC instants: from the parish-local day the list
- * starts on, LITE_WINDOW_DAYS on. Widened by a day at the front, because a
+ * starts on, `days` on. Widened by a day at the front, because a
  * parish in Auckland is already on tomorrow when Perth is on today; the list
  * trims by LOCAL date afterwards, which is the date that means anything.
  */
-export function liteWindow(fromDate) {
+export function liteWindow(fromDate, days = LITE_WINDOW_DAYS) {
   const start = Date.parse(`${fromDate}T00:00:00Z`) - DAY_MS;
   return {
     fromUtc: new Date(start).toISOString(),
-    toUtc: new Date(start + (LITE_WINDOW_DAYS + 2) * DAY_MS).toISOString(),
+    toUtc: new Date(start + (days + 2) * DAY_MS).toISOString(),
   };
+}
+
+/** How many days a link's card reads: a season for one with words, else LITE_WINDOW_DAYS. */
+export const liteDays = (route) => (route && route.words && route.words.length ? WORDS_WINDOW_DAYS : LITE_WINDOW_DAYS);
+
+/**
+ * What a link's own words ask (/smmp/disco), read as the search box reads
+ * them (search-words.js), or null when it has none that ask anything.
+ */
+export function wordsQuery(route, today) {
+  if (!route || !route.words || !route.words.length) return null;
+  const Q = search.parseQuery(search.phraseOf(route.words), today);
+  return search.asks(Q) ? Q : null;
 }
 
 /** Where the list starts: the focused date, or the parish's today. */
@@ -94,7 +113,8 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // none; its way on is the upcoming events, in the app.
   const servicesMode = !!route.timetable && !route.eventId;
   const start = liteStartDate(route, zone, now);
-  const { fromUtc, toUtc } = liteWindow(start);
+  const days = liteDays(route);
+  const { fromUtc, toUtc } = liteWindow(start, days);
 
   const instances = rows.schedules.length ? expandFrom(rows, fromUtc, toUtc) : [];
   const oneOffs = events.filter(e => {
@@ -115,14 +135,23 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   // A kind (/sgr/talks) and a language (/sgr/en) ask it as much as a service
   // does: the page opens the first that answers, in front of the parish.
   const lf = ruleFilters.langFilterOf(route);
-  const asks = isNarrowed(route) || !!route.kind || !!lf;
   // A service answers a language by its own tags; a talk or a social by its
   // parish holding a service in it (timetable.js rowAnswersLang).
   const today0 = localDateOf(zone, now);
-  const parishOk = ruleFilters.parishAnswersLang(rows.schedules.filter(r => r.parish_id === parish.id
-    && r.active !== 0 && (!r.effective_to || r.effective_to >= today0)), lf);
+  const liveRules = rows.schedules.filter(r => r.parish_id === parish.id
+    && r.active !== 0 && (!r.effective_to || r.effective_to >= today0));
+  const parishOk = ruleFilters.parishAnswersLang(liveRules, lf);
+  // The link's own words (/smmp/disco), asked of each occurrence as the
+  // search box asks them. Words nothing here answers ask nothing: the card
+  // is the parish's, as the app's is when no match opens over it.
+  let wq = route.eventId ? null : wordsQuery(route, today0);
+  const answersWords = (e) => !wq || search.answers(e, wq, { date: e._local.date, hm: e._local.time,
+    parishLang: (lang) => ruleFilters.parishAnswersLang(liveRules, { lang }) });
+  if (wq && !feed.some(e => !e.is_tombstone && answersWords(e) && Date.parse(e.end_utc || e.start_utc) >= now)) wq = null;
+  const asks = isNarrowed(route) || !!route.kind || !!lf || !!wq;
   const matches = (e) => {
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
+    if (!answersWords(e)) return false;
     if (route.service && !services.serviceMatches(route.service, e)) return false;
     if (!services.dayMatches(route.day, e._local.dow)) return false;
     if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
@@ -131,7 +160,8 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     if (!ruleFilters.rowAnswersLang(e, lf, parishOk)) return false;
     return true;
   };
-  const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + LITE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
+  // A season for words that found something; the usual two months otherwise.
+  const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + (wq ? days : LITE_WINDOW_DAYS) * DAY_MS).toISOString().slice(0, 10);
   // Under an event: "More at this parish" — everything else on there in the
   // next seven days, whichever rule or none it comes from.
   const weekEnd = new Date(Date.parse(`${start}T00:00:00Z`) + 7 * DAY_MS).toISOString().slice(0, 10);
@@ -163,7 +193,9 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     pinned = urlState.firstEventOnDay(list, route.dateFocus, route.precision, e => e._local.date);
   }
 
-  const indexable = !route.eventId && !route.dateFocus && !isNarrowed(route) && !servicesMode;
+  // Words are anybody's, an endless space of pages: never offered to a search engine.
+  const indexable = !route.eventId && !route.dateFocus && !isNarrowed(route) && !servicesMode
+    && !(route.words && route.words.length);
   // Day, part, service — the order the app writes them in, and the order they
   // are said: /sgr/wed/evening/vespers.
   const kindSegs = [
