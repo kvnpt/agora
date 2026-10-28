@@ -1899,6 +1899,18 @@
       who.textContent = S.who.signedIn && S.who.identity ? S.who.identity : 'Eastern Orthodox events & parishes';
       who.classList.toggle('signed-in', !!(S.who.signedIn && S.who.identity));
     }
+    // A card drawn before the answer said where its list was kept.
+    for (const el of $$('[data-kept]')) el.innerHTML = keptHTML();
+  }
+  /**
+   * Where Bookmarks and Favourites are kept, as their cards say it: on the
+   * account once signed in (syncSaved), else in this browser, with the way to
+   * change that. The sign-in comes back here, where they join the account.
+   */
+  function keptHTML() {
+    if (S.who.signedIn) return 'Saved to your account.';
+    const back = `/admin?back=${encodeURIComponent(location.pathname + location.search)}`;
+    return `Kept in this browser. <a href="${esc(back)}">Sign in</a> to save them to your account.`;
   }
   // Signing in is a redirect Cloudflare owns: /admin is behind Access, so going
   // there is what shows its sign-in, and signing out is its own logout path.
@@ -2491,7 +2503,7 @@
             ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
             <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
           </div>
-          <p>${esc(c.blurb || '')}</p>
+          <p>${esc(c.blurb || '')}${c.listId === 'fav' ? ` <span data-kept>${keptHTML()}</span>` : ''}</p>
         </div>
         ${c.segs ? `<div class="sheet-link">${linkChip(collSegs(c, from))}</div>` : ''}
         ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
@@ -2780,7 +2792,7 @@
     return `<div ${lookAttrs(BOOKMARK_LOOK, 'chero')}>
           <span class="ckicker">Your list</span>
           <h1>Bookmarks</h1>
-          <p>Kept in this browser.</p>
+          <p data-kept>${keptHTML()}</p>
         </div>
         ${services ? `<h2 class="sec">Services</h2><div class="lists">${services}</div>` : ''}
         <h2 class="sec">Coming up</h2>

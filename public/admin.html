@@ -5094,6 +5094,20 @@
 
       const ping = await fetch('/api/admin/ping', { headers }).catch(() => null);
 
+      // /admin?back=<path> — "Sign in" on a card of the visitor's own
+      // (Bookmarks, Favourites). Signing in was the whole errand, role or
+      // none, so once Access has let them through it is back to the page,
+      // where what that browser kept joins the account. Only a path on this
+      // site, never the admin page again.
+      if (ping && (ping.ok || ping.status === 403)) {
+        let back = null;
+        try {
+          const u = new URL(params.get('back') || '', location.origin);
+          if (params.get('back') && u.origin === location.origin && !/^\/admin\b/.test(u.pathname)) back = u.pathname + u.search + u.hash;
+        } catch { /* not a path */ }
+        if (back) { location.replace(back); return; }
+      }
+
       // 403 is new: Access let them in, and this deployment has an admin list
       // they are not on. Distinct from 401 (not signed in) and 503 (nobody can
       // get in), and it has a different remedy — ask an owner, not reload.
@@ -5147,7 +5161,8 @@
         } catch { /* storage blocked — show the message instead of looping */ }
 
         if (!tried) {
-          location.replace('/admin.html');
+          // With its query, so a ?back= still goes back after the sign-in.
+          location.replace('/admin.html' + location.search);
           return;
         }
         blockPage('Not signed in.',
