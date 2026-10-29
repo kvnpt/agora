@@ -2502,18 +2502,31 @@
 
   function openCollection(c, { entry = true, from = null } = {}) {
     const o = sortOrigin();
-    const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
-      .sort((a, b) => (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule)) || (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
-    const LIMIT = 30;
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
     const cf = { ...blankFilters(), ...(c.f || {}) };
     const only = asksWhat(cf) || cf.lang ? cf : null;
+    // Asked something, every parish here answers it, by its timetable or a
+    // one-off, so they are one list by distance (Kevin, 29 Oct 2026). Asked
+    // nothing (/greek, a list), the parishes with times come first.
+    const near = (a, b) => (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name));
+    const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
+      .sort((a, b) => (only ? 0 : (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule))) || near(a, b));
+    const LIMIT = 30;
     const item = (p) => {
       const d = distOf(p);
-      const nx = only ? nextOf(p.id, e => rowAnswers(e, only, false)) : nextOf(p.id);
+      // Its Next is its own, held by it or in its church, before one it only
+      // takes part in; and a one-off that puts it here may be months off,
+      // past nextOf's fortnight.
+      const answers = (e) => rowAnswers(e, only, false);
+      const nx = !only ? nextOf(p.id)
+        : nextOf(p.id, e => (e.parish_id === p.id || e.location_parish_id === p.id) && answers(e))
+          || upcomingOneOffs(p.id, { own: true }).find(e => Date.parse(e.start_utc) > Date.now() && answers(e))
+          || nextOf(p.id, answers);
       const times = rulesOf(p.id).some(liveRule);
       const tt = times ? timetable(p.id, { compact: true, only }) : '';
+      // Its Next says it when it has no lines here: words only for a parish with nothing.
+      const none = nx || only ? '' : '<div class="tt-none sm">No service times on file yet.</div>';
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
@@ -2521,7 +2534,7 @@
               ${nx ? `<span class="citem-next">${roundel(nx.event_type)} Next: ${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : ''}</span>
           </button>
           <button class="cadd" type="button" data-quickadd="${esc(p.id)}" aria-label="Add to a list">${I.plus}</button>
-          ${tt || `<div class="tt-none sm">${times ? 'Not on its timetable.' : 'No service times on file yet.'}</div>`}
+          ${tt || none}
         </article>`;
     };
     const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c)), { lang: cf.lang }) : '';
