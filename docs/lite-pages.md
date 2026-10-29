@@ -89,7 +89,8 @@ keep them saying the same thing.
 - the pin follows the page's rules (`firstEventOnDay` in `url-state.js`): an id pins its
   event, a day pins only an event ON that day, a service, weekday, part of the day
   (`/sgr/evening`, split at 2pm on the parish's clock), kind (`/sgr/talks`) or
-  language (`/sgr/en`) pins the next that answers, which is the event the page
+  language (`/sgr/en`) or a word nothing else claims (`/smmp/disco`, read as the
+  search box reads it, a season ahead, noindex) pins the next that answers, which is the event the page
   opens in front of the parish's card, and its head names it; the card painted is
   still the parish's; a synthetic id lists the other dates of the same rule;
 - times in the parish's zone. An event over more than one day reads as its span ("Fri 13
@@ -105,11 +106,14 @@ OKLab dark-mode lift in `public/shared/jurisdiction-colors.js` (`liftForDark`).
 `/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/timetables` — the
 aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, the list
 in `public/shared/collections.js`) opens its card, painted from the model
-(`collectionCardHTML`): the parishes, those with times first, each with the lines of
+(`collectionCardHTML`): the parishes by name (by distance on the page), each with the lines of
 its timetable that answer the link (all of them, for a link that asks nothing of a
 parish's services), folded to the first few lines until Show timetables (a checkbox in its label, so it
-opens with no script); the page adds a Today box of theirs above the timetables and
-what is coming up at them underneath. Any
+opens with no script; a jurisdiction's says Parishes); the page adds a Today box of theirs above the timetables and
+what is coming up at them underneath. A parish with no lines there says nothing in
+their place (Kevin, 29 Oct 2026): the page's card gives it a Next, its own one-off
+however far ahead before one it takes part in, and, for a link that asks something,
+lists every parish by distance, since each one answers it. Any
 other mix of filters is the page itself, filtered, and gets only its head.
 
 `worker/lib/lite-timetable.mjs` (`timetableModel`), pure like the card's:
@@ -147,7 +151,10 @@ other mix of filters is the page itself, filtered, and gets only its head.
   in any order; a talk or a social answers when its parish holds a service in that
   language. A parish's languages are what its services are tagged with: its own
   `languages` column (a directory's boilerplate) is no longer read, and a parish
-  with no tagged services shows no Languages box (Kevin, 22 Oct 2026). A one-off
+  with no tagged services shows no Languages box (Kevin, 22 Oct 2026). Its
+  services are its timetable and the one-offs it holds or hosts, never one it
+  only takes part in (`event_parishes`): an English Vespers with 27 Greek
+  parishes along made 22 of them "English" until Kevin ruled it out (28 Oct 2026). A one-off
   service cannot be published without a language (`event-checks.js`).
 
 ## The lite version, for a phone the page is too much for

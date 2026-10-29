@@ -230,6 +230,36 @@ test('a kind or a language beside a parish previews the first that answers it, a
   assert.match(title((await get('/sgr/en')).html), /^Vespers — Friday 2 October, 6pm/, 'its own English, not the parish’s');
 });
 
+test('a word nothing else claims, beside a parish, previews the soonest event it names, as the search box reads it', async () => {
+  const { raw, get } = fresh();
+  const event = (t, start, end, extra = '') => raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc,
+      event_type, status, mutation_type, poster_path) VALUES (?, 'manual', ?, ?, ?, 'social', 'approved', 'headless', ?)`)
+    .run(PARISH, t, start, end, extra || null);
+  event('Disco Night (Registration Essential)', '2026-10-17T08:00:00Z', '2026-10-17T11:00:00Z', '/posters/disco.jpg');
+  event('Disco Night (Registration Essential)', '2026-11-21T08:00:00Z', '2026-11-21T11:00:00Z');
+  event('Christmas Carols', '2026-12-20T08:00:00Z', '2026-12-20T10:00:00Z');
+  rule(raw, PARISH, 4, '19:30', 'Choir Practice', { parish_scoped: 1 });
+
+  const { res, html } = await get('/sgr/disco');
+  assert.equal(res.status, 200);
+  assert.match(title(html), /^Disco Night \(Registration Essential\) — Saturday 17 October, 7pm · St George Cathedral, Redfern/, 'the soonest');
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/posters/disco.jpg', 'its poster previews');
+  assert.equal(robots(html), 'noindex,follow', 'words are anybody’s: never indexed');
+  assert.match(card(html), /^<section class="sheet parish open ssr"/, "the parish's card, which the event opens in front of");
+  for (const p of ['/disco/sgr', '/sgr/disco-night', '/SGR/Disco']) {
+    assert.match(title((await get(p)).html), /^Disco Night \(Registration Essential\) — Saturday 17 October/, p);
+  }
+  assert.match(title((await get('/sgr/choir')).html), /^Choir Practice — Thursday 1 October, 7:30pm/, 'a rule kept to the parish’s own card is its own');
+  assert.match(title((await get('/sgr/carols')).html), /^Christmas Carols — Sunday 20 December/, 'a season ahead, past the card’s usual two months');
+  // Words that name nothing there: the parish's own card, still not indexed.
+  const none = await get('/sgr/bbq');
+  assert.equal(none.res.status, 200);
+  assert.match(title(none.html), /^St George Cathedral, Redfern — /);
+  assert.equal(robots(none.html), 'noindex,follow');
+  // A word the grammar knows is never a search.
+  assert.doesNotMatch(title((await get('/sgr/social')).html), /Choir/);
+});
+
 test('a painted Today: no count, Later today only under Happening now, This evening, Tomorrow, and the evening divided off', async () => {
   const today = async (setup) => {
     const { raw, get } = fresh();

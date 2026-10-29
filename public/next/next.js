@@ -107,6 +107,8 @@
     // `day` is one weekday or several, as services.js holds them (null, 3, [3, 5]).
     kind: null, kindSub: null, lang: null, langStrict: false, day: null, dayGroup: null, part: null, service: null,
     location: null, monasteries: false, parishIds: null, listId: null, timesOnly: false,
+    // A parish link's own words (/smmp/disco): what is asked of its card, as the search box reads them.
+    words: null,
   });
   S.f = blankFilters();
 
@@ -222,8 +224,13 @@
     const t = todayKey();
     return !(r.effective_to && r.effective_to < t);
   }
-  /** A parish's services that say what language they are in: its timetable, and its one-offs ahead. */
-  const langRows = (pid) => [...rulesOf(pid).filter(liveRule), ...upcomingOneOffs(pid)];
+  /**
+   * A parish's services that say what language they are in: its timetable,
+   * and the one-offs ahead it holds or hosts. Not one it only takes part in:
+   * an English Vespers at Crows Nest with 27 Greek parishes along is not
+   * English at those 27 (Kevin, 28 Oct 2026).
+   */
+  const langRows = (pid) => [...rulesOf(pid).filter(liveRule), ...upcomingOneOffs(pid, { own: true })];
   /**
    * A parish's languages: what its services are tagged with, in any order,
    * and never the parish's own column (a directory's "Greek, English" at
@@ -469,6 +476,10 @@
   const weekdayOf = (key) => new Date(key + 'T00:00:00Z').getUTCDay();
   /** Does a rule or an event answer what the filters ask: its kind, service, day and part of the day? */
   function whatMatches(row, f, isRule) {
+    if (f.words) {
+      const Q = wordsQ(f.words);
+      if (Q && !window.AgoraSearch.answers(row, Q, whereWhen(row, isRule))) return false;
+    }
     if (!window.AgoraTimetable.kindMatches(row, f)) return false;
     if (f.service && !window.AgoraServices.serviceMatches(f.service, row)) return false;
     const dow = isRule ? row.day_of_week : weekdayOf(local(row).date);
@@ -478,6 +489,29 @@
     return true;
   }
   const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.dayGroup || f.part);
+  /**
+   * Where and when a row is, as search-words.js asks it: an event's date and
+   * time on its parish's clock, and whether its parishes hold a service in a
+   * language. A rule happens on a weekday, which it carries.
+   */
+  function whereWhen(row, isRule) {
+    const ids = isRule ? [row.parish_id] : eventParishIds(row);
+    const parishLang = (lang) => ids.some(id => hasLang(S.byId.get(id), lang));
+    if (isRule) return { parishLang };
+    const l = local(row);
+    return { date: l.date, hm: l.hm, parishLang };
+  }
+  const wordsQs = new Map();
+  /** What a link's words ask (/smmp/disco → "disco"), or null when they ask nothing ("the"). */
+  function wordsQ(words) {
+    if (!words || !words.length) return null;
+    const SW = window.AgoraSearch, t = todayKey(), k = `${t}|${words.join('/')}`;
+    if (!wordsQs.has(k)) {
+      const Q = SW.parseQuery(SW.phraseOf(words), t);
+      wordsQs.set(k, SW.asks(Q) ? Q : null);
+    }
+    return wordsQs.get(k);
+  }
   const langIs = (l, want) => window.AgoraTimetable.langIs(l, want) || (want === 'Church Slavonic' && /slavonic|russian/i.test(l));
   const regionOf = (f) => (f.location && window.AgoraLocations ? window.AgoraLocations.resolveLocation(f.location) : null);
 
@@ -575,7 +609,7 @@
     // What a card lights is the link's too (/sgr/talk, /sgr/wed/liturgy).
     if (parish) {
       const x = focus || {};
-      return [acronymOf(parish), x.day != null ? SV.daySegment(x.day) : null, x.dayGroup, x.part, x.service,
+      return [acronymOf(parish), ...(x.words || []), x.day != null ? SV.daySegment(x.day) : null, x.dayGroup, x.part, x.service,
         x.kind ? U.kindSegment(x.kind, x.kindSub) : null, from, U.englishSegment(x)].filter(Boolean);
     }
     if (eventId) return [String(eventId)];
@@ -603,7 +637,13 @@
 
   /** What an address asks for: { juris, f, parish, eventId }. Needs the parishes. */
   function readPath(pathname) {
-    const r = window.AgoraUrlState.classifyPath(pathname, { today: todayKey() });
+    let r = window.AgoraUrlState.classifyPath(pathname, { today: todayKey() });
+    // /disco/smmp: the parish may be any word nothing else claimed, and the
+    // rest are what is asked of it (focusOf), as at /smmp/disco.
+    if (r.parishSlugs && r.parishSlugs.length === 1 && !parishBySlug(r.parishSlugs[0])) {
+      const named = r.words.find(parishBySlug);
+      if (named) r = window.AgoraUrlState.parishNamed(r, named);
+    }
     const f = blankFilters();
     if (r.location) f.location = r.location;
     if (r.monasteries) f.monasteries = true;
@@ -643,8 +683,10 @@
    */
   function focusOf(r) {
     const x = { ...blankFilters(), kind: r.kind || null, kindSub: r.kindSub || null, service: r.service || null,
-      day: r.day == null ? null : r.day, dayGroup: r.dayGroup || null, part: r.part || null, lang: r.lang || null, langStrict: !!r.langStrict };
-    return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang ? x : null;
+      day: r.day == null ? null : r.day, dayGroup: r.dayGroup || null, part: r.part || null, lang: r.lang || null, langStrict: !!r.langStrict,
+      // Words that ask nothing ("the") are not kept: the link is the parish's.
+      words: wordsQ(r.words) ? [...r.words] : null };
+    return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang || x.words ? x : null;
   }
   /**
    * The focus a card opened by a tap takes from where it was: the collection
@@ -845,11 +887,12 @@
     }
     return feedCache.list;
   }
-  function upcomingOneOffs(pid) {
+  /** A parish's one-offs ahead: its own, those held in its church and, unless `own`, those it takes part in. */
+  function upcomingOneOffs(pid, { own = false } = {}) {
     const raw = window.agoraBundle.raw;
     if (!raw) return [];
     const now = Date.now();
-    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || e.location_parish_id === pid || (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid))
+    return (raw.events || []).filter(e => visible(e) && (e.parish_id === pid || e.location_parish_id === pid || (!own && (raw.event_parishes || []).some(x => x.event_id === e.id && x.parish_id === pid)))
       && endMs(e) >= now).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
 
@@ -1117,14 +1160,38 @@
     const one = ps.length === 1 ? ps[0] : null;
     const chip = $('#inview');
     chip.classList.toggle('one', !!one);
-    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
+    // None here: the way to the nearest, or to the filters when none anywhere answers them.
+    const away = ps.length ? '' : nearestWords();
+    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
     chip.innerHTML = one
       ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
       : ps.length
         ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}Pan or zoom out</small></span>`;
+        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
-    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${place}</small></span>`;
+    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`;
+  }
+  /**
+   * Nothing in view is a way out, not a dead end (Kevin's friend, zoomed in
+   * on bush, 28 Oct 2026): the map out to the nearest few that answer the
+   * page, from where it is looking — or, with `ids`, the nearest of those.
+   */
+  const NEAREST = 5;
+  const answering = (ids = null) => S.parishes.filter(p => isFinite(p.lat) && p.lat != null && parishPasses(p) && (!ids || ids.has(p.id)));
+  function nearestWords() {
+    const n = Math.min(NEAREST, answering().length);
+    return !n ? 'Change the filters' : n === 1 ? 'Show the nearest' : `Show the nearest ${n}`;
+  }
+  function showNearest(ids = null) {
+    const ps = answering(ids);
+    if (!ps.length) { setPanel(true); return; }
+    const c = map ? map.getCenter() : null;
+    if (!c) return;
+    const o = { lat: c.lat, lng: c.lng };
+    const b = new maplibregl.LngLatBounds([c.lng, c.lat], [c.lng, c.lat]);
+    ps.sort((x, y) => km(o, x) - km(o, y)).slice(0, NEAREST).forEach(p => b.extend([p.lng, p.lat]));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    map.fitBounds(b, { padding: 50, maxZoom: 13, duration: 700 });
   }
   function renderParishRow() {
     const o = S.loc || (map ? map.getCenter() : null);
@@ -1240,9 +1307,18 @@
   }
 
   function renderToday() {
-    const html = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)), { lang: S.f.lang });
+    const on = feedFor(2).filter(e => eventPasses(e));
+    // Nothing in view but something elsewhere says so, and the way to it,
+    // rather than going without a word; nothing anywhere is still no box.
+    const html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
     $('#today').innerHTML = html;
     $('#today').hidden = !html;
+  }
+  function todayAwayHTML() {
+    const d = new Date(todayKey() + 'T00:00:00Z');
+    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div></header>
+      <div class="tempty">Nothing on in view.</div>
+      <button class="see-all" type="button" data-nearest="on">Show what's on nearest ${I.chev}</button>`;
   }
   /**
    * Today, from the rows given. With something on now, "Happening now" and
@@ -1454,6 +1530,31 @@
 
   // ── What's on: the one-offs, poster first ─────────────────────────────
 
+  /**
+   * Each thing once, at its soonest: a rule's dates as one card, and one
+   * occasion's poster as one (a feast's Vespers and Matins), since the poster
+   * says its own times. A poster's dates further apart are things of their
+   * own (a talk series' Fridays, two activities on one flyer) and keep theirs.
+   */
+  const OCCASION = 2 * DAY;
+  function oncePerPoster(list) {
+    const rules = new Set(), shown = new Map();
+    return list.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).filter(e => {
+      const r = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, p = String(e.poster_path).split('?')[0];
+      const at = Date.parse(e.start_utc);
+      if (rules.has(r) || (shown.has(p) && at - shown.get(p) < OCCASION)) return false;
+      rules.add(r);
+      shown.set(p, at);
+      return true;
+    });
+  }
+  /** A poster on the shelf, and what it is under it: its own words are on it already. */
+  const posterCard = (e, from) => `<button class="poster" type="button" data-event="${esc(e.id)}">
+          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
+          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
+            ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
+        </button>`;
+
   function renderWhatsOn() {
     const el = $('#shelf-whatson');
     const raw = window.agoraBundle.raw;
@@ -1465,11 +1566,7 @@
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
       // Regular services are the timetable's; this shelf is for the things that happen once.
       .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
-    const seen = new Set();
-    const uniq = pool.filter(e => {
-      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
-      if (seen.has(k)) return false; seen.add(k); return true;
-    });
+    const uniq = oncePerPoster(pool);
     let list = uniq.filter(inViewEvent);
     // Too few in view: the nearest a dozen, wherever they are.
     if (list.length < 2) {
@@ -1479,15 +1576,10 @@
     }
     list = list.sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
     if (!list.length) { el.innerHTML = ''; return; }
-    // The poster whole, and what it is under it: its own words are on it already.
     const cards = list.map(e => {
       const p = S.byId.get(e.parish_id);
       const d = distOf(p);
-      return `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
-          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
-            <span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span></span>
-        </button>`;
+      return posterCard(e, `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span>`);
     }).join('');
     shelf(el, "What's on", whatsOnWords(), cards);
   }
@@ -1611,14 +1703,30 @@
   function renderFeeds() {
     renderToday();
     renderWhatsOn();
-    // Counts on the shelves move with the view.
-    $$('.ccard[data-coll]').forEach(b => {
-      const c = COLL.get(b.dataset.coll) && underJuris(COLL.get(b.dataset.coll));
-      if (!c || !S.inView) return;
-      const n = c.ids.length, v = c.ids.filter(id => S.inView.has(id)).length;
+    // Counts on the shelves are what a tap opens, under the page's
+    // jurisdiction, and those in view; none is grey and not to be tapped
+    // (Kevin, 29 Oct 2026: Romanian, then Greek, was an empty card).
+    $$('.ccard[data-coll], .lchip[data-coll]').forEach(b => {
+      const c = shelfColl(b.dataset.coll);
+      if (!c) return;
+      const n = c.ids.length;
+      b.disabled = !n;
+      b.title = n ? '' : emptyWords(c);
+      if (b.classList.contains('lchip')) { b.querySelector('small').textContent = n; return; }
+      const v = S.inView ? c.ids.filter(id => S.inView.has(id)).length : 0;
       const s = b.querySelector('.csub');
       if (s) s.textContent = `${n} ${n === 1 ? 'place' : 'places'}${v && v !== n ? ` · ${v} in view` : ''}`;
     });
+  }
+  // A shelf's collection under the page's jurisdiction, asked again only when
+  // the jurisdiction or the data changes, not each time the map moves.
+  let shelfKey = null;
+  const shelfAt = new Map();
+  function shelfColl(id) {
+    const key = `${jList(S.juris).join('+')}|${S.loads}`;
+    if (key !== shelfKey) { shelfKey = key; shelfAt.clear(); }
+    if (!shelfAt.has(id)) shelfAt.set(id, COLL.get(id) ? underJuris(COLL.get(id)) : null);
+    return shelfAt.get(id);
   }
 
   // ── Sheets ────────────────────────────────────────────────────────────
@@ -2112,19 +2220,11 @@
     const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
       .filter(e => e.poster_path && visible(e) && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventParishIds(e).includes(pid));
-    const seen = new Set();
-    const list = pool.filter(e => {
-      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
-      if (seen.has(k)) return false; seen.add(k); return true;
-    }).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
+    const list = oncePerPoster(pool).slice(0, 12);
     if (!list.length) return '';
     const cards = list.map(e => {
       const host = e.parish_id !== pid ? S.byId.get(e.parish_id) : null;
-      return `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
-          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
-            ${host ? `<span class="pfrom">${avatar(host, 'xs')}<span>${esc(host.name)}</span></span>` : ''}</span>
-        </button>`;
+      return posterCard(e, host ? `<span class="pfrom">${avatar(host, 'xs')}<span>${esc(host.name)}</span></span>` : '');
     }).join('');
     return `<h2 class="sec">What's on</h2><div class="shelf-row">${cards}</div>`;
   }
@@ -2290,7 +2390,10 @@
       || KIND_NAMES[x.kind] || 'Services';
     const text = (x.part ? `${x.part} ${noun.toLowerCase()}` : noun) + window.AgoraLinkWords.daysPhrase(x)
       + (x.lang ? (x.langStrict ? ` in ${x.lang} only` : ` in ${x.lang}`) : '');
-    return text.charAt(0).toUpperCase() + text.slice(1);
+    // A link's words, as typed: “disco”, or Saturday services matching “disco”.
+    const said = x.words ? `“${window.AgoraSearch.phraseOf(x.words)}”` : '';
+    if (said && !(x.kind || x.service || x.kindSub || x.day != null || x.dayGroup || x.part || x.lang)) return said;
+    return text.charAt(0).toUpperCase() + text.slice(1) + (said ? ` matching ${said}` : '');
   }
   // ── A parish card's Filters, beside Pick a date ───────────────────────
   //
@@ -2300,7 +2403,7 @@
   // following. Only what the parish has is offered.
 
   /** How many things a focus asks: each day its own, as the page's count has them. */
-  const focusCount = (x) => (x ? window.AgoraServices.daysOf(x.day).length + [x.kind, x.service, x.dayGroup, x.part, x.lang].filter(Boolean).length : 0);
+  const focusCount = (x) => (x ? window.AgoraServices.daysOf(x.day).length + [x.kind, x.service, x.dayGroup, x.part, x.lang, x.words].filter(Boolean).length : 0);
   function cardPanelHTML(pid, focus) {
     const f = { ...blankFilters(), ...(focus || {}) }, SV = window.AgoraServices;
     const p = S.byId.get(pid);
@@ -2464,22 +2567,47 @@
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
-  const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
+  const foldHTML = (label) => `<label class="ctimes-open"><input type="checkbox" hidden><span>${label}</span>${I.chev}</label>`;
+  /**
+   * A card with nothing in it says what it looked for, and the way on: a
+   * list, how to fill it; the parishes in view, the nearest; a collection
+   * under a jurisdiction, the same in every one, when that has any.
+   */
+  function emptyWords(c) {
+    if (!c.segs) return 'Nothing here yet.';
+    const r = window.AgoraUrlState.classifyPath(pathOf(c.segs), { today: todayKey() });
+    return `No ${window.AgoraLinkWords.headingOf(r, {})} on file yet.`;
+  }
+  function emptyHTML(c) {
+    if (c.listId) return '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>';
+    if (c.id === 'inview') return `<div class="tt-none">No ${placeNoun(0)} in view.</div><button class="wide-btn" type="button" data-nearest>${esc(nearestWords())}</button>`;
+    const all = c.juris && c.f ? byFilters({ ...c, ids: null, juris: null }) : null;
+    const n = all ? all.ids.length : 0;
+    return `<div class="tt-none">${esc(emptyWords(c))}</div>${n ? `<button class="wide-btn" type="button" data-act="coll-all">See ${n} in every jurisdiction</button>` : ''}`;
+  }
 
   function openCollection(c, { entry = true, from = null } = {}) {
     const o = sortOrigin();
-    const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
-      .sort((a, b) => (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule)) || (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
-    const LIMIT = 30;
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
     const cf = { ...blankFilters(), ...(c.f || {}) };
     const only = asksWhat(cf) || cf.lang ? cf : null;
+    // One list by distance, whatever each holds: times, a one-off, or
+    // nothing yet (Kevin, 29 Oct 2026).
+    const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
+      .sort((a, b) => (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
+    const LIMIT = 30;
     const item = (p) => {
       const d = distOf(p);
-      const nx = only ? nextOf(p.id, e => rowAnswers(e, only, false)) : nextOf(p.id);
-      const times = rulesOf(p.id).some(liveRule);
-      const tt = times ? timetable(p.id, { compact: true, only }) : '';
+      // Its Next is its own, held by it or in its church, before one it only
+      // takes part in; and its own one-off may be months off, past nextOf's
+      // fortnight, which says when for a parish with no timetable (/greek).
+      const answers = only ? (e) => rowAnswers(e, only, false) : () => true;
+      const nx = nextOf(p.id, e => (e.parish_id === p.id || e.location_parish_id === p.id) && answers(e))
+        || upcomingOneOffs(p.id, { own: true }).find(e => Date.parse(e.start_utc) > Date.now() && answers(e))
+        || nextOf(p.id, answers);
+      // Its lines, or nothing: a parish with no times says no more (Kevin, 29 Oct 2026).
+      const tt = rulesOf(p.id).some(liveRule) ? timetable(p.id, { compact: true, only }) : '';
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
@@ -2487,7 +2615,7 @@
               ${nx ? `<span class="citem-next">${roundel(nx.event_type)} Next: ${esc(nx.title)} · ${esc(whenShort(nx))}</span>` : ''}</span>
           </button>
           <button class="cadd" type="button" data-quickadd="${esc(p.id)}" aria-label="Add to a list">${I.plus}</button>
-          ${tt || `<div class="tt-none sm">${times ? 'Not on its timetable.' : 'No service times on file yet.'}</div>`}
+          ${tt}
         </article>`;
     };
     const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c)), { lang: cf.lang }) : '';
@@ -2508,9 +2636,9 @@
         ${c.segs ? `<div class="sheet-link">${linkChip(collSegs(c, from))}</div>` : ''}
         ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
         <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
-          <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
+          <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || emptyHTML(c)}</div>
           ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
-          ${ps.length > 1 ? foldHTML() : ''}
+          ${ps.length > 1 ? foldHTML(c.group === 'jurisdiction' ? 'Parishes' : 'Show timetables') : ''}
         </section>
         ${ps.length ? `<section class="cu-band">
           <h2 class="sec">Coming up</h2>
@@ -3064,46 +3192,11 @@
   // "english liturgy sunday" or "vespers tonight" ask the timetable a question
   // instead of looking for those words in titles.
 
-  const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-    .replace(/[’'`.]/g, '').replace(/\bsaints?\b|\bsts?\b/g, 'st')
-    .replace(/[^a-z0-9Ͱ-ϿЀ-ӿ؀-ۿ]+/g, ' ').trim();
-  const hasWord = (hay, tok) => (' ' + hay).includes(' ' + tok);
-
-  const DAY_WORDS = { sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6 };
-  const KIND_WORDS = {
-    liturgy: 'liturgy', liturgies: 'liturgy', mass: 'liturgy', eucharist: 'liturgy',
-    talk: 'talk', talks: 'talk', bible: 'talk', study: 'talk', catechism: 'talk', class: 'talk', classes: 'talk', lecture: 'talk',
-    youth: 'youth', young: 'youth', kids: 'youth', children: 'youth',
-    social: 'social', socials: 'social', festival: 'social', fete: 'social', dinner: 'social', picnic: 'social', fundraiser: 'social',
-    feast: 'feast', feasts: 'feast',
-  };
-  // Prayer services are asked for by name; these stay as text, and also mean "a service".
-  const PRAYER_WORDS = ['vespers', 'vigil', 'matins', 'orthros', 'paraklesis', 'akathist', 'akatist', 'compline', 'confession', 'supplication', 'prayer', 'prayers'];
-  const LANG_WORDS = { english: 'English', greek: 'Greek', arabic: 'Arabic', serbian: 'Serbian', russian: 'Church Slavonic', slavonic: 'Church Slavonic', romanian: 'Romanian', macedonian: 'Macedonian', ukrainian: 'Ukrainian' };
-  const FILLER = new Set(['the', 'a', 'an', 'in', 'at', 'on', 'of', 'for', 'this', 'next', 'service', 'services', 'church', 'parish', 'parishes', 'orthodox', 'and', 'with', 'times', 'time', 'whats', 'what', 'is', 'near', 'me', 'nearby', 'around', 'week']);
-
-  function parseQuery(q) {
-    const toks = norm(q).split(' ').filter(Boolean);
-    const out = { text: [], days: null, tonight: false, kind: null, prayer: false, lang: null, nearMe: /\bnear me\b|\bnearby\b|\baround me\b/.test(norm(q)), raw: toks };
-    const t = todayKey();
-    const addDay = (k) => { out.days = out.days || new Set(); out.days.add(k); };
-    for (let i = 0; i < toks.length; i++) {
-      const w = toks[i];
-      if (w === 'today') { addDay(t); continue; }
-      if (w === 'tonight') { addDay(t); out.tonight = true; continue; }
-      if (w === 'tomorrow') { addDay(addDays(t, 1)); continue; }
-      if (w === 'weekend') { for (let d = 0; d < 7; d++) { const k = addDays(t, d); const wd = new Date(k + 'T00:00:00Z').getUTCDay(); if (wd === 0 || wd === 6) addDay(k); } continue; }
-      if (w in DAY_WORDS) { for (let d = 0; d < 14; d++) { const k = addDays(t, d); if (new Date(k + 'T00:00:00Z').getUTCDay() === DAY_WORDS[w]) addDay(k); } continue; }
-      if (w in KIND_WORDS) { out.kind = KIND_WORDS[w]; if (w !== 'bible' && w !== 'study') continue; }
-      if (w in LANG_WORDS) { out.lang = LANG_WORDS[w]; }
-      if (PRAYER_WORDS.includes(w)) out.prayer = true;
-      if (FILLER.has(w)) continue;
-      out.text.push(w);
-    }
-    // A language word is both: "greek" is a language for services and a
-    // jurisdiction (and a word in names) for parishes. Keep it as text too.
-    return out;
-  }
+  // What words mean, and whether a row answers them, is search-words.js's: a
+  // link's own words (/smmp/disco) are read there too, so the two agree.
+  const SW = window.AgoraSearch;
+  const { norm, hasWord, DAY_WORDS, LANG_WORDS, FILLER } = SW;
+  const parseQuery = (q) => SW.parseQuery(q, todayKey());
 
   let parishHay = null;
   function hayOf(p) {
@@ -3178,20 +3271,11 @@
       .filter(p => { const h = hayOf(p); return Q.text.every(w => hasWord(`${h.name} ${h.acr} ${h.addr}`, w)); }).map(p => p.id)) : null;
     const res = feedFor(42).filter(e => {
       if (!visible(e) || e.parish_scoped || endMs(e) < now) return false;
-      const l = local(e);
-      if (Q.days && !Q.days.has(l.date)) return false;
-      if (Q.tonight && l.hm < '16:00') return false;
-      if (Q.kind && e.event_type !== Q.kind && !(Q.kind === 'social' && e.event_type === 'youth')) return false;
-      if (Q.lang) {
-        if (!window.AgoraTimetable.rowAnswersLang(e, { lang: Q.lang },
-          eventParishIds(e).some(id => hasLang(S.byId.get(id), Q.lang)))) return false;
-      }
-      const words = Q.text.filter(w => !(w in LANG_WORDS));
-      if (!words.length) return !Q.prayer || e.event_type === 'prayer';
-      const hay = norm(`${e.title} ${e.feast || ''} ${e.description || ''}`);
-      if (words.every(w => hasWord(hay, w))) return true;
-      // Or the words name the parish (or its suburb): its services.
-      return pids && eventParishIds(e).some(id => pids.has(id)) && (!Q.prayer || e.event_type === 'prayer');
+      const at = whereWhen(e);
+      if (SW.answers(e, Q, at)) return true;
+      // Or the words name the parish (or its suburb): its services, as the
+      // rest of the query asks.
+      return !!pids && eventParishIds(e).some(id => pids.has(id)) && SW.answers(e, { ...Q, text: [] }, at);
     });
     // By day; within a day, what is near you first (when we know where you
     // are), then by time. A Liturgy in Perth at 8 should not sit between two
@@ -3386,7 +3470,13 @@
       return;
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
-    if (t.closest('#inview, [data-inview]')) { openInView(); return; }
+    if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else showNearest(); return; }
+    if ((b = t.closest('[data-nearest]'))) {
+      closeAll();
+      // Today's: the nearest with something on, today or tomorrow.
+      showNearest(b.dataset.nearest === 'on' ? new Set(feedFor(2).filter(e => eventPasses(e) && endMs(e) > Date.now()).flatMap(eventParishIds)) : null);
+      return;
+    }
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(underJuris(c)); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
@@ -3575,6 +3665,7 @@
         return;
       }
       if (a === 'more-items') { top.querySelector('.clist').insertAdjacentHTML('beforeend', top._rest()); b.remove(); return; }
+      if (a === 'coll-all') { const c = top._coll; openCollection(byFilters({ ...c, ids: null, juris: null })); return; }
     }
   });
   document.addEventListener('change', (e) => {

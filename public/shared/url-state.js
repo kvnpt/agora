@@ -222,6 +222,7 @@
       location: null,
       monasteries: false,
       parishSlugs: null,
+      words: [],
     };
     let parts;
     try {
@@ -291,10 +292,13 @@
         // Before the parish fallback — which is why an acronym may not spell a
         // region (slugs.js refuses one that would).
         out.location = loc.slug;
-      } else if (seg.includes('+')) {
-        out.parishSlugs = seg.split('+').map(s => s.trim()).filter(Boolean);
+      } else if (!out.parishSlugs) {
+        out.parishSlugs = seg.includes('+') ? seg.split('+').map(s => s.trim()).filter(Boolean) : [seg];
       } else {
-        out.parishSlugs = [seg];
+        // A word nothing above claims, after the parish: what is asked of
+        // it, as the search box reads it (search-words.js). /smmp/disco is
+        // St Mary's Disco Night. It used to replace the parish.
+        out.words.push(seg);
       }
     }
     out.jurisdiction = jurisdictionValue(juris);
@@ -308,6 +312,19 @@
     out.englishOnly = !!out.lang && /^english$/i.test(out.lang);
     out.englishStrict = out.englishOnly && out.langStrict;
     return out;
+  }
+
+  /**
+   * The route with `slug` as its one parish, and every other word nothing
+   * claimed as its words: /disco/smmp read as /smmp/disco, once the reader
+   * has found that "smmp" is the parish and "disco" is not. Only the reader
+   * knows (the browser holds the parishes, the Worker asks D1), so it is
+   * asked of it here rather than decided above.
+   */
+  function parishNamed(r, slug) {
+    const all = [...((r && r.parishSlugs) || []), ...((r && r.words) || [])];
+    const at = all.indexOf(slug);
+    return { ...r, parishSlugs: [slug], words: all.filter((w, i) => i !== at) };
   }
 
   /**
@@ -368,7 +385,7 @@
 
   const api = { JURISDICTION_KEYS, jurisdictionsOf, jurisdictionValue, jurisdictionMatches, jurisdictionSegment, KIND_SEGMENTS, KIND_ALIASES, SERVICE_KINDS, kindOfService, TIMETABLE_SEGMENTS, MONASTERY_SEGMENTS,
     renamedPath,
-    weekOffsetOf, weekSegment, isEventId, classifyPath, firstEventOnDay, pageKind,
+    weekOffsetOf, weekSegment, isEventId, classifyPath, parishNamed, firstEventOnDay, pageKind,
     englishSegment, kindSegment, langSlug, langFromSlug };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraUrlState = api;
