@@ -387,7 +387,7 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
     return `<article class="citem">
         <a class="citem-head" href="/${esc(slug)}">${avatar(p, 'md', color)}
           <span class="citem-t"><b>${esc(p.name)}</b><small>${esc(JURIS_SHORT(p.jurisdiction))}${langs.length ? ` · ${esc(langs.slice(0, 2).join(', '))}` : ''}</small></span></a>
-        ${tt || '<div class="tt-none sm">No service times on file yet.</div>'}
+        ${tt}
       </article>`;
   };
   return sheet('collection', c.title, '', `${glassBar(c.title, `${ps.length} places`)}
