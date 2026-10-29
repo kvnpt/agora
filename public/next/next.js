@@ -1498,16 +1498,20 @@
   // ── What's on: the one-offs, poster first ─────────────────────────────
 
   /**
-   * Each thing once, at its soonest: a rule's dates as one card, and a
-   * poster's as one (a talk series' flyer, a feast's Vespers and Liturgy),
-   * since the poster says its own dates.
+   * Each thing once, at its soonest: a rule's dates as one card, and one
+   * occasion's poster as one (a feast's Vespers and Matins), since the poster
+   * says its own times. A poster's dates further apart are things of their
+   * own (a talk series' Fridays, two activities on one flyer) and keep theirs.
    */
+  const OCCASION = 2 * DAY;
   function oncePerPoster(list) {
-    const seen = new Set();
+    const rules = new Set(), shown = new Map();
     return list.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).filter(e => {
-      const ks = [e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, `p${String(e.poster_path).split('?')[0]}`];
-      if (ks.some(k => seen.has(k))) return false;
-      ks.forEach(k => seen.add(k));
+      const r = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, p = String(e.poster_path).split('?')[0];
+      const at = Date.parse(e.start_utc);
+      if (rules.has(r) || (shown.has(p) && at - shown.get(p) < OCCASION)) return false;
+      rules.add(r);
+      shown.set(p, at);
       return true;
     });
   }
