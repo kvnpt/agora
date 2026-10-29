@@ -377,8 +377,9 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
   }
   const ps = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.map(x => x.parish)));
   const todayOf = (p) => localDateOf(p.timezone || 'Australia/Sydney', m.now);
-  const hasTimes = (p) => (byParish.get(p.id) || []).some(r => lines.isLive(r, todayOf(p)));
-  ps.sort((a, b) => hasTimes(b) - hasTimes(a) || String(a.name).localeCompare(String(b.name)));
+  // One list, those with times and those without together (Kevin, 29 Oct
+  // 2026): by name here, where the page has them by distance.
+  ps.sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const item = (p) => {
     const color = colorOf(p.jurisdiction);
     const tt = timetableHTML(byParish.get(p.id) || [], { today: todayOf(p), color, compact: true });
@@ -400,7 +401,7 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
       ${linkChipHTML(m.origin, c.path)}
       <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
         <div class="clist">${ps.slice(0, limit).map(item).join('') || '<div class="tt-none">Nothing here yet.</div>'}</div>
-        ${ps.length > 1 ? `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>` : ''}
+        ${ps.length > 1 ? `<label class="ctimes-open"><input type="checkbox" hidden><span>${c.group === 'jurisdiction' ? 'Parishes' : 'Show timetables'}</span>${I.chev}</label>` : ''}
       </section>
       ${feed ? `<section class="cu-band" id="coming-up">
         <h2 class="sec">Coming up</h2>

@@ -106,10 +106,10 @@ OKLab dark-mode lift in `public/shared/jurisdiction-colors.js` (`liftForDark`).
 `/greek/qld`, `/liturgy`, `/wed/evening`, `/en`, `/smg+sgr`, `/timetables` — the
 aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, the list
 in `public/shared/collections.js`) opens its card, painted from the model
-(`collectionCardHTML`): the parishes, those with times first, each with the lines of
+(`collectionCardHTML`): the parishes by name (by distance on the page), each with the lines of
 its timetable that answer the link (all of them, for a link that asks nothing of a
 parish's services), folded to the first few lines until Show timetables (a checkbox in its label, so it
-opens with no script); the page adds a Today box of theirs above the timetables and
+opens with no script; a jurisdiction's says Parishes); the page adds a Today box of theirs above the timetables and
 what is coming up at them underneath. A parish with no lines there says nothing in
 their place (Kevin, 29 Oct 2026): the page's card gives it a Next, its own one-off
 however far ahead before one it takes part in, and, for a link that asks something,
