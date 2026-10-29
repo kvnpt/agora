@@ -110,7 +110,10 @@ in `public/shared/collections.js`) opens its card, painted from the model
 its timetable that answer the link (all of them, for a link that asks nothing of a
 parish's services), folded to the first few lines until Show timetables (a checkbox in its label, so it
 opens with no script); the page adds a Today box of theirs above the timetables and
-what is coming up at them underneath. Any
+what is coming up at them underneath. A parish with no lines there says nothing in
+their place (Kevin, 29 Oct 2026): the page's card gives it a Next, its own one-off
+however far ahead before one it takes part in, and, for a link that asks something,
+lists every parish by distance, since each one answers it. Any
 other mix of filters is the page itself, filtered, and gets only its head.
 
 `worker/lib/lite-timetable.mjs` (`timetableModel`), pure like the card's:
