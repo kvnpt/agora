@@ -172,6 +172,22 @@ views are rows under them (Your lists), once there are any. Bookmarks are not a 
 bookmarks" would mean nothing in another browser. Every read and
 write survives storage being refused; the controls come back empty.
 
+**Saved to a Home Screen, the page is an app.** Since iOS 26 every site added
+to an iPhone's Home Screen opens full screen, so what the page owes it is an
+icon, a name and an answer with no signal. `public/manifest.webmanifest` names
+it (`orthodoxy.au`, opening `/`), `apple-touch-icon.png` and the `icon-*.png`
+sizes are its icon, and `public/sw.js` is the answer: network first for every
+request, keeping what came back and handing it out only when the network
+fails, so it never serves a stale page to anybody online. A first visit loads
+before `sw.js` is there to keep anything, so the page then sends it the
+addresses it loaded (`performance` entries), once. The bundle is kept
+under one key whatever its window; tiles, posters, `/admin` and the rest of
+`/api/` are never kept. The icon is a placeholder (the map's grape bunch over
+the land of `oceania.pmtiles`, `public/icon.svg`); the PNGs are renders of
+that SVG, made again whenever it changes. Every file sits at the root, so a
+PNG goes through the Worker and back out of the assets (`pageOf` reads a
+dotted last segment as a file), as `/apple-touch-icon.png` always did.
+
 **`/morning` and `/evening` split the day at 2pm**, on the parish's own clock — the
 line the feed already drew its Morning and Evening cards on, so a link and the
 cards it lands on agree. `partOfDayOf` in `public/shared/services.js` is the one

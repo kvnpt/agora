@@ -45,6 +45,29 @@
   <meta property="og:image" content="https://orthodoxy.au/og/default.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <!--/page:head-->
+  <!-- Saved to a Home Screen, the page is an app (docs/architecture.md): its
+       icon, its name under the icon, and sw.js, which opens it with the last
+       feed it saw when there is no signal. Registered after load, so nothing
+       the first paint needs waits on it. On a visit sw.js did not answer (the
+       first), it is told what the page loaded without it, to keep too. -->
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="apple-mobile-web-app-title" content="orthodoxy.au">
+  <script>
+    if ('serviceWorker' in navigator) {
+      addEventListener('load', function () {
+        var unanswered = !navigator.serviceWorker.controller;
+        navigator.serviceWorker.register('/sw.js')
+          .then(function () { return navigator.serviceWorker.ready; })
+          .then(function (reg) {
+            if (!unanswered || !reg.active) return;
+            reg.active.postMessage({ keep: performance.getEntriesByType('resource').map(function (e) { return e.name; }) });
+          })
+          .catch(function () {});
+      });
+    }
+  </script>
   <!-- v3: a page around a map rather than a map under a sheet. It reads
        /api/bundle through bundle.js and the /shared/ projection, and somebody
        signed in edits through the /api/admin routes /admin uses. -->
