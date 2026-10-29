@@ -1497,6 +1497,31 @@
 
   // ── What's on: the one-offs, poster first ─────────────────────────────
 
+  /**
+   * Each thing once, at its soonest: a rule's dates as one card, and one
+   * occasion's poster as one (a feast's Vespers and Matins), since the poster
+   * says its own times. A poster's dates further apart are things of their
+   * own (a talk series' Fridays, two activities on one flyer) and keep theirs.
+   */
+  const OCCASION = 2 * DAY;
+  function oncePerPoster(list) {
+    const rules = new Set(), shown = new Map();
+    return list.slice().sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).filter(e => {
+      const r = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`, p = String(e.poster_path).split('?')[0];
+      const at = Date.parse(e.start_utc);
+      if (rules.has(r) || (shown.has(p) && at - shown.get(p) < OCCASION)) return false;
+      rules.add(r);
+      shown.set(p, at);
+      return true;
+    });
+  }
+  /** A poster on the shelf, and what it is under it: its own words are on it already. */
+  const posterCard = (e, from) => `<button class="poster" type="button" data-event="${esc(e.id)}">
+          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
+          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
+            ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
+        </button>`;
+
   function renderWhatsOn() {
     const el = $('#shelf-whatson');
     const raw = window.agoraBundle.raw;
@@ -1508,11 +1533,7 @@
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
       // Regular services are the timetable's; this shelf is for the things that happen once.
       .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
-    const seen = new Set();
-    const uniq = pool.filter(e => {
-      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
-      if (seen.has(k)) return false; seen.add(k); return true;
-    });
+    const uniq = oncePerPoster(pool);
     let list = uniq.filter(inViewEvent);
     // Too few in view: the nearest a dozen, wherever they are.
     if (list.length < 2) {
@@ -1522,15 +1543,10 @@
     }
     list = list.sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
     if (!list.length) { el.innerHTML = ''; return; }
-    // The poster whole, and what it is under it: its own words are on it already.
     const cards = list.map(e => {
       const p = S.byId.get(e.parish_id);
       const d = distOf(p);
-      return `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
-          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
-            <span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span></span>
-        </button>`;
+      return posterCard(e, `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span>`);
     }).join('');
     shelf(el, "What's on", whatsOnWords(), cards);
   }
@@ -2143,19 +2159,11 @@
     const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
       .filter(e => e.poster_path && visible(e) && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventParishIds(e).includes(pid));
-    const seen = new Set();
-    const list = pool.filter(e => {
-      const k = e.schedule_id ? `r${e.schedule_id}` : `e${e.id}`;
-      if (seen.has(k)) return false; seen.add(k); return true;
-    }).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc)).slice(0, 12);
+    const list = oncePerPoster(pool).slice(0, 12);
     if (!list.length) return '';
     const cards = list.map(e => {
       const host = e.parish_id !== pid ? S.byId.get(e.parish_id) : null;
-      return `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
-          <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
-            ${host ? `<span class="pfrom">${avatar(host, 'xs')}<span>${esc(host.name)}</span></span>` : ''}</span>
-        </button>`;
+      return posterCard(e, host ? `<span class="pfrom">${avatar(host, 'xs')}<span>${esc(host.name)}</span></span>` : '');
     }).join('');
     return `<h2 class="sec">What's on</h2><div class="shelf-row">${cards}</div>`;
   }

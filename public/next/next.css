@@ -711,6 +711,8 @@ body.map-full .parish-row {
   font-size: 15px; font-weight: 650; line-height: 1.25;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+/* The subtitle, the saint or feast of the day, as a row in a list has it (.efeast). */
+.pfeast { font-size: 12.5px; color: var(--text-2); font-style: italic; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pfrom { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; color: var(--text-2); font-size: 12.5px; }
 .pfrom span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
