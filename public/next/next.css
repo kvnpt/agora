@@ -1005,6 +1005,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .chero .ckicker { color: rgba(255, 255, 255, .85); }
 .chero h1 { font-size: 32px; font-weight: 800; letter-spacing: -.025em; line-height: 1.08; margin-top: 4px; }
 .chero p { margin: 16px 0 0; font-size: 15.5px; opacity: .92; }
+.chero p a { color: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 .chero-acts { display: flex; gap: 10px; margin-top: 18px; }
 .hbtn {
   flex: 1; min-height: 66px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
@@ -1015,6 +1016,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
    page's ink, the kicker and the buttons in the tint's. */
 .chero.soft h1 { color: var(--text); }
 .chero.soft p { color: var(--text-2); opacity: 1; }
+.chero.soft p a { color: var(--ink); }
 .chero.soft .ckicker { color: var(--ink); }
 .chero.soft .hbtn { background: var(--card); box-shadow: var(--shadow); color: var(--ink); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .clist { padding: 6px 0 0; }
