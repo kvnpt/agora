@@ -1160,14 +1160,38 @@
     const one = ps.length === 1 ? ps[0] : null;
     const chip = $('#inview');
     chip.classList.toggle('one', !!one);
-    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
+    // None here: the way to the nearest, or to the filters when none anywhere answers them.
+    const away = ps.length ? '' : nearestWords();
+    chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
     chip.innerHTML = one
       ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
       : ps.length
         ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}Pan or zoom out</small></span>`;
+        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
-    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${place}</small></span>`;
+    $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`;
+  }
+  /**
+   * Nothing in view is a way out, not a dead end (Kevin's friend, zoomed in
+   * on bush, 28 Oct 2026): the map out to the nearest few that answer the
+   * page, from where it is looking — or, with `ids`, the nearest of those.
+   */
+  const NEAREST = 5;
+  const answering = (ids = null) => S.parishes.filter(p => isFinite(p.lat) && p.lat != null && parishPasses(p) && (!ids || ids.has(p.id)));
+  function nearestWords() {
+    const n = Math.min(NEAREST, answering().length);
+    return !n ? 'Change the filters' : n === 1 ? 'Show the nearest' : `Show the nearest ${n}`;
+  }
+  function showNearest(ids = null) {
+    const ps = answering(ids);
+    if (!ps.length) { setPanel(true); return; }
+    const c = map ? map.getCenter() : null;
+    if (!c) return;
+    const o = { lat: c.lat, lng: c.lng };
+    const b = new maplibregl.LngLatBounds([c.lng, c.lat], [c.lng, c.lat]);
+    ps.sort((x, y) => km(o, x) - km(o, y)).slice(0, NEAREST).forEach(p => b.extend([p.lng, p.lat]));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    map.fitBounds(b, { padding: 50, maxZoom: 13, duration: 700 });
   }
   function renderParishRow() {
     const o = S.loc || (map ? map.getCenter() : null);
@@ -1283,9 +1307,18 @@
   }
 
   function renderToday() {
-    const html = todayHTML(feedFor(2).filter(e => eventPasses(e) && inViewEvent(e)), { lang: S.f.lang });
+    const on = feedFor(2).filter(e => eventPasses(e));
+    // Nothing in view but something elsewhere says so, and the way to it,
+    // rather than going without a word; nothing anywhere is still no box.
+    const html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
     $('#today').innerHTML = html;
     $('#today').hidden = !html;
+  }
+  function todayAwayHTML() {
+    const d = new Date(todayKey() + 'T00:00:00Z');
+    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div></header>
+      <div class="tempty">Nothing on in view.</div>
+      <button class="see-all" type="button" data-nearest="on">Show what's on nearest ${I.chev}</button>`;
   }
   /**
    * Today, from the rows given. With something on now, "Happening now" and
@@ -1670,14 +1703,30 @@
   function renderFeeds() {
     renderToday();
     renderWhatsOn();
-    // Counts on the shelves move with the view.
-    $$('.ccard[data-coll]').forEach(b => {
-      const c = COLL.get(b.dataset.coll) && underJuris(COLL.get(b.dataset.coll));
-      if (!c || !S.inView) return;
-      const n = c.ids.length, v = c.ids.filter(id => S.inView.has(id)).length;
+    // Counts on the shelves are what a tap opens, under the page's
+    // jurisdiction, and those in view; none is grey and not to be tapped
+    // (Kevin, 29 Oct 2026: Romanian, then Greek, was an empty card).
+    $$('.ccard[data-coll], .lchip[data-coll]').forEach(b => {
+      const c = shelfColl(b.dataset.coll);
+      if (!c) return;
+      const n = c.ids.length;
+      b.disabled = !n;
+      b.title = n ? '' : emptyWords(c);
+      if (b.classList.contains('lchip')) { b.querySelector('small').textContent = n; return; }
+      const v = S.inView ? c.ids.filter(id => S.inView.has(id)).length : 0;
       const s = b.querySelector('.csub');
       if (s) s.textContent = `${n} ${n === 1 ? 'place' : 'places'}${v && v !== n ? ` · ${v} in view` : ''}`;
     });
+  }
+  // A shelf's collection under the page's jurisdiction, asked again only when
+  // the jurisdiction or the data changes, not each time the map moves.
+  let shelfKey = null;
+  const shelfAt = new Map();
+  function shelfColl(id) {
+    const key = `${jList(S.juris).join('+')}|${S.loads}`;
+    if (key !== shelfKey) { shelfKey = key; shelfAt.clear(); }
+    if (!shelfAt.has(id)) shelfAt.set(id, COLL.get(id) ? underJuris(COLL.get(id)) : null);
+    return shelfAt.get(id);
   }
 
   // ── Sheets ────────────────────────────────────────────────────────────
@@ -2506,7 +2555,24 @@
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
-  const foldHTML = () => `<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables</span>${I.chev}</label>`;
+  const foldHTML = (label) => `<label class="ctimes-open"><input type="checkbox" hidden><span>${label}</span>${I.chev}</label>`;
+  /**
+   * A card with nothing in it says what it looked for, and the way on: a
+   * list, how to fill it; the parishes in view, the nearest; a collection
+   * under a jurisdiction, the same in every one, when that has any.
+   */
+  function emptyWords(c) {
+    if (!c.segs) return 'Nothing here yet.';
+    const r = window.AgoraUrlState.classifyPath(pathOf(c.segs), { today: todayKey() });
+    return `No ${window.AgoraLinkWords.headingOf(r, {})} on file yet.`;
+  }
+  function emptyHTML(c) {
+    if (c.listId) return '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>';
+    if (c.id === 'inview') return `<div class="tt-none">No ${placeNoun(0)} in view.</div><button class="wide-btn" type="button" data-nearest>${esc(nearestWords())}</button>`;
+    const all = c.juris && c.f ? byFilters({ ...c, ids: null, juris: null }) : null;
+    const n = all ? all.ids.length : 0;
+    return `<div class="tt-none">${esc(emptyWords(c))}</div>${n ? `<button class="wide-btn" type="button" data-act="coll-all">See ${n} in every jurisdiction</button>` : ''}`;
+  }
 
   function openCollection(c, { entry = true, from = null } = {}) {
     const o = sortOrigin();
@@ -2514,12 +2580,10 @@
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
     const cf = { ...blankFilters(), ...(c.f || {}) };
     const only = asksWhat(cf) || cf.lang ? cf : null;
-    // Asked something, every parish here answers it, by its timetable or a
-    // one-off, so they are one list by distance (Kevin, 29 Oct 2026). Asked
-    // nothing (/greek, a list), the parishes with times come first.
-    const near = (a, b) => (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name));
+    // One list by distance, whatever each holds: times, a one-off, or
+    // nothing yet (Kevin, 29 Oct 2026).
     const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
-      .sort((a, b) => (only ? 0 : (rulesOf(b.id).some(liveRule)) - (rulesOf(a.id).some(liveRule))) || near(a, b));
+      .sort((a, b) => (o ? km(o, a) - km(o, b) : a.name.localeCompare(b.name)));
     const LIMIT = 30;
     const item = (p) => {
       const d = distOf(p);
@@ -2560,9 +2624,9 @@
         ${c.segs ? `<div class="sheet-link">${linkChip(collSegs(c, from))}</div>` : ''}
         ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
         <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
-          <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || '<div class="tt-none">Nothing here yet. Add parishes from their cards with +.</div>'}</div>
+          <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || emptyHTML(c)}</div>
           ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
-          ${ps.length > 1 ? foldHTML() : ''}
+          ${ps.length > 1 ? foldHTML(c.group === 'jurisdiction' ? 'Parishes' : 'Show timetables') : ''}
         </section>
         ${ps.length ? `<section class="cu-band">
           <h2 class="sec">Coming up</h2>
@@ -3394,7 +3458,13 @@
       return;
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
-    if (t.closest('#inview, [data-inview]')) { openInView(); return; }
+    if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else showNearest(); return; }
+    if ((b = t.closest('[data-nearest]'))) {
+      closeAll();
+      // Today's: the nearest with something on, today or tomorrow.
+      showNearest(b.dataset.nearest === 'on' ? new Set(feedFor(2).filter(e => eventPasses(e) && endMs(e) > Date.now()).flatMap(eventParishIds)) : null);
+      return;
+    }
     if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(underJuris(c)); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
@@ -3583,6 +3653,7 @@
         return;
       }
       if (a === 'more-items') { top.querySelector('.clist').insertAdjacentHTML('beforeend', top._rest()); b.remove(); return; }
+      if (a === 'coll-all') { const c = top._coll; openCollection(byFilters({ ...c, ids: null, juris: null })); return; }
     }
   });
   document.addEventListener('change', (e) => {
