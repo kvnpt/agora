@@ -130,7 +130,19 @@ tap is the parish's, with the focus of where it was (`focusAround`): the collect
 in, else the page's filters, so `/talks` then St George is `/sgr/talks`, St George's
 card with every line and date still on it, what answers lit (the next of it in
 Today under its day's name) and the rest dimmed, never hidden; its × in Today lets
-it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`). A collection's
+it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`).
+
+**A word nothing else claims, beside one parish, is a search of it** (Kevin,
+28 Oct 2026). `/smmp/disco` is "disco" asked of St Mary's, read as the search
+box reads it (`public/shared/search-words.js`, which the box reads too): every
+word in a title, subtitle or description, and a kind, day or language word as
+intent. It is a focus like `/sgr/talks`, so the soonest match opens over the
+parish and "More “disco”" lists the rest, a season ahead; nothing matching is the
+parish's plain card. Everything the grammar already knows comes first: the
+parish's own links and payment links (the Worker's redirects), the words above,
+then acronyms (`url-state.js` keeps the rest as `words`; `parishNamed` reads
+`/disco/smmp` as `/smmp/disco` once the reader has found the parish). Such a
+link is never indexed. A word on its own (`/village`) is not read yet. A collection's
 timetables do the opposite: they keep only the lines that answer what it asks
 (`/services` its services, `/sun/liturgy` its Sunday Liturgies), as its head counts
 them, and a collection that asks nothing of them (`/greek`) shows each whole week. The timetable is
