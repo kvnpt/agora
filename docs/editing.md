@@ -167,7 +167,8 @@ event.** Worth knowing before reaching for one:
 
 **Parish only is for the parish's own people** (Kevin, 30 Oct 2026). A rule's or
 an event's form has a pill at the end of Kind's line, on and reading *Public*,
-tapped off to *Parish only*. A Parish only row shows where its parish is named:
+tapped off to *Parish only*; so do the Add event card and each regular service a
+sign or a flyer proposes there. A Parish only row shows where its parish is named:
 its own card, a list of parishes holding it (Favourites, a list somebody made,
 `/sgr+snb`); and to whoever has starred the parish it is as if it were public,
 everywhere: Today, the feed, What's on, search, every collection's timetables.
@@ -181,7 +182,11 @@ working bee is the parish's own business, so picking Other in a rule's or an
 event's form turns the pill to *Parish only*, and `createOneOff` stores an Other
 with no `parish_scoped` in the body as parish-scoped. Tap it back to Public and
 it is in the feed like anything else; the pill is the decision, the default
-only a guess.
+only a guess. On the Add event card the pill is `draft_events.parish_scoped`
+(migration 031): NULL until somebody taps it or picks Other, when Publish leaves
+it to `createOneOff`'s default; a card published onto an occurrence starts from
+its rule's. A proposed regular service carries it in `read_services` and is
+added with it, an untapped Other as Parish only, as the rule form would.
 
 `filterByStatus` in `merge.mjs` passes `approved`, `cancelled` and `combined` —
 the last two still render, as tombstones, because nothing disappears.

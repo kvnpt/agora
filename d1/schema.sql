@@ -1165,7 +1165,11 @@ CREATE TABLE draft_events (
   -- Migration 023: where, as on events.
   location_parish_id TEXT,
   location_lat      REAL,
-  location_lng      REAL
+  location_lng      REAL,
+  -- Migration 031. The card's Public / Parish only pill, as events.parish_scoped:
+  -- 1 or 0 once somebody tapped it, NULL while nobody has, when publishing
+  -- leaves it to the kind (an Other is Parish only; createOneOff).
+  parish_scoped     INTEGER
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
 

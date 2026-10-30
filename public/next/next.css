@@ -1454,15 +1454,7 @@ body.dialog-open { overflow: hidden; }
    and who sees it (rule-form.js scopeHTML). */
 .detail-edit-form .edit-row-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .detail-edit-form .edit-row-head > label { margin: 0; }
-/* On, Public; tapped off, Parish only. The languages' chip, on and off. */
-.scope-pill {
-  flex: none; min-height: 32px; padding: 4px 14px;
-  font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap;
-  color: var(--text-2); background: transparent;
-  border: 1px solid var(--border); border-radius: 999px; cursor: pointer;
-}
-.scope-pill.on { color: #fff; background: var(--accent); border-color: var(--accent); }
-.scope-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+/* The pill itself is event-editor.css's .scope-pill, which the Add event card shares. */
 .detail-edit-form [hidden] { display: none !important; }
 .edit-row-hint { margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--text-3); }
 .edit-row-hint-bad { color: var(--danger); font-weight: 600; }

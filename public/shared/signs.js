@@ -90,6 +90,8 @@
         description: s.description ? String(s.description).trim().slice(0, 600) || null : null,
         effective_from: s.effective_from || null,
         effective_to: s.effective_to || null,
+        // Its Public / Parish only pill, once tapped; untapped, the kind decides (an Other is Parish only).
+        parish_scoped: s.parish_scoped == null ? null : s.parish_scoped ? 1 : 0,
         read_notes: notes,
       });
     }

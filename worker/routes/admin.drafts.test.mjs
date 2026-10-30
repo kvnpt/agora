@@ -319,6 +319,28 @@ test('publishing turns local wall-clock into instants, puts the poster on, and s
   assert.deepEqual(f.bucket.deleted, []);
 });
 
+test('the card\'s Public / Parish only pill is kept and published; untapped, the kind decides', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a })).body;
+  assert.equal(d.cards[0].parish_scoped, null, 'nobody has tapped it');
+  const card = async (fields) => (await f.call('POST', `/api/admin/drafts/${d.id}/events`, {
+    title: 'Card', date: '2026-11-14', start_time: '19:00', ...fields })).body;
+  const scopedOf = async (c) => {
+    const r = await f.call('POST', `/api/admin/draft-events/${c.id}/publish`, {});
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    return f.raw.prepare('SELECT parish_scoped FROM events WHERE id = ?').get(r.body.event.id).parish_scoped;
+  };
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`, { parish_scoped: 'yes' })).status, 400);
+  const tapped = await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`, { parish_scoped: true });
+  assert.equal(tapped.body.parish_scoped, 1);
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${d.cards[0].id}`, { parish_scoped: null })).body.parish_scoped, null);
+  assert.equal(await scopedOf(await card({ event_type: 'other' })), 1, 'an untapped Other is Parish only, as ever');
+  assert.equal(await scopedOf(await card({ event_type: 'talk' })), 0, 'an untapped talk is public');
+  assert.equal(await scopedOf(await card({ event_type: 'other', parish_scoped: false })), 0, 'tapped to Public');
+  assert.equal(await scopedOf(await card({ event_type: 'youth', parish_scoped: true })), 1, 'tapped to Parish only');
+});
+
 test('a card over several days publishes its end on the last day, and never matches one Sunday', async () => {
   const f = fresh({ role: 'editor' }, { key: null });
   const [a] = parishes(f.raw);
@@ -624,6 +646,8 @@ test('publishing a matched card writes onto that occurrence: its saint and the p
   const events = () => f.raw.prepare('SELECT COUNT(*) n FROM events').get().n;
   const before = events();
 
+  // Its pill, tapped to Parish only, is a patch on that date alone.
+  await f.call('PATCH', `/api/admin/draft-events/${draft.cards[0].id}`, { parish_scoped: true });
   const one = await f.call('POST', `/api/admin/draft-events/${draft.cards[0].id}/publish`, {});
   assert.equal(one.status, 201);
   assert.equal(one.body.occurrence, true);
@@ -633,12 +657,14 @@ test('publishing a matched card writes onto that occurrence: its saint and the p
   const o = f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sat, '2030-11-02');
   assert.deepEqual([o.kind, o.patch_title, o.patch_start_time, o.patch_end_time, o.patch_event_type, o.patch_feast, o.patch_poster_path],
     ['modified', null, null, null, null, 'Dionysios the Areopagite', poster], 'only what the programme changes');
+  assert.equal(o.patch_parish_scoped, 1, 'and the pill, which somebody tapped');
 
   // Nothing disappears, and a field the card leaves empty is not "clear it".
   const two = await f.call('POST', `/api/admin/draft-events/${draft.cards[1].id}/publish`, {});
   assert.equal(two.status, 201);
   const c = f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(sun, '2030-11-03');
   assert.deepEqual([c.kind, c.patch_description, c.patch_feast], ['cancelled', 'The priest is away.', 'Hierotheos, Bishop of Athens']);
+  assert.equal(c.patch_parish_scoped, null, 'an untapped pill is no patch');
   assert.equal(events(), before, 'no event written beside the services');
 
   // A service not on the timetable is an event, with its saint as its subtitle
@@ -769,7 +795,8 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
-  assert.deepEqual(cols('draft_events').slice(-6), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng']);
+  assert.deepEqual(cols('draft_events').slice(-7), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));
-  assert.deepEqual([types.location_lat, types.location_lng, types.end_date], ['REAL', 'REAL', 'TEXT'], 'a pin is a number');
+  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped], ['REAL', 'REAL', 'TEXT', 'INTEGER'],
+    'a pin is a number, and so is the pill');
 });

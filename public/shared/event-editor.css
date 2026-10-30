@@ -212,6 +212,23 @@
 .ee-card.is-peek [data-row="languages"] .ee-note-read,
 .ee-card.is-peek .lp-more { display: none; }
 
+/* Who sees it: on, Public; tapped off, Parish only. The languages' chip, on
+   and off, at the end of Kind's label line, here and in the page's forms
+   (rule-form.js scopeHTML). */
+.scope-pill {
+  flex: none; min-height: 32px; padding: 4px 14px;
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; white-space: nowrap;
+  color: var(--text-2, var(--ee-muted)); background: transparent;
+  border: 1px solid var(--border, #d1d5db); border-radius: 999px; cursor: pointer;
+}
+.scope-pill.on { color: #fff; background: var(--accent, #2b6cb0); border-color: var(--accent, #2b6cb0); }
+.scope-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.ee-row-head, .ee-svc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ee-row-head { margin-bottom: 6px; }
+.ee-row .ee-row-head > label { margin-bottom: 0; }
+/* Shut, the chip says it; the pill is for the open card. */
+.ee-card.is-peek .scope-pill { display: none; }
+
 .ee-row { margin-bottom: 12px; }
 .ee-row label {
   display: flex;
@@ -417,6 +434,7 @@
   border-radius: 12px;
 }
 .ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ee-chip-scope { color: var(--ee-muted); background: var(--ee-field); }
 
 /* ── A church sign: weekly services and the parish's details ──
    Set beside what is on file; each is added on its own. */
