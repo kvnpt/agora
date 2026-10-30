@@ -604,8 +604,11 @@ body.map-full .parish-row {
   min-width: 0; font-weight: 600; font-size: 16px; line-height: 1.25; overflow-wrap: break-word;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
 }
+/* Its languages are words in the name's line, not a box: an inline-block on
+   the second line made iPhone Safari draw the clamp's "…" after it, with
+   nothing cut. Nowrap keeps them whole; the padding gives the old height. */
 .etitle .elang {
-  display: inline-block; vertical-align: 2px; margin-left: 2px; padding: 1px 5px; border-radius: 3px;
+  display: inline; vertical-align: 2px; margin-left: 2px; padding: 2px 5px; border-radius: 3px;
   background: var(--card-2); color: var(--text-2); font-size: 10px; font-weight: 600; line-height: 1.4; white-space: nowrap;
 }
 .esub { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13.5px; min-width: 0; }
