@@ -81,8 +81,9 @@ every run reports errors:
 - `ERR_CERT_AUTHORITY_INVALID` — `api.iconify.design` is blocked by the agent
   proxy. /admin still draws its glyphs from it, so a blank button there is
   usually this, not your CSS; the page's icons are inline SVG.
-- `Bad response code: 404` from `pmtiles.js` — the basemap archive is not in
-  local R2, so the map is a grey rectangle. `docs/deploy.md` covers it. Worse,
+- `404 (Not Found)` for `/tiles/oceania/{z}/{x}/{y}.mvt` — the basemap archive
+  is not in local R2, so the Worker has no tiles to give and the map is a grey
+  rectangle. `docs/deploy.md` covers it. Worse,
   the map's `load` never fires, so **the map's loader stays up** over it. (The
   page's own layers go on at `style.load` since 30 Oct 2026, so the dots are
   there under the loader.)
@@ -95,7 +96,7 @@ every run reports errors:
       const orig = window.buildBaseStyle;
       window.buildBaseStyle = async (...a) => {
         const st = await orig(...a);
-        const bad = Object.keys(st.sources).filter(k => /pmtiles/.test(st.sources[k].url || ''));
+        const bad = Object.keys(st.sources).filter(k => (st.sources[k].tiles || []).some(t => t.includes('/tiles/')));
         bad.forEach(k => delete st.sources[k]);
         st.layers = st.layers.filter(l => !bad.includes(l.source));
         return st;
@@ -110,7 +111,7 @@ every run reports errors:
 page.on('console', m => {
   const t = m.text();
   if (m.type() === 'error' &&
-      !/ERR_CERT_AUTHORITY_INVALID|pmtiles|Bad response code|404 \(Not Found\)/.test(t)) {
+      !/ERR_CERT_AUTHORITY_INVALID|\/tiles\/|404 \(Not Found\)/.test(t)) {
     errors.push(t);
   }
 });
