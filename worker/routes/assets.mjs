@@ -118,6 +118,11 @@ const safeKey = (p) => (p && !p.includes('..') && !p.startsWith('/')) ? p : null
 // old tiles beside new ones after a rebuild.
 export const TILE_ARCHIVES = { oceania: 'tiles/oceania.pmtiles' };
 export const TILE_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=604800';
+// The edge cache keeps a tile under its path and this, never under the
+// address asked for. The first tiles (30 Oct 2026) went in still gzipped and
+// came out gzipped twice, a tile the map could not read, for a day; a new
+// version here leaves every copy kept before it behind.
+export const TILE_CACHE_VERSION = 'plain-1';
 // What this isolate knows of each archive: header, root directory, the leaf
 // directories it has read. The header is read again every few minutes, and a
 // new ETag (a rebuilt archive) throws the rest away.
@@ -167,7 +172,9 @@ export async function serveTile({ env, ctx, request, params }) {
   if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
 
   const cache = (typeof caches !== 'undefined' && caches && caches.default) ? caches.default : null;
-  const hit = cache && await cache.match(request);
+  const url = new URL(request.url);
+  const cacheKey = new Request(`${url.origin}${url.pathname}?v=${TILE_CACHE_VERSION}`);
+  const hit = cache && await cache.match(cacheKey);
   if (hit) return hit;
 
   const archive = await openArchive(env, key);
@@ -189,13 +196,16 @@ export async function serveTile({ env, ctx, request, params }) {
     if (!obj) return json({ error: 'Not found' }, 404);
     headers.set('content-type', 'application/vnd.mapbox-vector-tile');
     headers.set('etag', `"${String(archive.etag).replace(/"/g, '')}-${tileId}"`);
-    // The archive keeps its tiles gzipped: they go out as they are, and the
-    // browser undoes it.
-    if (archive.header.tileCompression === 2) headers.set('content-encoding', 'gzip');
-    res = new Response(obj.body, { headers, encodeBody: 'manual' });
+    // The archive keeps its tiles gzipped. They go out plain and Cloudflare
+    // compresses them for whoever asks, as for any response. Handed on still
+    // gzipped (encodeBody 'manual'), the first answer was right, but the copy
+    // the edge cache gave back was gzipped again on the way out: the map got a
+    // tile it could not read, from the second visitor on.
+    const body = archive.header.tileCompression === 2 ? obj.body.pipeThrough(new DecompressionStream('gzip')) : obj.body;
+    res = new Response(body, { headers });
   }
   if (cache) {
-    const put = cache.put(request, res.clone()).catch(() => {});
+    const put = cache.put(cacheKey, res.clone()).catch(() => {});
     if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(put);
   }
   return res;

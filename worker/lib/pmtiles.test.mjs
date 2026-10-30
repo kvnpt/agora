@@ -8,7 +8,7 @@ import {
   HEADER_BYTES, zxyToTileId, parseHeader, writeHeader, parseDirectory, serializeDirectory,
   findEntry, buildDirectories, gzip,
 } from './pmtiles.mjs';
-import { serveTile, forgetTileArchives, TILE_CACHE_CONTROL } from '../routes/assets.mjs';
+import { serveTile, forgetTileArchives, TILE_CACHE_CONTROL, TILE_CACHE_VERSION } from '../routes/assets.mjs';
 
 test('tile ids walk the zooms, then the Hilbert curve', () => {
   assert.equal(zxyToTileId(0, 0, 0), 0);
@@ -136,7 +136,7 @@ test('a tile comes out of a leaf directory as an ordinary cacheable file', async
   assert.equal(missing.status, 204);
 });
 
-test('gzipped tiles go out gzipped, with the encoding said', async () => {
+test('gzipped tiles go out plain, for Cloudflare to compress', async () => {
   // A one-entry archive whose tile is gzip bytes, as the real basemap's are.
   const tile = await gzip(new TextEncoder().encode('vector tile'));
   const entries = [{ tileId: 0, offset: 0, length: tile.length, runLength: 1 }];
@@ -155,14 +155,52 @@ test('gzipped tiles go out gzipped, with the encoding said', async () => {
   const res = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/0/0/0.mvt'),
     params: { archive: 'oceania', z: '0', x: '0', y: '0.mvt' } });
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('content-encoding'), 'gzip');
-  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), tile);
+  // Handed on gzipped, the edge cache's copy came back gzipped twice.
+  assert.equal(res.headers.get('content-encoding'), null);
+  assert.equal(new TextDecoder().decode(await res.arrayBuffer()), 'vector tile');
   // Past the archive's zooms: nothing, and no read of R2 for it.
   const reads = env.ASSETS_BUCKET.reads;
   const deep = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/3/1/1.mvt'),
     params: { archive: 'oceania', z: '3', x: '1', y: '1.mvt' } });
   assert.equal(deep.status, 204);
   assert.equal(env.ASSETS_BUCKET.reads, reads);
+});
+
+test('the edge cache keeps a tile under its path and the version, whatever was asked', async () => {
+  const tile = await gzip(new TextEncoder().encode('vector tile'));
+  const entries = [{ tileId: 0, offset: 0, length: tile.length, runLength: 1 }];
+  const { root } = await buildDirectories(entries);
+  const h = {
+    rootOffset: HEADER_BYTES, rootLength: root.length, metadataOffset: 0, metadataLength: 0,
+    leafOffset: 0, leafLength: 0, dataOffset: HEADER_BYTES + root.length, dataLength: tile.length,
+    addressedTiles: 1, tileEntries: 1, tileContents: 1, clustered: true, internalCompression: 2,
+    tileCompression: 2, tileType: 1, minZoom: 0, maxZoom: 0, minLon: 0, minLat: 0, maxLon: 0, maxLat: 0,
+    centerZoom: 0, centerLon: 0, centerLat: 0,
+  };
+  const file = new Uint8Array(h.dataOffset + tile.length);
+  file.set(writeHeader(h), 0); file.set(root, HEADER_BYTES); file.set(tile, h.dataOffset);
+  forgetTileArchives();
+  const env = { ASSETS_BUCKET: bucketOf('tiles/oceania.pmtiles', file, '"v3"') };
+  const kept = new Map();
+  const before = globalThis.caches;
+  globalThis.caches = { default: {
+    async match(req) { const r = kept.get(req.url); return r && r.clone(); },
+    async put(req, res) { kept.set(req.url, res); },
+  } };
+  try {
+    const params = { archive: 'oceania', z: '0', x: '0', y: '0.mvt' };
+    const first = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/0/0/0.mvt?v=2'), params });
+    assert.equal(await first.text(), 'vector tile');
+    assert.deepEqual([...kept.keys()], [`https://orthodoxy.au/tiles/oceania/0/0/0.mvt?v=${TILE_CACHE_VERSION}`]);
+    // A copy kept under the bare address, as the first tiles were, is never served.
+    kept.set('https://orthodoxy.au/tiles/oceania/0/0/0.mvt', new Response('gzipped twice'));
+    const reads = env.ASSETS_BUCKET.reads;
+    const again = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/0/0/0.mvt'), params });
+    assert.equal(await again.text(), 'vector tile');
+    assert.equal(env.ASSETS_BUCKET.reads, reads, 'the second answer is the kept one');
+  } finally {
+    if (before === undefined) delete globalThis.caches; else globalThis.caches = before;
+  }
 });
 
 test('only a known archive and a well-formed tile are asked for', async () => {
