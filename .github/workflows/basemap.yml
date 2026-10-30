@@ -273,8 +273,20 @@ jobs:
           ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
         run: |
           set -euo pipefail
-          aws s3 cp s3://agora-assets/tiles/oceania.pmtiles s3://agora-assets/tiles/oceania-previous.pmtiles \
-            --endpoint-url "$ENDPOINT" --no-progress || echo "No archive to keep aside (first upload)."
+          # Keep the archive being replaced. --copy-props metadata-directive:
+          # the archive is copied in parts, and by default the CLI then asks for
+          # the source's tags, which R2 answers with NotImplemented (as in
+          # previews.yml). On 30 Oct 2026 that failure was read as "first
+          # upload" and the old archive was overwritten with no copy kept; now
+          # only a missing archive skips the copy, and a failed copy stops the
+          # run before anything is replaced.
+          if aws s3api head-object --bucket agora-assets --key tiles/oceania.pmtiles \
+              --endpoint-url "$ENDPOINT" > /dev/null 2>&1; then
+            aws s3 cp s3://agora-assets/tiles/oceania.pmtiles s3://agora-assets/tiles/oceania-previous.pmtiles \
+              --endpoint-url "$ENDPOINT" --no-progress --copy-props metadata-directive
+          else
+            echo "No archive to keep aside (first upload)."
+          fi
           aws s3 cp oceania.pmtiles s3://agora-assets/tiles/oceania.pmtiles \
             --endpoint-url "$ENDPOINT" \
             --content-type application/vnd.pmtiles \
@@ -297,7 +309,7 @@ jobs:
             echo "The archive it replaced is \`tiles/oceania-previous.pmtiles\`. To put it back:"
             echo ""
             echo '```'
-            echo "aws s3 cp s3://agora-assets/tiles/oceania-previous.pmtiles s3://agora-assets/tiles/oceania.pmtiles --endpoint-url https://<account>.r2.cloudflarestorage.com"
+            echo "aws s3 cp s3://agora-assets/tiles/oceania-previous.pmtiles s3://agora-assets/tiles/oceania.pmtiles --copy-props metadata-directive --endpoint-url https://<account>.r2.cloudflarestorage.com"
             echo '```'
             echo ""
             echo "Browsers and the edge keep a tile up to a day, so old and new tiles mix for that long (they look the same)."
