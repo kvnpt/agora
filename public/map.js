@@ -239,9 +239,18 @@ async function buildBaseStyle() {
     glyphs: '/glyphs/{fontstack}/{range}.pbf',
     sprite: window.location.origin + '/sprites/protomaps',
     sources: {
+      // One tile at a time from the Worker, which reads the archive in R2
+      // (worker/routes/assets.mjs, serveTile): each tile an ordinary file the
+      // browser keeps, where reading the archive from here took three range
+      // requests before the first tile and Safari kept none of them. Zooms and
+      // bounds are the archive's (.github/workflows/basemap.yml builds it):
+      // past 12 MapLibre draws the zoom-12 tiles larger.
       protomaps: {
         type: 'vector',
-        url: 'pmtiles:///tiles/oceania.pmtiles',
+        tiles: [window.location.origin + '/tiles/oceania/{z}/{x}/{y}.mvt'],
+        minzoom: 0,
+        maxzoom: 12,
+        bounds: [110, -50, 180, 0],
         attribution: '<a href="https://protomaps.com">Protomaps</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
       }
     },
@@ -267,10 +276,10 @@ function mapPixelRatio() {
 }
 
 // The label fonts the first view needs, asked for as the map starts. MapLibre
-// asks for a font only once a tile it has read wants one: after the archive's
-// header, its directory and the first tile, three trips in a row, and the
-// map's first full draw then waited on the fonts as a fourth. Preloaded, they
-// come alongside the tiles and MapLibre's own requests are answered from them.
+// asks for a font only once a tile it has read wants one, and the map's first
+// full draw then waited on the fonts as one more trip after the tiles.
+// Preloaded, they come alongside the tiles and MapLibre's own requests are
+// answered from them.
 // The second Medium range is the parish labels' curly quotes (St Mary’s).
 const FIRST_GLYPHS = [['Noto Sans Regular', '0-255'], ['Noto Sans Medium', '0-255'], ['Noto Sans Medium', '8192-8447']];
 function preloadGlyphs() {
@@ -289,12 +298,6 @@ async function initMap(state) {
   if (map || initStarted) return;
   initStarted = true;
   preloadGlyphs();
-
-  if (!window.__pmtilesRegistered) {
-    const proto = new pmtiles.Protocol();
-    maplibregl.addProtocol('pmtiles', proto.tile);
-    window.__pmtilesRegistered = true;
-  }
 
   const style = await buildBaseStyle();
 

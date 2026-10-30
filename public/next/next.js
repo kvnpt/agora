@@ -896,6 +896,21 @@
       && endMs(e) >= now).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
 
+  // ── Posters, small ────────────────────────────────────────────────────
+  //
+  // A poster in a list is a thumbnail, cut to size by Cloudflare's image
+  // resizing (/cdn-cgi/image/, Images → Transformations on the zone): the
+  // poster itself is 250–370 KB, for a picture 44 px wide in Today. `width`
+  // is in image pixels, enough for a 3x screen. Where resizing is off the
+  // thumbnail's address answers 404, and the image falls back to the whole
+  // poster (THUMB_FALLBACK, first in each onerror) before giving up as before.
+  function posterThumb(path, width) {
+    const p = String(path || '');
+    if (!p.startsWith('/posters/')) return `src="${esc(p)}"`;
+    return `src="/cdn-cgi/image/width=${width},quality=78,format=auto,fit=scale-down${esc(p)}" data-full="${esc(p)}"`;
+  }
+  const THUMB_FALLBACK = "if(this.dataset.full){this.src=this.dataset.full;this.removeAttribute('data-full');return}";
+
   // ── Avatars ───────────────────────────────────────────────────────────
   //
   // A logo, like a poster's thumbnail, is fetched at low priority: on a slow
@@ -1306,7 +1321,7 @@
           ${sub}
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
-        ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy" fetchpriority="low" onerror="this.remove()">` : ''}
+        ${e.poster_path ? `<img class="ethumb" ${posterThumb(e.poster_path, 160)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.remove()">` : ''}
       </button>`;
   }
 
@@ -1554,7 +1569,7 @@
   }
   /** A poster on the shelf, and what it is under it: its own words are on it already. */
   const posterCard = (e, from) => `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" fetchpriority="low" onerror="this.parentNode.classList.add('noimg')"></span>
+          <span class="pimg"><img ${posterThumb(e.poster_path, 640)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.parentNode.classList.add('noimg')"></span>
           <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
             ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
         </button>`;

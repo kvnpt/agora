@@ -66,3 +66,19 @@ test('sw.js keeps the page and the bundle, and never tiles, posters, admin or th
   assert.equal(key('/next/next.js', { headers: { range: 'bytes=0-9' } }), null, 'never a range request');
   assert.equal(ctx.keyFor({ url: 'https://unpkg.com/x.js', method: 'GET', headers: new Map() }), null, 'only this site');
 });
+
+// Safari sends a request a service worker lets fall through past its HTTP
+// cache: map tiles and posters came down again on every visit. So what sw.js
+// does not keep still goes out through it, untouched; only a page (a
+// navigation) and another site's file fall through.
+test('sw.js sends what it does not keep through itself, not around it', () => {
+  const ctx = { self: { location: { origin: 'https://orthodoxy.au' }, addEventListener() {} }, URL };
+  vm.runInNewContext(read('sw.js').toString('utf8'), ctx);
+  const passes = (url, init = {}) => ctx.passes({ url, method: init.method || 'GET', mode: init.mode || 'cors' });
+  for (const p of ['/tiles/oceania/10/941/614.mvt', '/posters/x.jpg', '/cdn-cgi/image/width=160/posters/x.jpg', '/api/admin/ping']) {
+    assert.equal(passes(`https://orthodoxy.au${p}`), true, p);
+  }
+  assert.equal(passes('https://orthodoxy.au/admin', { mode: 'navigate' }), false, 'a page falls through');
+  assert.equal(passes('https://orthodoxy.au/api/x', { method: 'POST' }), false, 'only a GET');
+  assert.equal(passes('https://static.cloudflareinsights.com/beacon.min.js'), false, 'only this site');
+});

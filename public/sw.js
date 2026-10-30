@@ -7,10 +7,12 @@
 // scripts, styles, sprites and logos, and the last bundle. So the app opens to
 // the last feed it saw instead of an error.
 //
-// Not kept: map tiles (range requests, and the archive is hundreds of MB),
-// posters, /admin, and every /api/ path but the bundle. To retire this file,
-// deploy one that unregisters itself: deleting it leaves phones with the copy
-// they have.
+// Not kept: map tiles (the browser's own cache keeps them), posters, /admin,
+// and every /api/ path but the bundle. They still go out through here, not
+// around it: Safari sends a request this file lets fall through past its own
+// HTTP cache, so a tile or a poster came down again on every visit (measured
+// in the iOS Simulator, 30 Oct 2026). To retire this file, deploy one that
+// unregisters itself: deleting it leaves phones with the copy they have.
 const CACHE = 'agora-offline-v1';
 const SHELL = '/';
 const BUNDLE = '/api/bundle';
@@ -47,9 +49,19 @@ self.addEventListener('message', (event) => {
   }))));
 });
 
+/** Ours, a GET, and not a page: what goes out through here even when it is not kept. */
+function passes(request) {
+  return new URL(request.url).origin === self.location.origin && request.method === 'GET' && request.mode !== 'navigate';
+}
+
 self.addEventListener('fetch', (event) => {
   const key = keyFor(event.request);
-  if (!key) return;
+  if (!key) {
+    // Exactly as it would go without this file, and nothing kept; only not
+    // left to fall through, which Safari sends past its HTTP cache.
+    if (passes(event.request)) event.respondWith(fetch(event.request));
+    return;
+  }
   event.respondWith((async () => {
     try {
       const res = await fetch(event.request);
