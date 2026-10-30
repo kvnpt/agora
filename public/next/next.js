@@ -65,9 +65,9 @@
     const l = kindLabel(kind || 'other');
     return `<span class="roundel${big ? ' big' : ''}" style="--k-bg:${c.bg};--k-fg:${c.fg}" title="${esc(l)}" aria-label="${esc(l)}">${esc(l[0])}</span>`;
   }
-  /** A kind in its roundel's colours, said in full: the pill over an event card's title. */
-  function kindPill(kind) {
-    const c = window.AgoraEventTypes.kindColors(kind || 'other', dark());
+  /** A kind in its roundel's colours, said in full: the pill over an event card's title. `light`: in the light scheme's, on a band of colour. */
+  function kindPill(kind, light = false) {
+    const c = window.AgoraEventTypes.kindColors(kind || 'other', !light && dark());
     return `<span class="kpill" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(kindLabel(kind || 'other'))}</span>`;
   }
 
@@ -1309,7 +1309,7 @@
    * alone wears none, and one in two languages still says both.
    */
   const langBadge = (langs, asked) => !!(langs && langs.length) && !(asked && langs.every(l => langIs(l, asked)));
-  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false } = {}) {
+  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false, tint = null } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
@@ -1330,7 +1330,8 @@
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
     // `same`: a row after the first of its time slot, whose time the slot has said.
-    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}">
+    // `tint`: the colour of its own stretch of a Coming up's rule.
+    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}"${tint ? ` style="--pc:${tint}"` : ''}>
         <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
@@ -1687,10 +1688,16 @@
   }
   /** A day's own link, copied with a tap, as the app's day headers have. */
   const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
-  /** A day's rows by their time: those at one time on one stretch of the rule, the time said once. */
-  const slotsHTML = (rows, row) => TL.slotsOf(rows, e => local(e).hm)
-    .map(s => `<div class="slot">${s.rows.map((e, i) => eventRow(e, { ...row, same: i > 0 })).join('')}</div>`).join('');
-  function daysHTML(list, { start, days, linkFor, empty = false, row = {} }) {
+  /**
+   * A day's rows by their time: those at one time on one stretch of the rule,
+   * the time said once. `byVenue` (a collection's, In view's): each row its
+   * own stretch, in the colour of the jurisdiction it is held in.
+   */
+  const slotsHTML = (rows, row, byVenue) => TL.slotsOf(rows, e => local(e).hm)
+    .map(s => `<div class="slot${byVenue ? ' rows' : ''}">${s.rows.map((e, i) => eventRow(e, { ...row, same: i > 0, tint: byVenue ? venueColor(e) : null })).join('')}</div>`).join('');
+  /** Where a row is held, as a colour: its venue parish's jurisdiction, or its own parish's. */
+  const venueColor = (e) => parishColor(S.byId.get(e.location_parish_id) || S.byId.get(e.parish_id));
+  function daysHTML(list, { start, days, linkFor, empty = false, row = {}, byVenue = false }) {
     const byDay = new Map();
     for (const e of list) {
       const k = local(e).date;
@@ -1705,7 +1712,7 @@
       const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${linkFor ? dayLink(k, linkFor(k)) : ''}</h3>`;
       if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>Nothing in view</p></section>`); continue; }
       const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
-      out.push(`<section class="sday" data-date="${k}">${head}${slotsHTML(morning, row)}${evening.length ? EVENING + slotsHTML(evening, row) : ''}</section>`);
+      out.push(`<section class="sday" data-date="${k}">${head}${slotsHTML(morning, row, byVenue)}${evening.length ? EVENING + slotsHTML(evening, row, byVenue) : ''}</section>`);
     }
     return out.join('');
   }
@@ -2606,7 +2613,7 @@
     const list = feedRange(start, days).filter(e => endMs(e) > now).filter(inCollection(c));
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
-    const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang } });
+    const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang }, byVenue: true });
     return `${datePickHTML('card', from)}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
@@ -2838,9 +2845,18 @@
     // Off, a quiet veil over the poster and the words, which still say it is on.
     const offCls = off ? ` off ${esc(e.status)}` : '';
     const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
-    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : `<div class="ev-band${offCls}" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}${stamp}</div>`}
+    // With no poster, a band in the colour of the jurisdiction it is held in,
+    // as its stretch of a Coming up's line is: its kind said in full at the
+    // head, and the church it is held in, by logo and full name, at the foot.
+    const at = venue || p;
+    const band = `<div class="ev-band${offCls}" style="--j:${jColor(at?.jurisdiction)}">
+        <span class="ev-band-kind">${kindPill(e.event_type, true)}</span>
+        ${at ? `<button class="ev-at" type="button" data-parish="${esc(at.id)}">${avatar(at)}<span class="ev-at-name">${esc(at.full_name || at.name)}</span></button>` : ''}${stamp}</div>`;
+    // Said in the band, the kind is not said again over the title.
+    const kind = e.poster_path ? kindPill(e.event_type) : '';
+    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : band}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
-          <div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kindPill(e.event_type)}</div>
+          ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
           <h1>${esc(e.title)}</h1>
           ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
           <p class="ev-when">${overDays ? `${esc(dayLabel(l.date))} ${esc(hm12(l.hm))} – ${esc(dayLabel(last.date))} ${esc(hm12(end))}`

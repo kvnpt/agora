@@ -961,6 +961,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .cu .erow + .erow { border-top: 0; }
 .cu .sday .eve { padding: 12px 0 2px; border: 0; }
 .cu .slot + .eve { margin-top: 2px; border-top: 1px solid var(--line); }
+/* A collection's and In view's: each row its own stretch, in the colour of
+   the jurisdiction it is held in (next.js venueColor), so two at 9am of two
+   jurisdictions change colour between them. */
+.cu .slot.rows::before { content: none; }
+.cu .slot.rows .erow { position: relative; }
+.cu .slot.rows .erow::before {
+  content: ''; position: absolute; left: -13px; top: 6px; bottom: 6px;
+  width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
+}
 /* Said once by its slot, the time is still read out on every row. */
 .etime.same .t-time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .more-days { padding: 18px 0 6px; text-align: center; color: var(--text-3); font-size: 13px; }
@@ -1093,8 +1102,24 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
 .ev-poster img { display: block; width: 100%; max-height: 62vh; object-fit: contain; }
-.ev-band { height: calc(150px + var(--sat)); display: grid; place-items: center; background: linear-gradient(135deg, var(--j), color-mix(in srgb, var(--j) 55%, #000)); padding-top: calc(40px + var(--sat)); }
+/* No poster: a band in the colour of the jurisdiction it is held in, its
+   kind said in full at the head and the church it is held in at the foot. */
+.ev-band {
+  height: calc(160px + var(--sat)); padding: calc(25px + var(--sat)) 18px 16px;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, var(--j), color-mix(in srgb, var(--j) 55%, #000));
+}
+/* Its kind, the band's head, level with the card's buttons. */
+.ev-band-kind .kpill { padding: 5px 14px; font-size: 15px; box-shadow: 0 1px 4px rgba(0, 0, 0, .18); }
+.ev-at {
+  align-self: stretch; display: flex; align-items: center; gap: 10px; min-width: 0;
+  color: #fff; font-size: 15.5px; font-weight: 650; line-height: 1.25; text-align: left;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+}
+.ev-at .av { --s: 36px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .9); }
+.ev-at-name { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .ev-head { padding: 18px 18px 4px; }
+.ev-head > h1:first-child { margin-top: 0; }
 .ev-head h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.12; margin-top: 8px; }
 /* What it is, a pill in its kind's colours over its title (a date that is
    off says so first), and its subtitle (a saint, a talk's topic) under it,

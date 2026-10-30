@@ -144,7 +144,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
 
 // ── a parish ─────────────────────────────────────────────────────────────
 
-function eventRowHTML(e, here, now = false, same = false) {
+function eventRowHTML(e, here, { now = false, same = false, tint = null } = {}) {
   const tomb = TOMB[e.status] || null;
   // Its own languages first on the line under its name, then another parish's name.
   const langs = ruleFilters.serviceLangs(e) || [];
@@ -152,7 +152,7 @@ function eventRowHTML(e, here, now = false, same = false) {
   // Held here for another parish, it names its host.
   const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${here && e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
-  return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
+  return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}"${tint ? ` style="--pc:${esc(tint)}"` : ''}>
       <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
       ${roundel(e.event_type)}
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
@@ -163,9 +163,13 @@ function eventRowHTML(e, here, now = false, same = false) {
     </a>`;
 }
 
-/** A day's rows by their time: those at one time on one stretch of the rule, the time said once (next.js slotsHTML). */
-const slotsHTML = (rows, here) => lines.slotsOf(rows, e => e._local.time)
-  .map(s => `<div class="slot">${s.rows.map((e, i) => eventRowHTML(e, here, false, i > 0)).join('')}</div>`).join('');
+/**
+ * A day's rows by their time: those at one time on one stretch of the rule,
+ * the time said once (next.js slotsHTML). `tintOf` (a collection's): each row
+ * its own stretch, in the colour of the jurisdiction it is held in.
+ */
+const slotsHTML = (rows, here, tintOf = null) => lines.slotsOf(rows, e => e._local.time)
+  .map(s => `<div class="slot${tintOf ? ' rows' : ''}">${s.rows.map((e, i) => eventRowHTML(e, here, { same: i > 0, tint: tintOf && tintOf(e) })).join('')}</div>`).join('');
 
 /** Coming up on a parish's card: its days from `start`, morning then evening, tombstones struck through. */
 function comingUpHTML(m, start, today) {
@@ -206,7 +210,7 @@ function todayBoxHTML(m, today) {
     let div = '';
     if (!isEvening(e)) day = true;
     else if (!eve) { eve = true; if (day) div = EVENING; }
-    return div + eventRowHTML(e, m.parish.id, now);
+    return div + eventRowHTML(e, m.parish.id, { now });
   }).join('');
   let title = 'Today', k = today, body = '';
   const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
@@ -331,11 +335,19 @@ export function eventCardHTML(m) {
   const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
   // What it is said in: a service's own tags, never its parish's.
   const langs = ruleFilters.serviceLangs(e) || [];
+  // With no poster, a band in the colour of the jurisdiction it is held in:
+  // its kind said in full at the head, the church by logo and full name at the foot.
+  const at = venue ? { ...venue, id: e.location_parish_id } : { ...p, slug: m.slug, color: m.color };
+  const band = `<div class="ev-band${offCls}" style="--j:${at.color}">
+        <span class="ev-band-kind">${kindPill(e.event_type)}</span>
+        <a class="ev-at" href="/${esc(at.slug)}">${avatar(at, '', at.color)}<span class="ev-at-name">${esc(at.full_name || at.name)}</span></a>${stamp}</div>`;
+  // Said in the band, the kind is not said again over the title.
+  const kind = e.poster_path ? kindPill(e.event_type) : '';
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
-      ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : `<div class="ev-band${offCls}" style="--j:${m.color}">${roundel(e.event_type, true)}${stamp}</div>`}
+      ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : band}
       <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
-        <div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kindPill(e.event_type)}</div>
+        ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
         <h1>${esc(e.title)}</h1>
         ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
         <p class="ev-when">${overDays ? `${esc(shortDay(e._local.date, today))} ${esc(hm12(e._local.time))} – ${esc(shortDay(last.date, today))} ${esc(hm12(end))}`
@@ -366,9 +378,13 @@ export function eventCardHTML(m) {
  * card shows a parish's whole week. What is coming up under them is the
  * page's to add, once it holds the occurrences.
  */
-export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
+export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes = [] } = {}) {
   const c = m.collection;
   const colorOf = (j) => jurisColors.jurisdictionColorFrom(m.overrides, j);
+  // Coming up's rows each in the colour of where they are held: the venue
+  // parish's jurisdiction (any parish, not only the collection's), else their own.
+  const byId = new Map(parishes.map(p => [p.id, p]));
+  const venueColor = (e) => { const v = e.location_parish_id && byId.get(e.location_parish_id); return colorOf(v ? v.jurisdiction : e.jurisdiction); };
   const look = collections.lookOf(c, colorOf);
   // A link that narrows the rules (/sun/liturgy, /en) shows the lines that
   // answer it, as the page's card does (next.js timetable's `only`); one that
@@ -412,7 +428,7 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
       </section>
       ${feed ? `<section class="cu-band" id="coming-up">
         <h2 class="sec">Coming up</h2>
-        <div class="cu">${collectionComingUpHTML(feed, m.now)}</div>
+        <div class="cu">${collectionComingUpHTML(feed, m.now, venueColor)}</div>
       </section>` : ''}
     </div>`);
 }
@@ -421,7 +437,7 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
  * A collection's Coming up, for the lite version (lite-page.mjs
  * collectionFeed): its days, morning then evening, each row naming its parish.
  */
-function collectionComingUpHTML(feed, now) {
+function collectionComingUpHTML(feed, now, tintOf) {
   // By each parish's own clock: 8:30 in Perth comes before 9 in Sydney.
   const list = feed.filter(e => (shown(e) || TOMB[e.status]) && endMs(e) > now)
     .sort((a, b) => a._local.time.localeCompare(b._local.time));
@@ -436,7 +452,7 @@ function collectionComingUpHTML(feed, now) {
     const evening = es.filter(e => services.partOfDayOf(e, e.timezone || 'Australia/Sydney') === 'evening');
     const morning = es.filter(e => !evening.includes(e));
     const sun = new Date(`${k}T00:00:00Z`).getUTCDay() === 0;
-    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${slotsHTML(morning, null)}${evening.length ? EVENING + slotsHTML(evening, null) : ''}</section>`;
+    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${slotsHTML(morning, null, tintOf)}${evening.length ? EVENING + slotsHTML(evening, null, tintOf) : ''}</section>`;
   });
   return days.join('') || '<div class="tt-none sm">Nothing on file this week.</div>';
 }
