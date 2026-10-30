@@ -14,6 +14,12 @@ name: Build basemap tiles
 # Run it from the Actions tab. Start with "Estimate only" ticked to see the size
 # before spending the bandwidth.
 #
+# Every archive it uploads is slimmed first (scripts/slim-basemap.mjs): the
+# landuse our styles never paint, residential above all, is taken out, 15 to
+# 40% of a city tile. "Slim only" does just that to the archive already in R2,
+# with no new map data. The archive it replaces is kept beside it as
+# tiles/oceania-previous.pmtiles, to put back if anything is wrong.
+#
 # Secrets required (Settings → Secrets and variables → Actions):
 #   R2_ACCOUNT_ID          Cloudflare account id
 #   R2_ACCESS_KEY_ID       R2 API token, Object Read & Write on agora-assets
@@ -38,9 +44,13 @@ on:
         description: 'Refuse to build an archive larger than this. R2 free tier is 10 GB total, shared with logos and posters.'
         default: '4000'
       estimate_only:
-        description: 'Estimate the size and stop. Downloads nothing, uploads nothing.'
+        description: 'Estimate the size and stop. Downloads nothing, uploads nothing. With "Slim only": slim and report, upload nothing.'
         type: boolean
         default: true
+      slim_only:
+        description: 'Slim the archive already in R2 instead of building a new one. The map data stays as it is.'
+        type: boolean
+        default: false
 
 concurrency:
   group: basemap
@@ -53,6 +63,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       # goreleaser names these go-pmtiles_<version>_Linux_x86_64.tar.gz. Matching
       # on the pattern rather than pinning a version means this keeps working
@@ -71,6 +85,7 @@ jobs:
       # the run might be early in the UTC day, or a build might have been skipped.
       # Walk backwards until one answers.
       - name: Resolve the Protomaps daily build
+        if: ${{ !inputs.slim_only }}
         id: build
         run: |
           set -euo pipefail
@@ -99,6 +114,7 @@ jobs:
       # the exact resulting archive size WITHOUT downloading a single tile, so
       # the free-tier question is answered by measurement rather than by hope.
       - name: Estimate the extract
+        if: ${{ !inputs.slim_only }}
         id: estimate
         run: |
           set -euo pipefail
@@ -155,14 +171,15 @@ jobs:
           echo "Estimated ${mb} MB — within the ${budget} MB budget."
 
       - name: Stop here (estimate only)
-        if: ${{ inputs.estimate_only }}
+        if: ${{ inputs.estimate_only && !inputs.slim_only }}
         run: |
           echo "Estimate only — nothing downloaded, nothing uploaded." >> "$GITHUB_STEP_SUMMARY"
           echo "Re-run with 'Estimate only' unticked to build and upload."
 
-      # Everything below is skipped on an estimate run.
+      # Everything below is skipped on an estimate run (but for "Slim only",
+      # which reads the archive in R2 and so needs the keys either way).
       - name: Check the R2 credentials are present
-        if: ${{ !inputs.estimate_only }}
+        if: ${{ !inputs.estimate_only || inputs.slim_only }}
         env:
           ID: ${{ secrets.R2_ACCOUNT_ID }}
           KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -178,18 +195,48 @@ jobs:
           fi
 
       - name: Extract the region
-        if: ${{ !inputs.estimate_only }}
+        if: ${{ !inputs.estimate_only && !inputs.slim_only }}
         run: |
           set -euo pipefail
-          time pmtiles extract '${{ steps.build.outputs.url }}' oceania.pmtiles \
+          time pmtiles extract '${{ steps.build.outputs.url }}' raw.pmtiles \
             --bbox='${{ inputs.bbox }}' \
             --maxzoom='${{ inputs.maxzoom }}' \
             --download-threads=8
 
+      - name: Download the archive in R2
+        if: ${{ inputs.slim_only }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          aws s3 cp s3://agora-assets/tiles/oceania.pmtiles raw.pmtiles --endpoint-url "$ENDPOINT" --no-progress
+          echo "RAW_MB=$(( $(stat -c %s raw.pmtiles) / 1000000 ))" >> "$GITHUB_ENV"
+
+      # Byte for byte the same tiles but for landuse no style paints. The kinds
+      # kept come from public/lib/protomaps-themes-base.js and
+      # public/protomaps-dark.json, as the script prints first.
+      - name: Slim the archive
+        if: ${{ !inputs.estimate_only || inputs.slim_only }}
+        run: |
+          set -euo pipefail
+          node scripts/slim-basemap.mjs raw.pmtiles oceania.pmtiles | tee /tmp/slim.log
+          {
+            echo "### Slimmed"
+            echo ""
+            echo "\`$(tail -1 /tmp/slim.log)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm raw.pmtiles
+
       # A truncated extract is a valid-looking file that renders a broken map, so
       # confirm the header before it goes anywhere near production.
       - name: Verify the archive
-        if: ${{ !inputs.estimate_only }}
+        if: ${{ !inputs.estimate_only || inputs.slim_only }}
         run: |
           set -euo pipefail
           pmtiles verify oceania.pmtiles
@@ -203,9 +250,15 @@ jobs:
           fi
           echo "ACTUAL_MB=$actual_mb" >> "$GITHUB_ENV"
 
+      - name: Stop here (slim only, estimate)
+        if: ${{ inputs.estimate_only && inputs.slim_only }}
+        run: |
+          echo "Slimmed and verified, not uploaded: re-run with 'Estimate only' unticked to upload." >> "$GITHUB_STEP_SUMMARY"
+
       # wrangler's `r2 object put` refuses anything over ~300 MiB, which this
       # will exceed. R2 speaks the S3 API, and the AWS CLI (preinstalled here)
-      # does multipart automatically, so it handles any size.
+      # does multipart automatically, so it handles any size. The archive being
+      # replaced is copied aside first, inside R2, so it can be put back.
       - name: Upload to R2
         if: ${{ !inputs.estimate_only }}
         env:
@@ -220,6 +273,20 @@ jobs:
           ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
         run: |
           set -euo pipefail
+          # Keep the archive being replaced. --copy-props metadata-directive:
+          # the archive is copied in parts, and by default the CLI then asks for
+          # the source's tags, which R2 answers with NotImplemented (as in
+          # previews.yml). On 30 Oct 2026 that failure was read as "first
+          # upload" and the old archive was overwritten with no copy kept; now
+          # only a missing archive skips the copy, and a failed copy stops the
+          # run before anything is replaced.
+          if aws s3api head-object --bucket agora-assets --key tiles/oceania.pmtiles \
+              --endpoint-url "$ENDPOINT" > /dev/null 2>&1; then
+            aws s3 cp s3://agora-assets/tiles/oceania.pmtiles s3://agora-assets/tiles/oceania-previous.pmtiles \
+              --endpoint-url "$ENDPOINT" --no-progress --copy-props metadata-directive
+          else
+            echo "No archive to keep aside (first upload)."
+          fi
           aws s3 cp oceania.pmtiles s3://agora-assets/tiles/oceania.pmtiles \
             --endpoint-url "$ENDPOINT" \
             --content-type application/vnd.pmtiles \
@@ -233,12 +300,24 @@ jobs:
             echo ""
             echo "### Uploaded"
             echo ""
-            echo "\`tiles/oceania.pmtiles\` — ${ACTUAL_MB} MB — from build \`${{ steps.build.outputs.date }}\`."
+            if [ '${{ inputs.slim_only }}' = 'true' ]; then
+              echo "\`tiles/oceania.pmtiles\` — ${ACTUAL_MB} MB — the archive that was in R2 (${RAW_MB} MB), slimmed."
+            else
+              echo "\`tiles/oceania.pmtiles\` — ${ACTUAL_MB} MB — from build \`${{ steps.build.outputs.date }}\`, slimmed."
+            fi
             echo ""
-            echo "Confirm it serves ranged reads (a 200 here means a broken map):"
+            echo "The archive it replaced is \`tiles/oceania-previous.pmtiles\`. To put it back:"
             echo ""
             echo '```'
-            echo "curl -sI https://agora.orthodoxy.au/tiles/oceania.pmtiles -H 'Range: bytes=0-99'"
-            echo "# expect: HTTP/2 206"
+            echo "aws s3 cp s3://agora-assets/tiles/oceania-previous.pmtiles s3://agora-assets/tiles/oceania.pmtiles --copy-props metadata-directive --endpoint-url https://<account>.r2.cloudflarestorage.com"
+            echo '```'
+            echo ""
+            echo "Browsers and the edge keep a tile up to a day, so old and new tiles mix for that long (they look the same)."
+            echo ""
+            echo "Confirm the Worker reads it (the map asks for single tiles):"
+            echo ""
+            echo '```'
+            echo "curl -sI https://orthodoxy.au/tiles/oceania/10/941/614.mvt"
+            echo "# expect: HTTP/2 200, content-type: application/vnd.mapbox-vector-tile"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

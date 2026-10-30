@@ -40,9 +40,9 @@ The basemap archive lived only on the VM's disk, and until now nothing in the
 repo could rebuild it — `scripts/build-dark-basemap.js` bakes the *style JSON*,
 which describes how to colour tiles, not the tiles themselves.
 
-Without it the map renders empty: `map.js` asks for
-`pmtiles:///tiles/oceania.pmtiles`, R2 returns 404, MapLibre shows a blank
-canvas. The feed still works.
+Without it the map renders empty: `map.js` asks the Worker for
+`/tiles/oceania/{z}/{x}/{y}.mvt`, the Worker finds no `tiles/oceania.pmtiles`
+in R2 and answers 404, MapLibre shows a blank canvas. The feed still works.
 
 `.github/workflows/basemap.yml` is the recipe, and it runs on GitHub's machines,
 not yours. See **Step 4**.

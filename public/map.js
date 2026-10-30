@@ -217,6 +217,11 @@ async function buildBaseStyle() {
   } else {
     layers = protomaps_themes_base.default('protomaps', 'light');
   }
+  // Two fonts, not three. The theme sets water names in Noto Sans Italic, a
+  // third download (~78 KB) for a handful of labels on a faded map, and the
+  // fonts are what the map's first full draw waits on. Upright, they read the
+  // same.
+  layers = JSON.parse(JSON.stringify(layers).replaceAll('"Noto Sans Italic"', '"Noto Sans Regular"'));
   layers.push({
     id: 'fade-overlay',
     type: 'background',
@@ -224,12 +229,30 @@ async function buildBaseStyle() {
   });
   return {
     version: 8,
+    // No easing by default. The halos set paint values on every frame they
+    // draw, and each set restarted MapLibre's default 300ms ease on everything
+    // that eases, the style's sky included; while anything is easing MapLibre
+    // draws the whole map on every screen frame. So the halos' 30 sets a second
+    // were 120 full draws a second, and never one fewer. Nothing else here
+    // changes a paint value.
+    transition: { duration: 0, delay: 0 },
     glyphs: '/glyphs/{fontstack}/{range}.pbf',
     sprite: window.location.origin + '/sprites/protomaps',
     sources: {
+      // One tile at a time from the Worker, which reads the archive in R2
+      // (worker/routes/assets.mjs, serveTile): each tile an ordinary file the
+      // browser keeps, where reading the archive from here took three range
+      // requests before the first tile and Safari kept none of them. Zooms and
+      // bounds are the archive's (.github/workflows/basemap.yml builds it):
+      // past 12 MapLibre draws the zoom-12 tiles larger.
       protomaps: {
         type: 'vector',
-        url: 'pmtiles:///tiles/oceania.pmtiles',
+        // ?v=2: a browser that kept a tile served gzipped twice (30 Oct
+        // 2026, for minutes) keeps it a day; a new address asks again.
+        tiles: [window.location.origin + '/tiles/oceania/{z}/{x}/{y}.mvt?v=2'],
+        minzoom: 0,
+        maxzoom: 12,
+        bounds: [110, -50, 180, 0],
         attribution: '<a href="https://protomaps.com">Protomaps</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
       }
     },
@@ -245,16 +268,38 @@ function cameraOwnedBy(state) {
   return !!(state.cameraOwned || state.parishSheetFocus || state.parishFocus || state._openEventId);
 }
 
+// The map draws at most two device pixels to a CSS pixel. On a 3x phone that
+// is 56% fewer pixels to shade every frame, which is the GPU's whole job while
+// a finger pans; a faded basemap under round dots shows no difference, and a
+// label only the faintest softening. Apple's and Google's maps take the same
+// shortcut. Read again on every resize, so a desktop zoom still sharpens it.
+function mapPixelRatio() {
+  return Math.min(window.devicePixelRatio || 1, 2);
+}
+
+// The label fonts the first view needs, asked for as the map starts. MapLibre
+// asks for a font only once a tile it has read wants one, and the map's first
+// full draw then waited on the fonts as one more trip after the tiles.
+// Preloaded, they come alongside the tiles and MapLibre's own requests are
+// answered from them.
+// The second Medium range is the parish labels' curly quotes (St Mary’s).
+const FIRST_GLYPHS = [['Noto Sans Regular', '0-255'], ['Noto Sans Medium', '0-255'], ['Noto Sans Medium', '8192-8447']];
+function preloadGlyphs() {
+  for (const [font, range] of FIRST_GLYPHS) {
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'fetch';
+    link.crossOrigin = 'anonymous';
+    link.href = `/glyphs/${encodeURIComponent(font)}/${range}.pbf`;
+    document.head.appendChild(link);
+  }
+}
+
 // ── initMap ────────────────────────────────────────────────────────────
 async function initMap(state) {
   if (map || initStarted) return;
   initStarted = true;
-
-  if (!window.__pmtilesRegistered) {
-    const proto = new pmtiles.Protocol();
-    maplibregl.addProtocol('pmtiles', proto.tile);
-    window.__pmtilesRegistered = true;
-  }
+  preloadGlyphs();
 
   const style = await buildBaseStyle();
 
@@ -263,6 +308,7 @@ async function initMap(state) {
     style,
     center: [145, -20],
     zoom: 4,
+    pixelRatio: mapPixelRatio(),
     attributionControl: false,
     dragRotate: false,
     pitchWithRotate: false,
@@ -276,7 +322,11 @@ async function initMap(state) {
   parishesById.clear();
   for (const p of state.parishes || []) parishesById.set(p.id, p);
 
-  map.on('load', async () => {
+  // The parishes go on as soon as the style is read, not on 'load'. 'load'
+  // waits for every basemap tile and every label font, and on a slow phone
+  // the fonts came ten seconds in: the dots, which need neither, waited with
+  // them. Once: a scheme switch's own style.load is handled below.
+  map.once('style.load', async () => {
     addFavStarImage();
     addParishSourceAndLayers();
     addVenueSourceAndLayers();
@@ -290,18 +340,16 @@ async function initMap(state) {
       setupViewportPhases();
       setupDeclutterOnZoom();
       setupSolo();
+      setupHaloGates();
+      setupStillLabels();
     }
 
     // Register sprites BEFORE any layer tries to render them — otherwise the
     // symbol layers report "image missing" and skip drawing for the first
     // render frames, which is what made cluster icons vanish at low zoom.
     await registerGrapeSprites().catch(() => {});
-    // Logos are NOT awaited. They are one parish's focus sprite each, drawn
-    // only once that parish is picked, and awaiting them held every dot on the
-    // map back behind the slowest image — which, at 512px PNGs of up to half a
-    // megabyte, was most of a first load. A picked parish whose logo is still
-    // on its way shows the plain dot and repaints when it lands.
-    registerParishLogos(state.parishes || []).then(() => map && map.triggerRepaint());
+    // No logos here: a parish's logo becomes its focus sprite only when it is
+    // picked (bakeFocusLogo, from updateMap).
     map.triggerRepaint();
 
     styleLoaded = true;
@@ -340,6 +388,12 @@ async function initMap(state) {
 
   // Resize once after layout settles (matches old invalidateSize timing).
   setTimeout(() => map && map.resize(), 100);
+  // A fixed pixelRatio no longer follows the screen by itself: a desktop zoom
+  // or a move to another monitor changes devicePixelRatio and resizes the map.
+  map.on('resize', () => {
+    const want = mapPixelRatio();
+    if (map.getPixelRatio() !== want) map.setPixelRatio(want);
+  });
 
   // Live scheme switch — when system flips dark/light, rebuild the basemap
   // style and re-add our custom sources/layers/sprites. setStyle({diff:false})
@@ -357,10 +411,7 @@ async function initMap(state) {
         addParishSourceAndLayers();
         addVenueSourceAndLayers();
         addUserLocSourceAndLayer(st);
-        await Promise.allSettled([
-          registerGrapeSprites(),
-          registerParishLogos(st.parishes || [])
-        ]);
+        await registerGrapeSprites().catch(() => {});
         styleLoaded = true;
         if (typeof updateMap === 'function') updateMap(st);
         map.triggerRepaint();
@@ -717,8 +768,12 @@ window.agoraUpdateUserLocation = function (lat, lng) {
 // changes makes MapLibre re-tile the source, which every frame would mean a
 // worker round trip per frame. So the different sizes of marker are different
 // layers — a dot, and the big ones (a grape, a focused parish's logo) — each
-// with its own constant radius. The loop only runs while something is
-// flagged and the page is visible; under reduced motion the halos stand still.
+// with its own constant radius. Under reduced motion the halos stand still.
+//
+// Every frame of the loop is a draw of the WHOLE map, basemap and all, so it
+// runs only while it shows: something flagged, the page visible, the map on
+// screen (scrolled down the page, it is not), and a lit marker in or near the
+// view. Otherwise the map draws nothing until somebody moves it.
 const HALO_NOW = '#22c55e';
 const HALO_NOW_MS = 3000;        // one breath, in and out
 // One toll: the ring spreads and fades for HALO_RING_MS, then a short silence.
@@ -727,7 +782,7 @@ const HALO_NOW_MS = 3000;        // one breath, in and out
 // is visible for all but the last half second.
 const HALO_TOLL_MS = 3800;
 const HALO_RING_MS = 3300;
-const HALO_FRAME_MS = 33;        // ~30fps is plenty for a glow
+const HALO_FRAME_MS = 66;        // ~15fps: a slow ring moves under half a pixel a frame
 // Where a marker's edge is: the dot with its ring; a grape's spread or a logo;
 // a place's square with its ring.
 const HALO_EDGE = { dot: 5.25, big: 16, venue: 6.5 };
@@ -744,6 +799,8 @@ const HALO_IS_TODAY = ['any', ['==', ['get', 'today'], true],
 let haloState = null;            // the state updateMap last drew, for the minute tick
 let haloAny = false;             // is anything flagged — no flags, no loop
 let haloRaf = 0, haloLastFrame = 0, haloTimer = 0;
+let mapOnScreen = true;          // any of the map's box inside the window (setupHaloGates)
+let haloInView = true;           // a lit marker in or near the view (litInView)
 
 // The ring's grey, a step lighter than slate-500 so it reads as a ring rather
 // than as an outline. One crisp line and nothing else: the white ring that sat
@@ -792,7 +849,8 @@ function addRingLayers(id, source, filter, size, color, before) {
 
 // No transitions: every frame sets these, and MapLibre's default 300ms ease
 // between paint values is what made the toll visibly shrink back into the dot
-// before each ring.
+// before each ring. (The style's own `transition` is none as well: see
+// buildBaseStyle.)
 const NO_EASE = { duration: 0, delay: 0 };
 function ringPaint(size, color) {
   return {
@@ -911,7 +969,71 @@ function syncHalos() {
   }
   if (!map || !map.getLayer('parish-halo-now-dot')) return;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { paintHalos(null); return; }
+  haloInView = litInView();
   startHaloLoop();
+}
+
+/**
+ * Is a lit marker in the view, or near enough to be drawn in it? Near is half
+ * a view out each way: a grape stands where its parishes average out, so a lit
+ * parish just past the edge can be a ringing grape inside it.
+ */
+function litInView() {
+  const b = map.getBounds();
+  const w = (b.getEast() - b.getWest()) / 2, h = (b.getNorth() - b.getSouth()) / 2;
+  const W = b.getWest() - w, E = b.getEast() + w, S = b.getSouth() - h, N = b.getNorth() + h;
+  const near = (f) => {
+    const [x, y] = f.geometry.coordinates;
+    return x >= W && x <= E && y >= S && y <= N;
+  };
+  return trueFeatures.some(f => (f.properties.now || f.properties.away || f.properties.today) && near(f))
+    || venueFeaturesNow.some(f => (f.properties.now || f.properties.today) && near(f));
+}
+
+/**
+ * The loop's two gates that move on their own: the map scrolling on or off
+ * the screen, and the view moving onto or away from a lit marker. Once per map.
+ */
+function setupHaloGates() {
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver((entries) => {
+      mapOnScreen = entries[entries.length - 1].isIntersecting;
+      startHaloLoop();
+    }).observe(map.getContainer());
+  }
+  let lastCheck = 0;
+  const check = () => {
+    haloInView = haloAny && litInView();
+    startHaloLoop();
+  };
+  // Mid-move, a few times a second catches a lit marker coming into view.
+  map.on('move', () => {
+    const now = performance.now();
+    if (now - lastCheck > 250) { lastCheck = now; check(); }
+  });
+  map.on('moveend', check);
+}
+
+// Labels fade in and out over 300ms as they are placed, and after placing
+// them again MapLibre draws every frame for those 300ms. It places them again
+// after any change at all, so a halo frame every 66ms meant it never stopped
+// drawing. On a still map no label is placed differently, so the fade is off
+// while the map is still and back the moment it moves, where it shows.
+// (_fadeDuration is the vendored MapLibre 4.7.1's own, read on every frame.)
+const LABEL_FADE_MS = 300;
+function setupStillLabels() {
+  if (!('_fadeDuration' in map)) return;
+  let settle = 0;
+  map._fadeDuration = 0;
+  map.on('movestart', () => { clearTimeout(settle); map._fadeDuration = LABEL_FADE_MS; });
+  map.on('moveend', () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => { map._fadeDuration = 0; }, LABEL_FADE_MS);
+  });
+}
+
+function haloShows() {
+  return haloAny && haloInView && mapOnScreen && !document.hidden && !reducedMotion();
 }
 
 /** The minute tick: the same features with their flags worked out again. */
@@ -936,12 +1058,12 @@ function refreshHaloFlags() {
 }
 
 function startHaloLoop() {
-  if (!haloRaf && haloAny && !document.hidden) haloRaf = requestAnimationFrame(haloFrame);
+  if (!haloRaf && haloShows()) haloRaf = requestAnimationFrame(haloFrame);
 }
 
 function haloFrame(t) {
   haloRaf = 0;
-  if (!map || !haloAny || document.hidden || !map.getLayer('parish-halo-now-dot')) return;
+  if (!map || !haloShows() || !map.getLayer('parish-halo-now-dot')) return;
   if (t - haloLastFrame >= HALO_FRAME_MS) {
     haloLastFrame = t;
     paintHalos(t);
@@ -1262,15 +1384,24 @@ function loadSvgAsImage(svgString) {
   });
 }
 
-// Per-parish logo registration. Eager: fire all in parallel on init so the
-// focus-icon layer's icon-image expression can resolve as soon as a parish
-// gets focused. ~50–150 small images, completes within first second.
-function registerParishLogos(parishes) {
-  return Promise.allSettled(
-    parishes
-      .filter(p => p.logo_path && !logoRegistered.has(p.id))
-      .map(p => bakeAndRegisterLogo(p).catch(() => { /* skip silently — feature falls back to circle */ }))
-  );
+// A parish's logo becomes its focus sprite when the parish is picked, and not
+// before. Baking every parish's at startup downloaded every logo (~700 KB)
+// while the map still waited on its fonts, for a sprite only the one picked
+// parish ever wears. Until it lands the picked parish is its plain dot, and
+// the map is drawn again with the logo once it has.
+const logoBaking = new Set();
+function bakeFocusLogo(state) {
+  const id = state && state.parishSheetFocus;
+  const p = id && parishesById.get(id);
+  if (!p || !p.logo_path || logoRegistered.has(id) || logoBaking.has(id)) return;
+  logoBaking.add(id);
+  bakeAndRegisterLogo(p)
+    .then(() => {
+      const st = window.agoraStateRef || haloState;
+      if (map && styleLoaded && st && st.parishSheetFocus === id) updateMap(st);
+    })
+    .catch(() => { /* falls back to the circle */ })
+    .finally(() => logoBaking.delete(id));
 }
 
 async function bakeAndRegisterLogo(parish) {
@@ -1550,7 +1681,6 @@ function updateMap(state, opts = {}) {
   if (state.parishes && state.parishes.length !== parishesById.size) {
     parishesById.clear();
     for (const p of state.parishes) parishesById.set(p.id, p);
-    registerParishLogos(state.parishes).then(() => map && map.triggerRepaint());
   }
 
   // The first-load fit the style could not do because the list was not here
@@ -1590,6 +1720,7 @@ function updateMap(state, opts = {}) {
     : null;
 
   const focusId = state.parishSheetFocus || null;
+  bakeFocusLogo(state);
   const timeFlags = parishTimeFlags(state);
   const selectedSet = (state.selectionMode && state.filters.parishIds)
     ? state.filters.parishIds

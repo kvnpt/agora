@@ -1,0 +1,11 @@
+# Headers for files the asset router serves itself (Workers static assets
+# read this file; it is not served). The Worker's own responses ignore it, and
+# a header named here replaces the router's own.
+#
+# The map's label fonts went out with no Content-Type at all, so Cloudflare,
+# which compresses by type, sent them raw: 76 KB each where gzip makes 46.
+# They are what the map's first full draw waits on. They never change, so a
+# browser keeps them a week instead of asking again on every visit.
+/glyphs/*
+  Content-Type: application/x-protobuf
+  Cache-Control: public, max-age=604800

@@ -911,12 +911,31 @@
       && endMs(e) >= now).sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc));
   }
 
+  // ── Posters, small ────────────────────────────────────────────────────
+  //
+  // A poster in a list is a thumbnail, cut to size by Cloudflare's image
+  // resizing (/cdn-cgi/image/, Images → Transformations on the zone): the
+  // poster itself is 250–370 KB, for a picture 44 px wide in Today. `width`
+  // is in image pixels, enough for a 3x screen. Where resizing is off the
+  // thumbnail's address answers 404, and the image falls back to the whole
+  // poster (THUMB_FALLBACK, first in each onerror) before giving up as before.
+  function posterThumb(path, width) {
+    const p = String(path || '');
+    if (!p.startsWith('/posters/')) return `src="${esc(p)}"`;
+    return `src="/cdn-cgi/image/width=${width},quality=78,format=auto,fit=scale-down${esc(p)}" data-full="${esc(p)}"`;
+  }
+  const THUMB_FALLBACK = "if(this.dataset.full){this.src=this.dataset.full;this.removeAttribute('data-full');return}";
+
   // ── Avatars ───────────────────────────────────────────────────────────
+  //
+  // A logo, like a poster's thumbnail, is fetched at low priority: on a slow
+  // phone it shared the line with the map's fonts and tiles, and the map is
+  // what the page is waiting on.
 
   function avatar(p, cls = '') {
     if (!p) return `<span class="av ${cls}"></span>`;
     const c = jColor(p.jurisdiction);
-    if (p.logo_path) return `<span class="av ${cls}" style="--j:${c}"><img src="${esc(p.logo_path)}" alt="" loading="lazy" onerror="this.remove()"><b>${esc((p.acronym || p.name || '?').slice(0, 3))}</b></span>`;
+    if (p.logo_path) return `<span class="av ${cls}" style="--j:${c}"><img src="${esc(p.logo_path)}" alt="" loading="lazy" fetchpriority="low" onerror="this.remove()"><b>${esc((p.acronym || p.name || '?').slice(0, 3))}</b></span>`;
     return `<span class="av ${cls}" style="--j:${c}"><b>${esc((p.acronym || p.name || '?').slice(0, 3))}</b></span>`;
   }
 
@@ -1155,7 +1174,7 @@
     };
   }
   function pillLogo(p) {
-    if (p.logo_path) return `<span class="pill-logo avatar-logo"><img src="${esc(p.logo_path)}" alt="" loading="lazy"></span>`;
+    if (p.logo_path) return `<span class="pill-logo avatar-logo"><img src="${esc(p.logo_path)}" alt="" loading="lazy" fetchpriority="low"></span>`;
     const text = String(p.acronym || (p.name || '?')[0]).toUpperCase();
     return `<span class="pill-logo avatar-acronym" style="--avatar-ink:${shown(jColor(p.jurisdiction))}"><span class="avatar-acronym-text" data-len="${Math.min(text.length, 5)}">${esc(text)}</span></span>`;
   }
@@ -1317,7 +1336,7 @@
           ${sub}
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
           ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
-        ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+        ${e.poster_path ? `<img class="ethumb" ${posterThumb(e.poster_path, 160)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.remove()">` : ''}
       </button>`;
   }
 
@@ -1565,7 +1584,7 @@
   }
   /** A poster on the shelf, and what it is under it: its own words are on it already. */
   const posterCard = (e, from) => `<button class="poster" type="button" data-event="${esc(e.id)}">
-          <span class="pimg"><img src="${esc(e.poster_path)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('noimg')"></span>
+          <span class="pimg"><img ${posterThumb(e.poster_path, 640)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.parentNode.classList.add('noimg')"></span>
           <span class="ptext"><span class="pkicker">${esc(kindLabel(e.event_type))} · ${esc(whenShort(e))}</span><span class="ptitle">${esc(e.title)}</span>
             ${e.feast ? `<span class="pfeast">${esc(e.feast)}</span>` : ''}${from}</span>
         </button>`;
@@ -1984,6 +2003,9 @@
       suggestions: who.suggestions || 0,
     } : NOBODY;
     syncAccount();
+    // Somebody who may edit anything: the editor comes now, so the first
+    // pencil they press opens at once.
+    if (Object.values(S.who.can).some(Boolean)) editing().catch(() => {});
     // A card drawn before the answer came was drawn for a visitor.
     if (S.who.signedIn) repaintSheets();
     return who || noRole;
@@ -3501,19 +3523,19 @@
       return;
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
-    if ((b = t.closest('[data-edit-rules]'))) { window.NextEdit.editLine(b.dataset.editRules.split(',')); return; }
-    if ((b = t.closest('[data-edit-event]'))) { window.NextEdit.editEvent(b.dataset.editEvent); return; }
-    if ((b = t.closest('[data-edit-details]'))) { window.NextEdit.editDetails(b.dataset.editDetails); return; }
+    if ((b = t.closest('[data-edit-rules]'))) { edit('editLine', b.dataset.editRules.split(',')); return; }
+    if ((b = t.closest('[data-edit-event]'))) { edit('editEvent', b.dataset.editEvent); return; }
+    if ((b = t.closest('[data-edit-details]'))) { edit('editDetails', b.dataset.editDetails); return; }
     if ((b = t.closest('[data-suggest]'))) {
       const under = stack.filter(x => x.dataset.pid).pop();
       const pid = b.dataset.pid || (under && under.dataset.pid);
       // Somebody who may add it adds it, in the app's editor; anybody else suggests it.
       if (b.classList.contains('add-box') && b.dataset.suggest === SUGGEST.event && may('event.edit', pid)) {
-        window.NextEdit.addEvent(pid);
+        edit('addEvent', pid);
         return;
       }
       if (b.classList.contains('add-box') && b.dataset.suggest === SUGGEST.service && may('schedule.create', pid)) {
-        window.NextEdit.addService(pid);
+        edit('addService', pid);
         return;
       }
       suggest(pid, b.dataset.suggest);
@@ -3628,7 +3650,7 @@
       }
       if (a === 'addlist') return openAddToList(top.dataset.pid);
       // The bar's +: whoever may add an event adds one; anybody else suggests one.
-      if (a === 'addevent') return may('event.edit', top.dataset.pid) ? window.NextEdit.addEvent(top.dataset.pid) : suggest(top.dataset.pid, SUGGEST.event);
+      if (a === 'addevent') return may('event.edit', top.dataset.pid) ? edit('addEvent', top.dataset.pid) : suggest(top.dataset.pid, SUGGEST.event);
       if (a === 'more') return openMore(top.dataset.pid, b);
       if (a === 'juris-of') { const p = S.byId.get(top.dataset.pid); const c = COLL.get('j-' + p.jurisdiction); if (c) openCollection(c); return; }
       if (a === 'newlist') {
@@ -3751,24 +3773,71 @@
     syncURL();
   }
 
-  // What editing.js works on: this page, through the same questions it asks itself.
-  if (window.NextEdit) {
-    window.NextEdit.init({
-      parish: (id) => S.byId.get(id),
-      parishes: () => S.parishes,
-      rule: (id) => S.rules.find(r => String(r.id) === String(id)),
-      event: findEvent,
-      retarget: (from, to) => {
-        const e = findEvent(to);
-        for (const el of stack) if (el._event && String(el._event.id) === String(from)) el._event = e || { ...el._event, id: to };
-      },
-      today: todayKey,
-      may,
-      reload,
-      openParish: (id) => openParish(id),
-      avatar,
-      toast,
-      recheck: checkSignIn,
+  // ── The editor, loaded when it is wanted ──────────────────────────────
+  //
+  // next/editing.js and what it rests on, in /admin's order: the app's
+  // add-event editor and its helpers, a rule's form, a parish's details (the
+  // short link it suggests). Not in index.html: no visitor uses any of it, and
+  // its ~100 KB stood between every visitor and the map. It loads as soon as
+  // the sign-in says this account may edit something (checkSignIn), and every
+  // editing control goes through edit(), which waits for it, so a tap that
+  // beats the download still opens its form.
+  const EDITING_SCRIPTS = [
+    '/shared/read-from.js', '/shared/acronym-suggest.js', '/shared/logo-image.js',
+    '/shared/kind-picker.js', '/shared/lang-picker.js', '/shared/event-checks.js',
+    '/shared/sse.js', '/shared/signs.js', '/shared/venue-picker.js',
+    '/shared/event-editor.js', '/shared/time-field.js', '/shared/rule-form.js',
+    '/next/editing.js',
+  ];
+  const editingScripts = new Map();   // src → its load; a failed one is tried again
+  let editingReady = null;
+  function loadScript(src) {
+    if (!editingScripts.has(src)) {
+      const p = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = false;   // fetched together, run in this order
+        s.onload = resolve;
+        s.onerror = () => reject(new Error(`Could not load ${src}`));
+        document.body.appendChild(s);
+      });
+      p.catch(() => editingScripts.delete(src));
+      editingScripts.set(src, p);
+    }
+    return editingScripts.get(src);
+  }
+  function editing() {
+    if (!editingReady) {
+      editingReady = Promise.all(EDITING_SCRIPTS.map(loadScript)).then(() => {
+        // What editing.js works on: this page, through the same questions it asks itself.
+        window.NextEdit.init({
+          parish: (id) => S.byId.get(id),
+          parishes: () => S.parishes,
+          rule: (id) => S.rules.find(r => String(r.id) === String(id)),
+          event: findEvent,
+          retarget: (from, to) => {
+            const e = findEvent(to);
+            for (const el of stack) if (el._event && String(el._event.id) === String(from)) el._event = e || { ...el._event, id: to };
+          },
+          today: todayKey,
+          may,
+          reload,
+          openParish: (id) => openParish(id),
+          avatar,
+          toast,
+          recheck: checkSignIn,
+        });
+        return window.NextEdit;
+      });
+      editingReady.catch(() => { editingReady = null; });
+    }
+    return editingReady;
+  }
+  /** An editing control: `name` of editing.js's, with these, once it is here. */
+  function edit(name, ...args) {
+    return editing().then(E => E[name](...args)).catch(err => {
+      console.error(err);
+      toast('Could not open the editor. Check the connection and try again.');
     });
   }
 
@@ -3826,8 +3895,8 @@
     // here to finish it: the logo, the buttons, the links, the Maps place.
     let made = null;
     try { made = sessionStorage.getItem('agora-edit-parish'); sessionStorage.removeItem('agora-edit-parish'); } catch { /* storage refused */ }
-    if (made && made === route.parish && window.NextEdit) {
-      signedIn.then(() => { if (may('parish.edit', made)) window.NextEdit.editDetails(made); }).catch(() => {});
+    if (made && made === route.parish) {
+      signedIn.then(() => { if (may('parish.edit', made)) edit('editDetails', made); }).catch(() => {});
     }
     // A map that settled before the parishes came counted none in view: count again.
     onView();
