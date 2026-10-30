@@ -136,7 +136,7 @@ test('a tile comes out of a leaf directory as an ordinary cacheable file', async
   assert.equal(missing.status, 204);
 });
 
-test('gzipped tiles go out plain, for Cloudflare to compress', async () => {
+test('gzipped tiles go out gzipped, with the encoding said', async () => {
   // A one-entry archive whose tile is gzip bytes, as the real basemap's are.
   const tile = await gzip(new TextEncoder().encode('vector tile'));
   const entries = [{ tileId: 0, offset: 0, length: tile.length, runLength: 1 }];
@@ -155,9 +155,9 @@ test('gzipped tiles go out plain, for Cloudflare to compress', async () => {
   const res = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/0/0/0.mvt'),
     params: { archive: 'oceania', z: '0', x: '0', y: '0.mvt' } });
   assert.equal(res.status, 200);
-  // Handed on gzipped, the edge cache's copy came back gzipped twice.
-  assert.equal(res.headers.get('content-encoding'), null);
-  assert.equal(new TextDecoder().decode(await res.arrayBuffer()), 'vector tile');
+  assert.equal(res.headers.get('content-encoding'), 'gzip');
+  assert.equal(res.headers.get('x-tile-encoding'), null);
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), tile);
   // Past the archive's zooms: nothing, and no read of R2 for it.
   const reads = env.ASSETS_BUCKET.reads;
   const deep = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/3/1/1.mvt'),
@@ -190,13 +190,18 @@ test('the edge cache keeps a tile under its path and the version, whatever was a
   try {
     const params = { archive: 'oceania', z: '0', x: '0', y: '0.mvt' };
     const first = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/0/0/0.mvt?v=2'), params });
-    assert.equal(await first.text(), 'vector tile');
-    assert.deepEqual([...kept.keys()], [`https://orthodoxy.au/tiles/oceania/0/0/0.mvt?v=${TILE_CACHE_VERSION}`]);
+    assert.deepEqual(new Uint8Array(await first.arrayBuffer()), tile);
+    const key = `https://orthodoxy.au/tiles/oceania/0/0/0.mvt?v=${TILE_CACHE_VERSION}`;
+    assert.deepEqual([...kept.keys()], [key]);
+    // Kept with no Content-Encoding, which came back out of the cache gzipped again.
+    assert.equal(kept.get(key).headers.get('content-encoding'), null);
+    assert.equal(kept.get(key).headers.get('x-tile-encoding'), 'gzip');
     // A copy kept under the bare address, as the first tiles were, is never served.
     kept.set('https://orthodoxy.au/tiles/oceania/0/0/0.mvt', new Response('gzipped twice'));
     const reads = env.ASSETS_BUCKET.reads;
     const again = await serveTile({ env, request: new Request('https://orthodoxy.au/tiles/oceania/0/0/0.mvt'), params });
-    assert.equal(await again.text(), 'vector tile');
+    assert.equal(again.headers.get('content-encoding'), 'gzip');
+    assert.deepEqual(new Uint8Array(await again.arrayBuffer()), tile);
     assert.equal(env.ASSETS_BUCKET.reads, reads, 'the second answer is the kept one');
   } finally {
     if (before === undefined) delete globalThis.caches; else globalThis.caches = before;
