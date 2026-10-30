@@ -1309,7 +1309,7 @@
    * alone wears none, and one in two languages still says both.
    */
   const langBadge = (langs, asked) => !!(langs && langs.length) && !(asked && langs.every(l => langIs(l, asked)));
-  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null } = {}) {
+  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
@@ -1329,8 +1329,9 @@
     const tomb = tombOf(e);
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
+    // `same`: a row after the first of its time slot, whose time the slot has said.
     return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}">
-        <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
+        <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${sub}
@@ -1647,7 +1648,8 @@
   // ── Days: the stream's, and a parish's Coming up ───────────────────────
   //
   // The app's dated list: a quiet header for each day with its own link, the
-  // morning's services and events, then the evening's under the moon. A date
+  // morning's services and events, then the evening's under the moon, each in
+  // its time slots (the 9am's together, the time said once). A date
   // picked from the calendar is where the list starts — a FROM, as every date
   // in a link is — and it goes in the link: /2026-10-25, /sgr/2026-10-25.
 
@@ -1685,6 +1687,9 @@
   }
   /** A day's own link, copied with a tap, as the app's day headers have. */
   const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
+  /** A day's rows by their time: those at one time on one stretch of the rule, the time said once. */
+  const slotsHTML = (rows, row) => TL.slotsOf(rows, e => local(e).hm)
+    .map(s => `<div class="slot">${s.rows.map((e, i) => eventRow(e, { ...row, same: i > 0 })).join('')}</div>`).join('');
   function daysHTML(list, { start, days, linkFor, empty = false, row = {} }) {
     const byDay = new Map();
     for (const e of list) {
@@ -1700,7 +1705,7 @@
       const head = `<h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span>${linkFor ? dayLink(k, linkFor(k)) : ''}</h3>`;
       if (!es.length) { out.push(`<section class="sday empty" data-date="${k}">${head}<p>Nothing in view</p></section>`); continue; }
       const morning = es.filter(e => !isEvening(e)), evening = es.filter(isEvening);
-      out.push(`<section class="sday" data-date="${k}">${head}${morning.map(e => eventRow(e, row)).join('')}${evening.length ? EVENING + evening.map(e => eventRow(e, row)).join('') : ''}</section>`);
+      out.push(`<section class="sday" data-date="${k}">${head}${slotsHTML(morning, row)}${evening.length ? EVENING + slotsHTML(evening, row) : ''}</section>`);
     }
     return out.join('');
   }

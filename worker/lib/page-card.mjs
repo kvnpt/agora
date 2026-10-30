@@ -144,7 +144,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
 
 // ── a parish ─────────────────────────────────────────────────────────────
 
-function eventRowHTML(e, here, now = false) {
+function eventRowHTML(e, here, now = false, same = false) {
   const tomb = TOMB[e.status] || null;
   // Its own languages first on the line under its name, then another parish's name.
   const langs = ruleFilters.serviceLangs(e) || [];
@@ -153,7 +153,7 @@ function eventRowHTML(e, here, now = false) {
   const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${here && e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}">
-      <span class="etime">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
+      <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
       ${roundel(e.event_type)}
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
         ${away}
@@ -162,6 +162,10 @@ function eventRowHTML(e, here, now = false) {
       ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy">` : ''}
     </a>`;
 }
+
+/** A day's rows by their time: those at one time on one stretch of the rule, the time said once (next.js slotsHTML). */
+const slotsHTML = (rows, here) => lines.slotsOf(rows, e => e._local.time)
+  .map(s => `<div class="slot">${s.rows.map((e, i) => eventRowHTML(e, here, false, i > 0)).join('')}</div>`).join('');
 
 /** Coming up on a parish's card: its days from `start`, morning then evening, tombstones struck through. */
 function comingUpHTML(m, start, today) {
@@ -178,7 +182,7 @@ function comingUpHTML(m, start, today) {
     const evening = es.filter(e => services.partOfDayOf(e, m.zone) === 'evening');
     const morning = es.filter(e => !evening.includes(e));
     const sun = new Date(`${k}T00:00:00Z`).getUTCDay() === 0;
-    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${morning.map(e => eventRowHTML(e, m.parish.id)).join('')}${evening.length ? EVENING + evening.map(e => eventRowHTML(e, m.parish.id)).join('') : ''}</section>`;
+    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${slotsHTML(morning, m.parish.id)}${evening.length ? EVENING + slotsHTML(evening, m.parish.id) : ''}</section>`;
   });
   return days.join('') || '<div class="tt-none sm">Nothing on file for these days.</div>';
 }
@@ -432,7 +436,7 @@ function collectionComingUpHTML(feed, now) {
     const evening = es.filter(e => services.partOfDayOf(e, e.timezone || 'Australia/Sydney') === 'evening');
     const morning = es.filter(e => !evening.includes(e));
     const sun = new Date(`${k}T00:00:00Z`).getUTCDay() === 0;
-    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${morning.map(e => eventRowHTML(e, null)).join('')}${evening.length ? EVENING + evening.map(e => eventRowHTML(e, null)).join('') : ''}</section>`;
+    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${slotsHTML(morning, null)}${evening.length ? EVENING + slotsHTML(evening, null) : ''}</section>`;
   });
   return days.join('') || '<div class="tt-none sm">Nothing on file this week.</div>';
 }

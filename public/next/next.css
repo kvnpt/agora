@@ -939,15 +939,27 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* What's on at a parish: the page's posters, kept to it, under its timetable. */
 .p-whatson[hidden] { display: none; }
 .p-whatson .shelf-row { padding: 2px 18px 6px; scroll-padding: 0 18px; }
-.cu .sday { position: relative; background: none; border: 0; padding-left: 13px; }
-.cu .sday::before {
-  content: ''; position: absolute; left: 0; top: 14px; bottom: 6px;
+/* A day's header stands over its rule, not beside it. The rule comes in its
+   time slots, a hairline between each: the rows at one time share one stretch
+   of it, the time said once (next.js slotsHTML). The Evening is a header too. */
+.cu .sday { background: none; border: 0; }
+.cu .dh { position: static; padding: 18px 0 4px; background: none; }
+.cu .slot { position: relative; padding: 5px 0 5px 13px; }
+.cu .slot::before {
+  content: ''; position: absolute; left: 0; top: 11px; bottom: 11px;
   width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
 }
-.cu .dh { position: static; padding: 14px 0 2px; background: none; }
-.cu .erow { padding: 8px 0; min-height: 0; }
+.cu .slot + .slot { border-top: 1px solid var(--line); }
+/* Its time, roundel and name on one line at the top of the row, as a
+   calendar's are, so the times read down the day and a slot's is its head. */
+.cu .erow { padding: 6px 0; min-height: 0; align-items: flex-start; }
+.cu .erow .etime { padding-top: 2px; }
+.cu .erow .roundel { margin-top: -1px; }
 .cu .erow + .erow { border-top: 0; }
-.cu .sday .eve, .cu .sday .erow + .eve { padding: 8px 0 0; border: 0; }
+.cu .sday .eve { padding: 12px 0 2px; border: 0; }
+.cu .slot + .eve { margin-top: 2px; border-top: 1px solid var(--line); }
+/* Said once by its slot, the time is still read out on every row. */
+.etime.same .t-time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .more-days { padding: 18px 0 6px; text-align: center; color: var(--text-3); font-size: 13px; }
 .tt-none { margin: 0 18px; padding: 16px; border-radius: 16px; background: var(--card); color: var(--text-2); font-size: 14.5px; }
 .tt-none.sm { margin: 0; padding: 4px 0 0; background: none; font-size: 13.5px; }

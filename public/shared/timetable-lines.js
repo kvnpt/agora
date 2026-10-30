@@ -80,7 +80,24 @@
       || String(a.r.start_time).localeCompare(String(b.r.start_time)));
   }
 
-  const api = { qualifier, dayList, ruleRange, isLive, isEvening, linesOf };
+  /**
+   * A day's rows as its time slots: every row in a run at one time is one
+   * slot, which a Coming up shows on one stretch of its rule with the time
+   * said once. `timeOf(row)` is the row's wall clock ("09:00"); the rows come
+   * in the day's order, which this keeps.
+   */
+  function slotsOf(rows, timeOf) {
+    const out = [];
+    for (const row of rows) {
+      const t = timeOf(row);
+      const last = out[out.length - 1];
+      if (last && last.time === t) last.rows.push(row);
+      else out.push({ time: t, rows: [row] });
+    }
+    return out;
+  }
+
+  const api = { qualifier, dayList, ruleRange, isLive, isEvening, linesOf, slotsOf };
   if (isCjs) module.exports = api;
   else root.AgoraTimetableLines = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
