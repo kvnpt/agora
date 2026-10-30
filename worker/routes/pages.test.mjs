@@ -260,6 +260,63 @@ test('a word nothing else claims, beside a parish, previews the soonest event it
   assert.doesNotMatch(title((await get('/sgr/social')).html), /Choir/);
 });
 
+/** Words that name no parish, on a fresh database: a Disco Night and a Vigil each side, a bus kept to its parish. */
+function wordsFixture(f = fresh()) {
+  const event = (parish, t, start, extra = {}) => {
+    const cols = ['parish_id', 'source_adapter', 'title', 'start_utc', 'end_utc', 'event_type', 'status', 'mutation_type', ...Object.keys(extra)];
+    f.raw.prepare(`INSERT INTO events (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+      .run(parish, 'manual', t, start, new Date(Date.parse(start) + 3 * 3600000).toISOString(), 'social', 'approved', 'headless', ...Object.values(extra));
+  };
+  event(PARISH, 'Disco Night', '2026-10-17T08:00:00Z', { poster_path: '/posters/disco.jpg' });
+  event(GREEK_QLD, 'Spring Fete', '2026-10-24T00:00:00Z', { description: 'Stalls and a sausage sizzle.' });
+  event(PARISH, 'Picnic on the Sunshine Coast', '2026-11-07T00:00:00Z', { poster_path: '/posters/picnic.jpg' });
+  event(PARISH, 'Bus to Buderim', '2026-10-24T20:00:00Z', { parish_scoped: 1 });
+  rule(f.raw, PARISH, 6, '19:00', 'All-night Vigil');
+  rule(f.raw, GREEK_QLD, 6, '18:00', 'Vigil');
+  return f;
+}
+
+test('words that name no parish are what the site\'s search finds: one parish, one place, several, or nothing', async () => {
+  const { get } = wordsFixture();
+  // One parish by its name, and nothing found elsewhere: its card. The bus
+  // is St George's own business (Parish only), so Buderim is all there is.
+  let { res, html } = await get('/buderim');
+  assert.equal(res.status, 200);
+  assert.match(title(html), /^Sunshine Coast, Buderim — /);
+  assert.equal(robots(html), 'noindex,follow', 'words are anybody’s: never indexed');
+  assert.match(card(html), /^<section class="sheet parish open ssr"/);
+  // All that is found is at one parish: its first, as /sgr/disco would.
+  ({ res, html } = await get('/disco'));
+  assert.equal(res.status, 200);
+  assert.match(title(html), /^Disco Night — Saturday 17 October, 7pm · St George Cathedral, Redfern/);
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/posters/disco.jpg');
+  assert.equal(robots(html), 'noindex,follow');
+  assert.match(title((await get('/sausage')).html), /^Spring Fete — Saturday 24 October, 10am · Sunshine Coast, Buderim/, 'by its description');
+  // Several places: the words and where they were found, and no card (the page builds it).
+  ({ res, html } = await get('/vigil'));
+  assert.equal(res.status, 200);
+  assert.equal(title(html), '“vigil” at St George Cathedral, Redfern and Sunshine Coast, Buderim | orthodoxy.au');
+  assert.match(meta(html, 'name', 'description'), /^All-night Vigil · Vigil\. What orthodoxy\.au finds for “vigil”: 2 places/);
+  assert.equal(robots(html), 'noindex,follow');
+  assert.equal(canonical(html), undefined);
+  assert.equal(card(html), '');
+  // The link's other words narrow it: a jurisdiction, a region, a day.
+  for (const p of ['/greek/vigil', '/qld/vigil', '/vigil/greek']) {
+    assert.match(title((await get(p)).html), /^Vigil — Saturday 3 October, 6pm · Sunshine Coast, Buderim/, p);
+  }
+  assert.equal((await get('/sun/vigil')).res.status, 404, 'no Vigil on a Sunday');
+  // One parish by name, and something elsewhere: both (Kevin, 28 Oct 2026).
+  ({ html } = await get('/sunshine'));
+  assert.equal(title(html), '“sunshine” at Sunshine Coast, Buderim and St George Cathedral, Redfern | orthodoxy.au');
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/posters/picnic.jpg', 'the first poster found');
+  // Nothing: a 404, as any link to nothing is.
+  for (const p of ['/nosuch', '/antiochian/fete', '/the']) {
+    const r = await get(p);
+    assert.equal(r.res.status, 404, p);
+    assert.equal(robots(r.html), 'noindex,follow', p);
+  }
+});
+
 test('a painted Today: no count, Later today only under Happening now, This evening, Tomorrow, and the evening divided off', async () => {
   const today = async (setup) => {
     const { raw, get } = fresh();
@@ -822,6 +879,21 @@ test('the lite version of a parish link: its head and its card, no map, no scrip
   assert.match(html, /href="\/sgr\?lite=0"/, 'the way back to the full version of this link');
   assert.match(html, /<link rel="stylesheet" href="\/next\/lite\.css">/);
   assert.doesNotMatch(html, /<!--lite:/, 'every mark filled');
+});
+
+test('the lite version of words found at several places lists them; words that find nothing are its search', async () => {
+  const { lite } = wordsFixture(freshLite());
+  let { res, html } = await lite('/vigil');
+  assert.equal(res.status, 200);
+  assert.match(html, /<h1>“vigil”<\/h1><div class="lite-list">/);
+  assert.match(html, /<a class="lite-row" href="\/sgr">[\s\S]*<a class="lite-row" href="\/greek-gopssc-buderim">/, 'by name, with nobody placed');
+  assert.match(html, /value="vigil"/, 'its words in the search box');
+  ({ res, html } = await lite('/nosuch'));
+  assert.equal(res.status, 404);
+  assert.match(html, /Nothing for “nosuch”/);
+  // A search typed there is that search, whatever the link.
+  ({ html } = await lite('/vigil?q=buderim'));
+  assert.doesNotMatch(html, /<h1>“vigil”/);
 });
 
 test('the lite home page: the parishes nearest the reader, and the collections as links', async () => {

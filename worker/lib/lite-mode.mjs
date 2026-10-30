@@ -195,8 +195,15 @@ const FAR = 1000;
 const NEAR_ME = '<button class="lite-near" type="button" hidden>Use my location</button>';
 
 /** The lite home page under the search box: results for `q`, else the nearest parishes and the collections. */
-export function liteHomeHTML({ index, q = '', at = null }) {
+export function liteHomeHTML({ index, q = '', at = null, ids = null }) {
   q = String(q || '').trim().slice(0, 100);
+  // A link's words found across the site (/vigil, routes/pages.mjs
+  // wordsPage): the places they were found at, nearest first.
+  if (ids && ids.length) {
+    const ps = ids.map(id => index.find(p => p.id === id)).filter(Boolean)
+      .map(p => ({ p, d: km(at, p) })).sort((a, b) => (a.d ?? 0) - (b.d ?? 0) || a.p.name.localeCompare(b.p.name));
+    return `<section class="lite-sec"><h1>“${esc(q)}”</h1><div class="lite-list">${ps.map(parishRow).join('')}</div></section>`;
+  }
   if (q) {
     const ps = searchParishes(index, q, at);
     const cs = searchCollections(q);

@@ -642,6 +642,8 @@
       const acrs = [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean).map(acronymOf);
       if (acrs.length) segs.push(acrs.join('+'));
     }
+    // A search's words, as the link had them (/antiochian/festival).
+    if (f.words) segs.push(...f.words);
     if (from) segs.push(from);
     const lang = U.englishSegment(f);
     if (lang) segs.push(lang);
@@ -658,6 +660,9 @@
     if (r.parishSlugs && r.parishSlugs.length === 1 && !parishBySlug(r.parishSlugs[0])) {
       const named = r.words.find(parishBySlug);
       if (named) r = window.AgoraUrlState.parishNamed(r, named);
+      // /village, /antiochian/festival: words that name no parish are a
+      // search of the site (openWords), under whatever else the link says.
+      else if (wordsQ([r.parishSlugs[0], ...r.words])) r = { ...r, parishSlugs: null, words: [r.parishSlugs[0], ...r.words] };
     }
     const f = blankFilters();
     if (r.location) f.location = r.location;
@@ -689,7 +694,8 @@
     // One jurisdiction's donations; a link to several is everybody's.
     const one = typeof r.jurisdiction === 'string' ? r.jurisdiction : null;
     if (r.donate) return { juris: one, f, parish: null, eventId: null, from: null, donate: (parish && parish.jurisdiction) || one || 'all' };
-    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, focus: parish ? focusOf(r) : null, eventId: r.eventId || null, from };
+    return { juris: r.jurisdiction || null, f, parish: parish ? parish.id : null, focus: parish ? focusOf(r) : null, eventId: r.eventId || null, from,
+      words: !r.parishSlugs && !r.eventId && r.words.length ? r.words : null };
   }
   /**
    * What a link asks of one parish, as filters: /sgr/talk, /sgr/wed/liturgy,
@@ -785,7 +791,7 @@
     if (panelOpen()) setPanel(false);
     const route = readPath(path);
     applyRoute(route);
-    if (!route.parish && !route.eventId && !route.donate) {
+    if (!route.parish && !route.eventId && !route.donate && !route.words) {
       syncURL({ push: true });
       openPageCard(route, path);
     }
@@ -806,6 +812,7 @@
     if (route.parish) openParish(route.parish, { entry, from: route.from, focus: null });
     else if (route.eventId) return openEvent(route.eventId, { entry });
     else if (route.donate) openDonate(route.donate === 'all' ? null : route.donate, { entry });
+    else if (route.words) return openWords(route, { entry });
   }
   /** A region's parishes fill the small map; its whole box (Queensland reaches Torres Strait) would leave it empty. */
   function frameRegion(slug, animate) {
@@ -2635,7 +2642,11 @@
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
     const cf = { ...blankFilters(), ...(c.f || {}) };
-    const only = asksWhat(cf) || cf.lang ? cf : null;
+    const onlyOf = (x) => (asksWhat(x) || x.lang || x.words ? x : null);
+    const only = onlyOf(cf);
+    // A parish a search named (/village) is there for itself: all of it.
+    const named = new Set(c.named || []);
+    const bare = named.size ? onlyOf({ ...cf, words: null }) : null;
     // One list by distance, whatever each holds: times, a one-off, or
     // nothing yet (Kevin, 29 Oct 2026).
     const ps = c.ids.map(id => S.byId.get(id)).filter(Boolean)
@@ -2646,12 +2657,13 @@
       // Its Next is its own, held by it or in its church, before one it only
       // takes part in; and its own one-off may be months off, past nextOf's
       // fortnight, which says when for a parish with no timetable (/greek).
-      const answers = (e) => scopedOpen(e, cf) && (!only || rowAnswers(e, only, false));
+      const asked = named.has(p.id) ? bare : only;
+      const answers = (e) => scopedOpen(e, cf) && (!asked || rowAnswers(e, asked, false));
       const nx = nextOf(p.id, e => (e.parish_id === p.id || e.location_parish_id === p.id) && answers(e))
         || upcomingOneOffs(p.id, { own: true }).find(e => Date.parse(e.start_utc) > Date.now() && answers(e))
         || nextOf(p.id, answers);
       // Its lines, or nothing: a parish with no times says no more (Kevin, 29 Oct 2026).
-      const tt = rulesOf(p.id).some(liveRule) ? timetable(p.id, { compact: true, only, among: cf }) : '';
+      const tt = rulesOf(p.id).some(liveRule) ? timetable(p.id, { compact: true, only: asked, among: cf }) : '';
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
@@ -2704,6 +2716,59 @@
       list.style.setProperty('--fold', `${Math.round(tt.getBoundingClientRect().top - list.getBoundingClientRect().top + Math.min(tt.offsetHeight, 130))}px`);
     }
     el._rest = () => ps.slice(LIMIT).map(item).join('');
+  }
+
+  // ── Words that name no parish (/village, /vigil, /antiochian/festival) ──
+  //
+  // A search of the site, read as the box reads it (search-words.js), under
+  // whatever else the link says: its jurisdiction, its region, a kind or a
+  // day. One parish by its name is its card; what is found at one parish
+  // only, the first of it over that parish's card, as at /smmp/disco; several
+  // places, a card of them, the parish named and the others alike (Kevin,
+  // 28 Oct 2026); nothing, the search box with the words in it. The Worker's preview reaches the same verdict
+  // (routes/pages.mjs wordsPage). A Parish only row is its parish's own
+  // business and is not found from here.
+
+  async function openWords(route, { entry = true } = {}) {
+    const SW = window.AgoraSearch;
+    const phrase = SW.phraseOf(route.words);
+    const Q = wordsQ(route.words);
+    if (!Q) return openSearch(phrase);
+    const depth = stack.length;
+    try { await ensureLoaded(addDays(todayKey(), MATCH_DAYS)); } catch (err) { console.warn(err); }
+    const f = route.f, juris = route.juris;
+    const where = { ...blankFilters(), location: f.location, monasteries: f.monasteries };
+    const parishes = S.parishes.filter(p => parishMatches(p, where, juris));
+    const here = new Set(parishes.map(p => p.id));
+    const horizon = Date.parse(addDays(todayKey(), MATCH_DAYS) + 'T14:00:00Z'), now = Date.now();
+    const rows = [
+      ...S.rules.filter(r => here.has(r.parish_id) && liveRule(r) && !r.parish_scoped && rowAnswers(r, f, true)),
+      ...((window.agoraBundle.raw && window.agoraBundle.raw.events) || []).filter(e => here.has(e.parish_id)
+        && visible(e) && !e.parish_scoped && endMs(e) >= now && Date.parse(e.start_utc) <= horizon && rowAnswers(e, f, false))
+        .map(e => ({ ...e, _at: local(e) })),
+    ];
+    const v = SW.findAcross({ parishes, rows, Q, hayOf: (p) => JURIS[p.jurisdiction]?.long || '',
+      parishLang: (pid, lang) => hasLang(S.byId.get(pid), lang) });
+    // Something else opened meanwhile (the bundle was a while coming).
+    if (stack.length !== depth) return;
+    const from = route.from;
+    if (v.verdict === 'parish') return openParish(v.pid, { entry, from, focus: null });
+    if (v.verdict === 'match') return openMatch(v.pid, focusOf({ ...f, words: route.words }), { entry, from });
+    if (v.verdict === 'none') return openSearch(phrase);
+    const cf = { ...f, words: route.words };
+    openCollection({
+      id: 'words', kicker: 'Search', tint: '#475569', title: `“${phrase}”`,
+      ids: v.ids, named: v.named, f: cf, juris, segs: segsFor({ juris, f: cf }),
+      blurb: wordsBlurb(v, phrase),
+    }, { entry, from });
+  }
+  /** "1 parish by name, and services and events matching “village” at 1 more": what a search's card holds. */
+  function wordsBlurb(v, phrase) {
+    const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+    const more = new Set(v.found.map(r => r.parish_id).filter(id => !v.named.includes(id))).size;
+    const found = more ? `services and events matching “${phrase}” at ${v.named.length ? `${more} more` : n(more, 'place', 'places')}` : '';
+    const line = [v.named.length ? `${n(v.named.length, 'parish', 'parishes')} by name` : '', found].filter(Boolean).join(', and ');
+    return line.charAt(0).toUpperCase() + line.slice(1) + '.';
   }
 
   // ── Donate: the parishes that take donations online ───────────────────
@@ -3892,7 +3957,7 @@
     const opening = applyRoute(route, { animate: false });
     // A collection's link opens its card, over the page its filters make, as
     // the shelf's card does: a step back is that page.
-    if (!route.parish && !route.eventId && !route.donate) openPageCard(route, location.pathname);
+    if (!route.parish && !route.eventId && !route.donate && !route.words) openPageCard(route, location.pathname);
     // A card painted for a link this page did not open (a parish since gone),
     // once an event the bundle did not hold has been read.
     Promise.resolve(opening).catch(() => {}).then(() => $$('#sheets > .ssr').forEach(x => x.remove()));
