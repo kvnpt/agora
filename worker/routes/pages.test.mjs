@@ -152,8 +152,8 @@ test('a parish link is the page, saying what it is, indexable, with its card pai
   assert.doesNotMatch(c, /class="today card|Nothing more today/);
   assert.match(c, /<a class="sum sum-link"[^]*?<\/a><\/div>\s*<div class="p-details">[^]*?<\/div>\s*<h2 class="sec">Timetable<\/h2>\s*<div class="p-times">/, 'the details, then the timetable, by that name: it holds every kind');
   assert.match(timesOf(html), /<span class="tt-days">Sun<\/span>\s*<span class="t-time">10<span class="t-mer">am<\/span><\/span>[\s\S]*<span class="tt-title">Sunday Divine Liturgy/);
-  assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><a class="erow" href="\/\d+:2026-10-04">/,
-    'the next fortnight, day by day, each date its own link');
+  assert.match(comingUp(html), /<h3 class="dh sun"><span>Sunday 4 Oct<\/span><\/h3><div class="slot"><a class="erow" href="\/\d+:2026-10-04">/,
+    'the next fortnight, day by day, each date its own link, each time its own slot');
 });
 
 test('the card says where its details and its times came from, and how long ago (public/shared/source-line.js)', async () => {
