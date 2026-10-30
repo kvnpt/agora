@@ -251,7 +251,7 @@ async function parishPage(env, url, page, now) {
     ...((pinnedEvent && pinnedEvent.combined_parishes) || []),
   ].filter(Boolean))];
   const venueRows = venueIds.length
-    ? await db.prepare(`SELECT id, name, address, acronym, logo_path, jurisdiction FROM parishes
+    ? await db.prepare(`SELECT id, name, full_name, address, acronym, logo_path, jurisdiction FROM parishes
                         WHERE id IN (SELECT value FROM json_each(?))`)
       .bind(JSON.stringify(venueIds)).all().catch(() => ({ results: [] }))
     : { results: [] };
@@ -263,7 +263,7 @@ async function parishPage(env, url, page, now) {
     links: links.results || [],
     route, pinnedEvent, now, origin: url.origin, overrides,
     venues: Object.fromEntries((venueRows.results || []).map(p => [p.id, {
-      name: p.name, address: p.address, acronym: p.acronym, logo_path: p.logo_path, slug: parishSlug(p),
+      name: p.name, full_name: p.full_name, address: p.address, acronym: p.acronym, logo_path: p.logo_path, slug: parishSlug(p),
       color: jurisColors.jurisdictionColorFrom(overrides, p.jurisdiction),
     }])),
   });

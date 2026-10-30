@@ -17,6 +17,7 @@ import { servePage, pageOf, indexedCollections } from './pages.mjs';
 import { timetableModel } from '../lib/lite-timetable.mjs';
 import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
+import jurisColors from '../../public/shared/jurisdiction-colors.js';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -372,7 +373,8 @@ test('a cancelled occurrence previews as cancelled, and its card says so', async
   raw.prepare(`INSERT INTO schedule_overrides (schedule_id, occurrence_date, kind) VALUES (?, '2026-10-04', 'cancelled')`).run(sid);
   const { html } = await get(`/${sid}:2026-10-04`);
   assert.match(meta(html, 'name', 'description'), /^CANCELLED\./);
-  assert.match(card(html), /<div class="ev-head off cancelled">\s*<div class="ev-kind"><span class="ev-off">Cancelled<\/span><span class="kpill"[^>]*>Liturgy<\/span><\/div>/);
+  assert.match(card(html), /<div class="ev-band off cancelled"[^>]*>\s*<span class="ev-band-kind"><span class="kpill"[^>]*>Liturgy<\/span><\/span>/);
+  assert.match(card(html), /<div class="ev-head off cancelled">\s*<div class="ev-kind"><span class="ev-off">Cancelled<\/span><\/div>/);
   // And on its parish's Coming up, struck through rather than gone.
   assert.match(comingUp((await get('/sgr')).html), /<a class="erow tomb cancelled" href="\/\d+:2026-10-04">[\s\S]*?<span class="etomb">Cancelled<\/span>/);
 });
@@ -406,6 +408,10 @@ test('an event and a rule held at another parish, or a place, say where', async 
   assert.ok(meta(atPage.html, 'name', 'description').includes(venue.address), 'and its preview says that address, not the host\'s');
   assert.match(card(atPage.html), /<h2 class="sec">Parishes<\/h2>[\s\S]*<small>Hosting<\/small>[\s\S]*<small>Held here<\/small>/,
     'both parishes are named, each with its part');
+  const vrow = raw.prepare('SELECT jurisdiction, full_name, name FROM parishes WHERE id = ?').get(venue.id);
+  const band = between(card(atPage.html), '<div class="ev-band"', '<div class="ev-head');
+  assert.ok(band.includes(`--j:${jurisColors.jurisdictionColorFrom({}, vrow.jurisdiction)}`), "its band in the colour of the venue's jurisdiction");
+  assert.ok(band.includes(`<span class="ev-at-name">${(vrow.full_name || vrow.name).replace(/&/g, '&amp;')}</span></a>`), 'and naming the church it is held in');
   // And it is on the venue's own card, naming its host.
   const vslug = raw.prepare('SELECT acronym FROM parishes WHERE id = ?').get(venue.id).acronym || venue.id;
   assert.match(comingUp((await get(`/${String(vslug).toLowerCase().replace(/\s+/g, '')}/2026-10-03`)).html),
@@ -441,8 +447,14 @@ test("an event's card says its kind in a pill, and its subtitle under its title"
   const { raw, get } = fresh();
   const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, feast, start_utc, event_type, status, mutation_type)
     VALUES (?, 'manual', 'Men''s Group', 'St Joseph the Betrothed', '2026-10-10T08:00:00Z', 'talk', 'approved', 'headless') RETURNING id`).get(PARISH).id;
-  assert.match(card((await get(`/${id}`)).html),
-    /<div class="ev-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/div>\s*<h1>Men&#39;s Group<\/h1>\s*<p class="ev-sub">St Joseph the Betrothed<\/p>/);
+  const c = card((await get(`/${id}`)).html);
+  // No poster: the band says the kind at its head, in the parish's colour, and the church at its foot.
+  assert.match(c, /<div class="ev-band" style="--j:#7c3bc1">\s*<span class="ev-band-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/span>\s*<a class="ev-at" href="\/sgr"><span class="av [^>]*>[\s\S]*?<\/span><span class="ev-at-name">St George Antiochian Orthodox Cathedral<\/span><\/a><\/div>/);
+  assert.match(c, /<div class="ev-head">\s*<h1>Men&#39;s Group<\/h1>\s*<p class="ev-sub">St Joseph the Betrothed<\/p>/, 'and not again over the title');
+  // A poster has no band: the pill is over the title.
+  const poster = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type, poster_path)
+    VALUES (?, 'manual', 'Talk night', '2026-10-11T08:00:00Z', 'talk', 'approved', 'headless', '/posters/t.jpg') RETURNING id`).get(PARISH).id;
+  assert.match(card((await get(`/${poster}`)).html), /<div class="ev-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/div>\s*<h1>Talk night<\/h1>/);
 });
 
 test('the home page is the site, indexable; anything else is the page with its words, noindex', async () => {

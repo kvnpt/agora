@@ -65,9 +65,9 @@
     const l = kindLabel(kind || 'other');
     return `<span class="roundel${big ? ' big' : ''}" style="--k-bg:${c.bg};--k-fg:${c.fg}" title="${esc(l)}" aria-label="${esc(l)}">${esc(l[0])}</span>`;
   }
-  /** A kind in its roundel's colours, said in full: the pill over an event card's title. */
-  function kindPill(kind) {
-    const c = window.AgoraEventTypes.kindColors(kind || 'other', dark());
+  /** A kind in its roundel's colours, said in full: the pill over an event card's title. `light`: in the light scheme's, on a band of colour. */
+  function kindPill(kind, light = false) {
+    const c = window.AgoraEventTypes.kindColors(kind || 'other', !light && dark());
     return `<span class="kpill" style="--k-bg:${c.bg};--k-fg:${c.fg}">${esc(kindLabel(kind || 'other'))}</span>`;
   }
 
@@ -2845,9 +2845,18 @@
     // Off, a quiet veil over the poster and the words, which still say it is on.
     const offCls = off ? ` off ${esc(e.status)}` : '';
     const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
-    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : `<div class="ev-band${offCls}" style="--j:${jColor(p?.jurisdiction)}">${roundel(e.event_type, true)}${stamp}</div>`}
+    // With no poster, a band in the colour of the jurisdiction it is held in,
+    // as its stretch of a Coming up's line is: its kind said in full at the
+    // head, and the church it is held in, by logo and full name, at the foot.
+    const at = venue || p;
+    const band = `<div class="ev-band${offCls}" style="--j:${jColor(at?.jurisdiction)}">
+        <span class="ev-band-kind">${kindPill(e.event_type, true)}</span>
+        ${at ? `<button class="ev-at" type="button" data-parish="${esc(at.id)}">${avatar(at)}<span class="ev-at-name">${esc(at.full_name || at.name)}</span></button>` : ''}${stamp}</div>`;
+    // Said in the band, the kind is not said again over the title.
+    const kind = e.poster_path ? kindPill(e.event_type) : '';
+    return `${e.poster_path ? `<button class="ev-poster${offCls}" type="button" data-poster="${esc(e.poster_path)}" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</button>` : band}
         <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
-          <div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kindPill(e.event_type)}</div>
+          ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
           <h1>${esc(e.title)}</h1>
           ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
           <p class="ev-when">${overDays ? `${esc(dayLabel(l.date))} ${esc(hm12(l.hm))} – ${esc(dayLabel(last.date))} ${esc(hm12(end))}`

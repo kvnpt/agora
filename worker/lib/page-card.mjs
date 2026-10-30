@@ -335,11 +335,19 @@ export function eventCardHTML(m) {
   const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
   // What it is said in: a service's own tags, never its parish's.
   const langs = ruleFilters.serviceLangs(e) || [];
+  // With no poster, a band in the colour of the jurisdiction it is held in:
+  // its kind said in full at the head, the church by logo and full name at the foot.
+  const at = venue ? { ...venue, id: e.location_parish_id } : { ...p, slug: m.slug, color: m.color };
+  const band = `<div class="ev-band${offCls}" style="--j:${at.color}">
+        <span class="ev-band-kind">${kindPill(e.event_type)}</span>
+        <a class="ev-at" href="/${esc(at.slug)}">${avatar(at, '', at.color)}<span class="ev-at-name">${esc(at.full_name || at.name)}</span></a>${stamp}</div>`;
+  // Said in the band, the kind is not said again over the title.
+  const kind = e.poster_path ? kindPill(e.event_type) : '';
   return sheet('event', e.title, '', `${glassBar(e.title, p.name)}
     <div class="sheet-scroll">
-      ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : `<div class="ev-band${offCls}" style="--j:${m.color}">${roundel(e.event_type, true)}${stamp}</div>`}
+      ${e.poster_path ? `<a class="ev-poster${offCls}" href="${esc(e.poster_path)}" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="${esc(e.poster_path)}" alt="">${stamp}</a>` : band}
       <div class="ev-head${off ? ` off ${esc(e.status)}` : ''}">
-        <div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kindPill(e.event_type)}</div>
+        ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
         <h1>${esc(e.title)}</h1>
         ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
         <p class="ev-when">${overDays ? `${esc(shortDay(e._local.date, today))} ${esc(hm12(e._local.time))} – ${esc(shortDay(last.date, today))} ${esc(hm12(end))}`
