@@ -13,8 +13,11 @@
 //     link (/greek/qld, /smg+sgr): the timetable's heading, a collection
 //     indexable once it lists somebody, every other mix noindex;
 //   - the home page: the site's;
+//   - words that name no parish (/village, /vigil): what the site's search
+//     finds for them (wordsPage), never indexed;
 //   - anything else (/2026-10-25, /donate): the home page's words, noindex.
-// A parish or an event that is not there is a 404 with those words.
+// A parish or an event that is not there, and words that find nothing, are a
+// 404 with those words.
 //
 // It FAILS OPEN. Any error reading D1 serves the page as it is deployed, whose
 // own head is the home page's, noindex: a head that cannot be built must never
@@ -22,18 +25,21 @@
 
 import urlState from '../../public/shared/url-state.js';
 import slugs from '../../public/shared/slugs.js';
-import { localDateOf } from '../../public/shared/tz.mjs';
+import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
 import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
 import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
-import { liteModel, liteWindow, liteDays, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS } from '../lib/lite-page.mjs';
+import { liteModel, liteWindow, liteDays, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS,
+  wordsQuery, answersRoute, WORDS_WINDOW_DAYS } from '../lib/lite-page.mjs';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { timetableModel, timetableIndexable, timetableMeta } from '../lib/lite-timetable.mjs';
-import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, headHTML, withPage } from '../lib/page-head.mjs';
+import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, wordsMeta, headHTML, withPage } from '../lib/page-head.mjs';
 import { parishCardHTML, eventCardHTML, collectionCardHTML } from '../lib/page-card.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
 import { jurisdictionColorOverrides, PARISH_COLOR_SQL } from '../lib/juris-colors.mjs';
 import { jurisdictionLogos } from '../lib/juris-logos.mjs';
 import collections from '../../public/shared/collections.js';
+import search from '../../public/shared/search-words.js';
+import ruleFilters from '../../public/shared/timetable.js';
 import { liteSwitch, wantsLite, liteIndex, liteHomeHTML, readerPlace, withLite } from '../lib/lite-mode.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
@@ -81,10 +87,12 @@ export function pageOf(pathname, now = Date.now()) {
 
 // The parish columns the timetable page reads — address and pin for the
 // region, languages for /en, and nothing an admin wrote about themselves.
+// A rule's subtitle and description are what a link's words are looked for
+// in (wordsPage), as the search box looks.
 const TIMETABLE_PARISH_COLS = `id, name, full_name, jurisdiction, address, lat, lng, timezone, acronym, languages,
   logo_path`;
 const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, title, event_type,
-  languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
+  feast, description, poster_path, languages, week_of_month, week_parity, effective_from, effective_to, active, parish_scoped,
   source_name, source_ref, source_checked_at, location_override, location_parish_id`;
 
 /** What every timetable page reads: the parishes, their rules, /admin's colours and logos. */
@@ -198,11 +206,17 @@ async function findEvent(db, id) {
   return { event: { ...rest, combined_parishes: (cross.results || []).map(r => r.parish_id) }, parishId: ev.parish_id };
 }
 
-/** A parish's or an event's head and card, from the card's model; a 404 when it is not here. */
-async function parishPage(env, url, page, now) {
+/**
+ * A parish's or an event's head and card, from the card's model; a 404 when
+ * it is not here. `found` is a parish the link's words found (wordsPage),
+ * with the words still to ask of it: none for a parish by its name.
+ */
+async function parishPage(env, url, page, now, found = null) {
   const db = env.DB;
-  let parish, pinnedEvent = null, namedBy = null;
-  if (page.kind === 'parish') {
+  let parish = found && found.parish, pinnedEvent = null, namedBy = null;
+  if (found) {
+    // Found by a search (/village): the link is not the parish's own.
+  } else if (page.kind === 'parish') {
     parish = await findParish(db, page.slug);
     // /disco/smmp: the parish may be any word nothing else claimed, and the
     // rest are what is asked of it. A few at most, so a crawler's long path
@@ -211,6 +225,8 @@ async function parishPage(env, url, page, now) {
       parish = await findParish(db, w);
       if (parish) { namedBy = w; break; }
     }
+    // None: the words are a search of the site.
+    if (!parish) return wordsPage(env, url, page, now);
   } else {
     const found = await findEvent(db, page.route.eventId);
     if (!found) return missing(url);
@@ -222,7 +238,8 @@ async function parishPage(env, url, page, now) {
 
   const zone = parish.timezone || DEFAULT_ZONE;
   const read = urlState.classifyPath(url.pathname, { today: localDateOf(zone, now) });
-  const route = namedBy ? urlState.parishNamed(read, namedBy) : read;
+  const route = found ? { ...read, parishSlugs: [parishSlug(parish)], words: found.words }
+    : namedBy ? urlState.parishNamed(read, namedBy) : read;
   const { fromUtc, toUtc } = liteWindow(liteStartDate(route, zone, now), liteDays(route));
 
   const [rows, events, cross, links, overrides] = await Promise.all([
@@ -268,9 +285,88 @@ async function parishPage(env, url, page, now) {
     }])),
   });
   return {
-    status: 200, head: headHTML(parishMeta(model, { indexable: page.kind === 'parish' && page.indexable })),
+    status: 200, head: headHTML(parishMeta(model, { indexable: !found && page.kind === 'parish' && page.indexable })),
     // An event that cannot be found where its rule was is still its parish's card.
     card: page.kind === 'event' && model.pinned ? eventCardHTML(model) : parishCardHTML(model),
+  };
+}
+
+/**
+ * Words that name no parish (/village, /vigil, /antiochian/festival): what
+ * the site's search finds for them, read as the box reads them, under
+ * whatever else the link says (its jurisdiction, its region, a kind or a
+ * day). The page reaches the same verdict (next.js openWords), from the same
+ * findAcross (search-words.js):
+ *   - one parish by its name, and nothing elsewhere: its card, noindex;
+ *   - all that is found at one parish: its first, as at /smmp/disco;
+ *   - several places: the words, where they were found and the first poster
+ *     (the page builds the card of them), and the places for the lite
+ *     version's list;
+ *   - nothing: a 404, its words in the lite version's search box.
+ * A Parish only row is its parish's own business and is not found from here.
+ */
+async function wordsPage(env, url, page, now) {
+  const read = page.route;
+  const words = [...(read.parishSlugs || []), ...(read.words || [])];
+  const phrase = search.phraseOf(words);
+  const today = localDateOf(DEFAULT_ZONE, now);
+  const Q = wordsQuery({ words }, today);
+  if (!Q) return missing(url);
+  const nowIso = new Date(now).toISOString();
+  const toUtc = new Date(Date.parse(`${today}T00:00:00Z`) + (WORDS_WINDOW_DAYS + 1) * 86400000).toISOString();
+  const [{ parishes, rules }, events] = await Promise.all([
+    timetableRows(env),
+    env.DB.prepare(
+      `SELECT e.id, e.parish_id, e.title, e.feast, e.description, e.event_type, e.languages,
+              e.start_utc, e.end_utc, e.poster_path, p.timezone
+       FROM events e JOIN parishes p ON e.parish_id = p.id
+       WHERE e.source_adapter != 'schedule' AND e.status = 'approved' AND e.parish_scoped = 0
+         AND e.start_utc <= ? AND COALESCE(e.end_utc, e.start_utc) >= ?
+       ORDER BY e.start_utc`
+    ).bind(toUtc, nowIso).all(),
+  ]);
+  const here = parishes.filter(p => ruleFilters.parishInScope(p, {
+    jurisdiction: read.jurisdiction, location: read.location, monasteries: read.monasteries,
+  }));
+  const byId = new Map(here.map(p => [p.id, p]));
+  const zoneOf = (pid) => (byId.get(pid) && byId.get(pid).timezone) || DEFAULT_ZONE;
+  const live = rules.filter(r => byId.has(r.parish_id) && r.active !== 0
+    && (!r.effective_to || r.effective_to >= localDateOf(zoneOf(r.parish_id), now)));
+  const oneOffs = (events.results || []).filter(e => byId.has(e.parish_id))
+    .map(e => ({ ...e, _local: localPartsOf(e.timezone || DEFAULT_ZONE, Date.parse(e.start_utc)) }));
+  // A parish holds a language by what its services are tagged with, as the
+  // page's hasLang reads it: its timetable and its own one-offs ahead.
+  const langRows = new Map();
+  for (const r of [...live, ...oneOffs]) {
+    if (!langRows.has(r.parish_id)) langRows.set(r.parish_id, []);
+    langRows.get(r.parish_id).push(r);
+  }
+  const parishLang = (pid, lang) => ruleFilters.parishAnswersLang(langRows.get(pid) || [], { lang });
+  const lf = ruleFilters.langFilterOf(read);
+  const parishOk = (pid) => ruleFilters.parishAnswersLang(langRows.get(pid) || [], lf);
+  const rows = [
+    ...live.filter(r => ruleFilters.ruleMatches(r, read, { parishOk: parishOk(r.parish_id) })),
+    ...oneOffs.filter(e => answersRoute(e, read, zoneOf(e.parish_id), parishOk(e.parish_id)))
+      .map(e => ({ ...e, _at: { date: e._local.date, hm: e._local.time } })),
+  ];
+  const v = search.findAcross({ parishes: here, rows, Q, parishLang,
+    hayOf: (p) => collections.JURISDICTION_NAMES[p.jurisdiction] || '' });
+  if (v.verdict === 'none') return { ...missing(url), q: phrase };
+  if (v.verdict === 'parish' || v.verdict === 'match') {
+    const parish = await env.DB.prepare(`SELECT ${PARISH_PAGE_COLS} FROM parishes WHERE id = ?`).bind(v.pid).first();
+    if (!parish) return missing(url);
+    return parishPage(env, url, page, now, { parish, words: v.verdict === 'match' ? words : [] });
+  }
+  const poster = v.found.find(r => r.poster_path && r._at) || v.found.find(r => r.poster_path);
+  return {
+    status: 200,
+    head: headHTML(wordsMeta({
+      origin: url.origin, phrase,
+      places: v.ids.map(id => byId.get(id).name),
+      titles: v.found.map(r => r.title),
+      image: poster ? poster.poster_path : null,
+    })),
+    card: '', q: phrase, ids: v.ids,
   };
 }
 
@@ -355,14 +451,17 @@ export async function servePage(request, env, ctx, { now = Date.now() } = {}) {
           request, env, ctx, name: `lite-index@${hour}`,
           build: async () => JSON.stringify(liteIndex({ ...(await timetableRows(env)), now })),
         });
-        main = liteHomeHTML({ index: JSON.parse(kept.text), q: url.searchParams.get('q') || '', at: readerPlace(url, request.cf) });
+        // Words that are a search (/vigil) are its query, and where they were found.
+        const ask = url.searchParams.get('q') || '';
+        main = liteHomeHTML({ index: JSON.parse(kept.text), q: ask || (built && built.q) || '',
+          ids: ask ? null : built && built.ids, at: readerPlace(url, request.cf) });
         version = version || kept.version;
       } catch (err) {
         console.error(`[lite] ${url.pathname}: ${err && err.message}`);
       }
     }
     const body = withLite(built ? withPage(html, built) : html, {
-      q: url.searchParams.get('q') || '', main, path: `${url.pathname}${url.search}`,
+      q: url.searchParams.get('q') || (built && built.q) || '', main, path: `${url.pathname}${url.search}`,
     });
     return revalidated(request, {
       body, etag: await hashEtag(body), version, type: 'text/html; charset=utf-8',

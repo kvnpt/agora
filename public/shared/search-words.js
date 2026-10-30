@@ -105,7 +105,43 @@
   /** "disco-night" and "disco/night" as one phrase: what a link's words say. */
   const phraseOf = (words) => [].concat(words || []).join(' ').replace(/[-+]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-  const api = { norm, hasWord, DAY_WORDS, KIND_WORDS, PRAYER_WORDS, LANG_WORDS, FILLER, parseQuery, textWords, asks, answers, phraseOf };
+  /**
+   * What a link's words find across the site when they name no parish
+   * (/village, /vigil, /antiochian/festival), as one verdict the page and the
+   * Worker's preview both reach:
+   *
+   *   { verdict: 'none' }                  nothing: the search, with the words in it
+   *   { verdict: 'parish', pid }           one parish by its name, and nothing found elsewhere
+   *   { verdict: 'match', pid }            all that was found is at one parish: /smmp/disco
+   *   { verdict: 'list', ids, named, found } several places: a collection of them
+   *
+   * A parish is found as the search box finds one: every word in its names,
+   * initials or address (`hayOf` adds what else it answers to). A rule or a
+   * one-off is found by `answers`, and is at its own parish. `parishes` and
+   * `rows` are what the link's other words leave in (its jurisdiction, its
+   * region), Parish only rows already out; a one-off carries its `_at`
+   * ({ date, hm } on its parish's clock), a rule none. `parishLang(pid, lang)`
+   * says whether a parish holds a service in a language.
+   *
+   * One parish by name with something elsewhere is a list, not the parish
+   * (Kevin, 28 Oct 2026: /village is the monastery and the bus beside it).
+   */
+  function findAcross({ parishes = [], rows = [], Q, hayOf = () => '', parishLang = () => false }) {
+    if (!asks(Q)) return { verdict: 'none' };
+    const words = textWords(Q);
+    const named = !words.length ? [] : parishes.filter(p => {
+      const hay = norm(`${p.name || ''} ${p.full_name || ''} ${p.acronym || ''} ${p.address || ''} ${hayOf(p) || ''}`);
+      return words.every(w => hasWord(hay, w)) && (!Q.lang || parishLang(p.id, Q.lang));
+    }).map(p => p.id);
+    const found = rows.filter(r => answers(r, Q, { ...(r._at || {}), parishLang: (lang) => parishLang(r.parish_id, lang) }));
+    const hosts = [...new Set(found.map(r => r.parish_id))];
+    if (!named.length && !found.length) return { verdict: 'none' };
+    if (named.length === 1 && hosts.every(id => id === named[0])) return { verdict: 'parish', pid: named[0] };
+    if (!named.length && hosts.length === 1) return { verdict: 'match', pid: hosts[0] };
+    return { verdict: 'list', ids: [...new Set([...named, ...hosts])], named, found };
+  }
+
+  const api = { norm, hasWord, DAY_WORDS, KIND_WORDS, PRAYER_WORDS, LANG_WORDS, FILLER, parseQuery, textWords, asks, answers, phraseOf, findAcross };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraSearch = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
