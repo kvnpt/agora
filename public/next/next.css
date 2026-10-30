@@ -958,6 +958,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .cu .erow + .erow { border-top: 0; }
 .cu .sday .eve { padding: 12px 0 2px; border: 0; }
 .cu .slot + .eve { margin-top: 2px; border-top: 1px solid var(--line); }
+/* A collection's and In view's: each row its own stretch, in the colour of
+   the jurisdiction it is held in (next.js venueColor), so two at 9am of two
+   jurisdictions change colour between them. */
+.cu .slot.rows::before { content: none; }
+.cu .slot.rows .erow { position: relative; }
+.cu .slot.rows .erow::before {
+  content: ''; position: absolute; left: -13px; top: 6px; bottom: 6px;
+  width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
+}
 /* Said once by its slot, the time is still read out on every row. */
 .etime.same .t-time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .more-days { padding: 18px 0 6px; text-align: center; color: var(--text-3); font-size: 13px; }

@@ -119,7 +119,7 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
       console.error(`[lite] coming up ${url.pathname}: ${err && err.message}`);
       return null;
     });
-    return { status: 200, head, card: collectionCardHTML({ ...m, collection: as }, { rules: rows.rules, limit: Infinity, feed }) };
+    return { status: 200, head, card: collectionCardHTML({ ...m, collection: as }, { rules: rows.rules, limit: Infinity, feed, parishes: rows.parishes }) };
   }
   return {
     status: 200, head,

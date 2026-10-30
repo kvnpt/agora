@@ -883,6 +883,19 @@ test('the lite version of a collection lists what is on at its parishes this wee
   assert.doesNotMatch(full, /id="coming-up"/);
 });
 
+test('the lite version of a collection colours each row by the jurisdiction it is held in', async () => {
+  const { raw, lite } = freshLite();
+  // Two Sunday 9ams: one at home in Redfern, one of Redfern's held at a Greek church.
+  rule(raw, PARISH, 0, '09:00', 'Liturgy at home');
+  rule(raw, PARISH, 0, '09:00', 'Liturgy away', { location_parish_id: 'greek-stparaskevi-blacktown' });
+  const cu = between((await lite('/antiochian')).html, '<section class="cu-band" id="coming-up">');
+  const slot = cu.match(/<div class="slot rows">(?:(?!<div class="slot)[\s\S])*?Liturgy at home[\s\S]*?<\/div>(?=<div class="slot|<\/section>)/);
+  assert.ok(slot, 'one slot, each row its own stretch');
+  assert.match(slot[0], /style="--pc:#7c3bc1">[\s\S]*?Liturgy at home/, 'at home, in its own jurisdiction\'s colour');
+  assert.match(slot[0], /style="--pc:#0061fe">[\s\S]*?Liturgy away/, 'away, in the colour of the church it is held in');
+  assert.equal((slot[0].match(/<span class="etime">/g) || []).length, 1, 'and 9am said once');
+});
+
 test('the lite version shows a Parish only rule at a list that names its parish, and nowhere else', async () => {
   const { raw, lite } = freshLite();
   raw.prepare("UPDATE parishes SET acronym = 'SMG' WHERE id = 'antiochian-stmichaelgabriel-ryde'").run();
