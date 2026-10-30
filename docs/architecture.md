@@ -253,6 +253,28 @@ filters) and are worked out again every minute. The motion is CONSTANT paint
 values stepped each frame, one layer per marker size, because a data-driven paint
 property that changes re-tiles the source — `map.js`, "Halos".
 
+**Every halo frame is a draw of the whole map**, basemap and all, so the loop
+runs only while it shows: something lit, the page visible, the map's box on
+screen, and a lit marker in or near the view, at 15 frames a second. Two
+MapLibre behaviours had turned 30 halo steps a second into 120 full draws a
+second, forever, even with the map scrolled away: any paint change restarts
+the default 300 ms ease on everything that eases (the style's sky included),
+and any change at all re-places the labels and then draws every frame for the
+300 ms label fade. So the style's own `transition` is none, and the label fade
+is off while the map is still and back as soon as it moves (`setupStillLabels`).
+Measured 30 Oct 2026: a still map with a halo in view draws ~29 times a second,
+and otherwise not at all.
+
+**The map waits on as little as it can.** The parishes go on at `style.load`,
+not `load` (which waits for every tile and font); a parish's logo becomes its
+map sprite only when it is picked; the label fonts the first view needs are
+preloaded as the map starts, served compressed and kept a week
+(`public/_headers`), and in two weights, not three (the theme's italic water
+names are set upright); the canvas draws at most two device pixels to a CSS
+pixel; and the editor's scripts load only for somebody who may edit
+(`EDITING_SCRIPTS`, `next.js`). On a slow-4G, 4x-CPU phone profile this took
+the map's first full draw from ~9.8 s to ~5.3 s.
+
 **A place of its own is a square.** An event held "Somewhere else" with a pin is
 the first marker on the map that is not a parish: a square in its host's
 jurisdiction colour, labelled with the event, with the venue's halo under it.

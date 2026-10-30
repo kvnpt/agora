@@ -83,8 +83,9 @@ every run reports errors:
   usually this, not your CSS; the page's icons are inline SVG.
 - `Bad response code: 404` from `pmtiles.js` — the basemap archive is not in
   local R2, so the map is a grey rectangle. `docs/deploy.md` covers it. Worse,
-  the style never finishes loading, so **none of the page's own layers draw** —
-  no dots, squares, stars or halos — and the map's loader stays up.
+  the map's `load` never fires, so **the map's loader stays up** over it. (The
+  page's own layers go on at `style.load` since 30 Oct 2026, so the dots are
+  there under the loader.)
   To check anything on the map, drop the archive's source from the base style
   before the page asks for it:
 
