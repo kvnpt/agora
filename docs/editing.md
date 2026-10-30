@@ -163,13 +163,25 @@ event.** Worth knowing before reaching for one:
 |---|---|---|
 | `status='hidden'`, override `kind='hidden'` | the row, or the override | Drops it from the feed entirely. **Not a tombstone** — no card, no "CANCELLED", gone |
 | `hide_live` | `events`/`schedules`, patchable per occurrence | Nothing to do with hiding. Suppresses the **Watch Live** badge for that one service |
-| `parish_scoped` | same | Shows only on its parish's own card, never in the main feed |
+| `parish_scoped` | same | **Parish only**: on its parish's card, a list or link naming the parish, and for whoever starred it; off the feed for everyone else |
 
-**"Other" is parish-only until somebody says otherwise.** A council meeting or a
+**Parish only is for the parish's own people** (Kevin, 30 Oct 2026). A rule's or
+an event's form has a pill at the end of Kind's line, on and reading *Public*,
+tapped off to *Parish only*. A Parish only row shows where its parish is named:
+its own card, a list of parishes holding it (Favourites, a list somebody made,
+`/sgr+snb`); and to whoever has starred the parish it is as if it were public,
+everywhere: Today, the feed, What's on, search, every collection's timetables.
+Anybody else does not see it outside the parish's card. One test decides it:
+`scopedOpen` in `public/next/next.js`. The Worker's painted cards know no stars,
+so they keep only the naming half: `ruleMatches` (timetable.js),
+`collectionCardHTML` (page-card.mjs) and `collectionFeed` (lite-page.mjs).
+
+**"Other" is Parish only until somebody says otherwise.** A council meeting or a
 working bee is the parish's own business, so picking Other in a rule's or an
-event's form ticks *Parish only*, and `createOneOff` stores an Other with no
-`parish_scoped` in the body as parish-scoped. Untick it and it is in the feed
-like anything else; the box is the decision, the default only a guess.
+event's form turns the pill to *Parish only*, and `createOneOff` stores an Other
+with no `parish_scoped` in the body as parish-scoped. Tap it back to Public and
+it is in the feed like anything else; the pill is the decision, the default
+only a guess.
 
 `filterByStatus` in `merge.mjs` passes `approved`, `cancelled` and `combined` —
 the last two still render, as tombstones, because nothing disappears.

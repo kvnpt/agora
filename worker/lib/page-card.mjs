@@ -368,9 +368,12 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null } = {}) {
   const look = collections.lookOf(c, colorOf);
   // A link that narrows the rules (/sun/liturgy, /en) shows the lines that
   // answer it, as the page's card does (next.js timetable's `only`); one that
-  // does not (/greek, /monasteries) each parish's whole week.
+  // does not (/greek, /monasteries) each parish's whole week but its Parish
+  // only lines, which only a link naming the parish shows (/smg+sgr; ruleMatches).
   const byParish = new Map();
-  const shown = m.listsAll ? rules : m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.flatMap(x => x.rules)));
+  const named = new Set((m.named || []).map(p => p.id));
+  const shown = m.listsAll ? rules.filter(r => !r.parish_scoped || named.has(r.parish_id))
+    : m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.flatMap(x => x.rules)));
   for (const r of shown) {
     if (!byParish.has(r.parish_id)) byParish.set(r.parish_id, []);
     byParish.get(r.parish_id).push(r);

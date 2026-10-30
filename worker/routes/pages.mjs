@@ -145,7 +145,7 @@ async function collectionFeedOf(env, m, route, now) {
   ]);
   return collectionFeed({
     rows, events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
-    cross: cross.results || [], parishIds, route, now,
+    cross: cross.results || [], parishIds, named: (m.named || []).map(p => p.id), route, now,
   });
 }
 

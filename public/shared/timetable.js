@@ -137,16 +137,14 @@
    * `parishOk`, whether its parish holds a service in that language
    * (parishAnswersLang over the parish's rules).
    *
-   * A parish_scoped rule shows only on its own parish's card, never in a list
-   * of many (docs/editing.md), so it answers only when the link names that
-   * one parish — the rule the events feed already keeps.
+   * A parish_scoped rule (Parish only) is its parish's own business
+   * (docs/editing.md): it answers only a link that names its parish, alone
+   * or in a list (/sgr, /sgr+snb), as the page's scopedOpen has it. The
+   * page also shows it to whoever starred the parish, which no link says.
    */
   function ruleMatches(rule, f, { parishOk = false } = {}) {
     if (!rule) return false;
-    if (rule.parish_scoped) {
-      const one = f.parishIds && f.parishIds.size === 1 && f.parishIds.has(rule.parish_id);
-      if (!one) return false;
-    }
+    if (rule.parish_scoped && !(f.parishIds && f.parishIds.has(rule.parish_id))) return false;
     if (f.service && services && !services.serviceMatches(f.service, rule)) return false;
     if (f.day != null && ![].concat(f.day).includes(rule.day_of_week)) return false;
     if (f.dayGroup && services && !services.dayGroupMatches(f.dayGroup, rule.day_of_week, rule)) return false;
