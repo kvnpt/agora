@@ -252,27 +252,16 @@
   <!-- A form as a card of its own: the suggest form, and every editor (next/editing.js). -->
   <script src="/shared/form-sheet.js"></script>
   <script src="/shared/suggest-dialog.js"></script>
-  <!-- For somebody who may edit (next/editing.js): the app's add-event
-       editor and what it rests on, in /admin's order, a rule's form, and a
-       parish's details (the short link it suggests). -->
-  <script src="/shared/read-from.js"></script>
-  <script src="/shared/acronym-suggest.js"></script>
-  <script src="/shared/logo-image.js"></script>
-  <script src="/shared/kind-picker.js"></script>
-  <script src="/shared/lang-picker.js"></script>
-  <script src="/shared/event-checks.js"></script>
-  <script src="/shared/sse.js"></script>
-  <script src="/shared/signs.js"></script>
-  <script src="/shared/venue-picker.js"></script>
-  <script src="/shared/event-editor.js"></script>
-  <script src="/shared/time-field.js"></script>
-  <script src="/shared/rule-form.js"></script>
+  <!-- Not here: the editor (next/editing.js, the add-event editor and what it
+       rests on). A visitor never uses it and it was ~100 KB every visitor
+       waited on before the map could start; next.js loads it for somebody
+       who may edit, and before any editing control does anything
+       (next.js, EDITING_SCRIPTS). -->
   <script src="/lib/maplibre-gl.js"></script>
   <script src="/lib/pmtiles.js"></script>
   <script src="/lib/protomaps-themes-base.js"></script>
   <script src="/map.js"></script>
   <script src="/bundle.js"></script>
-  <script src="/next/editing.js"></script>
   <script src="/next/next.js"></script>
 </body>
 </html>
