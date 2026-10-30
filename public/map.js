@@ -247,7 +247,9 @@ async function buildBaseStyle() {
       // past 12 MapLibre draws the zoom-12 tiles larger.
       protomaps: {
         type: 'vector',
-        tiles: [window.location.origin + '/tiles/oceania/{z}/{x}/{y}.mvt'],
+        // ?v=2: a browser that kept a tile served gzipped twice (30 Oct
+        // 2026, for minutes) keeps it a day; a new address asks again.
+        tiles: [window.location.origin + '/tiles/oceania/{z}/{x}/{y}.mvt?v=2'],
         minzoom: 0,
         maxzoom: 12,
         bounds: [110, -50, 180, 0],
