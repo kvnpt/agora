@@ -739,7 +739,7 @@
       <div class="edit-row"><label>Title</label><input ${f('title')} value="${esc(e.title || '')}" autocomplete="off"></div>
       <div class="edit-row"><label>Subtitle</label><input ${f('feast')} value="${esc(e.feast || '')}" placeholder="The saint or feast, or the topic (optional)" autocomplete="off"></div>
       <div class="edit-row"><label>Description</label><textarea ${f('description')} rows="2" placeholder="Optional">${esc(e.description || '')}</textarea></div>
-      <div class="edit-row"><label>Kind</label><select ${f('event_type')} data-kind-picker="buttons">${kinds}</select></div>
+      ${RF().kindRowHTML('Kind', `<select ${f('event_type')} data-kind-picker="buttons">${kinds}</select>`, EV, !!e.parish_scoped)}
       ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
         `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
@@ -755,10 +755,9 @@
         ${VENUE.map(k => `<input type="hidden" ${f(k)} value="${esc(e[k] == null ? '' : e[k])}">`).join('')}
       </div>
       <div class="edit-row"><label>Poster</label><div data-ev-poster></div></div>
-      <div class="edit-row edit-checks">
-        ${live ? `<label class="edit-check"><input type="checkbox" ${f('hide_live')}${e.hide_live ? ' checked' : ''}> No live badge</label>` : ''}
-        <label class="edit-check"><input type="checkbox" ${f('parish_scoped')}${e.parish_scoped ? ' checked' : ''}> Parish only</label>
-      </div>`;
+      ${live ? `<div class="edit-row edit-checks">
+        <label class="edit-check"><input type="checkbox" ${f('hide_live')}${e.hide_live ? ' checked' : ''}> No live badge</label>
+      </div>` : ''}`;
   }
   const VENUE = ['location_override', 'location_parish_id', 'location_lat', 'location_lng'];
 
@@ -855,8 +854,9 @@
       form.querySelector('[data-ev-lastday]').hidden = !multiBox.checked;
       form.querySelector('[data-ev-endlabel]').textContent = multiBox.checked ? 'Ends, last day' : 'Ends';
     });
+    RF().wireScope(form, q('parish_scoped'));
     q('event_type').addEventListener('change', () => {
-      if (q('event_type').value === 'other') q('parish_scoped').checked = true;
+      if (q('event_type').value === 'other') RF().scopeTo(q('parish_scoped'), true);
       // Only a service is held in a language.
       form.querySelector('[data-ev-langrow]').hidden = !isService(q('event_type').value);
     });

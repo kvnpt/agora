@@ -882,3 +882,14 @@ test('the lite version of a collection lists what is on at its parishes this wee
   const { html: full } = await freshLite().get('/sun/liturgy');
   assert.doesNotMatch(full, /id="coming-up"/);
 });
+
+test('the lite version shows a Parish only rule at a list that names its parish, and nowhere else', async () => {
+  const { raw, lite } = freshLite();
+  raw.prepare("UPDATE parishes SET acronym = 'SMG' WHERE id = 'antiochian-stmichaelgabriel-ryde'").run();
+  rule(raw, PARISH, 4, '19:30', 'Choir Practice', { parish_scoped: 1 });
+  const list = (await lite('/smg+sgr')).html;
+  assert.match(between(list, '<section class="sheet collection'), /<div class="tt compact"[\s\S]*Choir Practice/, 'on its line in the list');
+  assert.match(between(list, '<section class="cu-band" id="coming-up">'), /Choir Practice/, 'and in what is coming up there');
+  const juris = (await lite('/antiochian')).html;
+  assert.doesNotMatch(juris, /Choir Practice/, 'a jurisdiction does not name the parish');
+});

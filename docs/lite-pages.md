@@ -123,8 +123,9 @@ other mix of filters is the page itself, filtered, and gets only its head.
   date ("what is on next Sunday") is a list of dates, and is left to the page.
 - **Which parishes and rules a link means is `public/shared/timetable.js`** — the same
   module the page's collections ask, so the painted card and the page cannot list
-  different services for one link. A `parish_scoped` rule stays on its own card
-  (docs/editing.md); an ended rule is off, one that starts later is marked "from".
+  different services for one link. A `parish_scoped` (Parish only) rule stays on its
+  own card and a link naming its parish, `/sgr+snb` (docs/editing.md); an ended rule is
+  off, one that starts later is marked "from".
 - **Grouped by state, then jurisdiction, alphabetical all the way down.** Australian
   states first (by address — `locations.js` says why), then other countries by pin.
 - **A link that asks nothing of the rules lists every parish** (`/timetables`, `/greek`,

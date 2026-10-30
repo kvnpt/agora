@@ -241,6 +241,38 @@
       </div>`;
   }
 
+  /**
+   * Who sees it: a pill beside its kind, on and "Public" until tapped, then
+   * "Parish only" (Kevin, 30 Oct 2026; it was a box to tick at the foot). A
+   * box stays, hidden, holding parish_scoped, so the form reads as it did.
+   * `attr` is the form's own field attribute (data-rf, data-ev).
+   */
+  function scopeHTML(attr, scoped) {
+    return `<button type="button" class="scope-pill${scoped ? '' : ' on'}" aria-label="Public" aria-pressed="${!scoped}" data-scope-pill>${scoped ? 'Parish only' : 'Public'}</button><input type="checkbox" ${attr}="parish_scoped"${scoped ? ' checked' : ''} hidden>`;
+  }
+  /** The pill, live: a tap flips the box; the box flipping (an Other ticks it) repaints the pill. */
+  function wireScope(form, box) {
+    const pill = form.querySelector('[data-scope-pill]');
+    if (!pill || !box) return;
+    const paint = () => {
+      const pub = !box.checked;
+      pill.classList.toggle('on', pub);
+      pill.setAttribute('aria-pressed', String(pub));
+      pill.textContent = pub ? 'Public' : 'Parish only';
+    };
+    pill.addEventListener('click', () => { box.checked = !box.checked; box.dispatchEvent(new Event('change', { bubbles: true })); });
+    box.addEventListener('change', paint);
+  }
+  /** Set the box, and the pill with it. */
+  function scopeTo(box, scoped) {
+    if (!box || box.checked === scoped) return;
+    box.checked = scoped;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  /** Kind, with who sees it at the end of its label's line. */
+  const kindRowHTML = (label, select, attr, scoped) =>
+    `<div class="edit-row"><div class="edit-row-head"><label>${label}</label>${scopeHTML(attr, scoped)}</div>${select}</div>`;
+
   function posterHTML(rule) {
     const has = !!rule.poster_path;
     return `<div class="rf-poster" data-rf-poster>
@@ -271,7 +303,7 @@
     return `
       <div class="edit-row"><label>Title</label><input ${field('title')} value="${esc(rule.title || '')}" placeholder="Divine Liturgy" autocomplete="off"></div>
       <div class="edit-row"><label>Subtitle</label><input ${field('feast')} value="${esc(rule.feast || '')}" placeholder="Shown under the title on every date (optional)" autocomplete="off"></div>
-      <div class="edit-row"><label>Kind</label><select ${field('event_type')} data-kind-picker="buttons">${kinds}</select></div>
+      ${kindRowHTML('Kind', `<select ${field('event_type')} data-kind-picker="buttons">${kinds}</select>`, ATTR, !!rule.parish_scoped)}
       <div class="edit-row"><label>Days</label>${daysHTML(days)}</div>
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', rule.start_time || (rule.id ? '' : '09:00'), ' data-tf-label="Starts"')}</div>
@@ -292,7 +324,6 @@
       <div class="edit-row"><label>Poster</label>${posterHTML(rule)}</div>
       <div class="edit-row edit-checks">
         <label class="edit-check"><input type="checkbox" ${field('hide_live')}${rule.hide_live ? ' checked' : ''}> No live badge</label>
-        <label class="edit-check"><input type="checkbox" ${field('parish_scoped')}${rule.parish_scoped ? ' checked' : ''}> Parish only</label>
       </div>`;
   }
 
@@ -348,9 +379,10 @@
     dayBox.addEventListener('change', repaintDates);
 
     // An Other is the parish's own business (a working bee) until somebody
-    // says otherwise: picking it ticks Parish only. Only on the change TO
-    // Other; unticking it after is the person's, and sticks.
-    q('event_type').addEventListener('change', () => { if (q('event_type').value === 'other') q('parish_scoped').checked = true; });
+    // says otherwise: picking it turns the pill to Parish only. Only on the
+    // change TO Other; tapping it back to Public after is the person's, and sticks.
+    wireScope(form, q('parish_scoped'));
+    q('event_type').addEventListener('change', () => { if (q('event_type').value === 'other') scopeTo(q('parish_scoped'), true); });
 
     // Dates: the button opens the browser's calendar; × clears.
     wireDates(form, ctx.today);
@@ -434,5 +466,5 @@
     };
   }
 
-  Object.assign(api, { fieldsHTML, wire, dateFieldHTML, wireDates });
+  Object.assign(api, { fieldsHTML, wire, dateFieldHTML, wireDates, kindRowHTML, wireScope, scopeTo });
 })(typeof window !== 'undefined' ? window : globalThis);

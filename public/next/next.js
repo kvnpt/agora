@@ -261,6 +261,8 @@
     toast(isFav(pid) ? 'Added to Favourites' : 'Removed from Favourites');
     renderLists();
     renderInView();
+    // Its Parish only events come and go with the star (scopedOpen).
+    renderFeeds();
     syncMap();
     followList();
   }
@@ -459,6 +461,7 @@
     if (doc && adoptSaved(doc)) {
       renderLists();
       renderInView();
+      renderFeeds();
       syncMap();
       followList();
       repaintSheets();
@@ -526,7 +529,7 @@
     if (f.parishIds && !f.parishIds.has(p.id)) return false;
     if (f.lang && !hasLang(p, f.lang, f.langStrict)) return false;
     if (f.timesOnly && !rulesOf(p.id).some(liveRule)) return false;
-    if (asksWhat(f) && !rulesOf(p.id).some(r => liveRule(r) && !r.parish_scoped && whatMatches(r, f, true))
+    if (asksWhat(f) && !rulesOf(p.id).some(r => liveRule(r) && scopedOpen(r, f, true) && whatMatches(r, f, true))
       && !upcomingOneOffs(p.id).some(e => whatMatches(e, f, false))) return false;
     return true;
   }
@@ -544,6 +547,18 @@
   // What the veil over an off event's poster and words says (worker/lib/page-card.mjs).
   const OFF_SAYS = { cancelled: 'This event has been cancelled', combined: 'Combined with another event', break: 'On a break', hidden: 'Suppressed' };
   function eventParishIds(e) { return [e.parish_id, ...(e.extra_parishes || []).map(x => x.id || x.parish_id || x)].filter(Boolean); }
+  /**
+   * May a Parish only row (the pill on its form) show here? It is its
+   * parish's own business, so it shows where the parish is named: its own
+   * card, and a list or a link that holds the parish (/sgr+snb, Favourites,
+   * a list you made). And for whoever starred the parish it is as if it were
+   * public, everywhere (Kevin, 30 Oct 2026). A public row is always open.
+   */
+  function scopedOpen(row, f, isRule = false) {
+    if (!row.parish_scoped) return true;
+    const ids = isRule ? [row.parish_id] : eventParishIds(row);
+    return ids.some(id => isFav(id) || !!(f && f.parishIds && f.parishIds.has(id)));
+  }
   /** Does an event answer the page's filters, and the collection on the map if there is one? */
   function eventPasses(e, opts) {
     if (S.focus && !eventParishIds(e).some(id => S.focus.ids.has(id))) return false;
@@ -552,7 +567,7 @@
   /** Does an event answer these filters? A collection asks it of its own. */
   function eventMatches(e, f, juris, { scoped = true } = {}) {
     if (!visible(e)) return false;
-    if (scoped && e.parish_scoped) return false;
+    if (scoped && !scopedOpen(e, f)) return false;
     const pids = eventParishIds(e);
     const ps = pids.map(id => S.byId.get(id)).filter(Boolean);
     if (juris && !ps.some(p => jList(juris).includes(p.jurisdiction))) return false;
@@ -1906,12 +1921,14 @@
    * A parish's week. `edit`: whoever may change the timetable gets a pencil
    * on each line. `only` keeps the lines that answer those filters, as a
    * collection's card has them (/services is its services); `focus` dims the
-   * ones that do not, as a parish's own card has them (/sgr/talk).
+   * ones that do not, as a parish's own card has them (/sgr/talk). `among`:
+   * a collection's filters, under which a Parish only line shows only where
+   * it is open (scopedOpen); its own card shows every line.
    */
-  function timetable(pid, { compact = false, edit = false, only = null, focus = null } = {}) {
+  function timetable(pid, { compact = false, edit = false, only = null, focus = null, among = null } = {}) {
     // One week, as the app's timetable reads: the morning's services, then
     // the evening's under the moon, each from Sunday; the roundels say which kind.
-    const rules = rulesOf(pid).filter(r => liveRule(r) && (!only || rowAnswers(r, only, true)));
+    const rules = rulesOf(pid).filter(r => liveRule(r) && (!only || rowAnswers(r, only, true)) && (!among || scopedOpen(r, among, true)));
     if (!rules.length) return '';
     const byId = new Map(rules.map(r => [r.id, r]));
     const ls = TL.linesOf(rules, { today: todayKey(), offOf: ruleBreak });
@@ -2602,12 +2619,12 @@
       // Its Next is its own, held by it or in its church, before one it only
       // takes part in; and its own one-off may be months off, past nextOf's
       // fortnight, which says when for a parish with no timetable (/greek).
-      const answers = only ? (e) => rowAnswers(e, only, false) : () => true;
+      const answers = (e) => scopedOpen(e, cf) && (!only || rowAnswers(e, only, false));
       const nx = nextOf(p.id, e => (e.parish_id === p.id || e.location_parish_id === p.id) && answers(e))
         || upcomingOneOffs(p.id, { own: true }).find(e => Date.parse(e.start_utc) > Date.now() && answers(e))
         || nextOf(p.id, answers);
       // Its lines, or nothing: a parish with no times says no more (Kevin, 29 Oct 2026).
-      const tt = rulesOf(p.id).some(liveRule) ? timetable(p.id, { compact: true, only }) : '';
+      const tt = rulesOf(p.id).some(liveRule) ? timetable(p.id, { compact: true, only, among: cf }) : '';
       return `<article class="citem">
           <button class="citem-head" type="button" data-parish="${esc(p.id)}">
             ${avatar(p, 'md')}
@@ -3270,7 +3287,7 @@
     const pids = Q.text.length ? new Set(searchParishes({ ...Q, kind: null, prayer: false, days: null })
       .filter(p => { const h = hayOf(p); return Q.text.every(w => hasWord(`${h.name} ${h.acr} ${h.addr}`, w)); }).map(p => p.id)) : null;
     const res = feedFor(42).filter(e => {
-      if (!visible(e) || e.parish_scoped || endMs(e) < now) return false;
+      if (!visible(e) || !scopedOpen(e, null) || endMs(e) < now) return false;
       const at = whereWhen(e);
       if (SW.answers(e, Q, at)) return true;
       // Or the words name the parish (or its suburb): its services, as the

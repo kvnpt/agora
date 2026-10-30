@@ -401,15 +401,16 @@ export const COLLECTION_FEED_DAYS = 7;
  * for the lite version, which has no page script to project it: every
  * occurrence from today for COLLECTION_FEED_DAYS, at one of `parishIds`, that
  * answers the link's filters (its service, day, part of the day, kind and
- * language). Each in its own parish's zone. A parish_scoped rule stays on its
- * own card.
+ * language). Each in its own parish's zone. A parish_scoped (Parish only)
+ * row is only at a link that names its parish (/sgr+snb): `named`, those
+ * the link names, as next.js's scopedOpen has it.
  */
-export function collectionFeed({ rows, events = [], cross = [], parishIds, route, now, zone = DEFAULT_ZONE }) {
+export function collectionFeed({ rows, events = [], cross = [], parishIds, named = [], route, now, zone = DEFAULT_ZONE }) {
   const start = localDateOf(zone, now);
   const { fromUtc } = liteWindow(start);
   const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (COLLECTION_FEED_DAYS + 1) * DAY_MS).toISOString();
   const end = new Date(Date.parse(`${start}T00:00:00Z`) + COLLECTION_FEED_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const ids = new Set(parishIds);
+  const ids = new Set(parishIds), mine = new Set(named);
   const instances = rows.schedules.length ? expandFrom(rows, fromUtc, toUtc) : [];
   const oneOffs = events.filter(e => { const t = Date.parse(e.start_utc); return t >= Date.parse(fromUtc) && t <= Date.parse(toUtc); });
   const extra = new Map();
@@ -433,7 +434,8 @@ export function collectionFeed({ rows, events = [], cross = [], parishIds, route
       is_tombstone: e.is_tombstone || TOMB_STATUSES.has(e.status) ? 1 : 0 }))
     .filter(e => {
       const pids = [e.parish_id, ...(extra.get(e.id) || [])];
-      if (!pids.some(id => ids.has(id)) || e.parish_scoped) return false;
+      if (!pids.some(id => ids.has(id))) return false;
+      if (e.parish_scoped && !pids.some(id => mine.has(id))) return false;
       if (e._local.date < start || e._local.date >= end) return false;
       const z = e.timezone || zone;
       if (route.service && !services.serviceMatches(route.service, e)) return false;

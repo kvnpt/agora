@@ -73,11 +73,13 @@ test('a service, a day, a part of the day or a language asks something of the ru
   }
 });
 
-test('a parish_scoped rule is only in a list that names its one parish', () => {
+test('a parish_scoped rule is only in a list that names its parish', () => {
   const setup = { parish_id: 'sgr', day_of_week: 2, start_time: '19:00', title: 'Setup', parish_scoped: 1 };
   assert.ok(!T.ruleMatches(setup, {}));
-  assert.ok(!T.ruleMatches(setup, { parishIds: new Set(['sgr', 'bud']) }));
+  assert.ok(!T.ruleMatches(setup, { jurisdiction: 'antiochian' }));
+  assert.ok(!T.ruleMatches(setup, { parishIds: new Set(['bud', 'snb']) }));
   assert.ok(T.ruleMatches(setup, { parishIds: new Set(['sgr']) }));
+  assert.ok(T.ruleMatches(setup, { parishIds: new Set(['sgr', 'bud']) }), 'a list of several holding it');
 });
 
 test('a languages column reads as an array or as nothing', () => {

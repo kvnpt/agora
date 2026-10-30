@@ -1104,7 +1104,7 @@
           <div class="field full"><label>Address</label><input name="location_override" placeholder="Blank — meets at the parish's own address"></div>
         </div>
         <label class="check"><input type="checkbox" name="hide_live"> Never show live badge (e.g. Confession, in-person only)</label>
-        <label class="check"><input type="checkbox" name="parish_scoped"> Parish-only (hidden unless filtered to parish)</label>
+        <label class="check"><input type="checkbox" name="parish_scoped"> Parish only (on its card and lists, and for whoever starred it)</label>
         <div class="modal-btn-row">
           <button type="button" class="btn btn-outline" onclick="closeModal('add-schedule-backdrop')">Cancel</button>
           <button type="submit" class="btn btn-primary">Add service time</button>
@@ -3026,7 +3026,7 @@
                 <div class="field" style="margin-top:6px;">
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;">
                     <input type="checkbox" data-field="parish_scoped" ${s.parish_scoped ? 'checked' : ''}>
-                    Parish-only (hidden unless filtered to parish)
+                    Parish only (on its card and lists, and for whoever starred it)
                   </label>
                 </div>
                 <!-- A rule is a claim about the FUTURE and never expires on
