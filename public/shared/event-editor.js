@@ -319,7 +319,7 @@
   const blankFields = () => ({
     title: '', feast: '', date: '', end_date: '', start_time: '', end_time: '', event_type: '', description: '',
     languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
-    location_parish_id: '', location_lat: '', location_lng: '',
+    location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null,
   });
 
   /** A field's value as the Worker stores it. */
@@ -328,6 +328,22 @@
     if (field === 'also_at' || field === 'replaces') return v && v.length ? v : null;
     return v === '' ? null : v;
   }
+
+  /**
+   * Who sees it: a pill at the end of Kind's line, on and "Public" until
+   * tapped, then "Parish only" — the edit forms' (rule-form.js scopeHTML),
+   * Kevin, 30 Oct 2026. `attrs` places it: a card's, or a proposed service's.
+   */
+  const scopePillHTML = (scoped = false, attrs = 'data-ee-scope') =>
+    `<button type="button" class="scope-pill${scoped ? '' : ' on'}" aria-label="Public" aria-pressed="${!scoped}" ${attrs}>${scoped ? 'Parish only' : 'Public'}</button>`;
+  function paintScope(pill, scoped) {
+    if (!pill) return;
+    pill.classList.toggle('on', !scoped);
+    pill.setAttribute('aria-pressed', String(!scoped));
+    pill.textContent = scoped ? 'Parish only' : 'Public';
+  }
+  /** A proposed regular service's pill: as tapped, or by its kind (an Other is Parish only). */
+  const svcScoped = (sv) => (sv.parish_scoped != null ? !!sv.parish_scoped : sv.event_type === 'other');
 
   let editors = 0;
 
@@ -624,6 +640,7 @@
         location_parish_id: row.location_parish_id || '',
         location_lat: row.location_lat != null ? row.location_lat : '', location_lng: row.location_lng != null ? row.location_lng : '',
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
+        parish_scoped: row.parish_scoped == null ? null : row.parish_scoped ? 1 : 0,
       };
       for (const f of Object.keys(server)) {
         // What a person changed and the server has not heard yet stays.
@@ -672,7 +689,11 @@
           ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
           ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="2" placeholder="Optional"></textarea>`)}
-          ${row('event_type', 'Kind', `<select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker="buttons"><option value="">Choose a kind</option>${kinds}</select>`)}
+          <div class="ee-row" data-row="event_type">
+            <div class="ee-row-head"><label for="${fieldId(card, 'event_type')}">Kind<span class="ee-mark" hidden>from poster</span></label>${scopePillHTML()}</div>
+            <select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker="buttons"><option value="">Choose a kind</option>${kinds}</select>
+            <div class="ee-notes"></div>
+          </div>
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
           ${row('date', 'Date', `<input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">`)}
           <div class="ee-grid">
@@ -728,8 +749,10 @@
         feastHint: node.querySelector('[data-hint="feast"]'),
         occ: node.querySelector('.ee-occ'),
         occWhat: node.querySelector('.ee-occ-what'),
+        scope: node.querySelector('[data-ee-scope]'),
         inputs: {},
       };
+      card.els.scope.addEventListener('click', () => setScope(card, !scopedOf(card)));
       node.querySelectorAll('[data-ee-field]').forEach(inp => {
         const f = inp.dataset.eeField;
         card.els.inputs[f] = inp;
@@ -823,11 +846,43 @@
         }
       }
       card.pending[f] = toPatchValue(f, value);
+      // An Other is the parish's own business until somebody says otherwise:
+      // picking it turns the pill to Parish only, as the edit forms do.
+      if (f === 'event_type' && value === 'other') {
+        card.fields.parish_scoped = 1;
+        card.touched.add('parish_scoped');
+        card.pending.parish_scoped = 1;
+      }
       // A refusal for scope is about the combine's targets, and stands until
       // they change (setList) — typing the reason it asks for must not clear
       // it, or the next press goes without the ask and is refused again.
       if (card.publish.state !== 'refused') card.publish = { state: 'idle', message: '' };
       schedule(card, isText ? SAVE_DELAY : 0);
+      refreshCard(card);
+      sync();
+    }
+
+    /**
+     * Is the card Parish only? What its pill was tapped to; untapped, what
+     * publishing does with it: a regular service's date is as its service
+     * is, a one-off an Other is Parish only (createOneOff), anything else public.
+     */
+    function scopedOf(card) {
+      const v = card.fields.parish_scoped;
+      if (v != null && v !== '') return !!Number(v);
+      const occ = card.fields.occurrence;
+      if (occ) {
+        const rule = (state.rules || []).find(r => String(r.id) === occ.split(':')[0]);
+        return !!(rule && rule.parish_scoped);
+      }
+      return card.fields.event_type === 'other';
+    }
+    function setScope(card, scoped) {
+      card.fields.parish_scoped = scoped ? 1 : 0;
+      card.touched.add('parish_scoped');
+      card.pending.parish_scoped = card.fields.parish_scoped;
+      if (card.publish.state !== 'refused') card.publish = { state: 'idle', message: '' };
+      schedule(card, 0);
       refreshCard(card);
       sync();
     }
@@ -952,7 +1007,10 @@
       card.els.kind.textContent = kind ? label.charAt(0) : '?';
       card.els.kind.title = label;
       card.els.kind.style.cssText = col ? `--k-bg:${col.bg};--k-fg:${col.fg}` : '';
+      const scoped = scopedOf(card);
+      paintScope(card.els.scope, scoped);
       card.els.chips.innerHTML = (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
+        + (scoped ? '<span class="ee-chip ee-chip-scope">parish only</span>' : '')
         + checks
         .filter(c => c.level !== 'info' || c.field === 'date')
         .map(c => `<span class="ee-chip ee-chip-${c.level}">${esc(chipText(c))}</span>`).join('')
@@ -1557,7 +1615,7 @@
             <div class="ee-svc-weeks"><span>Weeks of the month</span>${S.WEEKS.map(w => `<label><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${weeks.includes(w) ? ' checked' : ''}> ${w === 'last' ? 'Last' : ({ first: '1st', second: '2nd', third: '3rd', fourth: '4th' })[w]}</label>`).join('')}<small>None ticked is every week.</small></div>
             <div class="ee-grid">
               ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
-              ${field('Kind', `<select data-sf="event_type" data-i="${i}" data-kind-picker="buttons">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select>`)}
+              <div class="ee-svc-field"><span class="ee-svc-head"><span>Kind</span>${scopePillHTML(svcScoped(sv), `data-act="scope" data-i="${i}"`)}</span><select data-sf="event_type" data-i="${i}" data-kind-picker="buttons">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select></div>
             </div>
             ${flyer ? `
             ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
@@ -1619,6 +1677,15 @@
         renderSign();
         return;
       }
+      if (act === 'scope') {
+        const sv = state.services[i];
+        if (!sv) return;
+        sv.parish_scoped = svcScoped(sv) ? 0 : 1;
+        clearTimeout(state.svcTimer);
+        state.svcTimer = setTimeout(saveServices, 0);
+        renderSign();
+        return;
+      }
       signError('');
       state.signBusy = true;
       renderSign();
@@ -1652,6 +1719,8 @@
       } else if (f === 'day_of_week') sv.day_of_week = Number(inp.value);
       else if (f === 'languages') sv.languages = LANG_SPLIT(inp.value);
       else sv[f] = inp.value || null;
+      // Picking Other turns its pill to Parish only, as on the rule form.
+      if (f === 'event_type' && sv.event_type === 'other') sv.parish_scoped = 1;
       // A person has checked this field: the model's doubt about it goes.
       sv.read_notes = (sv.read_notes || []).filter(n => n.field !== f && !(f === 'week' && n.field === 'weeks')
         && !(f === 'day_of_week' && n.field === 'day'));
@@ -1705,6 +1774,7 @@
           start_time: sv.start_time,
           end_time: sv.end_time || null,
           event_type: sv.event_type || 'liturgy',
+          parish_scoped: svcScoped(sv) ? 1 : 0,
           languages: sv.languages && sv.languages.length ? JSON.stringify(sv.languages) : null,
           week_of_month: sv.week_of_month || null,
           effective_from: sv.effective_from || null,

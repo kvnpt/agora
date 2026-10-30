@@ -67,7 +67,8 @@ export const DRAFTS_DDL = [
   end_date          TEXT,
   location_parish_id TEXT,
   location_lat      REAL,
-  location_lng      REAL
+  location_lng      REAL,
+  parish_scoped     INTEGER
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -82,7 +83,7 @@ export const DRAFTS_DDL = [
 // answer is a query that works rather than one that errors.
 const LATER_COLUMNS = {
   drafts: ['read_parish', 'read_language', 'read_services', 'read_details'],
-  draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng'],
+  draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped'],
 };
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
@@ -94,8 +95,8 @@ export async function ensureDraftTables(db) {
     } catch {
       const have = new Set(((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).map(c => c.name));
       for (const c of cols) {
-        // A pin is a number; everything else these add is text.
-        const type = /_(lat|lng)$/.test(c) ? 'REAL' : 'TEXT';
+        // A pin is a number, the pill a 0 or 1; everything else these add is text.
+        const type = /_(lat|lng)$/.test(c) ? 'REAL' : c === 'parish_scoped' ? 'INTEGER' : 'TEXT';
         if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} ${type}`).run();
       }
     }
@@ -112,12 +113,16 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * own date — a programme's Sunday with its saint — rather than an event of its
  * own: publishing writes it onto that occurrence (an override), not beside it.
  * `feast` is the subtitle such a card carries: the commemoration, or the topic.
+ * `parish_scoped` is its Public / Parish only pill: 1 or 0 once tapped, null
+ * while nobody has, which publishing leaves to the kind (createOneOff).
  */
 export const CARD_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
   'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence',
-  'location_parish_id', 'location_lat', 'location_lng'];
+  'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped'];
 /** A pin's two halves: numbers, where every other field here is text. */
 const NUMBER_FIELDS = new Set(['location_lat', 'location_lng']);
+/** The pill: yes, no, or not said. */
+const FLAG_FIELDS = new Set(['parish_scoped']);
 const JSON_FIELDS = new Set(['languages', 'also_at', 'replaces']);
 
 /** The fields a poster read may fill — everything but the combine and the ask. */
@@ -155,6 +160,11 @@ export function validateCard(body) {
     if (!(f in b)) continue;
     let v = b[f];
     if (v === '' || v === undefined) v = null;
+    if (FLAG_FIELDS.has(f)) {
+      if (v != null && ![true, false, 0, 1].includes(v)) return bad(f, `${f} is yes or no.`);
+      patch[f] = v == null ? null : v ? 1 : 0;
+      continue;
+    }
     if (NUMBER_FIELDS.has(f)) {
       const n = v == null ? null : Number(v);
       if (n != null && !Number.isFinite(n)) return bad(f, 'A pin is two numbers.');
@@ -205,6 +215,7 @@ export function cardOut(r) {
     location_parish_id: r.location_parish_id || null,
     location_lat: r.location_lat != null ? r.location_lat : null,
     location_lng: r.location_lng != null ? r.location_lng : null,
+    parish_scoped: r.parish_scoped == null ? null : r.parish_scoped ? 1 : 0,
     printed_weekday: r.printed_weekday,
     year_printed: r.year_printed,
     read_notes: parseList(r.read_notes),
@@ -619,6 +630,8 @@ export function publishBody(card, parishId) {
     location_lng: card.location_lng != null ? card.location_lng : null,
     additive_parish_ids: parseList(card.also_at).map(String),
     replaced_event_ids: parseList(card.replaces).map(String),
+    // The pill, once somebody tapped it; untapped, createOneOff goes by the kind.
+    ...(card.parish_scoped != null ? { parish_scoped: !!card.parish_scoped } : {}),
   };
 }
 
@@ -647,6 +660,8 @@ export function occurrenceBody(card, posterPath) {
     body.location_lat = card.location_parish_id ? null : card.location_lat ?? null;
     body.location_lng = card.location_parish_id ? null : card.location_lng ?? null;
   }
+  // The pill, once tapped; equal to the rule's, it is no patch (mergePatch).
+  if (card.parish_scoped != null) body.parish_scoped = !!card.parish_scoped;
   if (posterPath) body.poster_path = posterPath;
   return body;
 }

@@ -76,7 +76,9 @@ test('services the editor sends back are checked, and shaped as the read gives t
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.services[0], { title: 'Orthros', day_of_week: 6, start_time: '08:00', end_time: null,
     week_of_month: 'first,second', languages: ['Greek'], event_type: 'liturgy', description: null, effective_from: null,
-    effective_to: null, read_notes: [{ field: 'title', text: 'x' }] });
+    effective_to: null, parish_scoped: null, read_notes: [{ field: 'title', text: 'x' }] });
+  assert.deepEqual([true, false, 1, 0].map(p => S.validateServices([{ day_of_week: 6, start_time: '08:00', parish_scoped: p }]).services[0].parish_scoped),
+    [1, 0, 1, 0], 'the pill, once tapped');
   // A flyer's: its words and its first date travel with it.
   const flyer = S.validateServices([{ day_of_week: 2, start_time: '19:00', title: 'Choir practice',
     description: ' All are welcome. ', effective_from: '2026-11-03', effective_to: '2026-12-15' }]);

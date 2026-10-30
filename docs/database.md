@@ -76,7 +76,9 @@ isolate, which tests run against databases made before 019 and before 020.
 the merge, like any other. So does 023 (venues: `location_parish_id`,
 `location_lat`, `location_lng` on `schedules`, `events` and `draft_events`, and
 their `patch_` columns on `schedule_overrides`); its draft columns are also
-added on first use, as REAL for the two coordinates. 023 also backfills: an
+added on first use, as REAL for the two coordinates. So is 031's
+`draft_events.parish_scoped` (the Add event card's Public / Parish only pill), as
+INTEGER. 023 also backfills: an
 event whose words already named a place and whose pin was not its parish's had
 been geocoded there, so that pin becomes the place's own, and the event a square.
 
