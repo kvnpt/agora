@@ -151,6 +151,65 @@
   const textToLangs = (text) => String(text || '').split(',').map(s => s.trim()).filter(Boolean);
   const langsToText = (list) => (Array.isArray(list) ? list.join(', ') : String(list || ''));
 
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  /**
+   * The weekday a card is held on: its date's, else the weekday the poster
+   * printed ("Sunday", "Thu"); null when neither says.
+   */
+  function cardWeekday(f, hints) {
+    if (isDate(f.date)) {
+      const [y, m, d] = f.date.split('-').map(Number);
+      return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    }
+    const printed = String((hints && hints.printed_weekday) || '').trim().slice(0, 3).toLowerCase();
+    const k = WEEKDAYS.findIndex(w => w.toLowerCase() === printed);
+    return k >= 0 ? k : null;
+  }
+
+  // What a card's read doubts can still be about once it is a weekly service:
+  // the fields the proposed service's form has (renderSign svcRow). Its date's
+  // go — "Printed as Sunday, not every Sunday" is what it no longer is.
+  const SERVICE_NOTE_FIELDS = new Set(['title', 'feast', 'start_time', 'end_time', 'event_type', 'languages', 'description']);
+
+  /**
+   * A card read as a one-off, as the regular service it really is, in the
+   * shape a poster's services are proposed in (signs.js validateServices).
+   * Kevin, 31 Oct 2026: St Paul, Dandenong's weekday posters ("Sunday —
+   * Matins 9:00am") gave Matins, the Liturgy and Vespers as events on the
+   * coming Sunday and Saturday. It keeps the card's weekday, times, kind,
+   * words, languages, subtitle, place and Public / Parish only; its date stays
+   * behind (blank From starts it now). Null when there is no weekday or no
+   * start time, which a rule cannot do without.
+   */
+  function serviceFromCard(f, hints, notes) {
+    const day = cardWeekday(f, hints);
+    if (day == null || !isTime(f.start_time)) return null;
+    const text = (v) => String(v == null ? '' : v).trim() || null;
+    const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+    const langs = Array.isArray(f.languages) ? f.languages : textToLangs(f.languages);
+    const scoped = f.parish_scoped;
+    return {
+      title: text(f.title),
+      feast: text(f.feast),
+      day_of_week: day,
+      start_time: f.start_time,
+      end_time: isTime(f.end_time) ? f.end_time : null,
+      week_of_month: null,
+      languages: langs.length ? langs : null,
+      event_type: text(f.event_type),
+      description: text(f.description),
+      effective_from: null,
+      effective_to: null,
+      parish_scoped: scoped == null || scoped === '' ? null : Number(scoped) ? 1 : 0,
+      location_parish_id: text(f.location_parish_id),
+      location_override: text(f.location_override),
+      location_lat: num(f.location_lat),
+      location_lng: num(f.location_lng),
+      read_notes: (notes || []).filter(n => n && SERVICE_NOTE_FIELDS.has(n.field)).map(n => ({ field: n.field, text: n.text })),
+    };
+  }
+
   function haversineKm(lat1, lng1, lat2, lng2) {
     const rad = (x) => x * Math.PI / 180;
     const a = Math.sin(rad(lat2 - lat1) / 2) ** 2
@@ -369,7 +428,8 @@
    *   intent      'event' (the default) or 'timetable': opened from the
    *               timetable's "Add an image" (under Add +), so a photo that
    *               turns out not to be a sign is said to be so (renderIntent)
-   *   onRead      (draft) — a read has finished; the host can retitle itself
+   *   onRead      (draft) — a read has finished, or a card has been moved up
+   *               to the timetable; the host can retitle itself
    */
   function open(mount, opts) {
     const may = opts.may || (() => true);
@@ -713,6 +773,9 @@
             <div class="ee-occ-what"></div>
             <button type="button" class="ee-link" data-act="unlink">Make it a separate event instead</button>
           </div>
+          <div class="ee-regular" hidden>
+            <button type="button" class="ee-link" data-act="regular"></button>
+          </div>
           <details class="ee-combine">
             <summary>Also at other parishes, or replaces a service</summary>
             <div class="ee-section-title">Also appears at</div>
@@ -749,6 +812,8 @@
         feastHint: node.querySelector('[data-hint="feast"]'),
         occ: node.querySelector('.ee-occ'),
         occWhat: node.querySelector('.ee-occ-what'),
+        regular: node.querySelector('.ee-regular'),
+        regularBtn: node.querySelector('[data-act="regular"]'),
         scope: node.querySelector('[data-ee-scope]'),
         inputs: {},
       };
@@ -792,6 +857,7 @@
       // and goes once it is left with nothing more to say (refreshPeek).
       card.els.body.addEventListener('focusout', () => setTimeout(() => refreshCard(card), 0));
       node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
+      card.els.regularBtn.addEventListener('click', () => makeRegular(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       node.querySelector('.ee-remove').addEventListener('click', () => removeCard(card));
       $('cards').appendChild(node);
@@ -1037,6 +1103,7 @@
       const langRow = card.els.root.querySelector('[data-row="languages"]');
       if (langRow) langRow.hidden = !!card.fields.event_type && !SERVICE_KINDS.has(card.fields.event_type);
       refreshOccurrence(card);
+      refreshRegular(card);
       refreshMultiday(card);
       const single = !state.multi;
       card.els.sum.hidden = single;
@@ -1106,6 +1173,24 @@
       card.els.occWhat.innerHTML = `On the timetable: this is the parish’s regular ${which} on ${esc(dateLabel(occ.split(':')[1]))}. Publishing adds what is here, and the poster, to that service — no second card beside it.`;
     }
 
+    /**
+     * "Held every Sunday? Put it on the timetable instead", on a card read off
+     * a poster: the other of the read's two categories, for when the reader
+     * took a weekly service for a one-off. Not for a programme's date of a
+     * service already on file (it says so above, and unlinks the other way),
+     * a run of days, a combine, or someone who cannot add to the timetable.
+     */
+    function refreshRegular(card) {
+      const day = cardWeekday(card.fields, card.hints);
+      const show = !!(state.draft && state.draft.poster_path) && day != null
+        && !card.fields.occurrence && !card.fields.end_date
+        && !card.fields.also_at.length && !card.fields.replaces.length
+        && card.publish.state !== 'done' && !!state.parish && may('schedule.create', state.parish.id);
+      card.els.regular.hidden = !show;
+      if (show) card.els.regularBtn.textContent = `Held every ${DAY_NAMES[day]}? Put it on the timetable instead`;
+      card.els.regularBtn.disabled = !!(state.read && state.read.active) || state.publishing || state.signBusy;
+    }
+
     function chipText(c) {
       if (c.level === 'block') return c.text.replace(/^Needs /, 'needs ').replace(/\.$/, '');
       if (c.field === 'date' && c.level === 'warn' && /poster says/.test(c.text)) return 'check the date';
@@ -1154,11 +1239,65 @@
         const r = await http('DELETE', `/api/admin/draft-events/${card.id}`);
         if (!r.ok && r.status !== 404) return setSaved(card, 'error', (r.body && r.body.error) || 'Could not remove it.');
       }
+      dropCard(card);
+      sync();
+    }
+
+    /** A card off the page. The last one leaves a blank card, as a draft continued with none has. */
+    function dropCard(card) {
       state.cards = state.cards.filter(c => c !== card);
       card.els.root.remove();
+      if (!state.cards.length) newCard();
       if (state.cards.length === 1) { state.multi = false; }
       state.cards.forEach(refreshCard);
+    }
+
+    /**
+     * The card is a weekly service, not a one-off (refreshRegular): it leaves
+     * the events and joins "Held regularly — for the timetable", open there to
+     * check, and is added from there like any service the poster gave — with
+     * the poster and its words on every date (addServices). Nothing reaches
+     * the timetable until that Add, so this is as undoable as the read was.
+     */
+    async function makeRegular(card) {
+      if (state.signBusy || state.publishing || !state.draft) return;
+      const fail = (text) => { card.els.err.textContent = text; card.els.err.hidden = false; };
+      const sv = serviceFromCard(card.fields, card.hints, card.notes);
+      if (!sv) return fail(isTime(card.fields.start_time) ? 'Give it a date first, so it is clear which day it is held on.'
+        : 'Give it a start time first — a weekly service needs one.');
+      clearTimeout(card.timer);
+      while (card.saving) await card.saving;
+      clearTimeout(state.svcTimer);
+      state.svcTimer = null;
+      state.signBusy = true;
       sync();
+      let moved = -1;
+      try {
+        const services = [...state.services, sv];
+        const r = await http('PUT', `/api/admin/drafts/${state.draft.id}/services`, { services });
+        if (!r.ok) return fail((r.body && r.body.error) || 'It could not be moved — check the connection.');
+        state.services = services;
+        moved = services.length - 1;
+        state.svcOpen.add(moved);
+        if (card.id) {
+          const d = await http('DELETE', `/api/admin/draft-events/${card.id}`);
+          if (!d.ok && d.status !== 404) {
+            return fail('It is under “Held regularly” now, but this event could not be taken out — remove it before publishing.');
+          }
+        }
+        card.pending = {};
+        dropCard(card);
+        if (state.draft.read_status === 'read') setStatus(readSummary(state.draft), 'done');
+        // The host's heading says what the draft holds ("Add to the timetable").
+        if (opts.onRead) opts.onRead({ ...state.draft, read_services: state.services, cards: state.cards.map(c => c.fields) });
+      } finally {
+        state.signBusy = false;
+        renderSign();
+        state.cards.forEach(refreshCard);
+        sync();
+      }
+      const row = moved >= 0 && $('sign').querySelector(`.ee-svc[data-i="${moved}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     $('add-card').addEventListener('click', async () => {
@@ -1568,6 +1707,10 @@
       const fresh = rows.map((r, i) => ({ ...r, i })).filter(r => r.status === 'new');
       const dis = busy ? ' disabled' : '';
       const types = (root.AgoraEventTypes ? root.AgoraEventTypes.KINDS : []);
+      // Where a service moved up from an event card is held, when not here.
+      const svcPlace = (sv) => (sv.location_parish_id
+        ? ((parishById(sv.location_parish_id) || {}).name || sv.location_parish_id)
+        : sv.location_override || (sv.location_lat != null ? 'its own pin' : ''));
 
       const svcRow = (r, i) => {
         const sv = r.service;
@@ -1607,6 +1750,8 @@
           ${notes}
           <div class="ee-svc-form"${open ? '' : ' hidden'}>
             ${field('Service', `<input data-sf="title" data-i="${i}" value="${esc(sv.title || '')}" placeholder="Divine Liturgy" autocomplete="off">`)}
+            ${sv.feast != null ? field('Subtitle', `<input data-sf="feast" data-i="${i}" value="${esc(sv.feast)}" placeholder="Optional — shown under the name on every date" autocomplete="off">`) : ''}
+            ${svcPlace(sv) ? `<div class="ee-svc-state">Held at ${esc(svcPlace(sv))}, as the event was.</div>` : ''}
             <div class="ee-grid ee-grid-3">
               ${field('Day', `<select data-sf="day_of_week" data-i="${i}">${DAY_PLURALS.map((d, k) => `<option value="${k}"${k === sv.day_of_week ? ' selected' : ''}>${d}</option>`).join('')}</select>`)}
               ${field('Starts', `<input type="time" data-sf="start_time" data-i="${i}" value="${esc(sv.start_time || '')}">`)}
@@ -1718,6 +1863,8 @@
         sv.week_of_month = ticked.length ? ticked.join(',') : null;
       } else if (f === 'day_of_week') sv.day_of_week = Number(inp.value);
       else if (f === 'languages') sv.languages = LANG_SPLIT(inp.value);
+      // A subtitle cleared keeps its box until the draft is opened again.
+      else if (f === 'feast') sv.feast = inp.value;
       else sv[f] = inp.value || null;
       // Picking Other turns its pill to Parish only, as on the rule form.
       if (f === 'event_type' && sv.event_type === 'other') sv.parish_scoped = 1;
@@ -1779,6 +1926,14 @@
           week_of_month: sv.week_of_month || null,
           effective_from: sv.effective_from || null,
           effective_to: sv.effective_to || null,
+          // An event card moved up to the timetable (makeRegular): its subtitle, and where it is held.
+          feast: String(sv.feast || '').trim() || null,
+          ...(sv.location_parish_id || sv.location_override || sv.location_lat != null ? {
+            location_parish_id: sv.location_parish_id || null,
+            location_override: sv.location_override || null,
+            location_lat: sv.location_lat != null ? sv.location_lat : null,
+            location_lng: sv.location_lng != null ? sv.location_lng : null,
+          } : {}),
           // A sign names itself as the timetable's source; a flyer goes ON the
           // rule instead, with its words, and names nothing — one flyer is not
           // where the rest of the timetable came from.
@@ -2089,6 +2244,8 @@
       $('save-draft').disabled = state.publishing;
       $('discard').disabled = state.publishing;
       $('add-card').disabled = state.publishing;
+      // Each card's "Held every …?" waits for the read, and for whatever is being added or published.
+      for (const c of state.cards) if (c.els) refreshRegular(c);
       // Not while the poster is read (the Worker squares the read with the
       // parish it started at), published, or already on its way somewhere.
       const still = reading || state.publishing || state.moving;
@@ -2261,7 +2418,7 @@
   // shrinkPoster too: "Suggest edits" adds a poster to a suggested event at
   // the same size the editor stores one (admin.html suggestPage).
   const api = { open, summaryLine, summaryParts, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
-    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster };
+    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, cardWeekday, serviceFromCard };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

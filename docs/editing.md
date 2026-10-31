@@ -425,6 +425,19 @@ Sunday), and becomes an event with a note saying so. With no occasion to date
 it from it stays a service, with a note that the poster does not say it is
 weekly. A sign's services are regular by being on the sign.
 
+**A person can move a card up to the timetable.** The reader still gets it
+wrong the other way: St Paul, Dandenong's weekday posters (31 Oct 2026), each
+headed only "Sunday", "Saturday" or "Thursday", gave Matins, the Liturgy and
+Vespers as events on the coming Sunday and Saturday. A card read off a poster
+offers **Held every Sunday? Put it on the timetable instead** (its date's
+weekday, or the one printed), which moves it into the services above, open to
+check, keeping its times, kind, words, languages, subtitle, place and Public /
+Parish only; its date and the doubts about it stay behind
+(`serviceFromCard`). Nothing is on the timetable until it is added from there,
+with the poster, like any service the reader gave. Not offered on a
+programme's date of a service on file, a run of days, a combine, or to someone
+who cannot add to the timetable.
+
 The kind decides one thing: how a regular service is added. A sign's name the
 sign as the timetable's source ("Church signage"). A poster's carry the poster
 as the rule's own and their description, with the period it gives (**From** /

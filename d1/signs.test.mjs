@@ -75,8 +75,9 @@ test('services the editor sends back are checked, and shaped as the read gives t
     week_of_month: 'second,first', languages: ['Greek', 'Greek', ' '], read_notes: [{ field: 'title', text: 'x' }] }]);
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.services[0], { title: 'Orthros', day_of_week: 6, start_time: '08:00', end_time: null,
-    week_of_month: 'first,second', languages: ['Greek'], event_type: 'liturgy', description: null, effective_from: null,
-    effective_to: null, parish_scoped: null, read_notes: [{ field: 'title', text: 'x' }] });
+    week_of_month: 'first,second', languages: ['Greek'], event_type: 'liturgy', description: null, feast: null, effective_from: null,
+    effective_to: null, parish_scoped: null, location_parish_id: null, location_override: null, location_lat: null, location_lng: null,
+    read_notes: [{ field: 'title', text: 'x' }] });
   assert.deepEqual([true, false, 1, 0].map(p => S.validateServices([{ day_of_week: 6, start_time: '08:00', parish_scoped: p }]).services[0].parish_scoped),
     [1, 0, 1, 0], 'the pill, once tapped');
   // A flyer's: its words and its first date travel with it.
@@ -84,13 +85,21 @@ test('services the editor sends back are checked, and shaped as the read gives t
     description: ' All are welcome. ', effective_from: '2026-11-03', effective_to: '2026-12-15' }]);
   assert.deepEqual([flyer.services[0].description, flyer.services[0].effective_from, flyer.services[0].effective_to],
     ['All are welcome.', '2026-11-03', '2026-12-15']);
+  // An event card moved up to the timetable keeps its subtitle and where it is held.
+  const moved = S.validateServices([{ day_of_week: 4, start_time: '18:45', title: 'Bible Study', feast: ' The Gospel of John ',
+    location_override: ' Church hall ', location_lat: '-37.98', location_lng: 145.21 }]).services[0];
+  assert.deepEqual([moved.feast, moved.location_parish_id, moved.location_override, moved.location_lat, moved.location_lng],
+    ['The Gospel of John', null, 'Church hall', -37.98, 145.21]);
+  assert.equal(S.validateServices([{ day_of_week: 4, start_time: '18:45', location_parish_id: 'antiochian-stgeorge-thornbury' }])
+    .services[0].location_parish_id, 'antiochian-stgeorge-thornbury');
   // A sign names itself as the source; anything else is a poster, which goes on its rules.
   assert.deepEqual(['timetable', 'poster', 'recurring', null].map(S.fromSign), [true, false, false, false]);
   for (const [bad, words] of [[{ day_of_week: 7, start_time: '08:00' }, /day/], [{ day_of_week: 0, start_time: '8am' }, /08:00/],
     [{ day_of_week: 0, start_time: '08:00', end_time: '10' }, /end time/], [{ day_of_week: 0, start_time: '08:00', event_type: 'mass' }, /kinds/],
     [{ day_of_week: 0, start_time: '08:00', effective_from: '3 Nov' }, /start date/],
     [{ day_of_week: 0, start_time: '08:00', effective_to: 'Xmas' }, /last date/],
-    [{ day_of_week: 0, start_time: '08:00', effective_from: '2026-12-01', effective_to: '2026-11-01' }, /ends before/]]) {
+    [{ day_of_week: 0, start_time: '08:00', effective_from: '2026-12-01', effective_to: '2026-11-01' }, /ends before/],
+    [{ day_of_week: 0, start_time: '08:00', location_lat: 'north', location_lng: 145 }, /pin/]]) {
     const r = S.validateServices([bad]);
     assert.equal(r.ok, false);
     assert.match(r.error, words);

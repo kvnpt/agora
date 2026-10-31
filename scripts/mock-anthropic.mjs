@@ -8,7 +8,7 @@
 //
 //   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
-//                   |"recurring_croydonpark"|"festival_mixed","delay":60}
+//                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -22,7 +22,12 @@
 //                  feasts_november: five services and a lunch, each with its saint —
 //                    for the collapsed cards: one with no time, one whose weekday
 //                    disagrees with its date, two that say no language
-//                  (each written from the photo by hand: what a good read of it says)
+//                  weekday_dandenong: St Paul, Dandenong's "Sunday" poster as it was read
+//                    on 31 Oct 2026 — Matins and the Liturgy as events on the coming
+//                    Sunday, Sunday School and Fellowship as weekly services: for
+//                    "Held every Sunday? Put it on the timetable instead"
+//                  (each written from the photo by hand: what a good read of it says,
+//                  except weekday_dandenong, which is the read that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
 // Dev tooling only — nothing deployed imports it.
@@ -142,6 +147,25 @@ const DOCS = {
         start_time: '07:30', end_time: '09:30', end_date: '', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
       { title: 'Parish lunch', feast: '', date: '2026-11-08', weekday_printed: 'Sunday', year_printed: false,
         start_time: '12:00', end_time: '14:00', end_date: '', event_type: 'social', languages: [], venue: 'The church hall', description: 'After the Liturgy. Bring a plate to share.', notes: [] },
+    ],
+  },
+  // A weekday heading and nothing else to date it: "Sunday — Matins | 9:00am,
+  // Divine Liturgy (Bilingual: English & Arabic) | 10:15am, Sunday School |
+  // 11:30am, Fellowship | 12:00pm". Half of it came back as events.
+  weekday_dandenong: {
+    kind: 'poster', other_parish: null, notes: [],
+    events: [
+      { title: 'Matins', date: '2026-11-01', weekday_printed: 'Sunday', year_printed: false,
+        start_time: '09:00', end_time: null, end_date: '', event_type: 'prayer', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Divine Liturgy', date: '2026-11-01', weekday_printed: 'Sunday', year_printed: false,
+        start_time: '10:15', end_time: null, end_date: '', event_type: 'liturgy', languages: ['English', 'Arabic'], venue: null,
+        description: 'Bilingual: English & Arabic.', notes: [] },
+    ],
+    services: [
+      { title: 'Sunday School', every: 'Sundays', day: 'Sunday', start_time: '11:30', end_time: '', weeks: [], languages: [],
+        event_type: 'other', description: null, starts: '', until: '', notes: [] },
+      { title: 'Fellowship', every: 'Sundays', day: 'Sunday', start_time: '12:00', end_time: '', weeks: [], languages: [],
+        event_type: 'social', description: null, starts: '', until: '', notes: [] },
     ],
   },
   // ΠΡΟΓΡΑΜΜΑ ΜΗΝΟΣ ΟΚΤΩΒΡΙΟΥ: every Saturday and Sunday of October 2026,

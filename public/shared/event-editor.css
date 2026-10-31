@@ -433,6 +433,11 @@
   border: 1px solid var(--accent-ring, var(--border));
   border-radius: 12px;
 }
+/* ── The other way: a one-off the reader dated that is really held every week ──
+   A quiet link where the combine would be, not a box: nothing is wrong. */
+.ee-regular { margin: 0 0 12px; }
+.ee-regular .ee-link { text-align: left; line-height: 1.35; }
+.ee-regular .ee-link:disabled { opacity: .45; cursor: default; text-decoration: none; }
 .ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ee-chip-scope { color: var(--ee-muted); background: var(--ee-field); }
 
