@@ -122,7 +122,7 @@ test('a collapsed card is drawn from its feed row’s parts, and what is missing
   assert.deepStrictEqual(E.summaryParts({}, { thisYear: 2026 }), { time: '', ampm: '', day: '', title: '', feast: '' });
 });
 
-test('a card read as a one-off becomes the weekly service it is (Convert to weekly)', () => {
+test('a card read as a one-off becomes the weekly service it is (the Weekly pill)', () => {
   // St Paul, Dandenong's Sunday poster, 31 Oct 2026: "Divine Liturgy
   // (Bilingual: English & Arabic) | 10:15am", read as Sunday 1 November's.
   const card = { title: 'Divine Liturgy', feast: '', date: '2026-11-01', end_date: '', start_time: '10:15', end_time: '',

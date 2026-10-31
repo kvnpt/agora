@@ -214,7 +214,8 @@
 
 /* Who sees it: on, Public; tapped off, Parish only. The languages' chip, on
    and off, at the end of Kind's label line, here and in the page's forms
-   (rule-form.js scopeHTML). */
+   (rule-form.js scopeHTML). Date's Single day / Multi day is one too
+   (.days-pill), off until tapped. */
 .scope-pill {
   flex: none; min-height: 28px; padding: 3px 12px;
   font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; white-space: nowrap;
@@ -224,7 +225,9 @@
 .scope-pill.on { color: #fff; background: var(--accent, #2b6cb0); border-color: var(--accent, #2b6cb0); }
 .scope-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
 .ee-row-head, .ee-svc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-/* "Convert to weekly", at the end of Date's label line on a card read off a
+/* More than one pill on a line (Date's Weekly and Single day): together at its end. */
+.ee-row-pills { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+/* "Weekly", at the end of Date's label line on a card read off a
    poster (event-editor.js refreshRegular): the scope pill's size, in the
    accent, with a repeat mark — an action, where the scope pill is a state. */
 .convert-pill {
@@ -567,14 +570,13 @@
 .ee.ee-sign-only .ee-readiness,
 .ee.ee-sign-only [data-ee="publish"] { display: none; }
 
-/* One event over several days: a switch under Starts / Ends (Kevin, 31 Oct
-   2026: a toggle, not a tick box), and the last day it brings out. The end
-   time above is the time it ends on that day. */
-.ee-multiday { margin: 0 0 12px; }
+/* One event over several days is Date's Single day / Multi day pill (a
+   .scope-pill, event-editor.js daysPillHTML; Kevin, 31 Oct 2026), and the
+   last day it brings out under Starts / Ends. */
 
 /* A switch: the words, and the switch at the end of the line. A real checkbox
    (role="switch") under it, so every reader of .checked keeps working; the
-   page's Edit event has the same one (editing.js). */
+   page's Edit event uses it for No live badge (editing.js). */
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   min-height: 40px; font-size: 15px; font-weight: 500; color: var(--text); cursor: pointer;

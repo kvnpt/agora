@@ -403,13 +403,28 @@
     pill.textContent = scoped ? 'Parish only' : 'Public';
   }
   /**
-   * "Convert to weekly": the one-off read off a poster is a service held every
-   * week (makeRegular). At the end of Date's label line, where the date is what
-   * shows it is not a one-off; shown only where it can be done (refreshRegular).
+   * One day or several: a pill at the end of Date's label line, "Single day"
+   * until tapped, then on and "Multi day", bringing out the last day (Kevin,
+   * 31 Oct 2026; it was a switch under the times). The page's Edit event has
+   * the same one (rule-form.js daysHTML).
+   */
+  const daysPillHTML = () =>
+    '<button type="button" class="scope-pill days-pill" aria-label="Multi day" aria-pressed="false" data-ee-multiday>Single day</button>';
+  function paintDays(pill, multi) {
+    pill.classList.toggle('on', multi);
+    pill.setAttribute('aria-pressed', String(multi));
+    pill.textContent = multi ? 'Multi day' : 'Single day';
+  }
+  /**
+   * "Weekly": the one-off read off a poster is a service held every week
+   * (makeRegular). At the end of Date's label line, where the date is what
+   * shows it is not a one-off, beside Single day; shown only where it can be
+   * done (refreshRegular). One word so the two pills fit one line on a phone;
+   * the aria-label says what it does.
    */
   const REPEAT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>';
   const convertPillHTML = () =>
-    `<button type="button" class="convert-pill" data-act="regular" hidden>${REPEAT_ICON}<span>Convert to weekly</span></button>`;
+    `<button type="button" class="convert-pill" data-act="regular" hidden>${REPEAT_ICON}<span>Weekly</span></button>`;
   /** A proposed regular service's pill: as tapped, or by its kind (an Other is Parish only). */
   const svcScoped = (sv) => (sv.parish_scoped != null ? !!sv.parish_scoped : sv.event_type === 'other');
 
@@ -765,7 +780,7 @@
           </div>
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
           <div class="ee-row" data-row="date">
-            <div class="ee-row-head"><label for="${fieldId(card, 'date')}">Date<span class="ee-mark" hidden>from poster</span></label>${convertPillHTML()}</div>
+            <div class="ee-row-head"><label for="${fieldId(card, 'date')}">Date<span class="ee-mark" hidden>from poster</span></label><span class="ee-row-pills">${convertPillHTML()}${daysPillHTML()}</span></div>
             <input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">
             <div class="ee-notes"></div>
           </div>
@@ -773,9 +788,8 @@
             ${row('start_time', 'Starts', timeInput('start_time', 'Starts', ''))}
             ${row('end_time', '<span data-ends-label>Ends</span>', timeInput('end_time', 'Ends', ' data-tf-optional data-tf-none="No end time" data-tf-near="start_time"'))}
           </div>
-          <!-- One event over several days: the tick brings out its last day,
-               and the end time above is the time it ends on that day. -->
-          <label class="toggle-row ee-multiday"><span>Over several days</span><input type="checkbox" role="switch" class="toggle" data-ee-multiday></label>
+          <!-- One event over several days: Date's Multi day pill brings out its
+               last day, and the end time above is the time it ends on that day. -->
           <div class="ee-multiday-row" hidden>
             ${row('end_date', 'Last day', `<input type="date" id="${fieldId(card, 'end_date')}" data-ee-field="end_date">`)}
           </div>
@@ -851,8 +865,9 @@
       card.els.multi = node.querySelector('[data-ee-multiday]');
       card.els.multiRow = node.querySelector('.ee-multiday-row');
       card.els.endsLabel = node.querySelector('[data-ends-label]');
-      card.els.multi.addEventListener('change', () => {
-        card.multi = card.els.multi.checked;
+      card.els.multi.addEventListener('click', () => {
+        card.multi = !(card.multi || card.fields.end_date);
+        refreshRegular(card);
         if (card.multi) {
           refreshMultiday(card);
           card.els.inputs.end_date.focus({ preventScroll: true });
@@ -1153,15 +1168,15 @@
       return any;
     }
 
-    /** The Multi-day tick: on while a last day is set or somebody ticked it. */
+    /** Date's Single day / Multi day pill: Multi day while a last day is set or somebody tapped it. */
     function refreshMultiday(card) {
       if (!card.els || !card.els.multi) return;
       const on = !!card.multi || !!card.fields.end_date;
-      card.els.multi.checked = on;
+      paintDays(card.els.multi, on);
       card.els.multiRow.hidden = !on;
       card.els.endsLabel.textContent = on ? 'Ends, last day' : 'Ends';
       // A programme's date is a regular service's: one day, never a run.
-      card.els.multi.closest('.ee-multiday').hidden = !!card.fields.occurrence;
+      card.els.multi.hidden = !!card.fields.occurrence;
     }
 
     /**
@@ -1183,7 +1198,7 @@
     }
 
     /**
-     * "Convert to weekly", a pill at the end of Date's label line (Kevin, 31
+     * "Weekly", a pill at the end of Date's label line (Kevin, 31
      * Oct 2026: where somebody sees it is not a one-off), on a card read off
      * a poster: the other of the read's two categories, for when the reader
      * took a weekly service for a one-off. Not for a programme's date of a
@@ -1193,7 +1208,7 @@
     function refreshRegular(card) {
       const day = cardWeekday(card.fields, card.hints);
       const show = !!(state.draft && state.draft.poster_path) && day != null
-        && !card.fields.occurrence && !card.fields.end_date
+        && !card.fields.occurrence && !card.fields.end_date && !card.multi
         && !card.fields.also_at.length && !card.fields.replaces.length
         && card.publish.state !== 'done' && !!state.parish && may('schedule.create', state.parish.id);
       card.els.regular.hidden = !show;

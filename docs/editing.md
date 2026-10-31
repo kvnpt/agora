@@ -429,8 +429,10 @@ weekly. A sign's services are regular by being on the sign.
 wrong the other way: St Paul, Dandenong's weekday posters (31 Oct 2026), each
 headed only "Sunday", "Saturday" or "Thursday", gave Matins, the Liturgy and
 Vespers as events on the coming Sunday and Saturday. A card read off a poster
-has a **Convert to weekly** pill at the end of Date's label line, where the
-date shows it is not a one-off (Kevin, 31 Oct 2026). It moves the card into
+has a **Weekly** pill (a repeat mark; "Held every Sunday: put it on the
+timetable instead" to a screen reader) at the end of Date's label line, beside
+Single day, where the date shows it is not a one-off (Kevin, 31 Oct 2026; it
+read "Convert to weekly" until the two pills had to share the line). It moves the card into
 the services above on its date's weekday (or the one printed), open to
 check, keeping its times, kind, words, languages, subtitle, place and Public /
 Parish only; its date and the doubts about it stay behind
@@ -448,10 +450,11 @@ A service already on file is offered **Put this poster on it**. The editor
 shows the services' review above the event cards, headed "Held regularly — for
 the timetable", and the dialog is "Add from the poster" when there are both.
 
-**One event can run over several days.** A card has **Multi-day** under its
-times: ticked, a **Last day** appears, and the end time is the time it ends on
+**One event can run over several days.** Date's label line ends in a
+**Single day** pill (Edit event's too): tapped, it reads **Multi day**, a
+**Last day** appears under the times, and the end time is the time it ends on
 that day (`draft_events.end_date`, migration 022; `localSpanToUtc` takes it).
-Without the tick an end earlier than the start is still "after midnight". The
+On Single day an end earlier than the start is still "after midnight". The
 reader gives `end_date` for one event over several days — a festival Friday to
 Sunday is ONE entry — and never matches one to a Sunday's service. Published
 it is only a later `end_utc`; the page calls an event multi-day when it ends on a

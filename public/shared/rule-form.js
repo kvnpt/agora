@@ -269,6 +269,26 @@
     box.checked = scoped;
     box.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  /**
+   * One day or several: a pill at the end of Date's label line, "Single day"
+   * until tapped, then on and "Multi day" (Kevin, 31 Oct 2026; it was a
+   * switch). A hidden box holds it, `${attr}="multi"`, so the form reads as it
+   * did; the Add event card has the same pill (event-editor.js daysPillHTML).
+   */
+  function daysHTML(attr, multi) {
+    return `<button type="button" class="scope-pill days-pill${multi ? ' on' : ''}" aria-label="Multi day" aria-pressed="${!!multi}" data-days-pill>${multi ? 'Multi day' : 'Single day'}</button><input type="checkbox" ${attr}="multi"${multi ? ' checked' : ''} hidden>`;
+  }
+  /** The pill, live: a tap flips the box, and the box flipping repaints the pill. */
+  function wireDays(form, box) {
+    const pill = form.querySelector('[data-days-pill]');
+    if (!pill || !box) return;
+    pill.addEventListener('click', () => { box.checked = !box.checked; box.dispatchEvent(new Event('change', { bubbles: true })); });
+    box.addEventListener('change', () => {
+      pill.classList.toggle('on', box.checked);
+      pill.setAttribute('aria-pressed', String(box.checked));
+      pill.textContent = box.checked ? 'Multi day' : 'Single day';
+    });
+  }
   /** Kind, with who sees it at the end of its label's line. */
   const kindRowHTML = (label, select, attr, scoped) =>
     `<div class="edit-row"><div class="edit-row-head"><label>${label}</label>${scopeHTML(attr, scoped)}</div>${select}</div>`;
@@ -466,5 +486,5 @@
     };
   }
 
-  Object.assign(api, { fieldsHTML, wire, dateFieldHTML, wireDates, kindRowHTML, wireScope, scopeTo });
+  Object.assign(api, { fieldsHTML, wire, dateFieldHTML, wireDates, kindRowHTML, wireScope, scopeTo, daysHTML, wireDays });
 })(typeof window !== 'undefined' ? window : globalThis);
