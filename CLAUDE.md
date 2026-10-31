@@ -97,7 +97,9 @@ for them, are in the doc it links to — read that before changing the area.
   (`info_overrides`, tiers, pins) it replaced are retired.
 - An admin edit records its own provenance; a timetable shows ONE source line.
 - Adapters are a static registry; absence becomes a cancellation only under the
-  guards in `tombstone.mjs`.
+  guards in `tombstone.mjs`. A source's entry that IS a rule's occurrence lands
+  ON it (nothing, or an adapter override), never as an event beside it; the
+  model may pair or hold back, never cancel.
 
 **People** — [docs/people-and-access.md](docs/people-and-access.md)
 - Access says who you are; `admin_roles` says what you may do. Routes name a
@@ -124,8 +126,8 @@ for them, are in the doc it links to — read that before changing the area.
 - The seed is a dev fixture, not production; never make it authoritative.
   `d1/seed-parishes.sql` is generated — `npm run gen:seed`.
 - A Secrets Store binding is an object; read it with `readSecret()`.
-  `ANTHROPIC_API_KEY` (the poster reader, Claude Haiku 4.5; the acronym
-  suggestion, Claude Haiku 5.5) is one, and optional.
+  `ANTHROPIC_API_KEY` (the poster reader and the acronym suggestion, both
+  Claude Haiku 5.5) is one, and optional.
 
 ## Where things are written down
 

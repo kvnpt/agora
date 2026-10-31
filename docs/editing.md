@@ -263,7 +263,7 @@ should never exist for a round trip beside it.
 **A poster is read into the draft, never into the feed.** Dropped, pasted or
 chosen, the image is shrunk in the browser to 2048px, stored once in R2 under a
 key of its own (one object for every event published from it, like a bulletin
-range), and read by Claude Haiku 4.5 (`worker/lib/poster-read.mjs`). The read
+range), and read by Claude Haiku 5.5 (`worker/lib/poster-read.mjs`). The read
 streams back as Server-Sent Events and the cards fill as it is written; a
 poster with several events becomes several cards, each collapsed to its row as
 the feed will draw it (time and day, the kind's roundel, title, subtitle) so
@@ -423,7 +423,11 @@ no such words is dated from the poster's own occasion — its dated events, all
 within a week — on the nearest day of its weekday (the Saturday before a
 Sunday), and becomes an event with a note saying so. With no occasion to date
 it from it stays a service, with a note that the poster does not say it is
-weekly. A sign's services are regular by being on the sign.
+weekly. A sign's services are regular by being on the sign. A poster that
+prints no date anywhere, only a weekday over its times, is the parish's weekly
+schedule for that day (Kevin, 31 Oct 2026, St Paul, Dandenong's "Sunday"
+poster): the reader gives its `every` as "Sunday, on a poster with no date".
+A feast day's poster prints its date, so its "Sat" is still that occasion's.
 
 **A person can move a card up to the timetable.** The reader still gets it
 wrong the other way: St Paul, Dandenong's weekday posters (31 Oct 2026), each

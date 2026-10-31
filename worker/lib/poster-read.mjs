@@ -2,7 +2,7 @@
 //
 // The WhatsApp ingestor did this on the VM, and went with it (docs/history.md).
 // This is the same read with a different door: an editor drops a poster on the
-// add-event editor, the Worker sends it to Claude Haiku 4.5, and the answer
+// add-event editor, the Worker sends it to Claude Haiku 5.5, and the answer
 // streams back into the editor's cards as it is written. Nothing here writes to
 // the feed. What a model read off a photograph is a draft until a person has
 // looked at it and pressed Publish (docs/editing.md).
@@ -11,17 +11,25 @@
 // code (docs/adapters.md, "Constraints that will bite"); the Messages API is
 // one POST and an event stream, and the SSE framing is public/shared/sse.js.
 //
-// HAIKU 4.5, by the owner's choice: the fastest to start filling the form and
-// a fraction of a cent a poster. What that asks of the request:
-//   * no `output_config.effort` — Haiku 4.5 rejects it;
-//   * no `thinking` — off is the lowest latency, and a poster is transcription;
-//   * structured output (`output_config.format`) does work, with streaming, so
-//     the answer is JSON in a fixed shape and nothing has to be fished out of
+// HAIKU 5.5, by the owner's choice (31 Oct 2026). It was Haiku 4.5, the
+// fastest to start filling the form; but Panagia Kamariani's December
+// programme came back with five of 25 times wrong (7:30 am read as 7:30 pm
+// four times, 8:15 as 8:45), and Haiku 5.5 is the cheaper of the two (about
+// 0.3c a poster, against 1.7c). What that asks of the request:
+//   * thinking is on by default, and stays on: a moment's thought is what a
+//     dense programme of small times needs. The answer can open with thinking
+//     blocks, and only `text_delta`s are the JSON, so they are ignored;
+//   * `output_config.effort` says how much: 'medium', its default, said
+//     explicitly so a change of default does not change the read;
+//   * no `temperature`, `top_p` or `top_k` — Haiku 5.5 rejects them — and no
+//     assistant prefill;
+//   * no `fallbacks`: Haiku 5.5 has no server-side fallback, so a refusal is
+//     the `refusal` stop reason, said to the editor as such;
+//   * structured output (`output_config.format`) works with streaming, so the
+//     answer is JSON in a fixed shape and nothing has to be fished out of
 //     prose. The schema is a constant: a new schema is compiled once and then
 //     cached, and one built per request would pay for that every time;
-//   * Haiku reads an image at up to 1568px on the long side. The editor sends
-//     2048px, the size it stores for people to look at, and Anthropic scales
-//     it down for reading.
+//   * the editor sends 2048px, the size it stores for people to look at.
 //
 // BASE64, not an image URL. The poster is in R2 and served publicly under
 // /posters/, so Claude could fetch it by URL — but not from `wrangler dev`,
@@ -39,15 +47,17 @@ const { createSseParser } = sse;
 const { EVENT_TYPES, KINDS, isEventType } = eventTypes;
 const { isLocalDate } = checks;
 
-export const POSTER_MODEL = 'claude-haiku-4-5';
+export const POSTER_MODEL = 'claude-haiku-5-5';
 // A month's programme of daily services and a few more: Panagia Kamariani's
 // December (Red Hill) lists 25, and at 20 it lost its last five days. An event
-// is about 110 tokens of answer and the reader writes about 160 a second (that
+// is about 110 tokens of answer and Haiku 4.5 wrote about 160 a second (that
 // read: 20 events, 2,129 tokens, 13 seconds), so 40 is about half a minute,
-// well inside READ_TIMEOUT_MS and max_tokens.
+// inside READ_TIMEOUT_MS and max_tokens with room for thinking.
 export const MAX_EVENTS = 40;
 export const MAX_SERVICES = 20;
-const READ_TIMEOUT_MS = 60000;
+// Thinking comes before the first field; a month's programme of 40 events is
+// a few thousand tokens after it.
+const READ_TIMEOUT_MS = 90000;
 
 /**
  * What the image IS — not what it announces, which is always one or both of
@@ -198,9 +208,9 @@ Write in English. Agora is read in English, so when the image is in another lang
 
 Everything an image announces is one of two things, and an image can announce both:
 1. A REGULAR SERVICE: something the parish holds on a weekday every week, or on some weeks of every month — the Sunday Liturgy, Saturday Vespers, a choir practice every Tuesday, a Bible study on the second Wednesday. It belongs on the parish's timetable, in services. Some are regular only for a while ("every Friday in August", "Wednesdays in Lent from 18 February", "until Christmas"): give its first and last dates.
-2. A ONE-OFF EVENT: something on a particular date — a feast-day Liturgy, a talk, a fundraiser, a camp. It belongs in events. One event that runs over several days (a festival from Friday to Sunday, a retreat) is ONE entry with its last day in end_date; separate meetings on different dates are one entry per date.
+2. A ONE-OFF EVENT: something on a particular date — a feast-day Liturgy, a talk, a fundraiser, a camp. It belongs in events. One event that runs over several days (a festival from Friday to Sunday, a retreat) is ONE entry with its last day in end_date; separate meetings on different dates are one entry per date. Two services on the same date, each printed with its own name and time, are two entries: under "Saturday 4 April", "Divine Liturgy 9am" and "Vespers 6pm" are two events on the 4th.
 A regular service on one particular date is listed in events only when the image says something about that date: the saint or feast it commemorates, a different time, a guest, that it is cancelled or moved. The site already shows the rest.
-What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week.
+What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week. A poster that prints no date anywhere, only a weekday over its times ("Sunday: Matins 9:00am, Divine Liturgy 10:15am, Sunday School 11:30am"), is the parish's weekly schedule for that day: every item on it is a regular service.
 
 What to return:
 - kind: what the image is. "timetable" for a sign, board or notice giving the parish's regular services, such as the board out the front of the church, with or without its contact details; "poster" for any poster, flyer, programme, newsletter or bulletin; "not_an_event" when the image announces no event and no regular service.
@@ -217,7 +227,7 @@ For each event:
 - date: YYYY-MM-DD. Images often leave out the year; then use the first such date on or after today, and set year_printed to false. A programme headed with its month and year ("October 2026") prints the year for every date in it.
 - weekday_printed: the weekday printed for this date, in English ("Saturday"), as printed even if it disagrees with the date; null if no weekday is printed.
 - year_printed: true only if the image prints the year.
-- start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note.
+- start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note; two services, each with its own name, are two events.
 - end_date: YYYY-MM-DD of the last day, only for one event that runs over several days; empty otherwise.
 - event_type: the closest kind from the list below.
 - languages: only languages the image says the event is held in, from the list ("Greek", "Arabic", "Church Slavonic"; Russian is Church Slavonic). A service named for its language says it: "English Vigil", "Greek Liturgy" and "Liturgy in English and Greek" are held in those languages. Empty if it does not say; do not guess from the language the image is written in.
@@ -227,7 +237,7 @@ For each event:
 
 For each regular service:
 - title: the service or activity as printed, in English and normal capitalisation ("Divine Liturgy", "Orthros and Divine Liturgy", "Church Choir Practice").
-- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date.
+- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date. The one exception is a poster that prints no date anywhere: its weekday is every week's, and every is that weekday followed by ", on a poster with no date" ("Sunday, on a poster with no date").
 - day: the weekday it is held on.
 - start_time, end_time: 24-hour HH:MM; end_time empty when none is printed ("8.00 - 10.00 am" is "08:00" to "10:00").
 - weeks: only when it is held on some weeks of the month and not others: "every 2nd and 4th Sunday" is ["second", "fourth"]. Empty for every week.
@@ -287,7 +297,7 @@ export function buildPosterRequest({ data, mediaType, context }) {
     max_tokens: 16000,
     stream: true,
     system: SYSTEM_PROMPT,
-    output_config: { format: { type: 'json_schema', schema: POSTER_SCHEMA } },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: POSTER_SCHEMA } },
     messages: [{
       role: 'user',
       content: [
@@ -583,12 +593,15 @@ export function normalizeRead(doc) {
 
 /**
  * Words that say a service repeats: "every Tuesday", "Sundays", "2nd and 4th
- * Sundays", "of the month". A weekday on its own ("Sat", "Sunday") does not.
+ * Sundays", "of the month". A weekday on its own ("Sat", "Sunday") does not,
+ * except on a poster that prints no date anywhere ("Sunday, on a poster with
+ * no date"): St Paul, Dandenong's weekday posters (31 Oct 2026) are its
+ * weekly schedule, one weekday each.
  * Not asked (a read from before `every`) is not a "no".
  */
 function saysRegular(every) {
   if (every === undefined) return true;
-  return /\b(every|each|weekly|fortnightly|monthly|daily|nightly|timetable)\b|\b(mon|tues|wednes|thurs|fri|satur|sun)days\b|\bof (the|each|every) month\b|\b(1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)\b/i
+  return /\b(every|each|weekly|fortnightly|monthly|daily|nightly|timetable)\b|\bno date\b|\b(mon|tues|wednes|thurs|fri|satur|sun)days\b|\bof (the|each|every) month\b|\b(1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)\b/i
     .test(String(every || ''));
 }
 

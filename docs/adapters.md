@@ -8,9 +8,11 @@ asked about.**
 source-specific:   fetchEvents(env) → { events, window }
                             │
 shared, already built:
-                   ├── written to `events`, idempotent on source_hash
+                   ├── reconcile.mjs   → which entries ARE the timetable's services
+                   ├── pairing.mjs     → what each becomes: nothing, an override, an event
+                   ├── pairing-read.mjs → Haiku, for the saint and the rare unclear one
+                   ├── the rest written to `events`, idempotent on source_hash
                    ├── infer.mjs       → proposed recurrence rules
-                   ├── reconcile.mjs   → what the source stopped publishing
                    ├── tombstone.mjs   → whether absence may cancel anything
                    └── adapter_settings → enable / disable / pace, from /admin
 ```
@@ -86,10 +88,44 @@ series are withheld on purpose: `schedules` has no interval column, and the
 month-position rule that fits the sample is wrong the first time a month has five
 of the weekday.
 
+**The timetable, not a second card.** Once a parish has rules, an entry that
+IS one of them — the same service by name (`sameService`: "Divine Liturgy" is
+the rule "Liturgy", "Matins (Orthros)" is "Matins"), that day — lands on that
+occurrence, the way a poster's dated services do. Nothing is written when it
+says what the rule says; an `adapter:<id>` override carries what it changes:
+another hour (and its end with it), the day's saint as the subtitle, or a
+different service's name. Only what is no regular service becomes an event. A
+second card each Sunday is what Good Shepherd, Clayton showed until October
+2026: its rules said "Liturgy" and its calendar "Divine Liturgy", and the
+feed's exact-title dedup let both through. Rows an earlier run wrote as events
+for what is now paired are retired, unless something hangs off them (a poster,
+a co-host, a combine).
+
+**Haiku, for what the rules cannot say** (`worker/lib/pairing-read.mjs`, with
+the optional `ANTHROPIC_API_KEY`). Two questions only. A paired entry whose
+title says more than its service ("Divine Liturgy – St Nicholas"): which words
+are the day's commemoration? And an occurrence with no entry by name on a day
+that has entries nothing claimed ("Feast of St Nicholas" at 9:30): is one of
+them this service? Each question is asked once and the answer kept in
+`adapter_reads`, so a card cannot flicker between runs; a changed title or time
+is a new question. An answer can pair an entry, or hold back a cancellation it
+is unsure of, and it **can never cause one**. An unsure answer goes to whoever
+keeps the parish as a suggestion (`parish_suggestions`, from
+`adapter:<id>`), once. Without a key, or when the call fails, the rules'
+answer stands and nothing is lost but the subtitle.
+
 **Cancellations.** Once rules exist, a service that disappears from the source
 inside the covered window is tombstoned automatically, withdrawn if it comes
-back, and never written over a human's override. A run that would cancel more
-than half the parish is refused and says so in `adapter_runs.tombstones_refused`.
+back, and never written over a human's override. The same pairing decides it,
+so an entry the timetable reads as its Liturgy can never also read as the
+Liturgy missing. Something else at the rule's exact minute holds it: not a
+cancellation, and not claimed either, until somebody says. A run that would
+cancel more than half the parish is refused and says so in
+`adapter_runs.tombstones_refused`.
+
+**A person's word stands.** An occurrence with an override from anyone but this
+adapter is projected as they left it, never asked about, and never written
+over.
 
 **Pacing.** `adapter_settings` decides how often each adapter runs; the Cron
 Trigger is an hourly heartbeat. No settings row means enabled at four-hourly.
@@ -479,9 +515,9 @@ What changed from the sketch above, and why:
   cards in the form a person is already looking at, saved as `draft_events`
   rather than as an `admin_proposals` row — that table is for asks an owner
   decides, and these are the editor's own unfinished work.
-- **Haiku 4.5**, by the owner's choice: fastest to start filling the form, a
-  fraction of a cent a poster. The model is one constant in
-  `worker/lib/poster-read.mjs`.
+- **Haiku 5.5**, by the owner's choice (Haiku 4.5 until 31 Oct 2026, when a
+  month's programme came back with five times wrong): a fraction of a cent a
+  poster. The model is one constant in `worker/lib/poster-read.mjs`.
 - **base64, not a URL.** The poster is stored first and is public under
   /posters/, but Claude cannot reach `wrangler dev`, and the Worker holds the
   bytes anyway; Buffer's base64 is native code.

@@ -28,13 +28,15 @@ const image = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 const read = (fetchImpl, emit) => readPoster(
   { apiKey: 'test-key', image, mediaType: 'image/jpeg', context: 'ctx', fetchImpl }, emit);
 
-test('the request: Haiku 4.5, structured output, the image as base64 — and nothing Haiku refuses', () => {
+test('the request: Haiku 5.5, medium effort, structured output, the image as base64 — and nothing Haiku refuses', () => {
   const body = buildPosterRequest({ data: 'QUJD', mediaType: 'image/webp', context: 'ctx' });
-  assert.strictEqual(body.model, 'claude-haiku-4-5');
+  assert.strictEqual(body.model, 'claude-haiku-5-5');
   assert.strictEqual(body.stream, true);
-  assert.deepStrictEqual(body.output_config, { format: { type: 'json_schema', schema: POSTER_SCHEMA } });
-  assert.ok(!('effort' in body.output_config), 'Haiku 4.5 rejects effort');
-  assert.ok(!('thinking' in body) && !('fallbacks' in body));
+  assert.deepStrictEqual(body.output_config,
+    { effort: 'medium', format: { type: 'json_schema', schema: POSTER_SCHEMA } });
+  assert.ok(!('thinking' in body), 'thinking is on by default: not turned off, not given a budget (a 400)');
+  for (const k of ['temperature', 'top_p', 'top_k', 'fallbacks']) assert.ok(!(k in body), `Haiku 5.5 rejects ${k}`);
+  assert.strictEqual(body.messages[body.messages.length - 1].role, 'user', 'no prefill');
   assert.deepStrictEqual(body.messages[0].content[0],
     { type: 'image', source: { type: 'base64', media_type: 'image/webp', data: 'QUJD' } });
   assert.strictEqual(body.system, SYSTEM_PROMPT);
@@ -79,6 +81,10 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   assert.match(SYSTEM_PROMPT, /"timetable" for a sign, board or notice giving the parish's regular services/);
   assert.match(SYSTEM_PROMPT, /Everything an image announces is one of two things, and an image can announce both/);
   assert.match(SYSTEM_PROMPT, /is listed in events only when the image says something about that date/);
+  // Haiku 5.5 read Red Hill's Saturday 12 December (Liturgy 8:15 am, Great
+  // Vespers 5 pm) as one event with "two times printed", the doors-and-start rule.
+  assert.match(SYSTEM_PROMPT, /Two services on the same date, each printed with its own name and time, are two entries/);
+  assert.match(SYSTEM_PROMPT, /two services, each with its own name, are two events/);
   assert.match(SYSTEM_PROMPT, /with its commemoration in feast and not in the title/);
   assert.match(SYSTEM_PROMPT, /"every 2nd and 4th Sunday" is \["second", "fourth"\]/);
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
@@ -95,6 +101,16 @@ test('the context names the parish, its day, and the services already on the sit
     [{ day_of_week: 0, start_time: '18:00', end_time: '19:30', title: 'Divine Liturgy', week_of_month: 'second,fourth' }]),
   /- Sundays 18:00–19:30 Divine Liturgy \(second and fourth of the month\)/);
   assert.match(posterContext(PARISH, '2026-10-08', []), /- none on file/);
+});
+
+test('an answer that opens with thinking: only the text is the JSON', async () => {
+  const plain = await read(fakeFetch(haikuStream(JSON.stringify(ONE))));
+  const seen = [];
+  const thought = await read(fakeFetch(haikuStream(JSON.stringify(ONE), { thinking: true })),
+    (event, payload) => seen.push({ event, ...payload }));
+  assert.strictEqual(thought.ok, true);
+  assert.deepStrictEqual(thought.read, plain.read);
+  assert.deepStrictEqual(seen[0], { event: 'kind', kind: 'poster' });
 });
 
 test('a streamed answer arrives as fields, then items, then the normalised read', async () => {
@@ -351,4 +367,26 @@ test('a service the poster does not call regular, with no date to put it on, sta
   assert.deepStrictEqual([month.events.length, month.services.length], [2, 1]);
   const sign = normalizeRead({ kind: 'timetable', services: [sv], details: empty, events: [{ title: 'A', date: '2026-11-08' }] });
   assert.deepStrictEqual([sign.services.length, sign.services[0].read_notes], [1, []]);
+});
+
+test('a poster with no date, only a weekday over its times, is that weekday’s weekly schedule', () => {
+  // St Paul, Dandenong, 31 Oct 2026: "Sunday — Matins | 9:00am, Divine Liturgy
+  // (Bilingual: English & Arabic) | 10:15am, Sunday School | 11:30am,
+  // Fellowship | 12:00pm". Matins and the Liturgy were read as events on the
+  // coming Sunday, the other two as services.
+  const svc = (title, start_time, event_type, languages = []) => ({ title, every: 'Sunday, on a poster with no date', day: 'Sunday',
+    start_time, end_time: '', weeks: [], languages, event_type, description: '', starts: '', until: '', notes: [] });
+  const r = normalizeRead({
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [], events: [],
+    services: [svc('Matins', '09:00', 'prayer'), svc('Divine Liturgy', '10:15', 'liturgy', ['English', 'Arabic']),
+      svc('Sunday School', '11:30', 'other'), svc('Fellowship', '12:00', 'social')],
+    details: { address: '', phone: '', email: '', website: '' },
+  });
+  assert.deepStrictEqual(r.services.map(s => [s.title, s.day_of_week, s.start_time, s.read_notes.length]),
+    [['Matins', 0, '09:00', 0], ['Divine Liturgy', 0, '10:15', 0], ['Sunday School', 0, '11:30', 0], ['Fellowship', 0, '12:00', 0]]);
+  assert.deepStrictEqual(r.events, []);
+  assert.match(SYSTEM_PROMPT, /A poster that prints no date anywhere, only a weekday over its times/);
+  assert.match(SYSTEM_PROMPT, /"Sunday, on a poster with no date"/);
+  // A feast day's poster prints its date, so its "Sat" is still that occasion's.
+  assert.match(SYSTEM_PROMPT, /"Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion/);
 });
