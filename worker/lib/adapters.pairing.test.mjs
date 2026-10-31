@@ -120,6 +120,28 @@ test('the second cards an earlier run wrote are retired', async () => {
   assert.deepStrictEqual(eventTitles(raw), ['Divine Liturgy'], 'nine retired, the one with a poster kept');
 });
 
+test('a service under way when the run starts is still its rule, not a card beside it', async () => {
+  // Run at 9:20 on Sunday 8 November. Google, asked from "now", still lists
+  // the 9:00 Matins because it has not ended; projected from 9:20 it had no
+  // rule to land on and was written as an event (orthodoxy.au, 1 Nov 2026).
+  const { raw, env } = fresh();
+  const events = SUNDAYS.flatMap(d => sunday(d));
+  const runAt = { from: localSpanToUtc(TZ, '2026-11-08', '09:20', null).start_utc, to: WINDOW.to };
+  const r = await runAdapter({ ...calendar(events), async fetchEvents() { return { events, window: runAt }; } }, env);
+
+  assert.strictEqual(r.eventsPaired, 10, 'the Matins under way is paired too');
+  assert.deepStrictEqual(eventTitles(raw), []);
+  assert.strictEqual(r.tombstones.windowFrom, '2026-11-09', 'the part-day is still not judged');
+
+  // And a Sunday whose Matins has already ended, so the calendar no longer
+  // lists it, is not cancelled for it: that morning was never covered.
+  const late = { from: localSpanToUtc(TZ, '2026-11-08', '10:30', null).start_utc, to: WINDOW.to };
+  const rest = events.filter(e => e.source_hash !== 'm-2026-11-08');
+  const r2 = await runAdapter({ ...calendar(rest), async fetchEvents() { return { events: rest, window: late }; } }, env);
+  assert.strictEqual(r2.tombstones.created, 0);
+  assert.deepStrictEqual(overrides(raw), []);
+});
+
 test('a Sunday at another hour is that Sunday moved, not a second service', async () => {
   const { raw, env, liturgy } = fresh();
   const moved = SUNDAYS.flatMap(d => sunday(d, d === '2026-11-22'

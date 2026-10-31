@@ -22,7 +22,7 @@ import { questionsFor, resolvePairing, overrideFor, suggestionFor, occurrenceKey
 import { answersFor } from './pairing-read.mjs';
 import { parseSchedulePdfText } from './pdf-schedule.mjs';
 import { PDF_SOURCES, r2KeyFor } from './pdf-sources.mjs';
-import { OffsetCache, localPartsOf } from '../../public/shared/tz.mjs';
+import { OffsetCache, localPartsOf, localSpanToUtc } from '../../public/shared/tz.mjs';
 
 async function sha256Hex(input) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -406,7 +406,15 @@ async function planRun(db, env, adapter, events, window) {
   const ours = new Map(onFile.filter(r => r.source === source).map(r => [keyOf(r), r]));
   const spoken = new Set(theirs.map(keyOf));
 
-  const projected = expandFrom({ schedules, overrides: theirs }, window.from, window.to);
+  // From the start of the window's first LOCAL day, not the window's instant.
+  // A source asked from "now" still lists what is under way — Google returns
+  // an event until it ends — and a Sunday Matins that began twenty minutes
+  // before the run has to find its rule, or it is written as an event beside
+  // it. Projecting earlier never cancels anything: absence is judged only on
+  // whole covered days, and that part-day is not one.
+  const dayStart = localSpanToUtc(timezone, fromDate, '00:00', null).start_utc;
+  const projectFrom = Date.parse(dayStart) < Date.parse(window.from) ? dayStart : window.from;
+  const projected = expandFrom({ schedules, overrides: theirs }, projectFrom, window.to);
   const diff = reconcile({ projected, scraped: events, timezone,
     windowFrom: covered?.windowFrom, windowTo: covered?.windowTo });
 
