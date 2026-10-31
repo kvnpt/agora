@@ -142,7 +142,22 @@ parish's plain card. Everything the grammar already knows comes first: the
 parish's own links and payment links (the Worker's redirects), the words above,
 then acronyms (`url-state.js` keeps the rest as `words`; `parishNamed` reads
 `/disco/smmp` as `/smmp/disco` once the reader has found the parish). Such a
-link is never indexed. A word on its own (`/village`) is not read yet. A collection's
+link is never indexed.
+
+**Words that name no parish are a search of the site** (Kevin, 28 Oct 2026):
+`/village`, `/vigil`, `/antiochian/festival`. They are read the same way, under
+whatever else the link says (its jurisdiction, region, kind or day), and one
+verdict (`findAcross` in `search-words.js`) decides what opens, on the page
+(`openWords`) and in the Worker's preview (`wordsPage` in `routes/pages.mjs`).
+One parish by its name, with nothing found elsewhere, is its card. All that is
+found at one parish is its first, over that parish's card, as at `/smmp/disco`.
+Several places are a Search card of them, by distance, the parish named beside
+the rest ("list both", 28 Oct): its timetables keep the lines that answer and a
+named parish's whole week, and its link is the words'. Nothing is the search box
+with the words in it, and a 404. A Parish only row is its parish's own business
+and is not found from here. Never indexed, as above.
+
+A collection's
 timetables do the opposite: they keep only the lines that answer what it asks
 (`/services` its services, `/sun/liturgy` its Sunday Liturgies), as its head counts
 them, and a collection that asks nothing of them (`/greek`) shows each whole week. The timetable is

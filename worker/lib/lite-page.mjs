@@ -80,6 +80,21 @@ export function wordsQuery(route, today) {
   return search.asks(Q) ? Q : null;
 }
 
+/**
+ * Does an occurrence answer what a link asks of it, its words aside: its
+ * service, day, part of the day, kind and language? `e._local` is its
+ * parish's clock; `parishOk`, whether its parish holds a service in the
+ * link's language (timetable.js rowAnswersLang).
+ */
+export function answersRoute(e, route, zone, parishOk) {
+  if (route.service && !services.serviceMatches(route.service, e)) return false;
+  if (!services.dayMatches(route.day, e._local.dow)) return false;
+  if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
+  if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
+  if (!ruleFilters.kindMatches(e, route)) return false;
+  return ruleFilters.rowAnswersLang(e, ruleFilters.langFilterOf(route), parishOk);
+}
+
 /** Where the list starts: the focused date, or the parish's today. */
 export function liteStartDate(route, zone, now) {
   // A focus is a FROM (dates.js), past or future, exactly as in the app.
@@ -151,14 +166,7 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
   const asks = isNarrowed(route) || !!route.kind || !!lf || !!wq;
   const matches = (e) => {
     if (synth) return e.schedule_id === pinnedEvent.schedule_id;
-    if (!answersWords(e)) return false;
-    if (route.service && !services.serviceMatches(route.service, e)) return false;
-    if (!services.dayMatches(route.day, e._local.dow)) return false;
-    if (route.dayGroup && !services.dayGroupMatches(route.dayGroup, e._local.dow, e, zone)) return false;
-    if (route.part && services.partOfDayOf(e, zone) !== route.part) return false;
-    if (!ruleFilters.kindMatches(e, route)) return false;
-    if (!ruleFilters.rowAnswersLang(e, lf, parishOk)) return false;
-    return true;
+    return answersWords(e) && answersRoute(e, route, zone, parishOk);
   };
   // A season for words that found something; the usual two months otherwise.
   const endBound = new Date(Date.parse(`${start}T00:00:00Z`) + (wq ? days : LITE_WINDOW_DAYS) * DAY_MS).toISOString().slice(0, 10);

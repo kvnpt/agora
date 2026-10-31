@@ -55,6 +55,12 @@ markup went.
 - **A filter link**: the timetable's heading (`timetableHeading`, whose words are
   `public/shared/link-words.js`, which the page's parishes in view read too), a collection
   indexable once its page lists somebody, every other mix noindex.
+- **Words that name no parish** (`/vigil`, `wordsPage`): what the site's search
+  finds for them (`findAcross`, as the page reads it). A parish by its name is its
+  card, and all found at one parish is its first, as above; several places are “the
+  words” at those places, the first poster found as the preview, no card (the page
+  builds the Search card), and the lite version lists the places. Nothing is a
+  404, its words in the lite search box. Never indexed.
 - **The home page**: the site's own words. **Anything else**: the home page's words,
   noindex.
 

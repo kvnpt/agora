@@ -65,3 +65,40 @@ test('words that ask nothing ask nothing', () => {
   assert.equal(W.asks(W.parseQuery('the', today)), false);
   assert.equal(W.asks(W.parseQuery('disco', today)), true);
 });
+
+test('words that name no parish find one parish, a match at one, a list, or nothing', () => {
+  const san = { id: 1, name: 'Antiochian Village', full_name: 'Holy Monastery of St Antony', acronym: 'SAN', address: 'Goulburn NSW' };
+  const smmp = { id: 2, name: "St Mary's", acronym: 'SMMP', address: 'Mount Pritchard NSW' };
+  const oca = { id: 3, name: 'Holy Resurrection', acronym: 'OCA', address: 'Redfern NSW' };
+  const parishes = [san, smmp, oca];
+  const rows = [
+    { ...festival, parish_id: 1, _at: at('2026-10-31') },
+    { ...disco, parish_id: 2, _at: at('2026-11-14') },
+    { title: 'Vigil', event_type: 'prayer', day_of_week: 6, start_time: '18:00', parish_id: 3 },
+    { title: 'All-night Vigil', event_type: 'prayer', parish_id: 2, _at: at('2026-11-07', '21:00') },
+  ];
+  const find = (q, more = {}) => W.findAcross({ parishes, rows, Q: W.parseQuery(q, today), ...more });
+
+  assert.deepEqual(find('village'), { verdict: 'parish', pid: 1 }, 'its name, and what it holds is its own');
+  assert.deepEqual(find('festival'), { verdict: 'match', pid: 1 }, 'found only at one parish');
+  assert.deepEqual(find('disco'), { verdict: 'match', pid: 2 });
+  const vigil = find('vigil');
+  assert.equal(vigil.verdict, 'list');
+  assert.deepEqual(vigil.ids, [3, 2], 'every parish it is found at');
+  assert.deepEqual(find('nosuch'), { verdict: 'none' });
+  assert.deepEqual(find('the'), { verdict: 'none' }, 'asks nothing');
+
+  // One parish by name, and something elsewhere: both (Kevin, 28 Oct 2026).
+  const bus = { title: 'Bus to Antiochian Village', event_type: 'other', parish_id: 2, _at: at('2026-10-31', '07:00') };
+  const both = W.findAcross({ parishes, rows: [...rows, bus], Q: W.parseQuery('village', today) });
+  assert.equal(both.verdict, 'list');
+  assert.deepEqual(both.ids, [1, 2], 'the parish named first');
+  assert.deepEqual(both.named, [1]);
+
+  // What else a parish answers to (its jurisdiction's long name) is the caller's.
+  assert.deepEqual(find('resurrection'), { verdict: 'parish', pid: 3 });
+  assert.equal(find('america').verdict, 'none');
+  assert.deepEqual(find('america', { hayOf: (p) => p.id === 3 ? 'Orthodox Church in America' : '' }), { verdict: 'parish', pid: 3 });
+  // Parishes and rows are what the link's other words left in.
+  assert.deepEqual(W.findAcross({ parishes: [oca], rows: rows.filter(r => r.parish_id === 3), Q: W.parseQuery('vigil', today) }), { verdict: 'match', pid: 3 });
+});

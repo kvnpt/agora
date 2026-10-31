@@ -45,6 +45,25 @@ export function otherMeta(origin) {
   return { ...homeMeta(origin), canonical: null, indexable: false };
 }
 
+/**
+ * A link's words found at several places across the site (/vigil,
+ * /antiochian/festival; routes/pages.mjs wordsPage): the words, where they
+ * were found, and the first poster among what was. Words are anybody's, an
+ * endless space of pages, so never indexed and never a canonical.
+ */
+export function wordsMeta({ origin, phrase, places = [], titles = [], image = null }) {
+  // A parish's name has a comma of its own (St George Cathedral, Redfern).
+  const list = (xs) => (xs.length > 2 ? `${xs[0]} and ${xs.length - 1} more` : xs.join(' and '));
+  const said = [...new Set(titles)].slice(0, 3);
+  return {
+    title: `“${phrase}” at ${list(places)}`,
+    description: `${said.length ? `${said.join(' · ')}. ` : ''}What orthodoxy.au finds for “${phrase}”: ${places.length} places, with their times and what is coming up.`,
+    canonical: null, indexable: false, ogType: 'website',
+    image: image ? (/^https?:/.test(image) ? image : `${origin}${image}`) : `${origin}/og/default.jpg`,
+    card: 'summary_large_image',
+  };
+}
+
 /** A parish or an event, from its card's model (lite-page.mjs liteModel). */
 export function parishMeta(m, { indexable = true } = {}) {
   const words = liteMeta(m);
