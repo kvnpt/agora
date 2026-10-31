@@ -19,6 +19,9 @@
 // doubt, match.
 
 import { localPartsOf } from '../../public/shared/tz.mjs';
+import services from '../../public/shared/services.js';
+
+const { serviceOf } = services;
 
 const MIN_MS = 60000;
 const DAY_MS = 86400000;
@@ -73,6 +76,29 @@ export function titlesMatch(a, b) {
 }
 
 /**
+ * The same service by name, which is a looser question than `titlesMatch`:
+ * the titles match, or both name the same service. "Liturgy" and "Divine
+ * Liturgy", "Matins" and "Matins (Orthros)", "Vespers" and "Great Vespers".
+ *
+ * Good Shepherd, Clayton is why. Its rules say "Matins" and "Liturgy" (the
+ * Archdiocese's words) and its calendar says "Matins (Orthros)" and "Divine
+ * Liturgy", so neither title is a prefix of the other — and every Sunday the
+ * feed showed both, and a run would have cancelled every Sunday Liturgy.
+ *
+ * The services are the site's own list (public/shared/services.js), the one
+ * that also answers /gsm/liturgy, so a calendar entry pairs with a rule
+ * exactly when a link would call them the same service. A feast is not one: it
+ * names the day, not what is served.
+ */
+export function sameService(a, b) {
+  if (titlesMatch(a, b)) return true;
+  const x = serviceOf({ title: a || '' }), y = serviceOf({ title: b || '' });
+  return !!x && x === y && x !== 'feast';
+}
+
+/**
+ * Pair what the rules project with what a source published.
+ *
  * @param {object} args
  *   projected         schedule instances, as expandFrom() emits them
  *   scraped           occurrences a source just published
@@ -82,7 +108,24 @@ export function titlesMatch(a, b) {
  *   windowFrom/To     local 'YYYY-MM-DD' bounds of what the source was asked
  *                     for. Absence outside them says nothing at all.
  *   toleranceMinutes  how far a start may drift and still be one service
- * @returns {{matched: Array, moved: Array, missing: Array, extra: Array}}
+ * @returns {{matched: Array, moved: Array, held: Array, missing: Array,
+ *            unpaired: Array, extra: Array}}
+ *
+ *   matched   [{instance, event, driftMinutes}] the same service, within tolerance
+ *   moved     [{instance, event, driftMinutes}] the same service, a different hour
+ *   held      [{instance, event}] something ELSE at the rule's exact time. Not
+ *             claimed as the service (the event stays in `extra`), but not
+ *             missing either: when in doubt, match.
+ *   missing   unpaired instances inside the window: the only list that may
+ *             become a cancellation (tombstone.mjs decides)
+ *   unpaired  every unpaired instance, edge days too, held ones excepted
+ *   extra     events no instance claimed as itself
+ *
+ * Pairs are chosen best first across the whole run, not rule by rule, so the
+ * order the rules happen to arrive in cannot hand an event to the wrong one:
+ * the same service at the same minute, then the same service nearest in time,
+ * an exact title before a related one. Only then does an unrelated event at
+ * the rule's exact minute hold it. One event is never two services.
  */
 export function reconcile({
   projected = [],
@@ -98,35 +141,56 @@ export function reconcile({
   };
   const inWindow = (d) => (!windowFrom || d >= windowFrom) && (!windowTo || d <= windowTo);
 
-  const want = projected.map(local).filter(p => p && inWindow(p.date));
+  const want = projected.map(local).filter(Boolean);
   const have = scraped.map(local).filter(Boolean);
 
-  const claimed = new Set();
-  const matched = [], moved = [], missing = [];
-
-  for (const p of want) {
-    // Best candidate on the same local day: a title match first, then closest.
-    let best = null;
-    for (let i = 0; i < have.length; i++) {
-      if (claimed.has(i) || have[i].date !== p.date) continue;
-      const ok = titlesMatch(p.o.title, have[i].o.title);
-      const drift = Math.abs(have[i].ms - p.ms) / MIN_MS;
-      const score = (ok ? 0 : 1e6) + drift;
-      if (!best || score < best.score) best = { i, ok, drift, score, s: have[i] };
-    }
-
-    if (!best || !best.ok) { missing.push(p.o); continue; }
-    claimed.add(best.i);
-
-    if (best.drift <= toleranceMinutes) {
-      matched.push({ instance: p.o, event: best.s.o });
-    } else {
-      // Same service, same day, a different hour: a time change. Reading it as
-      // a cancellation would bury a service that is running.
-      moved.push({ instance: p.o, event: best.s.o, driftMinutes: Math.round(best.drift) });
+  // Every same-day pairing worth considering, scored.
+  const related = [], sameMinute = [];
+  for (let w = 0; w < want.length; w++) {
+    for (let h = 0; h < have.length; h++) {
+      if (have[h].date !== want[w].date) continue;
+      const drift = Math.abs(have[h].ms - want[w].ms) / MIN_MS;
+      if (sameService(want[w].o.title, have[h].o.title)) {
+        // An exact title wins a tie over a merely related one.
+        related.push({ w, h, drift, score: drift + (titlesMatch(want[w].o.title, have[h].o.title) ? 0 : 0.5) });
+      } else if (drift === 0) {
+        sameMinute.push({ w, h, drift, score: 0 });
+      }
     }
   }
+  const byScore = (a, b) => a.score - b.score || a.w - b.w || a.h - b.h;
+  related.sort(byScore);
+  sameMinute.sort(byScore);
+
+  const pairedWant = new Map(), claimed = new Set();
+  for (const c of related) {
+    if (pairedWant.has(c.w) || claimed.has(c.h)) continue;
+    pairedWant.set(c.w, c);
+    claimed.add(c.h);
+  }
+  const heldWant = new Map(), heldHave = new Set();
+  for (const c of sameMinute) {
+    if (pairedWant.has(c.w) || heldWant.has(c.w) || claimed.has(c.h) || heldHave.has(c.h)) continue;
+    heldWant.set(c.w, c);
+    heldHave.add(c.h);
+  }
+
+  const matched = [], moved = [], held = [], missing = [], unpaired = [];
+  want.forEach((p, w) => {
+    const c = pairedWant.get(w);
+    if (c) {
+      const pair = { instance: p.o, event: have[c.h].o, driftMinutes: Math.round(c.drift) };
+      // Same service, same day, a different hour: a time change. Reading it as
+      // a cancellation would bury a service that is running.
+      (c.drift <= toleranceMinutes ? matched : moved).push(pair);
+      return;
+    }
+    const k = heldWant.get(w);
+    if (k) { held.push({ instance: p.o, event: have[k.h].o }); return; }
+    unpaired.push(p.o);
+    if (inWindow(p.date)) missing.push(p.o);
+  });
 
   const extra = have.filter((_, i) => !claimed.has(i)).map(s => s.o);
-  return { matched, moved, missing, extra };
+  return { matched, moved, held, missing, unpaired, extra };
 }

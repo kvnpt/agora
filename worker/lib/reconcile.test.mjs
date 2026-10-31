@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { localPartsOf } from '../../public/shared/tz.mjs';
-import { reconcile, titlesMatch, coveredLocalDates } from './reconcile.mjs';
+import { reconcile, titlesMatch, sameService, coveredLocalDates } from './reconcile.mjs';
 import { GOOD_SHEPHERD } from './infer.fixture.mjs';
 
 const TZ = 'Australia/Melbourne';
@@ -149,4 +149,60 @@ test('the narrowed window is what stops a clean scrape cancelling anything', () 
   const w = coveredLocalDates(TZ, '2026-09-12T04:00:00Z', '2026-11-08T04:00:00Z');
   const narrowed = reconcile({ projected: PROJECTED, scraped: GOOD_SHEPHERD, timezone: TZ, ...w });
   assert.equal(narrowed.missing.length, 0, 'the fix');
+});
+
+// ── the same service under another name ───────────────────────────────────
+//
+// Good Shepherd, Clayton: the Archdiocese's directory renamed its rules
+// "Matins" and "Liturgy", its calendar kept "Matins (Orthros)" and "Divine
+// Liturgy". Neither title is a prefix of the other, so every Sunday showed
+// both, and a run would have cancelled every Sunday Liturgy.
+
+const RENAMED = expandFrom({ schedules: [
+  { id: 13, parish_id: 'gs', day_of_week: 0, start_time: '09:00', title: 'Matins', event_type: 'liturgy', p_timezone: TZ },
+  { id: 14, parish_id: 'gs', day_of_week: 0, start_time: '10:00', title: 'Liturgy', event_type: 'liturgy', p_timezone: TZ },
+], overrides: [] }, '2026-09-12T00:00:00Z', '2026-11-08T00:00:00Z');
+const runRenamed = (scraped) => reconcile({ projected: RENAMED, scraped, timezone: TZ, ...W });
+const sundays = GOOD_SHEPHERD.filter(e => ['Matins (Orthros)', 'Divine Liturgy'].includes(e.title));
+
+test('one service by another name: Liturgy and Divine Liturgy, Matins and Matins (Orthros)', () => {
+  assert.ok(sameService('Liturgy', 'Divine Liturgy'));
+  assert.ok(sameService('Matins', 'Matins (Orthros)'));
+  assert.ok(sameService('Vespers', 'Great Vespers'));
+  assert.ok(!sameService('Liturgy', 'Matins'));
+  assert.ok(!sameService('Liturgy', 'Bookshop'));
+  assert.ok(!sameService('Feast of St Nicholas', 'Feast of the Dormition'), 'a feast names the day, not a service');
+
+  const r = runRenamed(GOOD_SHEPHERD);
+  assert.equal(r.missing.length, 0, 'not one Sunday cancelled');
+  assert.equal(r.matched.length, sundays.length, 'every Sunday entry is its rule');
+  assert.ok(r.matched.every(m => sameService(m.instance.title, m.event.title)));
+  assert.ok(!r.extra.some(e => e.title === 'Divine Liturgy'), 'and none is left over as a card of its own');
+});
+
+test('pairs are chosen best first, whatever order the rules arrive in', () => {
+  // Matins at 9 and Liturgy at 10. Matins must not take the 10:00 Liturgy
+  // because it is nearer than nothing, and each entry is one service.
+  const reversed = reconcile({ projected: [...RENAMED].reverse(), scraped: sundays, timezone: TZ, ...W });
+  for (const m of reversed.matched) assert.equal(m.driftMinutes, 0, `${m.instance.title} ↔ ${m.event.title}`);
+});
+
+test('something else at the rule\'s minute holds it: not missing, not claimed', () => {
+  const sunday = '2026-10-18';
+  const scraped = sundays.map(e => (e.title === 'Divine Liturgy' && day(e) === sunday)
+    ? { ...e, title: 'Feast of St Luke' } : e);
+  const r = runRenamed(scraped);
+  assert.equal(r.missing.length, 0, 'when in doubt, match');
+  assert.equal(r.held.length, 1);
+  assert.equal(r.held[0].instance.title, 'Liturgy');
+  assert.equal(r.held[0].event.title, 'Feast of St Luke');
+  assert.ok(r.extra.includes(r.held[0].event), 'the entry is still its own, until somebody says otherwise');
+  assert.ok(!r.unpaired.includes(r.held[0].instance));
+});
+
+test('unpaired is every occurrence nothing answered for; missing only those in the window', () => {
+  const r = reconcile({ projected: RENAMED, scraped: [], timezone: TZ, windowFrom: '2026-10-01', windowTo: '2026-10-31' });
+  assert.equal(r.unpaired.length, RENAMED.length);
+  assert.ok(r.missing.length < r.unpaired.length);
+  assert.ok(r.missing.every(i => i.start_local.slice(0, 10) >= '2026-10-01' && i.start_local.slice(0, 10) <= '2026-10-31'));
 });

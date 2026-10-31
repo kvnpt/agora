@@ -627,6 +627,30 @@ CREATE TABLE adapter_runs (
 CREATE INDEX idx_adapter_runs_lookup ON adapter_runs(adapter_id, started_at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- adapter_reads — what Claude said about a source's entry, kept (migration 032)
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- An adapter pairs a source's dated entries with the parish's rules by name
+-- and time (worker/lib/pairing.mjs). Where that cannot say — a title with the
+-- day's saint in it, a service under the feast's name at another hour — it
+-- asks Claude Haiku (worker/lib/pairing-read.mjs), and the answer is kept here
+-- so it is asked ONCE: a cron run asking afresh every four hours could answer
+-- differently each time, and the card would flicker between two readings.
+--
+-- Keyed by the question's own text (its SHA-256), which names the entry's
+-- title and time and the rule's: an entry the calendar renames is a new
+-- question. `answer` is the JSON pairing.mjs reads. Nothing else reads this
+-- table, and deleting a row only means asking again.
+CREATE TABLE adapter_reads (
+  question_hash TEXT PRIMARY KEY,
+  adapter_id    TEXT NOT NULL,
+  question      TEXT NOT NULL,
+  answer        TEXT NOT NULL,
+  model         TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- pdf_source_overrides — where a PDF parish's file is, when it has moved
 -- ─────────────────────────────────────────────────────────────────────────
 --
