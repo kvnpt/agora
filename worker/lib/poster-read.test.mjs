@@ -81,6 +81,10 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   assert.match(SYSTEM_PROMPT, /"timetable" for a sign, board or notice giving the parish's regular services/);
   assert.match(SYSTEM_PROMPT, /Everything an image announces is one of two things, and an image can announce both/);
   assert.match(SYSTEM_PROMPT, /is listed in events only when the image says something about that date/);
+  // Haiku 5.5 read Red Hill's Saturday 12 December (Liturgy 8:15 am, Great
+  // Vespers 5 pm) as one event with "two times printed", the doors-and-start rule.
+  assert.match(SYSTEM_PROMPT, /Two services on the same date, each printed with its own name and time, are two entries/);
+  assert.match(SYSTEM_PROMPT, /two services, each with its own name, are two events/);
   assert.match(SYSTEM_PROMPT, /with its commemoration in feast and not in the title/);
   assert.match(SYSTEM_PROMPT, /"every 2nd and 4th Sunday" is \["second", "fourth"\]/);
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
