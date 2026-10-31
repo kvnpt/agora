@@ -171,13 +171,32 @@ test('normalising: shapes checked, odd values dropped with a note, the list capp
   });
   assert.strictEqual(r.kind, 'poster', 'a kind from before the two categories reads as a poster');
   assert.strictEqual(r.events.length, MAX_EVENTS);
-  assert.match(r.notes[1], /more than 20 events/);
+  assert.strictEqual(r.notes[1], `Read ${MAX_EVENTS} events, the most the reader takes from one poster: check it for any after 14 November.`);
   const e = r.events[0];
   assert.deepStrictEqual(
     [e.title, e.date, e.start_time, e.end_time, e.event_type, e.languages, e.location_override, e.year_printed],
     ['Talk on prayer', null, '07:30', null, 'other', ['Greek', 'English'], 'Hall', 1]);
   assert.match(e.read_notes[0].text, /2026-02-30.*not a date/);
   assert.strictEqual(normalizeRead({ kind: 'nonsense' }).kind, 'poster', 'whatever else the model says, the image announced something');
+});
+
+test('a month of daily services: all of it under the cap, and a word when the cap is reached', () => {
+  // Panagia Kamariani, Red Hill, December 2026: 1–24 December and Great
+  // Vespers on the 12th. At a cap of 20 the reader stopped at the 19th and
+  // nothing said so.
+  const day = (n) => `2026-12-${String(n).padStart(2, '0')}`;
+  const december = [...Array.from({ length: 24 }, (_, i) => ({ title: 'Divine Liturgy', date: day(i + 1), start_time: '07:30' })),
+    { title: 'Great Vespers', date: '2026-12-12', start_time: '17:00' }];
+  const all = normalizeRead({ kind: 'poster', events: december });
+  assert.strictEqual(all.events.length, 25);
+  assert.deepStrictEqual(all.notes, [], 'under the cap, nothing to say');
+
+  const full = normalizeRead({ kind: 'poster', events: Array.from({ length: MAX_EVENTS }, (_, i) => ({ title: 'x', date: day((i % 31) + 1) })) });
+  assert.strictEqual(full.events.length, MAX_EVENTS);
+  assert.match(full.notes[0], /^Read 40 events, the most the reader takes from one poster: check it for any after 31 December\.$/,
+    'told the cap, the reader stops at it: reaching it is the only sign of more');
+  const undated = normalizeRead({ kind: 'poster', events: Array.from({ length: MAX_EVENTS }, () => ({ title: 'x' })) });
+  assert.match(undated.notes[0], /check it for any it left out\.$/);
 });
 
 test('another parish’s poster: the name and place as printed, or nothing', () => {
