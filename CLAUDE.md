@@ -97,7 +97,9 @@ for them, are in the doc it links to — read that before changing the area.
   (`info_overrides`, tiers, pins) it replaced are retired.
 - An admin edit records its own provenance; a timetable shows ONE source line.
 - Adapters are a static registry; absence becomes a cancellation only under the
-  guards in `tombstone.mjs`.
+  guards in `tombstone.mjs`. A source's entry that IS a rule's occurrence lands
+  ON it (nothing, or an adapter override), never as an event beside it; the
+  model may pair or hold back, never cancel.
 
 **People** — [docs/people-and-access.md](docs/people-and-access.md)
 - Access says who you are; `admin_roles` says what you may do. Routes name a
