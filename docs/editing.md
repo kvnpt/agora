@@ -429,8 +429,9 @@ weekly. A sign's services are regular by being on the sign.
 wrong the other way: St Paul, Dandenong's weekday posters (31 Oct 2026), each
 headed only "Sunday", "Saturday" or "Thursday", gave Matins, the Liturgy and
 Vespers as events on the coming Sunday and Saturday. A card read off a poster
-offers **Held every Sunday? Put it on the timetable instead** (its date's
-weekday, or the one printed), which moves it into the services above, open to
+has a **Convert to weekly** pill at the end of Date's label line, where the
+date shows it is not a one-off (Kevin, 31 Oct 2026). It moves the card into
+the services above on its date's weekday (or the one printed), open to
 check, keeping its times, kind, words, languages, subtitle, place and Public /
 Parish only; its date and the doubts about it stay behind
 (`serviceFromCard`). Nothing is on the timetable until it is added from there,

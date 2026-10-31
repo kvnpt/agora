@@ -25,7 +25,7 @@
 //                  weekday_dandenong: St Paul, Dandenong's "Sunday" poster as it was read
 //                    on 31 Oct 2026 — Matins and the Liturgy as events on the coming
 //                    Sunday, Sunday School and Fellowship as weekly services: for
-//                    "Held every Sunday? Put it on the timetable instead"
+//                    the cards' "Convert to weekly"
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong, which is the read that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image

@@ -128,6 +128,7 @@
     return (cards[0] && String(cards[0].title || '').trim()) || 'Untitled event';
   }
 
+  const WEEK_WORDS = { every: 'Every', first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'Last' };
   const DAY_PLURALS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
 
   /**
@@ -401,6 +402,14 @@
     pill.setAttribute('aria-pressed', String(!scoped));
     pill.textContent = scoped ? 'Parish only' : 'Public';
   }
+  /**
+   * "Convert to weekly": the one-off read off a poster is a service held every
+   * week (makeRegular). At the end of Date's label line, where the date is what
+   * shows it is not a one-off; shown only where it can be done (refreshRegular).
+   */
+  const REPEAT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>';
+  const convertPillHTML = () =>
+    `<button type="button" class="convert-pill" data-act="regular" hidden>${REPEAT_ICON}<span>Convert to weekly</span></button>`;
   /** A proposed regular service's pill: as tapped, or by its kind (an Other is Parish only). */
   const svcScoped = (sv) => (sv.parish_scoped != null ? !!sv.parish_scoped : sv.event_type === 'other');
 
@@ -509,7 +518,7 @@
         <div class="ee-sign" data-ee="sign" aria-live="polite" hidden></div>
         <div class="ee-head" data-ee="head" hidden></div>
         <div class="ee-cards" data-ee="cards"></div>
-        <button type="button" class="ee-add" data-ee="add-card">+ Add another event</button>
+        <button type="button" class="pill-btn ee-add" data-ee="add-card">+ Add another event</button>
         <div class="ee-readiness" data-ee="readiness" aria-live="polite"></div>
         <div class="ee-message" data-ee="error" hidden></div>
         <div class="ee-actions">
@@ -755,14 +764,18 @@
             <div class="ee-notes"></div>
           </div>
           ${row('languages', 'Languages', `<input id="${fieldId(card, 'languages')}" data-ee-field="languages" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
-          ${row('date', 'Date', `<input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">`)}
+          <div class="ee-row" data-row="date">
+            <div class="ee-row-head"><label for="${fieldId(card, 'date')}">Date<span class="ee-mark" hidden>from poster</span></label>${convertPillHTML()}</div>
+            <input type="date" id="${fieldId(card, 'date')}" data-ee-field="date">
+            <div class="ee-notes"></div>
+          </div>
           <div class="ee-grid">
             ${row('start_time', 'Starts', timeInput('start_time', 'Starts', ''))}
             ${row('end_time', '<span data-ends-label>Ends</span>', timeInput('end_time', 'Ends', ' data-tf-optional data-tf-none="No end time" data-tf-near="start_time"'))}
           </div>
           <!-- One event over several days: the tick brings out its last day,
                and the end time above is the time it ends on that day. -->
-          <label class="ee-check ee-multiday"><input type="checkbox" data-ee-multiday> Over several days</label>
+          <label class="toggle-row ee-multiday"><span>Over several days</span><input type="checkbox" role="switch" class="toggle" data-ee-multiday></label>
           <div class="ee-multiday-row" hidden>
             ${row('end_date', 'Last day', `<input type="date" id="${fieldId(card, 'end_date')}" data-ee-field="end_date">`)}
           </div>
@@ -771,13 +784,10 @@
             '<div class="ee-hint">Another parish, or a place of its own with a pin — it shows on the map where it is held. The parish’s own address and pin are untouched.</div>')}
           <div class="ee-occ" hidden>
             <div class="ee-occ-what"></div>
-            <button type="button" class="ee-link" data-act="unlink">Make it a separate event instead</button>
-          </div>
-          <div class="ee-regular" hidden>
-            <button type="button" class="ee-link" data-act="regular"></button>
+            <button type="button" class="pill-btn" data-act="unlink">Make it a separate event instead</button>
           </div>
           <details class="ee-combine">
-            <summary>Also at other parishes, or replaces a service</summary>
+            <summary>Include other parishes…</summary>
             <div class="ee-section-title">Also appears at</div>
             <div class="ee-list" data-list="also"></div>
             <div class="ee-section-title">Replaces at those parishes</div>
@@ -789,7 +799,7 @@
             <input data-ee-field="ask_reason" placeholder="Why — the owner reads this" autocomplete="off">
           </div>
           <div class="ee-card-error" hidden></div>
-          <button type="button" class="ee-link ee-link-danger ee-remove">Remove this event</button>
+          <button type="button" class="pill-btn pill-btn-danger ee-remove">Remove this event</button>
         </div>`;
       card.els = {
         root: node,
@@ -812,8 +822,7 @@
         feastHint: node.querySelector('[data-hint="feast"]'),
         occ: node.querySelector('.ee-occ'),
         occWhat: node.querySelector('.ee-occ-what'),
-        regular: node.querySelector('.ee-regular'),
-        regularBtn: node.querySelector('[data-act="regular"]'),
+        regular: node.querySelector('[data-act="regular"]'),
         scope: node.querySelector('[data-ee-scope]'),
         inputs: {},
       };
@@ -857,7 +866,7 @@
       // and goes once it is left with nothing more to say (refreshPeek).
       card.els.body.addEventListener('focusout', () => setTimeout(() => refreshCard(card), 0));
       node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
-      card.els.regularBtn.addEventListener('click', () => makeRegular(card));
+      card.els.regular.addEventListener('click', () => makeRegular(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       node.querySelector('.ee-remove').addEventListener('click', () => removeCard(card));
       $('cards').appendChild(node);
@@ -1174,7 +1183,8 @@
     }
 
     /**
-     * "Held every Sunday? Put it on the timetable instead", on a card read off
+     * "Convert to weekly", a pill at the end of Date's label line (Kevin, 31
+     * Oct 2026: where somebody sees it is not a one-off), on a card read off
      * a poster: the other of the read's two categories, for when the reader
      * took a weekly service for a one-off. Not for a programme's date of a
      * service already on file (it says so above, and unlinks the other way),
@@ -1187,8 +1197,8 @@
         && !card.fields.also_at.length && !card.fields.replaces.length
         && card.publish.state !== 'done' && !!state.parish && may('schedule.create', state.parish.id);
       card.els.regular.hidden = !show;
-      if (show) card.els.regularBtn.textContent = `Held every ${DAY_NAMES[day]}? Put it on the timetable instead`;
-      card.els.regularBtn.disabled = !!(state.read && state.read.active) || state.publishing || state.signBusy;
+      if (show) card.els.regular.setAttribute('aria-label', `Held every ${DAY_NAMES[day]}: put it on the timetable instead`);
+      card.els.regular.disabled = !!(state.read && state.read.active) || state.publishing || state.signBusy;
     }
 
     function chipText(c) {
@@ -1742,6 +1752,10 @@
         const open = state.svcOpen.has(i);
         const weeks = String(sv.week_of_month || '').split(',');
         const field = (label, input) => `<label class="ee-svc-field"><span>${label}</span>${input}</label>`;
+        // The quarter-hours box (time-field.js) where it is loaded, as the cards have it.
+        const svcTime = (k, f, v, extra) => (root.AgoraTimeField && root.AgoraTimeField.dress
+          ? `<input type="hidden" data-sf="${f}" data-i="${k}" value="${esc(v || '')}" data-time-field data-tf-name="${f}"${extra}>`
+          : `<input type="time" data-sf="${f}" data-i="${k}" value="${esc(v || '')}">`);
         return `<div class="ee-svc is-new${open ? ' is-open' : ''}" data-i="${i}">
           <div class="ee-svc-top">
             <button type="button" class="ee-svc-sum" data-act="toggle" data-i="${i}" aria-expanded="${open}"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></button>
@@ -1752,16 +1766,14 @@
             ${field('Service', `<input data-sf="title" data-i="${i}" value="${esc(sv.title || '')}" placeholder="Divine Liturgy" autocomplete="off">`)}
             ${sv.feast != null ? field('Subtitle', `<input data-sf="feast" data-i="${i}" value="${esc(sv.feast)}" placeholder="Optional — shown under the name on every date" autocomplete="off">`) : ''}
             ${svcPlace(sv) ? `<div class="ee-svc-state">Held at ${esc(svcPlace(sv))}, as the event was.</div>` : ''}
-            <div class="ee-grid ee-grid-3">
-              ${field('Day', `<select data-sf="day_of_week" data-i="${i}">${DAY_PLURALS.map((d, k) => `<option value="${k}"${k === sv.day_of_week ? ' selected' : ''}>${d}</option>`).join('')}</select>`)}
-              ${field('Starts', `<input type="time" data-sf="start_time" data-i="${i}" value="${esc(sv.start_time || '')}">`)}
-              ${field('Ends', `<input type="time" data-sf="end_time" data-i="${i}" value="${esc(sv.end_time || '')}">`)}
+            <div class="ee-svc-field"><span class="ee-svc-head"><span>Kind</span>${scopePillHTML(svcScoped(sv), `data-act="scope" data-i="${i}"`)}</span><select data-sf="event_type" data-i="${i}" data-kind-picker="buttons">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select></div>
+            <div class="ee-svc-field"><span id="${uid}-day-${i}">Day</span><div class="ee-days" role="radiogroup" aria-labelledby="${uid}-day-${i}">${WEEKDAYS.map((d, k) => `<label class="ee-day"><input type="radio" name="${uid}-day-${i}" data-sf="day_of_week" data-i="${i}" value="${k}"${k === sv.day_of_week ? ' checked' : ''}><span>${d}</span></label>`).join('')}</div></div>
+            <div class="ee-grid" data-tf-scope>
+              ${field('Starts', svcTime(i, 'start_time', sv.start_time, ' data-tf-label="Starts"'))}
+              ${field('Ends', svcTime(i, 'end_time', sv.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"'))}
             </div>
-            <div class="ee-svc-weeks"><span>Weeks of the month</span>${S.WEEKS.map(w => `<label><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${weeks.includes(w) ? ' checked' : ''}> ${w === 'last' ? 'Last' : ({ first: '1st', second: '2nd', third: '3rd', fourth: '4th' })[w]}</label>`).join('')}<small>None ticked is every week.</small></div>
-            <div class="ee-grid">
-              ${field('Languages', `<input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off">`)}
-              <div class="ee-svc-field"><span class="ee-svc-head"><span>Kind</span>${scopePillHTML(svcScoped(sv), `data-act="scope" data-i="${i}"`)}</span><select data-sf="event_type" data-i="${i}" data-kind-picker="buttons">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select></div>
-            </div>
+            <div class="ee-svc-field"><span>Weeks of the month</span><div class="ee-days ee-svc-weeks" role="group" aria-label="Weeks of the month">${['every', ...S.WEEKS].map(w => `<label class="ee-day"><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${(w === 'every' ? !sv.week_of_month : weeks.includes(w)) ? ' checked' : ''}><span>${WEEK_WORDS[w]}</span></label>`).join('')}</div></div>
+            ${!sv.event_type || SERVICE_KINDS.has(sv.event_type) ? `<div class="ee-svc-field"><span>Languages</span><input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off"></div>` : ''}
             ${flyer ? `
             ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
             <div class="ee-grid">
@@ -1858,8 +1870,10 @@
       if (!sv) return;
       const f = inp.dataset.sf;
       if (f === 'week') {
+        // "Every week" is none of the others; ticking one of them is some weeks only.
         const box = inp.closest('.ee-svc-weeks');
-        const ticked = [...box.querySelectorAll('input:checked')].map(x => x.dataset.week);
+        const ticked = inp.dataset.week === 'every' ? []
+          : [...box.querySelectorAll('input:checked')].map(x => x.dataset.week).filter(w => w !== 'every');
         sv.week_of_month = ticked.length ? ticked.join(',') : null;
       } else if (f === 'day_of_week') sv.day_of_week = Number(inp.value);
       else if (f === 'languages') sv.languages = LANG_SPLIT(inp.value);

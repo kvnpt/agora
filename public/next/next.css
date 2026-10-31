@@ -1490,6 +1490,8 @@ body.dialog-open { overflow: hidden; }
   font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text); cursor: pointer;
 }
 .detail-edit-form .edit-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+/* A switch (event-editor.css .toggle-row): the words at the start of the line, not a small-caps label. */
+.detail-edit-form label.toggle-row { display: flex; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text); }
 /* A field's label with something of its own at the end of the line: Kind,
    and who sees it (rule-form.js scopeHTML). */
 .detail-edit-form .edit-row-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }

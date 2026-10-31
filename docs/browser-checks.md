@@ -311,7 +311,7 @@ mark it checked.
 **A one-off that is really weekly.** `weekday_dandenong` is St Paul,
 Dandenong's "Sunday" poster as it was read on 31 Oct 2026: Matins and the
 Liturgy as events on the coming Sunday, Sunday School and Fellowship as
-services. Open a card: **Held every Sunday? Put it on the timetable instead**
+services. Open a card: **Convert to weekly** beside Date
 (`[data-act="regular"]`) should move it under "Held regularly", open, with
 English and Arabic still ticked; with both moved the cards go and the bar
 says **Done**. **Add to timetable** should write the rule with the poster on
