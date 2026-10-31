@@ -52,7 +52,9 @@
    * A list of services as the editor sends it back, checked field by field.
    * The same shape normalizeRead gives: {title, day_of_week, start_time,
    * end_time, week_of_month, languages, event_type, description,
-   * effective_from, read_notes}.
+   * effective_from, read_notes} — and, for an event card a person moved up
+   * to the timetable (event-editor.js serviceFromCard), its subtitle and its
+   * place, which POST /api/admin/schedules checks when it is added.
    *
    * @returns {{ok: true, services: Array} | {ok: false, error: string, index: number}}
    */
@@ -72,6 +74,9 @@
       if (s.effective_from && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_from))) return bad('Write the start date like 2026-11-03.');
       if (s.effective_to && !/^\d{4}-\d{2}-\d{2}$/.test(String(s.effective_to))) return bad('Write the last date like 2026-12-24.');
       if (s.effective_from && s.effective_to && s.effective_to < s.effective_from) return bad('It ends before it starts.');
+      const lat = s.location_lat == null || s.location_lat === '' ? null : Number(s.location_lat);
+      const lng = s.location_lng == null || s.location_lng === '' ? null : Number(s.location_lng);
+      if ((lat != null && !Number.isFinite(lat)) || (lng != null && !Number.isFinite(lng))) return bad('A pin is two numbers.');
       // Keeps to the fixed list (languages.js), where /admin has it loaded.
       const langs = !Array.isArray(s.languages) ? []
         : languages ? languages.names(s.languages)
@@ -88,10 +93,16 @@
         languages: langs.length ? langs : null,
         event_type: s.event_type || 'liturgy',
         description: s.description ? String(s.description).trim().slice(0, 600) || null : null,
+        feast: s.feast ? String(s.feast).trim().slice(0, 200) || null : null,
         effective_from: s.effective_from || null,
         effective_to: s.effective_to || null,
         // Its Public / Parish only pill, once tapped; untapped, the kind decides (an Other is Parish only).
         parish_scoped: s.parish_scoped == null ? null : s.parish_scoped ? 1 : 0,
+        // Where, when not at the parish: the four fields of venues.mjs, as one.
+        location_parish_id: s.location_parish_id ? String(s.location_parish_id).trim().slice(0, 100) || null : null,
+        location_override: s.location_override ? String(s.location_override).trim().slice(0, 300) || null : null,
+        location_lat: lat,
+        location_lng: lng,
         read_notes: notes,
       });
     }
