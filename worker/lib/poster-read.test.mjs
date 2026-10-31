@@ -364,3 +364,25 @@ test('a service the poster does not call regular, with no date to put it on, sta
   const sign = normalizeRead({ kind: 'timetable', services: [sv], details: empty, events: [{ title: 'A', date: '2026-11-08' }] });
   assert.deepStrictEqual([sign.services.length, sign.services[0].read_notes], [1, []]);
 });
+
+test('a poster with no date, only a weekday over its times, is that weekday’s weekly schedule', () => {
+  // St Paul, Dandenong, 31 Oct 2026: "Sunday — Matins | 9:00am, Divine Liturgy
+  // (Bilingual: English & Arabic) | 10:15am, Sunday School | 11:30am,
+  // Fellowship | 12:00pm". Matins and the Liturgy were read as events on the
+  // coming Sunday, the other two as services.
+  const svc = (title, start_time, event_type, languages = []) => ({ title, every: 'Sunday, on a poster with no date', day: 'Sunday',
+    start_time, end_time: '', weeks: [], languages, event_type, description: '', starts: '', until: '', notes: [] });
+  const r = normalizeRead({
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [], events: [],
+    services: [svc('Matins', '09:00', 'prayer'), svc('Divine Liturgy', '10:15', 'liturgy', ['English', 'Arabic']),
+      svc('Sunday School', '11:30', 'other'), svc('Fellowship', '12:00', 'social')],
+    details: { address: '', phone: '', email: '', website: '' },
+  });
+  assert.deepStrictEqual(r.services.map(s => [s.title, s.day_of_week, s.start_time, s.read_notes.length]),
+    [['Matins', 0, '09:00', 0], ['Divine Liturgy', 0, '10:15', 0], ['Sunday School', 0, '11:30', 0], ['Fellowship', 0, '12:00', 0]]);
+  assert.deepStrictEqual(r.events, []);
+  assert.match(SYSTEM_PROMPT, /A poster that prints no date anywhere, only a weekday over its times/);
+  assert.match(SYSTEM_PROMPT, /"Sunday, on a poster with no date"/);
+  // A feast day's poster prints its date, so its "Sat" is still that occasion's.
+  assert.match(SYSTEM_PROMPT, /"Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion/);
+});

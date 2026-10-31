@@ -210,7 +210,7 @@ Everything an image announces is one of two things, and an image can announce bo
 1. A REGULAR SERVICE: something the parish holds on a weekday every week, or on some weeks of every month — the Sunday Liturgy, Saturday Vespers, a choir practice every Tuesday, a Bible study on the second Wednesday. It belongs on the parish's timetable, in services. Some are regular only for a while ("every Friday in August", "Wednesdays in Lent from 18 February", "until Christmas"): give its first and last dates.
 2. A ONE-OFF EVENT: something on a particular date — a feast-day Liturgy, a talk, a fundraiser, a camp. It belongs in events. One event that runs over several days (a festival from Friday to Sunday, a retreat) is ONE entry with its last day in end_date; separate meetings on different dates are one entry per date.
 A regular service on one particular date is listed in events only when the image says something about that date: the saint or feast it commemorates, a different time, a guest, that it is cancelled or moved. The site already shows the rest.
-What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week.
+What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week. A poster that prints no date anywhere, only a weekday over its times ("Sunday: Matins 9:00am, Divine Liturgy 10:15am, Sunday School 11:30am"), is the parish's weekly schedule for that day: every item on it is a regular service.
 
 What to return:
 - kind: what the image is. "timetable" for a sign, board or notice giving the parish's regular services, such as the board out the front of the church, with or without its contact details; "poster" for any poster, flyer, programme, newsletter or bulletin; "not_an_event" when the image announces no event and no regular service.
@@ -237,7 +237,7 @@ For each event:
 
 For each regular service:
 - title: the service or activity as printed, in English and normal capitalisation ("Divine Liturgy", "Orthros and Divine Liturgy", "Church Choir Practice").
-- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date.
+- every: the words on the image that say it is held regularly, in English ("every Tuesday", "Sundays", "2nd and 4th Sundays"). A sign of the parish's services says it of all of them: "listed on the parish's timetable". If you cannot point to such words, it is not a regular service: put it in events, on its date. The one exception is a poster that prints no date anywhere: its weekday is every week's, and every is that weekday followed by ", on a poster with no date" ("Sunday, on a poster with no date").
 - day: the weekday it is held on.
 - start_time, end_time: 24-hour HH:MM; end_time empty when none is printed ("8.00 - 10.00 am" is "08:00" to "10:00").
 - weeks: only when it is held on some weeks of the month and not others: "every 2nd and 4th Sunday" is ["second", "fourth"]. Empty for every week.
@@ -593,12 +593,15 @@ export function normalizeRead(doc) {
 
 /**
  * Words that say a service repeats: "every Tuesday", "Sundays", "2nd and 4th
- * Sundays", "of the month". A weekday on its own ("Sat", "Sunday") does not.
+ * Sundays", "of the month". A weekday on its own ("Sat", "Sunday") does not,
+ * except on a poster that prints no date anywhere ("Sunday, on a poster with
+ * no date"): St Paul, Dandenong's weekday posters (31 Oct 2026) are its
+ * weekly schedule, one weekday each.
  * Not asked (a read from before `every`) is not a "no".
  */
 function saysRegular(every) {
   if (every === undefined) return true;
-  return /\b(every|each|weekly|fortnightly|monthly|daily|nightly|timetable)\b|\b(mon|tues|wednes|thurs|fri|satur|sun)days\b|\bof (the|each|every) month\b|\b(1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)\b/i
+  return /\b(every|each|weekly|fortnightly|monthly|daily|nightly|timetable)\b|\bno date\b|\b(mon|tues|wednes|thurs|fri|satur|sun)days\b|\bof (the|each|every) month\b|\b(1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)\b/i
     .test(String(every || ''));
 }
 
