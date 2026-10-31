@@ -423,7 +423,11 @@ no such words is dated from the poster's own occasion — its dated events, all
 within a week — on the nearest day of its weekday (the Saturday before a
 Sunday), and becomes an event with a note saying so. With no occasion to date
 it from it stays a service, with a note that the poster does not say it is
-weekly. A sign's services are regular by being on the sign.
+weekly. A sign's services are regular by being on the sign. A poster that
+prints no date anywhere, only a weekday over its times, is the parish's weekly
+schedule for that day (Kevin, 31 Oct 2026, St Paul, Dandenong's "Sunday"
+poster): the reader gives its `every` as "Sunday, on a poster with no date".
+A feast day's poster prints its date, so its "Sat" is still that occasion's.
 
 The kind decides one thing: how a regular service is added. A sign's name the
 sign as the timetable's source ("Church signage"). A poster's carry the poster
