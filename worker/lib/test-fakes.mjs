@@ -32,17 +32,26 @@ export function fakeCache() {
 // event, inside a line, inside a UTF-8 sequence.
 
 /** A Messages API event stream carrying `text` in several deltas. */
-export function haikuStream(text, { stop = 'end_turn', pieces = 7, extra = [] } = {}) {
+export function haikuStream(text, { stop = 'end_turn', pieces = 7, extra = [], thinking = false } = {}) {
   const ev = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
   const size = Math.ceil(text.length / pieces);
-  let out = ev('message_start', { message: { model: 'claude-haiku-4-5', usage: { input_tokens: 1800 } } })
-    + ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
+  // Haiku 5.5 thinks first by default: a block whose text is omitted, then its
+  // signature, then the answer in the next block.
+  const at = thinking ? 1 : 0;
+  let out = ev('message_start', { message: { model: 'claude-haiku-5-5', usage: { input_tokens: 1800 } } });
+  if (thinking) {
+    out += ev('content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } })
+      + ev('content_block_delta', { index: 0, delta: { type: 'thinking_delta', thinking: '' } })
+      + ev('content_block_delta', { index: 0, delta: { type: 'signature_delta', signature: 'c2lnbmF0dXJl' } })
+      + ev('content_block_stop', { index: 0 });
+  }
+  out += ev('content_block_start', { index: at, content_block: { type: 'text', text: '' } })
     + ev('ping', {});
   for (let i = 0; i < text.length; i += size) {
-    out += ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: text.slice(i, i + size) } });
+    out += ev('content_block_delta', { index: at, delta: { type: 'text_delta', text: text.slice(i, i + size) } });
   }
   for (const x of extra) out += x;
-  out += ev('content_block_stop', { index: 0 })
+  out += ev('content_block_stop', { index: at })
     + ev('message_delta', { delta: { stop_reason: stop }, usage: { output_tokens: 412 } })
     + ev('message_stop', {});
   return out;

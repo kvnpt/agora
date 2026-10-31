@@ -124,8 +124,8 @@ for them, are in the doc it links to — read that before changing the area.
 - The seed is a dev fixture, not production; never make it authoritative.
   `d1/seed-parishes.sql` is generated — `npm run gen:seed`.
 - A Secrets Store binding is an object; read it with `readSecret()`.
-  `ANTHROPIC_API_KEY` (the poster reader, Claude Haiku 4.5; the acronym
-  suggestion, Claude Haiku 5.5) is one, and optional.
+  `ANTHROPIC_API_KEY` (the poster reader and the acronym suggestion, both
+  Claude Haiku 5.5) is one, and optional.
 
 ## Where things are written down
 

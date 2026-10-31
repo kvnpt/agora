@@ -263,7 +263,7 @@ should never exist for a round trip beside it.
 **A poster is read into the draft, never into the feed.** Dropped, pasted or
 chosen, the image is shrunk in the browser to 2048px, stored once in R2 under a
 key of its own (one object for every event published from it, like a bulletin
-range), and read by Claude Haiku 4.5 (`worker/lib/poster-read.mjs`). The read
+range), and read by Claude Haiku 5.5 (`worker/lib/poster-read.mjs`). The read
 streams back as Server-Sent Events and the cards fill as it is written; a
 poster with several events becomes several cards, each collapsed to its row as
 the feed will draw it (time and day, the kind's roundel, title, subtitle) so

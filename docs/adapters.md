@@ -479,9 +479,9 @@ What changed from the sketch above, and why:
   cards in the form a person is already looking at, saved as `draft_events`
   rather than as an `admin_proposals` row — that table is for asks an owner
   decides, and these are the editor's own unfinished work.
-- **Haiku 4.5**, by the owner's choice: fastest to start filling the form, a
-  fraction of a cent a poster. The model is one constant in
-  `worker/lib/poster-read.mjs`.
+- **Haiku 5.5**, by the owner's choice (Haiku 4.5 until 31 Oct 2026, when a
+  month's programme came back with five times wrong): a fraction of a cent a
+  poster. The model is one constant in `worker/lib/poster-read.mjs`.
 - **base64, not a URL.** The poster is stored first and is public under
   /posters/, but Claude cannot reach `wrangler dev`, and the Worker holds the
   bytes anyway; Buffer's base64 is native code.

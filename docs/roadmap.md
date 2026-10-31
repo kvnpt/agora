@@ -23,7 +23,7 @@ Many parishes publish one image a month (Crows Nest's bulletin is the worked
 example in `docs/adapters.md`). Reading it by hand is the slowest step left.
 
 **The first door is built:** the add-event editor reads a dropped poster with
-Claude Haiku 4.5 into draft events (docs/editing.md). So is most of the
+Claude Haiku 5.5 into draft events (docs/editing.md). So is most of the
 bulletin's other half: a programme's dated services are matched to their
 occurrences and publish as overrides (the day's saint, a moved time, the
 poster), and a photo of a church sign proposes the weekly services and the

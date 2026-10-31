@@ -225,7 +225,7 @@ test('a read streams into the cards: empty fields filled, the rest appended, a t
 
   const sent = fetchImpl.calls[0];
   assert.equal(sent.url, 'https://api.anthropic.com/v1/messages');
-  assert.equal(sent.body.model, 'claude-haiku-4-5');
+  assert.equal(sent.body.model, 'claude-haiku-5-5');
   assert.match(sent.body.messages[0].content[1].text, /Its regular services:\n- /);
 
   const kinds = frames.map(x => x.event);
