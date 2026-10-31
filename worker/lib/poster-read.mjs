@@ -2,7 +2,7 @@
 //
 // The WhatsApp ingestor did this on the VM, and went with it (docs/history.md).
 // This is the same read with a different door: an editor drops a poster on the
-// add-event editor, the Worker sends it to Claude Haiku 4.5, and the answer
+// add-event editor, the Worker sends it to Claude Haiku 5.5, and the answer
 // streams back into the editor's cards as it is written. Nothing here writes to
 // the feed. What a model read off a photograph is a draft until a person has
 // looked at it and pressed Publish (docs/editing.md).
@@ -11,17 +11,25 @@
 // code (docs/adapters.md, "Constraints that will bite"); the Messages API is
 // one POST and an event stream, and the SSE framing is public/shared/sse.js.
 //
-// HAIKU 4.5, by the owner's choice: the fastest to start filling the form and
-// a fraction of a cent a poster. What that asks of the request:
-//   * no `output_config.effort` — Haiku 4.5 rejects it;
-//   * no `thinking` — off is the lowest latency, and a poster is transcription;
-//   * structured output (`output_config.format`) does work, with streaming, so
-//     the answer is JSON in a fixed shape and nothing has to be fished out of
+// HAIKU 5.5, by the owner's choice (31 Oct 2026). It was Haiku 4.5, the
+// fastest to start filling the form; but Panagia Kamariani's December
+// programme came back with five of 25 times wrong (7:30 am read as 7:30 pm
+// four times, 8:15 as 8:45), and Haiku 5.5 is the cheaper of the two (about
+// 0.3c a poster, against 1.7c). What that asks of the request:
+//   * thinking is on by default, and stays on: a moment's thought is what a
+//     dense programme of small times needs. The answer can open with thinking
+//     blocks, and only `text_delta`s are the JSON, so they are ignored;
+//   * `output_config.effort` says how much: 'medium', its default, said
+//     explicitly so a change of default does not change the read;
+//   * no `temperature`, `top_p` or `top_k` — Haiku 5.5 rejects them — and no
+//     assistant prefill;
+//   * no `fallbacks`: Haiku 5.5 has no server-side fallback, so a refusal is
+//     the `refusal` stop reason, said to the editor as such;
+//   * structured output (`output_config.format`) works with streaming, so the
+//     answer is JSON in a fixed shape and nothing has to be fished out of
 //     prose. The schema is a constant: a new schema is compiled once and then
 //     cached, and one built per request would pay for that every time;
-//   * Haiku reads an image at up to 1568px on the long side. The editor sends
-//     2048px, the size it stores for people to look at, and Anthropic scales
-//     it down for reading.
+//   * the editor sends 2048px, the size it stores for people to look at.
 //
 // BASE64, not an image URL. The poster is in R2 and served publicly under
 // /posters/, so Claude could fetch it by URL — but not from `wrangler dev`,
@@ -39,15 +47,17 @@ const { createSseParser } = sse;
 const { EVENT_TYPES, KINDS, isEventType } = eventTypes;
 const { isLocalDate } = checks;
 
-export const POSTER_MODEL = 'claude-haiku-4-5';
+export const POSTER_MODEL = 'claude-haiku-5-5';
 // A month's programme of daily services and a few more: Panagia Kamariani's
 // December (Red Hill) lists 25, and at 20 it lost its last five days. An event
-// is about 110 tokens of answer and the reader writes about 160 a second (that
+// is about 110 tokens of answer and Haiku 4.5 wrote about 160 a second (that
 // read: 20 events, 2,129 tokens, 13 seconds), so 40 is about half a minute,
-// well inside READ_TIMEOUT_MS and max_tokens.
+// inside READ_TIMEOUT_MS and max_tokens with room for thinking.
 export const MAX_EVENTS = 40;
 export const MAX_SERVICES = 20;
-const READ_TIMEOUT_MS = 60000;
+// Thinking comes before the first field; a month's programme of 40 events is
+// a few thousand tokens after it.
+const READ_TIMEOUT_MS = 90000;
 
 /**
  * What the image IS — not what it announces, which is always one or both of
@@ -287,7 +297,7 @@ export function buildPosterRequest({ data, mediaType, context }) {
     max_tokens: 16000,
     stream: true,
     system: SYSTEM_PROMPT,
-    output_config: { format: { type: 'json_schema', schema: POSTER_SCHEMA } },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: POSTER_SCHEMA } },
     messages: [{
       role: 'user',
       content: [

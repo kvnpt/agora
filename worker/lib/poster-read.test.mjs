@@ -28,13 +28,15 @@ const image = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 const read = (fetchImpl, emit) => readPoster(
   { apiKey: 'test-key', image, mediaType: 'image/jpeg', context: 'ctx', fetchImpl }, emit);
 
-test('the request: Haiku 4.5, structured output, the image as base64 — and nothing Haiku refuses', () => {
+test('the request: Haiku 5.5, medium effort, structured output, the image as base64 — and nothing Haiku refuses', () => {
   const body = buildPosterRequest({ data: 'QUJD', mediaType: 'image/webp', context: 'ctx' });
-  assert.strictEqual(body.model, 'claude-haiku-4-5');
+  assert.strictEqual(body.model, 'claude-haiku-5-5');
   assert.strictEqual(body.stream, true);
-  assert.deepStrictEqual(body.output_config, { format: { type: 'json_schema', schema: POSTER_SCHEMA } });
-  assert.ok(!('effort' in body.output_config), 'Haiku 4.5 rejects effort');
-  assert.ok(!('thinking' in body) && !('fallbacks' in body));
+  assert.deepStrictEqual(body.output_config,
+    { effort: 'medium', format: { type: 'json_schema', schema: POSTER_SCHEMA } });
+  assert.ok(!('thinking' in body), 'thinking is on by default: not turned off, not given a budget (a 400)');
+  for (const k of ['temperature', 'top_p', 'top_k', 'fallbacks']) assert.ok(!(k in body), `Haiku 5.5 rejects ${k}`);
+  assert.strictEqual(body.messages[body.messages.length - 1].role, 'user', 'no prefill');
   assert.deepStrictEqual(body.messages[0].content[0],
     { type: 'image', source: { type: 'base64', media_type: 'image/webp', data: 'QUJD' } });
   assert.strictEqual(body.system, SYSTEM_PROMPT);
@@ -95,6 +97,16 @@ test('the context names the parish, its day, and the services already on the sit
     [{ day_of_week: 0, start_time: '18:00', end_time: '19:30', title: 'Divine Liturgy', week_of_month: 'second,fourth' }]),
   /- Sundays 18:00–19:30 Divine Liturgy \(second and fourth of the month\)/);
   assert.match(posterContext(PARISH, '2026-10-08', []), /- none on file/);
+});
+
+test('an answer that opens with thinking: only the text is the JSON', async () => {
+  const plain = await read(fakeFetch(haikuStream(JSON.stringify(ONE))));
+  const seen = [];
+  const thought = await read(fakeFetch(haikuStream(JSON.stringify(ONE), { thinking: true })),
+    (event, payload) => seen.push({ event, ...payload }));
+  assert.strictEqual(thought.ok, true);
+  assert.deepStrictEqual(thought.read, plain.read);
+  assert.deepStrictEqual(seen[0], { event: 'kind', kind: 'poster' });
 });
 
 test('a streamed answer arrives as fields, then items, then the normalised read', async () => {
