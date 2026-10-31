@@ -40,7 +40,12 @@ const { EVENT_TYPES, KINDS, isEventType } = eventTypes;
 const { isLocalDate } = checks;
 
 export const POSTER_MODEL = 'claude-haiku-4-5';
-export const MAX_EVENTS = 20;
+// A month's programme of daily services and a few more: Panagia Kamariani's
+// December (Red Hill) lists 25, and at 20 it lost its last five days. An event
+// is about 110 tokens of answer and the reader writes about 160 a second (that
+// read: 20 events, 2,129 tokens, 13 seconds), so 40 is about half a minute,
+// well inside READ_TIMEOUT_MS and max_tokens.
+export const MAX_EVENTS = 40;
 export const MAX_SERVICES = 20;
 const READ_TIMEOUT_MS = 60000;
 
@@ -528,14 +533,20 @@ export function normalizeRead(doc) {
   const raw = Array.isArray(d.events) ? d.events : [];
   const rawServices = Array.isArray(d.services) ? d.services : [];
   const notes = (Array.isArray(d.notes) ? d.notes : []).map(n => clip(clean(n, 2000), 500)).filter(Boolean).slice(0, 5);
-  if (raw.length > MAX_EVENTS) {
-    notes.push(`The poster lists more than ${MAX_EVENTS} events; only the first ${MAX_EVENTS} were read.`);
-  }
   const other = d.other_parish && typeof d.other_parish === 'object' ? d.other_parish : null;
   const otherName = other && clean(other.name, 200);
   const language = clean(d.written_in, 40);
   const kind = readKind(d.kind);
   const events = raw.slice(0, MAX_EVENTS).map(normalizeEvent);
+  // The reader is told the most it may list, so a poster with more comes back
+  // with exactly that many and nothing to say the rest were left out: Red
+  // Hill's December came back as 20 with no word of 20–24 December. Reaching
+  // the cap is the only sign there may be more, so it is said whenever it is.
+  if (raw.length >= MAX_EVENTS) {
+    const last = events.map(e => e.date).filter(Boolean).sort().pop();
+    notes.push(`Read ${MAX_EVENTS} events, the most the reader takes from one poster: `
+      + `check it for any ${last ? `after ${dayMonth(last)}` : 'it left out'}.`);
+  }
   const services = [];
   // A day and a time off a poster for one occasion — "Vespers 7pm Sat" under
   // "Sunday 8 November" — is that occasion's, not every week's. The reader
@@ -584,6 +595,11 @@ function saysRegular(every) {
 const addDays = (date, n) => {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+};
+/** '2026-12-19' -> '19 December'. */
+const dayMonth = (date) => {
+  const [, m, d] = date.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]}`;
 };
 const dowOf = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
 
