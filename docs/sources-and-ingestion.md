@@ -121,8 +121,15 @@ photograph of a piece of paper.
 
 **Absence is a signal, under guards.** `infer.mjs` proposes recurrence rules from
 scraped occurrences, and only when a rule reproduces the observed dates exactly —
-every occurrence explained and every gap explained. `reconcile.mjs` then compares
-projected rules against what a source published, and `tombstone.mjs` decides
-whether a gap may become a cancellation. The asymmetry drives every choice in
+every occurrence explained and every gap explained. `reconcile.mjs` then pairs
+projected rules with what a source published, by service and time; a paired
+entry lands ON its occurrence (nothing, or an `adapter:<id>` override carrying
+its hour or its saint), never as an event beside it, and only what is no regular
+service is written to `events` (`pairing.mjs`). `tombstone.mjs` decides whether
+an unpaired occurrence may become a cancellation. Claude Haiku is asked only
+what the rules cannot say — the day's saint in a title, and the rare entry that
+might be a moved service — once per question (`adapter_reads`); its answer can
+pair or hold back, never cancel, and an unsure one becomes a suggestion to
+whoever keeps the parish. The asymmetry drives every choice in
 those files: a missed cancellation leaves a stale card the next scrape fixes; a
 false one keeps someone away from a service that is running.
