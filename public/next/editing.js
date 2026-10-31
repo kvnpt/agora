@@ -743,20 +743,19 @@
       ${parishes.length > 1 ? `<div class="edit-row"><label>Parish</label><select ${f('parish_id')}>${parishes.map(p =>
         `<option value="${esc(p.id)}"${p.id === e.parish_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       <div class="edit-row" data-ev-langrow${isService(e.event_type) ? '' : ' hidden'}><label>Languages</label><input ${f('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"><p class="rf-error" data-ev-langerr role="alert" hidden></p></div>
-      ${series ? '' : `<div class="edit-row"><label>Date</label>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
+      ${series ? '' : `<div class="edit-row"><div class="edit-row-head"><label>Date</label>${RF().daysHTML(EV, multi)}</div>${DF('date', start.date, 'Pick a date', { attr: EV, required: true })}</div>`}
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', start.time, ' data-tf-label="Starts"')}</div>
         <div><label data-ev-endlabel>${multi ? 'Ends, last day' : 'Ends'}</label>${time('end_time', end ? end.time : '', ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
       </div>
-      ${series ? '' : `<div class="edit-row edit-checks"><label class="edit-check"><input type="checkbox" ${f('multi')}${multi ? ' checked' : ''}> Over several days</label></div>
-      <div class="edit-row" data-ev-lastday${multi ? '' : ' hidden'}><label>Last day</label>${DF('last', multi && end ? end.date : '', 'Pick the last day', { attr: EV, required: true })}</div>`}
+      ${series ? '' : `<div class="edit-row" data-ev-lastday${multi ? '' : ' hidden'}><label>Last day</label>${DF('last', multi && end ? end.date : '', 'Pick the last day', { attr: EV, required: true })}</div>`}
       <div class="edit-row"><label>Where</label>
         <div class="vp-mount" data-venue-mount></div>
         ${VENUE.map(k => `<input type="hidden" ${f(k)} value="${esc(e[k] == null ? '' : e[k])}">`).join('')}
       </div>
       <div class="edit-row"><label>Poster</label><div data-ev-poster></div></div>
-      ${live ? `<div class="edit-row edit-checks">
-        <label class="edit-check"><input type="checkbox" ${f('hide_live')}${e.hide_live ? ' checked' : ''}> No live badge</label>
+      ${live ? `<div class="edit-row">
+        <label class="toggle-row"><span>No live badge</span><input type="checkbox" role="switch" class="toggle" ${f('hide_live')}${e.hide_live ? ' checked' : ''}></label>
       </div>` : ''}`;
   }
   const VENUE = ['location_override', 'location_parish_id', 'location_lat', 'location_lng'];
@@ -850,6 +849,7 @@
 
     RF().wireDates(form, host.today());
     const multiBox = q('multi');
+    RF().wireDays(form, multiBox);
     if (multiBox) multiBox.addEventListener('change', () => {
       form.querySelector('[data-ev-lastday]').hidden = !multiBox.checked;
       form.querySelector('[data-ev-endlabel]').textContent = multiBox.checked ? 'Ends, last day' : 'Ends';

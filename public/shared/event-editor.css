@@ -41,8 +41,8 @@
 }
 .ee-suggest span { flex: 1 1 220px; }
 .ee-btn-small {
-  min-height: 34px;
-  padding: 6px 12px;
+  min-height: 36px;
+  padding: 7px 14px;
   font-size: 13px;
   color: var(--text);
   background: var(--bg, var(--surface, #fff));
@@ -214,16 +214,33 @@
 
 /* Who sees it: on, Public; tapped off, Parish only. The languages' chip, on
    and off, at the end of Kind's label line, here and in the page's forms
-   (rule-form.js scopeHTML). */
+   (rule-form.js scopeHTML). Date's Single day / Multi day is one too
+   (.days-pill), off until tapped. */
 .scope-pill {
-  flex: none; min-height: 32px; padding: 4px 14px;
-  font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; white-space: nowrap;
+  flex: none; min-height: 28px; padding: 3px 12px;
+  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; letter-spacing: 0; text-transform: none; white-space: nowrap;
   color: var(--text-2, var(--ee-muted)); background: transparent;
   border: 1px solid var(--border, #d1d5db); border-radius: 999px; cursor: pointer;
 }
 .scope-pill.on { color: #fff; background: var(--accent, #2b6cb0); border-color: var(--accent, #2b6cb0); }
 .scope-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
 .ee-row-head, .ee-svc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* More than one pill on a line (Date's Weekly and Single day): together at its end. */
+.ee-row-pills { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+/* "Weekly", at the end of Date's label line on a card read off a
+   poster (event-editor.js refreshRegular): the scope pill's size, in the
+   accent, with a repeat mark — an action, where the scope pill is a state. */
+.convert-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: none; min-height: 28px; padding: 3px 12px 3px 10px;
+  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; white-space: nowrap;
+  color: var(--accent-text, var(--accent, #2b6cb0)); background: color-mix(in srgb, var(--accent, #2b6cb0) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #2b6cb0) 45%, transparent); border-radius: 999px; cursor: pointer;
+}
+.convert-pill svg { flex: none; width: 14px; height: 14px; }
+.convert-pill:disabled { opacity: .45; cursor: default; }
+.convert-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.ee-card.is-peek .convert-pill { display: none; }
 .ee-row-head { margin-bottom: 6px; }
 .ee-row .ee-row-head > label { margin-bottom: 0; }
 /* Shut, the chip says it; the pill is for the open card. */
@@ -294,9 +311,22 @@
 .ee-note-read { color: var(--ee-muted); font-style: italic; }
 .ee-note-read::before { content: 'Reader: '; font-style: normal; font-weight: 600; }
 
-/* ── The combine ── */
+/* ── The combine ──
+   Its summary is a button the width of the card (Kevin, 31 Oct 2026: the
+   text links at the foot of the card should be buttons), with its chevron. */
 .ee-combine { margin: 4px 0 12px; }
-.ee-combine summary { cursor: pointer; font-size: 13px; color: var(--accent-text, var(--accent)); padding: 4px 0 8px; }
+.ee-combine > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 40px; padding: 8px 16px;
+  font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--text);
+  list-style: none; cursor: pointer;
+  border: 1px solid var(--border, #d1d5db); border-radius: 999px;
+}
+.ee-combine > summary::-webkit-details-marker { display: none; }
+.ee-combine > summary::after { content: '▾'; flex: none; font-size: 12px; color: var(--ee-muted); }
+.ee-combine[open] > summary { margin-bottom: 10px; }
+.ee-combine[open] > summary::after { content: '▴'; }
+.ee-combine > summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
 .ee-section-title {
   margin: 8px 0 6px;
   font-size: 10px;
@@ -363,17 +393,21 @@
 }
 .ee-link:hover { text-decoration: underline; }
 .ee-link-danger { color: var(--danger); }
-.ee-add {
-  align-self: flex-start;
-  padding: 6px 2px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--accent-text, var(--accent));
-  background: none;
-  border: 0;
-  cursor: pointer;
+/* A button that is a pill, as the page's forms have them (next.css .rf-btn):
+   the card's foot (Remove this event, the combine), + Add another event, and
+   a programme's "Make it a separate event instead". */
+.pill-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 8px 16px;
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1.25; text-align: center;
+  color: var(--text); background: transparent;
+  border: 1px solid var(--border, #d1d5db); border-radius: 999px; cursor: pointer;
 }
-.ee-add:disabled { opacity: .5; cursor: default; }
+.pill-btn:disabled { opacity: .45; cursor: default; }
+.pill-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.pill-btn-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.ee-add { align-self: flex-start; }
+.ee-remove { margin-top: 2px; }
 .ee-readiness { font-size: 12.5px; color: var(--ee-muted); min-height: 0; }
 .ee-readiness:empty { display: none; }
 .ee-message { padding: 9px 12px; font-size: 12.5px; line-height: 1.45; border-radius: 10px; }
@@ -402,14 +436,14 @@
   flex: 0 1 auto;
   min-width: 0;
   min-height: 40px;
-  padding: 9px 12px;
+  padding: 9px 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font: inherit;
   font-size: 14px;
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: 999px;
   cursor: pointer;
 }
 .ee-btn:disabled { opacity: .45; cursor: default; }
@@ -478,7 +512,7 @@
 .ee-btn-add { flex: 0 0 auto; color: #fff; background: var(--accent); border-color: var(--accent); }
 .ee-svc-form { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .ee-svc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.ee-svc-field > span, .ee-svc-weeks > span {
+.ee-svc-field > span:not(.ee-svc-head), .ee-svc-head > span:first-child {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -487,10 +521,22 @@
 }
 .ee-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 420px) { .ee-grid-3 { grid-template-columns: 1fr 1fr; } .ee-grid-3 > :first-child { grid-column: 1 / -1; } }
-.ee-svc-weeks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13.5px; }
-.ee-svc-weeks > span { flex: 1 0 100%; }
-.ee-svc-weeks label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
-.ee-svc-weeks small { flex: 1 0 100%; font-size: 12px; color: var(--ee-muted); }
+/* A proposed service's day, one of seven to tap (the rule form's row of days,
+   next.css .rf-days, with one to pick), and its weeks of the month, six. */
+.ee-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.ee-days.ee-svc-weeks { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.ee-day { position: relative; cursor: pointer; }
+.ee .ee-day input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; opacity: 0; cursor: pointer; }
+.ee-day span {
+  display: flex; align-items: center; justify-content: center; min-height: 40px;
+  font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text);
+  border: 1px solid var(--border, #d1d5db); border-radius: 10px;
+}
+.ee-day input:checked + span {
+  color: #fff; background: var(--accent, #2b6cb0); border-color: var(--accent, #2b6cb0); font-weight: 600;
+}
+.ee-day input:focus-visible + span { box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+
 .ee-missing { font-size: 13px; }
 .ee-missing summary { cursor: pointer; color: var(--accent-text, var(--accent)); padding: 2px 0 6px; }
 .ee-missing .ee-svc-line { display: block; padding: 3px 0; color: var(--ee-muted); }
@@ -524,20 +570,34 @@
 .ee.ee-sign-only .ee-readiness,
 .ee.ee-sign-only [data-ee="publish"] { display: none; }
 
-/* One event over several days: the tick under Starts / Ends, and the last day
-   it brings out. The end time above is the time it ends on that day. */
-.ee-multiday {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary, var(--ee-muted));
-  cursor: pointer;
+/* One event over several days is Date's Single day / Multi day pill (a
+   .scope-pill, event-editor.js daysPillHTML; Kevin, 31 Oct 2026), and the
+   last day it brings out under Starts / Ends. */
+
+/* A switch: the words, and the switch at the end of the line. A real checkbox
+   (role="switch") under it, so every reader of .checked keeps working; the
+   page's Edit event uses it for No live badge (editing.js). */
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 40px; font-size: 15px; font-weight: 500; color: var(--text); cursor: pointer;
 }
-.ee-multiday[hidden] { display: none; }
-.ee-multiday input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent, #2b6cb0); }
+.toggle-row[hidden] { display: none; }
+/* Said as input.toggle[type=checkbox] to outweigh the editor's own checkbox
+   rule (.ee input[type="checkbox"], above). */
+input.toggle[type="checkbox"] {
+  -webkit-appearance: none; appearance: none; position: relative; flex: none;
+  width: 46px; height: 28px; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--border, #d1d5db); transition: background .15s;
+}
+.toggle::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .15s;
+}
+input.toggle[type="checkbox"]:checked { background: var(--accent, #2b6cb0); }
+.toggle:checked::after { transform: translateX(18px); }
+.toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.ee input.toggle:focus:not(:focus-visible) { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .toggle, .toggle::after { transition: none; } }
 
 /* ── Where it is held: the venue picker (public/shared/venue-picker.js) ──
    Used in the add-event card here and in the app's rule and event forms, so

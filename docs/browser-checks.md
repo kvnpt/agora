@@ -308,6 +308,15 @@ should write nine overrides with `patch_feast` and the poster and no row in
 `events`. Doonside's sign agrees with the seed's timetable, and offers only to
 mark it checked.
 
+**A one-off that is really weekly.** `weekday_dandenong` is St Paul,
+Dandenong's "Sunday" poster as it was read on 31 Oct 2026: Matins and the
+Liturgy as events on the coming Sunday, Sunday School and Fellowship as
+services. Open a card: **Weekly** beside Date
+(`[data-act="regular"]`) should move it under "Held regularly", open, with
+English and Arabic still ticked; with both moved the cards go and the bar
+says **Done**. **Add to timetable** should write the rule with the poster on
+it.
+
 **The move.** With `elsewhere`, drop a poster at St Nicholas, Punchbowl (a seed
 parish): the suggestion names St Elias, Wollongong and the venue holds its
 address. **Move it there** should leave the picker on St Elias, the suggestion

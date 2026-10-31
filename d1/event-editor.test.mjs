@@ -121,3 +121,37 @@ test('a collapsed card is drawn from its feed row’s parts, and what is missing
     { time: '6:00', ampm: 'pm', day: 'Fri 13 Nov – Sun 15 Nov', title: '', feast: '' });
   assert.deepStrictEqual(E.summaryParts({}, { thisYear: 2026 }), { time: '', ampm: '', day: '', title: '', feast: '' });
 });
+
+test('a card read as a one-off becomes the weekly service it is (the Weekly pill)', () => {
+  // St Paul, Dandenong's Sunday poster, 31 Oct 2026: "Divine Liturgy
+  // (Bilingual: English & Arabic) | 10:15am", read as Sunday 1 November's.
+  const card = { title: 'Divine Liturgy', feast: '', date: '2026-11-01', end_date: '', start_time: '10:15', end_time: '',
+    event_type: 'liturgy', description: '', languages: 'English, Arabic', location_override: '', also_at: [], replaces: [],
+    ask_reason: '', occurrence: '', location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null };
+  const notes = [
+    { field: 'date', text: 'Printed as “Sunday”, not every Sunday; dated from the poster’s 1 Nov.' },
+    { field: 'languages', text: 'Bilingual on the poster.' },
+  ];
+  assert.deepStrictEqual(E.serviceFromCard(card, { printed_weekday: 'Sunday', year_printed: 0 }, notes), {
+    title: 'Divine Liturgy', feast: null, day_of_week: 0, start_time: '10:15', end_time: null, week_of_month: null,
+    languages: ['English', 'Arabic'], event_type: 'liturgy', description: null, effective_from: null, effective_to: null,
+    parish_scoped: null, location_parish_id: null, location_override: null, location_lat: null, location_lng: null,
+    read_notes: [{ field: 'languages', text: 'Bilingual on the poster.' }],
+  }, 'its date and the doubt about it stay behind');
+  // Its subtitle, place and pill go with it.
+  const hall = E.serviceFromCard({ ...card, title: 'Bible Study', feast: ' John 1 ', date: '2026-11-05', start_time: '18:45',
+    end_time: '20:00', event_type: 'talk', languages: '', location_override: 'Church hall', location_lat: '-37.98',
+    location_lng: '145.21', parish_scoped: 1 }, {}, []);
+  assert.deepStrictEqual([hall.day_of_week, hall.feast, hall.end_time, hall.languages, hall.location_override,
+    hall.location_lat, hall.location_lng, hall.parish_scoped], [4, 'John 1', '20:00', null, 'Church hall', -37.98, 145.21, 1]);
+});
+
+test('which weekday a card is held on: its date, else the weekday printed', () => {
+  assert.strictEqual(E.cardWeekday({ date: '2026-10-31' }, {}), 6);
+  assert.strictEqual(E.cardWeekday({ date: '' }, { printed_weekday: 'Thursday' }), 4);
+  assert.strictEqual(E.cardWeekday({ date: '' }, { printed_weekday: 'thu' }), 4);
+  assert.strictEqual(E.cardWeekday({ date: '' }, { printed_weekday: null }), null);
+  // Without a weekday or a start time there is no rule to make.
+  assert.strictEqual(E.serviceFromCard({ date: '', start_time: '09:00' }, {}, []), null);
+  assert.strictEqual(E.serviceFromCard({ date: '2026-11-01', start_time: '' }, {}, []), null);
+});

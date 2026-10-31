@@ -429,6 +429,23 @@ schedule for that day (Kevin, 31 Oct 2026, St Paul, Dandenong's "Sunday"
 poster): the reader gives its `every` as "Sunday, on a poster with no date".
 A feast day's poster prints its date, so its "Sat" is still that occasion's.
 
+**A person can move a card up to the timetable.** The reader can still get
+it wrong the other way: before the rule above, St Paul, Dandenong's weekday
+posters (31 Oct 2026), each headed only "Sunday", "Saturday" or "Thursday",
+gave Matins, the Liturgy and Vespers as events on the coming Sunday and
+Saturday. A card read off a poster has a **Weekly** pill (a repeat mark;
+"Held every Sunday: put it on the timetable instead" to a screen reader) at
+the end of Date's label line, beside Single day, where the date shows it is
+not a one-off (Kevin, 31 Oct 2026; it read "Convert to weekly" until the two
+pills had to share the line). It moves the card into
+the services above on its date's weekday (or the one printed), open to
+check, keeping its times, kind, words, languages, subtitle, place and Public /
+Parish only; its date and the doubts about it stay behind
+(`serviceFromCard`). Nothing is on the timetable until it is added from there,
+with the poster, like any service the reader gave. Not offered on a
+programme's date of a service on file, a run of days, a combine, or to someone
+who cannot add to the timetable.
+
 The kind decides one thing: how a regular service is added. A sign's name the
 sign as the timetable's source ("Church signage"). A poster's carry the poster
 as the rule's own and their description, with the period it gives (**From** /
@@ -438,10 +455,11 @@ A service already on file is offered **Put this poster on it**. The editor
 shows the services' review above the event cards, headed "Held regularly — for
 the timetable", and the dialog is "Add from the poster" when there are both.
 
-**One event can run over several days.** A card has **Multi-day** under its
-times: ticked, a **Last day** appears, and the end time is the time it ends on
+**One event can run over several days.** Date's label line ends in a
+**Single day** pill (Edit event's too): tapped, it reads **Multi day**, a
+**Last day** appears under the times, and the end time is the time it ends on
 that day (`draft_events.end_date`, migration 022; `localSpanToUtc` takes it).
-Without the tick an end earlier than the start is still "after midnight". The
+On Single day an end earlier than the start is still "after midnight". The
 reader gives `end_date` for one event over several days — a festival Friday to
 Sunday is ONE entry — and never matches one to a Sunday's service. Published
 it is only a later `end_utc`; the page calls an event multi-day when it ends on a
