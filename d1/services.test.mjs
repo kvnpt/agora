@@ -99,6 +99,13 @@ test('serviceMatches is the same classification, not a looser one', () => {
   const vesperalLiturgy = { title: 'Vesperal Liturgy - Nativity', event_type: 'liturgy' };
   assert.ok(S.serviceMatches('liturgy', vesperalLiturgy));
   assert.ok(!S.serviceMatches('vespers', vesperalLiturgy), 'a Vesperal Liturgy is not Vespers');
+  // Save a feast, which is what the day is: a row typed Feast is one, whatever
+  // it is called, and still the service it is called (Kevin, 1 Nov 2026).
+  const greatVespers = { title: 'Great Vespers', feast: 'Archangels Michael and Gabriel', event_type: 'feast' };
+  assert.ok(S.serviceMatches('feast', greatVespers));
+  assert.ok(S.serviceMatches('vespers', greatVespers));
+  assert.ok(S.serviceMatches('feast', { title: 'Feast of the Dormition', event_type: 'prayer' }), 'by its title too');
+  assert.ok(!S.serviceMatches('feast', { title: 'Great Vespers', event_type: 'prayer' }));
   // No filter means everything passes.
   assert.ok(S.serviceMatches(null, { title: 'Bookshop' }));
 });

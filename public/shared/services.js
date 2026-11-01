@@ -39,9 +39,12 @@
     { slug: 'confession', label: 'Confession', plural: 'Confessions', aliases: ['confessions'],
       title: /\bconfession/i },
     // The only entry that is a type first. A feast is what the day is, not
-    // what the service is called, so its rows are titled after the feast.
+    // what the service is called: a row typed Feast is one, whatever its
+    // title (`anyTitle`). Since rows took the saint as a subtitle, a feast's
+    // service is titled as a service — Ryde's Great Vespers on the
+    // Archangels — and is that service too (Kevin, 1 Nov 2026: /smg/feast).
     { slug: 'feast', label: 'Feast', plural: 'Feasts', aliases: ['feasts', 'feast-day'],
-      title: /\bfeast\b/i, types: ['feast'] },
+      title: /\bfeast\b/i, types: ['feast'], anyTitle: true },
   ];
 
   // ── Days of the week ─────────────────────────────────────────────────
@@ -266,7 +269,10 @@
     const slug = typeof service === 'string' ? norm(service) : (service && service.slug);
     if (!slug) return true;
     const resolved = resolveService(slug);
-    return !!resolved && serviceOf(row) === resolved.slug;
+    if (!resolved) return false;
+    // A feast's Vespers is the Vespers, and the feast's too.
+    if (resolved.anyTitle && row && resolved.types.includes(row.event_type)) return true;
+    return serviceOf(row) === resolved.slug;
   }
 
   /** Label for a slug, for a chip or a pill. Falls back to the slug itself. */

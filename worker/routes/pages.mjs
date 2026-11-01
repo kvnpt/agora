@@ -298,7 +298,8 @@ async function parishPage(env, url, page, now, found = null) {
  * day). The page reaches the same verdict (next.js openWords), from the same
  * findAcross (search-words.js):
  *   - one parish by its name, and nothing elsewhere: its card, noindex;
- *   - all that is found at one parish: its first, as at /smmp/disco;
+ *   - all that is found at one parish: its first, as at /smmp/disco; and
+ *     words that name a parish ask the rest of them of it (/smg-feast);
  *   - several places: the words, where they were found and the first poster
  *     (the page builds the card of them), and the places for the lite
  *     version's list;
@@ -355,7 +356,7 @@ async function wordsPage(env, url, page, now) {
   if (v.verdict === 'parish' || v.verdict === 'match') {
     const parish = await env.DB.prepare(`SELECT ${PARISH_PAGE_COLS} FROM parishes WHERE id = ?`).bind(v.pid).first();
     if (!parish) return missing(url);
-    return parishPage(env, url, page, now, { parish, words: v.verdict === 'match' ? words : [] });
+    return parishPage(env, url, page, now, { parish, words: v.verdict === 'match' ? v.words || words : [] });
   }
   const poster = v.found.find(r => r.poster_path && r._at) || v.found.find(r => r.poster_path);
   return {

@@ -318,6 +318,22 @@ test('words that name no parish are what the site\'s search finds: one parish, o
   }
 });
 
+test('a feast beside a parish is a service typed Feast, whatever it is called; /sgr-feast is /sgr/feast', async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, feast, start_utc, end_utc, event_type, status, mutation_type)
+      VALUES (?, 'manual', 'Great Vespers', 'Archangels Michael and Gabriel', '2026-10-03T07:00:00Z', '2026-10-03T08:30:00Z', 'feast', 'approved', 'headless')`)
+    .run(PARISH);
+  for (const p of ['/sgr/feast', '/sgr-feast', '/feast-sgr']) {
+    const { res, html } = await get(p);
+    assert.equal(res.status, 200, p);
+    assert.match(title(html), /^Great Vespers — Saturday 3 October, 5pm · St George Cathedral, Redfern/, p);
+  }
+  // Still the Vespers it is called.
+  assert.match(title((await get('/sgr/vespers')).html), /^Great Vespers — Saturday 3 October/);
+  // A parish's name alone asks nothing more of it.
+  assert.match(title((await get('/sgr-cathedral')).html), /^St George Cathedral, Redfern — /);
+});
+
 test('a painted Today: no count, Later today only under Happening now, This evening, Tomorrow, and the evening divided off', async () => {
   const today = async (setup) => {
     const { raw, get } = fresh();
