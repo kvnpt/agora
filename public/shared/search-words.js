@@ -112,7 +112,8 @@
    *
    *   { verdict: 'none' }                  nothing: the search, with the words in it
    *   { verdict: 'parish', pid }           one parish by its name, and nothing found elsewhere
-   *   { verdict: 'match', pid }            all that was found is at one parish: /smmp/disco
+   *   { verdict: 'match', pid, words? }    all that was found is at one parish: /smmp/disco;
+   *                                        `words` when only some are asked of it (/smg-feast: "feast")
    *   { verdict: 'list', ids, named, found } several places: a collection of them
    *
    * A parish is found as the search box finds one: every word in its names,
@@ -125,6 +126,11 @@
    *
    * One parish by name with something elsewhere is a list, not the parish
    * (Kevin, 28 Oct 2026: /village is the monastery and the bus beside it).
+   *
+   * Words that name a parish ask the rest of themselves of it, as the box
+   * does when "smg feast" lists Ryde's feasts under Ryde: /smg-feast is
+   * /smg/feast (Kevin, 1 Nov 2026). The rest is a kind, a day or a
+   * language; a word that is only text is the parish's name or nothing.
    */
   function findAcross({ parishes = [], rows = [], Q, hayOf = () => '', parishLang = () => false }) {
     if (!asks(Q)) return { verdict: 'none' };
@@ -133,10 +139,17 @@
       const hay = norm(`${p.name || ''} ${p.full_name || ''} ${p.acronym || ''} ${p.address || ''} ${hayOf(p) || ''}`);
       return words.every(w => hasWord(hay, w)) && (!Q.lang || parishLang(p.id, Q.lang));
     }).map(p => p.id);
-    const found = rows.filter(r => answers(r, Q, { ...(r._at || {}), parishLang: (lang) => parishLang(r.parish_id, lang) }));
+    const rest = named.length && (Q.kind || Q.days || Q.lang) ? { ...Q, text: [] } : null;
+    const at = (r) => ({ ...(r._at || {}), parishLang: (lang) => parishLang(r.parish_id, lang) });
+    const asked = rows.filter(r => rest && named.includes(r.parish_id) && answers(r, rest, at(r)));
+    const found = rows.filter(r => asked.includes(r) || answers(r, Q, at(r)));
     const hosts = [...new Set(found.map(r => r.parish_id))];
     if (!named.length && !found.length) return { verdict: 'none' };
-    if (named.length === 1 && hosts.every(id => id === named[0])) return { verdict: 'parish', pid: named[0] };
+    if (named.length === 1 && hosts.every(id => id === named[0])) {
+      // The words not in its name are what is asked of it: "feast", "english".
+      if (asked.length) return { verdict: 'match', pid: named[0], words: Q.raw.filter(w => !words.includes(w)) };
+      return { verdict: 'parish', pid: named[0] };
+    }
     if (!named.length && hosts.length === 1) return { verdict: 'match', pid: hosts[0] };
     return { verdict: 'list', ids: [...new Set([...named, ...hosts])], named, found };
   }

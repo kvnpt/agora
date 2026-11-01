@@ -117,6 +117,9 @@ the two. `/talk`, `/socials` and the older `/social-youth` are read as people ty
 them and never written (`KIND_ALIASES`).
 `/liturgy`, `/feast` and `/bible-study` are service slugs as well
 (services.js), and across the page they read as the kind (`kindOfService`).
+Beside a parish (`/smg/feast`) they are the service, and a feast is what the
+day is: a row typed Feast is one whatever it is called (Great Vespers, the
+Archangels its subtitle), and still the service it is called (`anyTitle`).
 
 **Beside one parish, a filter is about that parish, not the page.** A link
 (`/sgr/talk`, `/sgr/wed/liturgy`, `/sgr/evening`, `/sgr/en`) opens the first that
@@ -150,7 +153,9 @@ whatever else the link says (its jurisdiction, region, kind or day), and one
 verdict (`findAcross` in `search-words.js`) decides what opens, on the page
 (`openWords`) and in the Worker's preview (`wordsPage` in `routes/pages.mjs`).
 One parish by its name, with nothing found elsewhere, is its card. All that is
-found at one parish is its first, over that parish's card, as at `/smmp/disco`.
+found at one parish is its first, over that parish's card, as at `/smmp/disco`;
+and words that name a parish ask the rest of themselves of it, as the box does
+with "smg feast", so `/smg-feast` is `/smg/feast` (Kevin, 1 Nov 2026).
 Several places are a Search card of them, by distance, the parish named beside
 the rest ("list both", 28 Oct): its timetables keep the lines that answer and a
 named parish's whole week, and its link is the words'. Nothing is the search box

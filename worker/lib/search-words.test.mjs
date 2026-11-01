@@ -99,6 +99,15 @@ test('words that name no parish find one parish, a match at one, a list, or noth
   assert.deepEqual(find('resurrection'), { verdict: 'parish', pid: 3 });
   assert.equal(find('america').verdict, 'none');
   assert.deepEqual(find('america', { hayOf: (p) => p.id === 3 ? 'Orthodox Church in America' : '' }), { verdict: 'parish', pid: 3 });
+  // Words that name a parish ask the rest of themselves of it, as the box
+  // does: /smg-feast is /smg/feast (Kevin, 1 Nov 2026).
+  const vespers = { title: 'Great Vespers', feast: 'Archangels Michael and Gabriel', event_type: 'feast', parish_id: 2, _at: at('2026-11-07', '18:00') };
+  assert.deepEqual(W.findAcross({ parishes, rows: [...rows, vespers], Q: W.parseQuery('smmp feast', today) }),
+    { verdict: 'match', pid: 2, words: ['feast'] });
+  assert.deepEqual(W.findAcross({ parishes, rows: [...rows, vespers], Q: W.parseQuery('smmp saturday', today) }),
+    { verdict: 'match', pid: 2, words: ['saturday'] }, 'a day');
+  assert.deepEqual(W.findAcross({ parishes, rows, Q: W.parseQuery('smmp feast', today) }), { verdict: 'parish', pid: 2 }, 'none there: the parish');
+  assert.deepEqual(find('smmp'), { verdict: 'parish', pid: 2 }, 'its name alone asks nothing more');
   // Parishes and rows are what the link's other words left in.
   assert.deepEqual(W.findAcross({ parishes: [oca], rows: rows.filter(r => r.parish_id === 3), Q: W.parseQuery('vigil', today) }), { verdict: 'match', pid: 3 });
 });

@@ -2730,7 +2730,8 @@
   // A search of the site, read as the box reads it (search-words.js), under
   // whatever else the link says: its jurisdiction, its region, a kind or a
   // day. One parish by its name is its card; what is found at one parish
-  // only, the first of it over that parish's card, as at /smmp/disco; several
+  // only, the first of it over that parish's card, as at /smmp/disco, and
+  // words that name a parish ask the rest of it (/smg-feast); several
   // places, a card of them, the parish named and the others alike (Kevin,
   // 28 Oct 2026); nothing, the search box with the words in it. The Worker's preview reaches the same verdict
   // (routes/pages.mjs wordsPage). A Parish only row is its parish's own
@@ -2760,7 +2761,7 @@
     if (stack.length !== depth) return;
     const from = route.from;
     if (v.verdict === 'parish') return openParish(v.pid, { entry, from, focus: null });
-    if (v.verdict === 'match') return openMatch(v.pid, focusOf({ ...f, words: route.words }), { entry, from });
+    if (v.verdict === 'match') return openMatch(v.pid, focusOf({ ...f, words: v.words || route.words }), { entry, from });
     if (v.verdict === 'none') return openSearch(phrase);
     const cf = { ...f, words: route.words };
     openCollection({
