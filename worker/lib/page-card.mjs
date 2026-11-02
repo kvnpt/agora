@@ -152,9 +152,10 @@ function eventRowHTML(e, here, { now = false, same = false, tint = null } = {}) 
   // Held here for another parish, it names its host.
   const away = e.parish_id !== here ? `<span class="esub">${lang}<span>${here && e.location_parish_id === here ? 'Hosted by ' : ''}${esc(e.parish_name || '')}</span></span>`
     : lang ? `<span class="esub">${lang}</span>` : '';
+  // No roundel: its kind is a word under its time where its name does not say it (next.js eventRow).
+  const kind = eventTypes.rowWord(e.event_type);
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}"${tint ? ` style="--pc:${esc(tint)}"` : ''}>
-      <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}</span>
-      ${roundel(e.event_type)}
+      <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}${kind ? `<span class="ekind" style="color:${eventTypes.kindColors(e.event_type, false).fg}">${esc(kind)}</span>` : ''}</span>
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
         ${away}
         ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}

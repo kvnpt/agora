@@ -29,3 +29,14 @@ test('a kind nobody knows wears "other"', () => {
   assert.deepEqual(kindColors('vespers'), kindColors('other'));
   assert.deepEqual(kindColors(undefined, true), kindColors('other', true));
 });
+
+test('a row says its kind only where its name does not', () => {
+  const { rowWord } = require('../public/shared/event-types.js');
+  // "Divine Liturgy" and "Vespers" say what they are; "Other" says nothing.
+  for (const k of ['liturgy', 'prayer', 'other', undefined, 'vespers']) assert.equal(rowWord(k), '', String(k));
+  // A feast's Great Vespers, a social's Paniyiri: the word is the only place it is said.
+  assert.equal(rowWord('feast'), 'Feast');
+  assert.equal(rowWord('talk'), 'Talk');
+  assert.equal(rowWord('youth'), 'Youth');
+  assert.equal(rowWord('social'), 'Social');
+});

@@ -48,6 +48,16 @@
     return { bg, fg };
   }
 
+  // The kinds a row of the Calendar, Today or search says in a word under its
+  // time. A liturgy's or a prayer's name already says what it is ("Divine
+  // Liturgy", "Vespers"), and "Other" says nothing; a feast's "Great Vespers"
+  // or a social's "Paniyiri" does not. Said in words, not a colour: Feast and
+  // Talk, Prayer and Youth are too near in colour to tell apart on their own,
+  // and a row's colour is its jurisdiction's.
+  const ROW_WORD_KINDS = ['feast', 'talk', 'youth', 'social'];
+  /** 'feast' -> 'Feast'; '' for a kind its row does not say. */
+  const rowWord = (id) => (ROW_WORD_KINDS.includes(id) ? eventTypeLabel(id) : '');
+
   /** Is this one of the seven? */
   const isEventType = (v) => EVENT_TYPES.includes(v);
 
@@ -57,7 +67,7 @@
     return k ? k.label : String(id || '');
   }
 
-  const api = { KINDS, EVENT_TYPES, isEventType, eventTypeLabel, kindColors };
+  const api = { KINDS, EVENT_TYPES, isEventType, eventTypeLabel, kindColors, rowWord };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventTypes = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
