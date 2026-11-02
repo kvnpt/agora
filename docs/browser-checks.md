@@ -255,7 +255,7 @@ npx wrangler d1 execute agora --local --command \
 ## The add-event editor and the poster reader
 
 The editor (`public/shared/event-editor.js`) is the same component on the page
-(`.new-event-modal`, behind the dotted **Add +** under a card's Coming up) and in
+(`.new-event-modal`, behind the dotted **Add +** under a card's Calendar) and in
 /admin (`#add-event-editor`, behind **Events** → + Event). Its controls carry
 `data-ee` hooks — `parish` (the picker; /admin has no select of its own any
 more), `suggest` and `move-suggested` (whose poster it is, and the one-tap

@@ -1166,31 +1166,36 @@
   // What the places in view are called: monasteries under /monasteries.
   const placeNoun = (n) => S.f.monasteries ? (n === 1 ? 'monastery' : 'monasteries') : (n === 1 ? 'parish' : 'parishes');
   /**
-   * The parishes in view, named for what they are: "64 parishes in Sydney",
-   * and the filters as a link's preview says them (shared/link-words.js):
-   * "Orthodox youth groups in Sydney", "Antiochian Orthodox Liturgies in
-   * English near you". Their card wears these, and so does a list saved
-   * from it.
+   * A card of the page's parishes (In view, From link), named for what they
+   * are. Asking something, it is called that, as a link's preview says it
+   * (shared/link-words.js): "Orthodox youth groups in Sydney", and of a few
+   * parishes by name, short: "Feasts at SMG and SMK" (Kevin, 2 Nov 2026).
+   * Asking nothing, it is "64 parishes in Sydney". Under that, the parishes'
+   * own short names while they are few enough to read. A list saved from it
+   * is named for what it holds, not how many.
    */
-  function viewWords(n) {
-    const place = !S.place ? '' : S.place === 'Near you' ? 'near you' : `in ${S.place}`;
-    const r = window.AgoraUrlState.classifyPath(pathOf(viewSegs()), { today: todayKey() });
-    const loc = regionOf(S.f);
-    const list = S.f.listId && listById(S.f.listId);
-    const named = !list && S.f.parishIds ? [...S.f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : null;
-    let what = window.AgoraLinkWords.headingOf(r, { loc, named: named && named.length <= 3 ? named : null });
+  const NAMES_SHOWN = 4;
+  const namesOf = (ps) => ps.slice(0, NAMES_SHOWN).map(p => p.name).join(' · ') + (ps.length > NAMES_SHOWN ? ` · and ${ps.length - NAMES_SHOWN} more` : '');
+  function viewWords(ids, f = S.f, juris = S.juris, { here = true } = {}) {
+    const W = window.AgoraLinkWords, n = ids.length;
+    // Where the map is, for the parishes it shows; not for a link's, which may be anywhere.
+    const place = !here || !S.place ? '' : S.place === 'Near you' ? 'near you' : `in ${S.place}`;
+    const r = window.AgoraUrlState.classifyPath(pathOf(segsFor({ juris, f })), { today: todayKey() });
+    const loc = regionOf(f);
+    const list = f.listId && listById(f.listId);
+    const named = f.parishIds ? [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : null;
+    const asks = asksWhat(f) || !!f.lang || !!juris || f.monasteries;
+    let what = W.headingOf(r, { loc });
     if (list) what += ` from ${list.name}`;
-    else if (named && named.length > 3) what += ` at ${named.length} parishes`;
-    // Saved as a list, it is named for what it holds, not how many.
-    let name = window.AgoraLinkWords.listNameOf(r, { loc, place: S.place });
+    else if (named) what += ` at ${named.length} parishes`;
+    if (!loc && place) what += ` ${place}`;
+    let name = W.listNameOf(r, { loc, place: S.place });
     if (list) name += ` from ${list.name}`;
     else if (named) name = named.map(p => p.acronym || p.name).join(' + ');
-    return {
-      title: `${n} ${placeNoun(n)}${place ? ` ${place}` : ''}`,
-      // A region or the parishes named say where already.
-      blurb: loc || named ? what : [what, place].filter(Boolean).join(' '),
-      name,
-    };
+    const count = `${n} ${placeNoun(n)}${place ? ` ${place}` : ''}`;
+    const title = named && named.length <= W.FEW ? W.shortHeadingOf(r, named) : asks || named ? what : count;
+    const ps = ids.map(id => S.byId.get(id)).filter(Boolean);
+    return { title, blurb: n && n <= NAMES_SHOWN ? namesOf(ps) : title === count ? what : count, name };
   }
   function pillLogo(p) {
     if (p.logo_path) return `<span class="pill-logo avatar-logo"><img src="${esc(p.logo_path)}" alt="" loading="lazy" fetchpriority="low"></span>`;
@@ -1349,7 +1354,7 @@
     // A card's focus (/sgr/talk) lights its next and dims what does not answer it.
     const dim = focus && !rowAnswers(e, focus, false);
     // `same`: a row after the first of its time slot, whose time the slot has said.
-    // `tint`: the colour of its own stretch of a Coming up's rule.
+    // `tint`: the colour of its own stretch of a Calendar's rule.
     return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}"${tint ? ` style="--pc:${tint}"` : ''}>
         <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
         ${roundel(e.event_type)}
@@ -1433,7 +1438,7 @@
     // once tomorrow is here already.
     return `<header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}</header>
       ${body}
-      <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Coming up' : 'Tomorrow'} ${I.chev}</button>`;
+      <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
@@ -1456,7 +1461,13 @@
   /** A shared collection with this page's look, and its filters from its link. */
   function fromShared(c, look) {
     const route = readPath(c.path);
-    return byFilters({ ...c, ...look, juris: route.juris, f: route.f });
+    // Its card's own Filters ask again of every parish (pick), and asked
+    // something else than its link it is called that: Sunday Liturgy in
+    // English is "Orthodox Liturgies on Sundays in English".
+    const own = whatPath(route.f);
+    const say = (ids, f, juris) => (whatPath(f) === own ? { title: c.title, blurb: c.blurb, name: c.title } : viewWords(ids, f, juris, { here: false }));
+    const pick = (f, juris) => S.parishes.filter(p => parishMatches(p, f, juris)).map(p => p.id);
+    return byFilters({ ...c, ...look, juris: route.juris, f: route.f, say, pick });
   }
   // The look of each — a tint and its sign, or a jurisdiction's colour — is
   // collections.js's, which the Worker's first paint of a card reads too.
@@ -1560,13 +1571,40 @@
       <div class="hlist">${rows}</div>` : '';
   }
   /** Your other lists, bookmarks and saved views, as rows: only once there is one. */
+  /** What a filter set asks of a parish's services, and no more: what, which language, when. */
+  const whatOf = (f) => ({ kind: f.kind || null, kindSub: f.kindSub || null, service: f.service || null, day: f.day == null ? null : f.day,
+    dayGroup: f.dayGroup || null, part: f.part || null, lang: f.lang || null, langStrict: !!f.langStrict });
+  /** A list's filters as it keeps them: a path ('/feast'), '/' for none. */
+  const whatPath = (f) => pathOf(segsFor({ f: { ...blankFilters(), ...whatOf(f) } }));
+  /**
+   * A list's card says who is in it, by their short names; its title is the
+   * list's own name, and the filters it was saved with are its pills
+   * (Kevin, 2 Nov 2026).
+   */
+  const listWords = (fav) => (ids) => {
+    const ps = ids.map(id => S.byId.get(id)).filter(Boolean);
+    return { blurb: ps.length ? namesOf(ps) : fav ? 'Parishes you starred.' : 'A list you made.' };
+  };
+  function listColl(l) {
+    const what = l.filters && l.filters !== '/' ? whatOf(readPath(l.filters).f) : {};
+    const f = { ...what, parishIds: new Set(l.ids), listId: l.id };
+    // A list of parishes is a link: /sgr+snb, /sgr+snb/feast.
+    return withWords({
+      id: 'list-' + l.id, listId: l.id, title: l.name, kicker: 'Your list', ...(l.fav ? FAV_LOOK : LIST_LOOK), ids: l.ids,
+      say: listWords(l.fav), ...(l.ids.length ? byFilters({ ids: l.ids, f }) : { f: { ...blankFilters(), ...f } }),
+    });
+  }
+  /** A list's card's Filters, kept with the list (saved.js cleanList), so it opens with them. */
+  function setListFilters(id, f) {
+    const ls = userLists();
+    const l = ls.find(x => x.id === id);
+    if (!l) return;
+    l.filters = whatPath(f);
+    writeLS(LISTS, ls);
+    renderLists();
+  }
   function renderLists() {
-    const ls = allLists().map(l => ({
-      id: 'list-' + l.id, listId: l.id, title: l.name, kicker: 'Your list',
-      ...(l.fav ? FAV_LOOK : LIST_LOOK), ids: l.ids, blurb: l.about || (l.fav ? 'Parishes you starred.' : 'A list you made.'),
-      // A list of parishes is a link: /sgr+snb.
-      ...(l.ids.length ? byFilters({ ids: l.ids, f: { parishIds: new Set(l.ids), listId: l.id } }) : {}),
-    }));
+    const ls = allLists().map(listColl);
     remember(ls);
     renderFavs();
     const row = (attr, look, title, sub) => `<button class="hrow" type="button" ${attr}><span ${lookAttrs(look, 'hic')}>${look.glyph}</span>
@@ -1665,7 +1703,7 @@
     return line.charAt(0).toUpperCase() + line.slice(1);
   }
 
-  // ── Days: the stream's, and a parish's Coming up ───────────────────────
+  // ── Days: the stream's, and a parish's Calendar ───────────────────────
   //
   // The app's dated list: a quiet header for each day with its own link, the
   // morning's services and events, then the evening's under the moon, each in
@@ -1697,14 +1735,20 @@
   const shortDate = (k) => { const d = new Date(k + 'T00:00:00Z'); return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
   const CHECK = '<svg viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32"/></svg>';
   const CAL = '<svg viewBox="0 0 256 256" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M208 32h-24v-8a8 8 0 0 0-16 0v8H88v-8a8 8 0 0 0-16 0v8H48a16 16 0 0 0-16 16v160a16 16 0 0 0 16 16h160a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16M72 48v8a8 8 0 0 0 16 0v-8h80v8a8 8 0 0 0 16 0v-8h24v32H48V48Zm136 160H48V96h160z"/></svg>';
-  /** Where a list of days starts: today, or a date picked from the calendar. */
+  /** Where a list of days starts: today, or a date picked from the calendar (Date). */
   function datePickHTML(scope, from, beside = '') {
     const t = todayKey();
     return `<div class="date-pick">
-        <span class="date-btn"><button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Pick a date'}</span></button><input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date"></span>
+        <span class="date-btn"><button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}" aria-label="${from ? esc(`From ${shortDate(from)}: pick another date`) : 'Pick a date to start from'}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Date'}</span></button><input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date"></span>
         ${from ? `<button class="fpill" type="button" data-date-clear="${scope}">Today</button>` : ''}${beside}
       </div>`;
   }
+  /**
+   * A card's Calendar (it was Coming up; Kevin, 2 Nov 2026): the title, and
+   * beside it Date and, on a card that has them, Filters. `acts` is
+   * re-drawn with the days (refreshComingUp), since it says the date.
+   */
+  const calHeadHTML = (acts) => `<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts">${acts}</div></div>`;
   /** A day's own link, copied with a tap, as the app's day headers have. */
   const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
   /**
@@ -1741,28 +1785,53 @@
    * Coming up from `k` (a date from a link, or tomorrow). One parish in view
    * is that parish's card. The page has no feed of its own.
    */
-  function openInView({ at = null, from = null } = {}) {
-    const ids = viewParishes().map(p => p.id);
+  function openInView({ at = null, from = null, link = false } = {}) {
+    // From a link that asks something, the parishes it means wherever they
+    // are; else (a date alone, or the chip) those the map is showing.
+    const everywhere = link && !!(S.f.parishIds || asksWhat(S.f) || S.f.lang);
+    const inView = (p) => everywhere || !S.inView || S.inView.has(p.id);
+    const pick = (f, juris = S.juris) => S.parishes.filter(p => inView(p) && (!S.focus || S.focus.ids.has(p.id)) && parishMatches(p, f, juris)).map(p => p.id);
+    const ids = pick(S.f);
+    const say = (xs, f, juris) => viewWords(xs, f, juris, { here: !everywhere });
     if (ids.length === 1) openParish(ids[0], { from });
     else {
-      // Its events are the page's filters' too. Shared, it is those parishes
-      // by name under the same filters (/sgr+snb/en-only), not the page's link.
-      const shareSegs = segsFor({ juris: S.juris, f: { ...S.f, parishIds: new Set(ids), listId: null } });
-      openCollection({ id: 'inview', kicker: 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris, shareSegs, ...viewWords(ids.length) }, { from });
+      // Its events are the page's filters' too, and its own Filters ask
+      // again of the same place (pick). Shared, it is those parishes by name
+      // under the same filters (/sgr+snb/en-only), not the page's link; from
+      // a link, that link, which its address keeps.
+      openCollection(withWords({ id: 'inview', kicker: link ? 'From link' : 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris,
+        pick, say, ...(link ? { segs: pageSegs() } : {}) }), { from });
     }
     if (at || from) toDay(stack[stack.length - 1], at || from);
   }
-  /** A card's Coming up, scrolled to the first day from `k` on. */
+  /**
+   * A card of parishes that says what it holds from its filters (In view,
+   * From link, a list): its title and the words under it, and what it is
+   * shared as when it has no link of its own.
+   */
+  function withWords(c) {
+    if (!c.say) return c;
+    const out = { ...c, ...c.say(c.ids, c.f, c.juris || null) };
+    if (!c.segs && c.id === 'inview') out.shareSegs = segsFor({ juris: c.juris || null, f: { ...c.f, parishIds: new Set(c.ids), listId: null } });
+    return out;
+  }
+  /** A card's Calendar, scrolled to the first day from `k` on. */
   function toDay(el, k) {
     if (!el || !el.querySelector('.cu')) return;
     const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
     (day || el.querySelector('.cu-band')).scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  /** A link that names a collection opens its card; a bare date, the In view card from it. */
+  /**
+   * A link that names a collection opens its card. One that names parishes
+   * or asks something of them (/smg+smk/feast, /wed/evening) opens them as a
+   * card From link, as the In view card is (Kevin, 2 Nov 2026), and so does
+   * a date. A place alone (/sydney, /greek/qld) is the map, framed on it.
+   */
   function openPageCard(route, path) {
     const c = collectionAt(path);
+    const f = route.f;
     if (c) openCollection(c, { from: route.from });
-    else if (route.from) openInView({ from: route.from });
+    else if (route.from || f.parishIds || asksWhat(f) || f.lang) openInView({ from: route.from, link: true });
   }
 
   function renderFeeds() {
@@ -2225,7 +2294,7 @@
 
   // ── The parish card ───────────────────────────────────────────────────
 
-  // Coming up: this parish's days, from today or from a date picked, a
+  // The Calendar: this parish's days, from today or from a date picked, a
   // fortnight at a time. The date is in the card's link.
   const CU_DAYS = 14;
   function comingUpHTML(pid, from, days, focus = null, panel = false) {
@@ -2234,16 +2303,20 @@
     const now = Date.now();
     const list = feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
-    const n = focusCount(focus);
-    const filters = `<button class="fpill fbtn" type="button" data-card-filters aria-expanded="${panel}">${I.filters}<span>Filters</span>${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
-    return `${datePickHTML('card', from, filters)}
-      ${panel ? cardPanelHTML(pid, focus) : ''}
+    return `${panel ? cardPanelHTML([pid], focus) : ''}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
-  // The foot of a Coming up, which brings the next fortnight as it scrolls into view.
+  /** A card's Filters pill, with how many it asks, opening its panel under the Calendar's title. */
+  const filtersPill = (n, panel) => `<button class="fpill fbtn" type="button" data-card-filters aria-expanded="${!!panel}">${I.filters}<span>Filters</span>${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
+  /** What sits beside a card's Calendar title: Date, and Filters. */
+  function calActsHTML(el) {
+    if (el._coll) return datePickHTML('card', el._from, filtersPill(collFilterCount(el._coll), el._fpanel));
+    return datePickHTML('card', el._from, filtersPill(focusCount(el._focus), el._fpanel));
+  }
+  // The foot of a Calendar, which brings the next fortnight as it scrolls into view.
   const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days>Loading…</div>' : '';
-  /** A card's Coming up grows as its foot comes into view (moreIO). */
+  /** A card's Calendar grows as its foot comes into view (moreIO). */
   function watchMore(el) {
     const m = el.querySelector('[data-more-days]');
     if (m) moreIO.observe(m);
@@ -2254,7 +2327,9 @@
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
     const m = box.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
-    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus, !!el._fpanel);
+    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from, !!el._fpanel) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus, !!el._fpanel);
+    const acts = el.querySelector('.cal-acts');
+    if (acts) acts.innerHTML = calActsHTML(el);
     watchMore(el);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
@@ -2474,26 +2549,33 @@
 
   /** How many things a focus asks: each day its own, as the page's count has them. */
   const focusCount = (x) => (x ? window.AgoraServices.daysOf(x.day).length + [x.kind, x.service, x.dayGroup, x.part, x.lang, x.words].filter(Boolean).length : 0);
-  function cardPanelHTML(pid, focus) {
+  /**
+   * A card's Filters panel: a parish's (`ids` its one parish), or a
+   * collection's, of all its parishes. `n` is how many it asks.
+   */
+  function cardPanelHTML(ids, focus, n = focusCount(focus)) {
     const f = { ...blankFilters(), ...(focus || {}) }, SV = window.AgoraServices;
-    const p = S.byId.get(pid);
-    // What it holds: its running services, and what is on file from today.
-    const rows = [...rulesOf(pid).filter(liveRule).map(r => [r, true]),
-      ...feedRange(todayKey(), CU_DAYS).filter(e => visible(e) && eventParishIds(e).includes(pid)).map(e => [e, false])];
+    const here = new Set([].concat(ids));
+    const ps = [...here].map(id => S.byId.get(id)).filter(Boolean);
+    // What they hold: their running services, and what is on file from today.
+    const rows = [...ps.flatMap(p => rulesOf(p.id)).filter(liveRule).map(r => [r, true]),
+      ...feedRange(todayKey(), CU_DAYS).filter(e => visible(e) && eventParishIds(e).some(id => here.has(id))).map(e => [e, false])];
     const has = (x) => rows.some(([r, isRule]) => whatMatches(r, { ...blankFilters(), ...x }, isRule));
     const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
-    const langs = parishLangs(p);
-    const langPills = langs.length > 1 ? langs.map(l => fpill('card:lang', l, f.lang === l, esc(l))
+    const langs = [...new Set(ps.flatMap(parishLangs))];
+    const langPills = langs.length > 1 || f.lang ? langs.map(l => fpill('card:lang', l, f.lang === l, esc(l))
       + (f.lang === l ? fpill('card:langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('') : '';
     const days = `<span class="fdays">${WD.map((d, i) => fpill('card:day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
     const spans = SV.DAY_GROUPS.map(g => fpill('card:dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
     const parts = SV.PARTS_OF_DAY.map(pt => fpill('card:part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
     return `<div class="filter-panel card-fpanel" role="group" aria-label="Filters">
-        ${group('What', ...kindLines(f, SV, 'card:', has))}${langPills ? group('Language', langPills) : ''}${group('When', days, spans, parts)}
-        <div class="fpanel-foot">${focusCount(focus) ? '<button class="fpill fpill-ghost" type="button" data-act="card-filters-clear">Clear all</button>' : '<span></span>'}
+        ${group('What', ...kindLines(f, SV, 'card:', (x) => has(x) || whatIs(f, x)))}${langPills ? group('Language', langPills) : ''}${group('When', days, spans, parts)}
+        <div class="fpanel-foot">${n ? '<button class="fpill fpill-ghost" type="button" data-act="card-filters-clear">Clear all</button>' : '<span></span>'}
           <button class="fpill on" type="button" data-act="card-filters-done">Done</button></div>
       </div>`;
   }
+  /** Is this pill the one a filter has on? It is offered, held or not, so it can be turned off. */
+  const whatIs = (f, x) => (x.service ? f.service === x.service : x.kindSub ? f.kind === x.kind && f.kindSub === x.kindSub : f.kind === x.kind);
   /** A card's focus as it now is: its link, its lit and dimmed rows, its Today. */
   function setCardFocus(el, focus) {
     el._focus = focus;
@@ -2505,11 +2587,21 @@
   }
   /** One of a card's pills tapped. */
   function setCardFilter(el, k, v) {
+    if (el._coll) {
+      const f = { ...blankFilters(), ...(el._coll.f || {}) };
+      if (flipWhat(f, k, v)) setCollFilters(el, f);
+      return;
+    }
     const f = { ...blankFilters(), ...(el._focus || {}) };
     if (flipWhat(f, k, v)) setCardFocus(el, focusOf(f));
   }
-  /** Light everything at a card again: /sgr/talk becomes /sgr. */
-  function unfocusCard(el) { setCardFocus(el, null); }
+  /** Light everything at a card again: /sgr/talk becomes /sgr. A collection asks nothing more than whose and where. */
+  function unfocusCard(el) {
+    if (!el._coll) return setCardFocus(el, null);
+    const f = el._coll.f || {};
+    setCollFilters(el, { ...blankFilters(), location: f.location || null, monasteries: !!f.monasteries, parishIds: f.parishIds || null,
+      listId: f.listId || null, timesOnly: !!f.timesOnly, words: f.words || null });
+  }
 
   // ── A parish link that asks something (/sgr/talks, /sgr/wed/liturgy) ──
   //
@@ -2581,7 +2673,7 @@
         <section class="p-whatson"${won ? '' : ' hidden'}>${won}</section>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
-          <h2 class="sec">Coming up</h2>
+          ${calHeadHTML(datePickHTML('card', from, filtersPill(focusCount(focus), false)))}
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
@@ -2610,11 +2702,14 @@
 
   // ── A collection's card: a bunch of parishes, with their timetables ───
   //
-  // The timetables folded to the first few lines of the first, under a fade,
-  // with Show timetables to open them all; under them, what is coming up at
-  // these parishes, by the collection's own filters. The fold is a checkbox
-  // in its label (next.css .ctimes), so the Worker's first paint of the card
-  // opens the same way with no script (worker/lib/page-card.mjs).
+  // Laid out as a parish's card is (Kevin, 2 Nov 2026): its head, with the
+  // filters it asks as an event card's kind pill is and a hairline of its
+  // colours over it; Today; its parishes and their timetables, folded behind
+  // their logos in a stack, as the chip under the map has them; What's on;
+  // and its Calendar, with Date and its own Filters beside the title. The
+  // fold is a checkbox in its label (next.css .cstack), so the Worker's
+  // first paint of the card opens the same way with no script
+  // (worker/lib/page-card.mjs).
 
   /** Is this event at one of a collection's parishes, and does it answer its filters? */
   function inCollection(c) {
@@ -2624,8 +2719,10 @@
   }
   /** A collection's link, from a date when one is picked. */
   const collSegs = (c, from) => from ? segsFor({ juris: c.juris || null, f: { ...blankFilters(), ...(c.f || {}) }, from }) : c.segs;
+  /** What a collection's Filters ask: what, which language, when — not its search's words. */
+  const collFilterCount = (c) => focusCount({ ...blankFilters(), ...(c.f || {}), words: null });
   /** What is on at a collection's parishes, by its filters, from today or a date, a fortnight at a time. */
-  function collFeedHTML(c, days, from = null) {
+  function collFeedHTML(c, days, from = null, panel = false) {
     const start = from || todayKey();
     const now = Date.now();
     const f = { ...blankFilters(), ...(c.f || {}) };
@@ -2633,11 +2730,79 @@
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
     const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang }, byVenue: true });
-    return `${datePickHTML('card', from)}
+    return `${panel ? cardPanelHTML(c.ids, f, collFilterCount(c)) : ''}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
-  const foldHTML = (label) => `<label class="ctimes-open"><input type="checkbox" hidden><span>${label}</span>${I.chev}</label>`;
+  /**
+   * What a collection asks, as pills over its title in their own colours, as
+   * an event card's kind is: Feast, Liturgy, English, Wednesdays, Evening.
+   */
+  function filterBadges(f) {
+    const SV = window.AgoraServices, out = [];
+    // `ink`, its colour in the head's hairline: a kind's pill is a pastel, so its words' colour.
+    const kind = (k, label) => {
+      const c = window.AgoraEventTypes.kindColors(k, dark());
+      out.push({ label, bg: c.bg, fg: c.fg, ink: shown(window.AgoraEventTypes.kindColors(k, false).fg) });
+    };
+    const plain = (label, tint = '#64748b') => out.push({ label, bg: shown(tint), fg: '#fff', ink: shown(tint) });
+    if (f.service) { const as = window.AgoraUrlState.kindOfService(f.service); kind(as && as[1] ? subColorOf(as[1]) : 'prayer', SV.serviceLabel(f.service)); }
+    else if (f.kindSub) kind(subColorOf(f.kindSub), kindSubLabel(f.kindSub));
+    else if (f.kind) kind({ services: 'liturgy', talks: 'talk', socials: 'social' }[f.kind] || 'other', KIND_NAMES[f.kind] || f.kind);
+    if (f.lang) plain(f.langStrict ? `${f.lang} only` : f.lang, (window.AgoraCollections.LANGUAGE_LOOK[f.lang] || [])[1]);
+    const days = SV.daysOf(f.day);
+    if (days.length) plain(SV.dayNames(f.day));
+    if (f.dayGroup) plain(SV.dayGroupLabel(f.dayGroup));
+    if (f.part) plain((SV.PARTS_OF_DAY.find(x => x.slug === f.part) || {}).label || f.part);
+    return out;
+  }
+  const badgeHTML = (b) => `<span class="kpill" style="--k-bg:${b.bg};--k-fg:${b.fg}">${esc(b.label)}</span>`;
+  /**
+   * The hairline over a collection's head: its parishes' jurisdictions'
+   * colours, most first, then its filters' (Kevin, 2 Nov 2026).
+   */
+  function stripeOf(c, ps) {
+    const count = new Map();
+    for (const p of ps) count.set(p.jurisdiction, (count.get(p.jurisdiction) || 0) + 1);
+    const cs = [...[...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([j]) => shown(jColor(j))),
+      ...filterBadges({ ...blankFilters(), ...(c.f || {}) }).map(b => b.ink)];
+    if (!cs.length) return '';
+    const w = 100 / cs.length;
+    return `linear-gradient(90deg, ${cs.map((x, i) => `${x} ${(i * w).toFixed(2)}% ${((i + 1) * w).toFixed(2)}%`).join(', ')})`;
+  }
+  /** What's on at a collection's parishes: the page's shelf kept to them and to its filters. */
+  function collWhatsOnHTML(c) {
+    const raw = window.agoraBundle.raw;
+    if (!raw || !c.ids.length) return '';
+    const now = Date.now();
+    const ok = inCollection(c);
+    const pool = feedFor(21)
+      .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY))
+      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && ok(e));
+    const list = oncePerPoster(pool).slice(0, 12);
+    if (!list.length) return '';
+    const cards = list.map(e => {
+      const p = S.byId.get(e.parish_id);
+      return posterCard(e, p ? `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p.name)}</span></span>` : '');
+    }).join('');
+    return `<h2 class="sec">What's on</h2><div class="shelf-row">${cards}</div>`;
+  }
+  /**
+   * A collection's parishes folded behind their logos, as the chip under the
+   * map has them: logos first, then those with times, then the nearest.
+   */
+  function stackHTML(ps, times) {
+    const o = sortOrigin();
+    const ranked = ps.slice().sort((a, b) => (!!b.logo_path - !!a.logo_path)
+      || (rulesOf(b.id).length > 0) - (rulesOf(a.id).length > 0)
+      || (o ? km(o, a) - km(o, b) : 0));
+    const n = ps.length, what = times ? 'timetables' : 'them';
+    return `<label class="cstack"><input type="checkbox" hidden>
+        <span class="stackrow">${ranked.slice(0, STACK_LOGOS).map(p => avatar(p, 'stack')).join('')}</span>
+        <span class="inview-text"><b>${n} ${n === 1 ? 'parish' : 'parishes'}</b><small><span class="cstack-shut">Show ${what}</span><span class="cstack-open">Hide ${what}</span></small></span>
+        <span class="inview-go">${I.chev}</span></label>`;
+  }
+  const STACK_LOGOS = 5;
   /**
    * A card with nothing in it says what it looked for, and the way on: a
    * list, how to fill it; the parishes in view, the nearest; a collection
@@ -2656,7 +2821,8 @@
     return `<div class="tt-none">${esc(emptyWords(c))}</div>${n ? `<button class="wide-btn" type="button" data-act="coll-all">See ${n} in every jurisdiction</button>` : ''}`;
   }
 
-  function openCollection(c, { entry = true, from = null } = {}) {
+  /** A collection's card as it now is: its bar's title, and everything under the bar. */
+  function collectionHTML(c, { from = null, panel = false } = {}) {
     const o = sortOrigin();
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
@@ -2693,11 +2859,16 @@
           ${tt}
         </article>`;
     };
+    const items = ps.slice(0, LIMIT).map(item).join('');
     const today = ps.length ? todayHTML(feedFor(2).filter(inCollection(c)), { lang: cf.lang }) : '';
+    const won = collWhatsOnHTML(c);
+    const badges = filterBadges(cf);
+    const stripe = stripeOf(c, ps);
     const html = `${glassBar(c.title, `${ps.length} places`)}
       <div class="sheet-scroll">
         <div ${lookAttrs(c, 'chero')}>
-          <span class="ckicker">${esc(c.kicker || '')}</span>
+          ${stripe ? `<span class="cstripe" style="background:${stripe}"></span>` : ''}
+          <div class="ckind"><span class="ckicker">${esc(c.kicker || '')}</span>${badges.map(badgeHTML).join('')}</div>
           <h1>${esc(c.title)}</h1>
           <div class="chero-acts">
             <button class="hbtn" type="button" data-act="showmap">${I.map}<span>Show on map</span></button>
@@ -2710,31 +2881,66 @@
         </div>
         ${c.segs ? `<div class="sheet-link">${linkChip(collSegs(c, from))}</div>` : ''}
         ${today ? `<section class="today card ctoday" aria-label="Today">${today}</section>` : ''}
-        <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
-          <div class="clist">${ps.slice(0, LIMIT).map(item).join('') || emptyHTML(c)}</div>
+        <section class="ctimes${ps.length > 1 ? ' stacked' : ''}">
+          ${ps.length > 1 ? stackHTML(ps, items.includes('class="tt-line')) : ''}
+          <div class="clist">${items || emptyHTML(c)}</div>
           ${ps.length > LIMIT ? `<button class="wide-btn" type="button" data-act="more-items">Show ${ps.length - LIMIT} more</button>` : ''}
-          ${ps.length > 1 ? foldHTML(c.group === 'jurisdiction' ? 'Parishes' : 'Show timetables') : ''}
         </section>
+        ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
-          <h2 class="sec">Coming up</h2>
-          <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
+          ${calHeadHTML(datePickHTML('card', from, filtersPill(collFilterCount(c), panel)))}
+          <div class="cu">${collFeedHTML(c, CU_DAYS, from, panel)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
       </div>`;
+    return { html, rest: () => ps.slice(LIMIT).map(item).join('') };
+  }
+  function openCollection(c, { entry = true, from = null } = {}) {
+    const { html, rest } = collectionHTML(c, { from });
     const el = pushSheet(html, 'collection', { segs: (c.segs && collSegs(c, from)) || null, entry });
     el._coll = c;
     el._from = from;
     el._days = CU_DAYS;
+    el._rest = rest;
     watchMore(el);
     // A date further out than the bundle holds fills in once it has it.
     if (from) refreshComingUp(el);
-    // Folded to the first parish's first few lines, however tall its name.
-    const tt = el.querySelector('.ctimes.folded .citem .tt');
-    if (tt) {
-      const list = tt.closest('.clist');
-      list.style.setProperty('--fold', `${Math.round(tt.getBoundingClientRect().top - list.getBoundingClientRect().top + Math.min(tt.offsetHeight, 130))}px`);
-    }
-    el._rest = () => ps.slice(LIMIT).map(item).join('');
+  }
+  /** An open collection's card again, where it was scrolled to: its filters changed, or what it holds. */
+  function repaintCollection(el) {
+    const c = el._coll;
+    const { html, rest } = collectionHTML(c, { from: el._from, panel: !!el._fpanel });
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    const scroller = el.querySelector('.sheet-scroll'), bar = el.querySelector('.gtitle');
+    const m = scroller.querySelector('[data-more-days]');
+    if (m) moreIO.unobserve(m);
+    // Its timetables stay open if they were.
+    const open = !!scroller.querySelector('.cstack input:checked');
+    scroller.innerHTML = box.querySelector('.sheet-scroll').innerHTML;
+    if (open) { const i = scroller.querySelector('.cstack input'); if (i) i.checked = true; }
+    if (bar) bar.innerHTML = box.querySelector('.gtitle').innerHTML;
+    el._rest = rest;
+    el._days = CU_DAYS;
+    fitLinks(el);
+    watchMore(el);
+    if (el._from) refreshComingUp(el);
+  }
+  /**
+   * A collection's own Filters changed (Kevin, 2 Nov 2026): its link and its
+   * words follow, a card of the page's parishes asks again which it holds,
+   * and a list keeps them, so it opens with them next time.
+   */
+  function setCollFilters(el, f) {
+    let c = { ...el._coll, f };
+    if (c.pick) c.ids = c.pick(f, c.juris || null);
+    if (c.segs) c.segs = segsFor({ juris: c.juris || null, f });
+    c = withWords(c);
+    if (c.listId && c.listId !== 'fav') setListFilters(c.listId, f);
+    el._coll = c;
+    el._segs = c.segs ? collSegs(c, el._from) : null;
+    syncURL();
+    repaintCollection(el);
   }
 
   // ── Words that name no parish (/village, /vigil, /antiochian/festival) ──
@@ -2931,7 +3137,7 @@
     const offCls = off ? ` off ${esc(e.status)}` : '';
     const stamp = off ? `<span class="off-veil"><span>${esc(OFF_SAYS[e.status] || off)}</span></span>` : '';
     // With no poster, a band in the colour of the jurisdiction it is held in,
-    // as its stretch of a Coming up's line is: its kind said in full at the
+    // as its stretch of a Calendar's line is: its kind said in full at the
     // head, and the church it is held in, by logo and full name, at the foot.
     const at = venue || p;
     const band = `<div class="ev-band${offCls}" style="--j:${jColor(at?.jurisdiction)}">
@@ -3068,7 +3274,7 @@
           <p data-kept>${keptHTML()}</p>
         </div>
         ${services ? `<h2 class="sec">Services</h2><div class="lists">${services}</div>` : ''}
-        <h2 class="sec">Coming up</h2>
+        <h2 class="sec">Calendar</h2>
         <div class="cu">${days || '<div class="tt-none sm">Nothing bookmarked is coming up.</div>'}</div>
         <div class="toolbar-space sm"></div>`;
   }
@@ -3672,7 +3878,7 @@
     }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     if ((b = t.closest('[data-jump]'))) {
-      // Tomorrow on: a card's Today goes on in the card's own Coming up, the
+      // Tomorrow on: a card's Today goes on in the card's own Calendar, the
       // page's in the In view card's.
       const sheet = b.closest('.sheet');
       const k = addDays(todayKey(), 1);
@@ -3780,8 +3986,9 @@
         // Named for what it holds ("English Antiochian parishes in Sydney"),
         // never "64 parishes in Sydney" twice over for two different views.
         const l = newList(c.name || c.title);
-        // Its parishes, and what they were: "Orthodox youth groups in Sydney".
-        const ls = userLists(); const mine = ls.find(x => x.id === l.id); mine.ids = c.ids.slice(); mine.about = c.blurb || ''; writeLS(LISTS, ls);
+        // Its parishes, and what its card asks of them (/feast), which its
+        // card opens with and its pills say (Kevin, 2 Nov 2026).
+        const ls = userLists(); const mine = ls.find(x => x.id === l.id); mine.ids = c.ids.slice(); mine.filters = whatPath(c.f || {}); writeLS(LISTS, ls);
         renderLists();
         toast(`Saved “${l.name}” to your lists`);
         return;
@@ -3831,7 +4038,7 @@
   });
   $('#btn-locate').addEventListener('click', locate);
 
-  // A card's Coming up goes on as it is scrolled, a fortnight at a time, to a year.
+  // A card's Calendar goes on as it is scrolled, a fortnight at a time, to a year.
   const moreIO = new IntersectionObserver((ents) => {
     for (const en of ents) {
       const el = en.isIntersecting && en.target.closest('.sheet');

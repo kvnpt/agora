@@ -58,7 +58,7 @@ v3 replaced both ([history.md](history.md)).
 existed as a row resolves — client-side, from rules the browser already holds.
 
 **The feed has no last page.** The page has no feed of its own: Today's button
-opens the In view card (or the one parish in view), and a card's Coming up grows a
+opens the In view card (or the one parish in view), and a card's Calendar grows a
 fortnight at a time as it is scrolled (`moreIO` in `next.js`, to a year), and
 nothing takes it away. The step
 costs a request only for what is genuinely window-bound — the overrides and

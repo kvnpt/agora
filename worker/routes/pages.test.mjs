@@ -783,9 +783,29 @@ test('several parishes by name are their maker\'s list: named in the title, noin
   const { html } = await get('/smg+sgr');
   assert.equal(canonical(html), 'https://orthodoxy.au/smg+sgr');
   assert.equal(robots(html), 'noindex,follow');
-  assert.equal(title(html), 'Orthodox parishes and times at Sts Michael &amp; Gabriel, Ryde and St George Cathedral, Redfern | orthodoxy.au');
+  assert.equal(title(html), 'SMG and SGR | orthodoxy.au', 'a few parishes, said by their acronyms (Kevin, 2 Nov 2026)');
   assert.equal(card(html), '');
   assert.match(timesOf((await get('/sgr')).html), /Choir practice/, 'a parish_scoped rule is on its own card');
+});
+
+test('a link that names parishes and asks something previews what is on there next, by its poster', async () => {
+  const { raw, get } = fresh();
+  raw.prepare("UPDATE parishes SET acronym = 'SMG' WHERE id = 'antiochian-stmichaelgabriel-ryde'").run();
+  const feast = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc, event_type, status, mutation_type, poster_path)
+      VALUES (?, 'manual', ?, ?, ?, 'feast', 'approved', 'headless', ?)`);
+  // Saturday 3 October 5pm at Ryde, with its poster; Sunday 4 October 9:45am at Redfern.
+  feast.run('antiochian-stmichaelgabriel-ryde', 'Great Vespers', '2026-10-03T07:00:00Z', '2026-10-03T08:30:00Z', '/posters/smg-vespers.jpg');
+  feast.run(PARISH, 'Feast of Saint Michael', '2026-10-03T22:45:00Z', '2026-10-04T01:00:00Z', null);
+  const { html } = await get('/smg+sgr/feast');
+  assert.equal(title(html), 'Feasts at SMG and SGR | orthodoxy.au');
+  assert.equal(meta(html, 'name', 'description'),
+    'Sat 3 Oct 5pm: Great Vespers at Sts Michael &amp; Gabriel, Ryde · Sun 4 Oct 9:45am: Feast of Saint Michael at St George Cathedral, Redfern.',
+    'their timetables hold no feast: what is on is said instead of "Nothing on file"');
+  assert.equal(meta(html, 'property', 'og:image'), previewImage('https://orthodoxy.au/posters/smg-vespers.jpg', 'https://orthodoxy.au'));
+  assert.equal(meta(html, 'name', 'twitter:card'), 'summary_large_image');
+  // Nothing on in the weeks ahead: as before.
+  raw.prepare("DELETE FROM events").run();
+  assert.equal(meta((await get('/smg+sgr/feast')).html, 'name', 'description'), 'Nothing on file for this yet.');
 });
 
 test('a collection is indexed, under its own name, with its own preview and its card', async () => {
@@ -802,8 +822,8 @@ test('a collection is indexed, under its own name, with its own preview and its 
     "in the collection's own look (collections.js)");
   assert.match(c, /<a class="citem-head" href="\/sgr">[\s\S]*?<b>St George Cathedral, Redfern<\/b>/, 'each parish a link to its card');
   assert.match(c, /<div class="tt compact"/, 'with its times');
-  assert.match(c, /<section class="ctimes folded">[\s\S]*<label class="ctimes-open"><input type="checkbox" hidden><span>Show timetables<\/span>/,
-    'folded to the first few lines until Show timetables, which opens with no script');
+  assert.match(c, /<section class="ctimes stacked">\s*<label class="cstack"><input type="checkbox" hidden>\s*<span class="stackrow"><span class="av stack"[\s\S]*?<b>\d+ parishes<\/b>/,
+    'folded behind a stack of their logos, which opens with no script');
 
   const sun = (await get('/liturgy/sunday')).html;
   assert.equal(canonical(sun), 'https://orthodoxy.au/sun/liturgy', 'however the link spells it');
@@ -1000,7 +1020,7 @@ test('the lite version of a collection lists what is on at its parishes this wee
   const { lite } = freshLite();
   const { html } = await lite('/sun/liturgy');
   const cu = between(html, '<section class="cu-band" id="coming-up">');
-  assert.match(cu, /<h2 class="sec">Coming up<\/h2>/);
+  assert.match(cu, /<h2 class="sec">Calendar<\/h2>/, 'Calendar, as the page calls it (it was Coming up)');
   // Sunday 4 October: the seed's Sunday Liturgies, each naming its parish; no Vespers.
   assert.match(cu, /<section class="sday" data-date="2026-10-04">/);
   assert.match(cu, /Sunday Divine Liturgy/);

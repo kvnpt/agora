@@ -26,7 +26,7 @@ import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import linkWords from '../../public/shared/link-words.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { previewLogo } from './juris-logos.mjs';
-import { jurisLabel, weekFrom, parishSlug, isNarrowed } from './lite-page.mjs';
+import { jurisLabel, weekFrom, parishSlug, isNarrowed, time12 } from './lite-page.mjs';
 
 const DEFAULT_ZONE = 'Australia/Sydney';
 /** The accent when the page is not one jurisdiction's: the app's own blue. */
@@ -180,18 +180,40 @@ export function timetableModel({ parishes, rules, route, now, origin, overrides 
  * page uses too for what its map is showing.
  */
 export function timetableHeading(m) {
+  // A few parishes by name, said short: "Feasts at SMG and SMK" (Kevin, 2 Nov 2026).
+  if (m.named && m.named.length <= linkWords.FEW) return linkWords.shortHeadingOf(m.route, m.named);
   return linkWords.headingOf(m.route, { loc: m.loc, named: m.named });
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const UPCOMING_SAID = 3;
+/**
+ * "Sat 7 Nov 6pm: Great Vespers at Sts. Michael & Gabriel, Ryde · Sun 8 Nov
+ * 8:45am: Feast of Saint Michael at St. Michael, Kirrawee": what is on next
+ * at the parishes a link names (`m.upcoming`, routes/pages.mjs), each on its
+ * own parish's clock.
+ */
+function upcomingWords(m) {
+  const nameOf = (id) => ((m.named || []).find(p => p.id === id) || {}).name;
+  const said = m.upcoming.slice(0, UPCOMING_SAID).map(e => {
+    const { date, time } = e._local;
+    const d = new Date(`${date}T00:00:00Z`);
+    const at = nameOf(e.parish_id) || e.parish_name;
+    return `${services.DAY_NAMES[d.getUTCDay()].slice(0, 3)} ${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${time12(time)}: ${e.title}${at ? ` at ${at}` : ''}`;
+  });
+  return `${said.join(' · ')}${m.upcoming.length > UPCOMING_SAID ? ' · and more' : ''}.`;
+}
+
 export function timetableMeta(m) {
   const heading = timetableHeading(m);
   const listed = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes));
   const names = listed.slice(0, 4).map(x => x.parish.name).join(', ');
-  const which = listed.length
-    ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
-    : 'Nothing on file for this yet.';
+  const which = m.upcoming && m.upcoming.length ? upcomingWords(m)
+    : listed.length
+      ? `${plural(m.parishCount, 'parish', 'parishes')}: ${names}${listed.length > 4 ? ' and more' : ''}.`
+      : 'Nothing on file for this yet.';
   return {
     title: heading,
     // A collection says what it holds first, then what it holds now.
@@ -211,11 +233,15 @@ export function timetableIndexable(m) {
 }
 
 /**
- * The preview's picture: a jurisdiction's logo once /admin has one, as a
- * parish previews with its own; else the collection's card, else the
+ * The preview's picture: the poster of what is on next at the parishes a
+ * link names; a jurisdiction's logo once /admin has one, as a parish
+ * previews with its own; else the collection's card, else the
  * jurisdiction's, else the site's.
  */
 export function timetableImage(m) {
+  // What is on next at the parishes a link names, by its poster.
+  const poster = (m.upcoming || []).find(e => e.poster_path);
+  if (poster) return /^https?:/.test(poster.poster_path) ? poster.poster_path : `${m.origin}${poster.poster_path}`;
   const j = m.route.jurisdiction;
   const logo = m.collection && previewLogo(m.logos, m.collection.jurisdiction);
   const path = logo || (m.collection && m.collection.image) || `/og/${OG_CARDS.has(j) ? j : 'default'}.jpg`;

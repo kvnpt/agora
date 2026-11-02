@@ -74,6 +74,27 @@
   }
 
   /**
+   * A few parishes by name, said short: "Feasts at SMG and SMK", "Liturgies
+   * on Sundays in English at SMG", and, asking nothing of them, "SMG and
+   * SMK". No "Orthodox": their names say whose (Kevin, 2 Nov 2026). `named`
+   * are the parishes, said by their acronyms where they have them.
+   */
+  function shortHeadingOf(r, named) {
+    const who = and(named.map(p => String(p.acronym || p.name)));
+    const full = r.lang && r.langStrict ? (/^english$/i.test(r.lang) ? 'fully-English' : `${r.lang}-only`) : '';
+    const sub = r.kind === 'services' && r.kindSub
+      ? `${eventTypes.eventTypeLabel(r.kindSub).toLowerCase()} services` : (r.kindSub && OTHER_SUBS[r.kindSub]) || null;
+    const noun = (r.service ? services.servicePlural(r.service) : null) || sub || OTHER_KINDS[r.kind]
+      || (r.kind === 'services' || isNarrowed(r) || r.lang ? 'services' : '');
+    if (!noun) return who;
+    const lang = r.lang && !full ? ` in ${r.lang}` : '';
+    const said = [full, r.part || '', noun].filter(Boolean).join(' ') + daysPhrase(r) + lang + ` at ${who}`;
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  }
+  /** How few parishes a link may name and still be said by their acronyms (shortHeadingOf). */
+  const FEW = 3;
+
+  /**
    * A list's name, for a list saved from a view: what it holds, shortest first.
    * "English Antiochian parishes in Sydney", "Greek Liturgies on Sundays near
    * you", "Monasteries in Victoria". No count: the list's row says how many,
@@ -96,7 +117,7 @@
   /** Does the link ask anything of a parish or its services, beyond where it is? */
   const asksAnything = (r) => !!(r.jurisdiction || r.monasteries || r.kind || r.lang || isNarrowed(r));
 
-  const api = { JURIS_LABEL, JURIS_SHORT, jurisLabel, isNarrowed, daysPhrase, headingOf, listNameOf, asksAnything };
+  const api = { JURIS_LABEL, JURIS_SHORT, FEW, jurisLabel, isNarrowed, daysPhrase, headingOf, shortHeadingOf, listNameOf, asksAnything };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraLinkWords = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

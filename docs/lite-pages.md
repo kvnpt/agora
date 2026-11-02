@@ -117,13 +117,36 @@ aggregated schedules. A collection among them (`/en`, `/greek`, `/sun/liturgy`, 
 in `public/shared/collections.js`) opens its card, painted from the model
 (`collectionCardHTML`): the parishes by name (by distance on the page), each with the lines of
 its timetable that answer the link (all of them, for a link that asks nothing of a
-parish's services), folded to the first few lines until Show timetables (a checkbox in its label, so it
-opens with no script; a jurisdiction's says Parishes); the page adds a Today box of theirs above the timetables and
-what is coming up at them underneath. A parish with no lines there says nothing in
+parish's services), folded behind a stack of their logos, as the chip under the map
+has them (a checkbox in its label, so it opens with no script); then its Calendar
+(Coming up until 2 Nov 2026). A parish with no lines there says nothing in
 their place (Kevin, 29 Oct 2026): the page's card gives it a Next, its own one-off
 however far ahead before one it takes part in, and, for a link that asks something,
-lists every parish by distance, since each one answers it. Any
-other mix of filters is the page itself, filtered, and gets only its head.
+lists every parish by distance, since each one answers it.
+
+The page's card of a collection, a list, a search or the parishes in view is laid
+out as a parish's (Kevin, 2 Nov 2026): its head, with the filters it asks as pills
+over its title (Feast, English, Wednesdays) and a hairline over it in its parishes'
+jurisdiction colours and the pills'; Today; the parishes behind their logos; What's
+on (their posters, under its filters); and the Calendar, with **Date** and the card's
+own **Filters** beside the title. Changing them changes the card's link and words: a
+collection's parishes are asked again, a list keeps them (`filters`, a path, in
+`saved.js`) and opens with them, and Clear all leaves only whose and where.
+
+Any other mix of filters is the page itself, filtered, and gets only its head; the
+page opens a card **From link** over it when the link names parishes or asks
+something of them (`/smg+smk/feast`, `/wed/evening`), or has a date. A place alone
+(`/sydney`, `/greek/qld`) is the map, framed on it. A few parishes by name (three at
+most) are said by their acronyms, with no "Orthodox": "Feasts at SMG and SMK"
+(`shortHeadingOf` in `link-words.js`), in its head and on its card; under the title,
+the parishes' short names while there are four or fewer.
+
+**A link that names parishes and asks something of them previews what is on
+there next** (`m.upcoming`, the next three weeks): "Sat 7 Nov 6pm: Great Vespers at
+Sts. Michael & Gabriel, Ryde · Sun 8 Nov 8:45am: Feast of Saint Michael at St.
+Michael, Kirrawee", under the first one's poster, cut small for WhatsApp. A feast is a
+one-off, which a timetable never holds: until 2 Nov 2026 `/smg+smk/feast` previewed
+"Nothing on file for this yet." with the site's card.
 
 `worker/lib/lite-timetable.mjs` (`timetableModel`), pure like the card's:
 

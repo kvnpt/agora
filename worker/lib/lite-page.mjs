@@ -417,17 +417,17 @@ export const COLLECTION_FEED_DAYS = 7;
 /**
  * What is on at a collection's parishes, as next.js's collFeedHTML lists it,
  * for the lite version, which has no page script to project it: every
- * occurrence from today for COLLECTION_FEED_DAYS, at one of `parishIds`, that
+ * occurrence from today for COLLECTION_FEED_DAYS (or `days`), at one of `parishIds`, that
  * answers the link's filters (its service, day, part of the day, kind and
  * language). Each in its own parish's zone. A parish_scoped (Parish only)
  * row is only at a link that names its parish (/sgr+snb): `named`, those
  * the link names, as next.js's scopedOpen has it.
  */
-export function collectionFeed({ rows, events = [], cross = [], parishIds, named = [], route, now, zone = DEFAULT_ZONE }) {
+export function collectionFeed({ rows, events = [], cross = [], parishIds, named = [], route, now, zone = DEFAULT_ZONE, days = COLLECTION_FEED_DAYS }) {
   const start = localDateOf(zone, now);
   const { fromUtc } = liteWindow(start);
-  const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (COLLECTION_FEED_DAYS + 1) * DAY_MS).toISOString();
-  const end = new Date(Date.parse(`${start}T00:00:00Z`) + COLLECTION_FEED_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (days + 1) * DAY_MS).toISOString();
+  const end = new Date(Date.parse(`${start}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
   const ids = new Set(parishIds), mine = new Set(named);
   const instances = rows.schedules.length ? expandFrom(rows, fromUtc, toUtc) : [];
   const oneOffs = events.filter(e => { const t = Date.parse(e.start_utc); return t >= Date.parse(fromUtc) && t <= Date.parse(toUtc); });

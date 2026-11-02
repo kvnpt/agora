@@ -218,7 +218,7 @@ visitor's card has Suggest an edit at its foot instead) opens the same toolkit a
 Cancel instead. A date of a service also takes its **Commemoration** (the saint,
 as `patch_feast`), and its card follows the date onto the new rule after
 "this and every following". A cancelled, combined or on-break date stays on its
-parish's Coming up, struck through with its word; the open feeds leave all three
+parish's Calendar, struck through with its word; the open feeds leave all three
 out for now, where the app v3 replaced showed a break.
 **Break…** (a date of a service) and **Include other parishes…** (a one-off)
 open their own dialogs in place of the form. The combine is the add-event
@@ -227,7 +227,7 @@ person's own becomes an ask, as it does there. A timetable line on a break
 today says when it is back, and a combined date's card names what is in its
 place.
 
-The dotted **Add +** under a card's Coming up alters nothing the card is
+The dotted **Add +** under a card's Calendar alters nothing the card is
 showing — it makes a one-off that is not there yet — and what it is gated on is
 the capability, per parish: `may('event.edit', pid)` in `next.js` asks the two
 questions the Worker asks, in the order it asks them, from the whole
@@ -237,7 +237,7 @@ contact on their own parishes only; anybody else gets **Suggest**, the same box.
 
 **Adding an event is a draft until Publish.** The add-event editor
 (`public/shared/event-editor.js`) is one component with two hosts — **Events** in
-/admin, and the dotted **Add +** under a card's Coming up for whoever may add one
+/admin, and the dotted **Add +** under a card's Calendar for whoever may add one
 there (`public/next/editing.js`) — because the app's old dialog was its own and
 /admin had none, and two forms would drift. It saves every
 card a moment after the typing stops into `drafts` / `draft_events`
