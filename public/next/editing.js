@@ -1295,6 +1295,28 @@
   // For a parish's pin, and for "Move the pin" wherever a venue is picked.
 
   const coord = (n) => Number(n).toFixed(6);
+
+  /**
+   * Where a pasted Google Maps link puts the place, when the link says.
+   *
+   * A place link carries the place itself as `!3d<lat>!4d<lng>`; a pin link
+   * carries it as `?q=<lat>,<lng>` (or query=, ll=). `@<lat>,<lng>` is only
+   * where the map was looking, often beside the place to clear the side panel,
+   * so it is not read. A short link (maps.app.goo.gl) or a `?cid=` link says
+   * nothing until Google is asked, so those answer null and the pin stays put.
+   */
+  function mapsLinkCoords(link) {
+    let text = String(link || '');
+    try { text = decodeURIComponent(text); } catch { /* keep it as typed */ }
+    const num = '(-?\\d{1,3}(?:\\.\\d+)?)';
+    const found = text.match(new RegExp(`!3d${num}!4d${num}`))
+      || text.match(new RegExp(`[?&](?:q|query|ll)=${num},\\s*${num}(?:[&#]|$)`));
+    if (!found) return null;
+    const lat = Number(found[1]), lng = Number(found[2]);
+    if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return null;
+    return { lat, lng };
+  }
+
   function basemapStyle() {
     let style = null;
     try { style = root.agoraMap && root.agoraMap.getStyle(); } catch { return null; }
@@ -1441,15 +1463,17 @@
     const err = form.querySelector('.rf-error');
     const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
 
-    // The pin. Nothing here writes: a pin located or placed is kept in the
-    // dialog until Save, which sends it as lat/lng (the route re-geocodes only
-    // an address that comes without them).
+    // The pin. Nothing here writes: a pin located, placed, or taken from the
+    // Google Maps place is kept in the dialog until Save, which sends it as
+    // lat/lng (the route re-geocodes only an address that changed and came
+    // without them).
     let pin = null;
     const pinBox = form.querySelector('[data-pd-pin]');
+    const pinFrom = (x) => (x.from === 'maps' ? 'from Google Maps' : x.manual ? 'placed by hand' : 'from the address');
     const paintPin = (problem = '') => {
       const now = host.parish(pid) || p;
       pinBox.innerHTML = problem ? `<span class="bad">${esc(problem)}</span>`
-        : pin ? `<span class="staged">New pin: ${coord(pin.lat)}, ${coord(pin.lng)}</span>, ${pin.manual ? 'placed by hand' : 'from the address'}. Save to keep it.`
+        : pin ? `<span class="staged">New pin: ${coord(pin.lat)}, ${coord(pin.lng)}</span>, ${pinFrom(pin)}. Save to keep it.`
           : now.lat == null || now.lng == null ? 'No pin yet. Locate it from the address, or place it by hand.'
             : `Pin: ${coord(now.lat)}, ${coord(now.lng)}`;
     };
@@ -1480,6 +1504,12 @@
     });
 
     // What Directions opens: a place chosen on Google Maps, or the pin.
+    //
+    // A place chosen also moves the pin to it (Kevin, 2 Nov 2026: /sjf kept a
+    // pin 2 km from its church after its place was picked). Google's place is
+    // where somebody stood and dropped it; the address's geocode is a guess at
+    // the street. So the place's own coordinates are staged as the pin, and
+    // the Directions button and the dot on the map agree.
     const mapsNow = form.querySelector('[data-pd-maps-now]');
     const usePin = form.querySelector('[data-pd-usepin]');
     const paintMaps = (text) => {
@@ -1487,10 +1517,23 @@
       usePin.hidden = !q('maps_url').value.trim();
     };
     paintMaps();
-    q('maps_url').addEventListener('input', () => paintMaps(q('maps_url').value.trim() ? 'This link. Save to keep it.' : ''));
+    // A pin taken from a place no longer stands once that place is cleared or replaced.
+    const pinFromPlace = (c) => {
+      if (c) pin = { lat: c.lat, lng: c.lng, manual: true, from: 'maps' };
+      else if (pin && pin.from === 'maps') pin = null;
+      paintPin();
+    };
+    q('maps_url').addEventListener('input', () => {
+      const link = q('maps_url').value.trim();
+      form.querySelectorAll('.pd-result').forEach(x => x.classList.remove('chosen'));
+      const c = mapsLinkCoords(link);
+      pinFromPlace(c);
+      paintMaps(link ? (c ? 'This link. The pin moves there too. Save to keep it.' : 'This link. Save to keep it.') : '');
+    });
     usePin.addEventListener('click', () => {
       q('maps_url').value = '';
       form.querySelectorAll('.pd-result').forEach(x => x.classList.remove('chosen'));
+      pinFromPlace(null);
       paintMaps('The pin, from the address. Save to keep it.');
     });
     const results = form.querySelector('[data-pd-results]');
@@ -1517,7 +1560,9 @@
         const pl = places[Number(b.dataset.i)];
         q('maps_url').value = pl.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name || '')}&query_place_id=${encodeURIComponent(pl.id)}`;
         results.querySelectorAll('.pd-result').forEach(x => x.classList.toggle('chosen', x === b));
-        paintMaps(`Chosen: ${pl.name}${pl.address ? `, ${pl.address}` : ''}. Save to keep it.`);
+        const at = pl.lat != null && pl.lng != null && isFinite(pl.lat) && isFinite(pl.lng) ? { lat: Number(pl.lat), lng: Number(pl.lng) } : null;
+        pinFromPlace(at);
+        paintMaps(`Chosen: ${pl.name}${pl.address ? `, ${pl.address}` : ''}.${at ? ' The pin moves there too.' : ''} Save to keep it.`);
       };
     }
     on('[data-pd-find]', findPlace);

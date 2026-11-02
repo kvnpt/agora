@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { Router } from '../lib/router.mjs';
 import { registerAdminRoutes } from './admin.mjs';
@@ -166,6 +167,25 @@ test('an address sent alone still geocodes, exactly as before', async () => {
   assert.equal(row.lng, 151.2);
 });
 
+test('an address that did not change is not looked up again, so a pin placed earlier stays', async () => {
+  // The form posts every field on every save. Before this, fixing a phone
+  // number re-geocoded the unchanged address and dragged a pin placed by hand
+  // (or taken from Google Maps) back onto the street's geocode.
+  const { raw, call } = fresh();
+  raw.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?').run(-33.891937, 151.208812, PARISH);
+  const { address } = raw.prepare('SELECT address FROM parishes WHERE id = ?').get(PARISH);
+  const nom = stubNominatim({ lat: -33.9, lng: 151.2 });
+  try {
+    const res = await call('PATCH', `/api/admin/parishes/${PARISH}`, { address: ` ${address} `, phone: '02 9000 0000' });
+    assert.equal(res.status, 200);
+    assert.equal(nom.calls.length, 0, 'an unchanged address was geocoded again');
+  } finally { nom.restore(); }
+  const row = raw.prepare('SELECT lat, lng, phone FROM parishes WHERE id = ?').get(PARISH);
+  assert.equal(row.lat, -33.891937);
+  assert.equal(row.lng, 151.208812);
+  assert.equal(row.phone, '02 9000 0000');
+});
+
 test('a pin placed by hand is saved where it was placed, not where the geocoder puts it', async () => {
   // What stops a later import moving it is the parish's read_from — an edit
   // like this one asks, in the panel, whether to stop reading the parish.
@@ -209,4 +229,51 @@ test('the address row carries both pin controls, and they reach the route', () =
   assert.ok(/if \(pin\) \{ data\.lat = pin\.lat; data\.lng = pin\.lng; \}/.test(ed),
     'a staged pin is not sent with the save, so the server would re-geocode over it');
   assert.ok(ed.includes('<div class="pin-map">'), 'Move pin has no map to place the pin on');
+});
+
+// ── The pin from a Google Maps place ───────────────────────────────────
+//
+// Kevin, 2 Nov 2026: /sjf's place was picked on Google Maps and its pin stayed
+// 2 km away on the Princes Highway. Choosing a place now stages its location
+// as the pin, which the save sends as lat/lng like any other staged pin.
+
+test('choosing a Google Maps place stages its location as the pin', () => {
+  const ed = fs.readFileSync('public/next/editing.js', 'utf8');
+  const pick = ed.slice(ed.indexOf('results.onclick'), ed.indexOf("on('[data-pd-find]'"));
+  assert.match(pick, /pinFromPlace\(at\)/, 'picking a place no longer moves the pin');
+  assert.match(ed, /pin = \{ lat: c\.lat, lng: c\.lng, manual: true, from: 'maps' \}/,
+    'a place\'s pin should be kept like one placed by hand, so editing the address does not drop it');
+  // The route's search must keep handing the place's location back.
+  const admin = fs.readFileSync('worker/routes/admin.mjs', 'utf8');
+  assert.ok(admin.includes('places.location'), 'Places search no longer asks Google for the location');
+});
+
+function mapsLinkCoords() {
+  const ed = fs.readFileSync('public/next/editing.js', 'utf8');
+  const start = ed.indexOf('  function mapsLinkCoords(');
+  const end = ed.indexOf('\n  }\n', start) + 4;
+  assert.ok(start > 0 && end > start, 'mapsLinkCoords is gone from editing.js');
+  const ctx = {};
+  vm.runInNewContext(`${ed.slice(start, end)}; this.f = mapsLinkCoords;`, ctx);
+  // Its objects belong to the other context; bring them back as plain ones.
+  return (link) => JSON.parse(JSON.stringify(ctx.f(link)));
+}
+
+test('a pasted place link moves the pin to the place, not to where the map was looking', () => {
+  const f = mapsLinkCoords();
+  // A desktop share link: @ is the view (shifted to clear the side panel), !3d!4d the place.
+  assert.deepEqual(f('https://www.google.com/maps/place/St+John/@-35.6901,150.1901,17z/data=!3m1!4b1!4m6!3m5!1s0x6b1!8m2!3d-35.688938!4d150.195437!16s%2Fg%2F11'),
+    { lat: -35.688938, lng: 150.195437 });
+  assert.deepEqual(f('https://maps.google.com/?q=-33.891937,151.208812'), { lat: -33.891937, lng: 151.208812 });
+  assert.deepEqual(f('https://www.google.com/maps/search/?api=1&query=-33.8919%2C151.2088'), { lat: -33.8919, lng: 151.2088 });
+});
+
+test('a link that does not say where the place is leaves the pin alone', () => {
+  const f = mapsLinkCoords();
+  assert.equal(f('https://maps.google.com/?cid=3134501034489291327&g_mp=Cidnb29n'), null);
+  assert.equal(f('https://maps.app.goo.gl/aDH4LcS6o23hmG6o9?g_st=ic'), null);
+  assert.equal(f('https://www.google.com/maps/@-33.89,151.20,15z'), null, 'a bare view is not a place');
+  assert.equal(f('https://maps.google.com/?q=852+Caoura+Rd,+Tallong+NSW+2579'), null);
+  assert.equal(f('https://maps.google.com/?q=123,456'), null, 'out of range');
+  assert.equal(f(''), null);
 });

@@ -2688,7 +2688,13 @@ export function registerAdminRoutes(router) {
 
     if (b.lat !== undefined || b.lng !== undefined) await syncEventCoordsForParish(env.DB, id);
 
-    if (b.address && b.lat === undefined) {
+    // Only an address that CHANGED is looked up again. The in-app form posts
+    // every field on every save, so re-geocoding on presence alone moved a pin
+    // placed by hand (or taken from Google Maps) back onto the street's
+    // geocode the next time anybody fixed a phone number. "Locate pin" is how
+    // somebody asks for the address's pin again on purpose.
+    const addressChanged = String(b.address || '').trim() !== String(parish.address || '').trim();
+    if (b.address && b.lat === undefined && addressChanged) {
       const coords = await geocode(b.address);
       if (coords) {
         await env.DB.prepare('UPDATE parishes SET lat = ?, lng = ? WHERE id = ?')
