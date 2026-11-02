@@ -156,6 +156,16 @@ somebody picked its Maps entry (a Places search through `POST
 never a route to it (October 2026, the owner's ruling; it was Directions to
 `/maps/dir/` before). An event's opens its own pin, or its venue's.
 
+**Picking the Maps place moves the pin there too** (Kevin, 2 Nov 2026: /sjf's
+place was picked and its pin stayed 2 km away). The place's location is
+staged as the pin, kept like one placed by hand, and saved as `lat`/`lng`;
+a pasted link does the same when it says where the place is (`!3d…!4d…`,
+`?q=lat,lng`), and a short or `?cid=` link leaves the pin where it was.
+"Use the pin instead" drops a pin taken from the place. The save looks an
+address up again only when the address changed, so a later edit to the
+phone number no longer drags a placed pin back onto the street's geocode;
+**Locate pin** asks for the address's pin on purpose.
+
 **Three different things are called "hide", and only one of them hides an
 event.** Worth knowing before reaching for one:
 
