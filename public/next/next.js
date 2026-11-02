@@ -1355,9 +1355,10 @@
     const dim = focus && !rowAnswers(e, focus, false);
     // `same`: a row after the first of its time slot, whose time the slot has said.
     // `tint`: the colour of its own stretch of a Calendar's rule.
+    // No roundel: its kind is a word under its time where its name does not say it.
+    const kind = window.AgoraEventTypes.rowWord(e.event_type);
     return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}"${tint ? ` style="--pc:${tint}"` : ''}>
-        <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}</span>
-        ${roundel(e.event_type)}
+        <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${sub}
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
