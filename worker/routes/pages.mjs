@@ -315,17 +315,28 @@ async function wordsPage(env, url, page, now) {
   if (!Q) return missing(url);
   const nowIso = new Date(now).toISOString();
   const toUtc = new Date(Date.parse(`${today}T00:00:00Z`) + (WORDS_WINDOW_DAYS + 1) * 86400000).toISOString();
-  const [{ parishes, rules }, events] = await Promise.all([
+  const [{ parishes, rules }, events, takingPart] = await Promise.all([
     timetableRows(env),
     env.DB.prepare(
       `SELECT e.id, e.parish_id, e.title, e.feast, e.description, e.event_type, e.languages,
-              e.start_utc, e.end_utc, e.poster_path, p.timezone
+              e.start_utc, e.end_utc, e.poster_path, e.location_parish_id, e.location_override, p.timezone
        FROM events e JOIN parishes p ON e.parish_id = p.id
        WHERE e.source_adapter != 'schedule' AND e.status = 'approved' AND e.parish_scoped = 0
          AND e.start_utc <= ? AND COALESCE(e.end_utc, e.start_utc) >= ?
        ORDER BY e.start_utc`
     ).bind(toUtc, nowIso).all(),
+    // Those taking part in them, whose names find an event as its own parish's do.
+    env.DB.prepare(
+      `SELECT ep.event_id, ep.parish_id FROM event_parishes ep JOIN events e ON e.id = ep.event_id
+       WHERE e.source_adapter != 'schedule' AND e.status = 'approved' AND e.parish_scoped = 0
+         AND e.start_utc <= ? AND COALESCE(e.end_utc, e.start_utc) >= ?`
+    ).bind(toUtc, nowIso).all().catch(() => ({ results: [] })),
   ]);
+  const partOf = new Map();
+  for (const x of takingPart.results || []) {
+    if (!partOf.has(x.event_id)) partOf.set(x.event_id, []);
+    partOf.get(x.event_id).push(x.parish_id);
+  }
   const here = parishes.filter(p => ruleFilters.parishInScope(p, {
     jurisdiction: read.jurisdiction, location: read.location, monasteries: read.monasteries,
   }));
@@ -334,7 +345,7 @@ async function wordsPage(env, url, page, now) {
   const live = rules.filter(r => byId.has(r.parish_id) && r.active !== 0
     && (!r.effective_to || r.effective_to >= localDateOf(zoneOf(r.parish_id), now)));
   const oneOffs = (events.results || []).filter(e => byId.has(e.parish_id))
-    .map(e => ({ ...e, _local: localPartsOf(e.timezone || DEFAULT_ZONE, Date.parse(e.start_utc)) }));
+    .map(e => ({ ...e, extra_parishes: partOf.get(e.id) || [], _local: localPartsOf(e.timezone || DEFAULT_ZONE, Date.parse(e.start_utc)) }));
   // A parish holds a language by what its services are tagged with, as the
   // page's hasLang reads it: its timetable and its own one-offs ahead.
   const langRows = new Map();
@@ -350,7 +361,7 @@ async function wordsPage(env, url, page, now) {
     ...oneOffs.filter(e => answersRoute(e, read, zoneOf(e.parish_id), parishOk(e.parish_id)))
       .map(e => ({ ...e, _at: { date: e._local.date, hm: e._local.time } })),
   ];
-  const v = search.findAcross({ parishes: here, rows, Q, parishLang,
+  const v = search.findAcross({ parishes: here, rows, Q, parishLang, everyParish: parishes,
     hayOf: (p) => collections.JURISDICTION_NAMES[p.jurisdiction] || '' });
   if (v.verdict === 'none') return { ...missing(url), q: phrase };
   if (v.verdict === 'parish' || v.verdict === 'match') {

@@ -319,6 +319,25 @@ test('words that name no parish are what the site\'s search finds: one parish, o
   }
 });
 
+// Kevin, 2 Nov 2026: "antiochian michael" missed Kirrawee's feast, which
+// says "Michael" while only its parish says "Antiochian". Each word is found
+// in what a row says or in where it is, as the search box finds it.
+test('words are found in what is on and in where it is: its parish, or one taking part', async () => {
+  const f = wordsFixture();
+  // Redfern's Vigil: "vigil" is its title, "redfern" its parish's address.
+  let { res, html } = await f.get('/redfern-vigil');
+  assert.equal(res.status, 200);
+  assert.match(title(html), /^All-night Vigil — Saturday 3 October, 7pm · St George Cathedral, Redfern/);
+  // Buderim's Fete, which Redfern takes part in: Buderim's, asked what it says.
+  const fete = f.raw.prepare("SELECT id FROM events WHERE title = 'Spring Fete'").get().id;
+  f.raw.prepare('INSERT INTO event_parishes (event_id, parish_id) VALUES (?, ?)').run(fete, PARISH);
+  ({ res, html } = await f.get('/redfern-fete'));
+  assert.equal(res.status, 200);
+  assert.match(title(html), /^Spring Fete — Saturday 24 October, 10am · Sunshine Coast, Buderim/);
+  // Redfern by its name is Redfern still, not the Fete it takes part in.
+  assert.match(title((await f.get('/redfern')).html), /^St George Cathedral, Redfern — /);
+});
+
 test('a feast beside a parish is a service typed Feast, whatever it is called; /sgr-feast is /sgr/feast', async () => {
   const { raw, get } = fresh();
   raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, feast, start_utc, end_utc, event_type, status, mutation_type)
