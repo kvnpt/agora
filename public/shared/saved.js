@@ -66,6 +66,10 @@
     const out = { id, name: str(l.name, 80) || 'My list', ids, at: time(l.at) };
     const about = str(l.about, 300);
     if (about) out.about = about;
+    // What its card asks of its parishes, as a link's path: '/feast', '/sun/liturgy/en'.
+    // '/' is none asked, kept so a merge does not bring old ones back.
+    const filters = str(l.filters, 200);
+    if (filters && filters.startsWith('/')) out.filters = filters;
     return out;
   }
   const markKey = (b) => `${b.kind}:${b.id}`;
@@ -108,6 +112,7 @@
       for (const id of l.ids) if (!same.ids.includes(id)) same.ids.push(id);
       same.at = first(same.at, l.at);
       if (!same.about && l.about) same.about = l.about;
+      if (!same.filters && l.filters) same.filters = l.filters;
     }
     return clean({
       favourites: byKey([...x.favourites, ...y.favourites], f => f.id),

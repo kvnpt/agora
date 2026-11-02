@@ -107,7 +107,8 @@ export function timetableHeadMeta(m) {
     canonical: m.canonical,
     indexable: timetableIndexable(m),
     ogType: 'website',
-    image: timetableImage(m),
+    // A poster (what is on next at the parishes named), cut small enough for WhatsApp.
+    image: previewImage(timetableImage(m), m.origin),
     // A logo is square, and previews as one; a card is wide.
     card: logo ? 'summary' : 'summary_large_image',
   };

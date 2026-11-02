@@ -292,7 +292,7 @@ export function parishCardHTML(m) {
         ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
         ${addBox(p.id, 'Add a service time')}</div>
       <section class="cu-band" id="coming-up">
-        <h2 class="sec">Coming up</h2>
+        ${calHeadHTML()}
         <div class="cu" style="--pc:${m.color}">${comingUpHTML(m, start, today)}</div>
         ${addBox(p.id, 'Add an event')}
       </section>
@@ -372,16 +372,15 @@ export function eventCardHTML(m) {
 
 /**
  * A collection's card, as next.js's openCollection draws it: its hero in its
- * look, then its parishes, those with times first, each with its timetable,
- * folded to the first few lines until Show timetables (a checkbox in its
- * label, so it opens with no script). `rules` is every active rule, since a
+ * look, then its parishes, each with its timetable, folded behind a stack of
+ * their logos (a checkbox in its label, so it opens with no script). `rules` is every active rule, since a
  * card shows a parish's whole week. What is coming up under them is the
  * page's to add, once it holds the occurrences.
  */
 export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes = [] } = {}) {
   const c = m.collection;
   const colorOf = (j) => jurisColors.jurisdictionColorFrom(m.overrides, j);
-  // Coming up's rows each in the colour of where they are held: the venue
+  // The Calendar's rows each in the colour of where they are held: the venue
   // parish's jurisdiction (any parish, not only the collection's), else their own.
   const byId = new Map(parishes.map(p => [p.id, p]));
   const venueColor = (e) => { const v = e.location_parish_id && byId.get(e.location_parish_id); return colorOf(v ? v.jurisdiction : e.jurisdiction); };
@@ -422,15 +421,33 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes
         <p>${esc(c.blurb || '')}</p>
       </div>
       ${linkChipHTML(m.origin, c.path)}
-      <section class="ctimes${ps.length > 1 ? ' folded' : ''}">
+      <section class="ctimes${ps.length > 1 ? ' stacked' : ''}">
+        ${ps.length > 1 ? stackHTML(ps, colorOf) : ''}
         <div class="clist">${ps.slice(0, limit).map(item).join('') || '<div class="tt-none">Nothing here yet.</div>'}</div>
-        ${ps.length > 1 ? `<label class="ctimes-open"><input type="checkbox" hidden><span>${c.group === 'jurisdiction' ? 'Parishes' : 'Show timetables'}</span>${I.chev}</label>` : ''}
       </section>
       ${feed ? `<section class="cu-band" id="coming-up">
-        <h2 class="sec">Coming up</h2>
+        ${calHeadHTML()}
         <div class="cu">${collectionComingUpHTML(feed, m.now, venueColor)}</div>
       </section>` : ''}
     </div>`);
+}
+
+/**
+ * A card's Calendar (it was Coming up; Kevin, 2 Nov 2026). Its Date and
+ * Filters beside the title are the page's, which need a script.
+ */
+const calHeadHTML = () => '<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts"></div></div>';
+/**
+ * A collection's parishes folded behind their logos, as the page's card has
+ * them (next.js stackHTML): logos first, then those with times. The fold is
+ * a checkbox in its label, so it opens with no script.
+ */
+function stackHTML(ps, colorOf) {
+  const ranked = ps.slice().sort((a, b) => !!b.logo_path - !!a.logo_path);
+  return `<label class="cstack"><input type="checkbox" hidden>
+        <span class="stackrow">${ranked.slice(0, 5).map(p => avatar(p, 'stack', colorOf(p.jurisdiction))).join('')}</span>
+        <span class="inview-text"><b>${ps.length} parishes</b><small><span class="cstack-shut">Show timetables</span><span class="cstack-open">Hide timetables</span></small></span>
+        <span class="inview-go">${I.chev}</span></label>`;
 }
 
 /**

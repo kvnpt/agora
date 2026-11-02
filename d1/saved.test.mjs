@@ -70,6 +70,19 @@ test('merge is everything in either, an item in both keeping when it was first a
   assert.ok(SV.same(SV.merge(m, m), m), 'merging a copy with itself changes nothing');
 });
 
+test('a list keeps the filters its card asks, as a path', () => {
+  const kept = SV.clean({ lists: [
+    { id: 'l1', name: 'SMG + SMK', ids: ['a', 'b'], at: 1, filters: '/feast' },
+    { id: 'l2', name: 'None asked', ids: ['a'], at: 1, filters: '/' },
+    { id: 'l3', name: 'Not a path', ids: ['a'], at: 1, filters: 'feast' },
+  ] }).lists;
+  assert.equal(kept[0].filters, '/feast');
+  assert.equal(kept[1].filters, '/', 'none asked is kept, so a merge does not bring old ones back');
+  assert.equal(kept[2].filters, undefined);
+  const both = SV.merge({ lists: [{ id: 'l1', name: 'A', ids: ['a'], at: 2, filters: '/' }] }, { lists: [{ id: 'l1', name: 'A', ids: ['a'], at: 1, filters: '/feast' }] });
+  assert.equal(both.lists[0].filters, '/', 'the first copy\'s word stands');
+});
+
 test('isEmpty and same', () => {
   assert.ok(SV.isEmpty({}));
   assert.ok(!SV.isEmpty({ favourites: [{ id: 'a' }] }));

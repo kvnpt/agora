@@ -115,6 +115,14 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
   const rows = await timetableRows(env);
   const m = timetableModel({ ...rows, route: page.route, now, origin: url.origin });
   if (!m) return missing(url);
+  // A link that names parishes and asks something of them (/smg+smk/feast)
+  // previews what is on there next, poster and all: their timetables may
+  // hold none of it, since a feast is a one-off (Kevin, 2 Nov 2026).
+  if (m.named && (!m.listsAll || !m.groups.length)) {
+    m.upcoming = await collectionFeedOf(env, m, page.route, now, { parishIds: m.named.map(p => p.id), days: PREVIEW_DAYS })
+      .then(feed => feed.filter(e => !e.is_tombstone))
+      .catch((err) => { console.error(`[preview] what is on ${url.pathname}: ${err && err.message}`); return null; });
+  }
   const head = headHTML(timetableHeadMeta(m));
   if (lite) {
     // The lite version has no page to filter, so every filter link is a
@@ -136,12 +144,16 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
   };
 }
 
-/** A collection's week, for the lite version's card (lite-page.mjs collectionFeed). */
-async function collectionFeedOf(env, m, route, now) {
-  const parishIds = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.map(x => x.parish.id)));
+/**
+ * A collection's week, for the lite version's card (lite-page.mjs
+ * collectionFeed); or, for a link's preview, what is on at the parishes it
+ * names (`parishIds`) over `days`.
+ */
+async function collectionFeedOf(env, m, route, now, { parishIds = null, days = COLLECTION_FEED_DAYS } = {}) {
+  parishIds = parishIds || m.groups.flatMap(g => g.juris.flatMap(j => j.parishes.map(x => x.parish.id)));
   const start = localDateOf(DEFAULT_ZONE, now);
   const { fromUtc } = liteWindow(start);
-  const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (COLLECTION_FEED_DAYS + 1) * 86400000).toISOString();
+  const toUtc = new Date(Date.parse(`${start}T00:00:00Z`) + (days + 1) * 86400000).toISOString();
   const [rows, events, cross] = await Promise.all([
     fetchWindowRows(env.DB, fromUtc, toUtc),
     env.DB.prepare(
@@ -153,9 +165,12 @@ async function collectionFeedOf(env, m, route, now) {
   ]);
   return collectionFeed({
     rows, events: (events.results || []).map(({ updated_by, ...e }) => e),   // eslint-disable-line no-unused-vars
-    cross: cross.results || [], parishIds, named: (m.named || []).map(p => p.id), route, now,
+    cross: cross.results || [], parishIds, named: (m.named || []).map(p => p.id), route, now, days,
   });
 }
+
+/** How far ahead a link that names parishes looks for what to preview. */
+const PREVIEW_DAYS = 21;
 
 /** A link to something that is not here: the home page's words, noindex. */
 const missing = (url) => ({ status: 404, head: headHTML(otherMeta(url.origin)) });
