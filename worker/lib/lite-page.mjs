@@ -25,6 +25,7 @@ import urlState from '../../public/shared/url-state.js';
 import linkWords from '../../public/shared/link-words.js';
 import ruleFilters from '../../public/shared/timetable.js';
 import search from '../../public/shared/search-words.js';
+import collections from '../../public/shared/collections.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import { expandFrom } from '../../public/shared/project.mjs';
 import { buildFeed } from '../../public/shared/merge.mjs';
@@ -157,10 +158,19 @@ export function liteModel({ parish, rows, events = [], cross = [], links = [], r
     && r.active !== 0 && (!r.effective_to || r.effective_to >= today0));
   const parishOk = ruleFilters.parishAnswersLang(liveRules, lf);
   // The link's own words (/smmp/disco), asked of each occurrence as the
-  // search box asks them. Words nothing here answers ask nothing: the card
-  // is the parish's, as the app's is when no match opens over it.
+  // search box asks them: each in what it says or where it is, which is
+  // this parish, the one holding it when another does, and the one it is
+  // held at. Words nothing here answers ask nothing: the card is the
+  // parish's, as the app's is when no match opens over it.
   let wq = route.eventId ? null : wordsQuery(route, today0);
-  const answersWords = (e) => !wq || search.answers(e, wq, { date: e._local.date, hm: e._local.time,
+  const jurisName = (j) => collections.JURISDICTION_NAMES[j] || '';
+  const homeWords = search.parishWords(parish, jurisName(parish.jurisdiction));
+  const whereOf = (e) => [homeWords,
+    e.parish_id && e.parish_id !== parish.id
+      ? search.parishWords({ name: e.parish_name, acronym: e.parish_acronym }, jurisName(e.jurisdiction)) : '',
+    e.location_parish_id && venues[e.location_parish_id] ? search.parishWords(venues[e.location_parish_id]) : '',
+  ].join(' ');
+  const answersWords = (e) => !wq || search.answers(e, wq, { date: e._local.date, hm: e._local.time, where: whereOf(e),
     parishLang: (lang) => ruleFilters.parishAnswersLang(liveRules, { lang }) });
   if (wq && !feed.some(e => !e.is_tombstone && answersWords(e) && Date.parse(e.end_utc || e.start_utc) >= now)) wq = null;
   const asks = isNarrowed(route) || !!route.kind || !!lf || !!wq;

@@ -494,15 +494,27 @@
   const asksWhat = (f) => !!(f.kind || f.service || f.day != null || f.dayGroup || f.part);
   /**
    * Where and when a row is, as search-words.js asks it: an event's date and
-   * time on its parish's clock, and whether its parishes hold a service in a
-   * language. A rule happens on a weekday, which it carries.
+   * time on its parish's clock, whether its parishes hold a service in a
+   * language, and the words they answer to (their names, initials,
+   * addresses and jurisdictions), in which a search's words are found as
+   * much as in its own. A rule happens on a weekday, which it carries.
    */
   function whereWhen(row, isRule) {
     const ids = isRule ? [row.parish_id] : eventParishIds(row);
     const parishLang = (lang) => ids.some(id => hasLang(S.byId.get(id), lang));
-    if (isRule) return { parishLang };
+    const where = window.AgoraSearch.parishIdsOf(row).map(parishWordsOf).join(' ');
+    if (isRule) return { parishLang, where };
     const l = local(row);
-    return { date: l.date, hm: l.hm, parishLang };
+    return { date: l.date, hm: l.hm, parishLang, where };
+  }
+  const parishWordsMemo = new Map();
+  /** What a parish answers to in a search (search-words.js parishWords), kept per bundle. */
+  function parishWordsOf(id) {
+    const p = S.byId.get(id);
+    if (!p) return '';
+    let m = parishWordsMemo.get(id);
+    if (!m || m.p !== p) parishWordsMemo.set(id, m = { p, w: window.AgoraSearch.parishWords(p, JURIS[p.jurisdiction]?.long || '') });
+    return m.w;
   }
   const wordsQs = new Map();
   /** What a link's words ask (/smmp/disco → "disco"), or null when they ask nothing ("the"). */
@@ -2749,13 +2761,20 @@
     const parishes = S.parishes.filter(p => parishMatches(p, where, juris));
     const here = new Set(parishes.map(p => p.id));
     const horizon = Date.parse(addDays(todayKey(), MATCH_DAYS) + 'T14:00:00Z'), now = Date.now();
+    const raw = window.agoraBundle.raw || {};
+    // Those taking part in a one-off, whose names find it as its own parish's do.
+    const takingPart = new Map();
+    for (const x of raw.event_parishes || []) {
+      if (!takingPart.has(x.event_id)) takingPart.set(x.event_id, []);
+      takingPart.get(x.event_id).push(x.parish_id);
+    }
     const rows = [
       ...S.rules.filter(r => here.has(r.parish_id) && liveRule(r) && !r.parish_scoped && rowAnswers(r, f, true)),
-      ...((window.agoraBundle.raw && window.agoraBundle.raw.events) || []).filter(e => here.has(e.parish_id)
+      ...(raw.events || []).filter(e => here.has(e.parish_id)
         && visible(e) && !e.parish_scoped && endMs(e) >= now && Date.parse(e.start_utc) <= horizon && rowAnswers(e, f, false))
-        .map(e => ({ ...e, _at: local(e) })),
+        .map(e => ({ ...e, extra_parishes: takingPart.get(e.id) || [], _at: local(e) })),
     ];
-    const v = SW.findAcross({ parishes, rows, Q, hayOf: (p) => JURIS[p.jurisdiction]?.long || '',
+    const v = SW.findAcross({ parishes, rows, Q, hayOf: (p) => JURIS[p.jurisdiction]?.long || '', everyParish: S.parishes,
       parishLang: (pid, lang) => hasLang(S.byId.get(pid), lang) });
     // Something else opened meanwhile (the bundle was a while coming).
     if (stack.length !== depth) return;
@@ -3393,23 +3412,20 @@
     const intent = Q.kind || Q.prayer || Q.lang || Q.days;
     if (!Q.text.length && !intent) return [];
     const now = Date.now();
-    const pids = Q.text.length ? new Set(searchParishes({ ...Q, kind: null, prayer: false, days: null })
-      .filter(p => { const h = hayOf(p); return Q.text.every(w => hasWord(`${h.name} ${h.acr} ${h.addr}`, w)); }).map(p => p.id)) : null;
-    const res = feedFor(42).filter(e => {
-      if (!visible(e) || !scopedOpen(e, null) || endMs(e) < now) return false;
-      const at = whereWhen(e);
-      if (SW.answers(e, Q, at)) return true;
-      // Or the words name the parish (or its suburb): its services, as the
-      // rest of the query asks.
-      return !!pids && eventParishIds(e).some(id => pids.has(id)) && SW.answers(e, { ...Q, text: [] }, at);
-    });
-    // By day; within a day, what is near you first (when we know where you
-    // are), then by time. A Liturgy in Perth at 8 should not sit between two
-    // in Sydney at 8 and 9.
+    // Each word in what it says or in where it is: its parishes' names,
+    // initials, suburbs and jurisdictions (search-words.js answers). So
+    // "kirrawee" is all that is on at Kirrawee, "antiochian michael" its
+    // feast and Ryde's vespers, and "ryde vespers" Ryde's vespers.
+    const res = feedFor(42).filter(e => visible(e) && scopedOpen(e, null) && endMs(e) >= now && SW.answers(e, Q, whereWhen(e)));
+    // What says the words itself first ("Feast of St Michael"), then what is
+    // found by where it is (Kirrawee's other Sundays). Within each, by day;
+    // within a day, what is near you first (when we know where you are),
+    // then by time. A Liturgy in Perth at 8 should not sit between two in
+    // Sydney at 8 and 9.
     const o = S.loc;
     const far = (e) => { if (!o) return 0; const at = e.lat != null ? e : S.byId.get(e.parish_id); return at && km(o, at) > 40 ? 1 : 0; };
-    return res.map(e => ({ e, day: local(e).date, far: far(e), t: Date.parse(e.start_utc) }))
-      .sort((a, b) => a.day.localeCompare(b.day) || a.far - b.far || a.t - b.t).map(x => x.e);
+    return res.map(e => ({ e, says: SW.saysCount(e, Q), day: local(e).date, far: far(e), t: Date.parse(e.start_utc) }))
+      .sort((a, b) => b.says - a.says || a.day.localeCompare(b.day) || a.far - b.far || a.t - b.t).map(x => x.e);
   }
 
   function searchCollections(Q) {

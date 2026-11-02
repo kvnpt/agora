@@ -137,9 +137,14 @@ it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`).
 
 **A word nothing else claims, beside one parish, is a search of it** (Kevin,
 28 Oct 2026). `/smmp/disco` is "disco" asked of St Mary's, read as the search
-box reads it (`public/shared/search-words.js`, which the box reads too): every
-word in a title, subtitle or description, and a kind, day or language word as
-intent. It is a focus like `/sgr/talks`, so the soonest match opens over the
+box reads it (`public/shared/search-words.js`, which the box reads too): each
+word in what a row says (its title, subtitle or description) or in where it is
+(its parishes' names, initials, addresses and jurisdictions, and a place of its
+own), and a kind, day or language word as intent. A word is found wherever it
+is: "antiochian michael" is Kirrawee's Feast of St Michael, though only its
+parish's jurisdiction says "Antiochian" (Kevin, 2 Nov 2026; it used to need
+every word in the title, or every word in the parish's name). The box lists
+what says the words itself first, then what is found by where it is. It is a focus like `/sgr/talks`, so the soonest match opens over the
 parish and "More “disco”" lists the rest, a season ahead; nothing matching is the
 parish's plain card. Everything the grammar already knows comes first: the
 parish's own links and payment links (the Worker's redirects), the words above,
@@ -155,7 +160,10 @@ verdict (`findAcross` in `search-words.js`) decides what opens, on the page
 One parish by its name, with nothing found elsewhere, is its card. All that is
 found at one parish is its first, over that parish's card, as at `/smmp/disco`;
 and words that name a parish ask the rest of themselves of it, as the box does
-with "smg feast", so `/smg-feast` is `/smg/feast` (Kevin, 1 Nov 2026).
+with "smg feast", so `/smg-feast` is `/smg/feast` (Kevin, 1 Nov 2026). A parish
+named is there for itself and finds nothing elsewhere (`/kirrawee` is Kirrawee,
+not every Vespers it takes part in); what is found at one parish only through
+where it is asks that parish what it says (`/ryde-vespers` is `/smg/vespers`).
 Several places are a Search card of them, by distance, the parish named beside
 the rest ("list both", 28 Oct): its timetables keep the lines that answer and a
 named parish's whole week, and its link is the words'. Nothing is the search box

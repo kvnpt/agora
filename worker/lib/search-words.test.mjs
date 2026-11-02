@@ -111,3 +111,65 @@ test('words that name no parish find one parish, a match at one, a list, or noth
   // Parishes and rows are what the link's other words left in.
   assert.deepEqual(W.findAcross({ parishes: [oca], rows: rows.filter(r => r.parish_id === 3), Q: W.parseQuery('vigil', today) }), { verdict: 'match', pid: 3 });
 });
+
+// Kevin, 2 Nov 2026: "antiochian michael" listed Ryde's and the Village's
+// events but not Kirrawee's Feast of St Michael. Ryde and the Village have
+// "Antiochian" in their names; Kirrawee has it only as its jurisdiction, and
+// its feast says "Michael" but not "Antiochian". A word is found wherever it
+// is, each in what a row says or in where it is.
+test('each word is found in what a row says or in its parishes', () => {
+  const smk = { id: 'smk', name: 'St. Michael, Kirrawee', full_name: 'St. Michael, Kirrawee', acronym: 'SMK', address: '47 Durbar Avenue, Kirrawee 2232 NSW', jurisdiction: 'antiochian' };
+  const where = W.parishWords(smk, 'Antiochian Orthodox');
+  const feast = { title: 'Feast of Saint Michael', feast: 'Saint Michael the Archangel', event_type: 'feast', description: 'Matins at 8:45am, Divine Liturgy at 10:00am.' };
+  const liturgy = { title: 'Liturgy', event_type: 'liturgy' };
+  const Q = W.parseQuery('antiochian michael', today);
+  assert.ok(!W.answers(feast, Q, at('2026-11-08', '08:45')), 'what it says alone has no "antiochian"');
+  assert.ok(W.answers(feast, Q, { ...at('2026-11-08', '08:45'), where }), 'its jurisdiction says it');
+  assert.ok(W.answers(liturgy, Q, { ...at('2026-11-15', '10:00'), where }), 'its parish says both');
+  assert.ok(W.answers(liturgy, W.parseQuery('kirrawee liturgy', today), { ...at('2026-11-15', '10:00'), where }));
+  assert.ok(!W.answers(liturgy, W.parseQuery('kirrawee vespers', today), { ...at('2026-11-15', '10:00'), where }), 'still every word');
+  assert.ok(W.answers({ title: 'Fishing Day', event_type: 'social', location_override: 'Dolls Point' }, W.parseQuery('dolls point', today)), 'a place of its own');
+  // What it says itself counts first.
+  assert.equal(W.saysCount(feast, Q), 1);
+  assert.equal(W.saysCount(liturgy, Q), 0);
+  // Its parishes: its own, the one it is held at, those taking part.
+  assert.deepEqual(W.parishIdsOf({ parish_id: 'smg', location_parish_id: 'san', extra_parishes: ['smk', { id: 'san' }] }), ['smg', 'san', 'smk']);
+});
+
+test('across the site: a parish named is there for itself; a row elsewhere by what it says and its parishes', () => {
+  const smg = { id: 'smg', name: 'Sts. Michael & Gabriel, Ryde', full_name: 'Sts Michael & Gabriel Antiochian Orthodox Church', acronym: 'SMG', address: '72 Belmore St, Ryde 2112 NSW', jurisdiction: 'antiochian' };
+  const smk = { id: 'smk', name: 'St. Michael, Kirrawee', acronym: 'SMK', address: '47 Durbar Avenue, Kirrawee 2232 NSW', jurisdiction: 'antiochian' };
+  const snp = { id: 'snp', name: 'St Nicholas, Punchbowl', acronym: 'SNP', address: 'Punchbowl NSW', jurisdiction: 'antiochian' };
+  const sgr = { id: 'sgr', name: 'St George, Redfern', acronym: 'SGR', address: 'Redfern NSW', jurisdiction: 'greek' };
+  const parishes = [smg, smk, snp, sgr];
+  const juris = { antiochian: 'Antiochian Orthodox', greek: 'Greek Orthodox' };
+  const hayOf = (p) => juris[p.jurisdiction];
+  const vespers = { title: 'Great Vespers', feast: 'Archangels Michael and Gabriel', event_type: 'feast', parish_id: 'smg', extra_parishes: ['smk'], _at: at('2026-11-07', '18:00') };
+  const kFeast = { title: 'Feast of Saint Michael', event_type: 'feast', parish_id: 'smk', _at: at('2026-11-08', '08:45') };
+  const nSynaxis = { title: 'Liturgy', feast: 'Synaxis of the Archangel Michael', event_type: 'liturgy', parish_id: 'snp', _at: at('2026-11-08', '09:00') };
+  const gSynaxis = { title: 'Liturgy', feast: 'Archangel Michael', event_type: 'liturgy', parish_id: 'sgr', _at: at('2026-11-08', '09:00') };
+  const sunday = { title: 'Liturgy', event_type: 'liturgy', day_of_week: 0, start_time: '10:00', parish_id: 'smk' };
+  const rows = [sunday, vespers, kFeast, nSynaxis, gSynaxis];
+  const find = (q, more = {}) => W.findAcross({ parishes, rows, Q: W.parseQuery(q, today), hayOf, ...more });
+
+  // Ryde and Kirrawee by name, and Punchbowl's Synaxis by its jurisdiction; not Redfern's.
+  const am = find('antiochian michael');
+  assert.equal(am.verdict, 'list');
+  assert.deepEqual(am.named, ['smg', 'smk']);
+  assert.deepEqual(am.ids, ['smg', 'smk', 'snp']);
+  // Kirrawee is Kirrawee, not the Vespers at Ryde it takes part in.
+  assert.deepEqual(find('kirrawee'), { verdict: 'parish', pid: 'smk' });
+  // Found only through those taking part: what is asked of Ryde is what its rows say.
+  assert.deepEqual(find('kirrawee vespers'), { verdict: 'match', pid: 'smg', words: ['vespers'] });
+  assert.deepEqual(find('ryde vespers'), { verdict: 'match', pid: 'smg', words: ['vespers'] }, 'its own suburb, too');
+  assert.deepEqual(find('punchbowl synaxis'), { verdict: 'match', pid: 'snp', words: ['synaxis'] });
+  assert.deepEqual(find('synaxis'), { verdict: 'match', pid: 'snp' }, 'all of it said: the words as they are');
+  // What says the words comes first: a preview's poster and titles.
+  const bus = { title: 'Bus from Ryde to Kirrawee', event_type: 'other', parish_id: 'sgr', _at: at('2026-11-08', '07:00') };
+  const rk = W.findAcross({ parishes, rows: [...rows, bus], Q: W.parseQuery('ryde kirrawee', today), hayOf });
+  assert.deepEqual(rk.found, [bus, vespers], 'the bus says both; the Vespers is at Ryde with Kirrawee');
+  assert.deepEqual(rk.ids, ['sgr', 'smg']);
+  // A row's parishes outside the link's (its jurisdiction's) still say their words.
+  const greekOnly = W.findAcross({ parishes: [sgr], rows: [{ ...gSynaxis, extra_parishes: ['smk'] }], Q: W.parseQuery('kirrawee archangel', today), hayOf, everyParish: parishes });
+  assert.deepEqual(greekOnly, { verdict: 'match', pid: 'sgr', words: ['archangel'] });
+});
