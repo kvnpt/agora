@@ -15,6 +15,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { servePage, pageOf, indexedCollections } from './pages.mjs';
 import { timetableModel } from '../lib/lite-timetable.mjs';
+import { previewImage } from '../lib/page-head.mjs';
 import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
@@ -244,7 +245,7 @@ test('a word nothing else claims, beside a parish, previews the soonest event it
   const { res, html } = await get('/sgr/disco');
   assert.equal(res.status, 200);
   assert.match(title(html), /^Disco Night \(Registration Essential\) — Saturday 17 October, 7pm · St George Cathedral, Redfern/, 'the soonest');
-  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/posters/disco.jpg', 'its poster previews');
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/disco.jpg', 'its poster previews, cut to a size WhatsApp shows');
   assert.equal(robots(html), 'noindex,follow', 'words are anybody’s: never indexed');
   assert.match(card(html), /^<section class="sheet parish open ssr"/, "the parish's card, which the event opens in front of");
   for (const p of ['/disco/sgr', '/sgr/disco-night', '/SGR/Disco']) {
@@ -290,7 +291,7 @@ test('words that name no parish are what the site\'s search finds: one parish, o
   ({ res, html } = await get('/disco'));
   assert.equal(res.status, 200);
   assert.match(title(html), /^Disco Night — Saturday 17 October, 7pm · St George Cathedral, Redfern/);
-  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/posters/disco.jpg');
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/disco.jpg');
   assert.equal(robots(html), 'noindex,follow');
   assert.match(title((await get('/sausage')).html), /^Spring Fete — Saturday 24 October, 10am · Sunshine Coast, Buderim/, 'by its description');
   // Several places: the words and where they were found, and no card (the page builds it).
@@ -309,7 +310,7 @@ test('words that name no parish are what the site\'s search finds: one parish, o
   // One parish by name, and something elsewhere: both (Kevin, 28 Oct 2026).
   ({ html } = await get('/sunshine'));
   assert.equal(title(html), '“sunshine” at Sunshine Coast, Buderim and St George Cathedral, Redfern | orthodoxy.au');
-  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/posters/picnic.jpg', 'the first poster found');
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/picnic.jpg', 'the first poster found');
   // Nothing: a 404, as any link to nothing is.
   for (const p of ['/nosuch', '/antiochian/fete', '/the']) {
     const r = await get(p);
@@ -332,6 +333,15 @@ test('a feast beside a parish is a service typed Feast, whatever it is called; /
   assert.match(title((await get('/sgr/vespers')).html), /^Great Vespers — Saturday 3 October/);
   // A parish's name alone asks nothing more of it.
   assert.match(title((await get('/sgr-cathedral')).html), /^St George Cathedral, Redfern — /);
+});
+
+test('a poster previews as a JPEG cut to size; a logo, an og card and a Preview as they are', () => {
+  const o = 'https://orthodoxy.au';
+  assert.equal(previewImage(`${o}/posters/a.png`, o), `${o}/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/a.png`);
+  for (const url of [`${o}/logos/a.png`, `${o}/og/greek.jpg`, 'https://elsewhere.org/posters/a.png']) assert.equal(previewImage(url, o), url);
+  // A workers.dev Preview has no image transformations.
+  const pv = 'https://x-agora.kpkevpat.workers.dev';
+  assert.equal(previewImage(`${pv}/posters/a.png`, pv), `${pv}/posters/a.png`);
 });
 
 test('a painted Today: no count, Later today only under Happening now, This evening, Tomorrow, and the evening divided off', async () => {
@@ -415,7 +425,7 @@ test('an event link — projected or stored — is its card, never indexed', asy
     'the poster opens full size');
   assert.match(card(stored), /<h1>Feast of St George<\/h1>\s*<p class="ev-when">Sunday 11 Oct · 10am–12pm/);
   assert.match(card(stored), /<div class="ev-desc">Vespers, then a meal\.<\/div>/);
-  assert.equal(meta(stored, 'property', 'og:image'), 'https://orthodoxy.au/posters/x.jpg', 'the poster previews');
+  assert.equal(meta(stored, 'property', 'og:image'), 'https://orthodoxy.au/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/x.jpg', 'the poster previews');
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
 });
 

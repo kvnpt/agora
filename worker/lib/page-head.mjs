@@ -59,9 +59,25 @@ export function wordsMeta({ origin, phrase, places = [], titles = [], image = nu
     title: `“${phrase}” at ${list(places)}`,
     description: `${said.length ? `${said.join(' · ')}. ` : ''}What orthodoxy.au finds for “${phrase}”: ${places.length} places, with their times and what is coming up.`,
     canonical: null, indexable: false, ogType: 'website',
-    image: image ? (/^https?:/.test(image) ? image : `${origin}${image}`) : `${origin}/og/default.jpg`,
+    image: image ? previewImage(/^https?:/.test(image) ? image : `${origin}${image}`, origin) : `${origin}/og/default.jpg`,
     card: 'summary_large_image',
   };
+}
+
+/**
+ * A poster as a preview image: a JPEG at most 1200px wide, cut by the zone's
+ * image transformations (Images → Transformations, which the page's poster
+ * thumbnails use too). A poster is often a megabyte or more — a PNG straight
+ * from a design app — and WhatsApp is widely reported to show no picture for
+ * an image much over 300 KB (Kevin, 1 Nov 2026: Ryde's 1.4 MB Archangels
+ * poster, 190 KB this way). A logo or one of the og cards is small and goes
+ * as it is, and so does everything on a workers.dev Preview, which has no
+ * transformations to ask.
+ */
+export const POSTER_PREVIEW = 'width=1200,quality=80,format=jpeg,fit=scale-down';
+export function previewImage(url, origin) {
+  if (!url || !origin || /\.workers\.dev$/.test(new URL(origin).hostname)) return url;
+  return url.startsWith(`${origin}/posters/`) ? `${origin}/cdn-cgi/image/${POSTER_PREVIEW}${url.slice(origin.length)}` : url;
 }
 
 /** A parish or an event, from its card's model (lite-page.mjs liteModel). */
@@ -72,7 +88,7 @@ export function parishMeta(m, { indexable = true } = {}) {
     canonical: m.canonical,
     indexable: indexable && m.indexable,
     ogType: m.pinned ? 'article' : 'place',
-    image: liteImage(m),
+    image: previewImage(liteImage(m), m.origin),
     card: m.pinned && m.pinned.poster_path ? 'summary_large_image' : 'summary',
     jsonLd: churchJsonLd(m),
   };

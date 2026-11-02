@@ -51,7 +51,10 @@ markup went.
   (`churchJsonLd`). Indexable at its plain link alone; `/greek/sgr` and `/sgr/en` open
   the same card under the same canonical, and are not offered to a search engine.
 - **An event** (`/102`, `/42:2026-10-04`): its title, when and where, its poster as the
-  preview. Never indexed (below).
+  preview. Never indexed (below). A poster previews as a JPEG at
+  most 1200px wide, cut by the zone's image transformations (`previewImage`): a
+  1.4 MB PNG may show no picture in WhatsApp, which is said to drop images over about
+  300 KB. A workers.dev Preview, which cannot transform, sends the poster itself.
 - **A filter link**: the timetable's heading (`timetableHeading`, whose words are
   `public/shared/link-words.js`, which the page's parishes in view read too), a collection
   indexable once its page lists somebody, every other mix noindex.
