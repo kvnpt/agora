@@ -553,6 +553,12 @@
 .ee-card.is-join [data-row="description"],
 .ee-card.is-join [data-row="event_type"],
 .ee-card.is-join [data-row="languages"] { display: none; }
+/* Its own, already on file (matchOnFile): nothing to take part in, nothing replaced. */
+.ee-card.is-here .ee-host .ee-section-title,
+.ee-card.is-here .ee-host-ask,
+.ee-card.is-here .ee-host [data-list="host-replaces"],
+.ee-card.is-here .ee-host [data-act="none-replaced"],
+.ee-card.is-here .ee-host [data-act="own"] { display: none; }
 .ee-card.is-open .ee-host { margin-top: 8px; }
 /* Shut, the box keeps only the question and its ticks: open, it says the rest. */
 .ee-card.is-peek .ee-host { max-width: 420px; gap: 4px; padding: 8px 10px; }

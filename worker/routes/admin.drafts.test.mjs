@@ -991,3 +991,107 @@ test('the whole poster being theirs is a move, not taking part; and moving there
   const moved = (await f.call('PATCH', `/api/admin/drafts/${ours.id}`, { parish_id: SBU })).body;
   assert.deepEqual([moved.cards[0].host_parish_id, moved.cards[0].host_event_id], [null, null]);
 });
+
+// ── an event at this parish's own church, already on file ──
+//
+// Burwood's own November poster gives its 9 Nov feast, which Burwood already
+// has on file (put up by hand, or published from an earlier read). Read at
+// Burwood it was a second feast beside the first (Kevin, 3 Nov 2026).
+
+const BURWOOD_NOV = (events) => GLADESVILLE_NOV(events.map(({ venue, ...e }) => e));
+
+test('a poster’s event this parish already has on file is that one: filled in on Publish, not made twice', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  // As printed: "at St Nectarios Church, Burwood" — its own church, so at home.
+  const read = await readAt(f, SBU, GLADESVILLE_NOV([{ ...FEAST_AT_BURWOOD, start_time: '07:00', feast: 'St Nectarios of Aegina',
+    description: 'Hierarchical Divine Liturgy, then lunch in the hall.' }]));
+  const card = read.cards[0];
+  assert.deepEqual([card.host_parish_id, card.host_event_id], [SBU, feast], 'its own, on file');
+  assert.equal(card.location_override, null, 'its own church by name is home, not a place of its own');
+  assert.ok(card.read_notes.some(n => n.field === 'host_event_id' && /Already on file here: 7:00am Feast of St Nectarios/.test(n.text)));
+  assert.ok(!card.read_notes.some(n => n.field === 'replaces'), 'nothing to ask about what it replaces');
+
+  const count = () => f.raw.prepare('SELECT COUNT(*) n FROM events').get().n;
+  const before = count();
+  const r = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(r.status, 201);
+  assert.equal(r.body.on_file, true);
+  assert.equal(count(), before, 'nothing new');
+  assert.deepEqual(f.raw.prepare('SELECT title, start_utc, end_utc, feast, description, poster_path FROM events WHERE id = ?').get(feast), {
+    title: 'Feast of St Nectarios', start_utc: '2030-11-08T20:00:00.000Z', end_utc: '2030-11-08T23:30:00.000Z',
+    feast: 'St Nectarios of Aegina', description: 'Hierarchical Divine Liturgy, then lunch in the hall.',
+    poster_path: read.poster_path,
+  }, 'the poster and what it was missing; its title and times as they were');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM event_parishes WHERE event_id = ?').get(feast).n, 0, 'nobody set as taking part');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM drafts WHERE id = ?').get(read.id).n, 0);
+  assert.deepEqual(f.bucket.deleted, [], 'the poster is on the event now');
+});
+
+test('on file at another time, the card says so and Publish keeps the time on file; what it has stays', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  f.raw.prepare("UPDATE events SET poster_path = '/posters/old.png', description = 'As put up by hand.' WHERE id = ?").run(feast);
+  const read = await readAt(f, SBU, BURWOOD_NOV([{ ...FEAST_AT_BURWOOD, description: 'From the poster.' }]));
+  const card = read.cards[0];
+  assert.equal(card.host_event_id, feast, 'the same feast, at 7:30 rather than 7:00');
+  assert.ok(card.read_notes.some(n => n.field === 'host_event_id'
+    && /poster has it at 7:30am\. Publishing keeps 7:00am/.test(n.text)));
+  const r = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(r.status, 201);
+  assert.deepEqual(r.body.filled, []);
+  assert.deepEqual(f.raw.prepare('SELECT start_utc, description, poster_path FROM events WHERE id = ?').get(feast),
+    { start_utc: '2030-11-08T20:00:00.000Z', description: 'As put up by hand.', poster_path: '/posters/old.png' });
+  assert.ok(f.bucket.deleted.includes(read.poster_path.slice(1)), 'the new poster, which nothing carries, goes');
+});
+
+test('something else that day is not it, and "not that one" makes it the parish’s own new event', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  burwoodFeast(f.raw, { title: 'Parish Fete' });
+  const other = await readAt(f, SBU, BURWOOD_NOV([{ ...FEAST_AT_BURWOOD, start_time: '18:00', end_time: '20:00',
+    title: 'Youth Night', event_type: 'youth' }]));
+  assert.equal(other.cards[0].host_event_id, null, 'a different event, not the fete');
+
+  const feast = burwoodFeast(f.raw);
+  const read = await readAt(f, SBU, BURWOOD_NOV([FEAST_AT_BURWOOD]));
+  const card = read.cards[0];
+  assert.equal(card.host_event_id, feast);
+  const r = await f.call('PATCH', `/api/admin/draft-events/${card.id}`, { host_parish_id: null, host_event_id: null, languages: ['Greek'] });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.read_notes.filter(n => n.field === 'host_event_id'), []);
+  const made = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(made.status, 201);
+  assert.notEqual(made.body.event.id, feast);
+  assert.equal(made.body.event.parish_id, SBU);
+});
+
+test('gone since the read: said so, not filled in', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  const read = await readAt(f, SBU, BURWOOD_NOV([FEAST_AT_BURWOOD]));
+  f.raw.prepare("UPDATE events SET status = 'cancelled' WHERE id = ?").run(feast);
+  const r = await f.call('POST', `/api/admin/draft-events/${read.cards[0].id}/publish`, {});
+  assert.equal(r.status, 400);
+  assert.equal(r.body.gone, true);
+  assert.equal(f.raw.prepare('SELECT poster_path FROM events WHERE id = ?').get(feast).poster_path, null);
+});
+
+test('moving a draft: the old parish’s event on file goes, and another parish’s it joined is its own on file', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  const own = await readAt(f, SBU, BURWOOD_NOV([FEAST_AT_BURWOOD]));
+  const away = (await f.call('PATCH', `/api/admin/drafts/${own.id}`, { parish_id: SAG })).body;
+  assert.deepEqual([away.cards[0].host_parish_id, away.cards[0].host_event_id], [null, null], 'found at Burwood, not Gladesville');
+
+  const joined = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  const there = (await f.call('PATCH', `/api/admin/drafts/${joined.id}`, { parish_id: SBU })).body;
+  assert.deepEqual([there.cards[0].host_parish_id, there.cards[0].host_event_id], [SBU, feast]);
+  const r = await f.call('POST', `/api/admin/draft-events/${there.cards[0].id}/publish`, {});
+  assert.equal(r.status, 201);
+  assert.equal(r.body.on_file, true, 'filled in, not joined by its own parish');
+});

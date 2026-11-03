@@ -394,6 +394,22 @@ when Where names another parish) does the reverse by hand. Not when the whole
 poster is that parish's (`read_parish`): St Elias's youth night dropped at
 Punchbowl is a move, not Punchbowl taking part.
 
+**An event a parish already has on file is that one, filled in** (Kevin, 3
+Nov 2026). Burwood's own poster read at Burwood would have made a second 9 Nov
+feast beside the one on file. Now, after the regular services are matched, a
+card is checked against the parish's own one-offs that day with the same
+`sameEventOnFile` (`matchOnFile`): a hit is `host_parish_id` = the parish
+itself and `host_event_id` = the event, and the card says **on file here**.
+Publishing writes nothing new (`publishOnFile`): the poster goes on the event,
+and its subtitle, description, end and languages, each only where the event
+has none — a read only ever fills empty fields. Its title, time, kind and place
+stay as they are on file; a poster with another time says so on the card.
+**Not that one — add it as a new event** makes it the parish's own new event.
+A venue naming the parish's own church ("St Nectarios Church, Burwood" on
+Burwood's poster) is home, as its address already was. Moving the draft drops
+a match at the old parish; one at the new parish (a card that joined its
+event) becomes that parish's own on file.
+
 **A subtitle is the line under the title** — the field is `feast` everywhere,
 for history, and the forms call it Subtitle. It is the saint or feast of the
 day, or a talk's topic: "Matins and Divine Liturgy" over "Holy Protection of
