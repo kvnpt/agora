@@ -224,7 +224,7 @@ What to return:
 For each event:
 - title: the event's name, in normal capitalisation even when the image prints it in capitals ("Feast of St Nicholas", not "FEAST OF ST NICHOLAS"). For a regular service, the service ("Orthros and Divine Liturgy"), with its commemoration in feast and not in the title. Do not add the parish's name unless it is part of the event's name.
 - feast: the saint or feast the date commemorates, when the image gives one beside the service ("Luke the Evangelist", "Sixth Sunday of Luke"). Empty when it gives none, and for an event that is itself the feast ("Feast of St Nicholas").
-- date: YYYY-MM-DD. Images often leave out the year; then use the first such date on or after today, and set year_printed to false. A programme headed with its month and year ("October 2026") prints the year for every date in it.
+- date: YYYY-MM-DD. A programme headed with its month and year ("October 2026") prints the year for every date in it, and a date in it that has already passed keeps that year: it is still that date, and the person checking sees it has passed. Only when the image prints no year anywhere, use the first such date on or after today, and set year_printed to false.
 - weekday_printed: the weekday printed for this date, in English ("Saturday"), as printed even if it disagrees with the date; null if no weekday is printed.
 - year_printed: true only if the image prints the year.
 - start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note; two services, each with its own name, are two events. An event printed with no time of its own, only as following a service that day ("Morning tea after the Liturgy", "Barbecue after the service"), starts when that service ends: its start_time is the end time the image prints for that service, or else that service's end among the parish's regular services given with the image, with a note on start_time saying which service it follows. If neither gives that service an end time, start_time is null.
@@ -547,7 +547,7 @@ export function normalizeRead(doc) {
   const otherName = other && clean(other.name, 200);
   const language = clean(d.written_in, 40);
   const kind = readKind(d.kind);
-  const events = raw.slice(0, MAX_EVENTS).map(normalizeEvent);
+  const events = sameYear(raw.slice(0, MAX_EVENTS).map(normalizeEvent));
   // The reader is told the most it may list, so a poster with more comes back
   // with exactly that many and nothing to say the rest were left out: Red
   // Hill's December came back as 20 with no word of 20–24 December. Reaching
@@ -589,6 +589,39 @@ export function normalizeRead(doc) {
     services,
     details: normalizeDetails(d.details),
   };
+}
+
+/**
+ * A date the reader put in the wrong year, put back: one whose printed
+ * weekday it is not, but is in the year of the poster's other dates.
+ *
+ * St Andrew, Gladesville's "Programme of church services during November
+ * 2026", read on 3 November, came back with "Sunday 1" as 1 November 2027
+ * (a Monday) and everything else in 2026: the 1st had passed, and the
+ * reader took "the first such date on or after today" over the printed
+ * year. The printed weekday says which year is meant, and the other dates
+ * say which year to try, so a lone date is never moved on a weekday alone —
+ * a poster can misprint one.
+ */
+function sameYear(events) {
+  const years = new Map();
+  for (const e of events) if (e.date) years.set(e.date.slice(0, 4), (years.get(e.date.slice(0, 4)) || 0) + 1);
+  let year = null;
+  for (const [y, n] of years) if (!year || n > years.get(year)) year = y;
+  if (!year) return events;
+  for (const e of events) {
+    const said = checks.printedWeekday(e.printed_weekday);
+    if (!e.date || said == null || e.date.startsWith(year) || dowOf(e.date) === said) continue;
+    // Only another year's own day: never 29 February into a year without one.
+    const moved = `${year}${e.date.slice(4)}`;
+    if (!isLocalDate(moved) || dowOf(moved) !== said) continue;
+    const shift = Number(year) - Number(e.date.slice(0, 4));
+    e.read_notes.push({ field: 'date', text: `Read as ${dayMonth(e.date)} ${e.date.slice(0, 4)}, which is not a ${DAY_NAMES[said]}; `
+      + `put in ${year} with the poster’s other dates.` });
+    e.date = moved;
+    if (e.end_date) e.end_date = `${Number(e.end_date.slice(0, 4)) + shift}${e.end_date.slice(4)}`;
+  }
+  return events;
 }
 
 /**

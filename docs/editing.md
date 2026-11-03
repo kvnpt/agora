@@ -283,6 +283,12 @@ every field its checks stop or doubt — a missing time, a date the poster's
 weekday disagrees with — answered right there without opening it. Something
 printed only as *after the Liturgy* starts when that service ends (the end the
 poster prints, or the rule's), with the model's note under the time saying so.
+Each row ends in a **bin** (Kevin, 3 Nov 2026): a tap marks the card to be
+thrown away, greyed and struck through where it stands, and another tap keeps
+it. A card whose date has passed starts marked — a month's programme read on
+the 3rd still lists the 1st. Publish skips marked cards, and once everything
+else is published the draft is discarded with them (`draft_events.discard`: 1,
+0, or NULL for untapped).
 **The read fills only empty fields** — in the
 editor and again when the Worker merges it — so nothing a person typed, before
 the drop or during the read, is overwritten. It runs under `waitUntil`, so

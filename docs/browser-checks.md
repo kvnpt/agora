@@ -317,6 +317,14 @@ English and Arabic still ticked; with both moved the cards go and the bar
 says **Done**. **Add to timetable** should write the rule with the poster on
 it.
 
+**Past dates and the bin.** `programme_gladesville` is St Andrew,
+Gladesville's November 2026 programme as it was read on 3 Nov 2026, "Sunday 1"
+in 2027. The read should put it back in 2026 with a note, and (on or after
+2 Nov 2026) its card should start greyed, struck through and dashed, with its
+bin (`.ee-bin`) a red disc and Publish counting one fewer. Tapping a bin
+toggles `draft_events.discard`; Publish should write every card but the marked
+ones and leave no draft behind.
+
 **The move.** With `elsewhere`, drop a poster at St Nicholas, Punchbowl (a seed
 parish): the suggestion names St Elias, Wollongong and the venue holds its
 address. **Move it there** should leave the picker on St Elias, the suggestion

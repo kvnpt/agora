@@ -398,3 +398,36 @@ test('a poster with no date, only a weekday over its times, is that weekday’s 
   // A feast day's poster prints its date, so its "Sat" is still that occasion's.
   assert.match(SYSTEM_PROMPT, /"Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion/);
 });
+
+test('a passed date the reader put in next year goes back to the poster’s year, when its weekday says so', () => {
+  // St Andrew, Gladesville's November 2026 programme, read on 3 November:
+  // "Sunday 1" came back as 1 November 2027, a Monday.
+  const ev = (date, weekday, title = 'Matins and Liturgy') => ({ title, feast: '', date, weekday_printed: weekday,
+    year_printed: true, start_time: '07:30', end_time: '10:30', end_date: '', event_type: 'liturgy', languages: [],
+    venue: null, description: null, notes: [] });
+  const empty = { address: '', phone: '', email: '', website: '' };
+  const r = normalizeRead({ kind: 'poster', services: [], details: empty, events: [
+    ev('2027-11-01', 'Sunday'), ev('2026-11-08', 'Sunday'), ev('2026-11-13', 'Friday'), ev('2026-11-15', 'Sunday'),
+  ] });
+  assert.deepStrictEqual(r.events.map(e => e.date), ['2026-11-01', '2026-11-08', '2026-11-13', '2026-11-15']);
+  assert.deepStrictEqual(r.events[0].read_notes,
+    [{ field: 'date', text: 'Read as 1 November 2027, which is not a Sunday; put in 2026 with the poster’s other dates.' }]);
+  assert.deepStrictEqual(r.events[1].read_notes, [], 'the rest are left alone');
+
+  // A programme over the new year keeps its January: those weekdays are right.
+  const turn = normalizeRead({ kind: 'poster', services: [], details: empty, events: [
+    ev('2026-12-27', 'Sunday'), ev('2026-12-25', 'Friday'), ev('2027-01-03', 'Sunday'),
+  ] });
+  assert.deepStrictEqual(turn.events.map(e => e.date), ['2026-12-27', '2026-12-25', '2027-01-03']);
+  // A lone date is never moved on its weekday alone: the poster may misprint it.
+  const lone = normalizeRead({ kind: 'poster', services: [], details: empty, events: [ev('2027-11-01', 'Sunday')] });
+  assert.strictEqual(lone.events[0].date, '2027-11-01');
+  // Nor to a weekday the other year does not have either.
+  const wrong = normalizeRead({ kind: 'poster', services: [], details: empty, events: [
+    ev('2027-11-01', 'Tuesday'), ev('2026-11-08', 'Sunday'), ev('2026-11-15', 'Sunday'),
+  ] });
+  assert.strictEqual(wrong.events[0].date, '2027-11-01');
+
+  assert.match(SYSTEM_PROMPT, /a date in it that has already passed keeps that year/);
+  assert.match(SYSTEM_PROMPT, /Only when the image prints no year anywhere, use the first such date on or after today/);
+});

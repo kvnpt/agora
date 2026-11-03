@@ -1193,7 +1193,11 @@ CREATE TABLE draft_events (
   -- Migration 031. The card's Public / Parish only pill, as events.parish_scoped:
   -- 1 or 0 once somebody tapped it, NULL while nobody has, when publishing
   -- leaves it to the kind (an Other is Parish only; createOneOff).
-  parish_scoped     INTEGER
+  parish_scoped     INTEGER,
+  -- Migration 033. The bin on the card's row: 1 marked to be thrown away at
+  -- Publish, 0 kept, NULL while nobody has tapped it, when the editor marks
+  -- it if its date has passed. Nothing publishes a marked card.
+  discard           INTEGER
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
 
