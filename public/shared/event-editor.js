@@ -379,8 +379,11 @@
   const blankFields = () => ({
     title: '', feast: '', date: '', end_date: '', start_time: '', end_time: '', event_type: '', description: '',
     languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
-    location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null,
+    location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null, discard: null,
   });
+
+  // The bin on a card's row: form-sheet.js's, the same bin the edit forms' bar has.
+  const BIN = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6m4-6v6"/><path d="m6 7 1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>';
 
   /** A field's value as the Worker stores it. */
   function toPatchValue(field, v) {
@@ -725,6 +728,7 @@
         location_lat: row.location_lat != null ? row.location_lat : '', location_lng: row.location_lng != null ? row.location_lng : '',
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
         parish_scoped: row.parish_scoped == null ? null : row.parish_scoped ? 1 : 0,
+        discard: row.discard == null ? null : row.discard ? 1 : 0,
       };
       for (const f of Object.keys(server)) {
         // What a person changed and the server has not heard yet stays.
@@ -758,16 +762,22 @@
         : `<input type="time" id="${fieldId(card, f)}" data-ee-field="${f}">`);
       const row = (f, label, input, extra = '') =>
         `<div class="ee-row" data-row="${f}"><label for="${fieldId(card, f)}">${label}<span class="ee-mark" hidden>from poster</span></label>${input}<div class="ee-notes"></div>${extra}</div>`;
+      // The row, and at its end the bin (Kevin, 3 Nov 2026): one tap marks the
+      // card to be thrown away at Publish, greyed where it stands; another
+      // keeps it. A card whose date has passed starts marked (discarding).
       node.innerHTML = `
-        <button type="button" class="ee-sum" aria-expanded="false" aria-describedby="${fieldId(card, 'chips')}">
-          <span class="ee-sum-when"><span class="ee-sum-time"></span><span class="ee-sum-day"></span></span>
-          <span class="ee-sum-kind"></span>
-          <span class="ee-sum-body">
-            <span class="ee-sum-title"></span>
-            <span class="ee-sum-feast"></span>
-            <span class="ee-sum-foot"><span class="ee-chips" id="${fieldId(card, 'chips')}"></span><span class="ee-saved"></span></span>
-          </span>
-        </button>
+        <div class="ee-sum-row">
+          <button type="button" class="ee-sum" aria-expanded="false" aria-describedby="${fieldId(card, 'chips')}">
+            <span class="ee-sum-when"><span class="ee-sum-time"></span><span class="ee-sum-day"></span></span>
+            <span class="ee-sum-kind"></span>
+            <span class="ee-sum-body">
+              <span class="ee-sum-title"></span>
+              <span class="ee-sum-feast"></span>
+              <span class="ee-sum-foot"><span class="ee-chips" id="${fieldId(card, 'chips')}"></span><span class="ee-saved"></span></span>
+            </span>
+          </button>
+          <button type="button" class="ee-bin" aria-pressed="false" aria-label="Discard this event">${BIN}</button>
+        </div>
         <div class="ee-body">
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
           ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
@@ -813,11 +823,12 @@
             <input data-ee-field="ask_reason" placeholder="Why — the owner reads this" autocomplete="off">
           </div>
           <div class="ee-card-error" hidden></div>
-          <button type="button" class="pill-btn pill-btn-danger ee-remove">Remove this event</button>
         </div>`;
       card.els = {
         root: node,
+        sumRow: node.querySelector('.ee-sum-row'),
         sum: node.querySelector('.ee-sum'),
+        bin: node.querySelector('.ee-bin'),
         time: node.querySelector('.ee-sum-time'),
         day: node.querySelector('.ee-sum-day'),
         kind: node.querySelector('.ee-sum-kind'),
@@ -883,7 +894,7 @@
       node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
       card.els.regular.addEventListener('click', () => makeRegular(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
-      node.querySelector('.ee-remove').addEventListener('click', () => removeCard(card));
+      card.els.bin.addEventListener('click', () => toggleDiscard(card));
       $('cards').appendChild(node);
       for (const f of Object.keys(card.els.inputs)) setInput(card, f, card.fields[f]);
       refreshCard(card);
@@ -1099,7 +1110,16 @@
       card.els.kind.style.cssText = col ? `--k-bg:${col.bg};--k-fg:${col.fg}` : '';
       const scoped = scopedOf(card);
       paintScope(card.els.scope, scoped);
-      card.els.chips.innerHTML = (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
+      const binned = discarding(card);
+      card.els.root.classList.toggle('is-discard', binned);
+      card.els.bin.setAttribute('aria-pressed', String(binned));
+      card.els.bin.setAttribute('aria-label', binned ? 'Keep this event' : 'Discard this event');
+      card.els.bin.title = binned ? 'Marked to discard — tap to keep it' : 'Discard this event';
+      // Marked, a card says so and why, and nothing else: what it is missing
+      // no longer matters, as it will not be published.
+      card.els.chips.innerHTML = binned
+        ? `<span class="ee-chip ee-chip-gone">${hasPassed(card) ? 'date has passed · ' : ''}to discard</span>`
+        : (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
         + (scoped ? '<span class="ee-chip ee-chip-scope">parish only</span>' : '')
         + checks
         .filter(c => c.level !== 'info' || c.field === 'date')
@@ -1130,10 +1150,10 @@
       refreshRegular(card);
       refreshMultiday(card);
       const single = !state.multi;
-      card.els.sum.hidden = single;
+      card.els.sumRow.hidden = single;
       card.els.sum.setAttribute('aria-expanded', String(single || card.open));
       card.els.root.classList.toggle('is-open', single || card.open);
-      const peek = !single && !card.open && refreshPeek(card, checks);
+      const peek = !single && !card.open && !binned && refreshPeek(card, checks);
       card.els.root.classList.toggle('is-peek', peek);
       card.els.body.hidden = !single && !card.open && !peek;
       card.els.root.classList.toggle('is-published', card.publish.state === 'done');
@@ -1224,6 +1244,34 @@
       return c.text.replace(/\.$/, '');
     }
 
+    /** A date before the parish's today. */
+    const hasPassed = (card) => !!(C && C.isLocalDate(card.fields.date) && card.fields.date < today());
+
+    /**
+     * Is the card marked to be thrown away at Publish? What its bin was
+     * tapped to; untapped, whether its date has passed — a month's programme
+     * read on the 3rd still lists the 1st, and that is not for publishing.
+     * Only among several cards: one card alone has the bar's Discard.
+     */
+    function discarding(card) {
+      if (!state.multi || card.publish.state === 'done') return false;
+      const v = card.fields.discard;
+      if (v != null && v !== '') return !!Number(v);
+      return hasPassed(card);
+    }
+
+    function toggleDiscard(card) {
+      if (state.publishing) return;
+      const next = discarding(card) ? 0 : 1;
+      card.fields.discard = next;
+      card.touched.add('discard');
+      card.pending.discard = next;
+      if (next) card.open = false;
+      schedule(card, 0);
+      refreshCard(card);
+      sync();
+    }
+
     function toggleCard(card) {
       const opening = !card.open;
       for (const c of state.cards) c.open = false;
@@ -1253,19 +1301,9 @@
       h.hidden = !state.multi;
       // A programme's cards are dates of services already on file, not events.
       const what = n && state.cards.every(c => c.fields.occurrence) ? 'dates' : 'events';
+      const binned = state.cards.filter(discarding).length;
       h.textContent = state.read && state.read.active ? `${n} ${what} found so far…`
-        : `${n} ${what}${state.draft && state.draft.poster_path ? ' read' : ''} — saved as a draft, not yet published. Tap one to check or change it.`;
-    }
-
-    async function removeCard(card) {
-      if (state.cards.length === 1) return discard();
-      clearTimeout(card.timer);
-      if (card.id) {
-        const r = await http('DELETE', `/api/admin/draft-events/${card.id}`);
-        if (!r.ok && r.status !== 404) return setSaved(card, 'error', (r.body && r.body.error) || 'Could not remove it.');
-      }
-      dropCard(card);
-      sync();
+        : `${n} ${what}${state.draft && state.draft.poster_path ? ' read' : ''}${binned ? `, ${binned} marked to discard` : ''} — saved as a draft, not yet published. Tap one to check or change it.`;
     }
 
     /** A card off the page. The last one leaves a blank card, as a draft continued with none has. */
@@ -2264,8 +2302,10 @@
     function sync() {
       if (state.closed) return;
       const reading = !!(state.read && state.read.active);
-      const n = state.cards.filter(c => c.publish.state !== 'done').length;
-      const blocked = state.cards.filter(c => C && C.blockers(checksFor(c)).length);
+      // A card marked to discard is not published, so neither counts nor holds Publish up.
+      const n = state.cards.filter(c => c.publish.state !== 'done' && !discarding(c)).length;
+      const binned = state.cards.filter(discarding).length;
+      const blocked = state.cards.filter(c => !discarding(c) && C && C.blockers(checksFor(c)).length);
       const quiet = state.cards.every(isPristine);
       const pub = $('publish');
       pub.textContent = state.publishing ? 'Publishing…' : n > 1 ? `Publish all ${n}` : 'Publish';
@@ -2291,6 +2331,7 @@
       $('done').disabled = reading || state.signBusy;
       const ready = $('readiness');
       if (reading) ready.textContent = 'Publish opens once the poster has been read.';
+      else if (!n && binned) ready.textContent = 'Every event here is marked to discard — keep one to publish it, or Discard the draft.';
       else if (blocked.length && !quiet) {
         const first = blocked[0];
         const what = C.blockers(checksFor(first)).map(c => c.text.replace(/\.$/, '').toLowerCase()).join(', ');
@@ -2316,13 +2357,15 @@
       sync();
       const events = [], proposals = [];
       let stopped = null;
+      // Decided before anything goes: publishing changes how many cards there are.
+      const binned = new Set(state.cards.filter(discarding));
       for (const card of state.cards) {
-        if (card.publish.state === 'done') continue;
+        if (card.publish.state === 'done' || binned.has(card)) continue;
         if (!card.id) { await save(card); if (!card.id) { card.publish = { state: 'error', message: 'Not saved yet.' }; continue; } }
         await ensureCandidates(card);
         const asking = needsAsk(card);
         card.publish = { state: 'busy', message: '' };
-        showMessage(`Publishing ${events.length + 1} of ${state.cards.filter(c => c.publish.state !== 'done').length + events.length}…`, 'busy');
+        showMessage(`Publishing ${events.length + 1} of ${state.cards.filter(c => c.publish.state !== 'done' && !binned.has(c)).length + events.length}…`, 'busy');
         const r = await http('POST', `/api/admin/draft-events/${card.id}/publish`,
           asking ? { propose: (card.fields.ask_reason || '').trim() || true } : {});
         if (r.ok) {
@@ -2340,6 +2383,13 @@
         refreshCard(card);
       }
       state.publishing = false;
+      // Everything else published: the marked cards go with the draft, which
+      // nothing else holds now (the poster stays, the events name it).
+      if (binned.size && state.cards.every(c => binned.has(c) || c.publish.state === 'done') && state.draft) {
+        for (const c of binned) clearTimeout(c.timer);
+        const r = await http('DELETE', `/api/admin/drafts/${state.draft.id}`);
+        if (r.ok || r.status === 404) for (const c of binned) c.publish = { state: 'done', message: '' };
+      }
       // Published cards leave the list; what is left is what still needs a person.
       for (const c of state.cards.filter(x => x.publish.state === 'done')) c.els.root.remove();
       state.cards = state.cards.filter(c => c.publish.state !== 'done');

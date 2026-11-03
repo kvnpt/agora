@@ -786,6 +786,24 @@ test('a service added from a sign names the sign as the timetable’s source, an
   assert.deepEqual(f.bucket.deleted, []);
 });
 
+test('a card\'s bin is kept as yes, no or untapped, and the draft goes with its marked cards once the rest is published', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const d = (await f.call('POST', '/api/admin/drafts', { parish_id: a, card: { title: 'Keep', date: '2026-11-14', start_time: '10:00' } })).body;
+  assert.equal(d.cards[0].discard, null, 'nobody has tapped it');
+  const gone = (await f.call('POST', `/api/admin/drafts/${d.id}/events`, { title: 'Gone', date: '2026-11-01', start_time: '07:30', discard: true })).body;
+  assert.equal(gone.discard, 1);
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${gone.id}`, { discard: 'yes' })).status, 400);
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${gone.id}`, { discard: false })).body.discard, 0, 'kept');
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${gone.id}`, { discard: 1 })).body.discard, 1, 'marked again');
+  // The editor publishes the rest, then discards the draft and the marked card with it.
+  assert.equal((await f.call('POST', `/api/admin/draft-events/${d.cards[0].id}/publish`, {})).status, 201);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM drafts WHERE id = ?').get(d.id).n, 1, 'the marked card still holds the draft');
+  assert.equal((await f.call('DELETE', `/api/admin/drafts/${d.id}`)).status, 200);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM draft_events').get().n, 0);
+  assert.equal(f.raw.prepare("SELECT COUNT(*) n FROM events WHERE title = 'Gone'").get().n, 0, 'never published');
+});
+
 test('a database made before 020 gets the sign and programme columns (and 022’s last day, 023’s place) on first use', async () => {
   const raw = new Database(':memory:');
   raw.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
@@ -795,8 +813,8 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
-  assert.deepEqual(cols('draft_events').slice(-7), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped']);
+  assert.deepEqual(cols('draft_events').slice(-8), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));
-  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped], ['REAL', 'REAL', 'TEXT', 'INTEGER'],
-    'a pin is a number, and so is the pill');
+  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard], ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER'],
+    'a pin is a number, and so are the pill and the bin');
 });

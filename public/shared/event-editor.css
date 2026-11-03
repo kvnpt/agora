@@ -150,7 +150,12 @@
    the time with its day under it, the kind's roundel, the title in bold and
    its subtitle in italics, so a poster's worth can be run down for what is
    wrong. What is missing says so in red where it would be. */
+/* The row and its bin: the bin sits outside the row's button, at its end. */
+.ee-sum-row { display: flex; align-items: center; }
+.ee-sum-row[hidden] { display: none; }
 .ee-sum {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -192,6 +197,20 @@
 .ee-chip-block { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .ee-chip-warn { color: var(--ee-warn); background: color-mix(in srgb, var(--ee-warn) 14%, transparent); }
 .ee-chip-info { color: var(--ee-muted); background: var(--ee-field); }
+.ee-chip-gone { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+/* The bin (event-editor.js toggleDiscard): grey until tapped, then a red
+   disc; its card greys where it stands, to be thrown away at Publish. */
+.ee-bin {
+  flex: none; display: inline-grid; place-items: center;
+  width: 40px; height: 40px; margin-right: 6px; padding: 0;
+  color: var(--ee-muted); background: none; border: 0; border-radius: 50%; cursor: pointer;
+}
+.ee-bin:hover { color: var(--danger); }
+.ee-bin:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.ee-bin[aria-pressed="true"] { color: #fff; background: var(--danger); }
+.ee-card.is-discard { border-style: dashed; }
+.ee-card.is-discard .ee-sum { opacity: .45; filter: grayscale(1); }
+.ee-card.is-discard .ee-sum-title { text-decoration: line-through; }
 .ee-saved { margin-left: auto; font-size: 11px; color: var(--ee-muted); white-space: nowrap; }
 .ee-saved-bad { color: var(--danger); }
 .ee-body { padding: 4px 12px 12px; }
@@ -407,7 +426,6 @@
 .pill-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
 .pill-btn-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
 .ee-add { align-self: flex-start; }
-.ee-remove { margin-top: 2px; }
 .ee-readiness { font-size: 12.5px; color: var(--ee-muted); min-height: 0; }
 .ee-readiness:empty { display: none; }
 .ee-message { padding: 9px 12px; font-size: 12.5px; line-height: 1.45; border-radius: 10px; }

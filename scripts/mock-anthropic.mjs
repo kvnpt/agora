@@ -8,7 +8,8 @@
 //
 //   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
-//                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong","delay":60}
+//                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong"
+//                   |"programme_gladesville","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -26,8 +27,12 @@
 //                    on 31 Oct 2026 — Matins and the Liturgy as events on the coming
 //                    Sunday, Sunday School and Fellowship as weekly services: for
 //                    the cards' "Weekly"
+//                  programme_gladesville: St Andrew, Gladesville's "November 2026"
+//                    programme as it was read on 3 Nov 2026: "Sunday 1" put in 2027
+//                    (sameYear puts it back; the 1st has passed, so its card starts
+//                    marked for discard), and the rest of the month
 //                  (each written from the photo by hand: what a good read of it says,
-//                  except weekday_dandenong, which is the read that went wrong)
+//                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
 //
 // Dev tooling only — nothing deployed imports it.
@@ -152,6 +157,24 @@ const DOCS = {
   // A weekday heading and nothing else to date it: "Sunday — Matins | 9:00am,
   // Divine Liturgy (Bilingual: English & Arabic) | 10:15am, Sunday School |
   // 11:30am, Fellowship | 12:00pm". Half of it came back as events.
+  programme_gladesville: {
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [], services: [],
+    details: { address: '', phone: '', email: '', website: '' },
+    events: [
+      { title: 'Matins and Liturgy', feast: 'Fifth Sunday of Luke (Holy Physicians Kosmas and Damian)', date: '2027-11-01', weekday_printed: 'Sunday', year_printed: true,
+        start_time: '07:30', end_time: '10:30', end_date: '', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Sausage Sizzle BBQ & Cold Drinks', feast: '', date: '2026-11-08', weekday_printed: 'Sunday', year_printed: true,
+        start_time: '10:30', end_time: null, end_date: '', event_type: 'social', languages: [], venue: null,
+        description: 'After the Liturgy. All proceeds support the church.', notes: [{ field: 'start_time', text: 'After the Liturgy, which ends at 10:30am.' }] },
+      { title: 'Matins and Liturgy', feast: 'Saint John Chrysostom', date: '2026-11-13', weekday_printed: 'Friday', year_printed: true,
+        start_time: '07:30', end_time: '09:30', end_date: '', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Matins and Liturgy', feast: 'Entry into the Temple of the Most Holy Virgin Mary', date: '2026-11-21', weekday_printed: 'Saturday', year_printed: true,
+        start_time: '07:30', end_time: '09:30', end_date: '', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Cake Stall', feast: '', date: '2026-11-29', weekday_printed: 'Sunday', year_printed: true,
+        start_time: '19:30', end_time: null, end_date: '', event_type: 'social', languages: [], venue: null,
+        description: 'After Vespers. All proceeds support the church.', notes: [{ field: 'start_time', text: 'After Vespers, which ends at 7:30pm.' }] },
+    ],
+  },
   weekday_dandenong: {
     kind: 'poster', other_parish: null, notes: [],
     events: [

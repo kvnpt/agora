@@ -280,7 +280,13 @@ the feed will draw it (time and day, the kind's roundel, title, subtitle) so
 they can be checked at a glance. A collapsed card still shows what needs a
 person (`refreshPeek`): a one-off service's first two languages, to tap, and
 every field its checks stop or doubt — a missing time, a date the poster's
-weekday disagrees with — answered right there without opening it.
+weekday disagrees with — answered right there without opening it. Each row
+ends in a **bin** (Kevin, 3 Nov 2026): a tap marks the card to be thrown away,
+greyed and struck through where it stands, and another tap keeps it. A card
+whose date has passed starts marked — a month's programme read on the 3rd
+still lists the 1st. Publish skips marked cards, and once everything else is
+published the draft is discarded with them (`draft_events.discard`: 1, 0, or
+NULL for untapped).
 **The read fills only empty fields** — in the
 editor and again when the Worker merges it — so nothing a person typed, before
 the drop or during the read, is overwritten. It runs under `waitUntil`, so
