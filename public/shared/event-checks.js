@@ -103,7 +103,9 @@
     // A one-off service says what language it is in: it has no timetable to
     // go by, and the language filters read nothing else. A date of a regular
     // service (occurrence) has its service's. Nothing but a service has one.
-    if (SERVICE_TYPES.has(f.event_type) && blank(f.occurrence) && !hasLangs(f.languages)) {
+    // Nor does a card that joins another parish's event already on file
+    // (host_event_id): publishing makes nothing, so there is nothing to tag.
+    if (SERVICE_TYPES.has(f.event_type) && blank(f.occurrence) && blank(f.host_event_id) && !hasLangs(f.languages)) {
       add('languages', 'block', 'Needs a language.');
     }
 
@@ -140,8 +142,54 @@
   /** The checks that stop a Publish. */
   const blockers = (checks) => (checks || []).filter(c => c.level === 'block');
 
+  // Words that say what kind of thing it is, not which one: "Feast of St
+  // Nectarios" and "Hierarchical Divine Liturgy — St Nectarios" share only
+  // "nectarios", and that is the word that matters.
+  const COMMON = new Set(['st', 'saint', 'saints', 'sts', 'the', 'of', 'and', 'a', 'an', 'in', 'at', 'on', 'for',
+    'to', 'with', 'by', 'from', 'feast', 'day', 'eve', 'divine', 'liturgy', 'matins', 'orthros', 'vespers',
+    'vigil', 'great', 'holy', 'hierarchical', 'archieratical', 'festal', 'service', 'services', 'church',
+    'parish', 'orthodox', 'greek', 'english', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday',
+    'friday', 'saturday', 'am', 'pm']);
+  const wordsOf = (...texts) => texts.join(' ').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z]+/g, ' ').trim().split(' ').filter(Boolean);
+  const titleKey = (t) => wordsOf(t).join(' ');
+
+  /**
+   * Which of another parish's events on file a card is — the same event,
+   * listed on this parish's poster (St Andrew, Gladesville's November
+   * programme gives St Nectarios, Burwood's feast on the 9th, which Burwood
+   * has on file). One check, run where the poster is read (drafts.mjs) and
+   * in the editor when a person says whose event it is, so the two cannot
+   * disagree about which event a card joins.
+   *
+   * `events` are that parish's one-offs on the card's date, each with its
+   * local start `time` ('HH:MM'). The one at the same time that is the same
+   * kind of thing or shares a name; else the one that shares a name (a word
+   * of its title or subtitle that says which feast or saint, or the same
+   * title). Never a guess between two: nothing is better than the wrong one,
+   * since a card that matches nothing becomes a new event there to check.
+   *
+   * @param {{title, feast, start_time, event_type}} card
+   * @param {Array<{id, title, feast, time, event_type}>} events
+   * @returns {number|string|null} the event's id
+   */
+  function sameEventOnFile(card, events) {
+    const list = (events || []).filter(e => e && e.id != null);
+    if (!card || !list.length) return null;
+    const own = new Set(wordsOf(card.title || '', card.feast || '').filter(w => !COMMON.has(w) && w.length > 2));
+    const key = titleKey(card.title);
+    const named = (e) => (!!key && titleKey(e.title) === key)
+      || wordsOf(e.title || '', e.feast || '').some(w => own.has(w));
+    const service = (k) => SERVICE_TYPES.has(k);
+    const alike = (e) => e.event_type === card.event_type || (service(e.event_type) && service(card.event_type));
+    const at = list.filter(e => isLocalTime(card.start_time) && e.time === card.start_time && (alike(e) || named(e)));
+    if (at.length === 1) return at[0].id;
+    const hits = (at.length ? at : list).filter(named);
+    return hits.length === 1 ? hits[0].id : null;
+  }
+
   const api = { checkDraftEvent, blockers, isLocalDate, isLocalTime, weekdayOf, readableDate,
-    printedWeekday, WEEKDAYS };
+    printedWeekday, WEEKDAYS, sameEventOnFile };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventChecks = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

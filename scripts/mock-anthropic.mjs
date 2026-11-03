@@ -9,7 +9,7 @@
 //   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
 //                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong"
-//                   |"programme_gladesville","delay":60}
+//                   |"programme_gladesville"|"feast_at_burwood","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -31,6 +31,10 @@
 //                    programme as it was read on 3 Nov 2026: "Sunday 1" put in 2027
 //                    (sameYear puts it back; the 1st has passed, so its card starts
 //                    marked for discard), and the rest of the month
+//                  feast_at_burwood: St Andrew, Gladesville's November services around
+//                    St Nectarios, Burwood's feast — its own Sunday Liturgy, the eve's
+//                    Vespers at Burwood (not on file there: added there) and the feast
+//                    at Burwood (on file there: joined), each with Gladesville taking part
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
@@ -173,6 +177,20 @@ const DOCS = {
       { title: 'Cake Stall', feast: '', date: '2026-11-29', weekday_printed: 'Sunday', year_printed: true,
         start_time: '19:30', end_time: null, end_date: '', event_type: 'social', languages: [], venue: null,
         description: 'After Vespers. All proceeds support the church.', notes: [{ field: 'start_time', text: 'After Vespers, which ends at 7:30pm.' }] },
+    ],
+  },
+  feast_at_burwood: {
+    kind: 'poster', written_in: 'English', other_parish: null, notes: [], services: [],
+    details: { address: '', phone: '', email: '', website: '' },
+    events: [
+      { title: 'Matins and Liturgy', feast: 'Seventh Sunday of Luke', date: '2026-11-08', weekday_printed: 'Sunday', year_printed: true,
+        start_time: '07:30', end_time: '10:30', end_date: '', event_type: 'liturgy', languages: [], venue: null, description: null, notes: [] },
+      { title: 'Great Hierarchical Vespers', feast: 'Eve of St Nectarios', date: '2026-11-08', weekday_printed: 'Sunday', year_printed: true,
+        start_time: '19:00', end_time: '21:00', end_date: '', event_type: 'prayer', languages: [], venue: 'St Nectarios Church, Burwood',
+        description: null, notes: [] },
+      { title: 'Feast of St Nectarios', feast: '', date: '2026-11-09', weekday_printed: 'Monday', year_printed: true,
+        start_time: '07:00', end_time: '10:30', end_date: '', event_type: 'feast', languages: [], venue: 'St Nectarios Church, Burwood',
+        description: 'St Andrew’s is closed this day so its parishioners can attend.', notes: [] },
     ],
   },
   weekday_dandenong: {

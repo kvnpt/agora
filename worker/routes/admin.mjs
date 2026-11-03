@@ -44,7 +44,7 @@ import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
-  placeRead, moveDraft, matchOccurrences, suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
+  placeRead, placeHosts, moveDraft, matchOccurrences, suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
@@ -1979,6 +1979,9 @@ export function registerAdminRoutes(router) {
       // The parish's own address is not a venue, and "another parish's poster"
       // becomes a parish on file when one clearly matches.
       await placeRead(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) });
+      // An event at another parish's church is that parish's, with this one
+      // taking part: the one of theirs on file, or one to add there.
+      await placeHosts(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) }, rules);
       // A dated regular service — a programme's Sunday and its saint — is a
       // change to that Sunday, not an event beside it.
       matchOccurrences(read.read, rules);
@@ -2050,29 +2053,126 @@ export function registerAdminRoutes(router) {
     if (card.occurrence) return publishOccurrence(c, card, zone);
 
     const b = await readJson(c.request);
-    const body = { ...publishBody(card, card.parish_id),
-      ...localSpanToUtc(zone, card.date, card.start_time, card.end_time, card.end_date) };
     // `propose` is the flag and the reason, as on POST /api/admin/events; the
     // card keeps the reason it was given, so a bare `true` uses that.
-    if (b.propose) body.propose = typeof b.propose === 'string' ? b.propose : (card.ask_reason || true);
+    const propose = b.propose ? (typeof b.propose === 'string' ? b.propose : (card.ask_reason || true)) : null;
+    if (card.host_parish_id && card.host_event_id) return publishJoin(c, card, propose);
+
+    // Another parish's event, not on file there yet: it goes up THERE, with
+    // this parish taking part — so it is made by somebody who may add events
+    // at that parish, at that parish's wall clock.
+    let host = null;
+    if (card.host_parish_id) {
+      host = await env.DB.prepare('SELECT id, name, timezone FROM parishes WHERE id = ?').bind(card.host_parish_id).first();
+      if (!host || host.id === '_unassigned') {
+        return json({ error: 'The parish this was read as being at is not on file — make it your own event instead.' }, 400);
+      }
+      if (!mayTouchParish(c.who, host.id)) {
+        return json({ error: `${host.name} is not one of your parishes, so this cannot be added there. Make it your own event, held at ${host.name}, or ask somebody who edits ${host.name} to add it.`, role: c.who.role }, 403);
+      }
+    }
+    const span = localSpanToUtc(host ? (host.timezone || DEFAULT_TIMEZONE) : zone,
+      card.date, card.start_time, card.end_time, card.end_date);
+    const body = { ...publishBody(card, host ? host.id : card.parish_id), ...span };
+    if (host) {
+      body.additive_parish_ids = [...new Set([card.parish_id, ...body.additive_parish_ids])].filter(id => id !== host.id);
+    }
+    if (propose) body.propose = propose;
 
     const made = await createOneOff(c, body, { posterPath: card.poster_path });
     if (made.response) return made.response;
 
-    await env.DB.prepare('DELETE FROM draft_events WHERE id = ?').bind(card.id).run();
-    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM draft_events WHERE draft_id = ?')
-      .bind(card.draft_id).first();
-    // The last card takes its draft with it. The poster object stays: the
-    // events published from it name it now.
-    if (!left.n) await env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(card.draft_id).run();
-    else await touchDraft(env.DB, card.draft_id);
-
+    const remaining = await spendCard(env, card);
     return json({
       event: await eventWithEscalation(env.DB, made.id),
       proposal_id: made.proposalId,
-      remaining: left.n,
+      remaining,
     }, 201);
   }));
+
+  /**
+   * A card published: it goes, and the last one takes its draft with it. The
+   * poster goes too once nothing names it — which happens only when every card
+   * joined an event already on file (publishJoin) and so published nothing
+   * that carries it.
+   */
+  async function spendCard(env, card) {
+    await env.DB.prepare('DELETE FROM draft_events WHERE id = ?').bind(card.id).run();
+    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM draft_events WHERE draft_id = ?')
+      .bind(card.draft_id).first();
+    if (left.n) {
+      await touchDraft(env.DB, card.draft_id);
+      return left.n;
+    }
+    await env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(card.draft_id).run();
+    await releaseUnused(env, [card.poster_path]);
+    return 0;
+  }
+
+  /**
+   * Publish a card that IS another parish's event already on file
+   * (`host_event_id`, matched when the poster was read — drafts.mjs
+   * placeHosts — or when a person said whose it is): add this parish to it as
+   * taking part, with what it replaces here. Nothing new is made, and the
+   * event itself stays as its own parish has it — title, time, poster.
+   *
+   * ADDS ONLY. writeCombine sets a whole target state and removes what it is
+   * not told, so the state on file is read first and this card's targets are
+   * added to it: joining Burwood's feast must not take off the parishes
+   * Burwood itself listed. Scoped on what is added, as a combine is — this
+   * parish is the person's own (cardInScope), and so are its services; another
+   * parish ticked as well is an ask, with `propose`, as on any combine. Not on
+   * the event's own parish, unlike "Include other parishes…" on its pencil:
+   * that route can strip what it does not name, and this cannot.
+   */
+  async function publishJoin(c, card, propose) {
+    const { env } = c;
+    const db = env.DB;
+    const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(card.host_event_id).first();
+    if (!event || event.parish_id !== card.host_parish_id
+        || ['replaced', 'rejected', 'cancelled', 'hidden'].includes(event.status)) {
+      return json({ error: 'That event is not on file there any more.', gone: true }, 400);
+    }
+    const [curP, curR, curC] = await Promise.all([
+      db.prepare('SELECT parish_id FROM event_parishes WHERE event_id = ?').bind(event.id).all(),
+      db.prepare('SELECT replaced_event_id FROM event_replaces WHERE replacing_event_id = ?').bind(event.id).all(),
+      db.prepare("SELECT schedule_id, occurrence_date FROM schedule_overrides WHERE combined_into_event_id = ? AND kind = 'combined'").bind(event.id).all(),
+    ]);
+    const cur = {
+      parishes: new Set((curP.results || []).map(r => r.parish_id)),
+      ints: new Set((curR.results || []).map(r => Number(r.replaced_event_id))),
+      synths: new Set((curC.results || []).map(r => `${r.schedule_id}:${r.occurrence_date}`)),
+    };
+    const asked = publishBody(card, event.parish_id);
+    const split = await scopeSplit(c, event, {
+      additive_parish_ids: [card.parish_id, ...asked.additive_parish_ids].filter(pid => !cur.parishes.has(pid)),
+      replaced_event_ids: asked.replaced_event_ids.filter(rid => !cur.ints.has(Number(rid)) && !cur.synths.has(rid)),
+    });
+    const asking = split.outside.length > 0;
+    if (asking && !propose) return combineRefusal(c, event, split);
+    const take = asking ? split.mine : split.wanted;
+    const union = (a, b) => new Set([...a, ...b]);
+    await writeCombine(db, event, {
+      parishes: union(cur.parishes, take.parishes),
+      ints: union(cur.ints, take.ints),
+      synths: union(cur.synths, take.synths),
+      approve: false,
+    });
+    // The ask carries the whole desired state, as applyEscalation's does:
+    // approving replays it through writeCombine, which removes what it is not told.
+    const proposalId = asking ? await insertProposal(env, {
+      capability: 'event.combine',
+      subject: String(event.id),
+      payload: {
+        additive_parish_ids: [...union(cur.parishes, split.wanted.parishes)],
+        replaced_event_ids: [...union(cur.ints, split.wanted.ints), ...union(cur.synths, split.wanted.synths)].map(String),
+      },
+      reason: typeof propose === 'string' ? propose : '',
+    }, await editor(c)) : null;
+
+    const remaining = await spendCard(env, card);
+    return json({ event: await eventWithEscalation(db, event.id), joined: true, proposal_id: proposalId, remaining }, 201);
+  }
 
   /**
    * Publish a card that is a regular service on its own date: write it onto
@@ -2111,12 +2211,8 @@ export function registerAdminRoutes(router) {
     const previous = before && before.patch_poster_path;
     if (previous && previous !== card.poster_path) await releaseUnused(env, [previous]);
 
-    await env.DB.prepare('DELETE FROM draft_events WHERE id = ?').bind(card.id).run();
-    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM draft_events WHERE draft_id = ?')
-      .bind(card.draft_id).first();
-    if (!left.n) await env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(card.draft_id).run();
-    else await touchDraft(env.DB, card.draft_id);
-    return json({ event: r.instance, occurrence: true, remaining: left.n }, 201);
+    const remaining = await spendCard(env, card);
+    return json({ event: r.instance, occurrence: true, remaining }, 201);
   }
 
   // ── combine ──

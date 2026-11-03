@@ -1197,7 +1197,15 @@ CREATE TABLE draft_events (
   -- Migration 033. The bin on the card's row: 1 marked to be thrown away at
   -- Publish, 0 kept, NULL while nobody has tapped it, when the editor marks
   -- it if its date has passed. Nothing publishes a marked card.
-  discard           INTEGER
+  discard           INTEGER,
+  -- Migration 034. Whose event this is when it is ANOTHER parish's, which
+  -- this one takes part in — read off a venue that names a parish on file
+  -- (worker/lib/drafts.mjs placeHosts), or said by a person. Publishing puts
+  -- it at that parish with this one in event_parishes; with `host_event_id`,
+  -- their event already on file, it adds this parish to that and makes
+  -- nothing new. NULL is the usual: this parish's own event.
+  host_parish_id    TEXT,
+  host_event_id     INTEGER
 );
 CREATE INDEX idx_draft_events_draft ON draft_events(draft_id, position);
 

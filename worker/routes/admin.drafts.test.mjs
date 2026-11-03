@@ -813,8 +813,181 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
   assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
-  assert.deepEqual(cols('draft_events').slice(-8), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard']);
+  assert.deepEqual(cols('draft_events').slice(-10), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
+    'host_parish_id', 'host_event_id']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));
-  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard], ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER'],
-    'a pin is a number, and so are the pill and the bin');
+  assert.deepEqual([types.location_lat, types.location_lng, types.end_date, types.parish_scoped, types.discard, types.host_parish_id, types.host_event_id],
+    ['REAL', 'REAL', 'TEXT', 'INTEGER', 'INTEGER', 'TEXT', 'INTEGER'],
+    'a pin is a number, and so are the pill, the bin and an event on file');
+});
+
+// ── an event at another parish: theirs, with this parish taking part ──
+//
+// St Andrew, Gladesville's November programme listed St Nectarios, Burwood's
+// feast "at St Nectarios Church, Burwood". Read at Gladesville it was
+// Gladesville's own event at a place of that name, and was moved to Burwood by
+// hand (Kevin, 3 Nov 2026). (2030, so no date has passed whenever this runs.)
+
+const SAG = 'greek-standrew-gladesville';
+const SBU = 'greek-stnectarios-burwood';
+
+function addGladesvilleBurwood(raw) {
+  const parish = raw.prepare(`INSERT INTO parishes (id, name, jurisdiction, address, lat, lng, timezone)
+    VALUES (?, ?, 'greek', ?, ?, ?, 'Australia/Sydney')`);
+  parish.run(SAG, 'St Andrew, Gladesville', '20 Wharf Rd Gladesville, NSW, 2111', -33.8348, 151.1265);
+  parish.run(SBU, 'St Nectarios, Burwood', '26 Railway Parade Burwood NSW 2134', -33.8777, 151.1045);
+  const rule = (pid, day, start, end, title, type) => raw.prepare(
+    `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+     VALUES (?, ?, ?, ?, ?, ?) RETURNING id`).get(pid, day, start, end, title, type).id;
+  return {
+    sagSunday: rule(SAG, 0, '07:30', '10:30', 'Matins and Liturgy', 'liturgy'),
+    sbuSeniors: rule(SBU, 4, '10:00', '12:00', "Seniors' Group", 'social'),
+  };
+}
+
+/** One of Burwood's own events, as Kevin's SQL left the 9 Nov feast: Burwood's, Gladesville taking part. */
+function burwoodFeast(raw, { at = '2030-11-08T20:00:00.000Z', title = 'Feast of St Nectarios' } = {}) {
+  return raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc, event_type, status, mutation_type)
+    VALUES (?, 'manual', ?, ?, '2030-11-08T23:30:00.000Z', 'feast', 'approved', 'headless') RETURNING id`).get(SBU, title, at).id;
+}
+
+const GLADESVILLE_NOV = (events) => ({
+  kind: 'poster', written_in: 'English', other_parish: null, notes: [], services: [],
+  details: { address: '', phone: '', email: '', website: '' },
+  events: events.map(e => ({ feast: '', weekday_printed: null, year_printed: true, end_time: null, end_date: '',
+    languages: [], description: null, notes: [], ...e })),
+});
+const FEAST_AT_BURWOOD = { title: 'Feast of St Nectarios', date: '2030-11-09', weekday_printed: 'Saturday',
+  start_time: '07:30', end_time: '10:30', event_type: 'feast', venue: 'St Nectarios Church, Burwood' };
+
+test('an event the poster puts at another parish on file is theirs: the one already there is joined, nothing new made', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  // Somebody else already takes part: joining must not take them off.
+  f.raw.prepare('INSERT INTO event_parishes (event_id, parish_id) VALUES (?, ?)').run(feast, ELIAS);
+
+  const read = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  const card = read.cards[0];
+  assert.deepEqual([card.host_parish_id, card.host_event_id], [SBU, feast]);
+  assert.equal(card.location_override, null, 'the venue named their church: it is theirs, not a place of its own');
+  assert.ok(card.read_notes.some(n => n.field === 'host_parish_id' && /St Nectarios Church, Burwood/.test(n.text)));
+  assert.ok(card.read_notes.some(n => n.field === 'replaces' && /^Check replaced services/.test(n.text)),
+    'what it replaces at Gladesville is asked about');
+  assert.deepEqual(card.replaces, [], 'nothing of Gladesville’s on a Saturday morning to tick');
+  assert.deepEqual(card.languages, [], 'no language guessed for another parish’s service');
+
+  const count = () => f.raw.prepare('SELECT COUNT(*) n FROM events').get().n;
+  const before = count();
+  const r = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(r.status, 201);
+  assert.equal(r.body.joined, true);
+  assert.equal(r.body.event.id, feast);
+  assert.deepEqual(r.body.event.additional_parishes.sort(), [ELIAS, SAG].sort());
+  assert.equal(count(), before, 'nothing new');
+  assert.deepEqual(f.raw.prepare('SELECT title, start_utc, poster_path FROM events WHERE id = ?').get(feast),
+    { title: 'Feast of St Nectarios', start_utc: '2030-11-08T20:00:00.000Z', poster_path: null },
+    'Burwood’s event stays as Burwood has it');
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM drafts WHERE id = ?').get(read.id).n, 0, 'the card took its draft with it');
+  assert.ok(f.bucket.deleted.includes(read.poster_path.slice(1)), 'and the poster, which nothing published carries');
+});
+
+test('not on file there yet, it is added THERE, with this parish taking part and the poster on it', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const read = await readAt(f, SAG, GLADESVILLE_NOV([{ ...FEAST_AT_BURWOOD, title: 'Great Vespers', feast: 'St Nectarios',
+    date: '2030-11-08', weekday_printed: 'Friday', start_time: '19:00', end_time: '21:00', event_type: 'prayer',
+    languages: ['Greek'], venue: 'St Nectarios Greek Orthodox Church, 26 Railway Parade, Burwood NSW 2134' }]));
+  const card = read.cards[0];
+  assert.deepEqual([card.host_parish_id, card.host_event_id], [SBU, null]);
+  const r = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(r.status, 201);
+  const ev = r.body.event;
+  assert.deepEqual([ev.parish_id, ev.title, ev.feast, ev.start_utc, ev.location_override, ev.location_parish_id],
+    [SBU, 'Great Vespers', 'St Nectarios', '2030-11-08T08:00:00.000Z', null, null], 'at their own church, on their clock');
+  assert.deepEqual(ev.additional_parishes, [SAG]);
+  assert.equal(ev.poster_path, read.poster_path);
+});
+
+test('this parish’s own service at that time is ticked as replaced, and so is theirs that it is', async () => {
+  const f = fresh({ role: 'owner' });
+  const { sagSunday } = addGladesvilleBurwood(f.raw);
+  const sbuSunday = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type)
+    VALUES (?, 0, '07:30', '11:00', 'Matins and Divine Liturgy', 'liturgy') RETURNING id`).get(SBU).id;
+  const read = await readAt(f, SAG, GLADESVILLE_NOV([{ title: 'Matins and Divine Liturgy', feast: 'Sunday after St Nectarios',
+    date: '2030-11-10', weekday_printed: 'Sunday', start_time: '07:30', end_time: '11:00', event_type: 'liturgy',
+    languages: ['Greek', 'English'], venue: 'St Nectarios, Burwood' }]));
+  const card = read.cards[0];
+  assert.equal(card.occurrence, null, 'not Gladesville’s own Sunday with a venue');
+  assert.deepEqual(card.replaces, [`${sbuSunday}:2030-11-10`, `${sagSunday}:2030-11-10`]);
+  assert.ok(card.read_notes.some(n => /Gladesville’s own 7:30am Matins and Liturgy/.test(n.text)));
+  assert.ok(!card.read_notes.some(n => /^Check replaced services/.test(n.text)), 'ticked says it instead');
+
+  const r = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(r.status, 201);
+  const ov = (sid) => f.raw.prepare('SELECT kind, combined_into_event_id FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?')
+    .get(sid, '2030-11-10');
+  assert.deepEqual(ov(sagSunday), { kind: 'combined', combined_into_event_id: r.body.event.id }, 'Gladesville’s Sunday points at it');
+  assert.deepEqual(ov(sbuSunday), { kind: 'combined', combined_into_event_id: r.body.event.id }, 'and it is shown once at Burwood');
+});
+
+test('ticking or saying nothing is replaced answers the prompt', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const read = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  const r = await f.call('PATCH', `/api/admin/draft-events/${read.cards[0].id}`, { replaces: null });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.read_notes.filter(n => n.field === 'replaces'), []);
+  assert.equal(r.body.host_parish_id, SBU, 'still theirs');
+});
+
+test('a parish contact joins another parish’s event as their own, and cannot add one there', async () => {
+  const f = fresh({ role: 'parish', parishIds: [SAG] });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  const join = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  // Another parish ticked as well is not theirs to add: an ask, as any combine.
+  await f.call('PATCH', `/api/admin/draft-events/${join.cards[0].id}`, { also_at: [ELIAS] });
+  const no = await f.call('POST', `/api/admin/draft-events/${join.cards[0].id}/publish`, {});
+  assert.equal(no.status, 403);
+  assert.equal(no.body.proposable, true);
+  const yes = await f.call('POST', `/api/admin/draft-events/${join.cards[0].id}/publish`, { propose: 'Deanery feast' });
+  assert.equal(yes.status, 201);
+  assert.deepEqual(yes.body.event.additional_parishes, [SAG], 'their own half now');
+  const ask = f.raw.prepare('SELECT payload FROM admin_proposals WHERE id = ?').get(yes.body.proposal_id);
+  assert.deepEqual(JSON.parse(ask.payload).additive_parish_ids.sort(), [ELIAS, SAG].sort(), 'the whole state, for the owner');
+
+  f.raw.prepare('DELETE FROM events WHERE id = ?').run(feast);
+  const make = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  assert.equal(make.cards[0].host_event_id, null);
+  await f.call('PATCH', `/api/admin/draft-events/${make.cards[0].id}`, { languages: ['Greek'] });
+  const refused = await f.call('POST', `/api/admin/draft-events/${make.cards[0].id}/publish`, {});
+  assert.equal(refused.status, 403);
+  assert.match(refused.body.error, /St Nectarios, Burwood is not one of your parishes/);
+});
+
+test('an event that has gone from their parish is said so, not joined', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const feast = burwoodFeast(f.raw);
+  const read = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  f.raw.prepare("UPDATE events SET status = 'cancelled' WHERE id = ?").run(feast);
+  const r = await f.call('POST', `/api/admin/draft-events/${read.cards[0].id}/publish`, {});
+  assert.equal(r.status, 400);
+  assert.equal(r.body.gone, true);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM event_parishes WHERE event_id = ?').get(feast).n, 0);
+});
+
+test('the whole poster being theirs is a move, not taking part; and moving there makes it theirs outright', async () => {
+  const f = fresh({ role: 'editor' });
+  addGladesvilleBurwood(f.raw);
+  const theirs = await readAt(f, SAG, { ...GLADESVILLE_NOV([FEAST_AT_BURWOOD]),
+    other_parish: { name: 'Holy Church of St Nectarios', place: 'Burwood' } });
+  assert.equal(theirs.read_parish.parish_id, SBU);
+  assert.equal(theirs.cards[0].host_parish_id, null, 'Gladesville takes no part in Burwood’s own poster');
+
+  const ours = await readAt(f, SAG, GLADESVILLE_NOV([FEAST_AT_BURWOOD]));
+  assert.equal(ours.cards[0].host_parish_id, SBU);
+  const moved = (await f.call('PATCH', `/api/admin/drafts/${ours.id}`, { parish_id: SBU })).body;
+  assert.deepEqual([moved.cards[0].host_parish_id, moved.cards[0].host_event_id], [null, null]);
 });

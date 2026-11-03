@@ -83,3 +83,33 @@ test('a one-off service needs a language; a date of a regular service and anythi
   assert.deepStrictEqual(C.checkDraftEvent({ ...vigil, occurrence: '12:2026-11-14' }, at), [], 'its service has one');
   assert.deepStrictEqual(C.checkDraftEvent({ ...ok, event_type: 'talk' }, at), [], 'a talk carries none');
 });
+
+test('joining another parish\'s event on file needs no language: nothing is made', () => {
+  const at = { today: '2026-10-08' };
+  const feast = { ...ok, title: 'Feast of St Nectarios', event_type: 'feast' };
+  assert.deepStrictEqual(levels(C.checkDraftEvent(feast, at)), ['languages:block'], 'a new one at their parish still does');
+  assert.deepStrictEqual(C.checkDraftEvent({ ...feast, host_parish_id: 'greek-stnectarios-burwood', host_event_id: 913 }, at), []);
+});
+
+// St Andrew, Gladesville's programme lists St Nectarios, Burwood's feast; what
+// Burwood has on file that day is what it is checked against.
+test('the same event on file at another parish: the one at that time, else the one of that name — never a guess', () => {
+  const card = { title: 'Feast of St Nectarios', feast: '', start_time: '07:30', event_type: 'feast' };
+  const feast = { id: 913, title: 'Feast of St Nectarios', feast: null, time: '07:00', event_type: 'feast' };
+  const seniors = { id: 920, title: "Seniors' Group", feast: null, time: '10:00', event_type: 'social' };
+  // Burwood's own poster says 7:30, Gladesville's said 7:00: the name decides.
+  assert.strictEqual(C.sameEventOnFile(card, [seniors, feast]), 913);
+  // Named for the liturgy, with the saint underneath: the saint is the name.
+  assert.strictEqual(C.sameEventOnFile({ title: 'Hierarchical Divine Liturgy', feast: 'St Nectarios of Aegina', start_time: '09:00', event_type: 'liturgy' },
+    [seniors, feast]), 913);
+  // At the same time and the same kind of thing, whatever it is called.
+  assert.strictEqual(C.sameEventOnFile({ title: 'Matins and Divine Liturgy', start_time: '07:00', event_type: 'liturgy' }, [seniors, feast]), 913);
+  // The same time is not enough for something else altogether.
+  assert.strictEqual(C.sameEventOnFile({ title: 'Youth BBQ', start_time: '10:00', event_type: 'youth' }, [seniors, feast]), null);
+  // Nothing in common, or two alike: nothing.
+  assert.strictEqual(C.sameEventOnFile({ title: 'Divine Liturgy', start_time: '08:00', event_type: 'liturgy' }, [seniors, feast]), null);
+  assert.strictEqual(C.sameEventOnFile(card, [feast, { ...feast, id: 914, time: '19:00' }]), null);
+  // Two of that name, one at its time: that one.
+  assert.strictEqual(C.sameEventOnFile({ ...card, start_time: '19:00' }, [feast, { ...feast, id: 914, time: '19:00' }]), 914);
+  assert.strictEqual(C.sameEventOnFile(card, []), null);
+});
