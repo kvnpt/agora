@@ -301,14 +301,22 @@
     });
     // The sign first: the add-event editor reads it, and offers its services
     // one by one beside what is on file (event-editor.js, intent 'timetable').
+    // Paste too, as the editor's own box has (readClipboardImage).
+    const EE = root.AgoraEventEditor;
+    const canPaste = !!(EE && EE.canReadClipboard());
     d.form.insertAdjacentHTML('afterbegin', `
-      <button type="button" class="sap-drop" data-sign>
-        <span class="sap-title">Add an image</span>
-        <span class="sap-sub">A photo of the board out the front, or a printed timetable. Nothing is added until you say so.</span>
-      </button>
+      <div class="drop-box${canPaste ? ' can-paste' : ''}">
+        <button type="button" class="sap-drop" data-sign>
+          <span class="sap-title">Add an image</span>
+          <span class="sap-sub">A photo of the board out the front, or a printed timetable. Nothing is added until you say so.</span>
+        </button>
+        ${canPaste ? EE.pastePillHTML('data-sign-paste') : ''}
+      </div>
+      <p class="paste-note" data-sign-note aria-live="polite" hidden></p>
       <input type="file" accept="image/*" hidden data-sign-input>
       <div class="schedule-add-or">or type it in</div>`);
     const sign = d.form.querySelector('[data-sign-input]');
+    const signNote = d.form.querySelector('[data-sign-note]');
     const fromSign = (file) => {
       if (!file || !/^image\//.test(file.type || '')) return;
       d.f.close();
@@ -316,6 +324,16 @@
     };
     d.form.querySelector('[data-sign]').addEventListener('click', () => { sign.value = ''; sign.click(); });
     sign.addEventListener('change', () => fromSign(sign.files && sign.files[0]));
+    if (canPaste) d.form.querySelector('[data-sign-paste]').addEventListener('click', () => {
+      signNote.hidden = true;
+      // Straight from the tap, nothing awaited first: Safari's Paste bubble needs it.
+      EE.readClipboardImage().then((r) => {
+        if (!d.form.isConnected) return;   // closed while the bubble was up
+        if (r.file) return fromSign(r.file);
+        signNote.textContent = EE.pasteNote(r.error);
+        signNote.hidden = !signNote.textContent;
+      });
+    });
     const drop = d.form.querySelector('[data-sign]');
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-dragging'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('is-dragging'));

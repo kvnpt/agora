@@ -155,3 +155,44 @@ test('which weekday a card is held on: its date, else the weekday printed', () =
   assert.strictEqual(E.serviceFromCard({ date: '', start_time: '09:00' }, {}, []), null);
   assert.strictEqual(E.serviceFromCard({ date: '2026-11-01', start_time: '' }, {}, []), null);
 });
+
+// The Paste pill (Kevin, 3 Nov 2026): an iPhone has no Ctrl+V, so the picture
+// comes off the clipboard through read(). A stand-in clipboard here; Safari's
+// own bubble is checked on a phone.
+test('Paste takes the picture off the clipboard, PNG first', async () => {
+  const item = (types) => ({
+    types,
+    getType: async (t) => new Blob([t], { type: t }),
+  });
+  const clip = (items) => ({ read: () => Promise.resolve(items) });
+  const r = await E.readClipboardImage(clip([item(['text/plain']), item(['image/jpeg', 'image/png'])]));
+  assert.ok(r.file, 'a file');
+  assert.strictEqual(r.file.type, 'image/png', 'PNG when the clipboard offers it');
+  assert.strictEqual(r.file.name, 'pasted-poster.png');
+  const j = await E.readClipboardImage(clip([item(['image/jpeg'])]));
+  assert.strictEqual(j.file.type, 'image/jpeg', 'any picture when there is no PNG');
+  assert.strictEqual(j.file.name, 'pasted-poster.jpeg');
+});
+
+test('Paste with no picture says why, and is not offered without read()', async () => {
+  const words = { read: () => Promise.resolve([{ types: ['text/plain'], getType: async () => new Blob(['x']) }]) };
+  assert.deepStrictEqual(await E.readClipboardImage(words), { error: 'empty' });
+  assert.deepStrictEqual(await E.readClipboardImage({ read: () => Promise.resolve([]) }), { error: 'empty' });
+  const waved = { read: () => Promise.reject(Object.assign(new Error('no'), { name: 'NotAllowedError' })) };
+  assert.deepStrictEqual(await E.readClipboardImage(waved), { error: 'denied' });
+  const throws = { read: () => { throw new TypeError('bad'); } };
+  assert.deepStrictEqual(await E.readClipboardImage(throws), { error: 'failed' });
+  assert.deepStrictEqual(await E.readClipboardImage({}), { error: 'unsupported' });
+  assert.strictEqual(E.canReadClipboard({ writeText() {} }), false);
+  assert.strictEqual(E.canReadClipboard({ read() {} }), true);
+  assert.match(E.pasteNote('empty'), /no picture on the clipboard/);
+  assert.strictEqual(E.pasteNote('unsupported'), '', 'nothing to say where there is no pill');
+});
+
+test('Paste starts the read in the tap itself, before anything is awaited', () => {
+  // Safari shows its Paste bubble only for a read() the tap started: a read
+  // begun after an await is refused.
+  let called = false;
+  E.readClipboardImage({ read: () => { called = true; return Promise.resolve([]); } });
+  assert.strictEqual(called, true, 'read() runs synchronously');
+});

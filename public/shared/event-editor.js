@@ -361,6 +361,60 @@
     }
   }
 
+  /**
+   * The picture on the clipboard, for the Paste pill under "Add an image".
+   *
+   * A phone has no Ctrl+V: on an iPhone a page hears a `paste` only while a
+   * text field is focused, so a poster copied out of WhatsApp or Photos had to
+   * be saved to Photos and chosen from there (Kevin, 3 Nov 2026). The
+   * Clipboard API's read() is the way in. Safari answers it with its own small
+   * "Paste" bubble by the finger, and hands the picture over only once that is
+   * tapped — and only for a read started by the tap itself, so this is called
+   * straight from the click handler, with nothing awaited before it. Chrome
+   * asks once for permission instead.
+   *
+   * Resolves { file } or { error }: 'unsupported' (no read() here — the pill
+   * is not shown), 'empty' (the clipboard holds no picture, only words or
+   * nothing), 'denied' (the bubble was waved away, or the browser refused),
+   * 'failed' (anything else).
+   */
+  const canReadClipboard = (clipboard = root.navigator && root.navigator.clipboard) =>
+    !!(clipboard && typeof clipboard.read === 'function');
+  function readClipboardImage(clipboard = root.navigator && root.navigator.clipboard) {
+    if (!canReadClipboard(clipboard)) return Promise.resolve({ error: 'unsupported' });
+    let reading;
+    try { reading = clipboard.read(); } catch (e) { reading = Promise.reject(e); }
+    return Promise.resolve(reading).then(async (items) => {
+      for (const item of items || []) {
+        const types = [...(item.types || [])];
+        // PNG first: it is the one picture type every browser hands a page.
+        const type = types.find(t => t === 'image/png') || types.find(t => /^image\//.test(t));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const ext = (type.split('/')[1] || 'png').replace(/[^a-z0-9]/g, '') || 'png';
+        const name = `pasted-poster.${ext}`;
+        const file = typeof File === 'function'
+          ? new File([blob], name, { type: blob.type || type })
+          : Object.assign(blob, { name });
+        return { file };
+      }
+      return { error: 'empty' };
+    }).catch((e) => ({ error: e && e.name === 'NotAllowedError' ? 'denied' : 'failed' }));
+  }
+
+  /** What to say under the box when Paste brought no picture. */
+  const PASTE_NOTES = {
+    empty: 'There is no picture on the clipboard. Copy the poster first (press and hold it, then Copy), then tap Paste.',
+    denied: 'Nothing was pasted. If no Paste bubble came up, choose the image instead (or press Ctrl+V on a computer).',
+    failed: 'The clipboard could not be read here. Choose the image instead.',
+  };
+  const pasteNote = (error) => PASTE_NOTES[error] || '';
+
+  /** The pill itself, for the boxes that take an image ("Add an image"). */
+  const CLIPBOARD_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>';
+  const pastePillHTML = (attrs) =>
+    `<button type="button" class="paste-pill" aria-label="Paste an image from the clipboard" ${attrs}>${CLIPBOARD_ICON}<span>Paste</span></button>`;
+
   async function http(method, url, body) {
     try {
       const init = { method, headers: {} };
@@ -514,10 +568,14 @@
       <div class="ee-strip" data-ee="strip" hidden></div>
       <div class="ee-poster">
         <input type="file" accept="image/*" data-ee="poster-input" hidden>
-        <button type="button" class="ee-drop" data-ee="drop">
-          <span class="ee-drop-title">Add an image</span>
-          <span class="ee-drop-sub">A poster, flyer or programme: drop it here, paste it, or tap to choose one. The details are read into the form for you to check — nothing is published until you say so.</span>
-        </button>
+        <div class="drop-box${canReadClipboard() ? ' can-paste' : ''}" data-ee="drop-box">
+          <button type="button" class="ee-drop" data-ee="drop">
+            <span class="ee-drop-title">Add an image</span>
+            <span class="ee-drop-sub">A poster, flyer or programme: tap to choose one, drop it here, or paste it. The details are read into the form for you to check — nothing is published until you say so.</span>
+          </button>
+          ${canReadClipboard() ? pastePillHTML('data-ee="paste"') : ''}
+        </div>
+        <p class="paste-note" data-ee="paste-note" aria-live="polite" hidden></p>
         <div class="ee-poster-card" data-ee="poster" hidden>
           <button type="button" class="ee-thumb-btn" data-ee="thumb" aria-label="Look at the poster full size"><img class="ee-thumb" alt="The poster"></button>
           <div class="ee-poster-side">
@@ -574,7 +632,7 @@
     // ── the poster panel ──
     function showPoster(url) {
       state.posterUrl = url;
-      $('drop').hidden = !!url;
+      $('drop-box').hidden = !!url;
       $('poster').hidden = !url;
       el.classList.toggle('has-poster', !!url);
       if (url) el.querySelector('.ee-thumb').src = url;
@@ -582,6 +640,20 @@
 
     $('drop').addEventListener('click', () => fileInput.click());
     $('replace').addEventListener('click', () => fileInput.click());
+    // Paste, for a phone: read() straight from the tap, so Safari offers its
+    // Paste bubble (readClipboardImage). Nothing awaited before it.
+    if ($('paste')) $('paste').addEventListener('click', () => {
+      showPasteNote('');
+      readClipboardImage().then((r) => {
+        if (state.closed) return;
+        if (r.file) dropFile(r.file);
+        else showPasteNote(pasteNote(r.error));
+      });
+    });
+    function showPasteNote(text) {
+      $('paste-note').textContent = text;
+      $('paste-note').hidden = !text;
+    }
     $('thumb').addEventListener('click', () => {
       const url = (state.draft && state.draft.poster_path) || state.posterUrl;
       if (!url) return;
@@ -1500,6 +1572,7 @@
       if (state.publishing || !state.parish) return;
       if (!/^image\//.test(file.type || '')) return showError('That is not an image — a poster has to be a photo or a picture file.');
       showError('');
+      showPasteNote('');
       if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
       state.objectUrl = URL.createObjectURL(file);
       showPoster(state.objectUrl);
@@ -2496,8 +2569,11 @@
 
   // shrinkPoster too: "Suggest edits" adds a poster to a suggested event at
   // the same size the editor stores one (admin.html suggestPage).
+  // readClipboardImage and friends too: the timetable's "Add an image"
+  // (editing.js addService) has the same Paste pill.
   const api = { open, summaryLine, summaryParts, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
-    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, cardWeekday, serviceFromCard };
+    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, cardWeekday, serviceFromCard,
+    canReadClipboard, readClipboardImage, pasteNote, pastePillHTML };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
