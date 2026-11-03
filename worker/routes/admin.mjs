@@ -44,7 +44,8 @@ import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
-  placeRead, placeHosts, moveDraft, matchOccurrences, suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
+  placeRead, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast, suggestLanguages,
+  occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
@@ -1985,6 +1986,9 @@ export function registerAdminRoutes(router) {
       // A dated regular service — a programme's Sunday and its saint — is a
       // change to that Sunday, not an event beside it.
       matchOccurrences(read.read, rules);
+      // A one-off this parish already has on file is that one, filled in
+      // rather than made twice.
+      await matchOnFile(env.DB, read.read, { id: draft.parish_id, ...(parish || {}), timezone: zone });
       // A one-off service the poster gives no language for: the parish's
       // usual, as a suggestion to check (publishing needs one).
       const past = (await env.DB.prepare(
@@ -2056,13 +2060,14 @@ export function registerAdminRoutes(router) {
     // `propose` is the flag and the reason, as on POST /api/admin/events; the
     // card keeps the reason it was given, so a bare `true` uses that.
     const propose = b.propose ? (typeof b.propose === 'string' ? b.propose : (card.ask_reason || true)) : null;
+    if (onFileHere(card)) return publishOnFile(c, card, zone);
     if (card.host_parish_id && card.host_event_id) return publishJoin(c, card, propose);
 
     // Another parish's event, not on file there yet: it goes up THERE, with
     // this parish taking part — so it is made by somebody who may add events
     // at that parish, at that parish's wall clock.
     let host = null;
-    if (card.host_parish_id) {
+    if (card.host_parish_id && card.host_parish_id !== card.parish_id) {
       host = await env.DB.prepare('SELECT id, name, timezone FROM parishes WHERE id = ?').bind(card.host_parish_id).first();
       if (!host || host.id === '_unassigned') {
         return json({ error: 'The parish this was read as being at is not on file — make it your own event instead.' }, 400);
@@ -2172,6 +2177,43 @@ export function registerAdminRoutes(router) {
 
     const remaining = await spendCard(env, card);
     return json({ event: await eventWithEscalation(db, event.id), joined: true, proposal_id: proposalId, remaining }, 201);
+  }
+
+  /**
+   * Publish a card that IS one of this parish's own one-offs already on file
+   * (matchOnFile): fill it in, rather than make a second. The poster goes on
+   * it, and the subtitle, description, end and languages the card has — each
+   * only where the event has none, since a poster read only ever fills empty
+   * fields. Its title, time, kind and place stay as they are on file; a
+   * poster that disagrees says so on the card, and the person changes the
+   * event if the poster is right.
+   */
+  async function publishOnFile(c, card, zone) {
+    const { env } = c;
+    const db = env.DB;
+    const event = await db.prepare('SELECT * FROM events WHERE id = ?').bind(card.host_event_id).first();
+    if (!event || event.parish_id !== card.parish_id
+        || ['replaced', 'rejected', 'cancelled', 'hidden'].includes(event.status)) {
+      return json({ error: 'That event is not on file here any more.', gone: true }, 400);
+    }
+    const blank = (v) => v == null || String(v).trim() === '' || v === '[]';
+    const fill = {};
+    if (blank(event.poster_path) && card.poster_path) fill.poster_path = card.poster_path;
+    const feast = oneOffFeast(card);
+    if (blank(event.feast) && feast) fill.feast = feast;
+    if (blank(event.description) && !blank(card.description)) fill.description = String(card.description).trim();
+    if (blank(event.end_utc) && card.end_time) {
+      fill.end_utc = localSpanToUtc(zone, card.date, card.start_time, card.end_time, card.end_date).end_utc;
+    }
+    if (blank(event.languages) && !blank(card.languages)) fill.languages = card.languages;
+    const cols = Object.keys(fill);
+    if (cols.length) {
+      await db.prepare(
+        `UPDATE events SET ${cols.map(k => `${k} = ?`).join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+      ).bind(...Object.values(fill), event.id).run();
+    }
+    const remaining = await spendCard(env, card);
+    return json({ event: await eventWithEscalation(db, event.id), on_file: true, filled: cols, remaining }, 201);
   }
 
   /**

@@ -359,7 +359,10 @@ export async function updateCard(db, card, patch) {
     const notes = parseList(card.read_notes).filter(n => !touched.includes(n.field));
     // Made another parish's event by hand ("It is their event"): the same
     // question the read asks of one it made theirs (placeHosts).
-    if (patch.host_parish_id && !('replaces' in patch) && !notes.some(n => n.field === 'replaces')) {
+    // Not when it is this parish's own, on file here: nothing is replaced by
+    // an event that is already what it is.
+    if (patch.host_parish_id && patch.host_parish_id !== card.parish_id
+        && !('replaces' in patch) && !notes.some(n => n.field === 'replaces')) {
       notes.push({ field: 'replaces', text: REPLACES_PROMPT });
     }
     set.read_fields = marks.length ? JSON.stringify(marks) : null;
@@ -611,7 +614,10 @@ export async function placeHosts(db, read, parish, ownRules = []) {
   const postersOwn = read.parish && read.parish.parish_id;
   for (const ev of at) {
     const id = venueParish(ev.location_override, list);
-    if (!id || id === parish.id || id === postersOwn) continue;
+    // Its own church by name ("St Nectarios Church, Burwood" on Burwood's
+    // poster): at home, as its address is (placeRead).
+    if (id && id === parish.id) { ev.location_override = null; continue; }
+    if (!id || id === postersOwn) continue;
     ev.host_parish_id = id;
     ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'location_override'),
       { field: 'host_parish_id', text: `Printed as at “${ev.location_override}”.` }];
@@ -675,6 +681,64 @@ export async function placeHosts(db, read, parish, ownRules = []) {
   return read;
 }
 
+/**
+ * Which of a parish's OWN one-offs on file a poster's event already is.
+ *
+ * St Nectarios, Burwood's November poster gives its feast on the 9th, which
+ * Burwood already has on file — put up by hand, or published from an earlier
+ * read of the same poster. Read again, it would have been a second feast
+ * beside the first. A card that IS one on file says so: whose event it is
+ * (`host_parish_id`, this parish's own) and which (`host_event_id`), and
+ * publishing adds the poster to it, and whatever it is missing, rather than
+ * making another (routes/admin.mjs publishOnFile). The same check as an event
+ * at another parish's church (placeHosts, event-checks.js sameEventOnFile), so
+ * the two cannot disagree about what "the same event" is.
+ *
+ * After matchOccurrences: a card that is a date of a regular service is that,
+ * not a one-off. Not a card already another parish's (placeHosts). One card
+ * to an event: two cards are two events, even when they share a saint.
+ *
+ * @param {object} read    normalizeRead()'s answer; changed in place
+ * @param {{id, timezone}} parish  the draft's parish
+ */
+export async function matchOnFile(db, read, parish) {
+  const cards = (read.events || []).filter(ev => ev.date && !ev.occurrence && !ev.host_parish_id);
+  if (!cards.length) return read;
+  const zone = parish.timezone || 'Australia/Sydney';
+  const dates = cards.map(ev => ev.date).sort();
+  const day = 86400000;
+  const from = new Date(Date.parse(`${dates[0]}T00:00:00Z`) - day).toISOString();
+  const to = new Date(Date.parse(`${dates[dates.length - 1]}T00:00:00Z`) + 2 * day).toISOString();
+  const rows = (await db.prepare(
+    `SELECT id, title, feast, start_utc, event_type FROM events
+     WHERE parish_id = ? AND source_adapter != 'schedule' AND start_utc >= ? AND start_utc < ?
+       AND status NOT IN ('replaced','rejected','cancelled','hidden')`
+  ).bind(parish.id, from, to).all()).results || [];
+  if (!rows.length) return read;
+  const onFile = rows.map(e => {
+    const p = localPartsOf(zone, Date.parse(e.start_utc));
+    return { ...e, date: p.date, time: p.time };
+  });
+  const used = new Set();
+  for (const ev of cards) {
+    const hit = checks.sameEventOnFile(ev, onFile.filter(e => e.date === ev.date && !used.has(e.id)));
+    if (hit == null) continue;
+    const e = onFile.find(x => x.id === hit);
+    used.add(e.id);
+    ev.host_parish_id = parish.id;
+    ev.host_event_id = Number(e.id);
+    const notes = [`Already on file here: ${clockText(e.time)} ${e.title}.`];
+    if (checks.isLocalTime(ev.start_time) && ev.start_time !== e.time) {
+      notes.push(`The poster has it at ${clockText(ev.start_time)}. Publishing keeps ${clockText(e.time)} — change it on the event if the poster is right.`);
+    }
+    ev.read_notes = [...(ev.read_notes || []), ...notes.map(text => ({ field: 'host_event_id', text }))];
+  }
+  return read;
+}
+
+/** A card that is this parish's own event already on file (matchOnFile). */
+export const onFileHere = (card) => !!card.host_event_id && card.host_parish_id === card.parish_id;
+
 // The kinds that are services: only a service is held in a language
 // (public/shared/timetable.js isService).
 const SERVICE_TYPES = new Set(['liturgy', 'prayer', 'feast', 'vespers', 'matins']);
@@ -735,7 +799,9 @@ export function suggestLanguages(read, rules = [], past = []) {
  *     parish's, so the card is an event of its own again until it is matched
  *     at the new one (a read again does that);
  *   * whose event it is (`host_parish_id`), when that is the new parish: it
- *     is the new parish's own event now, not one it takes part in.
+ *     is the new parish's own event now, not one it takes part in — and,
+ *     when it was one on file there, that one on file (matchOnFile). When it
+ *     was the OLD parish's own on file, it goes: found there, not here.
  * The read's "whose poster" stays when it named a parish on file — the editor
  * hides it once the draft is there, and shows it again after a wrong pick —
  * and goes when it named none: choosing a parish is the answer to it.
@@ -752,7 +818,14 @@ export async function moveDraft(db, draft, parish) {
       set.also_at = rest.length ? JSON.stringify(rest) : null;
     }
     if (card.occurrence) set.occurrence = null;
-    if (card.host_parish_id === parish.id) { set.host_parish_id = null; set.host_event_id = null; }
+    // Whose event it is. The old parish's own, found on file there: not
+    // this parish's, and nothing said it is. The new parish's, not on file:
+    // its own new event now. The new parish's, on file: that event, which is
+    // now its own on file (publishing fills it in, not a second).
+    if (card.host_parish_id === draft.parish_id
+        || (card.host_parish_id === parish.id && !card.host_event_id)) {
+      set.host_parish_id = null; set.host_event_id = null;
+    }
     if (card.read_fields.includes('location_override') && isOwnVenue(card.location_override, parish)) {
       const marks = card.read_fields.filter(f => f !== 'location_override');
       const notes = card.read_notes.filter(n => n.field !== 'location_override');

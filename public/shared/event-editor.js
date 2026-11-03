@@ -1131,11 +1131,19 @@
      * parish's that day to tick (or the list has not loaded yet to say so).
      */
     function hostPending(card) {
+      if (hereOnFile(card)) return false;
       if (!card.fields.host_parish_id || !card.notes.some(n => n.field === 'replaces')) return false;
       if (card.candidates == null) return isDate(card.fields.date);
       return card.candidates.some(e => e.parish_id === state.parish.id && String(e.id) !== String(card.fields.host_event_id || ''))
         || card.fields.replaces.length > 0;
     }
+
+    /**
+     * One of this parish's own one-offs already on file (drafts.mjs
+     * matchOnFile): publishing fills it in rather than making a second.
+     */
+    const hereOnFile = (card) => !!card.fields.host_event_id && !!state.parish
+      && card.fields.host_parish_id === state.parish.id;
 
     /** Their one-off on file that this card is (event-checks.js sameEventOnFile), from the day's candidates. */
     function onFileAt(card) {
@@ -1158,9 +1166,24 @@
       const hit = onFileAt(card);
       const v = hit == null ? '' : Number(hit);
       if (String(v) === String(card.fields.host_event_id)) return;
+      // This parish's own, and no longer like the one on file: just its own
+      // new event, not "its own, to add at itself".
+      if (v === '' && hereOnFile(card)) { forgetOnFile(card); return; }
       card.fields.host_event_id = v;
       card.touched.add('host_event_id');
       card.pending.host_event_id = toPatchValue('host_event_id', v);
+      schedule(card, 0);
+    }
+
+    /** Not the one on file here after all: the card is this parish's own new event. */
+    function forgetOnFile(card) {
+      for (const f of ['host_parish_id', 'host_event_id']) {
+        card.fields[f] = '';
+        card.touched.add(f);
+        card.pending[f] = null;
+      }
+      card.notes = card.notes.filter(n => n.field !== 'host_event_id');
+      card.rematch = false;
       schedule(card, 0);
     }
 
@@ -1181,6 +1204,9 @@
       // Joining one on file publishes none of the card's words: they go, and
       // what it was matched on (the date and times) stays.
       card.els.root.classList.toggle('is-join', !!(hid && card.fields.host_event_id));
+      // Its own, on file: nothing to take part in and nothing it replaces.
+      const here = hereOnFile(card);
+      card.els.root.classList.toggle('is-here', here);
       card.els.newThere.hidden = !(hid && card.fields.host_event_id) || !may('event.edit', hid);
       if (!hid) return;
       const name = nameOf(hid);
@@ -1188,18 +1214,22 @@
       const zoneOf = (pid) => (parishById(pid) || {}).timezone || zone();
       const when = on ? new Intl.DateTimeFormat('en-AU', { timeZone: zoneOf(hid), hour: 'numeric', minute: '2-digit' })
         .format(new Date(on.start_utc)) : '';
-      card.els.hostWhat.innerHTML = card.fields.host_event_id
+      card.els.hostWhat.innerHTML = here
+        ? `Already on file here${on ? `: <b>${esc(when)} ${esc(on.title)}</b>` : ''}. Publishing adds this poster to it, and its subtitle or description if it has none — nothing new is made, and its time and title stay as they are.`
+        : card.fields.host_event_id
         ? `Already on file at <b>${esc(name)}</b>${on ? `: <b>${esc(when)} ${esc(on.title)}</b>` : ''}. Publishing adds ${esc(own)} to it as taking part — nothing new is made, and it stays as ${esc(name)} has it.`
         : !may('event.edit', hid)
           ? `This is <b>${esc(name)}</b>’s event, and it is not on file there. ${esc(name)} is not one of your parishes, so it cannot be added there: make it ${esc(own)}’s own event, held at ${esc(name)}, or ask somebody who edits ${esc(name)}.`
           : `This is <b>${esc(name)}</b>’s event, and nothing like it is on file there that day: publishing adds it at ${esc(name)}, with ${esc(own)} taking part.`;
       card.els.hostAsk.textContent = `Does it take the place of anything at ${own} that day? Tick it, and it shows as a tombstone pointing here — nothing disappears.`;
       card.els.hostNotes.innerHTML = card.notes
-        .filter(n => (n.field === 'replaces' && !PROMPT.test(n.text)) || n.field === 'host_parish_id')
+        .filter(n => (n.field === 'replaces' && !PROMPT.test(n.text)) || n.field === 'host_parish_id'
+          // The read's "Already on file here: …" says what the line above does, once it has the event.
+          || (n.field === 'host_event_id' && !(on && /^Already on file/.test(n.text))))
         .map(n => `<div class="ee-note ee-note-read">${esc(n.text)}</div>`).join('');
       card.els.noneReplaced.hidden = !hostPending(card) || card.fields.replaces.length > 0;
       card.els.ownBtn.textContent = `Make it ${own}’s own event instead`;
-      card.els.newThere.textContent = `Not that one — add it at ${name} as a new event`;
+      card.els.newThere.textContent = here ? 'Not that one — add it as a new event' : `Not that one — add it at ${name} as a new event`;
       if (card.candidates == null) { if (isDate(card.fields.date) && !card.loadingCands) { card.loadingCands = true; loadCandidates(card).finally(() => { card.loadingCands = false; }); } }
       else renderReplaces(card);
     }
@@ -1229,10 +1259,13 @@
     /** Matched to the wrong event of theirs: a new one there instead, with this card's words. */
     function notThatOne(card) {
       if (!card.fields.host_event_id) return;
-      card.fields.host_event_id = '';
-      card.touched.add('host_event_id');
-      card.pending.host_event_id = null;
-      card.rematch = false;
+      if (hereOnFile(card)) forgetOnFile(card);
+      else {
+        card.fields.host_event_id = '';
+        card.touched.add('host_event_id');
+        card.pending.host_event_id = null;
+        card.rematch = false;
+      }
       if (card.publish.state !== 'refused') card.publish = { state: 'idle', message: '' };
       schedule(card, 0);
       refreshCard(card);
@@ -1382,7 +1415,8 @@
       card.els.chips.innerHTML = binned
         ? `<span class="ee-chip ee-chip-gone">${hasPassed(card) ? 'date has passed · ' : ''}to discard</span>`
         : (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
-        + (card.fields.host_parish_id ? `<span class="ee-chip ee-chip-occ">${card.fields.host_event_id ? 'taking part' : 'to add'} at ${esc(nameOf(card.fields.host_parish_id))}</span>` : '')
+        + (hereOnFile(card) ? '<span class="ee-chip ee-chip-occ">on file here</span>'
+          : card.fields.host_parish_id ? `<span class="ee-chip ee-chip-occ">${card.fields.host_event_id ? 'taking part' : 'to add'} at ${esc(nameOf(card.fields.host_parish_id))}</span>` : '')
         + (hostPending(card) ? '<span class="ee-chip ee-chip-warn">check replaced services</span>' : '')
         + (scoped ? '<span class="ee-chip ee-chip-scope">parish only</span>' : '')
         + checks
@@ -1953,9 +1987,14 @@
       } else if (n > 1) text = `${n} events read from the poster. Check each one against it, then publish.`;
       else text = 'Read from the poster. Check the details against it, then publish.';
       // Another parish's events: this one takes part, and says what they replace here.
-      const hosted = events.filter(c => c.fields.host_parish_id).length;
+      const here = events.filter(hereOnFile).length;
+      const hosted = events.filter(c => c.fields.host_parish_id && !hereOnFile(c)).length;
       if (hosted && state.parish) {
         text += ` ${hosted === 1 ? 'One is' : `${hosted} are`} at another parish, so ${state.parish.name} is set as taking part — check the services ${hosted === 1 ? 'it replaces' : 'they replace'} here.`;
+      }
+      // Its own, already on file: filled in, not made twice.
+      if (here) {
+        text += ` ${here === 1 ? 'One is' : `${here} are`} already on file here: publishing adds the poster to ${here === 1 ? 'it' : 'them'} rather than a second.`;
       }
       // The read is in English; the poster stays attached in the original.
       if (draft.read_language) text += ` Translated from ${draft.read_language} — the poster keeps the original.`;
@@ -2660,6 +2699,10 @@
           if (r.body.proposal_id) proposals.push(r.body.proposal_id);
         } else if (r.status === 403 && r.body && r.body.proposable) {
           card.publish = { state: 'refused', message: r.body.error || '', outside: r.body.outside || [] };
+        } else if (r.body && r.body.gone && hereOnFile(card)) {
+          // Its own event on file went since the read: a new one is for a person to say.
+          forgetOnFile(card);
+          card.publish = { state: 'error', message: 'That event is not on file here any more. Publish again to add it as a new one.' };
         } else if (r.body && r.body.gone && card.fields.host_event_id) {
           // Their event went (cancelled, or taken down) since the read: this
           // card would be a new one there now, which is for a person to say.
