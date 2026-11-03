@@ -363,6 +363,37 @@ changing its date, and so does moving the draft, since the rule was the old
 parish's. Publish checks the link again — the date is still the occurrence's
 and the rule still the parish's — and refuses otherwise.
 
+**An event at another parish's church is theirs, with this parish taking
+part** (Kevin, 3 Nov 2026). St Andrew, Gladesville's November programme gave
+St Nectarios, Burwood's feast on the 9th "at St Nectarios Church, Burwood";
+read at Gladesville it became Gladesville's own event at a place of its own
+by that name, and was moved by hand to Burwood with Gladesville in
+`event_parishes`. Now a read venue that names a parish on file
+(`venueParish`, the same three witnesses as `matchParish`) makes the card
+that parish's (`draft_events.host_parish_id`, migration 034) and drops the
+words, which named its church (`placeHosts` in `worker/lib/drafts.mjs`). Their
+one-off on file that day that is the same event — at the same time and alike,
+else the one that shares a name (`sameEventOnFile` in
+`public/shared/event-checks.js`, which the editor runs too) — is
+`host_event_id`: publishing **adds this parish to it** and makes nothing, and
+the event stays as its own parish has it (`publishJoin`). It only adds:
+`writeCombine` sets a whole state, so the state on file is read and the card's
+targets added to it, and so it is scoped on what is added — this parish and
+its services are the person's own — not on the event's parish. With nothing
+on file it is **added there**, on that parish's clock, with this parish taking
+part and the poster on it; that needs somebody who may add events there. Every
+such card asks **Check replaced services** — what it takes the place of here
+that day, ticked under it like the combine's "replaces" — until somebody
+ticks, unticks or says nothing is (a note on `replaces`). The reader cannot be
+trusted to turn "St Andrew's is closed this day" into the right tick, so it
+ticks only what the poster puts at the same time: this parish's own service
+then (the poster has the parish at the other church instead), and theirs that
+the event is. **Make it … own event instead** turns a card back into this
+parish's own event, held at that parish; **It is …'s event** (under Where,
+when Where names another parish) does the reverse by hand. Not when the whole
+poster is that parish's (`read_parish`): St Elias's youth night dropped at
+Punchbowl is a move, not Punchbowl taking part.
+
 **A subtitle is the line under the title** — the field is `feast` everywhere,
 for history, and the forms call it Subtitle. It is the saint or feast of the
 day, or a talk's topic: "Matins and Divine Liturgy" over "Holy Protection of

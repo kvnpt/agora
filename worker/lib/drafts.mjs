@@ -15,6 +15,7 @@ import langList from '../../public/shared/languages.js';
 import checks from '../../public/shared/event-checks.js';
 import { isOwnVenue, matchParish } from './parish-match.mjs';
 import { isValidOccurrence } from '../../public/shared/project.mjs';
+import { localPartsOf } from '../../public/shared/tz.mjs';
 
 const { isEventType } = eventTypes;
 const { isLocalDate, isLocalTime } = checks;
@@ -69,7 +70,9 @@ export const DRAFTS_DDL = [
   location_lat      REAL,
   location_lng      REAL,
   parish_scoped     INTEGER,
-  discard           INTEGER
+  discard           INTEGER,
+  host_parish_id    TEXT,
+  host_event_id     INTEGER
 )`,
   'CREATE INDEX IF NOT EXISTS idx_draft_events_draft ON draft_events(draft_id, position)',
 ];
@@ -84,7 +87,8 @@ export const DRAFTS_DDL = [
 // answer is a query that works rather than one that errors.
 const LATER_COLUMNS = {
   drafts: ['read_parish', 'read_language', 'read_services', 'read_details'],
-  draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard'],
+  draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
+    'host_parish_id', 'host_event_id'],
 };
 const ensured = new WeakSet();
 export async function ensureDraftTables(db) {
@@ -96,8 +100,8 @@ export async function ensureDraftTables(db) {
     } catch {
       const have = new Set(((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).map(c => c.name));
       for (const c of cols) {
-        // A pin is a number, the pill and the bin a 0 or 1; everything else these add is text.
-        const type = /_(lat|lng)$/.test(c) ? 'REAL' : FLAG_FIELDS.has(c) ? 'INTEGER' : 'TEXT';
+        // A pin is a number, the pill and the bin a 0 or 1, an event an id; everything else these add is text.
+        const type = /_(lat|lng)$/.test(c) ? 'REAL' : FLAG_FIELDS.has(c) || c === 'host_event_id' ? 'INTEGER' : 'TEXT';
         if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} ${type}`).run();
       }
     }
@@ -119,19 +123,29 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * `discard` is the bin on its row (Kevin, 3 Nov 2026): 1 marked to be thrown
  * away at Publish, 0 kept, null while nobody has tapped it — which the editor
  * reads as marked when the date has passed. Nothing publishes a marked card.
+ * `host_parish_id` is set when the event is ANOTHER parish's, which this one
+ * takes part in (Kevin, 3 Nov 2026: St Andrew, Gladesville's programme lists
+ * St Nectarios, Burwood's feast): publishing puts it at that parish with this
+ * one taking part — or, with `host_event_id`, the event of theirs already on
+ * file, adds this parish to it and makes nothing new.
  */
 export const CARD_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
   'languages', 'location_override', 'also_at', 'replaces', 'ask_reason', 'occurrence',
-  'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard'];
+  'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
+  'host_parish_id', 'host_event_id'];
 /** A pin's two halves: numbers, where every other field here is text. */
 const NUMBER_FIELDS = new Set(['location_lat', 'location_lng']);
 /** The pill and the bin: yes, no, or not said. */
 const FLAG_FIELDS = new Set(['parish_scoped', 'discard']);
 const JSON_FIELDS = new Set(['languages', 'also_at', 'replaces']);
 
-/** The fields a poster read may fill — everything but the combine and the ask. */
+/**
+ * The fields a poster read may fill — everything but the ask. The combine only
+ * for an event at another parish (placeHosts): whose it is, and this parish's
+ * own service the poster puts it at the time of, which it takes the place of.
+ */
 const READ_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_time', 'event_type', 'description',
-  'languages', 'location_override', 'occurrence'];
+  'languages', 'location_override', 'occurrence', 'host_parish_id', 'host_event_id', 'replaces'];
 
 const MAX_LEN = { title: 200, feast: 200, description: 2000, location_override: 300, ask_reason: 1000 };
 
@@ -187,6 +201,12 @@ export function validateCard(body) {
       patch[f] = f === 'languages' ? langList.clean(list) : (list.length ? JSON.stringify(list) : null);
       continue;
     }
+    if (f === 'host_event_id') {
+      const n = v == null ? null : Number(v);
+      if (n != null && !(Number.isInteger(n) && n > 0)) return bad(f, 'That is not an event on file.');
+      patch[f] = n;
+      continue;
+    }
     if (v != null && typeof v !== 'string') return bad(f, `${f} must be text.`);
     if (v != null) v = v.trim() || null;
     if (v != null) {
@@ -194,6 +214,7 @@ export function validateCard(body) {
       if ((f === 'start_time' || f === 'end_time') && !isLocalTime(v)) return bad(f, 'Write the time like 19:30.');
       if (f === 'event_type' && !isEventType(v)) return bad(f, 'That is not one of the kinds of event.');
       if (f === 'occurrence' && !OCCURRENCE.test(v)) return bad(f, 'That is not a service on the timetable.');
+      if (f === 'host_parish_id' && !/^[a-z0-9_-]{1,120}$/.test(v)) return bad(f, 'That is not a parish.');
       if (MAX_LEN[f]) v = v.slice(0, MAX_LEN[f]);
     }
     patch[f] = v;
@@ -221,6 +242,8 @@ export function cardOut(r) {
     location_lng: r.location_lng != null ? r.location_lng : null,
     parish_scoped: r.parish_scoped == null ? null : r.parish_scoped ? 1 : 0,
     discard: r.discard == null ? null : r.discard ? 1 : 0,
+    host_parish_id: r.host_parish_id || null,
+    host_event_id: r.host_event_id != null ? Number(r.host_event_id) : null,
     printed_weekday: r.printed_weekday,
     year_printed: r.year_printed,
     read_notes: parseList(r.read_notes),
@@ -334,6 +357,11 @@ export async function updateCard(db, card, patch) {
   if (touched.length) {
     const marks = parseList(card.read_fields).filter(f => !touched.includes(f));
     const notes = parseList(card.read_notes).filter(n => !touched.includes(n.field));
+    // Made another parish's event by hand ("It is their event"): the same
+    // question the read asks of one it made theirs (placeHosts).
+    if (patch.host_parish_id && !('replaces' in patch) && !notes.some(n => n.field === 'replaces')) {
+      notes.push({ field: 'replaces', text: REPLACES_PROMPT });
+    }
     set.read_fields = marks.length ? JSON.stringify(marks) : null;
     set.read_notes = notes.length ? JSON.stringify(notes) : null;
     if ('date' in patch) { set.printed_weekday = null; set.year_printed = null; }
@@ -354,6 +382,7 @@ const isEmpty = (v) => v == null || v === '' || v === '[]';
 function readColumn(f, v) {
   if (v == null) return null;
   if (f === 'languages') return Array.isArray(v) ? langList.clean(v) : null;
+  if (f === 'replaces') return Array.isArray(v) && v.length ? JSON.stringify(v.map(String)) : null;
   return v;
 }
 
@@ -387,7 +416,10 @@ export async function mergeRead(db, draftId, read) {
       set[f] = v;
       filled.push(f);
     }
-    const notes = (ev.read_notes || []).filter(n => filled.includes(n.field));
+    // A note goes with the field it is about — and "check what it replaces"
+    // with whose event it is, since nothing need be ticked for it to stand.
+    const notes = (ev.read_notes || []).filter(n => filled.includes(n.field)
+      || (n.field === 'replaces' && filled.includes('host_parish_id')));
     if (filled.includes('date')) {
       set.printed_weekday = ev.printed_weekday;
       set.year_printed = ev.year_printed;
@@ -478,20 +510,167 @@ export function matchOccurrences(read, rules) {
   const used = new Set();
   for (const ev of read.events) {
     ev.occurrence = null;
-    // A run of days is an event of its own, never one Sunday's service.
-    if (!ev.date || !ev.start_time || ev.end_date) continue;
-    const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
-    const same = (r) => titleKey(r.title) === titleKey(ev.title);
-    const at = that.filter(r => r.start_time === ev.start_time);
-    const named = that.filter(same);
-    const hit = at.length === 1 ? at[0]
-      : at.length > 1 ? (at.filter(same).length === 1 ? at.find(same) : null)
-        : named.length === 1 ? named[0] : null;
-    if (!hit || used.has(`${hit.id}:${ev.date}`)) continue;
+    // Another parish's event is not one of this parish's services (placeHosts).
+    if (ev.host_parish_id) continue;
+    const hit = occurrenceOf(ev, rules, used);
+    if (!hit) continue;
     used.add(`${hit.id}:${ev.date}`);
     ev.occurrence = `${hit.id}:${ev.date}`;
-    if (same(hit)) ev.title = hit.title;
+    if (sameTitle(hit, ev)) ev.title = hit.title;
     if (hit.event_type) ev.event_type = hit.event_type;
+  }
+  return read;
+}
+
+const sameTitle = (r, ev) => titleKey(r.title) === titleKey(ev.title);
+
+/**
+ * The rule whose occurrence a dated event is (matchOccurrences says how), or
+ * null — never one already `used`, and never for a run of days.
+ */
+function occurrenceOf(ev, rules, used = new Set()) {
+  if (!ev.date || !ev.start_time || ev.end_date) return null;
+  const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
+  const same = (r) => sameTitle(r, ev);
+  const at = that.filter(r => r.start_time === ev.start_time);
+  const named = that.filter(same);
+  const hit = at.length === 1 ? at[0]
+    : at.length > 1 ? (at.filter(same).length === 1 ? at.find(same) : null)
+      : named.length === 1 ? named[0] : null;
+  return hit && !used.has(`${hit.id}:${ev.date}`) ? hit : null;
+}
+
+/**
+ * The note that asks what another parish's event replaces here, until a person
+ * ticks, unticks or says nothing is (touching `replaces` drops it). The editor
+ * asks in words of its own, naming the parish; this marks it unanswered.
+ */
+export const REPLACES_PROMPT = 'Check replaced services: does this take the place of anything here that day?';
+
+/** "07:30" -> "7:30am", for a note. */
+const clockText = (t) => {
+  const h = Number(String(t).slice(0, 2));
+  return `${h % 12 || 12}:${String(t).slice(3, 5)}${h < 12 ? 'am' : 'pm'}`;
+};
+
+/**
+ * The parish a venue names, when it is a church on file: "St Nectarios
+ * Church, Burwood" is St Nectarios, Burwood. Read as matchParish reads a
+ * poster's own parish — the words before the last comma as the name, after
+ * it as the place, and the venue itself as the address — so the same three
+ * witnesses and the same "nothing on a tie" decide it.
+ */
+export function venueParish(venue, parishes) {
+  const v = String(venue || '').trim();
+  if (!v) return null;
+  const i = v.lastIndexOf(',');
+  const other = i < 0 ? { name: v, place: '' } : { name: v.slice(0, i), place: v.slice(i + 1) };
+  return matchParish(other, [v], parishes);
+}
+
+/**
+ * Events the poster puts at ANOTHER parish's church, as that parish's events
+ * with this one taking part (Kevin, 3 Nov 2026).
+ *
+ * St Andrew, Gladesville's November programme gave "Feast of St Nectarios, at
+ * St Nectarios Church, Burwood" on the 9th; read at Gladesville it became
+ * Gladesville's event at a place of its own called that, and was moved by
+ * hand to Burwood with Gladesville taking part. Now a venue that names a
+ * parish on file (venueParish) makes the card that parish's
+ * (`host_parish_id`) and drops the venue's words, which named its own church.
+ * Then:
+ *
+ *   * the event already on file there that day (sameEventOnFile in
+ *     public/shared/event-checks.js) is `host_event_id`: publishing adds this
+ *     parish to it, and makes nothing new;
+ *   * else, when their regular service that day is this event, it is ticked
+ *     under "replaces", so publishing puts the event there once, not beside it;
+ *   * this parish's own service at the time (or of the name) the poster gives
+ *     is ticked too: the poster has the parish at the other church instead;
+ *   * and every such card asks to have what it replaces here checked — a note
+ *     on `replaces` that goes once somebody ticks or unticks anything, or says
+ *     nothing is. A parish that closes for another's feast says so in a line
+ *     a reader cannot be trusted to turn into the right tick.
+ *
+ * A venue that is this parish (its own church by name) is left as it is, and
+ * so is one at the parish the whole poster is from (placeRead's `parish`):
+ * St Elias's youth night, dropped at Punchbowl, is St Elias's own event at
+ * its own church, and the answer is to move the draft there — Punchbowl takes
+ * no part in it.
+ *
+ * @param {object} read   normalizeRead()'s answer, after placeRead; changed in place
+ * @param {{id, name}} parish  the draft's parish
+ * @param {Array} ownRules     its active rules, as readContext gives them
+ */
+export async function placeHosts(db, read, parish, ownRules = []) {
+  const at = read.events.filter(ev => ev.location_override);
+  if (!at.length) return read;
+  const list = (await db.prepare(
+    "SELECT id, name, address, timezone FROM parishes WHERE id != '_unassigned'").all()).results || [];
+  const byId = new Map(list.map(p => [p.id, p]));
+  const postersOwn = read.parish && read.parish.parish_id;
+  for (const ev of at) {
+    const id = venueParish(ev.location_override, list);
+    if (!id || id === parish.id || id === postersOwn) continue;
+    ev.host_parish_id = id;
+    ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'location_override'),
+      { field: 'host_parish_id', text: `Printed as at “${ev.location_override}”.` }];
+    ev.location_override = null;
+  }
+  const hosted = read.events.filter(ev => ev.host_parish_id);
+  if (!hosted.length) return read;
+
+  const hosts = [...new Set(hosted.map(ev => ev.host_parish_id))];
+  const marks = hosts.map(() => '?').join(',');
+  const dates = hosted.map(ev => ev.date).filter(Boolean).sort();
+  let theirEvents = [], theirRules = [];
+  if (dates.length) {
+    // A day either side: a local date is never more than that from UTC's.
+    const day = 86400000;
+    const from = new Date(Date.parse(`${dates[0]}T00:00:00Z`) - day).toISOString();
+    const to = new Date(Date.parse(`${dates[dates.length - 1]}T00:00:00Z`) + 2 * day).toISOString();
+    [theirEvents, theirRules] = await Promise.all([
+      db.prepare(
+        `SELECT id, parish_id, title, feast, start_utc, event_type FROM events
+         WHERE parish_id IN (${marks}) AND source_adapter != 'schedule' AND start_utc >= ? AND start_utc < ?
+           AND status NOT IN ('replaced','rejected','cancelled','hidden')`).bind(...hosts, from, to).all(),
+      db.prepare(
+        `SELECT id, parish_id, day_of_week, start_time, end_time, title, event_type, active, week_of_month,
+                week_parity, effective_from, effective_to FROM schedules
+         WHERE parish_id IN (${marks}) AND active = 1`).bind(...hosts).all(),
+    ]).then(rs => rs.map(r => r.results || []));
+  }
+
+  const usedOwn = new Set();
+  for (const ev of hosted) {
+    const host = byId.get(ev.host_parish_id);
+    const zone = host.timezone || 'Australia/Sydney';
+    const replaces = [];
+    const notes = [];
+    if (ev.date) {
+      const onFile = theirEvents.filter(e => e.parish_id === host.id).map(e => {
+        const p = localPartsOf(zone, Date.parse(e.start_utc));
+        return { ...e, date: p.date, time: p.time };
+      }).filter(e => e.date === ev.date);
+      const hit = checks.sameEventOnFile(ev, onFile);
+      if (hit != null) ev.host_event_id = Number(hit);
+      else {
+        const theirs = occurrenceOf(ev, theirRules.filter(r => r.parish_id === host.id));
+        if (theirs) {
+          replaces.push(`${theirs.id}:${ev.date}`);
+          notes.push(`Ticked: ${host.name}’s regular ${clockText(theirs.start_time)} ${theirs.title} that day is this, so it shows once.`);
+        }
+      }
+      const mine = occurrenceOf(ev, ownRules, usedOwn);
+      if (mine) {
+        usedOwn.add(`${mine.id}:${ev.date}`);
+        replaces.push(`${mine.id}:${ev.date}`);
+        notes.push(`Ticked: ${parish.name}’s own ${clockText(mine.start_time)} ${mine.title} that day — the poster has this at ${host.name} instead. Untick it if it still goes ahead.`);
+      }
+    }
+    if (replaces.length) ev.replaces = replaces;
+    if (!notes.length) notes.push(REPLACES_PROMPT);
+    ev.read_notes = [...ev.read_notes, ...notes.map(text => ({ field: 'replaces', text }))];
   }
   return read;
 }
@@ -530,7 +709,8 @@ export function suggestLanguages(read, rules = [], past = []) {
   };
   for (const ev of read.events || []) {
     if (!SERVICE_TYPES.has(ev.event_type)) { ev.languages = null; continue; }
-    if ((ev.languages && ev.languages.length) || ev.occurrence) continue;
+    // Another parish's: theirs to say, not guessed from here.
+    if ((ev.languages && ev.languages.length) || ev.occurrence || ev.host_parish_id) continue;
     const pick = commonest(tagged.filter(r => r.type === ev.event_type)) || commonest(tagged);
     if (!pick) continue;
     ev.languages = pick;
@@ -553,7 +733,9 @@ export function suggestLanguages(read, rules = [], past = []) {
  *   * the new parish in "also appears at": an event is not also at its own;
  *   * the service a card was matched to (`occurrence`): that rule is the old
  *     parish's, so the card is an event of its own again until it is matched
- *     at the new one (a read again does that).
+ *     at the new one (a read again does that);
+ *   * whose event it is (`host_parish_id`), when that is the new parish: it
+ *     is the new parish's own event now, not one it takes part in.
  * The read's "whose poster" stays when it named a parish on file — the editor
  * hides it once the draft is there, and shows it again after a wrong pick —
  * and goes when it named none: choosing a parish is the answer to it.
@@ -570,6 +752,7 @@ export async function moveDraft(db, draft, parish) {
       set.also_at = rest.length ? JSON.stringify(rest) : null;
     }
     if (card.occurrence) set.occurrence = null;
+    if (card.host_parish_id === parish.id) { set.host_parish_id = null; set.host_event_id = null; }
     if (card.read_fields.includes('location_override') && isOwnVenue(card.location_override, parish)) {
       const marks = card.read_fields.filter(f => f !== 'location_override');
       const notes = card.read_notes.filter(n => n.field !== 'location_override');

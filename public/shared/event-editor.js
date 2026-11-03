@@ -434,6 +434,7 @@
     title: '', feast: '', date: '', end_date: '', start_time: '', end_time: '', event_type: '', description: '',
     languages: '', location_override: '', also_at: [], replaces: [], ask_reason: '', occurrence: '',
     location_parish_id: '', location_lat: '', location_lng: '', parish_scoped: null, discard: null,
+    host_parish_id: '', host_event_id: '',
   });
 
   // The bin on a card's row: form-sheet.js's, the same bin the edit forms' bar has.
@@ -443,6 +444,7 @@
   function toPatchValue(field, v) {
     if (field === 'languages') { const l = textToLangs(v); return l.length ? l : null; }
     if (field === 'also_at' || field === 'replaces') return v && v.length ? v : null;
+    if (field === 'host_event_id') return v === '' || v == null ? null : Number(v);
     return v === '' ? null : v;
   }
 
@@ -801,6 +803,7 @@
         also_at: row.also_at || [], replaces: row.replaces || [], ask_reason: row.ask_reason || '',
         parish_scoped: row.parish_scoped == null ? null : row.parish_scoped ? 1 : 0,
         discard: row.discard == null ? null : row.discard ? 1 : 0,
+        host_parish_id: row.host_parish_id || '', host_event_id: row.host_event_id != null ? row.host_event_id : '',
       };
       for (const f of Object.keys(server)) {
         // What a person changed and the server has not heard yet stays.
@@ -851,6 +854,20 @@
           <button type="button" class="ee-bin" aria-pressed="false" aria-label="Discard this event">${BIN}</button>
         </div>
         <div class="ee-body">
+          <!-- Another parish's event, this one taking part (refreshHost): first,
+               since it says what publishing does with everything under it. -->
+          <div class="ee-host" hidden>
+            <div class="ee-host-what"></div>
+            <div class="ee-section-title">Check replaced services</div>
+            <div class="ee-host-ask"></div>
+            <div class="ee-host-notes"></div>
+            <div class="ee-list" data-list="host-replaces"></div>
+            <div class="ee-host-actions">
+              <button type="button" class="pill-btn" data-act="none-replaced">Nothing is replaced</button>
+              <button type="button" class="pill-btn" data-act="new-there" hidden></button>
+              <button type="button" class="pill-btn" data-act="own"></button>
+            </div>
+          </div>
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
           ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
@@ -878,6 +895,9 @@
           <div class="ee-hint" data-hint="zone">${esc(tzHint())}</div>
           ${row('location_override', 'Where', `<input type="hidden" id="${fieldId(card, 'location_override')}" data-ee-field="location_override"><div data-ee-venue></div>`,
             '<div class="ee-hint">Another parish, or a place of its own with a pin — it shows on the map where it is held. The parish’s own address and pin are untouched.</div>')}
+          <div class="ee-their" hidden>
+            <button type="button" class="pill-btn" data-act="their"></button>
+          </div>
           <div class="ee-occ" hidden>
             <div class="ee-occ-what"></div>
             <button type="button" class="pill-btn" data-act="unlink">Make it a separate event instead</button>
@@ -919,6 +939,17 @@
         feastHint: node.querySelector('[data-hint="feast"]'),
         occ: node.querySelector('.ee-occ'),
         occWhat: node.querySelector('.ee-occ-what'),
+        host: node.querySelector('.ee-host'),
+        hostWhat: node.querySelector('.ee-host-what'),
+        hostAsk: node.querySelector('.ee-host-ask'),
+        hostNotes: node.querySelector('.ee-host-notes'),
+        hostList: node.querySelector('[data-list="host-replaces"]'),
+        noneReplaced: node.querySelector('[data-act="none-replaced"]'),
+        ownBtn: node.querySelector('[data-act="own"]'),
+        newThere: node.querySelector('[data-act="new-there"]'),
+        their: node.querySelector('.ee-their'),
+        theirBtn: node.querySelector('[data-act="their"]'),
+        whereRow: node.querySelector('[data-row="location_override"]'),
         regular: node.querySelector('[data-act="regular"]'),
         scope: node.querySelector('[data-ee-scope]'),
         inputs: {},
@@ -964,6 +995,10 @@
       // and goes once it is left with nothing more to say (refreshPeek).
       card.els.body.addEventListener('focusout', () => setTimeout(() => refreshCard(card), 0));
       node.querySelector('[data-act="unlink"]').addEventListener('click', () => unlinkCard(card));
+      card.els.noneReplaced.addEventListener('click', () => setList(card, 'replaces', []));
+      card.els.ownBtn.addEventListener('click', () => unlinkHost(card));
+      card.els.newThere.addEventListener('click', () => notThatOne(card));
+      card.els.theirBtn.addEventListener('click', () => makeTheirs(card));
       card.els.regular.addEventListener('click', () => makeRegular(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       card.els.bin.addEventListener('click', () => toggleDiscard(card));
@@ -1009,6 +1044,8 @@
       card.readFilling.delete(f);
       card.fromPoster.delete(f);
       card.notes = card.notes.filter(n => n.field !== f);
+      // Whose event it is was matched on the date, the time and the name.
+      if (card.fields.host_parish_id && (f === 'date' || f === 'start_time' || f === 'title')) card.rematch = true;
       if (f === 'date') {
         card.hints = { printed_weekday: null, year_printed: null };
         loadCandidates(card);
@@ -1019,6 +1056,7 @@
         }
       }
       card.pending[f] = toPatchValue(f, value);
+      if (card.rematch && f !== 'date' && card.candidates) rematchHost(card);
       // An Other is the parish's own business until somebody says otherwise:
       // picking it turns the pill to Parish only, as the edit forms do.
       if (f === 'event_type' && value === 'other') {
@@ -1074,9 +1112,161 @@
       }
     }
 
-    function setList(card, f, list) {
+    // ── another parish's event, this one taking part ──
+    //
+    // A venue naming a parish on file makes the card that parish's event
+    // (drafts.mjs placeHosts): the one of theirs already on file, which
+    // publishing adds this parish to, or a new one there. Either way the card
+    // asks what it replaces here — Kevin's "check replaced services" (3 Nov
+    // 2026): St Andrew, Gladesville closed for St Nectarios, Burwood's feast.
+
+    const nameOf = (pid) => { const p = parishById(pid); return p ? p.name : 'another parish'; };
+
+    /** The read's note that nothing has been said about what it replaces yet. */
+    const PROMPT = /^Check replaced services/;
+
+    /**
+     * Is "Check replaced services" still to answer? Until somebody ticks,
+     * unticks or says nothing is — and only while there is something of this
+     * parish's that day to tick (or the list has not loaded yet to say so).
+     */
+    function hostPending(card) {
+      if (!card.fields.host_parish_id || !card.notes.some(n => n.field === 'replaces')) return false;
+      if (card.candidates == null) return isDate(card.fields.date);
+      return card.candidates.some(e => e.parish_id === state.parish.id && String(e.id) !== String(card.fields.host_event_id || ''))
+        || card.fields.replaces.length > 0;
+    }
+
+    /** Their one-off on file that this card is (event-checks.js sameEventOnFile), from the day's candidates. */
+    function onFileAt(card) {
+      const hid = card.fields.host_parish_id;
+      if (!hid || !C || !C.sameEventOnFile || !isDate(card.fields.date)) return null;
+      const z = (parishById(hid) || {}).timezone || zone();
+      const time = new Intl.DateTimeFormat('en-GB', { timeZone: z, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+      const day = new Intl.DateTimeFormat('en-CA', { timeZone: z });
+      const theirs = (card.candidates || [])
+        .filter(e => e.parish_id === hid && /^\d+$/.test(String(e.id)))
+        .filter(e => day.format(new Date(e.start_utc)) === card.fields.date)
+        .map(e => ({ ...e, time: time.format(new Date(e.start_utc)) }));
+      return C.sameEventOnFile(card.fields, theirs);
+    }
+
+    /** Matched again once the date, time or title it was matched on changes. */
+    function rematchHost(card) {
+      card.rematch = false;
+      if (!card.fields.host_parish_id || card.candidates == null) return;
+      const hit = onFileAt(card);
+      const v = hit == null ? '' : Number(hit);
+      if (String(v) === String(card.fields.host_event_id)) return;
+      card.fields.host_event_id = v;
+      card.touched.add('host_event_id');
+      card.pending.host_event_id = toPatchValue('host_event_id', v);
+      schedule(card, 0);
+    }
+
+    /** The event of theirs on file the card joins, as the candidates list it. */
+    const joined = (card) => (card.candidates || []).find(e => String(e.id) === String(card.fields.host_event_id)) || null;
+
+    function refreshHost(card) {
+      const hid = card.fields.host_parish_id;
+      const own = state.parish ? state.parish.name : 'this parish';
+      // Where names another parish and nothing says whose event it is yet: one
+      // tap makes it theirs, as a read of the same words would have.
+      const venue = !hid && card.fields.location_parish_id && (!state.parish || card.fields.location_parish_id !== state.parish.id)
+        ? card.fields.location_parish_id : null;
+      card.els.their.hidden = !venue || !!card.fields.occurrence || card.publish.state === 'done';
+      if (venue) card.els.theirBtn.textContent = `It is ${nameOf(venue)}’s event — ${own} takes part`;
+      card.els.host.hidden = !hid;
+      card.els.whereRow.hidden = !!hid;
+      // Joining one on file publishes none of the card's words: they go, and
+      // what it was matched on (the date and times) stays.
+      card.els.root.classList.toggle('is-join', !!(hid && card.fields.host_event_id));
+      card.els.newThere.hidden = !(hid && card.fields.host_event_id) || !may('event.edit', hid);
+      if (!hid) return;
+      const name = nameOf(hid);
+      const on = joined(card);
+      const zoneOf = (pid) => (parishById(pid) || {}).timezone || zone();
+      const when = on ? new Intl.DateTimeFormat('en-AU', { timeZone: zoneOf(hid), hour: 'numeric', minute: '2-digit' })
+        .format(new Date(on.start_utc)) : '';
+      card.els.hostWhat.innerHTML = card.fields.host_event_id
+        ? `Already on file at <b>${esc(name)}</b>${on ? `: <b>${esc(when)} ${esc(on.title)}</b>` : ''}. Publishing adds ${esc(own)} to it as taking part — nothing new is made, and it stays as ${esc(name)} has it.`
+        : !may('event.edit', hid)
+          ? `This is <b>${esc(name)}</b>’s event, and it is not on file there. ${esc(name)} is not one of your parishes, so it cannot be added there: make it ${esc(own)}’s own event, held at ${esc(name)}, or ask somebody who edits ${esc(name)}.`
+          : `This is <b>${esc(name)}</b>’s event, and nothing like it is on file there that day: publishing adds it at ${esc(name)}, with ${esc(own)} taking part.`;
+      card.els.hostAsk.textContent = `Does it take the place of anything at ${own} that day? Tick it, and it shows as a tombstone pointing here — nothing disappears.`;
+      card.els.hostNotes.innerHTML = card.notes
+        .filter(n => (n.field === 'replaces' && !PROMPT.test(n.text)) || n.field === 'host_parish_id')
+        .map(n => `<div class="ee-note ee-note-read">${esc(n.text)}</div>`).join('');
+      card.els.noneReplaced.hidden = !hostPending(card) || card.fields.replaces.length > 0;
+      card.els.ownBtn.textContent = `Make it ${own}’s own event instead`;
+      card.els.newThere.textContent = `Not that one — add it at ${name} as a new event`;
+      if (card.candidates == null) { if (isDate(card.fields.date) && !card.loadingCands) { card.loadingCands = true; loadCandidates(card).finally(() => { card.loadingCands = false; }); } }
+      else renderReplaces(card);
+    }
+
+    /**
+     * Not theirs after all: this parish's own event, held at their church —
+     * what the read made of it before (Kevin, 3 Nov 2026), with the place as
+     * the parish it names rather than its words. Ticks of their services go:
+     * this parish's event stands in for nothing of theirs unless they are
+     * ticked under "Also appears at".
+     */
+    function unlinkHost(card) {
+      const hid = card.fields.host_parish_id;
+      if (!hid) return;
+      const of = parishOfTarget(card);
+      for (const f of ['host_parish_id', 'host_event_id']) {
+        card.fields[f] = '';
+        card.touched.add(f);
+        card.pending[f] = null;
+      }
+      card.notes = card.notes.filter(n => n.field !== 'host_parish_id');
+      setList(card, 'replaces', card.fields.replaces.filter(id => of(id) !== hid));
+      if (card.venue) card.venue.set({ location_parish_id: hid, location_override: null, location_lat: null, location_lng: null });
+      onPlace(card, { location_parish_id: hid, location_override: null, location_lat: null, location_lng: null });
+    }
+
+    /** Matched to the wrong event of theirs: a new one there instead, with this card's words. */
+    function notThatOne(card) {
+      if (!card.fields.host_event_id) return;
+      card.fields.host_event_id = '';
+      card.touched.add('host_event_id');
+      card.pending.host_event_id = null;
+      card.rematch = false;
+      if (card.publish.state !== 'refused') card.publish = { state: 'idle', message: '' };
+      schedule(card, 0);
+      refreshCard(card);
+      sync();
+    }
+
+    /** "It is their event": the parish Where names hosts it, and this one takes part. */
+    async function makeTheirs(card) {
+      const hid = card.fields.location_parish_id;
+      if (!hid || card.fields.host_parish_id) return;
+      card.fields.host_parish_id = hid;
+      card.touched.add('host_parish_id');
+      card.pending.host_parish_id = hid;
+      // Their church is where it is: the event is theirs, at home.
+      if (card.venue) card.venue.set({ location_parish_id: null, location_override: null, location_lat: null, location_lng: null });
+      onPlace(card, { location_parish_id: null, location_override: null, location_lat: null, location_lng: null });
+      // The Worker asks the same when it saves this (drafts.mjs updateCard).
+      if (!card.notes.some(n => n.field === 'replaces')) card.notes.push({ field: 'replaces', text: 'Check replaced services.' });
+      if (card.candidates == null) await loadCandidates(card);
+      rematchHost(card);
+      schedule(card, 0);
+      refreshCard(card);
+      sync();
+    }
+
+    function setList(card, f, list, { answer = true } = {}) {
       card.fields[f] = list;
       card.touched.add(f);
+      // Ticked or unticked, it is a person's answer now (as on the Worker,
+      // updateCard) — not a stale tick the list let go of by itself.
+      if (answer) {
+        card.fromPoster.delete(f);
+        card.notes = card.notes.filter(n => n.field !== f);
+      }
       card.pending[f] = toPatchValue(f, list);
       card.publish = { state: 'idle', message: '' };
       schedule(card, 0);
@@ -1192,6 +1382,8 @@
       card.els.chips.innerHTML = binned
         ? `<span class="ee-chip ee-chip-gone">${hasPassed(card) ? 'date has passed · ' : ''}to discard</span>`
         : (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
+        + (card.fields.host_parish_id ? `<span class="ee-chip ee-chip-occ">${card.fields.host_event_id ? 'taking part' : 'to add'} at ${esc(nameOf(card.fields.host_parish_id))}</span>` : '')
+        + (hostPending(card) ? '<span class="ee-chip ee-chip-warn">check replaced services</span>' : '')
         + (scoped ? '<span class="ee-chip ee-chip-scope">parish only</span>' : '')
         + checks
         .filter(c => c.level !== 'info' || c.field === 'date')
@@ -1217,8 +1409,9 @@
       }
       // Only a service is held in a language; for any other kind the row goes.
       const langRow = card.els.root.querySelector('[data-row="languages"]');
-      if (langRow) langRow.hidden = !!card.fields.event_type && !SERVICE_KINDS.has(card.fields.event_type);
+      if (langRow) langRow.hidden = (!!card.fields.event_type && !SERVICE_KINDS.has(card.fields.event_type)) || !!card.fields.host_event_id;
       refreshOccurrence(card);
+      refreshHost(card);
       refreshRegular(card);
       refreshMultiday(card);
       const single = !state.multi;
@@ -1244,7 +1437,7 @@
     function refreshPeek(card, checks) {
       const want = new Set(checks.filter(c => c.level === 'block' || c.level === 'warn').map(c => c.field));
       if (!isPristine(card) && !card.fields.event_type) want.add('event_type');
-      if (SERVICE_KINDS.has(card.fields.event_type) && !card.fields.occurrence) want.add('languages');
+      if (SERVICE_KINDS.has(card.fields.event_type) && !card.fields.occurrence && !card.fields.host_event_id) want.add('languages');
       const active = document.activeElement;
       let any = false;
       for (const [f, inp] of Object.entries(card.els.inputs)) {
@@ -1257,7 +1450,10 @@
       // A row inside a pair (the times) or the last day's box shows its box.
       card.els.body.querySelectorAll('.ee-grid, .ee-multiday-row').forEach(w =>
         w.classList.toggle('ee-peek-on', !!w.querySelector('.ee-row.ee-peek-on')));
-      return any;
+      // "Check replaced services", answered right there on the shut card.
+      const asking = hostPending(card);
+      card.els.host.classList.toggle('ee-peek-on', asking);
+      return any || asking;
     }
 
     /** Date's Single day / Multi day pill: Multi day while a last day is set or somebody tapped it. */
@@ -1278,7 +1474,8 @@
     function refreshOccurrence(card) {
       const occ = card.fields.occurrence;
       card.els.occ.hidden = !occ;
-      card.els.combine.hidden = !!occ;
+      // Another parish's event asks what it replaces in a box of its own (refreshHost).
+      card.els.combine.hidden = !!occ || !!card.fields.host_parish_id;
       card.els.feastHint.textContent = occ
         ? 'Shown under the service’s name on that day.'
         : 'Shown under the title.';
@@ -1301,7 +1498,7 @@
       const day = cardWeekday(card.fields, card.hints);
       const show = !!(state.draft && state.draft.poster_path) && day != null
         && !card.fields.occurrence && !card.fields.end_date && !card.multi
-        && !card.fields.also_at.length && !card.fields.replaces.length
+        && !card.fields.also_at.length && !card.fields.replaces.length && !card.fields.host_parish_id
         && card.publish.state !== 'done' && !!state.parish && may('schedule.create', state.parish.id);
       card.els.regular.hidden = !show;
       if (show) card.els.regular.setAttribute('aria-label', `Held every ${DAY_NAMES[day]}: put it on the timetable instead`);
@@ -1501,28 +1698,37 @@
       // on a day this event is no longer on.
       const ids = new Set(card.candidates.map(x => String(x.id)));
       const kept = card.fields.replaces.filter(id => ids.has(String(id)));
-      if (kept.length !== card.fields.replaces.length) setList(card, 'replaces', kept);
+      if (kept.length !== card.fields.replaces.length) setList(card, 'replaces', kept, { answer: false });
+      if (card.rematch) rematchHost(card);
       renderReplaces(card);
       refreshAsk(card);
+      refreshCard(card);
     }
 
     function renderReplaces(card) {
-      const list = card.els.repl;
+      // Another parish's event asks it under "Check replaced services", this
+      // parish's own services first; a new one there may stand in for one of
+      // theirs too (drafts.mjs placeHosts), and one already on file is not
+      // something it replaces.
+      const hid = card.fields.host_parish_id;
+      const list = hid ? card.els.hostList : card.els.repl;
       if (!isDate(card.fields.date)) {
         list.innerHTML = '<div class="ee-empty">Pick a date to see what it could replace</div>';
         return;
       }
       if (card.candidates == null) return;
-      const at = new Set([state.parish.id, ...card.fields.also_at]);
-      const visible = card.candidates.filter(e => at.has(e.parish_id));
+      const at = new Set([state.parish.id, ...card.fields.also_at, ...(hid && !card.fields.host_event_id ? [hid] : [])]);
+      const visible = card.candidates
+        .filter(e => at.has(e.parish_id) && String(e.id) !== String(card.fields.host_event_id || ''))
+        .sort((a, b) => (a.parish_id === state.parish.id ? 0 : 1) - (b.parish_id === state.parish.id ? 0 : 1));
       // A tick on a service this list no longer shows — its parish unticked
       // above, or the draft moved away from it — goes: a hidden tick would
       // still combine that service into this event on Publish.
       const shown = new Set(visible.map(e => String(e.id)));
       const kept = card.fields.replaces.filter(id => shown.has(String(id)));
-      if (kept.length !== card.fields.replaces.length) setList(card, 'replaces', kept);
+      if (kept.length !== card.fields.replaces.length) setList(card, 'replaces', kept, { answer: false });
       if (!visible.length) {
-        list.innerHTML = '<div class="ee-empty">Nothing on file at the ticked parishes that day</div>';
+        list.innerHTML = `<div class="ee-empty">${hid ? `Nothing on file at ${esc(state.parish.name)} that day` : 'Nothing on file at the ticked parishes that day'}</div>`;
         return;
       }
       const ticked = new Set(card.fields.replaces.map(String));
@@ -1746,6 +1952,11 @@
         text = `${plural(n, 'date', 'dates')} read. ${regular === n ? (n === 1 ? 'It is' : 'All are') : `${regular} ${regular === 1 ? 'is' : 'are'}`} the parish’s regular services: publishing adds each day’s details and the poster to that service rather than a second card.`;
       } else if (n > 1) text = `${n} events read from the poster. Check each one against it, then publish.`;
       else text = 'Read from the poster. Check the details against it, then publish.';
+      // Another parish's events: this one takes part, and says what they replace here.
+      const hosted = events.filter(c => c.fields.host_parish_id).length;
+      if (hosted && state.parish) {
+        text += ` ${hosted === 1 ? 'One is' : `${hosted} are`} at another parish, so ${state.parish.name} is set as taking part — check the services ${hosted === 1 ? 'it replaces' : 'they replace'} here.`;
+      }
       // The read is in English; the poster stays attached in the original.
       if (draft.read_language) text += ` Translated from ${draft.read_language} — the poster keeps the original.`;
       renderReadNotes(draft);
@@ -2449,6 +2660,14 @@
           if (r.body.proposal_id) proposals.push(r.body.proposal_id);
         } else if (r.status === 403 && r.body && r.body.proposable) {
           card.publish = { state: 'refused', message: r.body.error || '', outside: r.body.outside || [] };
+        } else if (r.body && r.body.gone && card.fields.host_event_id) {
+          // Their event went (cancelled, or taken down) since the read: this
+          // card would be a new one there now, which is for a person to say.
+          card.fields.host_event_id = '';
+          card.touched.add('host_event_id');
+          card.pending.host_event_id = null;
+          schedule(card, 0);
+          card.publish = { state: 'error', message: `That event is not on file at ${nameOf(card.fields.host_parish_id)} any more. Publish again to add it there as a new one, or make it your own.` };
         } else {
           card.publish = { state: 'error', message: (r.body && r.body.error) || (r.status ? `Not published (${r.status}).` : 'Not published — check the connection.') };
           if (!r.status) { stopped = card; break; }

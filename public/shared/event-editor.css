@@ -522,6 +522,48 @@
   border-radius: 12px;
 }
 .ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+/* ── Another parish's event, this one taking part ──
+   The programme's box's look: nothing is wrong, it says where this goes —
+   and asks what it replaces here (event-editor.js refreshHost). */
+.ee-host {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid var(--accent-ring, var(--border));
+  border-radius: 12px;
+}
+.ee-host .ee-section-title { margin: 6px 0 0; }
+.ee-host-ask { color: var(--ee-muted); }
+.ee-host-notes:empty { display: none; }
+.ee-host .ee-list { background: var(--bg, var(--surface, #fff)); }
+.ee-host-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ee-host-actions .pill-btn { white-space: normal; text-align: left; }
+.ee-their { margin: -4px 0 12px; }
+.ee-their .pill-btn { white-space: normal; text-align: left; }
+/* Joining their event on file publishes none of the card's own words. */
+.ee-card.is-join [data-row="title"],
+.ee-card.is-join [data-row="feast"],
+.ee-card.is-join [data-row="description"],
+.ee-card.is-join [data-row="event_type"],
+.ee-card.is-join [data-row="languages"] { display: none; }
+.ee-card.is-open .ee-host { margin-top: 8px; }
+/* Shut, the box keeps only the question and its ticks: open, it says the rest. */
+.ee-card.is-peek .ee-host { max-width: 420px; gap: 4px; padding: 8px 10px; }
+.ee-card.is-peek .ee-host .ee-section-title { margin: 0; }
+.ee-card.is-peek .ee-host .ee-list { margin-bottom: 4px; }
+.ee-card.is-peek .ee-host-what,
+.ee-card.is-peek .ee-host-ask,
+.ee-card.is-peek .ee-host-notes,
+.ee-card.is-peek .ee-host [data-act="own"],
+.ee-card.is-peek .ee-host [data-act="new-there"] { display: none; }
+.ee-card.is-peek .ee-host .pill-btn { min-height: 34px; padding: 5px 14px; font-size: 13px; }
 .ee-chip-scope { color: var(--ee-muted); background: var(--ee-field); }
 
 /* ── A church sign: weekly services and the parish's details ──
