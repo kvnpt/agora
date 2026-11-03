@@ -71,6 +71,42 @@
 .ee-drop-title { font-size: 15px; font-weight: 600; }
 .ee-drop-sub { font-size: 12.5px; line-height: 1.45; color: var(--ee-muted); }
 
+/* Paste, inside "Add an image" (event-editor.js readClipboardImage): a phone
+   has no Ctrl+V, so the box carries a pill that reads the clipboard. Also the
+   timetable's "Add an image" (next.css .sap-drop), so it is not .ee- only.
+   The box and the pill share one grid cell rather than one sitting inside
+   the other: a button in a button is not a button. Tapping anywhere else in
+   the box still chooses a file. */
+.drop-box { display: grid; }
+.drop-box > * { grid-area: 1 / 1; min-width: 0; }
+.drop-box.can-paste > :first-child { padding-bottom: 62px; }
+.paste-pill {
+  z-index: 1;
+  align-self: end;
+  justify-self: start;
+  margin: 0 0 14px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 15px 6px 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--accent-text, var(--accent));
+  background: var(--card, var(--surface, #fff));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.paste-pill:hover, .paste-pill:active { background: color-mix(in srgb, var(--accent) 12%, var(--card, var(--surface, #fff))); }
+.paste-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.paste-pill svg { flex: 0 0 auto; }
+.paste-note { margin: 6px 2px 0; font-size: 12.5px; line-height: 1.45; color: var(--text-2, var(--muted, #6b7280)); }
+.paste-note[hidden] { display: none; }
+
 .ee-poster-card { display: flex; gap: 12px; align-items: flex-start; }
 .ee-thumb-btn { flex: 0 0 auto; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .ee-thumb {
