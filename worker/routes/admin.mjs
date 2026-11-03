@@ -44,8 +44,8 @@ import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
-  placeRead, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast, suggestLanguages,
-  occurrenceBody } from '../lib/drafts.mjs';
+  placeRead, afterServices, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast,
+  suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue } from '../lib/venues.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
@@ -928,6 +928,8 @@ export function registerAdminRoutes(router) {
     // The parish's own address is not a "where", and a poster for another
     // parish is worth telling the person about before they send it.
     await placeRead(env.DB, read.read, at);
+    // "Following the Liturgy at 6pm" is the Liturgy's 6pm, not the event's.
+    afterServices(read.read, rules);
     return json({
       poster_path: posterPath,
       configured: true,
@@ -1980,6 +1982,9 @@ export function registerAdminRoutes(router) {
       // The parish's own address is not a venue, and "another parish's poster"
       // becomes a parish on file when one clearly matches.
       await placeRead(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) });
+      // Something held after a service starts when it ends, not at the time
+      // printed for the service — and is never that service's date.
+      afterServices(read.read, rules);
       // An event at another parish's church is that parish's, with this one
       // taking part: the one of theirs on file, or one to add there.
       await placeHosts(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) }, rules);

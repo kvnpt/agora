@@ -93,6 +93,13 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   assert.match(SYSTEM_PROMPT, /with a note on start_time saying which service it follows/);
   assert.match(SYSTEM_PROMPT, /If neither gives that service an end time, start_time is null/);
   assert.match(SYSTEM_PROMPT, /For an event that starts after a service, say so \("After the Liturgy\."\)/);
+  // Sts Peter & Paul, Doonside's "Outdoor Movie Night", "Following English
+  // Liturgy at 6pm" (3 Nov 2026), came back at 6pm, the Liturgy's time, and
+  // was taken for that Sunday's 6pm Liturgy.
+  assert.match(SYSTEM_PROMPT, /A time printed with the service it follows is that service's time, not the event's/);
+  assert.match(SYSTEM_PROMPT, /- after: the service the event follows, when the image gives the event no start time of its own/);
+  assert.match(SYSTEM_PROMPT, /a movie night after the Liturgy is Youth or Social, never Liturgy/);
+  assert.match(SYSTEM_PROMPT, /for the event itself: never the kind of a service it follows/);
   assert.match(SYSTEM_PROMPT, /with its commemoration in feast and not in the title/);
   assert.match(SYSTEM_PROMPT, /"every 2nd and 4th Sunday" is \["second", "fourth"\]/);
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
@@ -146,10 +153,24 @@ test('a streamed answer arrives as fields, then items, then the normalised read'
     title: 'Youth Night: Faith And Film', feast: null,
     date: '2026-11-14', start_time: '19:00', end_time: '21:30', end_date: null, event_type: 'youth',
     description: 'A film and a talk for young adults. Bring a plate to share.',
-    languages: null, location_override: null, printed_weekday: 'Saturday', year_printed: 0,
+    languages: null, location_override: null, printed_weekday: 'Saturday', year_printed: 0, after: null,
     read_notes: [{ field: 'start_time', text: 'Doors 6:30, film 7:00; used 7:00.' }],
   });
   assert.deepStrictEqual(r.usage, { model: POSTER_MODEL, input_tokens: 1800, output_tokens: 412 });
+});
+
+test('what an event follows is read before its time, kept as printed, and is no field of the form', async () => {
+  const fields = Object.keys(POSTER_SCHEMA.properties.events.items.properties);
+  assert.ok(fields.indexOf('after') < fields.indexOf('start_time'), 'what it follows, then the time');
+  assert.deepStrictEqual(POSTER_SCHEMA.properties.events.items.properties.after.type, 'string', 'no union: empty is none');
+  const doc = { kind: 'poster', events: [
+    { title: 'Outdoor Movie Night', date: '2026-11-22', after: ' English  Liturgy ', start_time: null, event_type: 'youth' },
+    { title: 'Parish Picnic', date: '2026-11-22', after: '', start_time: '12:00', event_type: 'social' },
+  ] };
+  const seen = [];
+  const r = await read(fakeFetch(haikuStream(JSON.stringify(doc))), (event, p) => seen.push({ event, ...p }));
+  assert.deepStrictEqual(r.read.events.map(e => e.after), ['English Liturgy', null]);
+  assert.ok(!seen.some(s => s.event === 'field' && s.name === 'after'), 'the editor is not sent it');
 });
 
 test('a refusal, a cut-off answer and a mid-stream error each say what happened', async () => {

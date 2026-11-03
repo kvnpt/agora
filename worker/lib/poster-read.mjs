@@ -87,7 +87,7 @@ export const readKind = (k) => (READ_KINDS.includes(k) ? k : 'poster');
 const nullable = (schema) => ({ anyOf: [schema, { type: 'null' }] });
 
 /** The fields of one event, in the order the editor's form shows them. */
-const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed', 'start_time', 'end_time',
+const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed', 'after', 'start_time', 'end_time',
   'end_date', 'event_type', 'languages', 'venue', 'description', 'notes'];
 
 /** One weekly service off a sign or a flyer: a rule to be, not an event. */
@@ -133,6 +133,10 @@ export const POSTER_SCHEMA = {
           date: nullable({ type: 'string', format: 'date' }),
           weekday_printed: nullable({ type: 'string' }),
           year_printed: { type: 'boolean' },
+          // Before the time, so the reader says what an event follows before
+          // it writes one: "Following English Liturgy at 6pm" is the
+          // Liturgy's 6pm, not the movie night's (afterServices, drafts.mjs).
+          after: { type: 'string', description: 'The service this event follows, as printed ("English Liturgy"), when it has no start time of its own; empty otherwise' },
           start_time: nullable({ type: 'string', description: '24-hour HH:MM, local time' }),
           end_time: nullable({ type: 'string', description: '24-hour HH:MM, local time' }),
           end_date: { type: 'string', description: 'YYYY-MM-DD of the last day, for one event over several days; empty otherwise' },
@@ -227,9 +231,10 @@ For each event:
 - date: YYYY-MM-DD. A programme headed with its month and year ("October 2026") prints the year for every date in it, and a date in it that has already passed keeps that year: it is still that date, and the person checking sees it has passed. Only when the image prints no year anywhere, use the first such date on or after today, and set year_printed to false.
 - weekday_printed: the weekday printed for this date, in English ("Saturday"), as printed even if it disagrees with the date; null if no weekday is printed.
 - year_printed: true only if the image prints the year.
-- start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note; two services, each with its own name, are two events. An event printed with no time of its own, only as following a service that day ("Morning tea after the Liturgy", "Barbecue after the service"), starts when that service ends: its start_time is the end time the image prints for that service, or else that service's end among the parish's regular services given with the image, with a note on start_time saying which service it follows. If neither gives that service an end time, start_time is null.
+- after: the service the event follows, when the image gives the event no start time of its own, only that it is after a service: "English Liturgy" for "Following English Liturgy at 6pm", "the service" for "Barbecue after the service". The event is not that service and not one of its dates: its title, kind and description are its own (a movie night after the Liturgy is Youth or Social, never Liturgy). Empty when the event has a start time of its own.
+- start_time, end_time: 24-hour HH:MM in the parish's local time, as printed ("7.30pm" is "19:30"). end_time only when the image gives one; for an event over several days, the time it ends on its last day. If two times are printed for one event, such as doors and start, use the time the event itself starts and add a note; two services, each with its own name, are two events. An event printed with no time of its own, only as following a service that day ("Morning tea after the Liturgy", "Barbecue after the service"), starts when that service ends: its start_time is the end time the image prints for that service, or else that service's end among the parish's regular services given with the image, with a note on start_time saying which service it follows. If neither gives that service an end time, start_time is null. A time printed with the service it follows is that service's time, not the event's: under "Outdoor Movie Night", "Following English Liturgy at 6pm" says the Liturgy is at 6pm, so the movie night starts when the Liturgy ends, never at 6pm.
 - end_date: YYYY-MM-DD of the last day, only for one event that runs over several days; empty otherwise.
-- event_type: the closest kind from the list below.
+- event_type: the closest kind from the list below, for the event itself: never the kind of a service it follows.
 - languages: only languages the image says the event is held in, from the list ("Greek", "Arabic", "Church Slavonic"; Russian is Church Slavonic). A service named for its language says it: "English Vigil", "Greek Liturgy" and "Liturgy in English and Greek" are held in those languages. Empty if it does not say; do not guess from the language the image is written in.
 - venue: only when the event is somewhere other than the parish's own church, such as a hall, a park or another church. The name and address as printed. Not the parish's own address (it is given below), even when the image prints it.
 - description: one to three short sentences with what someone deciding whether to come needs to know: what it is, who is speaking, what to bring, the cost, how to RSVP. For an event that starts after a service, say so ("After the Liturgy."), since its time alone reads as a set start. No exclamation marks, no emojis, nothing the image does not say. null if there is nothing beyond the title and feast.
@@ -312,6 +317,9 @@ export function buildPosterRequest({ data, mediaType, context }) {
 const FIELD_NAMES = { venue: 'location_override', weekday_printed: 'printed_weekday' };
 export const draftFieldName = (f) => FIELD_NAMES[f] || f;
 
+/** What the reader writes of an event that is no field of the form: its notes, and the service it follows. */
+const NOT_IN_FORM = new Set(['notes', 'after']);
+
 /** Which open strings are worth streaming a character at a time. */
 const typesItself = (path) => path.length === 3 && path[0] === 'events'
   && (path[2] === 'title' || path[2] === 'description');
@@ -385,7 +393,7 @@ export async function readPoster(o, emit = () => {}) {
     partial: typesItself,
     onValue: ({ path, value, done }) => {
       if (path.length === 1 && path[0] === 'kind' && done) emit('kind', { kind: value });
-      else if (path.length === 3 && path[0] === 'events' && path[2] !== 'notes') {
+      else if (path.length === 3 && path[0] === 'events' && !NOT_IN_FORM.has(path[2])) {
         emit('field', { index: path[1], name: draftFieldName(path[2]), value, done });
       } else if (path.length === 2 && path[0] === 'events' && done) emit('item', { index: path[1] });
       else if (path.length === 2 && path[0] === 'services' && done) emit('service', { index: path[1] });
@@ -698,6 +706,7 @@ function onTheDay(rule, occasion) {
     location_override: null,
     printed_weekday: DAY_NAMES[day],
     year_printed: occasion.year_printed,
+    after: null,
     read_notes: [...rule.read_notes, { field: 'date',
       text: `Printed as “${DAY_NAMES[day]}”, not every ${DAY_NAMES[day]}; dated from the poster’s ${d} ${MONTHS[m - 1]}.` }],
   };
@@ -731,6 +740,9 @@ function normalizeEvent(e) {
     location_override: clean(ev.venue, 300),
     printed_weekday: clean(ev.weekday_printed, 20),
     year_printed: ev.year_printed === true ? 1 : ev.year_printed === false ? 0 : null,
+    // The service it follows, as printed: not a field of the card, but what
+    // afterServices and matchOccurrences (drafts.mjs) go by.
+    after: clean(ev.after, 200),
     read_notes: notes,
   };
 }

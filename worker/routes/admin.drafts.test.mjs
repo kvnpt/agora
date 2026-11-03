@@ -730,6 +730,93 @@ test('moving a programme’s draft unlinks its cards from the old parish’s ser
   assert.deepEqual(moved.cards.map(c => c.feast).slice(0, 1), ['Dionysios the Areopagite'], 'what it says stays');
 });
 
+// ── something held after a service: not that service, and not at its time ──
+
+/** Doonside's English Liturgy, 6pm on the second and fourth Sundays, as on file. */
+const addEnglishLiturgy = (raw, end = null) => raw.prepare(
+  `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages, week_of_month)
+   VALUES (?, 0, '18:00', ?, 'Liturgy', 'liturgy', '["English"]', 'second,fourth') RETURNING id`).get(DOONSIDE, end).id;
+
+/**
+ * SPP Youth's poster (3 Nov 2026): "Outdoor Movie Night", "Following English
+ * Liturgy at 6pm", "Sunday 22 November" — here 22 December 2030, a fourth
+ * Sunday with a fifth after it — as the reader answered: the Liturgy's 6pm
+ * for the movie night's.
+ */
+const MOVIE_NIGHT = (ev = {}) => ({
+  kind: 'poster', written_in: 'English', other_parish: null, notes: [], services: [],
+  details: { address: '', phone: '', email: '', website: '' },
+  events: [{ title: 'Outdoor Movie Night', feast: '', date: '2030-12-22', weekday_printed: 'Sunday', year_printed: false,
+    after: 'English Liturgy', start_time: '18:00', end_time: null, end_date: '', event_type: 'youth', languages: [],
+    venue: null, description: 'After the Liturgy. Home Alone, $25 a head with dinner.', notes: [], ...ev }],
+});
+
+test('an event after a service is never that service, and does not start when it does', async () => {
+  // As it came back on 3 Nov 2026, kind and all: Liturgy, at the Liturgy's 6pm.
+  const f = fresh({ role: 'editor' });
+  addEnglishLiturgy(f.raw);
+  const card = (await readAt(f, DOONSIDE, MOVIE_NIGHT({ event_type: 'liturgy' }))).cards[0];
+  assert.equal(card.occurrence, null, 'not that Sunday’s Liturgy');
+  assert.equal(card.title, 'Outdoor Movie Night');
+  assert.equal(card.start_time, null, 'not the Liturgy’s 6pm: nothing says when it ends');
+  assert.deepEqual(card.read_notes.filter(n => n.field === 'start_time').map(n => n.text),
+    ['After the 6:00pm Liturgy, so not 6:00pm: nothing gives when that ends, so fill in when this starts.']);
+
+  // With the Liturgy's end on file, it starts then.
+  const g = fresh({ role: 'editor' });
+  addEnglishLiturgy(g.raw, '19:30');
+  const ended = (await readAt(g, DOONSIDE, MOVIE_NIGHT())).cards[0];
+  assert.deepEqual([ended.occurrence, ended.start_time, ended.event_type], [null, '19:30', 'youth']);
+  assert.ok(ended.read_fields.includes('start_time'));
+  assert.match(ended.read_notes.find(n => n.field === 'start_time').text, /from when that ends, 7:30pm; not 6:00pm/);
+
+  // The poster's own service, with its end, goes first: "Cake Stall after the
+  // Service" under Vespers 6:00–7:30pm, read at 6pm.
+  const h = fresh({ role: 'editor' });
+  const stall = (await readAt(h, DOONSIDE, { ...MOVIE_NIGHT(), events: [
+    { ...MOVIE_NIGHT().events[0], title: 'Vespers', after: '', start_time: '18:00', end_time: '19:30', event_type: 'prayer' },
+    { ...MOVIE_NIGHT().events[0], title: 'Cake Stall', after: 'the Service', start_time: '18:00', event_type: 'social' },
+  ] })).cards;
+  assert.deepEqual(stall.map(c => c.start_time), ['18:00', '19:30']);
+
+  // A time of its own stays, and so does one after a service at another time.
+  const i = fresh({ role: 'editor' });
+  addEnglishLiturgy(i.raw);
+  const own = (await readAt(i, DOONSIDE, MOVIE_NIGHT({ start_time: '19:45' }))).cards[0];
+  assert.deepEqual([own.start_time, own.occurrence], ['19:45', null]);
+  assert.ok(!(own.read_notes || []).some(n => n.field === 'start_time'));
+});
+
+test('a time alone never makes a youth night a service’s date — a service at that time still is', async () => {
+  // An answer with nothing to say the movie night follows the Liturgy: its
+  // own kind keeps it off the Liturgy's date, though not off its 6pm.
+  const f = fresh({ role: 'editor' });
+  const sid = addEnglishLiturgy(f.raw);
+  const card = (await readAt(f, DOONSIDE, MOVIE_NIGHT({ after: '' }))).cards[0];
+  assert.deepEqual([card.occurrence, card.event_type, card.start_time], [null, 'youth', '18:00']);
+
+  // That Sunday's 6pm Liturgy with its saint, by any name, is the Liturgy.
+  const g = fresh({ role: 'editor' });
+  const sid2 = addEnglishLiturgy(g.raw);
+  const liturgy = (await readAt(g, DOONSIDE, MOVIE_NIGHT({ title: 'English Divine Liturgy', feast: 'Apostle Philip',
+    after: '', event_type: 'feast' }))).cards[0];
+  assert.equal(liturgy.occurrence, `${sid2}:2030-12-22`);
+  assert.deepEqual([liturgy.title, liturgy.event_type, liturgy.feast], ['English Divine Liturgy', 'liturgy', 'Apostle Philip']);
+
+  // And a youth night on a youth group's evening is that evening's.
+  const yg = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type)
+    VALUES (?, 5, '19:00', 'Youth Group', 'youth') RETURNING id`).get(DOONSIDE).id;
+  const read = matchOccurrences({ events: [
+    { title: 'Great Vespers', date: '2030-11-22', start_time: '19:00', event_type: 'prayer' },
+    { title: 'Games Night', date: '2030-11-22', start_time: '19:00', event_type: 'social' },
+    { title: 'Youth Group', date: '2030-11-29', start_time: '19:00', event_type: 'prayer' },
+  ] }, [{ id: sid, parish_id: DOONSIDE, day_of_week: 0, start_time: '18:00', title: 'Liturgy', event_type: 'liturgy', active: 1,
+    week_of_month: 'second,fourth' }, { id: yg, parish_id: DOONSIDE, day_of_week: 5, start_time: '19:00', title: 'Youth Group',
+    event_type: 'youth', active: 1 }]);
+  assert.deepEqual(read.events.map(e => e.occurrence), [null, `${yg}:2030-11-22`, `${yg}:2030-11-29`],
+    'Vespers at its time is not; a social at its time is; its own name is, whatever the kind');
+});
+
 // ── a church sign: the timetable and the parish's details ──
 
 /** Sts Peter & Paul, Doonside's sign, as a person photographed it. */
