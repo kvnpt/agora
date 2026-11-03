@@ -85,6 +85,14 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   // Vespers 5 pm) as one event with "two times printed", the doors-and-start rule.
   assert.match(SYSTEM_PROMPT, /Two services on the same date, each printed with its own name and time, are two entries/);
   assert.match(SYSTEM_PROMPT, /two services, each with its own name, are two events/);
+  // St Andrew Gladesville's November programme: "Cake Stall after the
+  // Service" under Vespers 6:00–7:30pm came back with no start time, and the
+  // editor typed 7:30pm in. The service's end is the time the poster gives.
+  assert.match(SYSTEM_PROMPT, /only as following a service that day .* starts when that service ends/);
+  assert.match(SYSTEM_PROMPT, /or else that service's end among the parish's regular services given with the image/);
+  assert.match(SYSTEM_PROMPT, /with a note on start_time saying which service it follows/);
+  assert.match(SYSTEM_PROMPT, /If neither gives that service an end time, start_time is null/);
+  assert.match(SYSTEM_PROMPT, /For an event that starts after a service, say so \("After the Liturgy\."\)/);
   assert.match(SYSTEM_PROMPT, /with its commemoration in feast and not in the title/);
   assert.match(SYSTEM_PROMPT, /"every 2nd and 4th Sunday" is \["second", "fourth"\]/);
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
