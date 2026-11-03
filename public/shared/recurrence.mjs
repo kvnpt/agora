@@ -7,6 +7,15 @@
 //   week_parity    NULL, or 'a' / 'b' — the fortnightly rule, running on
 //                  alternate weeks forever
 //
+// The positions mean what a parish means by them: 'fourth' is the 22nd–28th,
+// every month, and 'last' is the final one. In a month with four Sundays the
+// 4th Sunday is both. 'fourth' used to match only when a 5th followed, so the
+// two never overlapped — and "2nd & 4th Sundays" (Doonside's English Liturgy)
+// then skipped the 4th Sunday of every four-Sunday month: 27 Dec 2026, 28 Feb
+// 2027. "Every Sunday but the last" is not a set of positions any more; it is
+// a weekly rule plus the last Sunday's own, which wins the dedup on that date
+// (merge.mjs preferenceCmp).
+//
 // They are mutually exclusive because together they over-constrain: "1st and
 // 3rd Saturday" AND "week B" is a rule that matches roughly a quarter of the
 // Saturdays it appears to name, and would look like a broken projection rather
@@ -29,8 +38,8 @@ function matchesOneWeek(dateStr, qualifier) {
   if (qualifier === 'first')  return dayOfMonth <= 7;
   if (qualifier === 'second') return dayOfMonth >= 8  && dayOfMonth <= 14;
   if (qualifier === 'third')  return dayOfMonth >= 15 && dayOfMonth <= 21;
-  // 'fourth' = 4th occurrence only when a 5th exists — never overlaps with 'last'
-  if (qualifier === 'fourth') return dayOfMonth >= 22 && dayOfMonth <= 28 && hasNextWeek;
+  // Always the 4th, and the last as well when no 5th follows.
+  if (qualifier === 'fourth') return dayOfMonth >= 22 && dayOfMonth <= 28;
   if (qualifier === 'last')   return !hasNextWeek;
   return false;
 }

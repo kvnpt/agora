@@ -70,16 +70,34 @@ function parityFor(dates, from, to, dow) {
   return (got.length === want.size && got.every(d => want.has(d))) ? parity : null;
 }
 
-/** The smallest set of qualifiers covering every observed date, or null. */
-function qualifierFor(dates, from, to, dow) {
-  const needed = new Set();
-  for (const d of dates) {
-    const q = QUALIFIERS.find(q => matchesWeekOfMonth(d, q));
-    if (!q) return null;
-    needed.add(q);
+/** Every non-empty set of qualifiers, fewest first, each in QUALIFIERS order. */
+const QUALIFIER_SETS = (() => {
+  const sets = [];
+  for (let mask = 1; mask < (1 << QUALIFIERS.length); mask++) {
+    sets.push(QUALIFIERS.filter((_, i) => mask & (1 << i)).join(','));
   }
-  const candidate = QUALIFIERS.filter(q => needed.has(q)).join(',');
-  return fitsExactly(candidate, dates, from, to, dow) ? candidate : null;
+  return sets.sort((a, b) => a.split(',').length - b.split(',').length);
+})();
+
+/**
+ * The smallest set of qualifiers that reproduces the dates exactly:
+ * { qualifier } when one set does, { tie: [..] } when two of the same size do,
+ * or null.
+ *
+ * Searched rather than read off each date, because the positions overlap: in a
+ * month with four Sundays the 4th Sunday is 'fourth' AND 'last'. A window with
+ * no five-Sunday month cannot tell "the 4th Sunday" from "the last Sunday", and
+ * they part at the next 29th–31st that falls on one — so a tie is withheld, as
+ * every other reading the data cannot settle is.
+ */
+function qualifierFor(dates, from, to, dow) {
+  let fits = [];
+  for (const candidate of QUALIFIER_SETS) {
+    if (fits.length && candidate.split(',').length > fits[0].split(',').length) break;
+    if (fitsExactly(candidate, dates, from, to, dow)) fits.push(candidate);
+  }
+  if (!fits.length) return null;
+  return fits.length === 1 ? { qualifier: fits[0] } : { tie: fits };
 }
 
 /**
@@ -214,7 +232,17 @@ export function inferSchedules(occurrences, {
       continue;
     }
 
-    const qualifier = qualifierFor(dates, from, to, g.dow);
+    const fit = qualifierFor(dates, from, to, g.dow);
+    if (fit && fit.tie) {
+      unexplained.push({
+        ...base, support,
+        why: `${fit.tie.map(q => `'${q}'`).join(' and ')} each reproduce these dates exactly, and ` +
+             `differ only in months with five of the day, which this window does not settle. ` +
+             `Neither is safe to assume.`,
+      });
+      continue;
+    }
+    const qualifier = fit && fit.qualifier;
     if (qualifier) {
       const interval = intervalReading(dates, qualifier, g.dow);
       if (interval) {

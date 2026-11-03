@@ -163,3 +163,32 @@ test('a fortnightly rule keeps a 14-day cadence where week_of_month drifts to 21
   assert.deepEqual(gapsOf(byParity), [14]);
   assert.deepEqual(gapsOf(byWom), [14, 21]);
 });
+
+// ── Week of the month ────────────────────────────────────────────────────
+
+test('the 4th Sunday is the 4th Sunday, whether or not a 5th follows', () => {
+  // Doonside's English Liturgy, "2nd & 4th Sundays" (rule 31). 'fourth' used
+  // to match only when a 5th Sunday followed, so it skipped the 4th Sunday of
+  // every month with four: 27 Dec 2026, 28 Feb 2027.
+  for (const date of ['2026-11-22', '2026-12-27', '2027-01-24', '2027-02-28']) {
+    assert.equal(matchesWeekOfMonth(date, 'second,fourth'), true, `${date} is a 4th Sunday`);
+  }
+  assert.equal(matchesWeekOfMonth('2026-11-29', 'second,fourth'), false, 'a 5th Sunday is not the 4th');
+});
+
+test("'last' is the final one, and in a four-week month that is also the 4th", () => {
+  assert.equal(matchesWeekOfMonth('2026-11-29', 'last'), true);   // 5th Sunday
+  assert.equal(matchesWeekOfMonth('2026-11-22', 'last'), false);  // 4th, a 5th follows
+  assert.equal(matchesWeekOfMonth('2026-12-27', 'last'), true);   // 4th and last
+  assert.equal(matchesWeekOfMonth('2026-12-27', 'fourth'), true);
+});
+
+test('every Sunday of a year sits in exactly one of first, second, third and fourth-or-fifth', () => {
+  for (const date of everyDay('2026-01-04', '2027-12-26')) {
+    if (new Date(d(date)).getUTCDay() !== 0) continue;
+    const day = Number(date.slice(8));
+    const named = ['first', 'second', 'third', 'fourth'].filter(q => matchesWeekOfMonth(date, q));
+    assert.equal(named.length, day > 28 ? 0 : 1, `${date} is named by ${named}`);
+    if (day > 28) assert.equal(matchesWeekOfMonth(date, 'last'), true, `${date} is a 5th, so the last`);
+  }
+});

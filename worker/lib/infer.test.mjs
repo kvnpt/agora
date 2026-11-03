@@ -151,6 +151,37 @@ test('an unexplained extra date blocks an otherwise clean rule', () => {
   assert.equal(run(series('Weekly', gappy), w).proposals[0].rule.week_of_month, 'first,second,fourth,last');
 });
 
+test("a 4th-Sunday series over four-Sunday months alone is withheld, not guessed", () => {
+  // Feb – Apr 2027 each have four Sundays, so their 4th Sundays are also
+  // their last. 'fourth' and 'last' both reproduce these dates and part in
+  // May, which has five; the window cannot say which the parish means.
+  // Brisbane, so April's end of daylight saving does not move the series' hour.
+  const w = { timezone: 'Australia/Brisbane', windowFrom: '2027-02-01', windowTo: '2027-04-30' };
+  const r = run(['2027-02-28', '2027-03-28', '2027-04-25'].map(d => ({
+    title: 'Monthly', start_utc: new Date(`${d}T10:00:00+10:00`).toISOString(), event_type: 'liturgy',
+  })), w);
+  assert.equal(r.proposals.length, 0);
+  assert.match(r.unexplained[0].why, /'fourth' and 'last' each reproduce/);
+});
+
+test('a window with a five-Sunday month settles 4th from last', () => {
+  // Nov 2026 has five Sundays. 22 Nov is its 4th and 29 Nov its last.
+  const w = { timezone: 'Australia/Melbourne', windowFrom: '2026-11-01', windowTo: '2027-01-31' };
+  const fourth = run(series('Fourth', ['2026-11-22', '2026-12-27', '2027-01-24']), w);
+  assert.equal(fourth.proposals[0].rule.week_of_month, 'fourth');
+  const last = run(series('Last', ['2026-11-29', '2026-12-27', '2027-01-31']), w);
+  assert.equal(last.proposals[0].rule.week_of_month, 'last');
+});
+
+test("2nd and 4th Sundays are proposed as 'second,fourth' across months of four and five", () => {
+  const w = { timezone: 'Australia/Melbourne', windowFrom: '2026-11-01', windowTo: '2027-02-28' };
+  const dates = ['2026-11-08', '2026-11-22', '2026-12-13', '2026-12-27',
+    '2027-01-10', '2027-01-24', '2027-02-14', '2027-02-28'];
+  const r = run(series('Doonside', dates, '18:00'), w);
+  assert.equal(r.proposals.length, 1);
+  assert.equal(r.proposals[0].rule.week_of_month, 'second,fourth');
+});
+
 test('a DST transition does not split one service into two rules', () => {
   // Melbourne moved +10 -> +11 on 4 October 2026. Vespers is 5pm local on both
   // sides; stored as UTC those are different wall clocks, and grouping on the
