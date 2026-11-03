@@ -1345,7 +1345,7 @@
     // Held in another parish's church, each card says the other's part: the
     // venue's names its host, the host's names where it is.
     const venue = e.location_parish_id && e.location_parish_id !== e.parish_id ? S.byId.get(e.location_parish_id) : null;
-    // The second block: whose it is, with how far, all one line that may run to two.
+    // Under its name and its subtitle: whose it is, with how far, all one line that may run to two.
     const sub = here && venue && here === venue.id ? `<span class="esub">${avatar(p, 'xs')}<span class="epar">Hosted by ${esc(p ? p.name : e.parish_name || '')}</span></span>`
       : here && venue && e.parish_id === here ? `<span class="esub">${avatar(venue, 'xs')}<span class="epar">At ${esc(venue.name)}</span></span>`
       : here && e.parish_id === here ? ''
@@ -1360,8 +1360,8 @@
     return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}"${tint ? ` style="--pc:${tint}"` : ''}>
         <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
-          ${sub}
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
+          ${sub}
           ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
         ${e.poster_path ? `<img class="ethumb" ${posterThumb(e.poster_path, 160)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.remove()">` : ''}
       </button>`;
