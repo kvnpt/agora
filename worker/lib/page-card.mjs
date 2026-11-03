@@ -157,8 +157,8 @@ function eventRowHTML(e, here, { now = false, same = false, tint = null } = {}) 
   return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}"${tint ? ` style="--pc:${esc(tint)}"` : ''}>
       <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}${kind ? `<span class="ekind" style="color:${eventTypes.kindColors(e.event_type, false).fg}">${esc(kind)}</span>` : ''}</span>
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
-        ${away}
         ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
+        ${away}
         ${tomb && e.break_note ? `<span class="enote">${esc(e.break_note)}</span>` : ''}</span>
       ${e.poster_path ? `<img class="ethumb" src="${esc(e.poster_path)}" alt="" loading="lazy">` : ''}
     </a>`;
