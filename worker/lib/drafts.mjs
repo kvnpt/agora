@@ -421,8 +421,11 @@ export async function mergeRead(db, draftId, read) {
     }
     // A note goes with the field it is about — and "check what it replaces"
     // with whose event it is, since nothing need be ticked for it to stand.
+    // A time the read left empty, where nobody has typed one, keeps the note
+    // that says why: "After the 6:00pm Liturgy … fill in when this starts".
+    const noTime = ev.start_time == null && (!card || isEmpty(card.start_time));
     const notes = (ev.read_notes || []).filter(n => filled.includes(n.field)
-      || (n.field === 'replaces' && filled.includes('host_parish_id')));
+      || (n.field === 'replaces' && filled.includes('host_parish_id')) || (n.field === 'start_time' && noTime));
     if (filled.includes('date')) {
       set.printed_weekday = ev.printed_weekday;
       set.year_printed = ev.year_printed;
@@ -489,6 +492,62 @@ export async function placeRead(db, read, parish) {
 /** "Orthros & Divine Liturgy" and "ORTHROS AND DIVINE LITURGY" are one service. */
 const titleKey = (t) => String(t || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z]+/g, ' ').trim();
 
+/** The words of a name that say which service it is: not "the", "and", "service". */
+const SMALL_WORDS = new Set(['a', 'an', 'the', 'and', 'of', 'in', 'at', 'on', 'for', 'with', 'to', 'service', 'services']);
+const nameWords = (t) => titleKey(t).split(' ').filter(w => w && !SMALL_WORDS.has(w));
+
+/**
+ * Does what an event follows, as printed, name this service? "English
+ * Liturgy" names "Liturgy" and "Orthros & Divine Liturgy" — a word in common —
+ * and "the service" names any.
+ */
+function namesService(after, title) {
+  const said = nameWords(after);
+  if (!said.length) return true;
+  const its = new Set(nameWords(title));
+  return said.some(w => its.has(w));
+}
+
+/**
+ * An event held after a service starts when that service ends — never when it
+ * starts.
+ *
+ * Sts Peter & Paul, Doonside's youth poster (3 Nov 2026): "Outdoor Movie
+ * Night", "Following English Liturgy at 6pm, Sunday 22 November". The reader
+ * gave the movie night 6pm, the Liturgy's time; the 22nd is a fourth Sunday,
+ * when Doonside's English Liturgy is at 6pm, so matchOccurrences took the card
+ * for that Liturgy and gave it the Liturgy's kind. The reader now says what an
+ * event follows (`after`, poster-read.mjs). A card that follows a service, and
+ * starts when that service does that day — on the poster, or on the timetable
+ * — was given the service's time: it takes the service's end instead, or no
+ * time when nothing gives one, with a note saying which. matchOccurrences
+ * never makes such a card the service's own date.
+ *
+ * Before placeHosts and matchOccurrences, which go by the time.
+ *
+ * @param {object} read   normalizeRead()'s answer, changed in place
+ * @param {Array} rules   the parish's active rules (schedules rows)
+ */
+export function afterServices(read, rules) {
+  for (const ev of read.events) {
+    if (!ev.after || !ev.date || !ev.start_time || ev.end_date) continue;
+    const services = [
+      ...read.events.filter(o => o !== ev && !o.after && o.date === ev.date && !o.end_date),
+      ...(rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date)),
+    ].filter(s => s.start_time === ev.start_time && namesService(ev.after, s.title));
+    if (!services.length) continue;
+    const ends = [...new Set(services.map(s => s.end_time).filter(Boolean))];
+    const was = ev.start_time;
+    const what = `${clockText(was)} ${services[0].title}`;
+    ev.start_time = ends.length === 1 && ends[0] > was ? ends[0] : null;
+    ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time',
+      text: ev.start_time
+        ? `After the ${what}, so from when that ends, ${clockText(ev.start_time)}; not ${clockText(was)}.`
+        : `After the ${what}, so not ${clockText(was)}: nothing gives when that ends, so fill in when this starts.` }];
+  }
+  return read;
+}
+
 /**
  * Which of a read's events are a regular service on its own date.
  *
@@ -513,8 +572,9 @@ export function matchOccurrences(read, rules) {
   const used = new Set();
   for (const ev of read.events) {
     ev.occurrence = null;
-    // Another parish's event is not one of this parish's services (placeHosts).
-    if (ev.host_parish_id) continue;
+    // Another parish's event is not one of this parish's services (placeHosts),
+    // and one held after a service is not that service (afterServices).
+    if (ev.host_parish_id || ev.after) continue;
     const hit = occurrenceOf(ev, rules, used);
     if (!hit) continue;
     used.add(`${hit.id}:${ev.date}`);
@@ -527,15 +587,28 @@ export function matchOccurrences(read, rules) {
 
 const sameTitle = (r, ev) => titleKey(r.title) === titleKey(ev.title);
 
+/** The kinds that are services. A Liturgy, a Vespers and a feast's services are one sort; a talk, a youth night, a meal are another. */
+const SERVICE_KINDS = new Set(['liturgy', 'prayer', 'feast']);
+/**
+ * Are a rule and a card the same sort of thing — both services, or both not?
+ * A time alone never takes a card across: Sts Peter & Paul, Doonside's
+ * "Outdoor Movie Night" at 6pm on the 22nd (3 Nov 2026) was taken for that
+ * Sunday's 6pm English Liturgy, and given its kind. A card or rule with no
+ * kind says nothing either way.
+ */
+const sameSort = (r, ev) => !r.event_type || !ev.event_type
+  || SERVICE_KINDS.has(r.event_type) === SERVICE_KINDS.has(ev.event_type);
+
 /**
  * The rule whose occurrence a dated event is (matchOccurrences says how), or
- * null — never one already `used`, and never for a run of days.
+ * null — never one already `used`, and never for a run of days. A rule at the
+ * same time is one of the same sort, or of the same name (sameSort).
  */
 function occurrenceOf(ev, rules, used = new Set()) {
   if (!ev.date || !ev.start_time || ev.end_date) return null;
   const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
   const same = (r) => sameTitle(r, ev);
-  const at = that.filter(r => r.start_time === ev.start_time);
+  const at = that.filter(r => r.start_time === ev.start_time && (same(r) || sameSort(r, ev)));
   const named = that.filter(same);
   const hit = at.length === 1 ? at[0]
     : at.length > 1 ? (at.filter(same).length === 1 ? at.find(same) : null)
