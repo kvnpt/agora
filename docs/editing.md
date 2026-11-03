@@ -280,7 +280,9 @@ the feed will draw it (time and day, the kind's roundel, title, subtitle) so
 they can be checked at a glance. A collapsed card still shows what needs a
 person (`refreshPeek`): a one-off service's first two languages, to tap, and
 every field its checks stop or doubt — a missing time, a date the poster's
-weekday disagrees with — answered right there without opening it.
+weekday disagrees with — answered right there without opening it. Something
+printed only as *after the Liturgy* starts when that service ends (the end the
+poster prints, or the rule's), with the model's note under the time saying so.
 **The read fills only empty fields** — in the
 editor and again when the Worker merges it — so nothing a person typed, before
 the drop or during the read, is overwritten. It runs under `waitUntil`, so
