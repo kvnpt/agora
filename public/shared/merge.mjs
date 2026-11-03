@@ -26,14 +26,20 @@ export function partitionKey(e) {
 //      week_of_month rule or a fortnightly one. Both are the same kind of
 //      claim ("not every week, these weeks"), and both are more specific than
 //      a bare weekly rule at the same time and title, so they rank together.
+//      Between two week_of_month rules, the one naming fewer weeks: a 4th
+//      Sunday that is also the last is claimed by "1st–4th Sundays" and by
+//      "last Sundays", and the last Sunday's own rule is the one meant.
 //   2. a stored one-off beats a schedule instance  <- the load-bearing rule:
 //      a scraped or hand-entered event supersedes its recurring twin
 //   3. most recently updated
 const qualified = (e) => (e.week_of_month || e.week_parity) ? 0 : 1;
+const weeksNamed = (e) => (e.week_of_month ? String(e.week_of_month).split(',').length : 0);
 
 export function preferenceCmp(a, b) {
   const womA = qualified(a), womB = qualified(b);
   if (womA !== womB) return womA - womB;
+  const nA = weeksNamed(a), nB = weeksNamed(b);
+  if (nA && nB && nA !== nB) return nA - nB;
   const schA = a.source_adapter === 'schedule' ? 1 : 0, schB = b.source_adapter === 'schedule' ? 1 : 0;
   if (schA !== schB) return schA - schB;
   return Date.parse(b.updated_at || 0) - Date.parse(a.updated_at || 0);

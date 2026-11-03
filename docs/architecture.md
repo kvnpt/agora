@@ -239,8 +239,9 @@ is what makes `start_time` meaningful.
 venue's opening hours. Only "is it on right now" depends on the viewer's actual moment.
 
 **Dedup decides which of two competing rows becomes one card** (`merge.mjs`): a
-`week_of_month` rule beats a generic weekly one, a stored one-off beats a schedule
-instance, then most-recently-updated. That middle rule is load-bearing — it is how a
+`week_of_month` rule beats a generic weekly one (and of two, the one naming fewer
+weeks: a 4th Sunday that is also the last goes to the "last Sundays" rule), a stored
+one-off beats a schedule instance, then most-recently-updated. That middle rule is load-bearing — it is how a
 scraped event supersedes its recurring twin instead of showing twice.
 
 **A jurisdiction's colour is written down once**, in

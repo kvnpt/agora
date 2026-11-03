@@ -131,3 +131,15 @@ test('sortFeed: chronological without a location, proximity-blended with one', (
   const bounded = sortFeed([near, far], { lat: -33.87, lng: 151.21, radiusKm: 10, now });
   assert.deepStrictEqual(bounded.map(e => e.id), ['near'], 'radius filters the far one out');
 });
+
+test('where two week_of_month rules meet, the one naming fewer weeks wins', () => {
+  // Mount Pritchard: Matins & Liturgy in Arabic and English on the 1st–4th
+  // Sundays (rule 34), in English on the last (rule 185). In a month with four
+  // Sundays the 4th is also the last, and both rules claim it.
+  const at = { parish_id: 'p', start_utc: '2026-12-26T22:00:00.000Z', title: 'Matins & Liturgy', source_adapter: 'schedule' };
+  const fourWeeks = { ...at, id: '34:2026-12-27', week_of_month: 'first,second,third,fourth', updated_at: '2026-12-01T00:00:00Z' };
+  const last = { ...at, id: '185:2026-12-27', week_of_month: 'last', updated_at: '2026-10-01T00:00:00Z' };
+  assert.ok(preferenceCmp(last, fourWeeks) < 0);
+  assert.strictEqual(dedupe([fourWeeks, last])[0].id, '185:2026-12-27');
+  assert.strictEqual(dedupe([last, fourWeeks])[0].id, '185:2026-12-27');
+});
