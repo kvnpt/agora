@@ -207,8 +207,14 @@
     });
   }
 
-  /** Seven days to tick, and the two sets people ask for by name. */
-  function daysHTML(days) {
+  /**
+   * Seven days to tick, and the two sets people ask for by name. Not
+   * `daysHTML`: that is Date's Single day / Multi day pill below, and two
+   * declarations of one name in one scope is the second one, everywhere —
+   * so from 31 Oct 2026 (#168) this form had no days and Add service and
+   * Edit service threw before they opened (d1/one-name.test.mjs).
+   */
+  function weekdaysHTML(days) {
     return `<div class="rf-days" data-rf-days role="group" aria-label="Days">
         ${DAYS.map((d, i) => `<label class="rf-day"><input type="checkbox" value="${i}"${days.includes(i) ? ' checked' : ''}><span>${d.slice(0, 3)}</span></label>`).join('')}
       </div>
@@ -324,7 +330,7 @@
       <div class="edit-row"><label>Title</label><input ${field('title')} value="${esc(rule.title || '')}" placeholder="Divine Liturgy" autocomplete="off"></div>
       <div class="edit-row"><label>Subtitle</label><input ${field('feast')} value="${esc(rule.feast || '')}" placeholder="Shown under the title on every date (optional)" autocomplete="off"></div>
       ${kindRowHTML('Kind', `<select ${field('event_type')} data-kind-picker="buttons">${kinds}</select>`, ATTR, !!rule.parish_scoped)}
-      <div class="edit-row"><label>Days</label>${daysHTML(days)}</div>
+      <div class="edit-row"><label>Days</label>${weekdaysHTML(days)}</div>
       <div class="edit-row edit-pair">
         <div><label>Starts</label>${time('start_time', rule.start_time || (rule.id ? '' : '09:00'), ' data-tf-label="Starts"')}</div>
         <div><label>Ends</label>${time('end_time', rule.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
