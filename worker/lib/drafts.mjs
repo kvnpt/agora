@@ -524,6 +524,9 @@ function namesService(after, title) {
   return said.some(w => its.has(w));
 }
 
+/** A time in what an event follows, with its "at": " at 6pm", " 10:30am", " 18:00". */
+const TIME_PHRASE = /\s*\b(?:at|from)?\s*\b(?:\d{1,2}(?:[:.]\d{2})?\s*[ap]\.?m\.?|(?:[01]?\d|2[0-3])[:.][0-5]\d)(?![\w])/gi;
+
 /** The time printed in what an event follows: "English Liturgy at 6pm" -> "18:00". */
 function timeIn(text) {
   const t = String(text || '');
@@ -589,9 +592,22 @@ export function afterServices(read, rules) {
     if (ev.start_time && printed && ev.start_time !== printed) continue;
     const when = printed || ev.start_time;
     const which = (list) => list.filter(s => namesService(ev.after, s.title) && (!when || s.start_time === when));
-    let services = which(read.events.filter(o => sameDay(ev, o)));
+    const onPoster = read.events.filter(o => sameDay(ev, o));
+    let services = which(onPoster);
+    // A service of the poster's at the very time printed, by whatever name the
+    // reader gave its card: St Andrew, Gladesville's cake stall follows the
+    // "Matins and Hierarchical Divine Liturgy at 7am", carded as the "Feast
+    // Day of … Saint Andrew" at 7:00–10:30 (one of two reads, 4 Nov 2026).
+    if (!services.length && printed) services = onPoster.filter(o => o.start_time === printed && isServiceKind(o));
     if (!services.length) {
       services = which((rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date)));
+    }
+    // The service as `after` itself gives it, when nothing else does: Croydon
+    // Park's fair follows "Liturgy at 10am", which the reader left off as the
+    // parish's regular Sunday (the Liturgy of its 9:00 Matins & Liturgy).
+    if (!services.length && printed) {
+      const title = String(ev.after).replace(TIME_PHRASE, ' ').replace(/\s+/g, ' ').trim();
+      if (title) services = [{ title, start_time: printed, end_time: null }];
     }
     if (!services.length) continue;
     const was = ev.start_time;

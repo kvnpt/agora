@@ -895,6 +895,25 @@ test('an event after a service follows the one on the poster first, at the time 
   assert.deepEqual([fair.start_time, fair.end_time], ['11:30', '15:30']);
   assert.match(fair.read_notes.find(n => n.field === 'start_time').text, /^After the 10:00am Liturgy, which usually runs 1½ hours/);
 
+  // The reader leaving the Liturgy off as the regular Sunday (2 of 3 real
+  // reads, 4 Nov 2026): what the fair follows still says when.
+  const k = fresh({ role: 'editor' });
+  addCroydonPark(k.raw);
+  const alone = CHRISTMAS_FAIR({ after: 'Liturgy at 10am' });
+  const only = (await readAt(k, CROYDON_PARK, { ...alone, events: [alone.events[1]] })).cards[0];
+  assert.deepEqual([only.start_time, only.end_time], ['11:30', '15:30']);
+  assert.match(only.read_notes.find(n => n.field === 'start_time').text, /^After the 10:00am Liturgy, which usually runs 1½ hours: from 11:30am/);
+
+  // The poster's service at the time printed, whatever the reader called it.
+  const m = fresh({ role: 'editor' });
+  addCroydonPark(m.raw);
+  const feast = CHRISTMAS_FAIR({ title: 'Cake Stall', after: 'Matins and Hierarchical Divine Liturgy at 7am' });
+  const stall = (await readAt(m, CROYDON_PARK, { ...feast, events: [
+    { ...feast.events[0], title: 'Feast of St John', start_time: '07:00', end_time: '10:30', event_type: 'feast' },
+    feast.events[1],
+  ] })).cards[1];
+  assert.equal(stall.start_time, '10:30');
+
   // "After the English Liturgy at 6pm", with nothing for it on the poster: the
   // timetable's 6pm one, never the morning's.
   const g = fresh({ role: 'editor' });
