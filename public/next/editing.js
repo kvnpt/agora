@@ -477,6 +477,7 @@
     });
     // What the form said when it opened: Save sends only what moved from it.
     const before = d.live.body();
+    exceptionsBlock(d, rules.map(r => r.id));
     d.form.querySelector('[data-rf-save]').addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       if (btn.disabled) return;
@@ -519,6 +520,17 @@
             body: JSON.stringify({ parish_id: first.parish_id, ...body, days: added, poster_path: first.poster_path || null }),
           }).catch(() => null);
           if (!res || !res.ok) err = res ? await errorText(res) : 'It did not go through. Check the connection.';
+          // A day ticked keeps the service's exceptions, so it stays the one line.
+          const made = !err && ((await res.clone().json().catch(() => null)) || {}).rules;
+          for (const r of made || []) {
+            for (const x of first.exceptions || []) {
+              if (err) break;
+              const res2 = await fetch(`/api/admin/schedules/${encodeURIComponent(r.id)}/exceptions`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(RF().exceptionCopy(x)),
+              }).catch(() => null);
+              if (!res2 || !res2.ok) err = res2 ? await errorText(res2) : 'It did not go through. Check the connection.';
+            }
+          }
         }
         const today = host.today();
         for (const r of gone) {
@@ -568,6 +580,254 @@
     });
     if (pick === 'all') editRules(rules.map(r => r.id));
     else if (pick) editService(pick);
+  }
+
+  // ── A service's exceptions ────────────────────────────────────────────
+  //
+  // Under Runs on the service's form: the weeks it is held otherwise ("Except
+  // the last Sunday: English, until 11:30am", schedule_week_exceptions), then
+  // its dates coming up that are (an override, a break). One list, because
+  // to a person they are one idea (Kevin, 4 Nov 2026: "we're just collapsing
+  // overrides and one-offs into the idea of exceptions"); each row opens its
+  // own card, over this one, and saves as it is closed, as the poster does.
+  //
+  // The rules of a line share their exceptions (timetable-lines.js keys a
+  // line on them), so a form for several days lists the first's, and a card
+  // writes the same exception on each.
+
+  const WX = 'data-wx';
+  const WEEK_TAP = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'Last' };
+  const shortDay = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  // Every refresh of the bundle repaints the lists that are open.
+  const afterReload = new Set();
+
+  /** What a date's override makes of it, in a few words; null for a poster or a subtitle alone. */
+  function overrideSummary(rule, o) {
+    if (STATE[o.kind]) return STATE[o.kind];
+    const parts = [];
+    if (o.patch_title && o.patch_title !== rule.title) parts.push(o.patch_title);
+    if (o.patch_languages) { try { parts.push(JSON.parse(o.patch_languages).join(', ')); } catch { /* skip */ } }
+    if (o.patch_start_time && o.patch_start_time !== rule.start_time) parts.push(`at ${clock(o.patch_start_time)}`);
+    if (o.patch_end_time && o.patch_end_time !== rule.end_time) parts.push(`until ${clock(o.patch_end_time)}`);
+    if (o.patch_location_override || o.patch_location_parish_id || o.patch_location_lat != null) parts.push('somewhere else');
+    if (o.patch_event_type && o.patch_event_type !== rule.event_type) parts.push('another kind');
+    return parts.length ? parts.join(', ') : null;
+  }
+
+  function exceptionsBlock(d, ids) {
+    const runs = d.form.querySelector('[data-cadence]');
+    if (!runs || !RF().exceptionSummary) return;
+    runs.closest('.edit-row').insertAdjacentHTML('afterend',
+      `<div class="edit-row rf-except" data-rf-except><label>Exceptions</label><div class="rf-except-list" data-rf-except-list></div></div>`);
+    const list = d.form.querySelector('[data-rf-except-list]');
+    const paint = () => {
+      if (d.f.closed) { afterReload.delete(paint); return; }
+      const rules = ids.map(id => host.rule(id)).filter(Boolean);
+      if (!rules.length) return;
+      const first = rules[0];
+      const days = rules.map(r => r.day_of_week);
+      const today = host.today();
+      const placeName = (pid) => (host.parish(pid) || {}).name || null;
+      const weekly = (first.exceptions || []).map(x => ({
+        open: () => editException(ids, x), text: RF().exceptionSummary(first, x, { days, placeName }),
+      }));
+      // Its dates coming up that somebody changed, a few: the date's own card says the rest.
+      const raw = (root.agoraBundle && root.agoraBundle.raw) || {};
+      const dated = (raw.overrides || [])
+        .filter(o => ids.some(id => String(id) === String(o.schedule_id)) && o.occurrence_date >= today)
+        .map(o => {
+          const r = rules.find(x => String(x.id) === String(o.schedule_id));
+          const what = overrideSummary(r, o);
+          return what && { date: o.occurrence_date, text: `${shortDay(o.occurrence_date)}: ${what}`,
+            open: () => editEvent(`${o.schedule_id}:${o.occurrence_date}`) };
+        })
+        .filter(Boolean);
+      const seen = new Set();
+      for (const r of rules) {
+        for (const b of breaksOf(r)) {
+          if (b.to_date < today || seen.has(b.id)) continue;
+          seen.add(b.id);
+          const from = b.from_date > today ? b.from_date : today;
+          dated.push({ date: from, text: `${shortDay(b.from_date)} – ${shortDay(b.to_date)}: on a break${b.note ? ` (${b.note})` : ''}`,
+            open: () => editBreak(`${r.id}:${from}`) });
+        }
+      }
+      dated.sort((a, b) => a.date.localeCompare(b.date));
+      const shown = dated.slice(0, 4);
+      const rows = [...weekly, ...shown];
+      const full = (first.exceptions || []).reduce((n, x) => n + String(x.weeks).split(',').length, 0) >= RF().WEEKS_OF_MONTH.length;
+      list.innerHTML = `${rows.map((x, i) =>
+        `<button type="button" class="rf-except-row" data-rf-except-open="${i}"><span>${esc(x.text)}</span>${PENCIL}</button>`).join('')}
+        ${dated.length > shown.length ? `<p class="edit-row-hint">And ${dated.length - shown.length} more ${dated.length - shown.length === 1 ? 'date' : 'dates'} after, on their own cards.</p>` : ''}
+        ${full ? '' : `<button type="button" class="rf-btn rf-except-add" data-rf-except-add>+ Except…</button>`}
+        ${rows.length ? '' : '<p class="edit-row-hint">Weeks of the month it is held otherwise, or not held. A single date is changed on its own card.</p>'}`;
+      list.querySelectorAll('[data-rf-except-open]').forEach(b => b.addEventListener('click', () => rows[Number(b.dataset.rfExceptOpen)].open()));
+      const add = list.querySelector('[data-rf-except-add]');
+      if (add) add.addEventListener('click', () => editException(ids, null));
+    };
+    paint();
+    afterReload.add(paint);
+  }
+
+  /** Is `rule` ever held on the `week` of the month? Two years of its weekday is enough to say. */
+  function everHeld(P, R, rule, week) {
+    const r = { ...rule, effective_from: null, effective_to: null };
+    const start = Date.parse(host.today() + 'T00:00:00Z');
+    for (let i = 0; i < 731; i++) {
+      const iso = new Date(start + i * 86400000).toISOString().slice(0, 10);
+      if (P.isValidOccurrence(r, iso) && R.matchesWeekOfMonth(iso, week)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * One exception's card, over the service's: Which weeks, Held differently
+   * or Not held, and the fields as it is held those weeks — a date's edit
+   * form with weeks in place of the date. `x` null is a new one.
+   */
+  async function editException(ids, x) {
+    const rules = ids.map(id => host.rule(id)).filter(Boolean);
+    if (!rules.length) return;
+    const rule = rules[0];
+    if (!host.may('schedule.edit', rule.parish_id)) return;
+    const [P, R] = await Promise.all([import('/shared/project.mjs'), import('/shared/recurrence.mjs')]);
+    const days = rules.map(r => r.day_of_week);
+    const parish = host.parish(rule.parish_id);
+    const held = x && x.kind === 'modified' ? P.withException(rule, x) : rule;
+    const notHeld = !!x && x.kind === 'not_held';
+    const mine = x ? String(x.weeks).split(',') : [];
+    // A week already another exception's, or one it is never held on, cannot be picked.
+    const taken = new Set((rule.exceptions || []).filter(y => !x || y.id !== x.id).flatMap(y => String(y.weeks).split(',')));
+    const never = new Set(RF().WEEKS_OF_MONTH.filter(w => !mine.includes(w) && !rules.every(r => everHeld(P, R, r, w))));
+    const langs = (() => { try { return JSON.parse(held.languages || '[]'); } catch { return []; } })();
+    const service = isService(rule.event_type);
+    const f = frame({ title: RF().exceptionTitle(mine, days), sub: [linesName(rules), parish && parish.name].filter(Boolean).join(' · '), cls: 'rule-backdrop' });
+    const a = (name) => `${WX}="${name}"`;
+    const time = (name, value, extra) =>
+      `<input type="hidden" ${a(name)} value="${esc(value || '')}" data-time-field data-tf-name="${name}"${extra}>`;
+    f.body.innerHTML = `<div class="detail-edit-form wx-form">
+        <div class="edit-row"><div class="edit-row-head"><label>Which</label>
+          <button type="button" class="scope-pill wx-pill${notHeld ? ' on' : ''}" aria-pressed="${notHeld}" data-wx-pill>${notHeld ? 'Not held' : 'Held differently'}</button>
+          <input type="checkbox" ${a('not_held')}${notHeld ? ' checked' : ''} hidden></div>
+          <div class="rf-days wx-weeks" data-wx-weeks role="group" aria-label="Which weeks">
+            ${RF().WEEKS_OF_MONTH.map(w => {
+              const off = taken.has(w) || never.has(w);
+              return `<label class="rf-day"${off ? ` title="${taken.has(w) ? 'It has an exception already' : `${esc(rule.title)} is not held then`}"` : ''}><input type="checkbox" value="${w}"${mine.includes(w) ? ' checked' : ''}${off ? ' disabled' : ''}><span>${WEEK_TAP[w]}</span></label>`;
+            }).join('')}
+          </div>
+          <div class="edit-row-hint" data-wx-hint></div>
+        </div>
+        <div data-wx-fields${notHeld ? ' hidden' : ''}>
+          <div class="edit-row"><label>Title</label><input ${a('title')} value="${esc(held.title || '')}" autocomplete="off"></div>
+          <div class="edit-row"><label>Subtitle</label><input ${a('feast')} value="${esc(held.feast || '')}" placeholder="Shown under the title those weeks (optional)" autocomplete="off"></div>
+          <div class="edit-row edit-pair">
+            <div><label>Starts</label>${time('start_time', held.start_time, ' data-tf-label="Starts"')}</div>
+            <div><label>Ends</label>${time('end_time', held.end_time, ' data-tf-label="Ends" data-tf-optional data-tf-none="No end time" data-tf-near="start_time"')}</div>
+          </div>
+          ${service ? `<div class="edit-row"><label>Languages</label><input ${a('languages')} value="${esc(langs.join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((parish && parish.jurisdiction) || '')}" autocomplete="off"></div>` : ''}
+          <div class="edit-row"><label>Where</label>
+            <div class="vp-mount" data-venue-mount></div>
+            ${VENUE.map(k => `<input type="hidden" ${a(k)} value="${esc(held[k] == null ? '' : held[k])}">`).join('')}
+          </div>
+          <div class="edit-row"><label>Description</label><textarea ${a('description')} rows="2" placeholder="Shown those weeks (optional)">${esc(held.description || '')}</textarea></div>
+        </div>
+        <p class="rf-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn-save" type="button" data-wx-save>Save</button>
+          <button class="btn-outline" type="button" data-frame-close>Cancel</button>
+          ${x ? '<button class="btn-danger" type="button" data-wx-delete>Delete exception</button>' : ''}
+        </div>
+      </div>`;
+    const form = f.body.firstElementChild;
+    const q = (name) => form.querySelector(`[${WX}="${name}"]`);
+    const err = form.querySelector('.rf-error');
+    const fail = (msg) => { err.textContent = msg; err.hidden = !msg; if (msg) err.scrollIntoView({ block: 'nearest' }); };
+    const weeksBox = form.querySelector('[data-wx-weeks]');
+    const picked = () => [...weeksBox.querySelectorAll('input:checked')].map(c => c.value);
+    const hint = form.querySelector('[data-wx-hint]');
+    const day = DAY_NAMES[rule.day_of_week];
+    const repaint = () => {
+      f.setTitle(RF().exceptionTitle(picked(), days));
+      const p = picked();
+      hint.textContent = p.includes('fourth') || p.includes('last')
+        ? `In a month with four ${day}s, the 4th is the last as well.` : '';
+      hint.hidden = !hint.textContent;
+    };
+    weeksBox.addEventListener('change', repaint);
+    repaint();
+    // Held differently, or not held: a pill at the end of Which's line, as Date's Single day is.
+    const pill = form.querySelector('[data-wx-pill]');
+    const box = q('not_held');
+    pill.addEventListener('click', () => {
+      box.checked = !box.checked;
+      pill.classList.toggle('on', box.checked);
+      pill.setAttribute('aria-pressed', String(box.checked));
+      pill.textContent = box.checked ? 'Not held' : 'Held differently';
+      form.querySelector('[data-wx-fields]').hidden = box.checked;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const mount = form.querySelector('[data-venue-mount]');
+    if (mount && root.AgoraVenuePicker) {
+      const value = {};
+      for (const k of VENUE) value[k] = held[k] != null && held[k] !== '' ? held[k] : null;
+      root.AgoraVenuePicker.mount(mount, {
+        value, host: parish || { id: rule.parish_id }, parishes: host.parishes(), geocode, pickPin,
+        onChange: (v) => { for (const k of VENUE) q(k).value = v[k] == null ? '' : v[k]; },
+      });
+    }
+    // The same exception on every rule of the line: each one's own, by its weeks.
+    const twinOf = (r) => (x ? (r.exceptions || []).find(y => y.weeks === x.weeks && y.kind === x.kind) : null);
+    const send = async (method, url, body) => {
+      const res = await fetch(url, {
+        method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+      }).catch(() => null);
+      return !res ? 'It did not go through. Check the connection.' : res.ok ? null : await errorText(res);
+    };
+    form.querySelector('[data-wx-save]').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try {
+        fail('');
+        if (root.AgoraTimeField && root.AgoraTimeField.commitAll && !root.AgoraTimeField.commitAll(form)) {
+          return fail('One of the times is not a time. Pick one from the list, or type it like 6:30 pm.');
+        }
+        const v = { weeks: picked(), not_held: box.checked };
+        form.querySelectorAll(`[${WX}]`).forEach(el => { const k = el.getAttribute(WX); if (k !== 'not_held') v[k] = el.value; });
+        const body = RF().exceptionBody(v);
+        if (!body.weeks.length) return fail('Which weeks? Tap at least one.');
+        if (!(await keepByHand(rule.parish_id))) return;
+        let bad = null;
+        for (const r of rules) {
+          const twin = twinOf(r);
+          bad = twin ? await send('PATCH', `/api/admin/week-exceptions/${encodeURIComponent(twin.id)}`, body)
+            : await send('POST', `/api/admin/schedules/${encodeURIComponent(r.id)}/exceptions`, body);
+          if (bad) break;
+        }
+        if (bad) { await host.reload(); return fail(bad); }
+        f.close();
+        await host.reload();
+        host.toast('Saved');
+      } finally { btn.disabled = false; }
+    });
+    const del = form.querySelector('[data-wx-delete]');
+    if (del) del.addEventListener('click', async () => {
+      const when = RF().weeksPhrase(x.weeks, days);
+      const go = await askChoice({
+        title: 'Delete this exception?',
+        body: `<p>The ${esc(when)} ${x.kind === 'not_held' ? 'has the service again' : 'goes back to being held as the service is'}. Dates changed on their own cards keep their changes.</p>`,
+        choices: [{ value: 'delete', label: 'Delete the exception', danger: true }],
+      });
+      if (go !== 'delete' || !(await keepByHand(rule.parish_id))) return;
+      for (const r of rules) {
+        const twin = twinOf(r);
+        const bad = twin && await send('DELETE', `/api/admin/week-exceptions/${encodeURIComponent(twin.id)}`);
+        if (bad) { await host.reload(); return fail(bad); }
+      }
+      f.close();
+      await host.reload();
+      host.toast('Deleted');
+    });
   }
 
   // ── An event, or one date of a service ────────────────────────────────
@@ -1986,7 +2246,15 @@
   }
 
   root.NextEdit = {
-    init(h) { host = h; },
+    init(h) {
+      // A re-read repaints the forms open on what it read: a service's
+      // Exceptions, after a card over it saved one.
+      host = { ...h, reload: async (...args) => {
+        const out = await h.reload(...args);
+        for (const paint of [...afterReload]) { try { paint(); } catch (err) { console.error(err); } }
+        return out;
+      } };
+    },
     askChoice, keepByHand, errorText, frame, pickPin, addEvent, addService, editService, editLine, editEvent, editBreak, combine,
     editDetails, editLogo, editLinks,
   };

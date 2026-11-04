@@ -13,8 +13,9 @@
 // two never overlapped — and "2nd & 4th Sundays" (Doonside's English Liturgy)
 // then skipped the 4th Sunday of every four-Sunday month: 27 Dec 2026, 28 Feb
 // 2027. "Every Sunday but the last" is not a set of positions any more; it is
-// a weekly rule plus the last Sunday's own, which wins the dedup on that date
-// (merge.mjs preferenceCmp).
+// a weekly rule with a week exception that it is not held on the last
+// (schedule_week_exceptions, project.mjs withException), and "the last Sunday
+// in English" one that it is held otherwise then.
 //
 // They are mutually exclusive because together they over-constrain: "1st and
 // 3rd Saturday" AND "week B" is a rule that matches roughly a quarter of the

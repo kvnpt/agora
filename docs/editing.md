@@ -30,6 +30,47 @@ Sunday — it uses the rule's own `effective_from`/`effective_to`
   asks: keep them on the new rule (those whose date it still produces) or
   discard them.
 
+**A week the service is held otherwise is an exception on the rule, not a
+second rule** (migration 035, `schedule_week_exceptions`). Mount Pritchard's
+Liturgy is bilingual every Sunday and in English on the last one; Homebush
+West's is Serbian, and English on the 1st Sunday. Those were written as a
+second rule at the same time with the same title, which the dedup paired
+(`merge.mjs`) — so every editor had to know that two rows only work as one if
+they are named alike, and Homebush West's, named differently, showed two 10am
+Liturgies on every 1st Sunday. Now it is one row on the rule: `weeks` (a set
+of `first … last`), `kind` (`modified` or `not_held`) and the `patch_` fields
+a date's override has, NULL meaning "as the service". It is projected with
+the rule, never stored per date (`project.mjs withException`):
+
+- a date's own override still has the last word on that date, and keeps the
+  week's fields it does not name (the last Sunday moved to 10am is still in
+  English); a break covers an exception week like any other;
+- **not held** means those dates are not occurrences at all, as a
+  `week_of_month` that leaves them out would — no tombstone — and it is how
+  "every Sunday but the last" is written since `fourth` stopped meaning "the
+  4th when a 5th follows" (PR #188). An override on such a date brings that
+  one date back; a bulletin over a range (`poster-range.mjs`) skips them, so
+  it does not;
+- of two exceptions meeting on a date (the 4th Sunday that is also the
+  last), the one naming fewer weeks speaks, as in the dedup; the routes refuse
+  two that name the same week;
+- the timetable's line says it ("last Sun: English", "not on the last Sun",
+  `timetable-lines.js exceptionNote`), and what reads a rule rather than its
+  dates — a language filter, a parish's languages — reads each way it is held
+  (`attachExceptions` → `variants`), so /en finds Homebush West;
+- the routes take the card whole and store only what differs from the rule
+  (`POST /api/admin/schedules/:id/exceptions`, `PATCH|DELETE
+  /api/admin/week-exceptions/:id`), so changing the service later reaches
+  those weeks too. "This and every following" copies them onto the new rule.
+
+The service's form lists them under **Runs** as **Exceptions**, then the
+dates coming up that have their own changes and its breaks, one list (Kevin,
+4 Nov 2026: "we're just collapsing overrides and one-offs into the idea of
+exceptions"). **+ Except…** opens a card over the form: Which weeks as tap
+buttons (one taken or never held is greyed), a Held differently / Not held
+pill on that line, and the date form's fields. It saves on its own Save, as
+the rule's poster does, outside the form's.
+
 The bundle carries a rule that starts after its window ("from 1 Nov" is how a
 new or seasonal service is announced) and drops one that has ended. The
 importers pair a scraped rule with the current row of a slot before an ended

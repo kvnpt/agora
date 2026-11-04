@@ -242,7 +242,11 @@ venue's opening hours. Only "is it on right now" depends on the viewer's actual 
 `week_of_month` rule beats a generic weekly one (and of two, the one naming fewer
 weeks: a 4th Sunday that is also the last goes to the "last Sundays" rule), a stored
 one-off beats a schedule instance, then most-recently-updated. That middle rule is load-bearing — it is how a
-scraped event supersedes its recurring twin instead of showing twice.
+scraped event supersedes its recurring twin instead of showing twice. A week a
+service is held otherwise is not a second rule for the dedup to pair: it is an
+exception on the one rule, projected with it (`schedule_week_exceptions`,
+`project.mjs withException`, [editing.md](editing.md)), and the bundle carries
+those rows beside the rules as `week_exceptions`.
 
 **A jurisdiction's colour is written down once**, in
 `public/shared/jurisdiction-colors.js`, which the page, the map and the seed all

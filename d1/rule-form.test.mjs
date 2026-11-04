@@ -86,3 +86,29 @@ test('the days ticked are the days sent, Sunday first, and none is asked for', (
   assert.deepEqual(R.problem(none), { error: 'Tick the days it runs.' });
   assert.deepEqual(R.daysOf({ day_of_week: 3 }), [3], 'a rule is its one day');
 });
+
+// ── A week exception's card ───────────────────────────────────────────────
+
+test("an exception's card is titled by its weeks, and listed in the service's form in words", () => {
+  assert.equal(R.exceptionTitle(['last'], [0]), 'Last Sunday');
+  assert.equal(R.exceptionTitle(['third', 'first'], [0]), '1st & 3rd Sundays', 'weeks in their order, whatever order tapped');
+  assert.equal(R.exceptionTitle([], [0]), 'Exception');
+  assert.equal(R.exceptionTitle(['last'], [0, 6]), 'Last Saturday & Sunday', 'Saturday first, as a timetable has it');
+  const rule = { day_of_week: 0, parish_id: 'smmp' };
+  assert.equal(R.exceptionSummary(rule, { weeks: 'last', kind: 'modified', patch_languages: '["English"]', patch_end_time: '11:30' }),
+    'Except the last Sunday: English, until 11:30am');
+  assert.equal(R.exceptionSummary(rule, { weeks: 'last', kind: 'not_held' }), 'Not on the last Sunday');
+  assert.equal(R.exceptionSummary(rule, { weeks: 'first', kind: 'modified', patch_location_parish_id: 'sgr' }, { placeName: () => 'St George' }),
+    'Except the 1st Sunday: at St George');
+  assert.equal(R.exceptionSummary(rule, { weeks: 'first', kind: 'modified', patch_location_parish_id: 'smmp' }),
+    'Except the 1st Sunday: at its own church');
+});
+
+test("an exception card's values are the request: not held is the weeks alone", () => {
+  assert.deepEqual(R.exceptionBody({ weeks: ['last'], not_held: true, title: 'Liturgy' }), { weeks: ['last'], kind: 'not_held' });
+  const b = R.exceptionBody({ weeks: ['last', 'first'], title: ' Liturgy ', start_time: '09:00', end_time: '', languages: 'English, Arabic',
+    feast: '', description: '', location_override: '', location_parish_id: '', location_lat: '', location_lng: '' });
+  assert.deepEqual(b, { weeks: ['first', 'last'], kind: 'modified', title: 'Liturgy', feast: null, start_time: '09:00', end_time: null,
+    languages: ['English', 'Arabic'], description: null, location_override: null, location_parish_id: null, location_lat: null, location_lng: null });
+  assert.equal('languages' in R.exceptionBody({ weeks: ['last'], title: 'Talk' }), false, 'no languages row, none sent');
+});

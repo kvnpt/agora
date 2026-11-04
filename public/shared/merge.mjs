@@ -28,7 +28,9 @@ export function partitionKey(e) {
 //      a bare weekly rule at the same time and title, so they rank together.
 //      Between two week_of_month rules, the one naming fewer weeks: a 4th
 //      Sunday that is also the last is claimed by "1st–4th Sundays" and by
-//      "last Sundays", and the last Sunday's own rule is the one meant.
+//      "last Sundays", and the last Sunday's own rule is the one meant. (The
+//      way to write that service now is one rule with a week exception,
+//      project.mjs withException; this keeps a pair written before it right.)
 //   2. a stored one-off beats a schedule instance  <- the load-bearing rule:
 //      a scraped or hand-entered event supersedes its recurring twin
 //   3. most recently updated

@@ -2061,7 +2061,7 @@
       return `<div class="tt-line${dim ? ' dim' : ''}">
           <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
-          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langBadge(langs, asked) ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}</span></span>
+          <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langBadge(langs, asked) ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}${(l.notes || []).map(n => `<span class="tt-range tt-except">${esc(n)}</span>`).join('')}</span></span>
           ${edit ? `<button class="tt-edit" type="button" data-edit-rules="${esc(l.ids.join(','))}" aria-label="${esc(`Edit ${l.r.title}`)}">${I.pencil}</button>` : ''}
         </div>`;
     };

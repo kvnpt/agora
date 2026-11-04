@@ -16,6 +16,7 @@
 
 import { readSecret } from './secrets.mjs';
 import { expandFrom } from '../../public/shared/project.mjs';
+import { fetchWeekExceptions } from './expand.mjs';
 import { reconcile, coveredLocalDates } from './reconcile.mjs';
 import { decideTombstones, adapterSource } from './tombstone.mjs';
 import { questionsFor, resolvePairing, overrideFor, suggestionFor, occurrenceKey } from './pairing.mjs';
@@ -414,7 +415,10 @@ async function planRun(db, env, adapter, events, window) {
   // whole covered days, and that part-day is not one.
   const dayStart = localSpanToUtc(timezone, fromDate, '00:00', null).start_utc;
   const projectFrom = Date.parse(dayStart) < Date.parse(window.from) ? dayStart : window.from;
-  const projected = expandFrom({ schedules, overrides: theirs }, projectFrom, window.to);
+  // With the rules' week exceptions: a week a service is not held on is no
+  // date to find in the source, and its absence there is no cancellation.
+  const weekExceptions = await fetchWeekExceptions(db, { parishId: adapter.parishId });
+  const projected = expandFrom({ schedules, overrides: theirs, week_exceptions: weekExceptions }, projectFrom, window.to);
   const diff = reconcile({ projected, scraped: events, timezone,
     windowFrom: covered?.windowFrom, windowTo: covered?.windowTo });
 

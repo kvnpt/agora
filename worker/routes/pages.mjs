@@ -26,7 +26,7 @@
 import urlState from '../../public/shared/url-state.js';
 import slugs from '../../public/shared/slugs.js';
 import { localDateOf, localPartsOf } from '../../public/shared/tz.mjs';
-import { fetchWindowRows, expandOne, parseInstanceId } from '../lib/expand.mjs';
+import { fetchWindowRows, expandOne, parseInstanceId, fetchWeekExceptions, attachExceptions } from '../lib/expand.mjs';
 import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-version.mjs';
 import { liteModel, liteWindow, liteDays, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS,
   wordsQuery, answersRoute, WORDS_WINDOW_DAYS } from '../lib/lite-page.mjs';
@@ -97,14 +97,17 @@ const TIMETABLE_RULE_COLS = `id, parish_id, day_of_week, start_time, end_time, t
 
 /** What every timetable page reads: the parishes, their rules, /admin's colours and logos. */
 async function timetableRows(env) {
-  const [parishes, rules, overrides, logos] = await Promise.all([
+  const [parishes, rules, overrides, logos, weekExceptions] = await Promise.all([
     env.DB.prepare(`SELECT ${TIMETABLE_PARISH_COLS} FROM parishes WHERE id != '_unassigned'`).all(),
     env.DB.prepare(`SELECT ${TIMETABLE_RULE_COLS} FROM schedules WHERE active = 1`).all(),
     // The colours /admin set, which the app paints and the page has to match.
     jurisdictionColorOverrides(env.DB),
     jurisdictionLogos(env.DB),
+    // A rule's weeks held otherwise: its line says so, and /en finds a 1st
+    // Sunday in English under a Serbian rule (project.mjs attachExceptions).
+    fetchWeekExceptions(env.DB),
   ]);
-  return { parishes: parishes.results || [], rules: rules.results || [], overrides, logos };
+  return { parishes: parishes.results || [], rules: attachExceptions(rules.results || [], weekExceptions), overrides, logos };
 }
 
 /**

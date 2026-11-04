@@ -132,6 +132,10 @@ window.agoraBundle = (function () {
       // Each rule arrives with its own columns only; give it its parish's
       // back, from the list in the same payload, before anything projects it.
       raw.schedules = mods.joinParishes(raw.schedules, raw.parishes);
+      // And its week exceptions ("every last Sunday in English"), for what
+      // reads a rule rather than its dates: the timetable's lines, the
+      // language filters (project.mjs attachExceptions).
+      mods.attachExceptions(raw.schedules, raw.week_exceptions);
       // What the SERVER says it answered with, not what we asked for — it
       // applies its own default when a bound is missing.
       held = { from: (raw.window && raw.window.from) || reqFrom, to: (raw.window && raw.window.to) || reqTo };
@@ -192,20 +196,25 @@ window.agoraBundle = (function () {
     if (!parsed) return null;
     // Project just this schedule's occurrence, without expanding the window.
     const s = (raw.schedules || []).find(x => x.id === parsed.scheduleId);
-    if (!s || !mods.isValidOccurrence(s, parsed.date)) return null;
+    if (!s) return null;
     const o = (raw.overrides || []).find(
       x => x.schedule_id === parsed.scheduleId && x.occurrence_date === parsed.date);
+    // A week it is not held on is no date of it, unless the date says otherwise.
+    const mine = s.exceptions || mods.exceptionsOf(s, raw.week_exceptions);
+    if (!mods.isValidOccurrence(s, parsed.date, mine, { overridden: !!o })) return null;
+    const x = mods.exceptionOn(mine, parsed.date);
     // A break speaks for this date when no override does, exactly as it does
     // inside expandFrom. Without this a deep link into a break resolved to the
     // service running — the one card the break exists to replace.
     const b = o ? null : mods.breakCovering(s, parsed.date, raw.breaks);
-    const inst = mods.project(s, parsed.date, o || (b ? {
+    const inst = mods.project(mods.withException(s, x), parsed.date, o || (b ? {
       kind: 'break',
       break_from: b.from_date,
       break_until: b.to_date,
       break_note: b.note || null,
       updated_at: b.updated_at || null,
     } : null), new mods.OffsetCache());
+    if (inst && x) inst.week_exception_id = x.id;
     return inst ? { ...inst, id: String(inst.id) } : null;
   }
 
@@ -230,6 +239,8 @@ window.agoraBundle = (function () {
   // a break, back on the 12th", and that sentence is about the RULE rather than
   // about any occurrence the feed happens to be showing.
   const breaks = () => (raw && raw.breaks) || [];
+  /** Every rule's week exceptions, as rows: the service form lists a rule's own. */
+  const weekExceptions = () => (raw && raw.week_exceptions) || [];
 
   /**
    * Which fortnight a date falls in — 'a', 'b', or null before the modules
@@ -256,7 +267,7 @@ window.agoraBundle = (function () {
     (mods ? mods.nextOccurrenceAfterBreak(rule, from, brs || breaks()) : null);
 
   return {
-    load, feed, resolveEvent, parishes, schedules, breaks, weekAbOf,
+    load, feed, resolveEvent, parishes, schedules, breaks, weekExceptions, weekAbOf,
     nextOccurrenceAfterBreak, isLoaded,
     get raw() { return raw; },
   };

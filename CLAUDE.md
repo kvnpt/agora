@@ -60,6 +60,9 @@ for them, are in the doc it links to — read that before changing the area.
 **Editing** — [docs/editing.md](docs/editing.md)
 - **Nothing disappears**: a cancellation is a tombstone. Editing a field keeps
   what an occurrence already is; only `status: 'approved'` revives.
+- A week held otherwise ("the last Sunday in English", "not on the last
+  Sunday") is an exception on the ONE rule (`schedule_week_exceptions`),
+  projected with it; never a second rule paired by a shared title.
 - "This and every following" ends or splits a rule with its own
   `effective_from`/`effective_to` — never edits it in place. Ending is the one
   deliberate exception to *nothing disappears*.

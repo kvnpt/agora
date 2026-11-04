@@ -19,6 +19,48 @@
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const ORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
 
+  const languages = () => (isCjs ? require('./languages.js') : root.AgoraLanguages);
+  /** "9am", "6:30pm". */
+  function clockText(hm) {
+    const [h, m] = String(hm || '').split(':').map(Number);
+    if (!Number.isFinite(h)) return hm || '';
+    return `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''}${h < 12 ? 'am' : 'pm'}`;
+  }
+  const langList = (v) => {
+    try { const a = Array.isArray(v) ? v : JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
+  };
+  const weeksText = (weeks) => String(weeks || '').split(',').map(w => ORD[w.trim()] || w.trim()).join(' & ');
+
+  /**
+   * One week exception as its line says it: "last Sun: English", "1st Sun:
+   * 10am", "not on the last Sun". What it changes that a timetable shows (a
+   * name, a time, languages, a place) first; an end or a subtitle only when
+   * nothing else differs; null when it changes nothing a timetable shows.
+   * `days` are the line's.
+   */
+  function exceptionNote(r, x, days = [r.day_of_week]) {
+    const when = `${weeksText(x.weeks)} ${dayList(days)}`;
+    if (x.kind === 'not_held') return `not on the ${when}`;
+    const parts = [];
+    if (x.patch_title && x.patch_title !== r.title) parts.push(x.patch_title);
+    if (x.patch_start_time && x.patch_start_time !== r.start_time) parts.push(clockText(x.patch_start_time));
+    const ls = langList(x.patch_languages);
+    if (ls.length && JSON.stringify(ls) !== JSON.stringify(langList(r.languages))) {
+      const L = languages();
+      parts.push(ls.map(l => (L ? L.shortOf(l) : l)).join(', '));
+    }
+    if (x.patch_location_override) parts.push(`at ${x.patch_location_override}`);
+    else if (x.patch_location_parish_id || x.patch_location_lat != null) parts.push('elsewhere');
+    if (!parts.length && x.patch_end_time && x.patch_end_time !== r.end_time) parts.push(`until ${clockText(x.patch_end_time)}`);
+    if (!parts.length && x.patch_feast) parts.push(x.patch_feast);
+    // Only words of its own (a description): nothing a timetable shows.
+    return parts.length ? `${when}: ${parts.join(', ')}` : null;
+  }
+  /** What makes two rules' exceptions the same, whatever day each is on. */
+  const exceptionsKey = (r) => (r.exceptions || []).map(x => [x.weeks, x.kind, x.patch_title, x.patch_start_time,
+    x.patch_end_time, x.patch_languages, x.patch_feast, x.patch_description, x.patch_location_override,
+    x.patch_location_parish_id, x.patch_location_lat, x.patch_location_lng].join('/')).join(';');
+
   /** "1st & 3rd", "fortnightly": what narrows a rule to some of its days. */
   function qualifier(r) {
     const bits = [];
@@ -63,18 +105,20 @@
   /**
    * The lines of these rules, in the timetable's order. `offOf(rule)` says
    * what a break makes of a rule today ('on a break, back Sun 8 Nov'), or ''.
-   * Each line is { r, days, ids, q, range, off, evening }: `r` the first rule
-   * of it, `ids` every rule it stands for.
+   * Each line is { r, days, ids, q, range, off, evening, notes }: `r` the
+   * first rule of it, `ids` every rule it stands for, `notes` what its week
+   * exceptions say ("last Sun: English"), which rules share to share a line.
    */
   function linesOf(rules, { today, offOf = () => '' } = {}) {
     const lines = new Map();
     for (const r of rules) {
       const q = qualifier(r), range = ruleRange(r, today), off = offOf(r) || '';
-      const key = [r.title, r.feast || '', r.event_type, r.start_time, q, r.languages || '', range, off].join('|');
+      const key = [r.title, r.feast || '', r.event_type, r.start_time, q, r.languages || '', range, off, exceptionsKey(r)].join('|');
       if (!lines.has(key)) lines.set(key, { r, days: [], ids: [], q, range, off, evening: isEvening(r) });
       lines.get(key).days.push(r.day_of_week);
       lines.get(key).ids.push(r.id);
     }
+    for (const l of lines.values()) l.notes = (l.r.exceptions || []).map(x => exceptionNote(l.r, x, l.days)).filter(Boolean);
     const firstDay = (l) => Math.min(...l.days);
     return [...lines.values()].sort((a, b) => a.evening - b.evening || firstDay(a) - firstDay(b)
       || String(a.r.start_time).localeCompare(String(b.r.start_time)));
@@ -97,7 +141,7 @@
     return out;
   }
 
-  const api = { qualifier, dayList, ruleRange, isLive, isEvening, linesOf, slotsOf };
+  const api = { qualifier, dayList, ruleRange, isLive, isEvening, linesOf, slotsOf, exceptionNote, clockText };
   if (isCjs) module.exports = api;
   else root.AgoraTimetableLines = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
