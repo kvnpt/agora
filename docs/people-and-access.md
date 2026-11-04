@@ -95,9 +95,17 @@ what it is doing, and the thank-you shows what went: the poster, what was read,
 their words. A poster the site refuses (the day's limit) leaves what they wrote
 to go as a change, and the thank-you says why the poster did not. This only
 works because there is one origin: every subdomain redirects to `orthodoxy.au`
-(`worker/lib/admin-host.mjs`). The account menu's
-**Sign in** opens the same dialog while a parish's card is open and nothing on
-it is theirs to edit, with a plain sign-in link for whoever already keeps it.
+(`worker/lib/admin-host.mjs`).
+
+**Signing in comes back to the page.** Every Sign in on the page (the account
+menu's, and the one on the Bookmarks and Favourites cards) is
+`/admin?back=<path>`, and `admin.html` sends anybody Access lets through, role
+or none, straight back to that path on this site; only the account menu's
+**Admin panel** goes to the panel (Kevin, 4 Nov 2026). The path brings back
+the card and the filters; the map's view goes along in this tab's
+`sessionStorage` (`agora-sign-in-view`, half an hour), so In view is what it
+was, with whether a card was open: a collection's link opens its card on a
+fresh load, and one shut before Sign in stays shut.
 
 The form is for what they came with: **Fix something** (optionally naming one
 of the parish's service times, then what it should say) or **Add an event** (a
