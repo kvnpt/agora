@@ -45,7 +45,7 @@ import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
   placeRead, afterServices, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast,
-  suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
+  suggestLanguages, suggestEnds, occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
@@ -934,6 +934,8 @@ export function registerAdminRoutes(router) {
     await placeRead(env.DB, read.read, at);
     // "Following the Liturgy at 6pm" is the Liturgy's 6pm, not the event's.
     afterServices(read.read, rules);
+    // And an end where none is printed, from how long such a thing usually runs.
+    suggestEnds(read.read);
     return json({
       poster_path: posterPath,
       configured: true,
@@ -1998,6 +2000,9 @@ export function registerAdminRoutes(router) {
       // A one-off this parish already has on file is that one, filled in
       // rather than made twice.
       await matchOnFile(env.DB, read.read, { id: draft.parish_id, ...(parish || {}), timezone: zone });
+      // No end printed: how long such a thing usually runs (a Liturgy 1½
+      // hours, a fair 4), as a suggestion to check.
+      suggestEnds(read.read);
       // A one-off service the poster gives no language for: the parish's
       // usual, as a suggestion to check (publishing needs one).
       const past = (await env.DB.prepare(

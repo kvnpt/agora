@@ -326,13 +326,23 @@ they can be checked at a glance. A collapsed card still shows what needs a
 person (`refreshPeek`): a one-off service's first two languages, to tap, and
 every field its checks stop or doubt — a missing time, a date the poster's
 weekday disagrees with — answered right there without opening it. Something
-printed only as *after the Liturgy* starts when that service ends (the end the
-poster prints, or the rule's), with the model's note under the time saying so.
-The reader also says which service an event follows (`after`), and a time that
-is that service's own start is moved to its end, or left empty with a note
-saying why (`afterServices` in `worker/lib/drafts.mjs`): Sts Peter & Paul,
-Doonside's "Outdoor Movie Night, following English Liturgy at 6pm" came back
-at 6pm (3 Nov 2026).
+printed only as *after the Liturgy* starts when that service ends. The reader
+says which service an event follows (`after`, with the service's time when one
+is printed) and leaves its time empty; the Worker finds that service on the
+poster first, then on the timetable, and starts the event at its end — the end
+printed or on file, else its start plus its usual length — or leaves it empty
+with a note saying why (`afterServices` in `worker/lib/drafts.mjs`). Sts Peter
+& Paul, Doonside's "Outdoor Movie Night, following English Liturgy at 6pm"
+came back at 6pm (3 Nov 2026). An event with no time at all on a day the
+poster gives one service for follows that service: St John the Baptist, Croydon
+Park's Christmas Fair under "Liturgy 10AM" starts at 11:30am (Kevin, 4 Nov
+2026).
+**Usual lengths** (`worker/lib/durations.mjs`, Kevin 4 Nov 2026): a Liturgy 1½
+hours, Matins 1, Vespers 1½, a Bible study 1½, a fair or festival 4; a name
+with several services is them in turn (Matins & Liturgy 2½). A card the poster
+gives no end gets one (`suggestEnds`), never marked "from poster" and with a
+note to check it; nothing for a name that gives nothing to go by, or past
+midnight.
 Each row ends in a **bin** (Kevin, 3 Nov 2026): a tap marks the card to be
 thrown away, greyed and struck through where it stands, and another tap keeps
 it. A card whose date has passed starts marked — a month's programme read on
@@ -397,13 +407,19 @@ timetable already projects, on its own date. Published as one-offs they would
 be nine cards beside nine cards, the duplicate the combine exists to stop. So
 when the Worker reads an image it matches each dated event to an occurrence of
 the parish's rules (`matchOccurrences` in `worker/lib/drafts.mjs`): the rule
-that runs that day at that time and is the same sort of thing — a service
-(Liturgy, Prayer, Feast) for a service, anything else for anything else, or the
-same name — or else the one occurrence that day with the same service name (a
-programme that moves it) — never a guess between two, and never an event held
-after a service. A time alone made that movie night at 6pm the 6pm English
-Liturgy, with the Liturgy's kind, and Publish would have written it over the
-Liturgy. A
+that runs that day at that time with the same or a kin name ("English Divine
+Liturgy" and "Liturgy"); else one of kin name and the same sort whose time it
+overlaps, each running its end or its usual length; else one at that time of
+the same sort of thing — a service (Liturgy, Prayer, Feast) for a service,
+anything else for anything else; else the one occurrence that day with the
+same name (a programme that moves it) when no other that day is kin to it —
+never a guess between two, and never an event held after a service. A time
+alone made that movie night at 6pm the 6pm English Liturgy, with the Liturgy's
+kind, and Publish would have written it over the Liturgy. And a name alone made
+Croydon Park's "Liturgy 10AM" its 6pm English "Liturgy" (4 Nov 2026), moving
+it to the morning, when it was the Liturgy of the 9:00–12:00 Matins & Divine
+Liturgy. A card that is only a later part of its rule like that keeps the
+rule's time and title, with a note: that Sunday stays 9:00 (Kevin). A
 matched card keeps `occurrence` ("sid:date") and the day's `feast`, takes the
 rule's own title and kind (so "and" for "&" is not an override), and publishes
 **onto** that occurrence through `applyAdminEdit`, with the poster as its

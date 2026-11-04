@@ -88,10 +88,14 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   // St Andrew Gladesville's November programme: "Cake Stall after the
   // Service" under Vespers 6:00–7:30pm came back with no start time, and the
   // editor typed 7:30pm in. The service's end is the time the poster gives.
-  assert.match(SYSTEM_PROMPT, /only as following a service that day .* starts when that service ends/);
-  assert.match(SYSTEM_PROMPT, /or else that service's end among the parish's regular services given with the image/);
-  assert.match(SYSTEM_PROMPT, /with a note on start_time saying which service it follows/);
-  assert.match(SYSTEM_PROMPT, /If neither gives that service an end time, start_time is null/);
+  // Since 4 Nov 2026 the Worker works that out (afterServices, drafts.mjs),
+  // from the poster's own service first and a usual length when no end is
+  // printed: the reader gives only what the event follows.
+  assert.match(SYSTEM_PROMPT, /An event with after has start_time null: it starts when that service ends/);
+  // St John the Baptist, Croydon Park's Christmas Fair: "Sunday 13th Dec,
+  // Liturgy 10AM", then a day of food and fun, no time of its own.
+  assert.match(SYSTEM_PROMPT, /An event the image gives no time at all, on a day it gives a service for, follows that service too/);
+  assert.match(SYSTEM_PROMPT, /"English Liturgy at 6pm" for "Following English Liturgy at 6pm"/);
   assert.match(SYSTEM_PROMPT, /For an event that starts after a service, say so \("After the Liturgy\."\)/);
   // Sts Peter & Paul, Doonside's "Outdoor Movie Night", "Following English
   // Liturgy at 6pm" (3 Nov 2026), came back at 6pm, the Liturgy's time, and
