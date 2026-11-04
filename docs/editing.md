@@ -68,8 +68,12 @@ dates coming up that have their own changes and its breaks, one list (Kevin,
 4 Nov 2026: "we're just collapsing overrides and one-offs into the idea of
 exceptions"). **+ Except…** opens a card over the form: Which weeks as tap
 buttons (one taken or never held is greyed), a Held differently / Not held
-pill on that line, and the date form's fields. It saves on its own Save, as
-the rule's poster does, outside the form's.
+pill on that line, and the date form's fields. What it says is the form's to
+save: its Done hands it back to the form ("Saved with the service."), and the
+form's Save writes the service first and then its exceptions, so the card is
+checked against the form as it stands, not the service as saved. Changing
+Runs to every week and adding "not on the 1st" is one Save (Kevin, 4 Nov 2026:
+it used to need a save in between). Add a service has the block too.
 
 The bundle carries a rule that starts after its window ("from 1 Nov" is how a
 new or seasonal service is announced) and drops one that has ended. The
