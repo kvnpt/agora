@@ -1052,6 +1052,8 @@
     mapState.parishSheetFocus = pid || null;
     syncMap();
   }
+  /** What a Sign in kept of the page (takeSignInView), once the map has used it. */
+  let signInBack = null;
   /** The map starts while the bundle is still on its way; it needs nothing from it. */
   async function startMap() {
     mapState.locationActive = !!S.loc;
@@ -1062,8 +1064,11 @@
     // The map's own first full draw. initMap returns before it can happen, so
     // this is never too late to hear it.
     S.mapLoaded = new Promise(resolve => map.once('load', resolve));
-    // Where the person is; else Sydney, where most of the parishes are.
-    map.fitBounds(S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
+    // Back from signing in, where it was looking; else where the person is;
+    // else Sydney, where most of the parishes are.
+    const back = signInBack = takeSignInView();
+    if (back) map.jumpTo({ center: [back.lng, back.lat], zoom: back.zoom });
+    else map.fitBounds(S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
       : [[150.6, -34.15], [151.35, -33.6]], { animate: false, padding: 0 });
   }
 
@@ -2157,18 +2162,38 @@
    */
   function keptHTML() {
     if (S.who.signedIn) return 'Saved to your account.';
-    const back = `/admin?back=${encodeURIComponent(location.pathname + location.search)}`;
-    return `Kept in this browser. <a href="${esc(back)}">Sign in</a> to save them to your account.`;
+    return `Kept in this browser. <a href="${esc(signInHref())}" data-sign-in>Sign in</a> to save them to your account.`;
   }
   // Signing in is a redirect Cloudflare owns: /admin is behind Access, so going
   // there is what shows its sign-in, and signing out is its own logout path.
+  // Every Sign in comes back to the page it was tapped on (admin.html follows
+  // ?back= for anyone Access lets through, role or none); only Admin panel
+  // goes to the panel. The address brings back the card and the filters; the
+  // map's view rides along in this tab (keepSignInView), so In view is too.
+  const signInHref = () => `/admin?back=${encodeURIComponent(location.pathname + location.search)}`;
+  const SIGN_IN_VIEW = 'agora-sign-in-view';
+  function keepSignInView() {
+    if (!map) return;
+    const c = map.getCenter();
+    // And whether a card with a link was open: a link's address opens its card
+    // on a fresh load, which the page shut before Sign in must not do.
+    const card = stack.some(el => el._segs);
+    try { sessionStorage.setItem(SIGN_IN_VIEW, JSON.stringify({ lng: c.lng, lat: c.lat, zoom: map.getZoom(), card, at: Date.now() })); } catch { /* the page still comes back */ }
+  }
+  /** The view kept by a Sign in, once, if it is from this sign-in (a typed code takes minutes, not hours). */
+  function takeSignInView() {
+    let v = null;
+    try { v = JSON.parse(sessionStorage.getItem(SIGN_IN_VIEW) || 'null'); sessionStorage.removeItem(SIGN_IN_VIEW); } catch { return null; }
+    if (!v || !(Date.now() - v.at < 30 * 60e3) || ![v.lng, v.lat, v.zoom].every(Number.isFinite)) return null;
+    return v;
+  }
   function openAccount(btn) {
     const w = waiting();
     const rows = S.who.signedIn
       ? `${S.who.identity ? `<div class="pm-note">${esc(S.who.identity)}</div>` : ''}
          ${S.who.role ? `<a class="pm-row" role="menuitem" href="/admin">${I.sliders}<span class="pm-t"><b>Admin panel</b>${w ? `<small class="pm-wait">${esc(w)}</small>` : ''}</span></a>` : ''}
          <a class="pm-row" role="menuitem" href="/cdn-cgi/access/logout">${I.signOut}<span class="pm-t"><b>Sign out</b></span></a>`
-      : `<a class="pm-row" role="menuitem" href="/admin">${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
+      : `<a class="pm-row" role="menuitem" href="${esc(signInHref())}" data-sign-in>${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
     openMenu(btn, rows);
   }
 
@@ -3766,6 +3791,9 @@
     const top = stack[stack.length - 1];
     let b;
 
+    // A Sign in is a link away and back: the map's view goes with it.
+    if (t.closest('a[data-sign-in]')) keepSignInView();
+
     // An open menu goes with any tap: off it, that is all the tap does (on
     // its own button, it closes it); on one of its rows, the row does its part.
     if (menu) {
@@ -4198,7 +4226,7 @@
     const opening = applyRoute(route, { animate: false });
     // A collection's link opens its card, over the page its filters make, as
     // the shelf's card does: a step back is that page.
-    if (!route.parish && !route.eventId && !route.donate && !route.words) openPageCard(route, location.pathname);
+    if (!route.parish && !route.eventId && !route.donate && !route.words && !(signInBack && !signInBack.card)) openPageCard(route, location.pathname);
     // A card painted for a link this page did not open (a parish since gone),
     // once an event the bundle did not hold has been read.
     Promise.resolve(opening).catch(() => {}).then(() => $$('#sheets > .ssr').forEach(x => x.remove()));
