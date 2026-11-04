@@ -47,7 +47,8 @@ import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, ins
   placeRead, afterServices, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast,
   suggestLanguages, occurrenceBody } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
-import { readVenue } from '../lib/venues.mjs';
+import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
+import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
 import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
 import { suggestAcronym } from '../lib/acronym-suggest.mjs';
@@ -157,6 +158,9 @@ const outOfScope = (c, parishId) => mayTouchParish(c.who, parishId)
 // is nullable and "dev" is not a person.
 const editor = async (c) => (await adminIdentity(c)) || null;
 const NOW = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+// A week exception's own columns, as a split copies them to the changed rule.
+const WEEK_EXCEPTION_COPY = `weeks, kind, patch_title, patch_start_time, patch_end_time, patch_languages,
+  patch_feast, patch_description, patch_location_override, patch_location_parish_id, patch_location_lat, patch_location_lng`;
 
 
 
@@ -3378,6 +3382,12 @@ export function registerAdminRoutes(router) {
         : env.DB.prepare('DELETE FROM schedule_breaks WHERE id = ?').bind(br.id));
     }
     await env.DB.batch(stmts);
+    // A rule's week exceptions are its pattern, not later decisions: the
+    // changed service keeps them ("still English on the last Sunday").
+    await env.DB.prepare(
+      `INSERT INTO schedule_week_exceptions (schedule_id, ${WEEK_EXCEPTION_COPY}, updated_by)
+       SELECT ?, ${WEEK_EXCEPTION_COPY}, ? FROM schedule_week_exceptions WHERE schedule_id = ?`
+    ).bind(newId, who, rule.id).run().catch(() => null);
 
     await alignAnchor(env.DB, newId, inst.date, b);
     await stampTimetable(c, rule.parish_id);
@@ -3433,6 +3443,133 @@ export function registerAdminRoutes(router) {
     // names them — the sign's photo is usually still another rule's source.
     await releaseUnused(env, [row.poster_path, row.source_ref]);
     await stampTimetable(c, row.parish_id);
+    return json({ ok: true });
+  }));
+
+  // ── A rule's week exceptions (migration 035) ──
+  //
+  // "Every last Sunday it is in English, until 11:30", or "not on the last
+  // Sunday": one row on the rule, projected with it (project.mjs
+  // withException), never a row per date. The body is the card whole: the
+  // weeks, `kind`, and the fields as they are held those weeks. A field the
+  // same as the rule's is stored NULL, "as the service", so changing the rule
+  // later reaches those weeks too. A rule edit, so it asks the rule's
+  // capability and stamps the timetable like one.
+
+  const WEEK_ORDER = ['first', 'second', 'third', 'fourth', 'last'];
+  const WEEK_WORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
+  const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const EXCEPTION_COLS = ['weeks', 'kind', 'patch_title', 'patch_start_time', 'patch_end_time', 'patch_languages',
+    'patch_feast', 'patch_description', 'patch_location_override', 'patch_location_parish_id',
+    'patch_location_lat', 'patch_location_lng'];
+
+  /** Does the rule ever run on these weeks? Two years of its weekday is enough to say. */
+  function weeksEverHeld(rule, weeks) {
+    const start = Date.parse(`${NOW().slice(0, 10)}T00:00:00Z`);
+    for (let i = 0; i < 731; i++) {
+      const d = new Date(start + i * 86400000).toISOString().slice(0, 10);
+      if (isValidOccurrence({ ...rule, effective_from: null, effective_to: null }, d) && matchesWeekOfMonth(d, weeks)) return true;
+    }
+    return false;
+  }
+
+  /** The row a card's body makes for this rule, checked: { row } or { error }. */
+  async function weekExceptionRow(env, rule, b, { id = null } = {}) {
+    const asked = (Array.isArray(b.weeks) ? b.weeks : String(b.weeks || '').split(',')).map(w => String(w).trim()).filter(Boolean);
+    if (!asked.length) return { error: 'Which weeks? Pick at least one.' };
+    if (asked.some(w => !VALID_WEEKS.has(w))) return { error: 'weeks must be: first, second, third, fourth, last' };
+    const weeks = WEEK_ORDER.filter(w => asked.includes(w)).join(',');
+    const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][rule.day_of_week];
+    if (!weeksEverHeld(rule, weeks)) return { error: `${rule.title} is not held on those ${day}s.` };
+    // One exception to a week: two saying different things about the last
+    // Sunday would leave it to an ordering nobody chose.
+    const others = await env.DB.prepare('SELECT id, weeks FROM schedule_week_exceptions WHERE schedule_id = ? AND id IS NOT ?')
+      .bind(rule.id, id).all();
+    for (const o of others.results || []) {
+      const shared = o.weeks.split(',').filter(w => weeks.split(',').includes(w));
+      if (shared.length) return { error: `The ${shared.map(w => WEEK_WORD[w]).join(' & ')} ${day} already has an exception. Change that one instead.` };
+    }
+    const kind = b.kind === 'not_held' ? 'not_held' : 'modified';
+    const row = { weeks, kind };
+    for (const k of EXCEPTION_COLS.slice(2)) row[k] = null;
+    if (kind === 'not_held') return { row };
+
+    const differs = (v, was) => (v != null && v !== '' && v !== (was ?? null) ? v : null);
+    const title = b.title == null ? null : String(b.title).trim().slice(0, 200);
+    row.patch_title = differs(title, rule.title);
+    for (const [k, col] of [['start_time', 'patch_start_time'], ['end_time', 'patch_end_time']]) {
+      if (b[k] == null || b[k] === '') continue;
+      if (!HM.test(b[k])) return { error: `${k === 'start_time' ? 'The start' : 'The end'} is not a time (HH:MM).` };
+      row[col] = differs(b[k], rule[k]);
+    }
+    if (b.languages !== undefined) row.patch_languages = differs(langList.clean(b.languages), rule.languages);
+    if (b.feast !== undefined) row.patch_feast = differs(subtitle(b.feast), rule.feast);
+    if (b.description !== undefined) row.patch_description = differs((b.description && String(b.description).trim()) || null, rule.description);
+    const v = await readVenue(env.DB, b, { hostParishId: rule.parish_id });
+    if (v.error) return { error: v.error };
+    if (v.present && !sameVenue(v.venue, venueOf(rule))) {
+      const home = !v.venue.location_parish_id && !v.venue.location_override && v.venue.location_lat == null;
+      // Back at its own church, under a rule held elsewhere: its own parish, as an override says it.
+      if (home) row.patch_location_parish_id = rule.parish_id;
+      else {
+        row.patch_location_override = v.venue.location_override;
+        row.patch_location_parish_id = v.venue.location_parish_id;
+        row.patch_location_lat = v.venue.location_lat;
+        row.patch_location_lng = v.venue.location_lng;
+      }
+    }
+    if (EXCEPTION_COLS.slice(2).every(k => row[k] == null)) {
+      return { error: 'Nothing those weeks differs from the service. Change what is different, or choose Not held.' };
+    }
+    return { row };
+  }
+
+  async function ruleForException(c, scheduleId) {
+    const rule = await c.env.DB.prepare('SELECT * FROM schedules WHERE id = ?').bind(scheduleId).first();
+    if (!rule) return { res: json({ error: 'Schedule not found' }, 404) };
+    const scoped = outOfScope(c, rule.parish_id);
+    if (scoped) return { res: scoped };
+    return { rule };
+  }
+
+  router.post('/api/admin/schedules/:id/exceptions', guarded('schedule.edit', async (c) => {
+    const { env, params, request } = c;
+    const { rule, res } = await ruleForException(c, params.id);
+    if (res) return res;
+    const made = await weekExceptionRow(env, rule, await readJson(request));
+    if (made.error) return json({ error: made.error }, 400);
+    const row = await env.DB.prepare(
+      `INSERT INTO schedule_week_exceptions (schedule_id, ${EXCEPTION_COLS.join(', ')}, updated_by)
+       VALUES (?, ${EXCEPTION_COLS.map(() => '?').join(', ')}, ?) RETURNING *`
+    ).bind(rule.id, ...EXCEPTION_COLS.map(k => made.row[k]), await editor(c)).first();
+    await stampTimetable(c, rule.parish_id);
+    return json(row, 201);
+  }));
+
+  router.patch('/api/admin/week-exceptions/:id', guarded('schedule.edit', async (c) => {
+    const { env, params, request } = c;
+    const cur = await env.DB.prepare('SELECT * FROM schedule_week_exceptions WHERE id = ?').bind(params.id).first();
+    if (!cur) return json({ error: 'Exception not found' }, 404);
+    const { rule, res } = await ruleForException(c, cur.schedule_id);
+    if (res) return res;
+    const made = await weekExceptionRow(env, rule, await readJson(request), { id: cur.id });
+    if (made.error) return json({ error: made.error }, 400);
+    await env.DB.prepare(
+      `UPDATE schedule_week_exceptions SET ${EXCEPTION_COLS.map(k => `${k} = ?`).join(', ')},
+         updated_at = ?, updated_by = ? WHERE id = ?`
+    ).bind(...EXCEPTION_COLS.map(k => made.row[k]), NOW(), await editor(c), cur.id).run();
+    await stampTimetable(c, rule.parish_id);
+    return json(await env.DB.prepare('SELECT * FROM schedule_week_exceptions WHERE id = ?').bind(cur.id).first());
+  }));
+
+  router.delete('/api/admin/week-exceptions/:id', guarded('schedule.edit', async (c) => {
+    const { env, params } = c;
+    const cur = await env.DB.prepare('SELECT * FROM schedule_week_exceptions WHERE id = ?').bind(params.id).first();
+    if (!cur) return json({ error: 'Exception not found' }, 404);
+    const { rule, res } = await ruleForException(c, cur.schedule_id);
+    if (res) return res;
+    await env.DB.prepare('DELETE FROM schedule_week_exceptions WHERE id = ?').bind(cur.id).run();
+    await stampTimetable(c, rule.parish_id);
     return json({ ok: true });
   }));
 

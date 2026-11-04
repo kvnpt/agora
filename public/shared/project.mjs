@@ -14,6 +14,11 @@
 //   combined  -> tombstone linking to the combining event
 //   hidden    -> dropped from the default filter; NOT a tombstone
 //
+// A week exception (schedule_week_exceptions) is the rule's own, not a change
+// to it: "every last Sunday in English" patches the RULE for those dates
+// (withException) before a date's override patches the date, and "not on the
+// last Sunday" means those dates are not occurrences at all.
+//
 // THREE CHANGES FROM THE EXPRESS VERSION:
 //   1. async — D1's API is promise-based.
 //   2. Per-parish timezone. The old code hardcoded Australia/Sydney in a module
@@ -61,6 +66,78 @@ function placeOf(o, s) {
     location_lat: src.lat != null ? src.lat : null,
     location_lng: src.lng != null ? src.lng : null,
   };
+}
+
+// ── Week exceptions ──────────────────────────────────────────────────────
+
+/** The fields an exception may hold for a rule, as rule column -> patch column. */
+export const EXCEPTION_PATCHES = {
+  title: 'patch_title', start_time: 'patch_start_time', end_time: 'patch_end_time',
+  languages: 'patch_languages', feast: 'patch_feast', description: 'patch_description',
+};
+const EXCEPTION_PLACE = {
+  location_override: 'patch_location_override', location_parish_id: 'patch_location_parish_id',
+  location_lat: 'patch_location_lat', location_lng: 'patch_location_lng',
+};
+const weeksNamed = (x) => String(x.weeks || '').split(',').filter(Boolean).length;
+
+/**
+ * A rule's exceptions, the one that wins first: where two meet on a date (a
+ * 4th Sunday that is also the last), the one naming fewer weeks, then the
+ * one changed last — the dedup's own order (merge.mjs preferenceCmp).
+ */
+export function exceptionsOf(s, exceptions) {
+  return (exceptions || [])
+    .filter(x => String(x.schedule_id) === String(s.id))
+    .sort((a, b) => weeksNamed(a) - weeksNamed(b)
+      || String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+}
+
+/** The exception speaking for this date, from a rule's own (exceptionsOf), or null. */
+export function exceptionOn(mine, date) {
+  return (mine || []).find(x => matchesWeekOfMonth(date, x.weeks)) || null;
+}
+
+/**
+ * The rule as it is held on an exception's weeks. NULL patches are "as the
+ * service", so a rule renamed later renames its exception's weeks too. A place
+ * is a unit (migration 023): an exception naming any part of one is all of it,
+ * and naming the rule's own parish is "at home", as an override's does.
+ */
+export function withException(s, x) {
+  if (!x || x.kind !== 'modified') return s;
+  // A variant is one way the rule is held, not a rule with variants of its own.
+  const { exceptions: _x, variants: _v, ...out } = s;
+  for (const [col, patch] of Object.entries(EXCEPTION_PATCHES)) if (x[patch] != null) out[col] = x[patch];
+  if (x.patch_location_override || x.patch_location_parish_id || x.patch_location_lat != null) {
+    // Its own parish named is those weeks back at its own church, under a rule held elsewhere.
+    const home = x.patch_location_parish_id && x.patch_location_parish_id === s.parish_id;
+    for (const [col, patch] of Object.entries(EXCEPTION_PLACE)) out[col] = !home && x[patch] != null ? x[patch] : null;
+  }
+  return out;
+}
+
+/**
+ * Join each rule to its exceptions, as `exceptions` (the rows, winner first)
+ * and `variants` (the rule as each modified one holds it). What reads a rule
+ * rather than its dates — the timetable's lines, the language filters — asks
+ * these: Homebush West's 1st Sunday is in English though its rule is Serbian.
+ * The bundle carries the rows; the page and the Worker join them (bundle.js,
+ * expand.mjs), the way the parish columns are joined on.
+ */
+export function attachExceptions(schedules, exceptions) {
+  const by = new Map();
+  for (const x of exceptions || []) {
+    const k = String(x.schedule_id);
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(x);
+  }
+  for (const s of schedules || []) {
+    const mine = by.has(String(s.id)) ? exceptionsOf(s, by.get(String(s.id))) : [];
+    s.exceptions = mine;
+    s.variants = mine.filter(x => x.kind === 'modified').map(x => withException(s, x));
+  }
+  return schedules;
 }
 
 // Project one occurrence of a schedule (with optional override) into the shape
@@ -146,14 +223,23 @@ export function project(s, date, o, cache) {
   };
 }
 
-/** Does `date` (local 'YYYY-MM-DD') fall on an occurrence the rule produces? */
-export function isValidOccurrence(s, date) {
+/**
+ * Does `date` (local 'YYYY-MM-DD') fall on an occurrence the rule produces?
+ * `exceptions` are the rule's (exceptionsOf): a week it is not held on is no
+ * date of it — unless that date has an override of its own (`overridden`),
+ * which is somebody saying something about that date in particular.
+ */
+export function isValidOccurrence(s, date, exceptions = null, { overridden = false } = {}) {
   const dow = new Date(date + 'T00:00:00Z').getUTCDay();
   if (dow !== s.day_of_week) return false;
   if (!matchesWeekOfMonth(date, s.week_of_month)) return false;
   if (!matchesWeekParity(date, s.week_parity)) return false;
   if (s.effective_from && date < s.effective_from) return false;
   if (s.effective_to && date > s.effective_to) return false;
+  if (!overridden && exceptions) {
+    const x = exceptionOn(exceptions, date);
+    if (x && x.kind === 'not_held') return false;
+  }
   return true;
 }
 
@@ -185,12 +271,12 @@ export function breakCovering(s, date, breaks) {
  * Null means "not within the horizon", and the caller says "on a break" without
  * naming a date rather than inventing one.
  */
-export function nextOccurrenceAfterBreak(s, date, breaks, { horizonDays = 400 } = {}) {
+export function nextOccurrenceAfterBreak(s, date, breaks, { horizonDays = 400, exceptions = s.exceptions || null } = {}) {
   const start = Date.parse(date + 'T00:00:00Z');
   if (Number.isNaN(start)) return null;
   for (let i = 0; i <= horizonDays; i++) {
     const d = new Date(start + i * DAY_MS).toISOString().slice(0, 10);
-    if (!isValidOccurrence(s, d)) continue;
+    if (!isValidOccurrence(s, d, exceptions)) continue;
     if (breakCovering(s, d, breaks)) continue;
     return d;
   }
@@ -207,12 +293,18 @@ export function nextOccurrenceAfterBreak(s, date, breaks, { horizonDays = 400 } 
  * two can't drift — which was the standing objection to moving the lens
  * client-side.
  */
-export function expandFrom({ schedules, overrides, breaks }, fromUtc, toUtc, { cache = new OffsetCache() } = {}) {
+export function expandFrom({ schedules, overrides, breaks, week_exceptions }, fromUtc, toUtc, { cache = new OffsetCache() } = {}) {
   const fromMs = Date.parse(fromUtc);
   const toMs = Date.parse(toUtc);
 
   const ov = {};
   for (const r of overrides || []) ov[`${r.schedule_id}:${r.occurrence_date}`] = r;
+  const wx = new Map();
+  for (const x of week_exceptions || []) {
+    const k = String(x.schedule_id);
+    if (!wx.has(k)) wx.set(k, []);
+    wx.get(k).push(x);
+  }
 
   // One date index per distinct zone — a handful across Oceania, not one per rule.
   const indexes = new Map();
@@ -225,6 +317,7 @@ export function expandFrom({ schedules, overrides, breaks }, fromUtc, toUtc, { c
     // Narrowed once per rule rather than once per date: a parish-wide break is
     // a row every rule at that parish has to consider.
     const mine = breaksFor(s, breaks);
+    const excepted = wx.has(String(s.id)) ? exceptionsOf(s, wx.get(String(s.id))) : [];
 
     for (const date of byDow[s.day_of_week] || []) {
       if (!matchesWeekOfMonth(date, s.week_of_month)) continue;
@@ -236,8 +329,11 @@ export function expandFrom({ schedules, overrides, breaks }, fromUtc, toUtc, { c
       // this fortnight"; an override on one of those dates is somebody having
       // said something about that date in particular, and the narrower
       // statement is the later thought. It is also how a single service is
-      // reinstated mid-break without cutting the break in two.
+      // reinstated mid-break without cutting the break in two. The same goes
+      // for a week the service is not held on.
       let o = ov[`${s.id}:${date}`];
+      const x = exceptionOn(excepted, date);
+      if (x && x.kind === 'not_held' && !o) continue;
       if (!o) {
         const b = mine.find(x => date >= x.from_date && date <= x.to_date);
         if (b) {
@@ -250,7 +346,8 @@ export function expandFrom({ schedules, overrides, breaks }, fromUtc, toUtc, { c
           };
         }
       }
-      const inst = project(s, date, o, cache);
+      const inst = project(withException(s, x), date, o, cache);
+      if (x) inst.week_exception_id = x.id;
       const startMs = Date.parse(inst.start_utc);
       if (startMs < fromMs || startMs > toMs) continue;
       out.push(inst);

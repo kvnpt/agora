@@ -920,6 +920,8 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 }
 .tt-range { display: inline-block; margin-left: 6px; color: var(--text-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .tt-range.tt-break { display: block; margin: 1px 0 0; color: #8a5a10; white-space: normal; }
+/* A week the service is held differently, or not at all: "last Sun: English". */
+.tt-range.tt-except { display: block; margin: 1px 0 0; white-space: normal; }
 @media (prefers-color-scheme: dark) { .tt-range.tt-break { color: #e3b86a; } }
 .tt .eve { margin: 9px 0 3px; color: var(--text-3); }
 .tt.compact .tt-line { grid-template-columns: 64px 54px minmax(0, 1fr); padding: 3px 0; }
@@ -1557,6 +1559,24 @@ body.dialog-open { overflow: hidden; }
 .detail-edit-form label.cad-week { padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; }
 .detail-edit-form label.cad-week:has(input:checked) { border-color: var(--text); background: var(--card-2); }
 .cad-week-dates { font-size: 14px; font-variant-numeric: tabular-nums; }
+/* A service's exceptions (editing.js exceptionsBlock): a row each, opening its
+   card over the form, then "+ Except…". */
+.rf-except-list { display: flex; flex-direction: column; align-items: stretch; }
+.rf-except-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px;
+  padding: 10px 2px; text-align: left; font-size: 15px; line-height: 1.35; color: var(--text);
+  border-bottom: 1px solid var(--line);
+}
+.rf-except-row:first-child { border-top: 1px solid var(--line); }
+.rf-except-row svg { flex: none; color: var(--text-3); }
+.rf-except-add { align-self: flex-start; margin-top: 10px; }
+.rf-except-list > .edit-row-hint { margin-top: 8px; }
+/* Which weeks, on an exception's card: five to tap. */
+.rf-days.wx-weeks { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.rf-day input:disabled + span { opacity: .38; cursor: not-allowed; }
+.rf-day:has(input:disabled) { cursor: not-allowed; }
+.wx-form [data-wx-hint] { margin-top: 8px; }
+.wx-form [data-wx-hint][hidden], .wx-form [data-wx-fields][hidden] { display: none; }
 /* A time (public/shared/time-field.js): quarter-hours in a list, or typed. */
 .tf { position: relative; }
 .detail-edit-form .tf .tf-text, .ee .tf .tf-text { padding-right: 40px; cursor: pointer; }

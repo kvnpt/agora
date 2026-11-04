@@ -148,7 +148,104 @@
     return null;
   }
 
-  const api = { DAYS, WEEKS_OF_MONTH, WEEKDAYS, daysOf, fortnightDates, parityOrder, naturalFirstDate, fortnightPreview, cadence, requestBody, problem };
+  // ── a week exception (migration 035) ──────────────────────────────────
+  //
+  // "Except the last Sunday: English, until 11:30am": the rule held otherwise
+  // on some weeks of the month, or not held then. Its card is a date's edit
+  // form with Which weeks in place of the date (public/next/editing.js).
+
+  const WEEK_WORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th', last: 'last' };
+  const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} & ${xs[xs.length - 1]}` : xs[0] || '');
+  const weeksIn = (weeks) => {
+    const ws = Array.isArray(weeks) ? weeks : String(weeks || '').split(',');
+    return WEEKS_OF_MONTH.filter(w => ws.map(x => String(x).trim()).includes(w));
+  };
+  /** "last Sunday", "1st & 3rd Saturdays & Sundays": the weeks of `days`. */
+  function weeksPhrase(weeks, days) {
+    const ws = weeksIn(weeks);
+    const ds = [...new Set([].concat(days))].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+    const plural = ws.length > 1 ? 's' : '';
+    return `${andList(ws.map(w => WEEK_WORD[w]))} ${andList(ds.map(d => DAYS[d] + plural))}`;
+  }
+  /** An exception's card title: "Last Sunday", or "Exception" before a week is picked. */
+  function exceptionTitle(weeks, days) {
+    if (!weeksIn(weeks).length) return 'Exception';
+    const t = weeksPhrase(weeks, days);
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  const clockOf = (t) => {
+    const [h, m] = String(t || '').split(':').map(Number);
+    if (!Number.isFinite(h)) return t || '';
+    return `${h % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
+  };
+  const langsIn = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+  /**
+   * The line a service's form lists an exception on: "Except the last Sunday:
+   * English, until 11:30am", "Not on the last Sunday". `placeName(id)` names a
+   * parish it is held at; `days` are the form's.
+   */
+  function exceptionSummary(rule, x, { days = [rule.day_of_week], placeName = () => null } = {}) {
+    const when = `the ${weeksPhrase(x.weeks, days)}`;
+    if (x.kind === 'not_held') return `Not on ${when}`;
+    const parts = [];
+    if (x.patch_title) parts.push(x.patch_title);
+    if (x.patch_languages) parts.push(langsIn(x.patch_languages).join(', '));
+    if (x.patch_start_time) parts.push(`at ${clockOf(x.patch_start_time)}`);
+    if (x.patch_end_time) parts.push(`until ${clockOf(x.patch_end_time)}`);
+    if (x.patch_location_parish_id && x.patch_location_parish_id === rule.parish_id) parts.push('at its own church');
+    else if (x.patch_location_parish_id) parts.push(`at ${placeName(x.patch_location_parish_id) || 'another parish'}`);
+    else if (x.patch_location_override) parts.push(`at ${x.patch_location_override}`);
+    else if (x.patch_location_lat != null) parts.push('at a pin of its own');
+    if (x.patch_feast) parts.push(x.patch_feast);
+    if (x.patch_description) parts.push('its own description');
+    return parts.length ? `Except ${when}: ${parts.join(', ')}` : `Except ${when}`;
+  }
+  /**
+   * An exception card's values as the route takes them: the weeks, and
+   * either not held or every field as it is held those weeks (the Worker
+   * keeps what differs from the service, worker/routes/admin.mjs).
+   */
+  function exceptionBody(v) {
+    const weeks = weeksIn(v.weeks || []);
+    if (v.not_held) return { weeks, kind: 'not_held' };
+    const text = (x) => String(x == null ? '' : x).trim() || null;
+    const num = (x) => (x === '' || x == null || !Number.isFinite(Number(x)) ? null : Number(x));
+    return {
+      weeks, kind: 'modified',
+      title: text(v.title),
+      feast: text(v.feast),
+      start_time: v.start_time || null,
+      end_time: v.end_time || null,
+      ...(v.languages === undefined ? {} : { languages: String(v.languages || '').split(',').map(s => s.trim()).filter(Boolean) }),
+      description: text(v.description),
+      location_override: text(v.location_override),
+      location_parish_id: v.location_parish_id || null,
+      location_lat: num(v.location_lat),
+      location_lng: num(v.location_lng),
+    };
+  }
+
+  /**
+   * An exception already on one rule as the body that writes it on another:
+   * a day ticked on a service that has one ("Sat & Sun, not on the last").
+   * Only what it changes is named; a place it does not change is left out,
+   * because a Where sent empty is "at its own church".
+   */
+  function exceptionCopy(x) {
+    if (x.kind === 'not_held') return { weeks: String(x.weeks).split(','), kind: 'not_held' };
+    const b = { weeks: String(x.weeks).split(','), kind: 'modified',
+      title: x.patch_title, feast: x.patch_feast, start_time: x.patch_start_time, end_time: x.patch_end_time,
+      description: x.patch_description };
+    if (x.patch_languages) b.languages = x.patch_languages;
+    if (x.patch_location_parish_id || x.patch_location_override || x.patch_location_lat != null) {
+      Object.assign(b, { location_parish_id: x.patch_location_parish_id, location_override: x.patch_location_override,
+        location_lat: x.patch_location_lat, location_lng: x.patch_location_lng });
+    }
+    return b;
+  }
+
+  const api = { DAYS, WEEKS_OF_MONTH, WEEKDAYS, daysOf, fortnightDates, parityOrder, naturalFirstDate, fortnightPreview, cadence, requestBody, problem,
+    WEEK_WORD, weeksPhrase, exceptionTitle, exceptionSummary, exceptionBody, exceptionCopy };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   root.AgoraRuleForm = api;
   if (typeof document === 'undefined') return;

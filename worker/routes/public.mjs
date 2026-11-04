@@ -103,6 +103,9 @@ export function registerPublicRoutes(router) {
       // bundle — the browser decides which occurrences they silence, because
       // the browser is where the projection happens.
       breaks: (rows.breaks || []).map(withoutAuthor),
+      // A rule's weeks that differ ("every last Sunday in English") or are not
+      // held (migration 035). Rows again; the browser joins them to their rules.
+      week_exceptions: (rows.week_exceptions || []).map(withoutAuthor),
       events: (oneOffs.results || []).map(withoutAuthor),
       event_parishes: cross.results || [],
       // Carried in the bundle rather than fetched separately: every reader of a

@@ -17,6 +17,8 @@ CREATE TABLE schedule_breaks ( id INTEGER PRIMARY KEY AUTOINCREMENT, parish_id T
 CREATE INDEX idx_breaks_parish ON schedule_breaks(parish_id);
 CREATE INDEX idx_breaks_schedule ON schedule_breaks(schedule_id);
 CREATE INDEX idx_breaks_window ON schedule_breaks(from_date, to_date);
+CREATE TABLE schedule_week_exceptions ( id INTEGER PRIMARY KEY AUTOINCREMENT, schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE, weeks TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('modified','not_held')), patch_title TEXT, patch_start_time TEXT, patch_end_time TEXT, patch_languages TEXT, patch_feast TEXT, patch_description TEXT, patch_location_override TEXT, patch_location_parish_id TEXT, patch_location_lat REAL, patch_location_lng REAL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), updated_by TEXT );
+CREATE INDEX idx_week_exceptions_schedule ON schedule_week_exceptions(schedule_id);
 CREATE TABLE event_parishes ( event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, parish_id TEXT NOT NULL REFERENCES parishes(id), PRIMARY KEY (event_id, parish_id) );
 CREATE TABLE event_replaces ( replacing_event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, replaced_event_id INTEGER NOT NULL REFERENCES events(id), PRIMARY KEY (replacing_event_id, replaced_event_id) );
 CREATE INDEX idx_event_replaces_replaced ON event_replaces(replaced_event_id);

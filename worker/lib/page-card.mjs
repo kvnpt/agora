@@ -136,7 +136,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
     return `${i === eve ? EVENING : ''}<div class="tt-line">
         <span class="tt-days">${esc((l.q ? `${l.q} ` : '') + lines.dayList(l.days))}</span>
         ${timeHTML(l.r.start_time)}
-        <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs.length ? `<span class="tt-lang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : ''}${l.range ? `<span class="tt-range">${esc(l.range)}</span>` : ''}</span></span>
+        <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langs.length ? `<span class="tt-lang">${esc(langs.map(languages.shortOf).join(', '))}</span>` : ''}${l.range ? `<span class="tt-range">${esc(l.range)}</span>` : ''}${(l.notes || []).map(n => `<span class="tt-range tt-except">${esc(n)}</span>`).join('')}</span></span>
       </div>`;
   });
   return `<div class="tt${compact ? ' compact' : ''}" style="--pc:${color}">${out.join('')}</div>`;

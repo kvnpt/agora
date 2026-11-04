@@ -471,6 +471,38 @@ CREATE INDEX idx_breaks_schedule ON schedule_breaks(schedule_id);
 CREATE INDEX idx_breaks_window   ON schedule_breaks(from_date, to_date);
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- schedule_week_exceptions — a service that differs on some weeks of the month
+--
+-- To a WEEK OF THE MONTH what schedule_overrides is to a DATE: "every last
+-- Sunday it is in English, until 11:30" (modified, the patch_* fields; NULL is
+-- "as the service"), or "not on the last Sunday" (not_held). One row, projected
+-- with its rule (project.mjs withException), never a row per date; a date's
+-- own override still wins on its date. `weeks` is week_of_month's vocabulary
+-- (recurrence.mjs). Migration 035 says why it is a table of its own.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE schedule_week_exceptions (
+  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_id              INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+  weeks                    TEXT NOT NULL,
+  kind                     TEXT NOT NULL CHECK(kind IN ('modified','not_held')),
+  patch_title              TEXT,
+  patch_start_time         TEXT,            -- 'HH:MM' LOCAL
+  patch_end_time           TEXT,            -- 'HH:MM' LOCAL
+  patch_languages          TEXT,
+  patch_feast              TEXT,
+  patch_description        TEXT,
+  patch_location_override  TEXT,
+  patch_location_parish_id TEXT,
+  patch_location_lat       REAL,
+  patch_location_lng       REAL,
+  created_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_by               TEXT
+);
+
+CREATE INDEX idx_week_exceptions_schedule ON schedule_week_exceptions(schedule_id);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- Combine / cross-parish
 --
 -- Three mechanisms, routed by the shape of the target id

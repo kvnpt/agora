@@ -11,12 +11,29 @@ import { PARISH_COLOR_SQL } from './juris-colors.mjs';
 import {
   expandFrom, project, isValidOccurrence, parseInstanceId,
   breaksFor, breakCovering, nextOccurrenceAfterBreak,
+  exceptionsOf, exceptionOn, withException, attachExceptions,
 } from '../../public/shared/project.mjs';
 
 export {
   expandFrom, project, isValidOccurrence, parseInstanceId,
   breaksFor, breakCovering, nextOccurrenceAfterBreak,
+  exceptionsOf, exceptionOn, withException, attachExceptions,
 };
+
+/**
+ * Week exceptions of the active rules (migration 035), all of them or one
+ * rule's or one parish's. A handful of rows, not windowed: they are a rule's
+ * pattern, not its dates. [] while the migration has not run, the guard the
+ * breaks read carries too.
+ */
+export async function fetchWeekExceptions(db, { scheduleId = null, parishId = null } = {}) {
+  const r = await db.prepare(
+    `SELECT x.* FROM schedule_week_exceptions x JOIN schedules s ON s.id = x.schedule_id
+     WHERE s.active = 1 ${scheduleId ? 'AND s.id = ?' : ''} ${parishId ? 'AND s.parish_id = ?' : ''}
+     ORDER BY x.schedule_id, x.id`
+  ).bind(...(scheduleId ? [scheduleId] : []), ...(parishId ? [parishId] : [])).all().catch(() => ({ results: [] }));
+  return r.results || [];
+}
 
 const DAY_MS = 86400000;
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -83,18 +100,25 @@ export async function fetchWindowRows(db, fromUtc, toUtc, { scheduleId = null, p
     endStr, startStr, ...(scheduleId ? [scheduleId] : []), ...(parishId ? [parishId] : []),
   ];
 
-  const [schedules, overrides, breaks] = await Promise.all([
+  const [schedules, overrides, breaks, weekExceptions] = await Promise.all([
     db.prepare(schedSql).bind(...schedArgs).all(),
     db.prepare(ovSql).bind(...ovArgs).all(),
     // Catch, so a bundle is still served while migration 014 has not run — the
     // same guard the parish_links read carries in the bundle route.
     db.prepare(brSql).bind(...brArgs).all().catch(() => ({ results: [] })),
+    fetchWeekExceptions(db, { scheduleId, parishId }),
   ]);
-  return {
+  const rows = {
     schedules: schedules.results || [],
     overrides: overrides.results || [],
     breaks: breaks.results || [],
+    week_exceptions: weekExceptions,
   };
+  // Joined on where the parish is, for what reads the rules themselves (a
+  // timetable's lines, a language's parishes). The bundle sends the rows and
+  // the browser joins them (bundle.js), as it does the parish.
+  if (withParish) attachExceptions(rows.schedules, rows.week_exceptions);
+  return rows;
 }
 
 /**
@@ -115,10 +139,17 @@ export async function expandOne(db, scheduleId, date, { cache = new OffsetCache(
   if (!s || !s.active) return null;
   if (!isValidOccurrence(s, date)) return null;
 
-  const o = await db.prepare(
-    'SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?'
-  ).bind(scheduleId, date).first();
-  if (o) return project(s, date, o, cache);
+  const [o, mine] = await Promise.all([
+    db.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?')
+      .bind(scheduleId, date).first(),
+    fetchWeekExceptions(db, { scheduleId }),
+  ]);
+  // The week's exception shapes the rule; the date's override, if any, the date.
+  const x = exceptionOn(exceptionsOf(s, mine), date);
+  if (x && x.kind === 'not_held' && !o) return null;
+  const held = withException(s, x);
+  const tag = (inst) => { if (inst && x) inst.week_exception_id = x.id; return inst; };
+  if (o) return tag(project(held, date, o, cache));
 
   // No override — but a break may still speak for this date, and a deep link
   // into one has to resolve to the tombstone rather than to the service. Same
@@ -130,11 +161,11 @@ export async function expandOne(db, scheduleId, date, { cache = new OffsetCache(
      ORDER BY from_date LIMIT 1`
   ).bind(date, date, scheduleId, s.parish_id).first().catch(() => null);
 
-  return project(s, date, b ? {
+  return tag(project(held, date, b ? {
     kind: 'break',
     break_from: b.from_date,
     break_until: b.to_date,
     break_note: b.note || null,
     updated_at: b.updated_at || null,
-  } : null, cache);
+  } : null, cache));
 }

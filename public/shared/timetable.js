@@ -72,23 +72,31 @@
   /** A service's own languages, or null: never its parish's, and never a non-service's. */
   const serviceLangs = (row) => (isService(row) ? langsOf(row.languages) : null);
   /**
+   * A rule as it is held: itself, and as each of its week exceptions holds it
+   * (project.mjs attachExceptions). Homebush West's Liturgy is Serbian, and
+   * English on the 1st Sunday, so it is a service in English too. An event is
+   * only itself.
+   */
+  const variantsOf = (row) => (row && row.variants && row.variants.length ? [row, ...row.variants] : [row]);
+  /**
    * A parish's languages: what its services are tagged with, and nothing it
    * claims for itself. The parish's own column was a directory's boilerplate
    * ("Greek, English" at every Greek parish) and is no longer read.
    */
   function parishLangsOf(rows) {
     const out = [];
-    for (const r of rows || []) for (const l of serviceLangs(r) || []) if (!out.includes(l)) out.push(l);
+    for (const r of rows || []) for (const v of variantsOf(r)) for (const l of serviceLangs(v) || []) if (!out.includes(l)) out.push(l);
     return out;
   }
   /** Does a parish hold a service in the language asked (only in it, when strict)? */
-  const parishAnswersLang = (rows, lf) => !lf || (rows || []).some(r => !!serviceLangs(r) && langsMatch(serviceLangs(r), lf));
+  const parishAnswersLang = (rows, lf) => !lf || (rows || []).some(r => variantsOf(r).some(v => !!serviceLangs(v) && langsMatch(serviceLangs(v), lf)));
   /**
    * Does a row answer a language filter? A service by its own tags; anything
    * else by its parish (`parishOk`, parishAnswersLang): the talk at a parish
    * that holds services in English is there under /en.
    */
-  const rowAnswersLang = (row, lf, parishOk) => !lf || (isService(row) ? langsMatch(serviceLangs(row), lf) : !!parishOk);
+  const rowAnswersLang = (row, lf, parishOk) => !lf
+    || (isService(row) ? variantsOf(row).some(v => langsMatch(serviceLangs(v), lf)) : !!parishOk);
   /** Is this row a Bible study, by its title? Talks' one sub-kind is read that way. */
   const isBibleStudy = (row) => !!services && services.serviceOf(row) === 'bible-study';
   /** Is an event or a rule of the kind (and sub-kind) asked for? Any, with none asked. */
@@ -142,8 +150,12 @@
    * or in a list (/sgr, /sgr+snb), as the page's scopedOpen has it. The
    * page also shows it to whoever starred the parish, which no link says.
    */
-  function ruleMatches(rule, f, { parishOk = false } = {}) {
+  function ruleMatches(rule, f, opts = {}) {
     if (!rule) return false;
+    // Any way it is held: a 1st Sunday in English answers /en.
+    return variantsOf(rule).some(v => ruleMatchesAsHeld(v, f, opts));
+  }
+  function ruleMatchesAsHeld(rule, f, { parishOk = false } = {}) {
     if (rule.parish_scoped && !(f.parishIds && f.parishIds.has(rule.parish_id))) return false;
     if (f.service && services && !services.serviceMatches(f.service, rule)) return false;
     if (f.day != null && ![].concat(f.day).includes(rule.day_of_week)) return false;
@@ -165,7 +177,7 @@
     return !!(f.service || f.day != null || f.dayGroup || f.part || langFilterOf(f) || f.kind);
   }
 
-  const api = { langsOf, langIs, langFilterOf, langsMatch, isService, serviceLangs, parishLangsOf, parishAnswersLang, rowAnswersLang, kindMatches, KIND_TYPES, isMonastery, parishInScope, ruleMatches, narrowsRules };
+  const api = { langsOf, langIs, langFilterOf, langsMatch, isService, serviceLangs, variantsOf, parishLangsOf, parishAnswersLang, rowAnswersLang, kindMatches, KIND_TYPES, isMonastery, parishInScope, ruleMatches, narrowsRules };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraTimetable = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

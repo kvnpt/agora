@@ -18,7 +18,9 @@
 // beats a break, so a poster there would quietly reinstate the service), and
 // one somebody hid (it is not on the site to carry a flyer). A cancelled or
 // combined occurrence keeps what it is and gains the poster, exactly as the
-// single-occurrence upload does — see applyAdminEdit.
+// single-occurrence upload does — see applyAdminEdit. Nor a week the rule is
+// not held on (a week exception, migration 035): an override there is the
+// one way to bring that week back, and a bulletin is not somebody saying so.
 //
 // The object is released, not just un-pointed, once nothing refers to it:
 // `releaseUnused` deletes a poster from R2 only when no event, override, draft
@@ -26,7 +28,7 @@
 // the other three.
 
 import { ensureDraftTables } from './drafts.mjs';
-import { isValidOccurrence, breakCovering } from './expand.mjs';
+import { isValidOccurrence, breakCovering, exceptionsOf } from './expand.mjs';
 import { localDateOf } from '../../public/shared/tz.mjs';
 
 const DAY_MS = 86400000;
@@ -67,15 +69,16 @@ export function readRange({ scope, from, until }, { anchorDate, anchorIsRule }) 
  *
  * Pure — rows in, targets out. `schedules` are the rules in scope (already
  * narrowed to one rule or one parish), `overrides` and `breaks` those that
- * touch the range.
+ * touch the range, `week_exceptions` the rules'.
  */
-export function ruleTargets({ schedules, overrides, breaks }, from, until) {
+export function ruleTargets({ schedules, overrides, breaks, week_exceptions }, from, until) {
   const ov = new Map((overrides || []).map(o => [`${o.schedule_id}:${o.occurrence_date}`, o]));
   const out = [];
   for (const s of schedules || []) {
+    const mine = exceptionsOf(s, week_exceptions);
     for (let d = from; d <= until; d = addDays(d, 1)) {
-      if (!isValidOccurrence(s, d)) continue;
       const o = ov.get(`${s.id}:${d}`);
+      if (!isValidOccurrence(s, d, mine, { overridden: !!o })) continue;
       if (o && o.kind === 'hidden') continue;
       // No override and a break: the service is not running, and a write here
       // would be an override — which beats the break and brings it back.
