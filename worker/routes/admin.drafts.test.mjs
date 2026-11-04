@@ -685,8 +685,10 @@ test('a one-off service the poster gives no language for is suggested the parish
   const f = fresh({ role: 'editor' });
   addRookwood(f.raw);
   f.raw.prepare(`UPDATE schedules SET languages = '["Greek","English"]' WHERE parish_id = ?`).run(ROOKWOOD);
+  // On a Friday: a Saturday Vespers at 5pm would be the programme's 6pm
+  // Great Vespers that day, moved (matchOccurrences, by its usual 1½ hours).
   f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, languages)
-    VALUES (?, 6, '17:00', 'Vespers', 'prayer', '["English"]')`).run(ROOKWOOD);
+    VALUES (?, 5, '17:00', 'Vespers', 'prayer', '["English"]')`).run(ROOKWOOD);
   const draft = await readAt(f, ROOKWOOD, PROGRAMME);
   const vespers = draft.cards[3];
   assert.equal(vespers.occurrence, null);
@@ -758,9 +760,10 @@ test('an event after a service is never that service, and does not start when it
   const card = (await readAt(f, DOONSIDE, MOVIE_NIGHT({ event_type: 'liturgy' }))).cards[0];
   assert.equal(card.occurrence, null, 'not that Sunday’s Liturgy');
   assert.equal(card.title, 'Outdoor Movie Night');
-  assert.equal(card.start_time, null, 'not the Liturgy’s 6pm: nothing says when it ends');
+  assert.equal(card.start_time, '19:30', 'not the Liturgy’s 6pm: when a Liturgy usually ends');
+  assert.ok(!card.read_fields.includes('start_time'), 'worked out, not printed');
   assert.deepEqual(card.read_notes.filter(n => n.field === 'start_time').map(n => n.text),
-    ['After the 6:00pm Liturgy, so not 6:00pm: nothing gives when that ends, so fill in when this starts.']);
+    ['After the 6:00pm Liturgy, which usually runs 1½ hours: from 7:30pm, not 6:00pm. Check it.']);
 
   // With the Liturgy's end on file, it starts then.
   const g = fresh({ role: 'editor' });
@@ -815,6 +818,171 @@ test('a time alone never makes a youth night a service’s date — a service at
     event_type: 'youth', active: 1 }]);
   assert.deepEqual(read.events.map(e => e.occurrence), [null, `${yg}:2030-11-22`, `${yg}:2030-11-29`],
     'Vespers at its time is not; a social at its time is; its own name is, whatever the kind');
+});
+
+// ── a service by the time it runs, not only when it starts ──
+
+const CROYDON_PARK = 'antiochian-stjohnbaptist-croydonpark';
+
+/** St John the Baptist, Croydon Park's Sundays, as on file on 4 Nov 2026. */
+function addCroydonPark(raw) {
+  raw.prepare('DELETE FROM schedules WHERE parish_id = ?').run(CROYDON_PARK);
+  const rule = (start, end, title, type, langs) => raw.prepare(
+    `INSERT INTO schedules (parish_id, day_of_week, start_time, end_time, title, event_type, languages)
+     VALUES (?, 0, ?, ?, ?, ?, ?) RETURNING id`).get(CROYDON_PARK, start, end, title, type, langs).id;
+  return {
+    matins: rule('09:00', '12:00', 'Matins & Divine Liturgy', 'liturgy', '["Arabic"]'),
+    english: rule('18:00', null, 'Liturgy', 'liturgy', '["English"]'),
+    school: rule('10:00', null, 'Sunday School', 'other', '["Arabic"]'),
+  };
+}
+
+/**
+ * Its Christmas Fair poster (4 Nov 2026): "Sunday 13th Dec, Liturgy 10AM",
+ * then "a day of delicious food, fun & festivities" — here 15 December 2030,
+ * a Sunday. The fair as the reader may give it: no time, and nothing to say
+ * it follows the Liturgy.
+ */
+const CHRISTMAS_FAIR = (fair = {}) => ({
+  kind: 'poster', written_in: 'English', other_parish: null, notes: [], services: [],
+  details: { address: '', phone: '', email: '', website: '' },
+  events: [
+    { title: 'Liturgy', feast: '', date: '2030-12-15', weekday_printed: 'Sunday', year_printed: false, after: '',
+      start_time: '10:00', end_time: null, end_date: '', event_type: 'liturgy', languages: [], venue: null,
+      description: null, notes: [] },
+    { title: 'Christmas Fair', feast: '', date: '2030-12-15', weekday_printed: 'Sunday', year_printed: false, after: '',
+      start_time: null, end_time: null, end_date: '', event_type: 'social', languages: [], venue: null,
+      description: 'A day of delicious food, fun and festivities.', notes: [], ...fair },
+  ],
+});
+
+test('a poster’s 10am Liturgy is the 9am Matins & Liturgy it falls in, not the 6pm Liturgy of its name', async () => {
+  const f = fresh({ role: 'editor' });
+  const { matins, english } = addCroydonPark(f.raw);
+  const draft = await readAt(f, CROYDON_PARK, CHRISTMAS_FAIR());
+  const [liturgy, fair] = draft.cards;
+  assert.equal(liturgy.occurrence, `${matins}:2030-12-15`, 'the one it falls in, not the 6pm one by name');
+  // Kevin, 4 Nov 2026: that Sunday stays 9:00 Matins & Divine Liturgy.
+  assert.deepEqual([liturgy.title, liturgy.start_time, liturgy.end_time], ['Matins & Divine Liturgy', '09:00', null]);
+  assert.ok(!liturgy.read_fields.includes('start_time'), 'not the time the poster printed');
+  assert.deepEqual(liturgy.read_notes.filter(n => n.field === 'start_time').map(n => n.text),
+    ['The poster’s 10:00am Liturgy is part of the regular 9:00am Matins & Divine Liturgy, so it stays at 9:00am. Change it if the poster moves the whole service.']);
+
+  // The fair starts when that Liturgy usually ends, and runs a fair's four hours.
+  assert.deepEqual([fair.occurrence, fair.start_time, fair.end_time, fair.event_type], [null, '11:30', '15:30', 'social']);
+  assert.ok(!fair.read_fields.includes('start_time') && !fair.read_fields.includes('end_time'), 'suggestions, not the poster');
+  assert.deepEqual(fair.read_notes.filter(n => /_time$/.test(n.field)).map(n => n.text), [
+    'No time printed, so after the 10:00am Liturgy that day, which usually runs 1½ hours: from 11:30am. Check it.',
+    'No end printed, and a fair or festival usually runs 4 hours: until 3:30pm. Check it.',
+  ]);
+
+  // Published, the 9am service carries the poster and nothing else changes:
+  // the 6pm English Liturgy that evening is where it was.
+  const one = await f.call('POST', `/api/admin/draft-events/${liturgy.id}/publish`, {});
+  assert.equal(one.status, 201);
+  assert.deepEqual([one.body.event.id, one.body.event.title], [`${matins}:2030-12-15`, 'Matins & Divine Liturgy']);
+  const o = f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(matins, '2030-12-15');
+  assert.deepEqual([o.patch_title, o.patch_start_time, o.patch_end_time, o.patch_poster_path],
+    [null, null, null, draft.poster_path]);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) n FROM schedule_overrides WHERE schedule_id = ?').get(english).n, 0);
+});
+
+test('an event after a service follows the one on the poster first, at the time it prints', async () => {
+  // The reader saying so, with the Liturgy's time: the same fair.
+  const f = fresh({ role: 'editor' });
+  addCroydonPark(f.raw);
+  const fair = (await readAt(f, CROYDON_PARK, CHRISTMAS_FAIR({ after: 'Liturgy at 10am' }))).cards[1];
+  assert.deepEqual([fair.start_time, fair.end_time], ['11:30', '15:30']);
+  assert.match(fair.read_notes.find(n => n.field === 'start_time').text, /^After the 10:00am Liturgy, which usually runs 1½ hours/);
+
+  // The reader leaving the Liturgy off as the regular Sunday (2 of 3 real
+  // reads, 4 Nov 2026): what the fair follows still says when.
+  const k = fresh({ role: 'editor' });
+  addCroydonPark(k.raw);
+  const alone = CHRISTMAS_FAIR({ after: 'Liturgy at 10am' });
+  const only = (await readAt(k, CROYDON_PARK, { ...alone, events: [alone.events[1]] })).cards[0];
+  assert.deepEqual([only.start_time, only.end_time], ['11:30', '15:30']);
+  assert.match(only.read_notes.find(n => n.field === 'start_time').text, /^After the 10:00am Liturgy, which usually runs 1½ hours: from 11:30am/);
+
+  // The poster's service at the time printed, whatever the reader called it.
+  const m = fresh({ role: 'editor' });
+  addCroydonPark(m.raw);
+  const feast = CHRISTMAS_FAIR({ title: 'Cake Stall', after: 'Matins and Hierarchical Divine Liturgy at 7am' });
+  const stall = (await readAt(m, CROYDON_PARK, { ...feast, events: [
+    { ...feast.events[0], title: 'Feast of St John', start_time: '07:00', end_time: '10:30', event_type: 'feast' },
+    feast.events[1],
+  ] })).cards[1];
+  assert.equal(stall.start_time, '10:30');
+
+  // "After the English Liturgy at 6pm", with nothing for it on the poster: the
+  // timetable's 6pm one, never the morning's.
+  const g = fresh({ role: 'editor' });
+  addCroydonPark(g.raw);
+  const doc = CHRISTMAS_FAIR({ title: 'Youth Night', after: 'English Liturgy at 6pm', event_type: 'youth' });
+  const night = (await readAt(g, CROYDON_PARK, { ...doc, events: [doc.events[1]] })).cards[0];
+  assert.deepEqual([night.start_time, night.end_time, night.occurrence], ['19:30', null, null]);
+
+  // "After the Liturgy" with two Liturgies that day and no time: which one is
+  // not guessed.
+  const h = fresh({ role: 'editor' });
+  addCroydonPark(h.raw);
+  const which = (await readAt(h, CROYDON_PARK, { ...doc, events: [{ ...doc.events[1], after: 'the Liturgy' }] })).cards[0];
+  assert.equal(which.start_time, null);
+  assert.match(which.read_notes.find(n => n.field === 'start_time').text,
+    /more than one that day \(9:00am, 6:00pm\): fill in when this starts/);
+
+  // A time of its own on an untimed... a fair with its own time keeps it.
+  const i = fresh({ role: 'editor' });
+  addCroydonPark(i.raw);
+  const own = (await readAt(i, CROYDON_PARK, CHRISTMAS_FAIR({ start_time: '12:00' }))).cards[1];
+  assert.deepEqual([own.start_time, own.end_time], ['12:00', '16:00']);
+  assert.ok(own.read_fields.includes('start_time'));
+});
+
+test('services are matched by the time they run: the exact start first, never a guess between two', () => {
+  const rules = [
+    { id: 1, day_of_week: 0, start_time: '08:00', end_time: '10:00', title: 'Divine Liturgy', event_type: 'liturgy', active: 1 },
+    { id: 2, day_of_week: 0, start_time: '18:00', end_time: null, title: 'Liturgy', event_type: 'liturgy', active: 1 },
+    { id: 3, day_of_week: 6, start_time: '17:00', end_time: null, title: 'Vespers', event_type: 'prayer', active: 1 },
+    { id: 4, day_of_week: 6, start_time: '18:00', end_time: null, title: 'Paraklesis', event_type: 'prayer', active: 1 },
+  ];
+  const read = matchOccurrences({ events: [
+    // A feast's early Liturgy, listed before the usual one: the 8am card has
+    // the 8am Liturgy, and the 7am one is a Liturgy of its own.
+    { title: 'Divine Liturgy', date: '2030-12-15', start_time: '07:00', event_type: 'liturgy' },
+    { title: 'Divine Liturgy', date: '2030-12-15', start_time: '08:00', event_type: 'liturgy' },
+    // A 6pm Great Vespers on a Saturday is that evening's Vespers, moved; not
+    // the Paraklesis that starts at six.
+    { title: 'Great Vespers', date: '2030-12-14', start_time: '18:00', event_type: 'prayer' },
+    // Moved by a programme: the one Vespers that day, by name.
+    { title: 'Vespers', date: '2030-12-21', start_time: '16:00', event_type: 'prayer' },
+    // Two Liturgies that day and neither in its time: not the 6pm one by name.
+    { title: 'Liturgy', date: '2030-12-22', start_time: '11:00', event_type: 'liturgy' },
+  ] }, rules);
+  assert.deepEqual(read.events.map(e => e.occurrence),
+    [null, '1:2030-12-15', '3:2030-12-14', '3:2030-12-21', null]);
+  // Moved, not a part of it: the poster's time stands.
+  assert.deepEqual([read.events[2].title, read.events[2].start_time], ['Great Vespers', '18:00']);
+});
+
+test('a card the poster gives no end is given its usual length, as a suggestion', async () => {
+  const f = fresh({ role: 'editor' });
+  addCroydonPark(f.raw);
+  const doc = CHRISTMAS_FAIR();
+  const base = doc.events[1];
+  const cards = (await readAt(f, CROYDON_PARK, { ...doc, events: [
+    { ...base, title: 'Bible Study', date: '2030-12-17', start_time: '19:30', event_type: 'talk' },
+    { ...base, title: 'Orthros and Divine Liturgy', date: '2030-12-18', start_time: '08:00', event_type: 'feast', languages: ['Arabic'] },
+    { ...base, title: 'Great Vespers', date: '2030-12-18', start_time: '18:00', end_time: '19:00', event_type: 'prayer' },
+    { ...base, title: 'Talk on the Nativity', date: '2030-12-19', start_time: '19:00', event_type: 'talk' },
+    { ...base, title: 'New Year Festival', date: '2030-12-31', start_time: '21:00', event_type: 'social' },
+  ] })).cards;
+  assert.deepEqual(cards.map(c => c.end_time), ['21:00', '10:30', '19:00', null, null],
+    'its own end stays; nothing for a talk, or past midnight');
+  assert.ok(!cards[0].read_fields.includes('end_time'));
+  assert.ok(cards[2].read_fields.includes('end_time'), 'printed');
+  assert.deepEqual(cards[1].read_notes.filter(n => n.field === 'end_time').map(n => n.text),
+    ['No end printed, and Matins and Liturgy usually runs 2½ hours: until 10:30am. Check it.']);
 });
 
 // ── a church sign: the timetable and the parish's details ──

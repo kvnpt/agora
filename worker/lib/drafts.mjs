@@ -16,6 +16,7 @@ import checks from '../../public/shared/event-checks.js';
 import { isOwnVenue, matchParish } from './parish-match.mjs';
 import { isValidOccurrence } from '../../public/shared/project.mjs';
 import { localPartsOf } from '../../public/shared/tz.mjs';
+import { endOf, lengthText, toMinutes, fromMinutes, servicesNamed } from './durations.mjs';
 
 const { isEventType } = eventTypes;
 const { isLocalDate, isLocalTime } = checks;
@@ -492,9 +493,24 @@ export async function placeRead(db, read, parish) {
 /** "Orthros & Divine Liturgy" and "ORTHROS AND DIVINE LITURGY" are one service. */
 const titleKey = (t) => String(t || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z]+/g, ' ').trim();
 
-/** The words of a name that say which service it is: not "the", "and", "service". */
-const SMALL_WORDS = new Set(['a', 'an', 'the', 'and', 'of', 'in', 'at', 'on', 'for', 'with', 'to', 'service', 'services']);
+/** The words of a name that say which service it is: not "the", "and", "service", or a time's "pm". */
+const SMALL_WORDS = new Set(['a', 'an', 'the', 'and', 'of', 'in', 'at', 'on', 'for', 'with', 'to', 'service', 'services',
+  'am', 'pm']);
 const nameWords = (t) => titleKey(t).split(' ').filter(w => w && !SMALL_WORDS.has(w));
+
+/**
+ * The words of a name that say WHICH service, less those that only say what
+ * kind of one: "Divine", "English", "Great". So "Liturgy" and "Matins &
+ * Divine Liturgy" are kin (relatedName), and "English Divine Liturgy" and
+ * "Divine Liturgy" are too, but "Great Vespers" and "Great Compline" are not.
+ */
+const QUALIFIERS = new Set(['divine', 'holy', 'great', 'small', 'little', 'english', 'greek', 'arabic', 'slavonic',
+  'church', 'serbian', 'romanian', 'macedonian', 'morning', 'evening', 'online', 'weekly', 'monthly', 'parish',
+  'orthodox', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']);
+const whichWords = (t) => new Set(nameWords(t).map(w => (w === 'orthros' ? 'matins' : w)).filter(w => !QUALIFIERS.has(w)));
+const relatedName = (a, b) => { const x = whichWords(a); return [...whichWords(b)].some(w => x.has(w)); };
+/** Does `inner` say nothing `outer` does not? "Liturgy" is within "Matins & Divine Liturgy". */
+const nameWithin = (inner, outer) => { const x = whichWords(outer); return [...whichWords(inner)].every(w => x.has(w)); };
 
 /**
  * Does what an event follows, as printed, name this service? "English
@@ -508,6 +524,24 @@ function namesService(after, title) {
   return said.some(w => its.has(w));
 }
 
+/** A time in what an event follows, with its "at": " at 6pm", " 10:30am", " 18:00". */
+const TIME_PHRASE = /\s*\b(?:at|from)?\s*\b(?:\d{1,2}(?:[:.]\d{2})?\s*[ap]\.?m\.?|(?:[01]?\d|2[0-3])[:.][0-5]\d)(?![\w])/gi;
+
+/** The time printed in what an event follows: "English Liturgy at 6pm" -> "18:00". */
+function timeIn(text) {
+  const t = String(text || '');
+  const ampm = /\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?m\b/i.exec(t);
+  if (ampm) {
+    const h = Number(ampm[1]) % 12 + (ampm[3].toLowerCase() === 'p' ? 12 : 0);
+    return Number(ampm[1]) <= 12 ? fromMinutes(h * 60 + Number(ampm[2] || 0)) : null;
+  }
+  const h24 = /\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/.exec(t);
+  return h24 ? `${h24[1].padStart(2, '0')}:${h24[2]}` : null;
+}
+
+/** A card or rule that is a service: a Liturgy, a Vespers, a feast's services. */
+const isServiceKind = (x) => SERVICE_KINDS.has(x && x.event_type);
+
 /**
  * An event held after a service starts when that service ends — never when it
  * starts.
@@ -517,33 +551,88 @@ function namesService(after, title) {
  * gave the movie night 6pm, the Liturgy's time; the 22nd is a fourth Sunday,
  * when Doonside's English Liturgy is at 6pm, so matchOccurrences took the card
  * for that Liturgy and gave it the Liturgy's kind. The reader now says what an
- * event follows (`after`, poster-read.mjs). A card that follows a service, and
- * starts when that service does that day — on the poster, or on the timetable
- * — was given the service's time: it takes the service's end instead, or no
- * time when nothing gives one, with a note saying which. matchOccurrences
- * never makes such a card the service's own date.
+ * event follows (`after`, poster-read.mjs), with the service's time when one
+ * is printed ("English Liturgy at 6pm").
  *
- * Before placeHosts and matchOccurrences, which go by the time.
+ * Which service: the one `after` names that day ON THE POSTER, else on the
+ * timetable — at the time `after` prints, or at the start the reader gave the
+ * event, when a service it names starts then (that was the service's time,
+ * not the event's). When it ends: the end printed or on file, else its start
+ * and its usual length (durations.mjs: a Liturgy 1½ hours), which is a
+ * suggestion and says so. Nothing it names, or two at different times, and
+ * the time is left as the reader gave it, or empty with a note.
+ *
+ * An event with no time at all, on a day the poster gives one service for,
+ * follows that service whether or not it says so. St John the Baptist,
+ * Croydon Park's Christmas Fair poster (4 Nov 2026): "Sunday 13th Dec,
+ * Liturgy 10AM", then "a day of delicious food, fun & festivities". The fair
+ * starts when that Liturgy ends, 11:30am (Kevin).
+ *
+ * matchOccurrences never makes such a card the service's own date. Before
+ * placeHosts and matchOccurrences, which go by the time.
  *
  * @param {object} read   normalizeRead()'s answer, changed in place
  * @param {Array} rules   the parish's active rules (schedules rows)
  */
 export function afterServices(read, rules) {
+  const sameDay = (ev, o) => o !== ev && !o.after && o.date === ev.date && !o.end_date && isLocalTime(o.start_time);
   for (const ev of read.events) {
-    if (!ev.after || !ev.date || !ev.start_time || ev.end_date) continue;
-    const services = [
-      ...read.events.filter(o => o !== ev && !o.after && o.date === ev.date && !o.end_date),
-      ...(rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date)),
-    ].filter(s => s.start_time === ev.start_time && namesService(ev.after, s.title));
+    if (!ev.date || ev.end_date) continue;
+    let implied = false;
+    if (!ev.after && !ev.start_time && !isServiceKind(ev)) {
+      const day = read.events.filter(o => sameDay(ev, o) && isServiceKind(o));
+      if (day.length !== 1) continue;
+      ev.after = day[0].title;
+      implied = true;
+    }
+    if (!ev.after) continue;
+    const printed = timeIn(ev.after);
+    // A start of its own: after says so only when there is none, but a
+    // reader that gives both has given the event's.
+    if (ev.start_time && printed && ev.start_time !== printed) continue;
+    const when = printed || ev.start_time;
+    const which = (list) => list.filter(s => namesService(ev.after, s.title) && (!when || s.start_time === when));
+    const onPoster = read.events.filter(o => sameDay(ev, o));
+    let services = which(onPoster);
+    // A service of the poster's at the very time printed, by whatever name the
+    // reader gave its card: St Andrew, Gladesville's cake stall follows the
+    // "Matins and Hierarchical Divine Liturgy at 7am", carded as the "Feast
+    // Day of … Saint Andrew" at 7:00–10:30 (one of two reads, 4 Nov 2026).
+    if (!services.length && printed) services = onPoster.filter(o => o.start_time === printed && isServiceKind(o));
+    if (!services.length) {
+      services = which((rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date)));
+    }
+    // The service as `after` itself gives it, when nothing else does: Croydon
+    // Park's fair follows "Liturgy at 10am", which the reader left off as the
+    // parish's regular Sunday (the Liturgy of its 9:00 Matins & Liturgy).
+    if (!services.length && printed) {
+      const title = String(ev.after).replace(TIME_PHRASE, ' ').replace(/\s+/g, ' ').trim();
+      if (title) services = [{ title, start_time: printed, end_time: null }];
+    }
     if (!services.length) continue;
-    const ends = [...new Set(services.map(s => s.end_time).filter(Boolean))];
     const was = ev.start_time;
-    const what = `${clockText(was)} ${services[0].title}`;
-    ev.start_time = ends.length === 1 && ends[0] > was ? ends[0] : null;
-    ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time',
-      text: ev.start_time
-        ? `After the ${what}, so from when that ends, ${clockText(ev.start_time)}; not ${clockText(was)}.`
-        : `After the ${what}, so not ${clockText(was)}: nothing gives when that ends, so fill in when this starts.` }];
+    const not = was ? `, not ${clockText(was)}` : '';
+    const starts = [...new Set(services.map(s => s.start_time))].sort();
+    const ends = services.map(s => endOf(s));
+    const end = new Set(ends.map(e => e && e.end)).size === 1 ? ends[0] && ends[0].end : null;
+    const what = `${clockText(services[0].start_time)} ${services[0].title}`;
+    const lead = implied ? `No time printed, so after the ${what} that day` : `After the ${what}`;
+    let text;
+    ev.start_time = null;
+    if (starts.length > 1) {
+      text = `After the ${services[0].title}, but there is more than one that day (${starts.map(clockText).join(', ')}): fill in when this starts.`;
+    } else if (!end || (was && end <= was)) {
+      text = `${lead}${was ? `, so not ${clockText(was)}` : ''}: nothing gives when that ends, so fill in when this starts.`;
+    } else if (ends[0].usual) {
+      ev.start_time = end;
+      text = `${lead}, which usually runs ${lengthText(ends[0].usual.minutes)}: from ${clockText(end)}${not}. Check it.`;
+    } else {
+      ev.start_time = end;
+      text = `${lead}, so from when that ends, ${clockText(end)}${was ? `; not ${clockText(was)}` : ''}.`;
+    }
+    // Worked out here, not printed: no "from poster" mark (mergeRead).
+    if (ev.start_time && (implied || ends[0].usual)) ev.suggested = [...(ev.suggested || []), 'start_time'];
+    ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time', text }];
   }
   return read;
 }
@@ -558,29 +647,44 @@ export function afterServices(read, rules) {
  * and publishing writes it onto that occurrence instead (an override, the way
  * an admin's edit of one Sunday is written).
  *
- * An occurrence of a rule ON that date that starts at the same time, or else
- * the one occurrence that day with the same service name (a programme that
- * moves it). Never a guess between two, and never one occurrence twice. A
- * matched event takes the rule's own title when it names the same service,
- * and the rule's kind, so the override carries only what the programme
- * actually changes — the saint, a time — and not "and" for "&".
+ * occurrenceOf says which. Cards at a rule's own start go first, so a
+ * feast's early Liturgy at 7am cannot take the 8am one a later card gives at
+ * 8am. A matched event takes the rule's own title when it names the same
+ * service, and the rule's kind, so the override carries only what the
+ * programme actually changes — the saint, a time — and not "and" for "&".
+ *
+ * And a card that is only a later part of its rule keeps the rule's time
+ * (Kevin, 4 Nov 2026): St John the Baptist, Croydon Park's "Liturgy 10AM" is
+ * the Liturgy of its 9:00–12:00 Matins & Divine Liturgy, the hour of Matins
+ * before it. That Sunday stays 9:00 Matins & Divine Liturgy, with the poster.
  *
  * @param {object} read   normalizeRead()'s answer, changed in place
  * @param {Array} rules   the parish's active rules (schedules rows)
  */
 export function matchOccurrences(read, rules) {
   const used = new Set();
-  for (const ev of read.events) {
-    ev.occurrence = null;
-    // Another parish's event is not one of this parish's services (placeHosts),
-    // and one held after a service is not that service (afterServices).
-    if (ev.host_parish_id || ev.after) continue;
-    const hit = occurrenceOf(ev, rules, used);
-    if (!hit) continue;
-    used.add(`${hit.id}:${ev.date}`);
-    ev.occurrence = `${hit.id}:${ev.date}`;
-    if (sameTitle(hit, ev)) ev.title = hit.title;
-    if (hit.event_type) ev.event_type = hit.event_type;
+  // Another parish's event is not one of this parish's services (placeHosts),
+  // and one held after a service is not that service (afterServices).
+  const cards = read.events.filter(ev => !ev.host_parish_id && !ev.after);
+  for (const ev of read.events) ev.occurrence = null;
+  for (const exact of [true, false]) {
+    for (const ev of cards) {
+      if (ev.occurrence) continue;
+      const hit = occurrenceOf(ev, rules, used, { exact });
+      if (!hit) continue;
+      used.add(`${hit.id}:${ev.date}`);
+      ev.occurrence = `${hit.id}:${ev.date}`;
+      if (partOf(hit, ev)) {
+        const was = `${clockText(ev.start_time)} ${ev.title}`;
+        ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time',
+          text: `The poster’s ${was} is part of the regular ${clockText(hit.start_time)} ${hit.title}, so it stays at ${clockText(hit.start_time)}. Change it if the poster moves the whole service.` }];
+        ev.start_time = hit.start_time;
+        ev.end_time = null;
+        ev.suggested = [...(ev.suggested || []), 'start_time'];
+        if (nameWithin(ev.title, hit.title)) ev.title = hit.title;
+      } else if (sameTitle(hit, ev)) ev.title = hit.title;
+      if (hit.event_type) ev.event_type = hit.event_type;
+    }
   }
   return read;
 }
@@ -600,20 +704,117 @@ const sameSort = (r, ev) => !r.event_type || !ev.event_type
   || SERVICE_KINDS.has(r.event_type) === SERVICE_KINDS.has(ev.event_type);
 
 /**
- * The rule whose occurrence a dated event is (matchOccurrences says how), or
- * null — never one already `used`, and never for a run of days. A rule at the
- * same time is one of the same sort, or of the same name (sameSort).
+ * When something runs, in minutes of its day: { s, e }, e === s when nothing
+ * says how long (its end, or its usual length: durations.mjs).
  */
-function occurrenceOf(ev, rules, used = new Set()) {
+const spanOf = (x) => {
+  const s = toMinutes(x.start_time);
+  const end = endOf(x);
+  return { s, e: end ? toMinutes(end.end) : s };
+};
+/** Do two spans share a minute? One with no length shares its start's. */
+const overlaps = (a, b) => {
+  if (a.s == null || b.s == null) return false;
+  if (a.e > a.s && b.e > b.s) return a.s < b.e && b.s < a.e;
+  if (a.e > a.s) return a.s <= b.s && b.s < a.e;
+  if (b.e > b.s) return b.s <= a.s && a.s < b.e;
+  return a.s === b.s;
+};
+
+/**
+ * Is a card only a later part of its rule — the Liturgy of a Matins &
+ * Liturgy, starting inside it? Then the poster is giving when that part
+ * starts, not moving the service.
+ */
+function partOf(r, ev) {
+  const t = toMinutes(ev.start_time);
+  const span = spanOf(r);
+  if (t == null || !(span.s < t && t < span.e)) return false;
+  const mine = servicesNamed(ev.title);
+  const its = servicesNamed(r.title);
+  return mine.length > 0 && mine.length < its.length && mine.every(w => its.includes(w));
+}
+
+/**
+ * The rule whose occurrence a dated event is, or null — never one already
+ * `used`, never for a run of days, and never a guess between two. In order:
+ *
+ *   1. a rule that day starting when it does, of the same name or a kin one
+ *      ("English Divine Liturgy" and "Liturgy"; relatedName);
+ *   2. one whose time it falls in, or that falls in its time, of the same name
+ *      or a kin one of the same sort. A poster's "Liturgy 10AM" is the 9:00–
+ *      12:00 Matins & Divine Liturgy; until 4 Nov 2026 only the same start
+ *      counted, and Croydon Park's 10am Liturgy was taken by name for its
+ *      6pm English one instead. A rule or card with no end runs its usual
+ *      length (durations.mjs);
+ *   3. one starting when it does, of the same sort: a games night is the
+ *      youth group's evening, a Vespers never is (sameSort);
+ *   4. a programme that moves it: the one rule that day of the same name,
+ *      when no other that day is kin to it — never the 6pm "Liturgy" for a
+ *      10am one when there is a morning Liturgy too.
+ * Two in a step are told apart by the same name, then by which the card
+ * starts inside; else none. `exact` asks only the first: a kin rule at its
+ * own start.
+ */
+function occurrenceOf(ev, rules, used = new Set(), { exact = false } = {}) {
   if (!ev.date || !ev.start_time || ev.end_date) return null;
   const that = (rules || []).filter(r => r.active !== 0 && isValidOccurrence(r, ev.date));
   const same = (r) => sameTitle(r, ev);
-  const at = that.filter(r => r.start_time === ev.start_time && (same(r) || sameSort(r, ev)));
-  const named = that.filter(same);
-  const hit = at.length === 1 ? at[0]
-    : at.length > 1 ? (at.filter(same).length === 1 ? at.find(same) : null)
-      : named.length === 1 ? named[0] : null;
+  const kin = (r) => same(r) || (sameSort(r, ev) && relatedName(r.title, ev.title));
+  const span = spanOf(ev);
+  const steps = [
+    that.filter(r => r.start_time === ev.start_time && kin(r)),
+    ...(exact ? [] : [
+      that.filter(r => kin(r) && overlaps(spanOf(r), span)),
+      that.filter(r => r.start_time === ev.start_time && sameSort(r, ev)),
+    ]),
+  ];
+  const step = steps.find(list => list.length);
+  let hit = null;
+  if (step) hit = oneOf(step, ev);
+  else if (!exact) {
+    const named = that.filter(same);
+    if (named.length === 1 && that.filter(kin).length === 1) hit = named[0];
+  }
   return hit && !used.has(`${hit.id}:${ev.date}`) ? hit : null;
+}
+
+/** One rule of several for a card: the one of its name, else the one it starts inside; else none. */
+function oneOf(list, ev) {
+  if (list.length === 1) return list[0];
+  const named = list.filter(r => sameTitle(r, ev));
+  if (named.length === 1) return named[0];
+  const t = toMinutes(ev.start_time);
+  const inside = list.filter(r => { const sp = spanOf(r); return sp.s <= t && t < sp.e; });
+  return inside.length === 1 ? inside[0] : null;
+}
+
+/**
+ * An end for each card the poster gives none, from how long such a thing
+ * usually runs (durations.mjs: a Liturgy 1½ hours, Matins 1, Vespers 1½, a
+ * Bible study 1½, a fair or festival 4). Kevin, 4 Nov 2026: "I do want more
+ * ending times inferred in general." A suggestion: never marked "from
+ * poster", and said in a note to check. Not for a date of a regular service
+ * (`occurrence`), which has its service's end, nor one on file already
+ * (`host_event_id`), which has its own; nothing that would run past midnight,
+ * and nothing for a name that gives nothing to go by.
+ *
+ * After afterServices and matchOccurrences: a fair after the Liturgy starts
+ * when that ends, then runs its four hours.
+ *
+ * @param {object} read   normalizeRead()'s answer; changed in place
+ */
+export function suggestEnds(read) {
+  for (const ev of read.events || []) {
+    if (!ev.date || !isLocalTime(ev.start_time) || ev.end_time || ev.end_date || ev.occurrence || ev.host_event_id) continue;
+    const e = endOf(ev);
+    if (!e || !e.usual) continue;
+    ev.end_time = e.end;
+    ev.suggested = [...(ev.suggested || []), 'end_time'];
+    ev.read_notes = [...(ev.read_notes || []), { field: 'end_time',
+      text: `No end printed, and ${e.usual.what} usually runs ${lengthText(e.usual.minutes)}: until ${clockText(e.end)}. Check it.` }];
+  }
+  return read;
 }
 
 /**
