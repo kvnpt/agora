@@ -226,6 +226,44 @@
   }
 
   /**
+   * The row a card's body makes against `rule` (the service as its form holds
+   * it, saved or not): what the Worker stores (worker/routes/admin.mjs
+   * weekExceptionRow), worked out in the page so a form can list an exception
+   * it has not saved yet. A field the same as the service's is null; all null
+   * on a held-differently card is nothing to save.
+   */
+  const PATCH_COLS = ['patch_title', 'patch_start_time', 'patch_end_time', 'patch_languages', 'patch_feast',
+    'patch_description', 'patch_location_override', 'patch_location_parish_id', 'patch_location_lat', 'patch_location_lng'];
+  function exceptionPatch(body, rule) {
+    const out = { weeks: weeksIn(body.weeks).join(','), kind: body.kind === 'not_held' ? 'not_held' : 'modified' };
+    for (const c of PATCH_COLS) out[c] = null;
+    if (out.kind === 'not_held') return out;
+    const differs = (v, was) => (v != null && v !== '' && v !== (was == null || was === '' ? null : was) ? v : null);
+    out.patch_title = differs(body.title, rule.title);
+    out.patch_start_time = differs(body.start_time, rule.start_time);
+    out.patch_end_time = differs(body.end_time, rule.end_time);
+    if (body.languages !== undefined) {
+      out.patch_languages = differs(body.languages && body.languages.length ? JSON.stringify(body.languages) : null, rule.languages);
+    }
+    out.patch_feast = differs(body.feast, rule.feast);
+    out.patch_description = differs(body.description, rule.description);
+    const place = (o) => {
+      const p = VENUE_FIELDS.map(k => (o[k] == null || o[k] === '' ? null : o[k]));
+      // Its own parish named is at home, as the Worker reads it (venues.mjs).
+      if (p[1] && p[1] === rule.parish_id) p[1] = null;
+      return p.map(String).join('|');
+    };
+    if (VENUE_FIELDS.some(k => k in body) && place(body) !== place(rule)) {
+      const home = place(body) === place({});
+      if (home) out.patch_location_parish_id = rule.parish_id;
+      else for (const k of VENUE_FIELDS) out[`patch_${k}`] = body[k] == null || body[k] === '' ? null : body[k];
+    }
+    return out;
+  }
+  /** Does a row change nothing? (A held-differently card the same as the service.) */
+  const exceptionEmpty = (x) => x.kind === 'modified' && PATCH_COLS.every(c => x[c] == null);
+
+  /**
    * An exception already on one rule as the body that writes it on another:
    * a day ticked on a service that has one ("Sat & Sun, not on the last").
    * Only what it changes is named; a place it does not change is left out,
@@ -245,7 +283,7 @@
   }
 
   const api = { DAYS, WEEKS_OF_MONTH, WEEKDAYS, daysOf, fortnightDates, parityOrder, naturalFirstDate, fortnightPreview, cadence, requestBody, problem,
-    WEEK_WORD, weeksPhrase, exceptionTitle, exceptionSummary, exceptionBody, exceptionCopy };
+    WEEK_WORD, weeksPhrase, exceptionTitle, exceptionSummary, exceptionBody, exceptionCopy, exceptionPatch, exceptionEmpty };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   root.AgoraRuleForm = api;
   if (typeof document === 'undefined') return;

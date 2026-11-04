@@ -218,3 +218,38 @@ test("a day ticked on a service gets the service's exceptions as they are (rule-
   const copied = await call('POST', `/api/admin/schedules/${sat}/exceptions`, RF.exceptionCopy(plain));
   assert.equal(copied.body.patch_location_parish_id, null, 'not "at its own church"');
 });
+
+test('the form works out the row the Worker will store (rule-form.js exceptionPatch), saved or not', async () => {
+  const RF = require('../../public/shared/rule-form.js');
+  const { call, raw, sid, parishId } = fresh();
+  const other = raw.prepare(`SELECT id FROM parishes WHERE id NOT IN ('_unassigned', ?) ORDER BY id LIMIT 1`).get(parishId).id;
+  const card = (over) => RF.exceptionBody({ weeks: ['last'], title: 'Matins & Divine Liturgy', feast: '', start_time: '09:00', end_time: '12:00',
+    languages: 'Arabic, English', description: '', location_override: '', location_parish_id: '', location_lat: '', location_lng: '', ...over });
+  const bodies = [
+    card({ end_time: '11:30', languages: 'English' }),
+    card({ title: 'Liturgy in English', start_time: '10:00' }),
+    card({ location_override: 'Church hall' }),
+    card({ location_parish_id: other }),
+    card({ feast: 'Youth Sunday', description: 'Bring a plate' }),
+    RF.exceptionBody({ weeks: ['last'], not_held: true }),
+  ];
+  const cols = (x) => { const { id, schedule_id, created_at, updated_at, updated_by, ...rest } = x; return rest; };
+  for (const body of bodies) {
+    const rule = raw.prepare('SELECT * FROM schedules WHERE id = ?').get(sid);
+    const r = await call('POST', `/api/admin/schedules/${sid}/exceptions`, body);
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.deepEqual(RF.exceptionPatch(body, rule), cols(r.body), JSON.stringify(body));
+    await call('DELETE', `/api/admin/week-exceptions/${r.body.id}`);
+  }
+  // The same as the service is nothing, to the form as to the Worker.
+  const same = card({});
+  assert.ok(RF.exceptionEmpty(RF.exceptionPatch(same, raw.prepare('SELECT * FROM schedules WHERE id = ?').get(sid))));
+  assert.equal((await call('POST', `/api/admin/schedules/${sid}/exceptions`, same)).status, 400);
+  // A rule held elsewhere, an exception at home: its own parish named.
+  raw.prepare(`UPDATE schedules SET location_override = 'The school' WHERE id = ?`).run(sid);
+  const home = card({ end_time: '11:30' });
+  const rule = raw.prepare('SELECT * FROM schedules WHERE id = ?').get(sid);
+  const made = await call('POST', `/api/admin/schedules/${sid}/exceptions`, home);
+  assert.deepEqual(RF.exceptionPatch(home, rule), cols(made.body));
+  assert.equal(made.body.patch_location_parish_id, parishId);
+});

@@ -238,6 +238,9 @@
       el: back,
       body,
       setTitle: (t) => { back.querySelector('.fs-title b').textContent = t; },
+      // Something changed that no field's typing says: a card over this one
+      // left it a change to save (editing.js exceptionsBlock).
+      markDirty: () => { dirty = true; },
       close,
       get closed() { return closed; },
     };
