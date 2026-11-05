@@ -232,3 +232,18 @@ test('when a service is held, without its name', () => {
     assert.strictEqual(E.serviceWhen({ day_of_week: 2, start_time: '19:00', end_time: '20:30' }), 'Tuesdays, 7:00–8:30 pm');
   } finally { delete globalThis.AgoraSigns; }
 });
+
+// Kevin, 5 Nov 2026: the date drawn as its feed row, under its service, with
+// what it changes highlighted — and nothing that only repeats the service.
+test('what a date changes on its service', () => {
+  const rule = { title: 'St Emilia’s Mums Group', feast: null, description: 'A mums group, on the first Friday of each month.',
+    start_time: '10:00', event_type: 'social', location_override: 'Antiochian Youth Centre, 8 Henry St', poster_path: null };
+  const card = { title: 'St Emilia’s Mums Group', feast: 'Christmas Ornaments', description: 'Make a Christmas ornament for the tree.',
+    start_time: '10:00', event_type: 'social', location_override: '', location_parish_id: '', location_lat: '', location_lng: '' };
+  assert.deepStrictEqual([...E.dateChanges(card, rule, '/posters/dec.png')].sort(), ['description', 'feast', 'poster']);
+  // Its own poster already on the rule, and an empty field, change nothing.
+  assert.deepStrictEqual([...E.dateChanges({ ...card, feast: '', description: '' }, { ...rule, poster_path: '/posters/dec.png' }, '/posters/dec.png')], []);
+  // A new time, name or place is a change; the same words as the rule are not.
+  assert.deepStrictEqual([...E.dateChanges({ ...card, feast: '', description: rule.description, start_time: '10:30',
+    title: 'Mums & Bubs', location_override: 'Church hall' }, rule, null)].sort(), ['start_time', 'title', 'where']);
+});

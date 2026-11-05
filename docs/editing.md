@@ -428,10 +428,15 @@ what `patch_feast` is for — not a new title, because the service is still the
 Liturgy. The usual rules hold: the occurrence keeps what it already is (a
 cancelled Sunday that the programme gives a saint stays cancelled), and a field
 the card leaves empty is not "clear it" — a note somebody put on that Sunday
-survives (`occurrenceBody`). The card says which service it changes where the
-combine would be, and **Make it a separate event instead** unlinks it; so does
-changing its date, and so does moving the draft, since the rule was the old
-parish's. Publish checks the link again — the date is still the occurrence's
+survives (`occurrenceBody`). Where the combine would be, at the top of the
+card, it shows the timetable's line it is a date of, a link, and the date as
+its row in the feed will be, with what it changes on that date highlighted
+(`dateChanges`: its subtitle, its own description, the poster, a new time,
+name or place) — Kevin's markup of the sentences it had (5 Nov 2026). The
+link is a button: tapped, the card is an event of its own and the link shows
+broken, to tap back (it was **Make it a separate event instead**). Changing
+its date unlinks it for good, and so does moving the draft, since the rule
+was the old parish's. Publish checks the link again — the date is still the occurrence's
 and the rule still the parish's — and refuses otherwise. A card matched only
 by its time and sort, under a name that is no kin to the rule's, keeps the
 rule's title and gives its own to the subtitle when that is empty: "Games
@@ -449,9 +454,10 @@ the workshop's poster on every Friday after. Now `matchOccurrences` matches a
 card against the read's own new services too, after the rules on file (a rule
 on file wins), and links it as `new:<key>:YYYY-MM-DD` — `key` is the service's
 name in the draft (`s1`, `s2`…, set in `normalizeRead` and kept through the
-services PUT), so no migration. The card says so at its top ("✓ Fri 6 Nov: a
-date of St Emilia's Mums Group · 1st Fridays, 10:00 am · new, under "Held
-regularly" above") and the service's row names its date below. One Publish
+services PUT), so no migration. The card shows it at its top, the service's
+line marked "new", and the service's row above has a link and the date. A
+service on file whose dates are all linked below is not listed above at all:
+each card shows its line. One Publish
 adds the service first (`addServices`, its description and its Where, no
 poster), then relinks each such card to the rule it made (`relinkCards`) and
 publishes it onto that occurrence like any other, with the poster as the
@@ -459,7 +465,7 @@ date's own. Publish on a `new:` card is refused by the Worker (409,
 `unlinked`): the service has to be on the timetable first. A date the service
 does not run on (it moved, or the weeks changed) shows the card's link in
 warning and is not published until it is fixed or unlinked. Next month's
-poster finds the rule on file and links as before ("on the timetable").
+poster finds the rule on file and links as before.
 
 **An event at another parish's church is theirs, with this parish taking
 part** (Kevin, 3 Nov 2026). St Andrew, Gladesville's November programme gave
