@@ -196,3 +196,39 @@ test('Paste starts the read in the tap itself, before anything is awaited', () =
   E.readClipboardImage({ read: () => { called = true; return Promise.resolve([]); } });
   assert.strictEqual(called, true, 'read() runs synchronously');
 });
+
+test('a card’s link to a service: a rule on file, or one the same poster gives', () => {
+  assert.strictEqual(E.occDate('199:2026-11-06'), '2026-11-06');
+  assert.strictEqual(E.occOf('199:2026-11-06'), '199');
+  assert.strictEqual(E.occDate('new:s1:2026-11-06'), '2026-11-06');
+  assert.strictEqual(E.occOf('new:s1:2026-11-06'), 'new:s1');
+  assert.strictEqual(E.isNewOcc('new:s1:2026-11-06'), true);
+  assert.strictEqual(E.isNewOcc('199:2026-11-06'), false);
+  assert.strictEqual(E.isNewOcc(''), false);
+  assert.strictEqual(E.occDate(''), '');
+});
+
+test('a date is one of a weekly service’s by its weekday, its weeks of the month and its period', () => {
+  // St Emilia's Mums Group: the first Friday of each month (5 Nov 2026).
+  const mums = { day_of_week: 5, week_of_month: 'first' };
+  assert.strictEqual(E.serviceRunsOn(mums, '2026-11-06'), true);
+  assert.strictEqual(E.serviceRunsOn(mums, '2026-11-13'), false, 'the second Friday');
+  assert.strictEqual(E.serviceRunsOn(mums, '2026-11-07'), false, 'a Saturday');
+  assert.strictEqual(E.serviceRunsOn({ ...mums, effective_from: '2026-12-01' }, '2026-11-06'), false, 'before it starts');
+  assert.strictEqual(E.serviceRunsOn({ ...mums, effective_to: '2026-10-31' }, '2026-11-06'), false, 'after it ends');
+  // project.mjs's positions: the 4th is the 22nd–28th, and the last has no week after it.
+  const liturgy = { day_of_week: 0, week_of_month: 'second,fourth' };
+  assert.strictEqual(E.serviceRunsOn(liturgy, '2026-12-27'), true, 'the 4th Sunday of a four-Sunday month');
+  assert.strictEqual(E.serviceRunsOn({ day_of_week: 0, week_of_month: 'last' }, '2026-11-29'), true);
+  assert.strictEqual(E.serviceRunsOn({ day_of_week: 0, week_of_month: 'last' }, '2026-11-22'), false);
+  assert.strictEqual(E.serviceRunsOn({ day_of_week: 0 }, '2026-11-22'), true, 'every week');
+  assert.strictEqual(E.serviceRunsOn(null, '2026-11-22'), false);
+});
+
+test('when a service is held, without its name', () => {
+  globalThis.AgoraSigns = require('../public/shared/signs.js');
+  try {
+    assert.strictEqual(E.serviceWhen({ day_of_week: 5, start_time: '10:00', week_of_month: 'first' }), '1st Fridays, 10:00 am');
+    assert.strictEqual(E.serviceWhen({ day_of_week: 2, start_time: '19:00', end_time: '20:30' }), 'Tuesdays, 7:00–8:30 pm');
+  } finally { delete globalThis.AgoraSigns; }
+});

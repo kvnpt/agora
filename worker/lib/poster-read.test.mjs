@@ -104,7 +104,13 @@ test('the prompt asks for English, a timetable’s services, and a regular servi
   assert.match(SYSTEM_PROMPT, /- after: the service the event follows, when the image gives the event no start time of its own/);
   assert.match(SYSTEM_PROMPT, /a movie night after the Liturgy is Youth or Social, never Liturgy/);
   assert.match(SYSTEM_PROMPT, /for the event itself: never the kind of a service it follows/);
-  assert.match(SYSTEM_PROMPT, /with its commemoration in feast and not in the title/);
+  assert.match(SYSTEM_PROMPT, /with what that date is about in feast and not in the title/);
+  // St Emilia's Mums Group at St Nicholas, Punchbowl (5 Nov 2026): the group
+  // on first Fridays and its 6 November coaster workshop, off one poster.
+  assert.match(SYSTEM_PROMPT, /is the group in services \(the first Friday of each month\) and that Friday's meeting in events/);
+  assert.match(SYSTEM_PROMPT, /that date's own activity or topic as printed \("Coaster-making Workshop"\)/);
+  assert.match(SYSTEM_PROMPT, /Only what holds every time: what is particular to one date/);
+  assert.match(SYSTEM_PROMPT, /- venue: where it is held every time, when that is not the parish's own church/);
   assert.match(SYSTEM_PROMPT, /"every 2nd and 4th Sunday" is \["second", "fourth"\]/);
   assert.match(SYSTEM_PROMPT, /Not a priest's own mobile/);
 });
@@ -279,13 +285,13 @@ test('a sign: its weekly services as rules, its details, and nothing without a d
   assert.strictEqual(r.kind, 'timetable');
   assert.strictEqual(r.language, null, 'English is not a translation');
   assert.deepStrictEqual(r.services, [
-    { title: 'Orthros & Divine Liturgy', day_of_week: 6, start_time: '08:00', end_time: '10:00',
-      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, effective_to: null, read_notes: [] },
+    { title: 'Orthros & Divine Liturgy', day_of_week: 6, start_time: '08:00', end_time: '10:00', week_of_month: null, languages: null,
+      event_type: 'liturgy', location_override: null, description: null, effective_from: null, effective_to: null, read_notes: [], key: 's1' },
     { title: 'Divine Liturgy', day_of_week: 0, start_time: '18:00', end_time: null,
-      week_of_month: 'second,fourth', languages: ['English'], event_type: 'liturgy', description: null, effective_from: null, effective_to: null,
-      read_notes: [{ field: 'weeks', text: 'Printed as "2nd & 4th".' }] },
-    { title: 'Every week', day_of_week: 0, start_time: '09:00', end_time: null,
-      week_of_month: null, languages: null, event_type: 'liturgy', description: null, effective_from: null, effective_to: null, read_notes: [] },
+      week_of_month: 'second,fourth', languages: ['English'], event_type: 'liturgy', location_override: null, description: null,
+      effective_from: null, effective_to: null, read_notes: [{ field: 'weeks', text: 'Printed as "2nd & 4th".' }], key: 's2' },
+    { title: 'Every week', day_of_week: 0, start_time: '09:00', end_time: null, week_of_month: null, languages: null,
+      event_type: 'liturgy', location_override: null, description: null, effective_from: null, effective_to: null, read_notes: [], key: 's3' },
   ]);
   assert.deepStrictEqual(r.details, { address: 'Cnr Weekes & Carpenter Ave, Rookwood', phone: '(02) 9643 2850',
     email: null, website: 'https://www.example.org.au' });
@@ -310,9 +316,9 @@ test('a flyer for something held every week: a rule with its words and its perio
   assert.deepStrictEqual(r.events, []);
   assert.strictEqual(r.details, null, 'a flyer’s contact is not the parish’s details');
   assert.deepStrictEqual(r.services[0], { title: 'Church Choir Practice', day_of_week: 2, start_time: '19:00',
-    end_time: null, week_of_month: null, languages: ['Arabic', 'English'], event_type: 'other',
+    end_time: null, week_of_month: null, languages: ['Arabic', 'English'], event_type: 'other', location_override: null,
     description: 'Led by Simon Yazbek. No prior experience needed; all are welcome.', effective_from: '2026-11-03',
-    effective_to: null, read_notes: [] });
+    effective_to: null, read_notes: [], key: 's1' });
   assert.deepStrictEqual([r.services[1].description, r.services[1].effective_from, r.services[1].effective_to, r.services[1].week_of_month],
     [null, null, '2026-12-09', 'second'], 'no words, and a start that is not a date, are nothing; a period’s end is kept');
   assert.match(SYSTEM_PROMPT, /"7pm every Tuesday" is one/);

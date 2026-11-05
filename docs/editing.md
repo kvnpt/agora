@@ -432,7 +432,34 @@ survives (`occurrenceBody`). The card says which service it changes where the
 combine would be, and **Make it a separate event instead** unlinks it; so does
 changing its date, and so does moving the draft, since the rule was the old
 parish's. Publish checks the link again — the date is still the occurrence's
-and the rule still the parish's — and refuses otherwise.
+and the rule still the parish's — and refuses otherwise. A card matched only
+by its time and sort, under a name that is no kin to the rule's, keeps the
+rule's title and gives its own to the subtitle when that is empty: "Games
+Night" on the youth group's Friday is that Friday's `patch_feast`, not a
+`patch_title` that renames the group.
+
+**A service and its own date, off one poster** (Kevin, 5 Nov 2026). St
+Emilia's Mums Group, St Nicholas, Punchbowl, moved to "the first Friday of
+every month" and its poster gave that Friday's coaster-making workshop. The
+read was right — the group in `services`, the workshop in `events` — but a card
+could only match a rule already on file, so it took two reads: add the
+service, discard the draft, read it again, and take **Make it a separate
+event instead** as the only sign the date was linked. And the service carried
+the workshop's poster on every Friday after. Now `matchOccurrences` matches a
+card against the read's own new services too, after the rules on file (a rule
+on file wins), and links it as `new:<key>:YYYY-MM-DD` — `key` is the service's
+name in the draft (`s1`, `s2`…, set in `normalizeRead` and kept through the
+services PUT), so no migration. The card says so at its top ("✓ Fri 6 Nov: a
+date of St Emilia's Mums Group · 1st Fridays, 10:00 am · new, under "Held
+regularly" above") and the service's row names its date below. One Publish
+adds the service first (`addServices`, its description and its Where, no
+poster), then relinks each such card to the rule it made (`relinkCards`) and
+publishes it onto that occurrence like any other, with the poster as the
+date's own. Publish on a `new:` card is refused by the Worker (409,
+`unlinked`): the service has to be on the timetable first. A date the service
+does not run on (it moved, or the weeks changed) shows the card's link in
+warning and is not published until it is fixed or unlinked. Next month's
+poster finds the rule on file and links as before ("on the timetable").
 
 **An event at another parish's church is theirs, with this parish taking
 part** (Kevin, 3 Nov 2026). St Andrew, Gladesville's November programme gave
@@ -583,11 +610,17 @@ programme's date of a service on file, a run of days, a combine, or to someone
 who cannot add to the timetable.
 
 The kind decides one thing: how a regular service is added. A sign's name the
-sign as the timetable's source ("Church signage"). A poster's carry the poster
-as the rule's own and their description, with the period it gives (**From** /
-**Until**: "every Friday in November"), and name no source — one flyer is not
-where the rest of the timetable came from, and a timetable has one source line.
-A service already on file is offered **Put this poster on it**. The editor
+sign as the timetable's source ("Church signage"). A poster's carry their
+description, with the period it gives (**From** / **Until**: "every Friday in
+November"), and name no source — one flyer is not where the rest of the
+timetable came from, and a timetable has one source line. They carry the
+poster as the rule's own only when it has no date on it (the choir practice's
+"7pm every Tuesday"); a poster with dates on it stays on those dates, as
+next month's meeting must not show this month's workshop (`posterIsDated` in
+`event-editor.js`). A service read off a poster has a **Where** of its own,
+when it is not held at the parish's church (`venue` from the reader, as
+`location_override`). A service already on file is offered **Put this poster
+on it**, again only for a poster with no date on it. The editor
 shows the services' review above the event cards, headed "Held regularly — for
 the timetable", and the dialog is "Add from the poster" when there are both.
 

@@ -818,6 +818,8 @@ test('a time alone never makes a youth night a service’s date — a service at
     event_type: 'youth', active: 1 }]);
   assert.deepEqual(read.events.map(e => e.occurrence), [null, `${yg}:2030-11-22`, `${yg}:2030-11-29`],
     'Vespers at its time is not; a social at its time is; its own name is, whatever the kind');
+  // A name of its own on that evening is what the evening is about: the subtitle, under the group's.
+  assert.deepEqual([read.events[1].title, read.events[1].feast], ['Youth Group', 'Games Night']);
 });
 
 // ── a service by the time it runs, not only when it starts ──
@@ -1349,4 +1351,105 @@ test('moving a draft: the old parish’s event on file goes, and another parish�
   const r = await f.call('POST', `/api/admin/draft-events/${there.cards[0].id}/publish`, {});
   assert.equal(r.status, 201);
   assert.equal(r.body.on_file, true, 'filled in, not joined by its own parish');
+});
+
+// ── a service and its own dates, off one poster ──
+
+/**
+ * St Emilia's Mums Group's poster at St Nicholas, Punchbowl (5 Nov 2026):
+ * the group, now on the first Friday of every month at the youth centre
+ * across the road, and this month's meeting, a coaster workshop. The group
+ * was not on the timetable, so the workshop could only be a one-off: Kevin
+ * added the group, threw the draft away and read the poster again to get
+ * the 6th onto it. (2030: 1 November 2030 is a first Friday.)
+ */
+const MUMS_GROUP = (event = {}) => ({
+  kind: 'poster', written_in: 'English', other_parish: null, notes: [],
+  details: { address: '', phone: '', email: '', website: '' },
+  services: [{ title: 'St Emilia’s Mums Group', every: 'first Friday of each month', day: 'Friday', start_time: '10:00',
+    end_time: '', weeks: ['first'], languages: [], event_type: 'social',
+    venue: 'Antiochian Youth Centre, 8 Henry St, Punchbowl NSW 2234',
+    description: 'A mums group on the first Friday of each month. All mums welcome, and stay-at-home dads too.',
+    starts: '', until: '', notes: [] }],
+  events: [{ title: 'Coaster-making Workshop', feast: '', date: '2030-11-01', weekday_printed: 'Friday', year_printed: true,
+    after: '', start_time: '10:00', end_time: null, end_date: '', event_type: 'social', languages: [],
+    venue: 'Antiochian Youth Centre, 8 Henry St, Punchbowl NSW 2234',
+    description: 'This month: make your own sparkly coaster. All mums welcome.', notes: [], ...event }],
+});
+
+test('a dated meeting of a service the same poster gives is linked to that service, before it is on the timetable', async () => {
+  const f = fresh({ role: 'editor' });
+  const draft = await readAt(f, PUNCHBOWL, MUMS_GROUP());
+  const [svc] = draft.read_services;
+  assert.equal(svc.key, 's1');
+  assert.equal(svc.location_override, 'Antiochian Youth Centre, 8 Henry St, Punchbowl NSW 2234', 'where it is held every time');
+  const card = draft.cards[0];
+  assert.equal(card.occurrence, 'new:s1:2030-11-01');
+  // The group's name, with the day's own under it — not "Coaster-making Workshop" in its place.
+  assert.deepEqual([card.title, card.feast, card.event_type], ['St Emilia’s Mums Group', 'Coaster-making Workshop', 'social']);
+
+  // Nothing publishes it half-linked, as a one-off beside the group.
+  const early = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(early.status, 409);
+  assert.equal(early.body.unlinked, true);
+  assert.equal(f.raw.prepare("SELECT COUNT(*) n FROM events WHERE parish_id = ? AND title LIKE '%Mums%'").get(PUNCHBOWL).n, 0);
+
+  // What the editor does at Publish: add the group (without the poster,
+  // which is the 1st's), link the card to it, publish the card onto it.
+  const rule = await f.call('POST', '/api/admin/schedules', {
+    parish_id: PUNCHBOWL, title: svc.title, day_of_week: svc.day_of_week, start_time: svc.start_time,
+    event_type: svc.event_type, week_of_month: svc.week_of_month, description: svc.description,
+    location_override: svc.location_override, poster_path: null });
+  assert.equal(rule.status, 201);
+  const rid = rule.body.id;
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${card.id}`, { occurrence: `${rid}:2030-11-01` })).status, 200);
+  const pub = await f.call('POST', `/api/admin/draft-events/${card.id}/publish`, {});
+  assert.equal(pub.status, 201);
+  assert.equal(pub.body.occurrence, true);
+  const o = f.raw.prepare('SELECT * FROM schedule_overrides WHERE schedule_id = ? AND occurrence_date = ?').get(rid, '2030-11-01');
+  assert.equal(o.patch_feast, 'Coaster-making Workshop');
+  assert.equal(o.patch_title, null, 'the group’s own name, as the rule has it');
+  assert.equal(o.patch_poster_path, draft.poster_path, 'the poster is the 1st’s');
+  assert.match(o.patch_description, /sparkly coaster/);
+  const r = f.raw.prepare('SELECT poster_path, location_override FROM schedules WHERE id = ?').get(rid);
+  assert.deepEqual([r.poster_path, r.location_override], [null, 'Antiochian Youth Centre, 8 Henry St, Punchbowl NSW 2234']);
+});
+
+test('next month, the group on file: its date is matched to the rule, not to the poster’s copy of it', async () => {
+  const f = fresh({ role: 'editor' });
+  const rid = f.raw.prepare(`INSERT INTO schedules (parish_id, day_of_week, start_time, title, event_type, week_of_month)
+    VALUES (?, 5, '10:00', 'St Emilia’s Mums Group', 'social', 'first') RETURNING id`).get(PUNCHBOWL).id;
+  const draft = await readAt(f, PUNCHBOWL, MUMS_GROUP({ title: 'Christmas Ornaments', date: '2030-12-06', weekday_printed: 'Friday' }));
+  assert.equal(draft.cards[0].occurrence, `${rid}:2030-12-06`);
+  assert.deepEqual([draft.cards[0].title, draft.cards[0].feast], ['St Emilia’s Mums Group', 'Christmas Ornaments']);
+});
+
+test('a date that is not one of the proposed service’s, or a run of days, is not linked to it', () => {
+  const services = [{ key: 's1', title: 'Mums Group', day_of_week: 5, start_time: '10:00', week_of_month: 'first', event_type: 'social' }];
+  const read = matchOccurrences({ services, events: [
+    { title: 'Coaster-making Workshop', date: '2030-11-08', start_time: '10:00', event_type: 'social' },
+    { title: 'Mums Group', date: '2030-11-01', start_time: '10:00', event_type: 'social' },
+    { title: 'Mums Group camp', date: '2030-12-06', end_date: '2030-12-07', start_time: '10:00', event_type: 'social' },
+    { title: 'Bible study', date: '2030-12-06', start_time: '10:00', event_type: 'talk', feast: 'Romans 8' },
+  ] }, []);
+  assert.deepEqual(read.events.map(e => e.occurrence), [null, 'new:s1:2030-11-01', null, 'new:s1:2030-12-06'],
+    'the second Friday is not a first; a run of days never is');
+  // A card with a subtitle of its own keeps its name: it would lose one or the other.
+  assert.deepEqual([read.events[3].title, read.events[3].feast], ['Bible study', 'Romans 8']);
+  // A service without its key (an older draft) is never a target.
+  const old = matchOccurrences({ services: [{ ...services[0], key: undefined }],
+    events: [{ title: 'Mums Group', date: '2030-11-01', start_time: '10:00', event_type: 'social' }] }, []);
+  assert.equal(old.events[0].occurrence, null);
+});
+
+test('a card’s link to a service still to be added is a link the autosave takes, and nothing else like it', async () => {
+  const f = fresh({ role: 'editor' });
+  const draft = await readAt(f, PUNCHBOWL, MUMS_GROUP());
+  const id = draft.cards[0].id;
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${id}`, { occurrence: 'new:s1:2030-11-01' })).status, 200);
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${id}`, { occurrence: 'new:s 1:2030-11-01' })).body.field, 'occurrence');
+  assert.equal((await f.call('PATCH', `/api/admin/draft-events/${id}`, { occurrence: 'new:2030-11-01' })).body.field, 'occurrence');
+  // Saving the services back keeps each one's key, which its cards point at.
+  const put = await f.call('PUT', `/api/admin/drafts/${draft.id}/services`, { services: draft.read_services });
+  assert.equal(put.body.read_services[0].key, 's1');
 });

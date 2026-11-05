@@ -521,6 +521,16 @@
   border: 1px solid var(--accent-ring, var(--border));
   border-radius: 12px;
 }
+.ee-occ-what { font-size: 13px; }
+.ee-occ-how { color: var(--ee-muted); }
+.ee-occ-how:empty { display: none; }
+/* First in the card, it says where everything under it goes. */
+.ee-card.is-open .ee-occ { margin-top: 8px; }
+/* Its service changed so this date is not one of it: nothing is published onto it. */
+.ee-occ.is-off {
+  background: color-mix(in srgb, var(--ee-warn) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ee-warn) 40%, transparent);
+}
 .ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* ── Another parish's event, this one taking part ──

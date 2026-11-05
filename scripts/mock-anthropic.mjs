@@ -9,7 +9,8 @@
 //   POST /__mode   {"mode":"one"|"three"|"elsewhere"|"not_an_event"|"busy"
 //                   |"sign_rookwood"|"sign_doonside"|"programme_rookwood"
 //                   |"recurring_croydonpark"|"festival_mixed"|"weekday_dandenong"
-//                   |"programme_gladesville"|"feast_at_burwood","delay":60}
+//                   |"programme_gladesville"|"feast_at_burwood"|"mums_group"
+//                   |"mums_group_december","delay":60}
 //                  elsewhere: St Elias, Wollongong's poster, read as if dropped at another parish
 //                  sign_*: the board out the front of St Athanasios, Rookwood and of
 //                    Sts Peter & Paul, Doonside — weekly services and details
@@ -35,6 +36,12 @@
 //                    St Nectarios, Burwood's feast — its own Sunday Liturgy, the eve's
 //                    Vespers at Burwood (not on file there: added there) and the feast
 //                    at Burwood (on file there: joined), each with Gladesville taking part
+//                  mums_group: St Emilia's Mums Group's poster at St Nicholas, Punchbowl
+//                    (5 Nov 2026) — the group, now on the first Friday of each month at
+//                    the youth centre, for the timetable, and its 6 November coaster
+//                    workshop: a date of that group, linked to it before it is added
+//                  mums_group_december: next month's, the group on file — its 4 December
+//                    meeting goes onto the rule
 //                  (each written from the photo by hand: what a good read of it says,
 //                  except weekday_dandenong and programme_gladesville, the reads that went wrong)
 //   GET  /__calls  what the Worker sent: model, top-level keys, headers, image
@@ -45,6 +52,20 @@ import http from 'node:http';
 const port = Number(process.argv[2] || 8788);
 let mode = 'one', delay = 60;
 const calls = [];
+
+/** St Emilia's Mums Group's poster, a month's meeting of it (St Nicholas, Punchbowl, 5 Nov 2026). */
+function mumsGroup(topic, date, words) {
+  const venue = 'Antiochian Youth Centre, 8 Henry St, Punchbowl NSW 2234';
+  return {
+    kind: 'poster', other_parish: null, notes: [],
+    services: [{ title: 'St Emilia’s Mums Group', every: 'first Friday of each month', day: 'Friday', start_time: '10:00',
+      end_time: '', weeks: ['first'], languages: [], event_type: 'social', venue,
+      description: 'A mums group, meeting on the first Friday of each month.', starts: '', until: '', notes: [] }],
+    events: [{ title: 'St Emilia’s Mums Group', feast: topic, date, weekday_printed: 'Friday', year_printed: true, after: '',
+      start_time: '10:00', end_time: null, end_date: '', event_type: 'social', languages: [], venue,
+      description: words, notes: [] }],
+  };
+}
 
 const DOCS = {
   one: {
@@ -231,6 +252,10 @@ const DOCS = {
       languages: [], venue: null, description: null, notes: [],
     })),
   },
+  mums_group: mumsGroup('Coaster-making Workshop', '2026-11-06',
+    'Coaster-making workshop: create your very own coaster.'),
+  mums_group_december: mumsGroup('Christmas Ornaments', '2026-12-04',
+    'Make a Christmas ornament for the tree.'),
 };
 
 // Every answer in the schema's full shape (worker/lib/poster-read.mjs), as

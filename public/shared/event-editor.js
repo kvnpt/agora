@@ -148,6 +148,44 @@
     ].filter(Boolean).join(' · ');
   }
 
+  /** "1st Fridays, 10:00 am": when a weekly service is held, without its name. */
+  function serviceWhen(s) {
+    const weeks = root.AgoraSigns ? root.AgoraSigns.weeksLabel(s.week_of_month) : '';
+    const day = DAY_PLURALS[s.day_of_week] || 'No day';
+    const time = timeRange(s.start_time, s.end_time);
+    return `${weeks ? `${weeks} ${day}` : day}${time ? `, ${time}` : ''}`;
+  }
+
+  /**
+   * A card's link to a regular service: "sid:YYYY-MM-DD" for a rule on file,
+   * or "new:<key>:YYYY-MM-DD" for a service the same read proposes, not on
+   * the timetable yet (drafts.mjs matchOccurrences) — St Emilia's Mums
+   * Group's first Fridays and its 6 November meeting, off one poster.
+   */
+  const occDate = (occ) => (occ ? String(occ).slice(String(occ).lastIndexOf(':') + 1) : '');
+  const occOf = (occ) => (occ ? String(occ).slice(0, String(occ).lastIndexOf(':')) : '');
+  const isNewOcc = (occ) => /^new:/.test(String(occ || ''));
+
+  /**
+   * Is a date one of a weekly service's: its weekday, its weeks of the month
+   * as project.mjs counts them (the 4th is the 22nd–28th, the last the one
+   * with no week after it), inside its From/Until. A proposed service has no
+   * fortnight; a rule's week_parity is the Worker's to check on Publish.
+   */
+  function serviceRunsOn(s, date) {
+    if (!s || !isDate(date)) return false;
+    const [y, m, d] = date.split('-').map(Number);
+    const at = new Date(Date.UTC(y, m - 1, d));
+    if (at.getUTCDay() !== Number(s.day_of_week)) return false;
+    if (s.effective_from && date < s.effective_from) return false;
+    if (s.effective_to && date > s.effective_to) return false;
+    const weeks = String(s.week_of_month || '').split(',').map(w => w.trim()).filter(Boolean);
+    if (!weeks.length) return true;
+    const last = new Date(Date.UTC(y, m - 1, d + 7)).getUTCMonth() !== m - 1;
+    return weeks.some(w => (w === 'first' ? d <= 7 : w === 'second' ? d >= 8 && d <= 14
+      : w === 'third' ? d >= 15 && d <= 21 : w === 'fourth' ? d >= 22 && d <= 28 : w === 'last' ? last : false));
+  }
+
   /** "Greek, English" <-> ['Greek', 'English']. */
   const textToLangs = (text) => String(text || '').split(',').map(s => s.trim()).filter(Boolean);
   const langsToText = (list) => (Array.isArray(list) ? list.join(', ') : String(list || ''));
@@ -868,6 +906,15 @@
               <button type="button" class="pill-btn" data-act="own"></button>
             </div>
           </div>
+          <!-- A date of a regular service (refreshOccurrence): first, in words,
+               since it says where everything under it goes — Kevin, 5 Nov
+               2026, had only "Make it a separate event instead", under Where,
+               to tell him his card was going onto the Mums Group's Friday. -->
+          <div class="ee-occ" hidden>
+            <div class="ee-occ-what"></div>
+            <div class="ee-occ-how"></div>
+            <button type="button" class="pill-btn" data-act="unlink">Make it a separate event instead</button>
+          </div>
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
           ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
@@ -897,10 +944,6 @@
             '<div class="ee-hint">Another parish, or a place of its own with a pin — it shows on the map where it is held. The parish’s own address and pin are untouched.</div>')}
           <div class="ee-their" hidden>
             <button type="button" class="pill-btn" data-act="their"></button>
-          </div>
-          <div class="ee-occ" hidden>
-            <div class="ee-occ-what"></div>
-            <button type="button" class="pill-btn" data-act="unlink">Make it a separate event instead</button>
           </div>
           <details class="ee-combine">
             <summary>Include other parishes…</summary>
@@ -939,6 +982,7 @@
         feastHint: node.querySelector('[data-hint="feast"]'),
         occ: node.querySelector('.ee-occ'),
         occWhat: node.querySelector('.ee-occ-what'),
+        occHow: node.querySelector('.ee-occ-how'),
         host: node.querySelector('.ee-host'),
         hostWhat: node.querySelector('.ee-host-what'),
         hostAsk: node.querySelector('.ee-host-ask'),
@@ -1050,7 +1094,7 @@
         card.hints = { printed_weekday: null, year_printed: null };
         loadCandidates(card);
         // A programme's Sunday on another date is not that Sunday any more.
-        if (card.fields.occurrence && card.fields.occurrence.split(':')[1] !== value) {
+        if (card.fields.occurrence && occDate(card.fields.occurrence) !== value) {
           unlinkCard(card, { quiet: true });
           card.notes.push({ field: 'date', text: 'A new date, so this is an event of its own now — not a change to the regular service.' });
         }
@@ -1083,7 +1127,9 @@
       if (v != null && v !== '') return !!Number(v);
       const occ = card.fields.occurrence;
       if (occ) {
-        const rule = (state.rules || []).find(r => String(r.id) === occ.split(':')[0]);
+        const sv = isNewOcc(occ) ? linkedService(occ) : null;
+        if (sv) return svcScoped(sv);
+        const rule = ruleOf(occ);
         return !!(rule && rule.parish_scoped);
       }
       return card.fields.event_type === 'other';
@@ -1097,6 +1143,14 @@
       refreshCard(card);
       sync();
     }
+
+    /** The rule on file a card is a date of, or null. */
+    const ruleOf = (occ) => (occ && !isNewOcc(occ)
+      ? (state.rules || []).find(r => String(r.id) === occOf(occ)) || null : null);
+    /** Which of the read's services a "new:<key>:date" card is a date of: its index, or -1. */
+    const linkedIndex = (occ) => (isNewOcc(occ)
+      ? state.services.findIndex(sv => sv.key && `new:${sv.key}` === occOf(occ)) : -1);
+    const linkedService = (occ) => state.services[linkedIndex(occ)] || null;
 
     /** A card matched to a regular service, made an event of its own. */
     function unlinkCard(card, { quiet = false } = {}) {
@@ -1414,7 +1468,7 @@
       // no longer matters, as it will not be published.
       card.els.chips.innerHTML = binned
         ? `<span class="ee-chip ee-chip-gone">${hasPassed(card) ? 'date has passed · ' : ''}to discard</span>`
-        : (card.fields.occurrence ? '<span class="ee-chip ee-chip-occ">regular service</span>' : '')
+        : (card.fields.occurrence ? `<span class="ee-chip ee-chip-occ">${isNewOcc(card.fields.occurrence) ? 'new on the timetable' : 'on the timetable'}</span>` : '')
         + (hereOnFile(card) ? '<span class="ee-chip ee-chip-occ">on file here</span>'
           : card.fields.host_parish_id ? `<span class="ee-chip ee-chip-occ">${card.fields.host_event_id ? 'taking part' : 'to add'} at ${esc(nameOf(card.fields.host_parish_id))}</span>` : '')
         + (hostPending(card) ? '<span class="ee-chip ee-chip-warn">check replaced services</span>' : '')
@@ -1502,8 +1556,13 @@
     }
 
     /**
-     * A card matched to a regular service says which, where the combine would
-     * be — publishing writes onto that service, so there is nothing to combine.
+     * A card that is a date of a regular service says so first, before Title,
+     * as a statement and not only by its way out (Kevin, 5 Nov 2026: "Make
+     * it a separate event instead" was the one sign that his card was going
+     * onto the Mums Group's Friday). Publishing writes onto that service, so
+     * there is nothing to combine. A service the same read proposes says it
+     * is added first; one whose day or weeks were changed so this date is no
+     * longer among them says that, and Publish leaves the card alone.
      */
     function refreshOccurrence(card) {
       const occ = card.fields.occurrence;
@@ -1514,10 +1573,34 @@
         ? 'Shown under the service’s name on that day.'
         : 'Shown under the title.';
       card.els.feastHint.hidden = !String(card.fields.feast || '').trim();
+      card.els.occ.classList.remove('is-off');
       if (!occ) return;
-      const rule = (state.rules || []).find(r => String(r.id) === occ.split(':')[0]);
-      const which = rule ? `<b>${esc(timeRange(rule.start_time, rule.end_time))} ${esc(rule.title)}</b>` : 'service';
-      card.els.occWhat.innerHTML = `On the timetable: this is the parish’s regular ${which} on ${esc(dateLabel(occ.split(':')[1]))}. Publishing adds what is here, and the poster, to that service — no second card beside it.`;
+      const date = occDate(occ);
+      const day = esc(dateLabel(date));
+      const service = isNewOcc(occ) ? linkedService(occ) : ruleOf(occ);
+      if (!service) {
+        card.els.occWhat.innerHTML = isNewOcc(occ)
+          ? `The service this is a date of is no longer in this draft.`
+          : `This is a date of a regular service on ${day}.`;
+        card.els.occHow.textContent = 'Publishing adds what is here, and the poster, to that day’s service.';
+        if (isNewOcc(occ)) card.els.occ.classList.add('is-off');
+        return;
+      }
+      const name = `<b>${esc(String(service.title || '').trim() || 'the service')}</b>`;
+      const when = esc(serviceWhen(service));
+      if (isNewOcc(occ) && !serviceRunsOn(service, date)) {
+        card.els.occ.classList.add('is-off');
+        card.els.occWhat.innerHTML = `${day} is not one of ${name}’s dates as it now stands (${when}).`;
+        card.els.occHow.textContent = 'Check its day and weeks under “Held regularly” above, or make this a separate event.';
+        return;
+      }
+      if (isNewOcc(occ)) {
+        card.els.occWhat.innerHTML = `✓ ${day}: a date of ${name} · ${when} · new, under “Held regularly” above`;
+        card.els.occHow.textContent = `Publishing adds it to the timetable first, then puts what is here${state.draft && state.draft.poster_path ? ', and the poster,' : ''} on ${dateLabel(date)} only. Its other dates stay as they are.`;
+      } else {
+        card.els.occWhat.innerHTML = `✓ ${day}: a date of ${name} · ${when} · on the timetable`;
+        card.els.occHow.textContent = `Publishing puts what is here${state.draft && state.draft.poster_path ? ', and the poster,' : ''} on ${dateLabel(date)} only — no second card beside it. Its other dates stay as they are.`;
+      }
     }
 
     /**
@@ -1978,8 +2061,25 @@
         text = 'This looks like a sign, but no weekly services could be read from it — add them on the timetable by hand.';
       } else if (kind === 'not_an_event' && !svcs && !n) {
         text = 'This does not look like an event poster — fill in the details by hand.';
+      } else if (svcs && n && events.some(c => linkedToRead(c))) {
+        // A service and its own dates off one poster (St Emilia's, 5 Nov
+        // 2026): the service new, or on the timetable already (next month's).
+        const linked = events.filter(linkedToRead);
+        const isNew = (c) => isNewOcc(c.fields.occurrence);
+        const anyNew = linked.some(isNew);
+        const allNew = linked.every(isNew);
+        const nameOf = (c) => String(((isNew(c) ? linkedService(c.fields.occurrence) : ruleOf(c.fields.occurrence)) || {}).title || '').trim();
+        const names = [...new Set(linked.map(nameOf).filter(Boolean))];
+        const days = linked.map(c => dateLabel(occDate(c.fields.occurrence))).join(', ');
+        const one = linked.length === 1;
+        const rest = n - linked.length;
+        const held = allNew ? 'held regularly, for the timetable' : anyNew ? 'held regularly' : 'already on the timetable';
+        const then = allNew ? `Publish adds the service first, then ${one ? 'the date' : 'the dates'} onto it`
+          : anyNew ? 'Publish adds what is new to the timetable first, then each date onto its service'
+            : `Publish puts ${one ? 'the date' : 'the dates'} onto the service`;
+        text = `Read from the poster: ${names.join(' and ') || plural(svcs, 'thing held regularly', 'things held regularly')}, ${held}, and ${one ? 'its date' : 'its dates'} ${days} with ${one ? 'that day’s' : 'each day’s'} own details${rest ? `, and ${plural(rest, 'other event', 'other events')}` : ''}. Check each against it. ${then}; the poster stays on ${one ? 'that date' : 'those dates'}.`;
       } else if (svcs && n) {
-        text = `Read from the poster: ${plural(svcs, 'thing held regularly', 'things held regularly')}, for the timetable, and ${plural(n, 'event', 'events')} for the feed. Check each against it — what goes on the timetable takes the poster and its description with it.`;
+        text = `Read from the poster: ${plural(svcs, 'thing held regularly', 'things held regularly')}, for the timetable, and ${plural(n, 'event', 'events')} for the feed. Check each against it — what goes on the timetable takes its description with it${posterIsDated() ? '; the poster stays on the dates it gives' : ', and the poster'}.`;
       } else if (svcs) {
         text = `Read as something held regularly, so it goes on the timetable rather than in the events. Check ${svcs === 1 ? 'it' : `all ${svcs}`} against the poster, then add ${svcs === 1 ? 'it' : 'them'} — the poster and its description go with ${svcs === 1 ? 'it' : 'them'}, on every date.`;
       } else if (regular) {
@@ -2063,6 +2163,37 @@
       box.hidden = !text;
     }
 
+    /**
+     * Does the poster give dates? Then it is those dates' (Kevin, 5 Nov
+     * 2026): a service added from it carries its words on every date, and the
+     * poster stays on the dates it is for — St Emilia's December meeting
+     * would otherwise show November's coaster workshop, as rule 199 did. Only
+     * a flyer with no date on it (the choir practice's "7pm every Tuesday")
+     * is the rule's own poster (docs/editing.md: a bulletin never goes on the
+     * rule).
+     */
+    const posterIsDated = () => state.cards.some(c => !isPristine(c) && isDate(c.fields.date));
+
+    /**
+     * Is this card a date of one of the read's own services: one proposed in
+     * it ("new:s1:…"), or one the read found on the timetable already?
+     */
+    const linkedToRead = (c) => {
+      const occ = c.fields.occurrence;
+      if (!occ) return false;
+      if (isNewOcc(occ)) return true;
+      if (!root.AgoraSigns || !state.rules) return false;
+      return root.AgoraSigns.compareSign(state.services, state.rules, today()).rows
+        .some(r => r.rule && String(r.rule.id) === occOf(occ));
+    };
+
+    /** The cards that are dates of the read's service `i`, still to publish. */
+    const datesOf = (i) => {
+      const sv = state.services[i];
+      return sv && sv.key ? state.cards.filter(c => c.publish.state !== 'done' && !discarding(c)
+        && isNewOcc(c.fields.occurrence) && occOf(c.fields.occurrence) === `new:${sv.key}`) : [];
+    };
+
     const LANG_SPLIT = (t) => String(t || '').split(',').map(x => x.trim()).filter(Boolean);
     const DETAIL_LABELS = { address: 'Address', phone: 'Phone', email: 'Email', website: 'Website' };
 
@@ -2117,16 +2248,24 @@
           // A flyer for a service already on file: its poster (and words, where
           // the rule has none) can go onto that rule rather than a second one.
           const posterOn = flyer && r.rule.poster_path === state.draft.poster_path;
-          const offerPoster = flyer && canFill && !posterOn;
+          // Not a poster with dates on it: that is those dates' (posterIsDated).
+          const offerPoster = flyer && canFill && !posterOn && !posterIsDated();
+          // Its dates on this poster, below, which go onto it (St Emilia's next month).
+          const onDates = state.cards.filter(c => c.publish.state !== 'done' && !discarding(c) && c.fields.occurrence
+            && !isNewOcc(c.fields.occurrence) && occOf(c.fields.occurrence) === String(r.rule.id));
           return `<div class="ee-svc is-on" data-i="${i}">
             <div class="ee-svc-top"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></div>
-            <div class="ee-svc-state">✓ On the timetable${named}${fills.length ? ` — the ${flyer ? 'poster' : 'sign'} adds its ${what}.` : '.'}${posterOn ? ' It shows this poster.' : ''}</div>
+            <div class="ee-svc-state">✓ On the timetable${named}${fills.length ? ` — the ${flyer ? 'poster' : 'sign'} adds its ${what}.` : '.'}${posterOn ? ' It shows this poster.' : ''}${onDates.length
+              ? ` ${onDates.length === 1 ? 'Its date' : 'Its dates'} ${esc(onDates.map(c => dateLabel(occDate(c.fields.occurrence))).join(', '))} ${onDates.length === 1 ? 'is' : 'are'} below: Publish puts ${onDates.length === 1 ? 'it' : 'them'} onto this service.` : ''}</div>
             ${fills.length && canFill ? `<button type="button" class="ee-btn ee-btn-small" data-act="fill" data-i="${i}"${dis}>Add its ${what}</button>` : ''}
             ${offerPoster ? `<button type="button" class="ee-btn ee-btn-small" data-act="poster" data-i="${i}"${dis}>Put this poster on it${r.rule.poster_path ? ' instead' : ''}</button>` : ''}
             ${notes}</div>`;
         }
         const open = state.svcOpen.has(i);
         const weeks = String(sv.week_of_month || '').split(',');
+        // Its dates on this poster, below: they go onto it once it is added.
+        const dates = datesOf(i);
+        const datesLine = dates.length ? `<div class="ee-svc-state ee-svc-dates">${dates.length === 1 ? 'Its date' : 'Its dates'} ${esc(dates.map(c => dateLabel(occDate(c.fields.occurrence))).join(', '))} ${dates.length === 1 ? 'is' : 'are'} below, with ${dates.length === 1 ? 'its' : 'their'} own words${state.draft.poster_path ? ' and the poster' : ''}. Publish adds this to the timetable, then ${dates.length === 1 ? 'that date' : 'those dates'} onto it.</div>` : '';
         const field = (label, input) => `<label class="ee-svc-field"><span>${label}</span>${input}</label>`;
         // The quarter-hours box (time-field.js) where it is loaded, as the cards have it.
         const svcTime = (k, f, v, extra) => (root.AgoraTimeField && root.AgoraTimeField.dress
@@ -2137,11 +2276,14 @@
             <button type="button" class="ee-svc-sum" data-act="toggle" data-i="${i}" aria-expanded="${open}"><span class="ee-svc-line">${esc(serviceLine(sv))}</span></button>
             ${canAdd ? `<button type="button" class="ee-btn ee-btn-small ee-btn-add" data-act="add" data-i="${i}"${dis}>Add to timetable</button>` : ''}
           </div>
+          ${datesLine}
           ${notes}
           <div class="ee-svc-form"${open ? '' : ' hidden'}>
             ${field('Service', `<input data-sf="title" data-i="${i}" value="${esc(sv.title || '')}" placeholder="Divine Liturgy" autocomplete="off">`)}
             ${sv.feast != null ? field('Subtitle', `<input data-sf="feast" data-i="${i}" value="${esc(sv.feast)}" placeholder="Optional — shown under the name on every date" autocomplete="off">`) : ''}
-            ${svcPlace(sv) ? `<div class="ee-svc-state">Held at ${esc(svcPlace(sv))}, as the event was.</div>` : ''}
+            ${sv.location_parish_id || sv.location_lat != null
+              ? `<div class="ee-svc-state">Held at ${esc(svcPlace(sv))}, as the event was.</div>`
+              : field('Where', `<input data-sf="location_override" data-i="${i}" value="${esc(sv.location_override || '')}" placeholder="At the parish" autocomplete="off">`)}
             <div class="ee-svc-field"><span class="ee-svc-head"><span>Kind</span>${scopePillHTML(svcScoped(sv), `data-act="scope" data-i="${i}"`)}</span><select data-sf="event_type" data-i="${i}" data-kind-picker="buttons">${types.map(k => `<option value="${esc(k.id)}"${k.id === (sv.event_type || 'liturgy') ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select></div>
             <div class="ee-svc-field"><span id="${uid}-day-${i}">Day</span><div class="ee-days" role="radiogroup" aria-labelledby="${uid}-day-${i}">${WEEKDAYS.map((d, k) => `<label class="ee-day"><input type="radio" name="${uid}-day-${i}" data-sf="day_of_week" data-i="${i}" value="${k}"${k === sv.day_of_week ? ' checked' : ''}><span>${d}</span></label>`).join('')}</div></div>
             <div class="ee-grid" data-tf-scope>
@@ -2156,7 +2298,7 @@
               ${field('From', `<input type="date" data-sf="effective_from" data-i="${i}" value="${esc(sv.effective_from || '')}">`)}
               ${field('Until', `<input type="date" data-sf="effective_to" data-i="${i}" value="${esc(sv.effective_to || '')}">`)}
             </div>
-            <div class="ee-hint">Blank From starts it now; blank Until keeps it going. The poster goes on every date.</div>` : ''}
+            <div class="ee-hint">Blank From starts it now; blank Until keeps it going. ${posterIsDated() ? 'The poster stays on its own dates, not every date.' : 'The poster goes on every date.'}</div>` : ''}
           </div>
         </div>`;
       };
@@ -2193,9 +2335,10 @@
           ${missing.map(r => `<div class="ee-svc-line">${esc(serviceLine(r))}</div>`).join('')}
           <div class="ee-hint">Nothing changes for these: a sign often leaves out the weekday services. If one has stopped, end it from the parish’s timetable.</div></details>` : ''}
         ${details.length ? `<div class="ee-section-title">The parish’s details on the sign</div><div class="ee-details">${details.map(detailRow).join('')}</div>` : ''}
-        <div class="ee-hint">${flyer
-          ? 'What you add carries this poster, and its description, on every date.'
-          : `What you add shows “${esc(S.SIGN_SOURCE)}” as its source, linking to this photo.`}</div>
+        ${!flyer || fresh.length ? `<div class="ee-hint">${!flyer
+          ? `What you add shows “${esc(S.SIGN_SOURCE)}” as its source, linking to this photo.`
+          : posterIsDated() ? 'What you add carries its description on every date. The poster has dates on it, so it stays on those dates.'
+            : 'What you add carries this poster, and its description, on every date.'}</div>` : ''}
         <div class="ee-message ee-message-error ee-sign-error" hidden></div>`;
     }
 
@@ -2266,7 +2409,13 @@
       clearTimeout(state.svcTimer);
       state.svcTimer = setTimeout(saveServices, e.type === 'input' ? SAVE_DELAY : 0);
       // Whether it is on file may have changed; redraw once the field is left.
-      if (e.type === 'change') { state.svcOpen.add(i); renderSign(); }
+      // Its dates below say whether they are still among its dates.
+      if (e.type === 'change') {
+        state.svcOpen.add(i);
+        renderSign();
+        state.cards.filter(c => isNewOcc(c.fields.occurrence)).forEach(refreshCard);
+        sync();
+      }
     }
     $('done').addEventListener('click', () => doneWithSign());
     $('sign').addEventListener('input', onServiceEdit);
@@ -2326,9 +2475,10 @@
           } : {}),
           // A sign names itself as the timetable's source; a flyer goes ON the
           // rule instead, with its words, and names nothing — one flyer is not
-          // where the rest of the timetable came from.
+          // where the rest of the timetable came from. A poster with dates on
+          // it stays on those dates (posterIsDated): only its words go.
           ...(flyer ? {
-            poster_path: state.draft.poster_path || null,
+            poster_path: posterIsDated() ? null : state.draft.poster_path || null,
             description: sv.description || null,
           } : {
             source_name: root.AgoraSigns.SIGN_SOURCE,
@@ -2339,7 +2489,70 @@
         state.svcOpen.delete(i);
         added++;
       }
-      if (added) { await loadRules(); changed('timetable'); }
+      if (added) { await loadRules(); await relinkCards(); changed('timetable'); }
+    }
+
+    /**
+     * Cards that are dates of a service the read proposed ("new:<key>:date")
+     * point at its rule once it is on the timetable — Add to timetable, or
+     * Publish adding it first — so nothing is read twice: Kevin threw St
+     * Emilia's draft away and read the poster again to get its 6 November
+     * meeting onto the Mums Group he had just added (5 Nov 2026).
+     */
+    async function relinkCards() {
+      const S = root.AgoraSigns;
+      if (!S || !state.rules) return;
+      const { rows } = S.compareSign(state.services, state.rules, today());
+      const moved = [];
+      for (const card of state.cards) {
+        const occ = card.fields.occurrence;
+        if (!isNewOcc(occ) || card.publish.state === 'done') continue;
+        const row = rows[linkedIndex(occ)];
+        const date = occDate(occ);
+        if (!row || row.status !== 'on_file' || !row.rule || !serviceRunsOn(row.rule, date)) continue;
+        card.fields.occurrence = `${row.rule.id}:${date}`;
+        card.pending.occurrence = card.fields.occurrence;
+        moved.push(card);
+      }
+      await Promise.all(moved.map(c => flush(c)));
+      moved.forEach(refreshCard);
+      if (moved.length) renderSign();
+    }
+
+    /**
+     * Before Publish: the services the cards are dates of that the timetable
+     * does not have yet are added, as Add to timetable adds them, and their
+     * cards linked to the new rules. Whatever is still a "new:" after that —
+     * not added (no right to, or it failed), or its day changed so the date
+     * is not one of it — stays a draft and says why.
+     */
+    async function addLinkedServices(cards) {
+      const linked = cards.filter(c => isNewOcc(c.fields.occurrence));
+      if (!linked.length || !root.AgoraSigns) return;
+      if (state.svcTimer) { clearTimeout(state.svcTimer); await saveServices(); }
+      const { rows } = root.AgoraSigns.compareSign(state.services, state.rules || [], today());
+      const add = new Set();
+      for (const card of linked) {
+        const i = linkedIndex(card.fields.occurrence);
+        if (i >= 0 && rows[i] && rows[i].status === 'new' && serviceRunsOn(state.services[i], occDate(card.fields.occurrence))) add.add(i);
+      }
+      if (add.size) {
+        state.signBusy = true;
+        try { await addServices([...add].sort((a, b) => a - b)); } finally { state.signBusy = false; renderSign(); }
+      }
+      await relinkCards();
+    }
+
+    /** Why a card still linked to a service not on the timetable was not published. */
+    function linkProblem(card) {
+      const occ = card.fields.occurrence;
+      const sv = linkedService(occ);
+      const name = sv && String(sv.title || '').trim() ? sv.title.trim() : 'Its service';
+      if (!sv) return 'The service this is a date of is no longer in this draft. Make it a separate event to publish it.';
+      if (!serviceRunsOn(sv, occDate(occ))) {
+        return `${dateLabel(occDate(occ))} is not one of ${name}’s dates any more. Check its day and weeks above, or make this a separate event.`;
+      }
+      return `${name} is not on the timetable, so this date cannot go onto it yet. Add it above, or make this a separate event.`;
     }
 
     /** A flyer's poster onto the rule already on file, and its words where the rule has none. */
@@ -2661,8 +2874,29 @@
         const name = state.multi ? `“${first.fields.title || dateLabel(first.fields.date) || 'An event'}” ` : '';
         const sentence = `${name}${name ? what : what.charAt(0).toUpperCase() + what.slice(1)}`;
         ready.textContent = `${sentence}${blocked.length > 1 ? ` — and ${blocked.length - 1} more` : ''}.`;
-      } else ready.textContent = '';
+      } else ready.textContent = addsLine();
       updateHead();
+    }
+
+    /**
+     * What Publish will do to the timetable, said before it does it: "Publish
+     * adds St Emilia's Mums Group to the timetable, then Fri 6 Nov onto it."
+     * Empty when it adds nothing there.
+     */
+    function addsLine() {
+      if (!root.AgoraSigns || !state.rules) return '';
+      const { rows } = root.AgoraSigns.compareSign(state.services, state.rules, today());
+      const parts = [];
+      state.services.forEach((sv, i) => {
+        const dates = datesOf(i).filter(c => serviceRunsOn(sv, occDate(c.fields.occurrence)));
+        if (!dates.length || !rows[i] || rows[i].status !== 'new') return;
+        parts.push(`${String(sv.title || '').trim() || 'its service'} to the timetable, then ${dates.map(c => dateLabel(occDate(c.fields.occurrence))).join(', ')} onto it`);
+      });
+      if (!parts.length) return '';
+      if (!state.parish || !may('schedule.create', state.parish.id)) {
+        return 'Somebody who edits this parish’s timetable has to add the service first, or make each date a separate event.';
+      }
+      return `Publish adds ${parts.join('; and ')}.`;
     }
 
     async function ensureCandidates(card) {
@@ -2682,8 +2916,16 @@
       let stopped = null;
       // Decided before anything goes: publishing changes how many cards there are.
       const binned = new Set(state.cards.filter(discarding));
+      // A date of a service the poster also gives, not on the timetable yet:
+      // that service goes on first, and the date onto it (Kevin, 5 Nov 2026).
+      await addLinkedServices(state.cards.filter(c => c.publish.state !== 'done' && !binned.has(c)));
       for (const card of state.cards) {
         if (card.publish.state === 'done' || binned.has(card)) continue;
+        if (isNewOcc(card.fields.occurrence)) {
+          card.publish = { state: 'error', message: linkProblem(card) };
+          refreshCard(card);
+          continue;
+        }
         if (!card.id) { await save(card); if (!card.id) { card.publish = { state: 'error', message: 'Not saved yet.' }; continue; } }
         await ensureCandidates(card);
         const asking = needsAsk(card);
@@ -2833,8 +3075,9 @@
   // the same size the editor stores one (admin.html suggestPage).
   // readClipboardImage and friends too: the timetable's "Add an image"
   // (editing.js addService) has the same Paste pill.
-  const api = { open, summaryLine, summaryParts, serviceLine, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
+  const api = { open, summaryLine, summaryParts, serviceLine, serviceWhen, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
     textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, cardWeekday, serviceFromCard,
+    occDate, occOf, isNewOcc, serviceRunsOn,
     canReadClipboard, readClipboardImage, pasteNote, pastePillHTML };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.AgoraEventEditor = api;

@@ -17,6 +17,7 @@ import { isOwnVenue, matchParish } from './parish-match.mjs';
 import { isValidOccurrence } from '../../public/shared/project.mjs';
 import { localPartsOf } from '../../public/shared/tz.mjs';
 import { endOf, lengthText, toMinutes, fromMinutes, servicesNamed } from './durations.mjs';
+import signs from '../../public/shared/signs.js';
 
 const { isEventType } = eventTypes;
 const { isLocalDate, isLocalTime } = checks;
@@ -118,6 +119,11 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
  * `occurrence` is "sid:YYYY-MM-DD" when the card is a regular service on its
  * own date — a programme's Sunday with its saint — rather than an event of its
  * own: publishing writes it onto that occurrence (an override), not beside it.
+ * It is "new:<key>:YYYY-MM-DD" for a date of a service the same read proposes
+ * and the timetable does not have yet (drafts.read_services, by its `key`):
+ * St Emilia's Mums Group, first Fridays, and its 6 November meeting, read off
+ * one poster (5 Nov 2026). The editor adds that service before it publishes
+ * the card, and links the card to the new rule; nothing publishes a "new:".
  * `feast` is the subtitle such a card carries: the commemoration, or the topic.
  * `parish_scoped` is its Public / Parish only pill: 1 or 0 once tapped, null
  * while nobody has, which publishing leaves to the kind (createOneOff).
@@ -150,8 +156,10 @@ const READ_FIELDS = ['title', 'feast', 'date', 'end_date', 'start_time', 'end_ti
 
 const MAX_LEN = { title: 200, feast: 200, description: 2000, location_override: 300, ask_reason: 1000 };
 
-/** A rule's occurrence: "sid:YYYY-MM-DD". */
-const OCCURRENCE = /^\d+:\d{4}-\d{2}-\d{2}$/;
+/** A rule's occurrence, "sid:YYYY-MM-DD", or one of a service still to be added, "new:<key>:YYYY-MM-DD". */
+const OCCURRENCE = /^(\d+|new:[a-z0-9]{1,16}):\d{4}-\d{2}-\d{2}$/i;
+/** A date of a service the read proposes, not on the timetable yet. */
+export const isNewOccurrence = (v) => typeof v === 'string' && /^new:[a-z0-9]{1,16}:\d{4}-\d{2}-\d{2}$/i.test(v);
 
 /** "sid:YYYY-MM-DD" (a rule's occurrence) or an integer (a stored one-off). */
 const isReplaceId = (v) => typeof v === 'string' && (/^\d+$/.test(v) || /^\d+:\d{4}-\d{2}-\d{2}$/.test(v));
@@ -477,7 +485,7 @@ export async function mergeRead(db, draftId, read) {
  * @param {{id, name, address}} parish  the draft's parish
  */
 export async function placeRead(db, read, parish) {
-  for (const ev of read.events) {
+  for (const ev of [...read.events, ...(read.services || [])]) {
     if (isOwnVenue(ev.location_override, parish)) ev.location_override = null;
   }
   read.parish = null;
@@ -658,6 +666,24 @@ export function afterServices(read, rules) {
  * the Liturgy of its 9:00–12:00 Matins & Divine Liturgy, the hour of Matins
  * before it. That Sunday stays 9:00 Matins & Divine Liturgy, with the poster.
  *
+ * THE READ'S OWN SERVICES TOO (5 Nov 2026). St Emilia's Mums Group's poster
+ * at St Nicholas, Punchbowl gave the group (first Fridays, 10am) for the
+ * timetable and that month's coaster workshop (Friday 6 November, 10am) for
+ * the feed. Only a rule on file could be matched, so the workshop was a
+ * one-off: Kevin added the group, threw the draft away and read the poster
+ * again to get the date onto it. Now, once the rules on file have had their
+ * turn, a card is matched the same way against the services the read
+ * proposes that the timetable does not have (compareSign 'new'), and gets
+ * "new:<key>:<date>". The editor adds that service before publishing it.
+ *
+ * A card matched on its time alone (same start, same sort) has a name of its
+ * own that is not the service's: "Coaster-making Workshop" on the Mums
+ * Group's Friday, "Games Night" on the youth group's. That name is what the
+ * day is about, so it becomes the subtitle under the service's name, as a
+ * saint does under the Liturgy's — not a new title for that date (Kevin's
+ * 6 Nov override had "Coaster-making Workshop" in place of the group's name).
+ * Not when the card already has a subtitle, which it would lose.
+ *
  * @param {object} read   normalizeRead()'s answer, changed in place
  * @param {Array} rules   the parish's active rules (schedules rows)
  */
@@ -667,23 +693,33 @@ export function matchOccurrences(read, rules) {
   // and one held after a service is not that service (afterServices).
   const cards = read.events.filter(ev => !ev.host_parish_id && !ev.after);
   for (const ev of read.events) ev.occurrence = null;
-  for (const exact of [true, false]) {
-    for (const ev of cards) {
-      if (ev.occurrence) continue;
-      const hit = occurrenceOf(ev, rules, used, { exact });
-      if (!hit) continue;
-      used.add(`${hit.id}:${ev.date}`);
-      ev.occurrence = `${hit.id}:${ev.date}`;
-      if (partOf(hit, ev)) {
-        const was = `${clockText(ev.start_time)} ${ev.title}`;
-        ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time',
-          text: `The poster’s ${was} is part of the regular ${clockText(hit.start_time)} ${hit.title}, so it stays at ${clockText(hit.start_time)}. Change it if the poster moves the whole service.` }];
-        ev.start_time = hit.start_time;
-        ev.end_time = null;
-        ev.suggested = [...(ev.suggested || []), 'start_time'];
-        if (nameWithin(ev.title, hit.title)) ev.title = hit.title;
-      } else if (sameTitle(hit, ev)) ev.title = hit.title;
-      if (hit.event_type) ev.event_type = hit.event_type;
+  // The read's services the timetable does not have, as rules to be.
+  const { rows } = signs.compareSign(read.services || [], rules || []);
+  const proposed = rows.filter(r => r.status === 'new' && r.service.key)
+    .map(r => ({ ...r.service, id: `new:${r.service.key}`, active: 1 }));
+  for (const list of [rules, proposed]) {
+    for (const exact of [true, false]) {
+      for (const ev of cards) {
+        if (ev.occurrence) continue;
+        const hit = occurrenceOf(ev, list, used, { exact });
+        if (!hit) continue;
+        used.add(`${hit.id}:${ev.date}`);
+        ev.occurrence = `${hit.id}:${ev.date}`;
+        if (partOf(hit, ev)) {
+          const was = `${clockText(ev.start_time)} ${ev.title}`;
+          ev.read_notes = [...(ev.read_notes || []).filter(n => n.field !== 'start_time'), { field: 'start_time',
+            text: `The poster’s ${was} is part of the regular ${clockText(hit.start_time)} ${hit.title}, so it stays at ${clockText(hit.start_time)}. Change it if the poster moves the whole service.` }];
+          ev.start_time = hit.start_time;
+          ev.end_time = null;
+          ev.suggested = [...(ev.suggested || []), 'start_time'];
+          if (nameWithin(ev.title, hit.title)) ev.title = hit.title;
+        } else if (sameTitle(hit, ev)) ev.title = hit.title;
+        else if (hit.title && ev.title && !relatedName(hit.title, ev.title) && !String(ev.feast || '').trim()) {
+          ev.feast = ev.title;
+          ev.title = hit.title;
+        }
+        if (hit.event_type) ev.event_type = hit.event_type;
+      }
     }
   }
   return read;
