@@ -909,6 +909,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
 }
 .tt-line { display: grid; grid-template-columns: 68px 60px minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 5px 0; }
+/* A line opens its own card (Kevin, 5 Nov 2026): it gives under the finger,
+   on a band that reaches past its words without moving them. */
+.tt-line[data-line] { --tap: transparent; cursor: pointer; border-radius: 4px; background: var(--tap); box-shadow: 0 0 0 5px var(--tap); -webkit-tap-highlight-color: transparent; }
+.tt-line[data-line]:active { --tap: color-mix(in srgb, var(--pc, var(--accent)) 13%, transparent); }
+.tt-line[data-line]:focus-visible { outline: 2px solid var(--pc, var(--accent)); outline-offset: 3px; }
+@media (hover: hover) { .tt-line[data-line]:hover { --tap: var(--card-2); } }
 .tt-days { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
 .tt-line .t-time { font-size: 14px; }
 .tt-what { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }

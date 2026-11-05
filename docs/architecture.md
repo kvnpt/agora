@@ -128,12 +128,28 @@ in next.js): a step back, or the event's Parish, is the parish. Under the event,
 the others that answer ("More talks"), a season ahead at most (`matchFeedHTML`).
 The event's card keeps the link followed (`segsFor({ parish, focus })`), so sharing
 it shares that. With none on file, the parish's plain card is all there is, at
-`/sgr`, as if the link had named only the parish. A card opened by a
-tap is the parish's, with the focus of where it was (`focusAround`): the collection it was
-in, else the page's filters, so `/talks` then St George is `/sgr/talks`, St George's
-card with every line and date still on it, what answers lit (the next of it in
+`/sgr`, as if the link had named only the parish. A card's own Filters focus it
+(`/sgr/talks`): every line and date still on it, what answers lit (the next of it in
 Today under its day's name) and the rest dimmed, never hidden; its × in Today lets
 it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`).
+
+**A card's filters are that card's** (Kevin, 5 Nov 2026). A link that opens a
+card (`/sun/liturgy`, `/smg+smk/feast`, `/greek`, a date, a search's words) gives
+its filters to the card it opens and never to the page (`opensCard`, `openRoute`
+in next.js): the page under it is plain, and closing it is `/`. A link with no
+card (`/sydney`, `/greek/qld`) is a view of the map (`applyPage`). A history entry
+with no card (`depth` 0) is the map's filters; one with a card reopens the card.
+A card opened from another card, or from the map, starts plain: no parish card
+takes the focus of what was under it. The map's own Filters and tabs are the
+map's, its Today's and the In view card's, and no one else's: the shelves (What's
+on, Collections, Languages) are every jurisdiction's whatever they say, and a
+collection's card narrows to a jurisdiction inside it (`jurisOffer`).
+Show on map is the one hand-off, a button that says so. A timetable line opens
+its own card (`openLine`): the line's next date with its later dates under it,
+over the card it was tapped on, which stays as it was. Its link asks what the
+line is (`lineFocus`: `/smg/sun/liturgy`, `/spp/sun/liturgy/en-only` where the
+parish holds that service in another language too), or is its date's own where
+no link can ask for it (a choir practice).
 
 **A word nothing else claims, beside one parish, is a search of it** (Kevin,
 28 Oct 2026). `/smmp/disco` is "disco" asked of St Mary's, read as the search

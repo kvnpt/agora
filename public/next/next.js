@@ -721,16 +721,6 @@
       words: wordsQ(r.words) ? [...r.words] : null };
     return x.kind || x.service || x.day != null || x.dayGroup || x.part || x.lang || x.words ? x : null;
   }
-  /**
-   * The focus a card opened by a tap takes from where it was: the collection
-   * it was in (Sunday Liturgy, the services in view), else the page's filters
-   * (/talks, /wed/evening). Every parish card answers every filter one way,
-   * however it was reached: /talks, then St George, is /sgr/talks.
-   */
-  function focusAround() {
-    const top = stack[stack.length - 1];
-    return focusOf((top && top._coll && top._coll.f) || S.f || {});
-  }
 
   // The history. Every card is one entry; a filter changed with no card open
   // is one more, as at /. Closing a card is a step back, which lands later
@@ -780,9 +770,13 @@
       writeURL();
       return;
     }
-    // Back or forward through filters, or forward onto a card: read the address.
+    // Forward onto a card: the card its address names, over the page as it
+    // is. Back or forward through the map's own filters (an entry with no
+    // card): the address is the map's, as it was then.
     while (stack.length) dropSheet();
-    applyRoute(readPath(location.pathname), { entry: false });
+    const route = readPath(location.pathname);
+    if (depth > 0 && opensCard(route, location.pathname)) openRoute(route, location.pathname, { entry: false });
+    else applyPage(route);
   });
 
   /** The collection a link names (/en, /greek, /talks), as the page has it, or null. */
@@ -797,34 +791,57 @@
   }
   /**
    * Follow one of this site's links from inside the page, as if it had been
-   * opened: its filters are a step, and the card it names opens over them.
+   * opened: the card it names, over the page as it is; a link with no card
+   * (/sydney) is a step of the map's.
    */
   function go(path) {
     if (panelOpen()) setPanel(false);
     const route = readPath(path);
-    applyRoute(route);
-    if (!route.parish && !route.eventId && !route.donate && !route.words) {
-      syncURL({ push: true });
-      openPageCard(route, path);
-    }
+    if (opensCard(route, path)) { openRoute(route, path); return; }
+    applyPage(route);
+    syncURL({ push: true });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  /** Make the page what an address asks for. */
-  function applyRoute(route, { entry = true, animate = true } = {}) {
+  /**
+   * Does an address open a card? A parish, an event, the donations, a
+   * search's words, a collection (/sun/liturgy, /greek), or parishes asked
+   * something (/smg+smk/feast, /wed/evening, a date). A card's filters are
+   * that card's alone (Kevin, 5 Nov 2026): they never become the page's, so
+   * closing it is the page as it was. A place alone (/sydney, /greek/qld)
+   * opens none: it is a view of the map.
+   */
+  function opensCard(route, path) {
+    const f = route.f;
+    return !!(route.parish || route.eventId || route.donate || route.words || collectionAt(path)
+      || route.from || f.parishIds || asksWhat(f) || f.lang);
+  }
+  /** The map's own filters from an address with no card: /sydney, /greek/qld, a step back through them. */
+  function applyPage(route, { animate = true } = {}) {
     S.juris = route.juris;
     S.f = route.f;
     S.focus = null;
     refilter({ url: 'none' });
+    frameRoute(route, animate);
+  }
+  /** The map turns to where a link is, its region or its parishes, and takes no filter from it. */
+  function frameRoute(route, animate = true) {
     if (route.f.location) frameRegion(route.f.location, animate);
     else if (route.f.parishIds) fitTo(route.f.parishIds, animate);
-    // A link that asks something of one parish (/sgr/talks) opens the first
-    // that answers it, in front of the parish's own card.
+  }
+  /**
+   * Open the card an address names, over the page as it is. A link that
+   * asks something of one parish (/sgr/talks) opens the first that answers
+   * it, in front of the parish's own, plain card.
+   */
+  function openRoute(route, path, { entry = true, animate = true } = {}) {
+    frameRoute(route, animate);
     if (route.parish && route.focus) return openMatch(route.parish, route.focus, { entry, from: route.from });
-    if (route.parish) openParish(route.parish, { entry, from: route.from, focus: null });
-    else if (route.eventId) return openEvent(route.eventId, { entry });
-    else if (route.donate) openDonate(route.donate === 'all' ? null : route.donate, { entry });
-    else if (route.words) return openWords(route, { entry });
+    if (route.parish) return openParish(route.parish, { entry, from: route.from, focus: null });
+    if (route.eventId) return openEvent(route.eventId, { entry });
+    if (route.donate) return openDonate(route.donate === 'all' ? null : route.donate, { entry });
+    if (route.words) return openWords(route, { entry });
+    return openPageCard(route, path, { entry });
   }
   /** A region's parishes fill the small map; its whole box (Queensland reaches Torres Strait) would leave it empty. */
   function frameRegion(slug, animate) {
@@ -1052,8 +1069,6 @@
     mapState.parishSheetFocus = pid || null;
     syncMap();
   }
-  /** What a Sign in kept of the page (takeSignInView), once the map has used it. */
-  let signInBack = null;
   /** The map starts while the bundle is still on its way; it needs nothing from it. */
   async function startMap() {
     mapState.locationActive = !!S.loc;
@@ -1066,7 +1081,7 @@
     S.mapLoaded = new Promise(resolve => map.once('load', resolve));
     // Back from signing in, where it was looking; else where the person is;
     // else Sydney, where most of the parishes are.
-    const back = signInBack = takeSignInView();
+    const back = takeSignInView();
     if (back) map.jumpTo({ center: [back.lng, back.lat], zoom: back.zoom });
     else map.fitBounds(S.loc ? [[S.loc.lng - 0.35, S.loc.lat - 0.28], [S.loc.lng + 0.35, S.loc.lat + 0.28]]
       : [[150.6, -34.15], [151.35, -33.6]], { animate: false, padding: 0 });
@@ -1470,8 +1485,8 @@
     // Its card's own Filters ask again of every parish (pick), and asked
     // something else than its link it is called that: Sunday Liturgy in
     // English is "Orthodox Liturgies on Sundays in English".
-    const own = whatPath(route.f);
-    const say = (ids, f, juris) => (whatPath(f) === own ? { title: c.title, blurb: c.blurb, name: c.title } : viewWords(ids, f, juris, { here: false }));
+    const own = whatPath(route.f), ownJ = jList(route.juris).join('+');
+    const say = (ids, f, juris) => (whatPath(f) === own && jList(juris).join('+') === ownJ ? { title: c.title, blurb: c.blurb, name: c.title } : viewWords(ids, f, juris, { here: false }));
     const pick = (f, juris) => S.parishes.filter(p => parishMatches(p, f, juris)).map(p => p.id);
     return byFilters({ ...c, ...look, juris: route.juris, f: route.f, say, pick });
   }
@@ -1501,11 +1516,12 @@
   let COLL = new Map();
   function remember(cs) { cs.forEach(c => COLL.set(c.id, c)); return cs; }
   /**
-   * A collection opened under the page's jurisdiction keeps to it: on /greek
-   * (greek.orthodoxy.au), Sunday Liturgy is /greek/sun/liturgy. A
-   * jurisdiction's own, a list and a search keep to themselves.
+   * A collection a link names under a jurisdiction keeps to it:
+   * /greek/sun/liturgy is Sunday Liturgy at Greek parishes. A
+   * jurisdiction's own, a list and a search keep to themselves. The shelf's
+   * cards are every jurisdiction's, whatever the map's tab (Kevin, 5 Nov 2026).
    */
-  function underJuris(c, juris = S.juris) {
+  function underJuris(c, juris) {
     if (!juris || c.juris || c.listId || !c.segs) return c;
     return byFilters({ ...c, ids: null, juris });
   }
@@ -1660,11 +1676,14 @@
     if (!raw) return;
     const now = Date.now();
     const horizon = now + 60 * DAY;
+    // The same whatever the map's filters are (Kevin, 5 Nov 2026): what is
+    // near where it is looking, never only what its Filters ask.
+    const none = blankFilters();
     // One-offs with posters first, then rule occurrences that carry their own.
     const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
       // Regular services are the timetable's; this shelf is for the things that happen once.
-      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
+      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventMatches(e, none, null));
     const uniq = oncePerPoster(pool);
     let list = uniq.filter(inViewEvent);
     // Too few in view: the nearest a dozen, wherever they are.
@@ -1680,35 +1699,8 @@
       const d = distOf(p);
       return posterCard(e, `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span>`);
     }).join('');
-    shelf(el, "What's on", whatsOnWords(), cards);
+    shelf(el, "What's on", 'Nearby events', cards);
   }
-  // The feed's kinds, as What's on says them.
-  const ON_KINDS = { services: 'services', talks: 'talks and Bible studies', socials: 'youth groups and socials' };
-  const ON_SUBS = { 'bible-study': 'Bible studies', youth: 'youth groups', social: 'social gatherings', feast: 'feasts' };
-  /**
-   * What's on, said as the filters ask it: "Nearby events", "Nearby talks and
-   * Bible studies in Greek", "Nearby Greek Orthodox evening events on
-   * Saturdays"; where the filters say where, there instead: "Events in
-   * Queensland", "Events at St Savvas".
-   */
-  function whatsOnWords() {
-    const f = S.f, W = window.AgoraLinkWords, SV = window.AgoraServices;
-    const full = f.lang && f.langStrict ? (/^english$/i.test(f.lang) ? 'fully-English' : `${f.lang}-only`) : '';
-    let noun = f.service ? SV.servicePlural(f.service)
-      : f.kindSub ? ON_SUBS[f.kindSub] || `${kindLabel(f.kindSub).toLowerCase()} events`
-      : ON_KINDS[f.kind] || 'events';
-    if (f.monasteries) noun += ' at monasteries';
-    const what = [S.juris ? W.jurisLabel(S.juris) : '', full, f.part || '', noun].filter(Boolean).join(' ')
-      + W.daysPhrase(f) + (f.lang && !full ? ` in ${f.lang}` : '');
-    const loc = regionOf(f);
-    const list = f.listId && listById(f.listId);
-    const named = !list && f.parishIds ? [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : [];
-    const where = loc ? ` in ${loc.label}` : list ? ` from ${list.name}` : S.focus ? ` from ${S.focus.title}`
-      : named.length > 3 ? ` at ${named.length} parishes` : named.length ? ` at ${named.map(p => p.name).join(', ').replace(/, ([^,]*)$/, ' and $1')}` : '';
-    const line = where ? what + where : `nearby ${what}`;
-    return line.charAt(0).toUpperCase() + line.slice(1);
-  }
-
   // ── Days: the stream's, and a parish's Calendar ───────────────────────
   //
   // The app's dated list: a quiet header for each day with its own link, the
@@ -1791,22 +1783,25 @@
    * Coming up from `k` (a date from a link, or tomorrow). One parish in view
    * is that parish's card. The page has no feed of its own.
    */
-  function openInView({ at = null, from = null, link = false } = {}) {
-    // From a link that asks something, the parishes it means wherever they
-    // are; else (a date alone, or the chip) those the map is showing.
-    const everywhere = link && !!(S.f.parishIds || asksWhat(S.f) || S.f.lang);
+  function openInView({ at = null, from = null, link = null, entry = true } = {}) {
+    // From a link (its route), the link's own filters, and the parishes it
+    // means wherever they are when it asks something; else (a date alone, or
+    // the chip) those the map is showing. From the chip or Today, the map's
+    // own filters: it is the map's card.
+    const f0 = link ? link.f : S.f, j0 = link ? link.juris : S.juris;
+    const only = link ? null : S.focus;
+    const everywhere = !!link && !!(f0.parishIds || asksWhat(f0) || f0.lang);
     const inView = (p) => everywhere || !S.inView || S.inView.has(p.id);
-    const pick = (f, juris = S.juris) => S.parishes.filter(p => inView(p) && (!S.focus || S.focus.ids.has(p.id)) && parishMatches(p, f, juris)).map(p => p.id);
-    const ids = pick(S.f);
+    const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && (!only || only.ids.has(p.id)) && parishMatches(p, f, juris)).map(p => p.id);
+    const ids = pick(f0);
     const say = (xs, f, juris) => viewWords(xs, f, juris, { here: !everywhere });
-    if (ids.length === 1) openParish(ids[0], { from });
+    if (ids.length === 1) openParish(ids[0], { from, entry });
     else {
-      // Its events are the page's filters' too, and its own Filters ask
-      // again of the same place (pick). Shared, it is those parishes by name
-      // under the same filters (/sgr+snb/en-only), not the page's link; from
-      // a link, that link, which its address keeps.
-      openCollection(withWords({ id: 'inview', kicker: link ? 'From link' : 'In view', tint: '#475569', ids, f: { ...S.f }, juris: S.juris,
-        pick, say, ...(link ? { segs: pageSegs() } : {}) }), { from });
+      // Its own Filters ask again of the same place (pick). Shared, it is
+      // those parishes by name under the same filters (/sgr+snb/en-only), not
+      // the map's link; from a link, that link, which its address keeps.
+      openCollection(withWords({ id: 'inview', kicker: link ? 'From link' : 'In view', tint: '#475569', ids, f: { ...f0 }, juris: j0,
+        pick, say, ...(link ? { segs: segsFor({ juris: j0, f: f0 }) } : {}) }), { from, entry });
     }
     if (at || from) toDay(stack[stack.length - 1], at || from);
   }
@@ -1833,21 +1828,20 @@
    * card From link, as the In view card is (Kevin, 2 Nov 2026), and so does
    * a date. A place alone (/sydney, /greek/qld) is the map, framed on it.
    */
-  function openPageCard(route, path) {
+  function openPageCard(route, path, { entry = true } = {}) {
     const c = collectionAt(path);
-    const f = route.f;
-    if (c) openCollection(c, { from: route.from });
-    else if (route.from || f.parishIds || asksWhat(f) || f.lang) openInView({ from: route.from, link: true });
+    if (c) return openCollection(c, { from: route.from, entry });
+    openInView({ from: route.from, link: route, entry });
   }
 
   function renderFeeds() {
     renderToday();
     renderWhatsOn();
-    // Counts on the shelves are what a tap opens, under the page's
-    // jurisdiction, and those in view; none is grey and not to be tapped
-    // (Kevin, 29 Oct 2026: Romanian, then Greek, was an empty card).
+    // Counts on the shelves are what a tap opens: every jurisdiction's,
+    // whatever the map's filters are (Kevin, 5 Nov 2026), and how many are
+    // in view. None is grey and not to be tapped (Kevin, 29 Oct 2026).
     $$('.ccard[data-coll], .lchip[data-coll]').forEach(b => {
-      const c = shelfColl(b.dataset.coll);
+      const c = COLL.get(b.dataset.coll);
       if (!c) return;
       const n = c.ids.length;
       b.disabled = !n;
@@ -1857,16 +1851,6 @@
       const s = b.querySelector('.csub');
       if (s) s.textContent = `${n} ${n === 1 ? 'place' : 'places'}${v && v !== n ? ` · ${v} in view` : ''}`;
     });
-  }
-  // A shelf's collection under the page's jurisdiction, asked again only when
-  // the jurisdiction or the data changes, not each time the map moves.
-  let shelfKey = null;
-  const shelfAt = new Map();
-  function shelfColl(id) {
-    const key = `${jList(S.juris).join('+')}|${S.loads}`;
-    if (key !== shelfKey) { shelfKey = key; shelfAt.clear(); }
-    if (!shelfAt.has(id)) shelfAt.set(id, COLL.get(id) ? underJuris(COLL.get(id)) : null);
-    return shelfAt.get(id);
   }
 
   // ── Sheets ────────────────────────────────────────────────────────────
@@ -2063,7 +2047,7 @@
       const langs = !compact && window.AgoraTimetable.serviceLangs(l.r);
       const asked = (only && only.lang) || (focus && focus.lang);
       const dim = focus && !l.ids.some(id => rowAnswers(byId.get(id), focus, true));
-      return `<div class="tt-line${dim ? ' dim' : ''}">
+      return `<div class="tt-line${dim ? ' dim' : ''}" data-line="${esc(l.ids.join(','))}" role="button" tabindex="0">
           <span class="tt-days">${esc((q ? q + ' ' : '') + TL.dayList(l.days))}</span>
           ${timeHTML(l.r.start_time)}
           <span class="tt-what">${roundel(l.r.event_type)}<span class="tt-title">${esc(l.r.title)}${langBadge(langs, asked) ? `<span class="tt-lang">${esc(langs.map(window.AgoraLanguages.shortOf).join(', '))}</span>` : ''}${range ? `<span class="tt-range">${esc(range)}</span>` : ''}${off ? `<span class="tt-range tt-break">${esc(off)}</span>` : ''}${(l.notes || []).map(n => `<span class="tt-range tt-except">${esc(n)}</span>`).join('')}</span></span>
@@ -2071,7 +2055,7 @@
         </div>`;
     };
     const out = ls.map((l, i) => (i === eve ? EVENING : '') + line(l));
-    return `<div class="tt${compact ? ' compact' : ''}${edit ? ' editing' : ''}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
+    return `<div class="tt${compact ? ' compact' : ''}${edit ? ' editing' : ''}" data-tt="${esc(pid)}" style="--pc:${parishColor(S.byId.get(pid))}">${out.join('')}</div>`;
   }
   function nextOf(pid, pred = () => true) {
     const now = Date.now();
@@ -2180,13 +2164,14 @@
     const card = stack.some(el => el._segs);
     try { sessionStorage.setItem(SIGN_IN_VIEW, JSON.stringify({ lng: c.lng, lat: c.lat, zoom: map.getZoom(), card, at: Date.now() })); } catch { /* the page still comes back */ }
   }
-  /** The view kept by a Sign in, once, if it is from this sign-in (a typed code takes minutes, not hours). */
-  function takeSignInView() {
+  /** The view kept by a Sign in, if it is from this sign-in (a typed code takes minutes, not hours); `take` uses it up. */
+  function readSignInView({ take = false } = {}) {
     let v = null;
-    try { v = JSON.parse(sessionStorage.getItem(SIGN_IN_VIEW) || 'null'); sessionStorage.removeItem(SIGN_IN_VIEW); } catch { return null; }
+    try { v = JSON.parse(sessionStorage.getItem(SIGN_IN_VIEW) || 'null'); if (take) sessionStorage.removeItem(SIGN_IN_VIEW); } catch { return null; }
     if (!v || !(Date.now() - v.at < 30 * 60e3) || ![v.lng, v.lat, v.zoom].every(Number.isFinite)) return null;
     return v;
   }
+  const takeSignInView = () => readSignInView({ take: true });
   function openAccount(btn) {
     const w = waiting();
     const rows = S.who.signedIn
@@ -2579,7 +2564,7 @@
    * A card's Filters panel: a parish's (`ids` its one parish), or a
    * collection's, of all its parishes. `n` is how many it asks.
    */
-  function cardPanelHTML(ids, focus, n = focusCount(focus)) {
+  function cardPanelHTML(ids, focus, n = focusCount(focus), { juris = null } = {}) {
     const f = { ...blankFilters(), ...(focus || {}) }, SV = window.AgoraServices;
     const here = new Set([].concat(ids));
     const ps = [...here].map(id => S.byId.get(id)).filter(Boolean);
@@ -2594,8 +2579,10 @@
     const days = `<span class="fdays">${WD.map((d, i) => fpill('card:day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
     const spans = SV.DAY_GROUPS.map(g => fpill('card:dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
     const parts = SV.PARTS_OF_DAY.map(pt => fpill('card:part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
+    // A collection's jurisdictions, each in its colour as its tab is: those its parishes are in.
+    const jPills = juris ? juris.offer.map(j => fpill('card:juris', j, juris.on.includes(j), esc(JURIS[j].short), ' fpill-j', `--j:${shown(jColor(j))}`)).join('') : '';
     return `<div class="filter-panel card-fpanel" role="group" aria-label="Filters">
-        ${group('What', ...kindLines(f, SV, 'card:', (x) => has(x) || whatIs(f, x)))}${langPills ? group('Language', langPills) : ''}${group('When', days, spans, parts)}
+        ${group('What', ...kindLines(f, SV, 'card:', (x) => has(x) || whatIs(f, x)))}${langPills ? group('Language', langPills) : ''}${group('When', days, spans, parts)}${jPills ? group('Jurisdiction', jPills) : ''}
         <div class="fpanel-foot">${n ? '<button class="fpill fpill-ghost" type="button" data-act="card-filters-clear">Clear all</button>' : '<span></span>'}
           <button class="fpill on" type="button" data-act="card-filters-done">Done</button></div>
       </div>`;
@@ -2615,7 +2602,10 @@
   function setCardFilter(el, k, v) {
     if (el._coll) {
       const f = { ...blankFilters(), ...(el._coll.f || {}) };
-      if (flipWhat(f, k, v)) setCollFilters(el, f);
+      if (k === 'juris') {
+        const js = jList(el._coll.juris);
+        setCollFilters(el, f, window.AgoraUrlState.jurisdictionValue(js.includes(v) ? js.filter(j => j !== v) : [...js, v]));
+      } else if (flipWhat(f, k, v)) setCollFilters(el, f);
       return;
     }
     const f = { ...blankFilters(), ...(el._focus || {}) };
@@ -2626,7 +2616,7 @@
     if (!el._coll) return setCardFocus(el, null);
     const f = el._coll.f || {};
     setCollFilters(el, { ...blankFilters(), location: f.location || null, monasteries: !!f.monasteries, parishIds: f.parishIds || null,
-      listId: f.listId || null, timesOnly: !!f.timesOnly, words: f.words || null });
+      listId: f.listId || null, timesOnly: !!f.timesOnly, words: f.words || null }, jurisOffer(el._coll) ? null : el._coll.juris || null);
   }
 
   // ── A parish link that asks something (/sgr/talks, /sgr/wed/liturgy) ──
@@ -2641,15 +2631,17 @@
   const MATCH_CAP = 10;
   const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
   /** What answers a parish link, from its date to as far as the bundle holds, a season at most. */
-  function matchesAt({ pid, focus, from }) {
+  function matchesAt(m) {
+    const { pid, focus, from } = m;
     const start = from || todayKey();
     const last = [addDays(start, MATCH_DAYS), S.loadedTo || todayKey()].sort()[0];
     if (last < start) return [];
     const now = Date.now();
     return feedRange(start, daysBetween(start, last) + 1).filter(e => eventParishIds(e).includes(pid)
-      && (visible(e) || tombOf(e)) && endMs(e) > now && rowAnswers(e, focus, false));
+      && (visible(e) || tombOf(e)) && endMs(e) > now && (m.rules ? m.rules.has(ruleIdOf(e)) : rowAnswers(e, focus, false)));
   }
-  const matchSegs = (m) => segsFor({ parish: S.byId.get(m.pid), focus: m.focus, from: m.from });
+  /** A match's link: what it asks of its parish (/sgr/sun/liturgy), or, for a line that no link can ask, its event's own. */
+  const matchSegs = (m, id) => (m.focus ? segsFor({ parish: S.byId.get(m.pid), focus: m.focus, from: m.from }) : segsFor({ eventId: id }));
   async function openMatch(pid, focus, { entry = true, from = null } = {}) {
     openParish(pid, { entry, from, focus: null });
     const under = stack[stack.length - 1];
@@ -2664,15 +2656,70 @@
     }
     if (e) openEvent(e.id, { entry, match });
   }
+  /**
+   * What a timetable line asks, as a link to its parish would ask it: its
+   * days and its service (/sgr/sun/liturgy), and its language where the
+   * parish holds that service on those days in another one too, so the
+   * Greek 8am and the English 10am are a link each. Its service as the
+   * feed names it (/liturgy), else its kind: Ryde's “Matins & Divine
+   * Liturgy” is typed a prayer, so /smg/sun/prayer. Null where no link can
+   * ask for the line alone (a choir practice, which is a kind of nothing).
+   */
+  const LINE_KINDS = { liturgy: ['services', 'liturgy'], prayer: ['services', 'prayer'], feast: ['services', 'feast'],
+    talk: ['talks', null], youth: ['socials', 'youth'], social: ['socials', 'social'], festival: ['socials', 'social'], fundraiser: ['socials', 'social'] };
+  function lineFocus(pid, rules) {
+    const SV = window.AgoraServices, T = window.AgoraTimetable, r = rules[0];
+    // Every day of the week is no day at all: /spp/compline.
+    const days = [...new Set(rules.map(q => q.day_of_week))];
+    const day = days.length === 7 ? null : SV.dayValue(days);
+    const answers = (f) => rules.every(q => rowAnswers(q, f, true));
+    // What a link reads back as it was written: a service that is a kind
+    // (/liturgy) is the kind, so it is asked as one.
+    const svc = SV.serviceOf(r), asKind = svc && window.AgoraUrlState.kindOfService(svc);
+    const asks = [asKind ? { kind: asKind[0], kindSub: asKind[1] } : svc ? { service: svc } : null,
+      LINE_KINDS[r.event_type] ? { kind: LINE_KINDS[r.event_type][0], kindSub: LINE_KINDS[r.event_type][1] } : null];
+    const x = asks.filter(Boolean).map(a => ({ ...blankFilters(), day, ...a })).find(answers);
+    if (!x) return null;
+    const own = new Set(rules.map(q => String(q.id)));
+    const langs = T.serviceLangs(r) || [];
+    const others = rulesOf(pid).filter(q => liveRule(q) && !own.has(String(q.id)) && whatMatches(q, x, true));
+    const theirs = others.map(q => T.serviceLangs(q) || []);
+    if (!langs.length || !theirs.some(ls => ls.join() !== langs.join())) return x;
+    // A language only this line holds; else its one language, held alone.
+    const only = langs.find(l => theirs.every(ls => !ls.some(m => langIs(m, l))));
+    const y = only ? { ...x, lang: only } : langs.length === 1 ? { ...x, lang: langs[0], langStrict: true } : x;
+    return answers(y) ? y : x;
+  }
+  /**
+   * A timetable line tapped: its next date's card over the card it is on,
+   * the dates after it under it, as its link (/sgr/sun/liturgy) opens it.
+   * The card it was tapped on stays as it was (Kevin, 5 Nov 2026). Its
+   * dates are the line's own, the services merged into it and no others.
+   */
+  async function openLine(pid, ids) {
+    const rules = ids.map(id => rulesOf(pid).find(r => String(r.id) === String(id))).filter(Boolean);
+    if (!rules.length) return;
+    const match = { pid, focus: lineFocus(pid, rules), from: null, rules: new Set(rules.map(r => String(r.id))) };
+    const under = stack[stack.length - 1];
+    let e = matchesAt(match).find(visible);
+    if (!e) {
+      try { await ensureLoaded(addDays(todayKey(), MATCH_DAYS)); } catch (err) { console.warn(err); }
+      if (stack[stack.length - 1] !== under) return;
+      e = matchesAt(match).find(visible);
+    }
+    if (e) openEvent(e.id, { match });
+    else toast(`No ${rules[0].title} on file in the next ${Math.round(MATCH_DAYS / 30)} months`);
+  }
   /** "More talks", "More liturgies on Wednesdays": what else answers, under the first. */
   function matchFeedHTML(m, id) {
     const list = matchesAt(m).filter(e => String(e.id) !== String(id)).slice(0, MATCH_CAP);
     if (!list.length) return '';
-    const label = focusLabel(m.focus);
+    // A line's are its own dates, whatever else its link would find.
+    const label = m.focus && !m.rules ? focusLabel(m.focus) : 'Later dates';
     const start = local(list[0]).date;
     const days = daysBetween(start, local(list[list.length - 1]).date) + 1;
     return `<section class="cu-band ev-more">
-        <h2 class="sec">More ${esc(/^Bible\b/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1))}</h2>
+        <h2 class="sec">${m.focus && !m.rules ? `More ${esc(/^Bible\b/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1))}` : esc(label)}</h2>
         <div class="cu" style="--pc:${parishColor(S.byId.get(m.pid))}">${daysHTML(list, { start, days, row: { here: m.pid, focus: m.focus } })}</div>
       </section>`;
   }
@@ -2680,8 +2727,10 @@
   function openParish(pid, { entry = true, from = null, focus } = {}) {
     const p = S.byId.get(pid);
     if (!p) return;
-    // A link says its own (/sgr/talk, or none at /sgr); a tap takes where it was.
-    if (focus === undefined) focus = focusAround();
+    // Plain, however it was reached: a tap takes nothing from the card or
+    // the page under it (Kevin, 5 Nov 2026). Only its own Filters ask
+    // something of it.
+    if (focus === undefined) focus = null;
     const segs = segsFor({ parish: p, focus, from });
     const won = parishWhatsOnHTML(pid);
     const html = `${glassBar(p.name, JURIS[p.jurisdiction]?.long)}
@@ -2745,8 +2794,21 @@
   }
   /** A collection's link, from a date when one is picked. */
   const collSegs = (c, from) => from ? segsFor({ juris: c.juris || null, f: { ...blankFilters(), ...(c.f || {}) }, from }) : c.segs;
-  /** What a collection's Filters ask: what, which language, when — not its search's words. */
-  const collFilterCount = (c) => focusCount({ ...blankFilters(), ...(c.f || {}), words: null });
+  /**
+   * A collection's Jurisdiction row, where it asks its parishes again (pick)
+   * and is not a jurisdiction's own: the shelf's Sunday Liturgy is every
+   * jurisdiction's, and narrowed to Greek inside its card (Kevin, 5 Nov
+   * 2026). Offered are the jurisdictions its parishes are in.
+   */
+  function jurisOffer(c) {
+    if (!c.pick || /^j-/.test(c.id || '')) return null;
+    const on = jList(c.juris);
+    const have = new Set(c.pick({ ...blankFilters(), ...(c.f || {}) }, null).map(id => S.byId.get(id)?.jurisdiction));
+    const offer = TAB_ORDER.filter(j => have.has(j) || on.includes(j));
+    return offer.length > 1 || on.length ? { on, offer } : null;
+  }
+  /** What a collection's Filters ask: what, which language, when, and whose — not its search's words. */
+  const collFilterCount = (c) => focusCount({ ...blankFilters(), ...(c.f || {}), words: null }) + (jurisOffer(c) ? jList(c.juris).length : 0);
   /** What is on at a collection's parishes, by its filters, from today or a date, a fortnight at a time. */
   function collFeedHTML(c, days, from = null, panel = false) {
     const start = from || todayKey();
@@ -2756,7 +2818,7 @@
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
     const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang }, byVenue: true });
-    return `${panel ? cardPanelHTML(c.ids, f, collFilterCount(c)) : ''}
+    return `${panel ? cardPanelHTML(c.ids, f, collFilterCount(c), { juris: jurisOffer(c) }) : ''}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
@@ -2957,10 +3019,10 @@
    * words follow, a card of the page's parishes asks again which it holds,
    * and a list keeps them, so it opens with them next time.
    */
-  function setCollFilters(el, f) {
-    let c = { ...el._coll, f };
-    if (c.pick) c.ids = c.pick(f, c.juris || null);
-    if (c.segs) c.segs = segsFor({ juris: c.juris || null, f });
+  function setCollFilters(el, f, juris = el._coll.juris || null) {
+    let c = { ...el._coll, f, juris };
+    if (c.pick) c.ids = c.pick(f, juris);
+    if (c.segs) c.segs = segsFor({ juris, f });
     c = withWords(c);
     if (c.listId && c.listId !== 'fav') setListFilters(c.listId, f);
     el._coll = c;
@@ -3136,7 +3198,7 @@
     ? `<section class="ev-parishes folded">${list}<label class="ctimes-open"><input type="checkbox" hidden><span>Show all ${n} parishes</span>${I.chev}</label></section>`
     : list);
   function eventBodyHTML(e, match = null) {
-    const segs = match ? matchSegs(match) : segsFor({ eventId: e.id });
+    const segs = match ? matchSegs(match, e.id) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const last = e.end_local ? { date: e.end_local.slice(0, 10), hm: e.end_local.slice(11, 16) } : (e.end_utc ? partsIn(e.timezone || TZ, Date.parse(e.end_utc)) : null);
@@ -3213,7 +3275,7 @@
     // Its bookmark floats, as a parish's star does, and its pencil beside it.
     const html = `${glassBar(e.title, p ? p.name : '')}<div class="sheet-scroll">${eventBodyHTML(e, match)}</div>
       <div class="floatbar" role="toolbar">${eventTools(e)}</div>`;
-    const el = pushSheet(html, 'event', { segs: match ? matchSegs(match) : segsFor({ eventId: e.id }), entry });
+    const el = pushSheet(html, 'event', { segs: match ? matchSegs(match, e.id) : segsFor({ eventId: e.id }), entry });
     el._event = e;
     el._match = match;
   }
@@ -3228,7 +3290,7 @@
       return;
     }
     el._event = e;
-    el._segs = el._match ? matchSegs(el._match) : segsFor({ eventId: e.id });
+    el._segs = el._match ? matchSegs(el._match, e.id) : segsFor({ eventId: e.id });
     const p = S.byId.get(e.parish_id);
     const bar = el.querySelector('.gtitle');
     if (bar) bar.innerHTML = `<b>${esc(e.title)}</b>${p ? `<small>${esc(p.name)}</small>` : ''}`;
@@ -3854,7 +3916,8 @@
       showNearest(b.dataset.nearest === 'on' ? new Set(feedFor(2).filter(e => eventPasses(e) && endMs(e) > Date.now()).flatMap(eventParishIds)) : null);
       return;
     }
-    if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(underJuris(c)); return; }
+    // A shelf's card is its own, whatever the map's filters are (Kevin, 5 Nov 2026).
+    if ((b = t.closest('[data-coll]'))) { const c = COLL.get(b.dataset.coll); if (c) openCollection(c); return; }
     if (t.closest('[data-newlist]')) {
       const name = prompt('Name your list', 'Parishes to visit');
       if (name) { const l = newList(name); toast(`Made “${l.name}”`); }
@@ -3862,6 +3925,8 @@
     }
     if ((b = t.closest('[data-quickadd]'))) { openAddToList(b.dataset.quickadd); return; }
     if ((b = t.closest('[data-edit-rules]'))) { edit('editLine', b.dataset.editRules.split(',')); return; }
+    // A timetable line opens its own card, and leaves the one it is on as it was.
+    if ((b = t.closest('[data-line]'))) { openLine(b.closest('[data-tt]').dataset.tt, b.dataset.line.split(',')); return; }
     if ((b = t.closest('[data-edit-event]'))) { edit('editEvent', b.dataset.editEvent); return; }
     if ((b = t.closest('[data-edit-details]'))) { edit('editDetails', b.dataset.editDetails); return; }
     if ((b = t.closest('[data-suggest]'))) {
@@ -4054,6 +4119,8 @@
   });
   $('#scrim').addEventListener('click', () => popSheet());
   document.addEventListener('keydown', (e) => {
+    const line = (e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-line]') ? e.target : null;
+    if (line) { e.preventDefault(); line.click(); return; }
     if (e.key !== 'Escape') return;
     if (menu) closeMenu();
     else if (stack.length) popSheet();
@@ -4183,6 +4250,8 @@
   // ── Boot ──────────────────────────────────────────────────────────────
 
   async function boot() {
+    // Back from a Sign in: read before the map uses it up (startMap).
+    const kept = readSignInView();
     // Who is looking, alongside everything else; the cards ask it as they open.
     const signedIn = checkSignIn();
     const mapStarted = startMap().catch(err => console.warn('map', err));
@@ -4195,17 +4264,23 @@
     adopt();
     step(`✓ ${S.parishes.length} parishes, ${S.rules.length} service times`, 0.6);
     if (S.loc) document.body.classList.add('located');
-    // What the address asks for. The older /#sgr is /sgr.
-    const route = readPath(location.pathname);
+    // What the address asks for. The older /#sgr is /sgr. The address
+    // becomes the page's own below, so the link is read here, once.
+    const path = location.pathname;
+    const route = readPath(path);
     const h = decodeURIComponent(location.hash.slice(1));
     if (h && !route.parish) { const p = parishBySlug(h); if (p) route.parish = p.id; }
+    // The shelves first: a link to one of them (/sun/liturgy, /greek) is its card.
+    renderCollections();
     // greek.orthodoxy.au never gets here: the Worker sends it to /greek (lib/admin-host.mjs).
-    S.juris = route.juris;
-    S.f = route.f;
+    // A link that opens a card keeps its filters to the card, over a plain
+    // page; one that opens none (/sydney), or the map's own address kept by
+    // a Sign in with no card open, is the map's.
+    const asCard = !(kept && !kept.card) && opensCard(route, path);
+    if (!asCard) { S.juris = route.juris; S.f = route.f; }
     renderJurisChips();
     renderInView();
     renderActive();
-    renderCollections();
     renderFeeds();
     // The page's own address first, so a card opened from a link is one step
     // back from the page rather than from wherever the person came from.
@@ -4223,10 +4298,10 @@
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncSaved(); });
     }).catch(() => {});
     await mapStarted;
-    const opening = applyRoute(route, { animate: false });
-    // A collection's link opens its card, over the page its filters make, as
-    // the shelf's card does: a step back is that page.
-    if (!route.parish && !route.eventId && !route.donate && !route.words && !(signInBack && !signInBack.card)) openPageCard(route, location.pathname);
+    // The card a link names, one step on from the plain page: closing it is
+    // that page, whose map is drawn first.
+    if (asCard) refilter({ url: 'none' });
+    const opening = asCard ? openRoute(route, path, { animate: false }) : applyPage(route, { animate: false });
     // A card painted for a link this page did not open (a parish since gone),
     // once an event the bundle did not hold has been read.
     Promise.resolve(opening).catch(() => {}).then(() => $$('#sheets > .ssr').forEach(x => x.remove()));
