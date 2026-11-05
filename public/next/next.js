@@ -1795,7 +1795,12 @@
     const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && (!only || only.ids.has(p.id)) && parishMatches(p, f, juris)).map(p => p.id);
     const ids = pick(f0);
     const say = (xs, f, juris) => viewWords(xs, f, juris, { here: !everywhere });
-    if (ids.length === 1) openParish(ids[0], { from, entry });
+    // One parish is that parish's card, asked what the card would have been:
+    // a link's as the parish's own link asks it (/smg+smk/feast with only
+    // SMK's ahead is /smk/feast), the chip's under the map's filters.
+    const ask = ids.length === 1 ? focusOf(f0) : null;
+    if (ids.length === 1 && link && ask) openMatch(ids[0], ask, { entry, from });
+    else if (ids.length === 1) openParish(ids[0], { from, entry, focus: ask });
     else {
       // Its own Filters ask again of the same place (pick). Shared, it is
       // those parishes by name under the same filters (/sgr+snb/en-only), not
