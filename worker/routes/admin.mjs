@@ -45,7 +45,7 @@ import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
   updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
   placeRead, afterServices, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast,
-  suggestLanguages, suggestEnds, occurrenceBody } from '../lib/drafts.mjs';
+  suggestLanguages, suggestEnds, occurrenceBody, isNewOccurrence } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
@@ -2068,6 +2068,11 @@ export function registerAdminRoutes(router) {
       return json({ error: problems.map(p => p.text).join(' '), checks: problems }, 400);
     }
 
+    // A date of a service the read proposed: the editor adds the service and
+    // links the card to it first. Never written half-linked, as a one-off.
+    if (isNewOccurrence(card.occurrence)) {
+      return json({ error: 'This is a date of a service that is not on the timetable yet. Add it to the timetable first, or make this a separate event.', unlinked: true }, 409);
+    }
     if (card.occurrence) return publishOccurrence(c, card, zone);
 
     const b = await readJson(c.request);

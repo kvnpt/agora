@@ -113,3 +113,10 @@ test('weeks read as people say them', () => {
   assert.equal(S.weeksLabel(null), '');
   assert.equal(S.SIGN_SOURCE, 'Church signage');
 });
+
+test('a service keeps its key, which its dates on the poster point at; anything else is dropped', () => {
+  const base = { day_of_week: 5, start_time: '10:00', title: 'Mums Group' };
+  assert.strictEqual(S.validateServices([{ ...base, key: 's1' }]).services[0].key, 's1');
+  assert.ok(!('key' in S.validateServices([{ ...base, key: 's 1; drop' }]).services[0]));
+  assert.ok(!('key' in S.validateServices([base]).services[0]));
+});

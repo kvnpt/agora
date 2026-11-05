@@ -92,7 +92,7 @@ const EVENT_FIELDS = ['title', 'feast', 'date', 'weekday_printed', 'year_printed
 
 /** One weekly service off a sign or a flyer: a rule to be, not an event. */
 const SERVICE_FIELDS = ['title', 'every', 'day', 'start_time', 'end_time', 'weeks', 'languages', 'event_type',
-  'description', 'starts', 'until', 'notes'];
+  'venue', 'description', 'starts', 'until', 'notes'];
 const WEEKS = ['first', 'second', 'third', 'fourth', 'last'];
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -129,7 +129,7 @@ export const POSTER_SCHEMA = {
         required: EVENT_FIELDS,
         properties: {
           title: nullable({ type: 'string' }),
-          feast: { type: 'string', description: 'The saint or feast commemorated that day, in English; empty if none' },
+          feast: { type: 'string', description: 'The saint or feast commemorated that day, or a regular meeting\'s own topic that day, in English; empty if none' },
           date: nullable({ type: 'string', format: 'date' }),
           weekday_printed: nullable({ type: 'string' }),
           year_printed: { type: 'boolean' },
@@ -176,7 +176,11 @@ export const POSTER_SCHEMA = {
           weeks: { type: 'array', items: { type: 'string', enum: WEEKS } },
           languages: { type: 'array', items: { type: 'string', enum: langList.NAMES } },
           event_type: { type: 'string', enum: EVENT_TYPES },
-          description: { type: 'string', description: 'From a poster, what someone deciding whether to come needs to know; empty for a sign' },
+          // Where it is held every time, when that is not the parish's church:
+          // St Emilia's Mums Group meets at the youth centre across the road
+          // (5 Nov 2026), and every date of it said the church.
+          venue: { type: 'string', description: 'Where it is held, when not at the parish\'s own church: the name and address as printed; empty otherwise' },
+          description: { type: 'string', description: 'From a poster, what holds on every date: what it is, who it is for, who leads it; empty for a sign' },
           starts: { type: 'string', description: 'YYYY-MM-DD it begins, only if the image says it starts on a date; empty otherwise' },
           until: { type: 'string', description: 'YYYY-MM-DD of its last date, only if the image says it is held only until then; empty otherwise' },
           notes: {
@@ -213,7 +217,7 @@ Write in English. Agora is read in English, so when the image is in another lang
 Everything an image announces is one of two things, and an image can announce both:
 1. A REGULAR SERVICE: something the parish holds on a weekday every week, or on some weeks of every month — the Sunday Liturgy, Saturday Vespers, a choir practice every Tuesday, a Bible study on the second Wednesday. It belongs on the parish's timetable, in services. Some are regular only for a while ("every Friday in August", "Wednesdays in Lent from 18 February", "until Christmas"): give its first and last dates.
 2. A ONE-OFF EVENT: something on a particular date — a feast-day Liturgy, a talk, a fundraiser, a camp. It belongs in events. One event that runs over several days (a festival from Friday to Sunday, a retreat) is ONE entry with its last day in end_date; separate meetings on different dates are one entry per date. Two services on the same date, each printed with its own name and time, are two entries: under "Saturday 4 April", "Divine Liturgy 9am" and "Vespers 6pm" are two events on the 4th.
-A regular service on one particular date is listed in events only when the image says something about that date: the saint or feast it commemorates, a different time, a guest, that it is cancelled or moved. The site already shows the rest.
+A regular service on one particular date is listed in events only when the image says something about that date: the saint or feast it commemorates, what that meeting is about (this month's activity or topic), a different time, a guest, that it is cancelled or moved. The site already shows the rest. A poster can announce both at once: "St Emilia's Mums Group, now on the first Friday of each month" over "Coaster-making Workshop, Friday 6 November, 10am" is the group in services (the first Friday of each month) and that Friday's meeting in events.
 What makes something regular is the image saying it repeats: "every", a weekday in the plural ("Sundays"), "weekly", "of the month", or a sign of the parish's regular services. A weekday beside a time on a poster for one occasion does not: under "Sunday 8 November", "Vespers 7pm Sat" and "Liturgy 9am Sun" say which day of that occasion each is held, so each is an event on its date (the Saturday is the 7th, the day before). The schedule of a feast day, a festival, a visit or a Holy Week is events, one per item, never services, even when the same services are also held every week. A poster that prints no date anywhere, only a weekday over its times ("Sunday: Matins 9:00am, Divine Liturgy 10:15am, Sunday School 11:30am"), is the parish's weekly schedule for that day: every item on it is a regular service.
 
 What to return:
@@ -226,8 +230,8 @@ What to return:
 - notes: anything about the image as a whole that the person should know, such as part of it being cut off or unreadable. One short sentence each, at most two. Usually empty.
 
 For each event:
-- title: the event's name, in normal capitalisation even when the image prints it in capitals ("Feast of St Nicholas", not "FEAST OF ST NICHOLAS"). For a regular service, the service ("Orthros and Divine Liturgy"), with its commemoration in feast and not in the title. Do not add the parish's name unless it is part of the event's name.
-- feast: the saint or feast the date commemorates, when the image gives one beside the service ("Luke the Evangelist", "Sixth Sunday of Luke"). Empty when it gives none, and for an event that is itself the feast ("Feast of St Nicholas").
+- title: the event's name, in normal capitalisation even when the image prints it in capitals ("Feast of St Nicholas", not "FEAST OF ST NICHOLAS"). For a date of a regular service, whether it is one of the parish's below or one in services, the service's name as given there ("Orthros and Divine Liturgy", "St Emilia's Mums Group"), with what that date is about in feast and not in the title. Do not add the parish's name unless it is part of the event's name.
+- feast: the saint or feast the date commemorates, when the image gives one beside the service ("Luke the Evangelist", "Sixth Sunday of Luke"); for a date of a regular group, class or meeting, that date's own activity or topic as printed ("Coaster-making Workshop"). Empty when it gives none, and for an event that is itself the feast ("Feast of St Nicholas").
 - date: YYYY-MM-DD. A programme headed with its month and year ("October 2026") prints the year for every date in it, and a date in it that has already passed keeps that year: it is still that date, and the person checking sees it has passed. Only when the image prints no year anywhere, use the first such date on or after today, and set year_printed to false.
 - weekday_printed: the weekday printed for this date, in English ("Saturday"), as printed even if it disagrees with the date; null if no weekday is printed.
 - year_printed: true only if the image prints the year.
@@ -237,7 +241,7 @@ For each event:
 - event_type: the closest kind from the list below, for the event itself: never the kind of a service it follows.
 - languages: only languages the image says the event is held in, from the list ("Greek", "Arabic", "Church Slavonic"; Russian is Church Slavonic). A service named for its language says it: "English Vigil", "Greek Liturgy" and "Liturgy in English and Greek" are held in those languages. Empty if it does not say; do not guess from the language the image is written in.
 - venue: only when the event is somewhere other than the parish's own church, such as a hall, a park or another church. The name and address as printed. Not the parish's own address (it is given below), even when the image prints it.
-- description: one to three short sentences with what someone deciding whether to come needs to know: what it is, who is speaking, what to bring, the cost, how to RSVP. For an event that starts after a service, say so ("After the Liturgy."), since its time alone reads as a set start. No exclamation marks, no emojis, nothing the image does not say. null if there is nothing beyond the title and feast.
+- description: one to three short sentences with what someone deciding whether to come needs to know: what it is, who is speaking, what to bring, the cost, how to RSVP. For an event that starts after a service, say so ("After the Liturgy."), since its time alone reads as a set start. For a date of a regular service, what is particular to that date first, then what holds every time (who it is for), since it is shown that day in place of the service's own. No exclamation marks, no emojis, nothing the image does not say. null if there is nothing beyond the title and feast.
 - notes: a short note for any field you were unsure of, naming that field. Usually empty.
 
 For each regular service:
@@ -248,7 +252,8 @@ For each regular service:
 - weeks: only when it is held on some weeks of the month and not others: "every 2nd and 4th Sunday" is ["second", "fourth"]. Empty for every week.
 - languages: languages the sign says it is held in, from the list (Russian is Church Slavonic). Empty if it does not say.
 - event_type: the closest kind from the list below.
-- description: from a poster, one to three short sentences with what someone deciding whether to come needs to know: who leads it, who it is for, what to bring, the cost, who to contact. No exclamation marks, no emojis, nothing the image does not say. Empty for a sign.
+- venue: where it is held every time, when that is not the parish's own church (a hall, a youth centre, another church): the name and address as printed. Empty when it is at the church, and never the parish's own address.
+- description: from a poster, one to three short sentences with what someone deciding whether to come needs to know on any date: what it is, who it is for, who leads it, what to bring, the cost, who to contact. Only what holds every time: what is particular to one date (this month's activity, a guest) goes in that date's entry in events. No exclamation marks, no emojis, nothing the image does not say. Empty for a sign.
 - starts: YYYY-MM-DD, only when the image says it begins on a date ("starting 3 November", "from 18 February"); empty otherwise.
 - until: YYYY-MM-DD of its last date, only when the image says it is held only until then ("every Friday in August" is until the last Friday of August); empty otherwise.
 - notes: a short note for any field you were unsure of, naming that field. Usually empty.
@@ -531,6 +536,9 @@ function normalizeService(v) {
     week_of_month: weeks.length && weeks.length < WEEKS.length ? weeks.join(',') : null,
     languages: languages.length ? languages : null,
     event_type: isEventType(sv.event_type) ? sv.event_type : 'liturgy',
+    // Where it is held every time, as printed: words, which placeRead clears
+    // when they are only the parish's own address.
+    location_override: clean(sv.venue, 300),
     // A poster's words and its period, for a rule read off a poster; a sign
     // gives neither words nor (usually) dates.
     description: clean(sv.description, 600),
@@ -581,6 +589,10 @@ export function normalizeRead(doc) {
       rule.read_notes.push({ field: 'day', text: 'The poster does not say this is held every week. If it is for one date, add it as an event instead.' });
     }
   }
+  // Each its own name in the draft, which a card that is one of its dates
+  // points at (drafts.mjs matchOccurrences: "new:s1:2026-11-06") until it is
+  // on the timetable.
+  services.forEach((s, i) => { s.key = `s${i + 1}`; });
   return {
     kind,
     // What it was translated from, when it was: the editor says so beside the
@@ -703,7 +715,7 @@ function onTheDay(rule, occasion) {
     event_type: rule.event_type,
     description: rule.description,
     languages: rule.languages,
-    location_override: null,
+    location_override: rule.location_override,
     printed_weekday: DAY_NAMES[day],
     year_printed: occasion.year_printed,
     after: null,

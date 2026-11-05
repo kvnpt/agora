@@ -52,9 +52,10 @@
    * A list of services as the editor sends it back, checked field by field.
    * The same shape normalizeRead gives: {title, day_of_week, start_time,
    * end_time, week_of_month, languages, event_type, description,
-   * effective_from, read_notes} — and, for an event card a person moved up
-   * to the timetable (event-editor.js serviceFromCard), its subtitle and its
-   * place, which POST /api/admin/schedules checks when it is added.
+   * effective_from, read_notes, key} — its place, as read or as an event card
+   * a person moved up to the timetable had it (event-editor.js
+   * serviceFromCard), and that card's subtitle, which POST
+   * /api/admin/schedules checks when it is added.
    *
    * @returns {{ok: true, services: Array} | {ok: false, error: string, index: number}}
    */
@@ -85,6 +86,9 @@
         .filter(n => n && typeof n.text === 'string')
         .map(n => ({ field: String(n.field || '').slice(0, 30), text: n.text.slice(0, 300) })).slice(0, 6);
       out.push({
+        // Its name in the draft, which a card that is one of its dates points
+        // at until it is on the timetable ("new:s1:2026-11-06").
+        ...(typeof s.key === 'string' && /^[a-z0-9]{1,16}$/i.test(s.key) ? { key: s.key } : {}),
         title: s.title ? String(s.title).trim().slice(0, 200) || null : null,
         day_of_week: day,
         start_time: s.start_time,

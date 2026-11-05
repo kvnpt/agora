@@ -12,6 +12,9 @@
   --ee-muted: var(--text-secondary, var(--muted, #6b7280));
   --ee-field: var(--surface-2, var(--soft-bg, #f3f4f6));
   --ee-warn: var(--warn, #b45309);
+  /* A highlighter: what a date changes on its regular service. */
+  --ee-mod: rgba(250, 204, 21, .38);
+  --ee-mod-line: #d4a106;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -19,6 +22,9 @@
   font-size: 14px;
 }
 .ee [hidden] { display: none !important; }
+@media (prefers-color-scheme: dark) {
+  .ee { --ee-mod: rgba(250, 204, 21, .26); --ee-mod-line: #e0b52a; }
+}
 
 /* ── The parish ──
    A draft can move until it is published: a poster dropped at the wrong
@@ -449,8 +455,7 @@
 .ee-link:hover { text-decoration: underline; }
 .ee-link-danger { color: var(--danger); }
 /* A button that is a pill, as the page's forms have them (next.css .rf-btn):
-   the card's foot (Remove this event, the combine), + Add another event, and
-   a programme's "Make it a separate event instead". */
+   the card's foot (Remove this event, the combine) and + Add another event. */
 .pill-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 40px; padding: 8px 16px;
@@ -506,21 +511,80 @@
 .ee-btn-danger { color: var(--danger); border-color: transparent; padding-left: 2px; padding-right: 2px; }
 
 /* ── A programme's Sunday: a change to the service already on file ──
-   Where the combine would be. Accent, like the ask: nothing is wrong, it is
-   saying where this goes. */
-.ee-occ {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 4px 0 12px;
-  padding: 10px 12px;
-  font-size: 12.5px;
-  line-height: 1.45;
+   Where the combine would be, first in the card: the timetable's line it is
+   a date of, a link, and the date as its row in the feed will be, with what
+   it changes highlighted (Kevin, 5 Nov 2026, marking up the sentences this
+   box had). The link is the button: broken, the card is its own event. */
+.ee-occ { display: flex; flex-direction: column; align-items: stretch; margin: 4px 0 12px; }
+.ee-card.is-open .ee-occ { margin-top: 8px; }
+.ee-occ-rule {
+  padding: 10px 12px 18px;
+  background: var(--ee-field);
+  border-radius: 12px;
+}
+.ee-occ-new {
+  display: inline-block; margin-left: 6px; vertical-align: 1px;
+  font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: 999px;
+  color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Over the seam between the two boxes, like a link between them. */
+.ee-occ-link {
+  position: relative; z-index: 1; align-self: center;
+  display: inline-grid; place-items: center;
+  width: 40px; height: 40px; margin: -16px 0; padding: 0;
+  color: var(--accent-text, var(--accent));
+  background: var(--card, var(--bg, #fff));
+  border: 1px solid var(--accent-ring, var(--border));
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ee-occ-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring, rgba(44, 108, 180, .22)); }
+.ee-occ-link:disabled { cursor: default; opacity: .6; }
+.ee-occ-row {
+  padding: 18px 12px 11px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border: 1px solid var(--accent-ring, var(--border));
   border-radius: 12px;
 }
+/* Unlinked: the line it was a date of greys, the link shows broken, and the
+   row is an event of its own, nothing in it a change to anything. */
+.ee-occ.is-unlinked .ee-occ-rule { opacity: .55; }
+.ee-occ.is-unlinked .ee-occ-link { color: var(--ee-muted); border-color: var(--border); border-style: dashed; }
+.ee-occ.is-unlinked .ee-occ-row { background: none; border-color: var(--border); }
+/* Its service changed so this date is not one of it: nothing is published onto it. */
+.ee-occ.is-off .ee-occ-row {
+  background: color-mix(in srgb, var(--ee-warn) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ee-warn) 40%, transparent);
+}
+.ee-occ.is-off .ee-occ-link { color: var(--ee-warn); border-color: color-mix(in srgb, var(--ee-warn) 40%, transparent); }
+.ee-occ-what { margin-top: 6px; font-size: 12.5px; line-height: 1.4; color: var(--ee-warn); }
+
+/* The date as its row in the feed (next.css .erow): time, day and kind word,
+   then its name, its subtitle and where, and the poster at the end. */
+.ee-feed { display: flex; align-items: flex-start; gap: 12px; }
+.ee-feed-when {
+  flex: none; width: 68px; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  font-size: 14.5px; font-weight: 600; line-height: 1.2;
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+.ee-feed-kind { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.ee-feed-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ee-feed-title { font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: break-word; }
+.ee-feed-feast { font-size: 12.5px; line-height: 1.3; font-style: italic; color: var(--ee-muted); }
+.ee-feed-desc, .ee-feed-where { font-size: 12.5px; line-height: 1.35; color: var(--ee-muted); }
+.ee-feed-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ee-feed-thumb { flex: none; width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+/* What the date changes on its service: a highlighter over it. */
+.ee-feed .is-mod {
+  color: var(--text);
+  background: var(--ee-mod);
+  border-radius: 4px;
+  padding: 0 3px;
+  margin: 0 -3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.ee-feed img.is-mod { padding: 0; margin: 0; background: none; outline: 2px solid var(--ee-mod-line); outline-offset: 1px; }
 .ee-chip-occ { color: var(--accent-text, var(--accent)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* ── Another parish's event, this one taking part ──
@@ -609,6 +673,9 @@
 .ee-svc-line { font-size: 13.5px; line-height: 1.4; }
 .ee-svc.is-new .ee-svc-line { font-weight: 600; }
 .ee-svc-state { font-size: 12.5px; line-height: 1.4; color: var(--ee-muted); }
+/* Its dates linked below: a link and their days. */
+.ee-svc-dates { display: flex; align-items: center; gap: 5px; color: var(--accent-text, var(--accent)); }
+.ee-svc-dates svg { width: 14px; height: 14px; flex: none; }
 .ee-svc.is-on .ee-svc-state { color: var(--success, var(--ee-muted)); }
 .ee-svc > .ee-btn-small { align-self: flex-start; }
 .ee-btn-add { flex: 0 0 auto; color: #fff; background: var(--accent); border-color: var(--accent); }

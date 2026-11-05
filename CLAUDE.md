@@ -79,8 +79,10 @@ for them, are in the doc it links to — read that before changing the area.
   several days). A dated change to a regular service is an override, published
   ONTO its occurrence (the saint as `patch_feast`), never a one-off beside it.
   Services are proposals a person adds one by one: a sign's sourced "Church
-  signage" → the photo, a poster's carrying the poster. Reads are written in
-  English; the poster keeps the original.
+  signage" → the photo, a poster's carrying the poster only when it has no
+  date on it. A dated card can be a date of a service in the same read
+  (`new:<key>:date`): Publish adds the service, then the date onto it. Reads
+  are written in English; the poster keeps the original.
 - `hidden` hides; `hide_live` and `parish_scoped` do not. Cancel and Suppress are
   confirmed because they look alike and are not.
 - Combine is three mechanisms routed by the target id's shape, scoped per target.
