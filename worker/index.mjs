@@ -9,6 +9,7 @@ import { Router, json } from './lib/router.mjs';
 import { registerPublicRoutes } from './routes/public.mjs';
 import { registerAdminRoutes } from './routes/admin.mjs';
 import { registerAssetRoutes } from './routes/assets.mjs';
+import { registerIngestRoutes } from './routes/ingest.mjs';
 import { ADAPTERS, runAdapter, adapterPacing, isDue } from './lib/adapters.mjs';
 import { bumpVersion, isDataWrite } from './lib/data-version.mjs';
 import { servePage } from './routes/pages.mjs';
@@ -20,6 +21,7 @@ const router = new Router();
 registerPublicRoutes(router);
 registerAdminRoutes(router);
 registerAssetRoutes(router);
+registerIngestRoutes(router);
 
 // GET /health — proves the D1 binding, nothing more.
 router.get('/health', async ({ env }) => {

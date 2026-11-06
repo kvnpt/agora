@@ -111,6 +111,9 @@ for them, are in the doc it links to — read that before changing the area.
   capability, never a role. An EMPTY table is nobody in production (an owner
   only under `wrangler dev`); the first owner is one row of SQL.
 - Admin fails closed. `AGORA_DEV_ADMIN` is for `wrangler dev` only.
+- `/api/ingest/whatsapp` is outside Access: it trusts Meta's signature and a
+  phone linked by its code to an account, whose role is read per message. A
+  forwarded poster becomes a draft, never an event.
 - A refusal with somewhere to go becomes an ask; "Suggest edits" becomes a
   suggestion to whoever may edit the parish, and a claim only when its box is
   ticked. None is a moderation queue: a suggestion is a message, never an edit

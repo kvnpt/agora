@@ -1162,7 +1162,16 @@ CREATE TABLE drafts (
   -- (public/shared/signs.js) and a person adds them one by one, through the
   -- routes they would use by hand. Nothing here is read by anything public.
   read_services TEXT,
-  read_details TEXT
+  read_details TEXT,
+  -- Migration 036: a poster forwarded to Agora's WhatsApp number
+  -- (worker/routes/ingest.mjs). 'whatsapp' for those, NULL for a draft made
+  -- in the editor. `message_text` is what was sent with the image — its
+  -- caption, and a text sent a moment after it — read with the poster and
+  -- shown in the editor. `seen_at` is when somebody first opened it, which
+  -- takes it off the red badge on the parish's + and the sender's home page.
+  source       TEXT,
+  message_text TEXT,
+  seen_at      TEXT
 );
 CREATE INDEX idx_drafts_parish ON drafts(parish_id);
 
@@ -1256,3 +1265,52 @@ CREATE TABLE saved_items (
   data       TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- whatsapp_links, whatsapp_codes, whatsapp_messages — posters by WhatsApp
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- Migration 036. A poster forwarded to Agora's WhatsApp number becomes a
+-- draft at the sender's parish (worker/routes/ingest.mjs). worker/lib/
+-- whatsapp.mjs also creates these IF NOT EXISTS on first use, with the same
+-- DDL, as drafts.mjs does for its tables.
+--
+-- A phone that may send posters, and whose account they are drafted as: the
+-- address Access verified, lower-cased, as admin_roles keys it. Made by
+-- sending the code the account menu's "Link WhatsApp" shows. `phone` is
+-- WhatsApp's wa_id, digits only (61412345678); `name` the profile name it
+-- last sent. What the account may do is still admin_roles', read per message.
+CREATE TABLE whatsapp_links (
+  phone      TEXT PRIMARY KEY,
+  email      TEXT NOT NULL,
+  name       TEXT,
+  linked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX idx_whatsapp_links_email ON whatsapp_links(email);
+
+-- The six digits "Link WhatsApp" shows, one per account, for 15 minutes.
+CREATE TABLE whatsapp_codes (
+  code       TEXT PRIMARY KEY,
+  email      TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL
+);
+
+-- Every message the number received, by WhatsApp's id (wamid.…): a webhook
+-- delivered twice is read once, a poster and a text sent a moment apart are
+-- read together, and a phone is held to 30 drafts a day. `sent_at` is
+-- WhatsApp's timestamp (unix seconds); `draft_id` the draft it went into, and
+-- `outcome` what became of it ('draft', 'joined', 'linked', 'unlinked', …).
+-- Rows older than 30 days are deleted as new ones arrive.
+CREATE TABLE whatsapp_messages (
+  id          TEXT PRIMARY KEY,
+  phone       TEXT NOT NULL,
+  type        TEXT NOT NULL,
+  body        TEXT,
+  media_id    TEXT,
+  media_type  TEXT,
+  sent_at     INTEGER NOT NULL,
+  received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  draft_id    INTEGER,
+  outcome     TEXT
+);
+CREATE INDEX idx_whatsapp_messages_phone ON whatsapp_messages(phone, sent_at);

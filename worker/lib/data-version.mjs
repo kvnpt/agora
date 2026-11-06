@@ -200,5 +200,7 @@ export function isDataWrite(request, response) {
   if (path === '/api/admin/acronym-suggestion') return false;
   // A person's favourites and lists are theirs, and the bundle never reads them.
   if (path === '/api/admin/saved') return false;
+  // Nor which phone is linked to which account (routes/ingest.mjs).
+  if (/^\/api\/admin\/whatsapp(\/|$)/.test(path)) return false;
   return true;
 }

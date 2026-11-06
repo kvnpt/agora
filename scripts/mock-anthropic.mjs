@@ -283,9 +283,12 @@ http.createServer(async (req, res) => {
   if (req.url === '/__calls') { res.end(JSON.stringify(calls)); return; }
   if (req.method !== 'POST' || req.url !== '/v1/messages') { res.statusCode = 404; res.end(); return; }
   const parsed = JSON.parse(body);
+  // Words alone (a WhatsApp message, routes/ingest.mjs) come with no image.
+  const content = parsed.messages[0].content;
+  const img = content.find(c => c.type === 'image');
   calls.push({ model: parsed.model, keys: Object.keys(parsed), headers: { key: req.headers['x-api-key'], version: req.headers['anthropic-version'] },
-    image: parsed.messages[0].content[0].source.media_type, bytes: parsed.messages[0].content[0].source.data.length,
-    context: parsed.messages[0].content[1].text });
+    image: img ? img.source.media_type : null, bytes: img ? img.source.data.length : 0,
+    context: content[content.length - 1].text });
   if (mode === 'busy') {
     res.writeHead(529, { 'content-type': 'application/json' });
     res.end('{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}');

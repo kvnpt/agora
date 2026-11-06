@@ -42,7 +42,10 @@ export const DRAFTS_DDL = [
   read_parish TEXT,
   read_language TEXT,
   read_services TEXT,
-  read_details TEXT
+  read_details TEXT,
+  source       TEXT,
+  message_text TEXT,
+  seen_at      TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_drafts_parish ON drafts(parish_id)',
   `CREATE TABLE IF NOT EXISTS draft_events (
@@ -88,7 +91,7 @@ export const DRAFTS_DDL = [
 // the migration lacks them. A read rather than a bare ALTER, so the usual
 // answer is a query that works rather than one that errors.
 const LATER_COLUMNS = {
-  drafts: ['read_parish', 'read_language', 'read_services', 'read_details'],
+  drafts: ['read_parish', 'read_language', 'read_services', 'read_details', 'source', 'message_text', 'seen_at'],
   draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
     'host_parish_id', 'host_event_id'],
 };
@@ -283,6 +286,11 @@ export function draftOut(d, cards = []) {
     read_language: d.read_language || null,
     read_services: parseList(d.read_services),
     read_details: parseObject(d.read_details),
+    // Forwarded to Agora's WhatsApp number (routes/ingest.mjs): what was sent
+    // with the image, and whether anybody has opened it yet.
+    source: d.source || null,
+    message_text: d.message_text || null,
+    seen_at: d.seen_at || null,
     created_by: d.created_by,
     created_at: d.created_at,
     updated_at: d.updated_at,

@@ -64,6 +64,20 @@ Secrets (set once, via `wrangler secret put` or the dashboard):
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access, e.g. `yourteam.cloudflareaccess.com` |
 | `ACCESS_AUD` | The Access application's audience tag |
 | `ANTHROPIC_API_KEY` | Reading a dropped poster with Claude, and suggesting a parish's acronym from its names (optional — without it the editor is typed by hand, and the acronym comes from the initials rule). Set a monthly spend limit on the key in the Anthropic Console |
+| `WHATSAPP_TOKEN` | Agora's WhatsApp number (optional, with the two below and the two vars after): a Meta system user's permanent token with `whatsapp_business_messaging` and `whatsapp_business_management`, to fetch a forwarded poster and reply |
+| `WHATSAPP_APP_SECRET` | The Meta app's secret, which signs every webhook POST (`X-Hub-Signature-256`); a POST it did not sign is refused |
+| `WHATSAPP_VERIFY_TOKEN` | Any long random string, typed again into the Meta app's webhook settings so Meta's one-time GET can be answered |
+
+The WhatsApp three are **Worker secrets** (Workers & Pages → agora → Settings →
+Variables and Secrets → Add, type Secret), not Secrets Store bindings: nothing
+in `wrangler.toml` names them, so a deploy can never fail for one that is not
+there yet, and without all three the number is simply off. Beside them, two
+plain vars in `wrangler.toml`: `WHATSAPP_PHONE_NUMBER_ID` (Meta's id for the
+number, not the number) and `WHATSAPP_NUMBER` (the number itself, digits, for
+the account menu's Link WhatsApp). Then, in the Meta app: Webhooks → callback
+`https://orthodoxy.au/api/ingest/whatsapp`, the verify token, and subscribe to
+`messages`. Meta's test number answers only the phones listed as its
+recipients (up to five).
 
 Not a secret but worth knowing here: the `EMAIL` binding (Cloudflare Email
 Sending, for the claim emails) is commented out in `wrangler.toml` until the

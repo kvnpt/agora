@@ -277,9 +277,14 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
  * @param {string} today  the parish's own 'YYYY-MM-DD'
  * @param {Array<{day_of_week, start_time, title}>} rules  its active rules
  * @param {string} [note]  the sender's own words, quoted as theirs
+ * @param {object} [o]
+ * @param {boolean} [o.image=true]  false when there is no image: a WhatsApp
+ *   message of words only (routes/ingest.mjs), read as the poster itself
+ * @param {boolean} [o.whatsapp=false]  the note is what came with the image on
+ *   WhatsApp — usually the announcement's own words, not a note about it
  */
-export function posterContext(parish, today, rules = [], note = '') {
-  const said = String(note || '').trim().slice(0, 2000);
+export function posterContext(parish, today, rules = [], note = '', { image = true, whatsapp = false } = {}) {
+  const said = String(note || '').trim().slice(0, 4000);
   const [y, m, d] = today.split('-').map(Number);
   const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
   // The weeks too: "2nd and 4th Sundays 18:00" is the only way the reader can
@@ -295,13 +300,27 @@ export function posterContext(parish, today, rules = [], note = '') {
     `Today there is ${weekday} ${d} ${MONTHS[m - 1]} ${y}.`,
     `Its regular services:\n${regular}`,
     `Kinds of event:\n${kinds}`,
-    ...(said ? [`What the person sending this poster wrote beside it. Their words: they may say which event they mean, or add what the poster leaves out. What the poster prints is still read from the poster.\n"""\n${said}\n"""`] : []),
-    'Read the image.',
+    ...(said ? [noteText(said, { image, whatsapp })] : []),
+    image ? 'Read the image.' : 'Read the message.',
   ].join('\n\n');
+}
+
+/** The sender's words, framed by where they came from. */
+function noteText(said, { image, whatsapp }) {
+  const quoted = `\n"""\n${said}\n"""`;
+  if (!image) {
+    return `There is no image: this is a message sent to Agora on WhatsApp, often an announcement forwarded from a parish group. Read it as you would a poster — what it says is what the poster would print. If it announces nothing (a greeting, a question), the kind is not_an_event.${quoted}`;
+  }
+  if (whatsapp) {
+    return `The words this image came with on WhatsApp — usually the announcement's own, forwarded from a parish group. Read them with the image: they may give what the image leaves out (a time, a place, a description), or say which of its events is meant. Where the two disagree, the image wins.${quoted}`;
+  }
+  return `What the person sending this poster wrote beside it. Their words: they may say which event they mean, or add what the poster leaves out. What the poster prints is still read from the poster.${quoted}`;
 }
 
 /** The Messages API request body. */
 export function buildPosterRequest({ data, mediaType, context }) {
+  // No image: a WhatsApp message of words only, which the context carries.
+  const image = data ? [{ type: 'image', source: { type: 'base64', media_type: mediaType, data } }] : [];
   return {
     model: POSTER_MODEL,
     max_tokens: 16000,
@@ -310,10 +329,7 @@ export function buildPosterRequest({ data, mediaType, context }) {
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: POSTER_SCHEMA } },
     messages: [{
       role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
-        { type: 'text', text: context },
-      ],
+      content: [...image, { type: 'text', text: context }],
     }],
   };
 }
@@ -349,7 +365,7 @@ export function readFailure(status) {
  * @param {object} o
  * @param {string} o.apiKey
  * @param {string} [o.baseUrl]  for `wrangler dev` against a local stand-in
- * @param {ArrayBuffer|Uint8Array} o.image
+ * @param {ArrayBuffer|Uint8Array|null} o.image  null for a message of words only
  * @param {string} o.mediaType
  * @param {string} o.context    posterContext()
  * @param {Function} [o.fetchImpl]
@@ -364,7 +380,7 @@ export async function readPoster(o, emit = () => {}) {
   const ms = () => Date.now() - started;
   const fetchImpl = o.fetchImpl || fetch;
   const body = buildPosterRequest({
-    data: Buffer.from(o.image instanceof ArrayBuffer ? new Uint8Array(o.image) : o.image).toString('base64'),
+    data: o.image ? Buffer.from(o.image instanceof ArrayBuffer ? new Uint8Array(o.image) : o.image).toString('base64') : null,
     mediaType: o.mediaType,
     context: o.context,
   });
