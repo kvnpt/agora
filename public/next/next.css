@@ -154,8 +154,6 @@ body.docked .dock { transform: none; visibility: visible; }
 .dock-chip-t b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-chip-t small { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-row .fbtn { min-height: 34px; }
-.dock-active { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
-.dock-active:empty { display: none; }
 .dock .filter-panel {
   max-width: calc(600px - 2 * var(--pad)); margin: 0 auto 10px; width: calc(100% - 2 * var(--pad));
   max-height: calc(100dvh - var(--dock-h, 60px) - 16px); overflow-y: auto; overscroll-behavior: contain;
@@ -236,6 +234,23 @@ body.map-full .viewport::after { display: none; }
   border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
 }
 body.located .map-locate { color: var(--accent); }
+/* The map's Filters, under Full screen, with how many are on as a badge on
+   its corner (Kevin, 6 Nov 2026). On, it is filled as an on pill is. */
+.map-filters {
+  position: absolute; top: 62px; right: 10px; z-index: 2;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+  -webkit-tap-highlight-color: transparent;
+}
+.map-filters[aria-expanded="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.map-filters .fcount {
+  position: absolute; top: -4px; right: -4px; margin: 0;
+  box-shadow: 0 0 0 2px var(--bg);
+  background: var(--accent); color: #fff;
+}
 body.map-full .map-locate { bottom: calc(78px + env(safe-area-inset-bottom)); }
 body.map-full .map-fs .fs-open { display: none; }
 body.map-full .map-fs .fs-close { display: block; }
@@ -385,19 +400,13 @@ body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border: 0; 
 body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0; border-radius: 0; }
 body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
+body.map-full .map-filters { top: calc(41px + 62px + env(safe-area-inset-top)); }
 body.map-full .inview { display: none; }
-/* The filters float on it, under the tabs: the button and its chips at the
-   top left, clear of the close button, and the panel under them
-   (--fbar-h is the bar's height, next.js). */
-body.map-full #page > .filter-bar {
-  position: fixed; z-index: 31; left: 0; right: 64px; top: calc(41px + 10px + env(safe-area-inset-top));
-  padding: 0 0 0 10px;
-}
-body.map-full #page > .filter-bar :is(.fpill, .afchip) { min-height: 36px; box-shadow: 0 1px 4px rgba(0, 0, 0, .18); }
+/* The panel floats on it, under the tabs, clear of the map's buttons. */
 body.map-full #page > .filter-panel {
-  position: fixed; z-index: 31; left: 10px; right: 10px; margin: 0;
-  top: calc(41px + 18px + var(--fbar-h, 36px) + env(safe-area-inset-top));
-  max-height: calc(100dvh - 41px - 18px - var(--fbar-h, 36px) - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  position: fixed; z-index: 31; left: 10px; right: 64px; margin: 0;
+  top: calc(41px + 10px + env(safe-area-inset-top));
+  max-height: calc(100dvh - 41px - 10px - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-lift);
 }
 body.map-full .parish-row {
@@ -476,11 +485,9 @@ body.map-full .parish-row {
 
 /* ── The filters ──────────────────────────────────────────────────────────
    The app's pills (app.css .mode-bar-pill, .kind-sub, .mode-bar-en-only):
-   a button with the chips it made beside it, and under it, when open, a
-   group of pills per question, framed in a hairline. A pill that is on is filled
-   with the text colour, as the app's are. Nothing scrolls sideways. */
-.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px var(--pad) 0; }
-.active-filters { display: contents; }
+   opened from the map's button (or a card's), a group of pills per question,
+   framed in a hairline. A pill that is on is filled with the text colour, as
+   the app's are. Nothing scrolls sideways. */
 .fpill {
   flex: none; display: inline-flex; align-items: center; gap: 6px;
   min-height: 30px; padding: 5px 12px;
@@ -499,17 +506,6 @@ body.map-full .parish-row {
   display: inline-grid; place-items: center;
   background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.afchip {
-  flex: none; display: inline-flex; align-items: center; gap: 5px;
-  min-height: 30px; padding: 5px 8px 5px 12px; border-radius: 999px;
-  background: var(--text); color: var(--bg); border: 1px solid var(--text);
-  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2; white-space: nowrap;
-  max-width: 100%;
-}
-.afchip svg { width: 12px; height: 12px; flex: none; opacity: .75; }
-/* A jurisdiction's chip is its colour, as its tab is when chosen. */
-.afchip.afj { background: var(--j); border-color: var(--j); color: #fff; }
-
 .filter-panel {
   margin: 8px var(--pad) 0; padding: 2px 12px 10px;
   background: var(--card); border: 1px solid var(--hair); border-radius: 14px;
@@ -1884,7 +1880,7 @@ body.dialog-open { overflow: hidden; }
     display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); column-gap: 8px; align-items: start;
     padding: 0 24px 64px;
   }
-  main > :is(.viewport-card, .filter-bar, .filter-panel, .page-link) { grid-column: 1 / -1; }
+  main > :is(.viewport-card, .filter-panel, .page-link) { grid-column: 1 / -1; }
   .col-side { display: block; grid-column: 1; }
   .col-main { display: block; grid-column: 2; min-width: 0; }
   /* The left column rides along under the dock, scrolling on its own if it
@@ -1903,6 +1899,7 @@ body.dialog-open { overflow: hidden; }
   body.map-full .jurisdiction-banner { margin: 0; background: var(--card); }
   .viewport { height: clamp(420px, 62vh, 720px); margin: 14px var(--pad) 0; border-radius: 28px; }
   .map-fs { top: 16px; right: 16px; }
+  .map-filters { top: 68px; right: 16px; }
   .map-locate { right: 16px; bottom: 16px; }
 
   /* What it holds, under it, as the page's heading. */
@@ -1914,7 +1911,6 @@ body.dialog-open { overflow: hidden; }
   .inview-text small { margin-top: 2px; font-size: 16px; letter-spacing: 0; }
   .inview.one .inview-text b { line-height: 1.15; }
   .inview-go svg { width: 22px; height: 22px; }
-  .filter-bar { padding-top: 12px; }
   .filter-panel { max-width: 760px; }
 
   /* The right column's shelves: laid out, not scrolled sideways. */

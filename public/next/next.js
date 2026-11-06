@@ -610,7 +610,7 @@
     return eventParishIds(e).some(id => S.inView && S.inView.has(id));
   }
   // A chip each: each jurisdiction and each day its own.
-  const filterCount = () => { const f = S.f; return jList(S.juris).length + window.AgoraServices.daysOf(f.day).length + [f.kind, f.lang, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
+  const filterCount = () => { const f = S.f; return !!S.focus + jList(S.juris).length + window.AgoraServices.daysOf(f.day).length + [f.kind, f.lang, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
   const filtersOn = () => filterCount() > 0;
 
   // ── Links ─────────────────────────────────────────────────────────────
@@ -1122,11 +1122,11 @@
   // ── The dock ──────────────────────────────────────────────────────────
   //
   // Scrolled past the parish chip and the filters, they come down the page
-  // with you: a header of their own, holding the chip, the filters' button,
-  // search and the account, and the filters' chips under them. It is there
-  // while the page's own filters are out of sight above, or while the panel
-  // is open under it; never over the full-screen map. The days' headers stick
-  // under it (--dock-h).
+  // with you: a header of their own, holding the chip, the filters' button
+  // with its count, search and the account. It is there while the chip under
+  // the map is out of sight above, or while the panel is open under it;
+  // never over the full-screen map. The days' headers stick under it
+  // (--dock-h).
 
   let pageBarGone = false;
   function syncDock() {
@@ -1138,12 +1138,9 @@
   new IntersectionObserver(([e]) => {
     pageBarGone = !e.isIntersecting && e.boundingClientRect.top < 0;
     syncDock();
-  }).observe($('#page > .filter-bar'));
+  }).observe($('#inview'));
   new ResizeObserver(() => document.documentElement.style.setProperty('--dock-h', `${$('#dock .dock-head').offsetHeight}px`))
     .observe($('#dock .dock-head'));
-  // On the full-screen map the panel sits under the filters' button and its chips, however many rows they make.
-  new ResizeObserver(() => document.documentElement.style.setProperty('--fbar-h', `${$('#page > .filter-bar').offsetHeight}px`))
-    .observe($('#page > .filter-bar'), { box: 'border-box' });
 
   // ── Jurisdiction tabs (above the viewport) ────────────────────────────
   //
@@ -1317,17 +1314,14 @@
     }
     return bits;
   }
+  /**
+   * The map's filters, said as a count on its button and the dock's (Kevin,
+   * 6 Nov 2026): which they are is the panel's, and the map's to show.
+   */
   function renderActive() {
-    const f = S.f;
-    const chip = (k, label, val = null, style = '') => `<button class="afchip${style ? ' afj' : ''}" type="button" data-clear="${k}"${val != null ? ` data-val="${esc(val)}"` : ''}${style ? ` style="${style}"` : ''} aria-label="${esc(`Remove ${label}`)}">${esc(label)}${I.x}</button>`;
-    const bits = activeBits(f).map(([k, label, val]) => chip(k, label, val));
-    // A jurisdiction first, in its colour, as its tab is.
-    bits.unshift(...jList(S.juris).map(j => chip('juris', JURIS[j]?.short || j, j, `--j:${shown(jColor(j))}`)));
-    if (S.focus) bits.unshift(chip('focus', S.focus.title));
-    // Beside the button on the page, and under the dock's.
-    $('#active-filters').innerHTML = $('#dock-active').innerHTML = bits.join('');
     const n = filterCount();
     $$('.fcount').forEach(count => { count.hidden = !n; count.textContent = n; });
+    $$('[data-filters]').forEach(b => b.classList.toggle('has', !!n));
     renderPanel();
   }
 
@@ -1488,7 +1482,7 @@
     const own = whatPath(route.f), ownJ = jList(route.juris).join('+');
     const say = (ids, f, juris) => (whatPath(f) === own && jList(juris).join('+') === ownJ ? { title: c.title, blurb: c.blurb, name: c.title } : viewWords(ids, f, juris, { here: false }));
     const pick = (f, juris) => S.parishes.filter(p => parishMatches(p, f, juris)).map(p => p.id);
-    return byFilters({ ...c, ...look, juris: route.juris, f: route.f, say, pick });
+    return byFilters({ ...c, ...look, juris: route.juris, f: route.f, own: route.f, say, pick });
   }
   // The look of each — a tint and its sign, or a jurisdiction's colour — is
   // collections.js's, which the Worker's first paint of a card reads too.
@@ -1676,14 +1670,13 @@
     if (!raw) return;
     const now = Date.now();
     const horizon = now + 60 * DAY;
-    // The same whatever the map's filters are (Kevin, 5 Nov 2026): what is
-    // near where it is looking, never only what its Filters ask.
-    const none = blankFilters();
+    // The map's: where it is looking, and what its tabs and Filters ask, as
+    // Today is (Kevin, 6 Nov 2026).
     // One-offs with posters first, then rule occurrences that carry their own.
     const pool = feedFor(21)
       .concat((raw.events || []).filter(e => Date.parse(e.start_utc) > now + 21 * DAY && Date.parse(e.start_utc) < horizon))
       // Regular services are the timetable's; this shelf is for the things that happen once.
-      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventMatches(e, none, null));
+      .filter(e => e.poster_path && endMs(e) > now && !['liturgy', 'prayer'].includes(e.event_type) && eventPasses(e));
     const uniq = oncePerPoster(pool);
     let list = uniq.filter(inViewEvent);
     // Too few in view: the nearest a dozen, wherever they are.
@@ -1699,8 +1692,35 @@
       const d = distOf(p);
       return posterCard(e, `<span class="pfrom">${avatar(p, 'xs')}<span>${esc(p ? p.name : '')}${d != null ? ` · ${distHTML(d, 'span')}` : ''}</span></span>`);
     }).join('');
-    shelf(el, "What's on", 'Nearby events', cards);
+    shelf(el, "What's on", whatsOnWords(), cards);
   }
+  // The feed's kinds, as What's on says them.
+  const ON_KINDS = { services: 'services', talks: 'talks and Bible studies', socials: 'youth groups and socials' };
+  const ON_SUBS = { 'bible-study': 'Bible studies', youth: 'youth groups', social: 'social gatherings', feast: 'feasts' };
+  /**
+   * What's on, said as the filters ask it: "Nearby events", "Nearby talks and
+   * Bible studies in Greek", "Nearby Greek Orthodox evening events on
+   * Saturdays"; where the filters say where, there instead: "Events in
+   * Queensland", "Events at St Savvas".
+   */
+  function whatsOnWords() {
+    const f = S.f, W = window.AgoraLinkWords, SV = window.AgoraServices;
+    const full = f.lang && f.langStrict ? (/^english$/i.test(f.lang) ? 'fully-English' : `${f.lang}-only`) : '';
+    let noun = f.service ? SV.servicePlural(f.service)
+      : f.kindSub ? ON_SUBS[f.kindSub] || `${kindLabel(f.kindSub).toLowerCase()} events`
+      : ON_KINDS[f.kind] || 'events';
+    if (f.monasteries) noun += ' at monasteries';
+    const what = [S.juris ? W.jurisLabel(S.juris) : '', full, f.part || '', noun].filter(Boolean).join(' ')
+      + W.daysPhrase(f) + (f.lang && !full ? ` in ${f.lang}` : '');
+    const loc = regionOf(f);
+    const list = f.listId && listById(f.listId);
+    const named = !list && f.parishIds ? [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : [];
+    const where = loc ? ` in ${loc.label}` : list ? ` from ${list.name}` : S.focus ? ` from ${S.focus.title}`
+      : named.length > 3 ? ` at ${named.length} parishes` : named.length ? ` at ${named.map(p => p.name).join(', ').replace(/, ([^,]*)$/, ' and $1')}` : '';
+    const line = where ? what + where : `nearby ${what}`;
+    return line.charAt(0).toUpperCase() + line.slice(1);
+  }
+
   // ── Days: the stream's, and a parish's Calendar ───────────────────────
   //
   // The app's dated list: a quiet header for each day with its own link, the
@@ -2569,7 +2589,7 @@
    * A card's Filters panel: a parish's (`ids` its one parish), or a
    * collection's, of all its parishes. `n` is how many it asks.
    */
-  function cardPanelHTML(ids, focus, n = focusCount(focus), { juris = null } = {}) {
+  function cardPanelHTML(ids, focus, n = focusCount(focus), { juris = null, own = null } = {}) {
     const f = { ...blankFilters(), ...(focus || {}) }, SV = window.AgoraServices;
     const here = new Set([].concat(ids));
     const ps = [...here].map(id => S.byId.get(id)).filter(Boolean);
@@ -2579,15 +2599,19 @@
     const has = (x) => rows.some(([r, isRule]) => whatMatches(r, { ...blankFilters(), ...x }, isRule));
     const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
     const langs = [...new Set(ps.flatMap(parishLangs))];
-    const langPills = langs.length > 1 || f.lang ? langs.map(l => fpill('card:lang', l, f.lang === l, esc(l))
-      + (f.lang === l ? fpill('card:langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('') : '';
-    const days = `<span class="fdays">${WD.map((d, i) => fpill('card:day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
-    const spans = SV.DAY_GROUPS.map(g => fpill('card:dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
-    const parts = SV.PARTS_OF_DAY.map(pt => fpill('card:part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
+    const langPills = own && own.lang
+      ? (own.langStrict || !f.lang ? '' : fpill('card:langStrict', '1', f.langStrict, `${esc(f.lang)} only`))
+      : langs.length > 1 || f.lang ? langs.map(l => fpill('card:lang', l, f.lang === l, esc(l))
+        + (f.lang === l ? fpill('card:langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('') : '';
+    const days = own && own.days ? '' : `<span class="fdays">${WD.map((d, i) => fpill('card:day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
+    const spans = own && own.days ? '' : SV.DAY_GROUPS.map(g => fpill('card:dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
+    const parts = own && own.part ? '' : SV.PARTS_OF_DAY.map(pt => fpill('card:part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
+    const what = own && own.what ? '' : group('What', ...kindLines(f, SV, 'card:', (x) => has(x) || whatIs(f, x)));
+    const when = days || spans || parts ? group('When', days, spans, parts) : '';
     // A collection's jurisdictions, each in its colour as its tab is: those its parishes are in.
     const jPills = juris ? juris.offer.map(j => fpill('card:juris', j, juris.on.includes(j), esc(JURIS[j].short), ' fpill-j', `--j:${shown(jColor(j))}`)).join('') : '';
     return `<div class="filter-panel card-fpanel" role="group" aria-label="Filters">
-        ${group('What', ...kindLines(f, SV, 'card:', (x) => has(x) || whatIs(f, x)))}${langPills ? group('Language', langPills) : ''}${group('When', days, spans, parts)}${jPills ? group('Jurisdiction', jPills) : ''}
+        ${what}${langPills ? group('Language', langPills) : ''}${when}${jPills ? group('Jurisdiction', jPills) : ''}
         <div class="fpanel-foot">${n ? '<button class="fpill fpill-ghost" type="button" data-act="card-filters-clear">Clear all</button>' : '<span></span>'}
           <button class="fpill on" type="button" data-act="card-filters-done">Done</button></div>
       </div>`;
@@ -2616,12 +2640,13 @@
     const f = { ...blankFilters(), ...(el._focus || {}) };
     if (flipWhat(f, k, v)) setCardFocus(el, focusOf(f));
   }
-  /** Light everything at a card again: /sgr/talk becomes /sgr. A collection asks nothing more than whose and where. */
+  /** Light everything at a card again: /sgr/talk becomes /sgr. A collection asks nothing more than its own link, or whose and where. */
   function unfocusCard(el) {
     if (!el._coll) return setCardFocus(el, null);
-    const f = el._coll.f || {};
+    const f = el._coll.f || {}, keep = jurisOffer(el._coll) ? null : el._coll.juris || null;
+    if (el._coll.own) return setCollFilters(el, { ...blankFilters(), ...el._coll.own }, keep);
     setCollFilters(el, { ...blankFilters(), location: f.location || null, monasteries: !!f.monasteries, parishIds: f.parishIds || null,
-      listId: f.listId || null, timesOnly: !!f.timesOnly, words: f.words || null }, jurisOffer(el._coll) ? null : el._coll.juris || null);
+      listId: f.listId || null, timesOnly: !!f.timesOnly, words: f.words || null }, keep);
   }
 
   // ── A parish link that asks something (/sgr/talks, /sgr/wed/liturgy) ──
@@ -2812,8 +2837,29 @@
     const offer = TAB_ORDER.filter(j => have.has(j) || on.includes(j));
     return offer.length > 1 || on.length ? { on, offer } : null;
   }
-  /** What a collection's Filters ask: what, which language, when, and whose — not its search's words. */
-  const collFilterCount = (c) => focusCount({ ...blankFilters(), ...(c.f || {}), words: null }) + (jurisOffer(c) ? jList(c.juris).length : 0);
+  /**
+   * The questions a collection's own link answers, which its Filters leave
+   * alone, so Sunday Liturgy stays Sunday Liturgy (Kevin, 6 Nov 2026): no
+   * What or days on it, and its Filters ask the rest (time of day, language,
+   * jurisdiction). A language's own offers "only" still. In view, a link's
+   * card and a list ask everything.
+   */
+  function ownAsks(c) {
+    const o = c && c.own;
+    if (!o) return null;
+    return { what: !!(o.kind || o.kindSub || o.service), lang: !!o.lang, langStrict: !!o.langStrict,
+      days: o.day != null || !!o.dayGroup, part: !!o.part };
+  }
+  /** What a collection's Filters ask beyond its own: what, which language, when, and whose — not its search's words. */
+  function collFilterCount(c) {
+    const f = { ...blankFilters(), ...(c.f || {}), words: null }, a = ownAsks(c);
+    let extra = 0;
+    if (a && a.what) { f.kind = f.kindSub = f.service = null; }
+    if (a && a.lang) { extra += !a.langStrict && f.langStrict ? 1 : 0; f.lang = null; }
+    if (a && a.days) { f.day = null; f.dayGroup = null; }
+    if (a && a.part) f.part = null;
+    return focusCount(f) + extra + (jurisOffer(c) ? jList(c.juris).length : 0);
+  }
   /** What is on at a collection's parishes, by its filters, from today or a date, a fortnight at a time. */
   function collFeedHTML(c, days, from = null, panel = false) {
     const start = from || todayKey();
@@ -2823,7 +2869,7 @@
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
     const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang }, byVenue: true });
-    return `${panel ? cardPanelHTML(c.ids, f, collFilterCount(c), { juris: jurisOffer(c) }) : ''}
+    return `${panel ? cardPanelHTML(c.ids, f, collFilterCount(c), { juris: jurisOffer(c), own: ownAsks(c) }) : ''}
       ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
@@ -3508,7 +3554,9 @@
     const regions = [...REGIONS, ...(f.location && !REGIONS.includes(f.location) ? [f.location] : [])]
       .map(r => fpill('location', r, f.location === r, esc(regionShort(r)))).join('');
     const lists = allLists().filter(l => l.ids.length);
-    const parishes = fpill('monasteries', '1', f.monasteries, 'Monasteries')
+    // A card shown on the map (Show on map) is its parishes, a pill to let go.
+    const parishes = (S.focus ? fpill('focus', '1', true, esc(S.focus.title)) : '')
+      + fpill('monasteries', '1', f.monasteries, 'Monasteries')
       + fpill('timesOnly', '1', f.timesOnly, 'With service times')
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
     return group('What', ...kindLines(f, SV)) + group('Language', langs) + group('When', days, spans, parts)
@@ -3533,7 +3581,7 @@
   const panelInDock = () => $('#filter-panel').parentNode === $('#dock');
   function setPanel(open, { dock = false } = {}) {
     const el = $('#filter-panel');
-    if (!open || !dock) $('#page > .filter-bar').after(el);
+    if (!open || !dock) $('#viewport-card').after(el);
     else $('#dock').appendChild(el);
     // Moving it is not a new go at the filters: back still undoes the whole of it.
     if (!open) S.panel = null;
@@ -3587,6 +3635,7 @@
       S.juris = window.AgoraUrlState.jurisdictionValue(js.includes(v) ? js.filter(j => j !== v) : [...js, v]);
     }
     else if (k === 'location') flip(k, v);
+    else if (k === 'focus') S.focus = null;
     else if (k === 'timesOnly' || k === 'monasteries') f[k] = !f[k];
     else if (k === 'list') {
       const l = f.listId === v ? null : listById(v);
@@ -3898,18 +3947,6 @@
     if ((b = t.closest('[data-juris]'))) {
       S.juris = S.juris === b.dataset.juris ? null : b.dataset.juris;
       renderJurisChips();
-      refilter();
-      return;
-    }
-    if ((b = t.closest('[data-clear]'))) {
-      const k = b.dataset.clear;
-      if (k === 'focus') S.focus = null;
-      else if (k === 'juris') S.juris = window.AgoraUrlState.jurisdictionValue(jList(S.juris).filter(j => j !== b.dataset.val));
-      else if (k === 'day' && b.dataset.val != null) S.f.day = window.AgoraServices.dayValue(window.AgoraServices.daysOf(S.f.day).filter(d => d !== +b.dataset.val));
-      else if (k === 'kind') { S.f.kind = null; S.f.kindSub = null; }
-      else if (k === 'lang') { S.f.lang = null; S.f.langStrict = false; }
-      else if (k === 'parishIds') { S.f.parishIds = null; S.f.listId = null; }
-      else S.f[k] = k === 'timesOnly' || k === 'monasteries' ? false : null;
       refilter();
       return;
     }

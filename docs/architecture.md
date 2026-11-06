@@ -140,11 +140,21 @@ in next.js): the page under it is plain, and closing it is `/`. A link with no
 card (`/sydney`, `/greek/qld`) is a view of the map (`applyPage`). A history entry
 with no card (`depth` 0) is the map's filters; one with a card reopens the card.
 A card opened from another card, or from the map, starts plain: no parish card
-takes the focus of what was under it. The map's own Filters and tabs are the
-map's, its Today's and the In view card's, and no one else's: the shelves (What's
-on, Collections, Languages) are every jurisdiction's whatever they say, and a
-collection's card narrows to a jurisdiction inside it (`jurisOffer`).
-Show on map is the one hand-off, a button that says so. A timetable line opens
+takes the focus of what was under it; a link that finds one parish opens as that
+parish's own link would (`/smg+smk/feast` with only SMK's ahead is `/smk/feast`).
+The map's own Filters and tabs are the map's, and its Today's, What's on's and
+the In view card's (Kevin, 6 Nov 2026), and no one else's. They are a button on
+the map with how many are on (`renderActive`), never a row of chips, and What's
+on comes before what does not follow them. Collections and Languages are every
+jurisdiction's whatever the map says; `/greek` is the Greek card, whose Show on
+map is the Greek tab. A collection's own Filters ask what its link does not
+(`ownAsks`): Sunday Liturgy's offer time of day, language and jurisdiction but
+no What or days, so it stays Sunday Liturgy; a language's offers "only"; Clear
+all is the collection as its link has it. A jurisdiction is narrowed inside a
+collection's card (`jurisOffer`). In view, a link's card and a list ask
+everything. Show on map is the one hand-off, a button that says so: a card
+with a link gives the map its filters, one without its parishes, which the
+panel names and lets go. A timetable line opens
 its own card (`openLine`): the line's next date with its later dates under it,
 over the card it was tapped on, which stays as it was. Its link asks what the
 line is (`lineFocus`: `/smg/sun/liturgy`, `/spp/sun/liturgy/en-only` where the
