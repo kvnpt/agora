@@ -154,12 +154,6 @@ body.docked .dock { transform: none; visibility: visible; }
 .dock-chip-t b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-chip-t small { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-row .fbtn { min-height: 34px; }
-.dock-active { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
-.dock-active:empty { display: none; }
-.dock .filter-panel {
-  max-width: calc(600px - 2 * var(--pad)); margin: 0 auto 10px; width: calc(100% - 2 * var(--pad));
-  max-height: calc(100dvh - var(--dock-h, 60px) - 16px); overflow-y: auto; overscroll-behavior: contain;
-}
 @media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 
 /* ── The viewport: tabs, map, in-view chip ───────────────────────────────
@@ -207,6 +201,18 @@ body.docked .dock { transform: none; visibility: visible; }
   isolation: isolate;
 }
 #map { position: absolute; inset: 0; touch-action: none; }
+/* A card of parishes' own map: the page's map, moved in at the top of the
+   card under its glass bar, the card's list scrolling under it (Kevin, 6 Nov
+   2026). Back on the page when the card goes (next.js, mapFollow). */
+.card-map { position: relative; flex: none; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
+.card-map .map-filters { top: auto; bottom: 10px; right: 10px; }
+/* On a wide screen the card is a panel, and the page's map beside it is the
+   card's: in front of the dimmed page, to pan and tap, its full screen not
+   the card's (next.js, mapToCard). */
+body.map-beside .viewport { z-index: 41; }
+body.map-beside .map-fs { display: none; }
+body.map-beside .viewport :is(.map-filters, .map-locate) { right: calc(var(--beside, 0px) + 16px); }
+body.map-beside .viewport .map-filters { top: 16px; }
 /* Its frame: a dark hairline, and inside it a white glow you can see. The
    dark scheme has the hairline alone: a white glow there is a smudge. */
 .viewport::after {
@@ -236,6 +242,23 @@ body.map-full .viewport::after { display: none; }
   border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
 }
 body.located .map-locate { color: var(--accent); }
+/* The map's Filters, under Full screen, with how many are on as a badge on
+   its corner (Kevin, 6 Nov 2026). On, it is filled as an on pill is. */
+.map-filters {
+  position: absolute; top: 62px; right: 10px; z-index: 2;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+  -webkit-tap-highlight-color: transparent;
+}
+.map-filters[aria-expanded="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.map-filters .fcount {
+  position: absolute; top: -4px; right: -4px; margin: 0;
+  box-shadow: 0 0 0 2px var(--bg);
+  background: var(--accent); color: #fff;
+}
 body.map-full .map-locate { bottom: calc(78px + env(safe-area-inset-bottom)); }
 body.map-full .map-fs .fs-open { display: none; }
 body.map-full .map-fs .fs-close { display: block; }
@@ -385,21 +408,8 @@ body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border: 0; 
 body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0; border-radius: 0; }
 body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
+body.map-full .map-filters { top: calc(41px + 62px + env(safe-area-inset-top)); }
 body.map-full .inview { display: none; }
-/* The filters float on it, under the tabs: the button and its chips at the
-   top left, clear of the close button, and the panel under them
-   (--fbar-h is the bar's height, next.js). */
-body.map-full #page > .filter-bar {
-  position: fixed; z-index: 31; left: 0; right: 64px; top: calc(41px + 10px + env(safe-area-inset-top));
-  padding: 0 0 0 10px;
-}
-body.map-full #page > .filter-bar :is(.fpill, .afchip) { min-height: 36px; box-shadow: 0 1px 4px rgba(0, 0, 0, .18); }
-body.map-full #page > .filter-panel {
-  position: fixed; z-index: 31; left: 10px; right: 10px; margin: 0;
-  top: calc(41px + 18px + var(--fbar-h, 36px) + env(safe-area-inset-top));
-  max-height: calc(100dvh - 41px - 18px - var(--fbar-h, 36px) - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-lift);
-}
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
@@ -476,11 +486,9 @@ body.map-full .parish-row {
 
 /* ── The filters ──────────────────────────────────────────────────────────
    The app's pills (app.css .mode-bar-pill, .kind-sub, .mode-bar-en-only):
-   a button with the chips it made beside it, and under it, when open, a
-   group of pills per question, framed in a hairline. A pill that is on is filled
-   with the text colour, as the app's are. Nothing scrolls sideways. */
-.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px var(--pad) 0; }
-.active-filters { display: contents; }
+   opened from the map's button (or a card's), a group of pills per question,
+   framed in a hairline. A pill that is on is filled with the text colour, as
+   the app's are. Nothing scrolls sideways. */
 .fpill {
   flex: none; display: inline-flex; align-items: center; gap: 6px;
   min-height: 30px; padding: 5px 12px;
@@ -499,24 +507,30 @@ body.map-full .parish-row {
   display: inline-grid; place-items: center;
   background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.afchip {
-  flex: none; display: inline-flex; align-items: center; gap: 5px;
-  min-height: 30px; padding: 5px 8px 5px 12px; border-radius: 999px;
-  background: var(--text); color: var(--bg); border: 1px solid var(--text);
-  font-size: 12.5px; font-weight: 600; letter-spacing: .02em; line-height: 1.2; white-space: nowrap;
-  max-width: 100%;
-}
-.afchip svg { width: 12px; height: 12px; flex: none; opacity: .75; }
-/* A jurisdiction's chip is its colour, as its tab is when chosen. */
-.afchip.afj { background: var(--j); border-color: var(--j); color: #fff; }
-
+/* Popped out of its button, as the toolbar's ⋯ menu is (Kevin, 6 Nov 2026):
+   glass, a heading per question saying what it is set to, one open at a
+   time, scrolling inside itself when it is taller than the room it has. */
 .filter-panel {
-  margin: 8px var(--pad) 0; padding: 2px 12px 10px;
-  background: var(--card); border: 1px solid var(--hair); border-radius: 14px;
-  animation: fpanel-in .16s ease-out;
+  position: fixed; z-index: 55; padding: 4px 12px 10px;
+  background: var(--glass-solid); border: 1px solid var(--hair); border-radius: 18px; box-shadow: var(--shadow-lift);
+  overflow-y: auto; overscroll-behavior: contain;
+  animation: pm-in .16s cubic-bezier(.2, .8, .2, 1);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .filter-panel { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
 }
 .filter-panel[hidden] { display: none; }
-@keyframes fpanel-in { from { opacity: 0; transform: translateY(-4px); } }
+.frow.fsec { display: block; padding: 0; }
+.fhead {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 8px 2px;
+  color: var(--text); text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.fhead b { font-size: 15.5px; font-weight: 600; }
+.fsum { flex: 1; min-width: 0; text-align: right; font-size: 13.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fhead svg { flex: none; width: 15px; height: 15px; color: var(--text-3); transition: transform .15s; }
+.fsec.open .fhead svg { transform: rotate(90deg); }
+.fbody { display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 0 14px; }
+.fsec.open .fbody { display: flex; }
 .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; }
 .frow + .frow { border-top: 1px solid var(--line); }
 .fbreak { flex-basis: 100%; height: 0; }
@@ -546,6 +560,7 @@ body.map-full .parish-row {
 .fpill-saved { color: var(--accent); border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .filter-panel, .fpill-only { animation: none; }
+  .fhead svg { transition: none; }
   .ftype { transition: none; }
 }
 
@@ -909,6 +924,12 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
 }
 .tt-line { display: grid; grid-template-columns: 68px 60px minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 5px 0; }
+/* A line opens its own card (Kevin, 5 Nov 2026): it gives under the finger,
+   on a band that reaches past its words without moving them. */
+.tt-line[data-line] { --tap: transparent; cursor: pointer; border-radius: 4px; background: var(--tap); box-shadow: 0 0 0 5px var(--tap); -webkit-tap-highlight-color: transparent; }
+.tt-line[data-line]:active { --tap: color-mix(in srgb, var(--pc, var(--accent)) 13%, transparent); }
+.tt-line[data-line]:focus-visible { outline: 2px solid var(--pc, var(--accent)); outline-offset: 3px; }
+@media (hover: hover) { .tt-line[data-line]:hover { --tap: var(--card-2); } }
 .tt-days { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
 .tt-line .t-time { font-size: 14px; }
 .tt-what { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
@@ -950,7 +971,6 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   display: inline-grid; place-items: center;
   background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.cu .card-fpanel { margin: 8px 0 6px; animation: none; }
 /* What's on at a parish: the page's posters, kept to it, under its timetable. */
 .p-whatson[hidden] { display: none; }
 .p-whatson .shelf-row { padding: 2px 18px 6px; scroll-padding: 0 18px; }
@@ -1037,6 +1057,8 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* A collection's card. */
 .collection .sheet-scroll { padding-top: 0; }
 .chero { position: relative; padding: calc(84px + var(--sat)) 20px 22px; color: #fff; }
+/* Under its own map the bar is over the map, not the head. */
+.has-map .chero { padding-top: 22px; }
 /* A hairline over its head in its parishes' jurisdictions' colours and its
    filters' (next.js stripeOf), as a top border; the card's corners round it. */
 .cstripe { position: absolute; top: 0; left: 0; right: 0; height: 4px; }
@@ -1053,7 +1075,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   background: rgba(255, 255, 255, .18); font-weight: 650; font-size: 14.5px;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
-/* A label that wraps ("Show on map" beside three others) stays centred under
+/* A label that wraps ("Save as list" beside two others) stays centred under
    its icon, and the icons stay level along the row. */
 .hbtn span { text-align: center; line-height: 1.2; }
 /* Every head but a jurisdiction's is its tint (.soft): the words in the
@@ -1870,15 +1892,13 @@ body.dialog-open { overflow: hidden; }
   main, .top { max-width: 1480px; }
   .top { padding: 14px 40px 8px; }
   .dock-head { max-width: 1480px; padding: 8px 40px 8px; }
-  .dock .filter-panel { max-width: min(760px, calc(100% - 80px)); width: auto; margin: 0 40px 12px; }
-  @media (min-width: 1560px) { .dock .filter-panel { margin-left: calc((100% - 1480px) / 2 + 40px); } }
 
   /* Every --pad inset lands 40px in; the columns' own insets make the gap. */
   main {
     display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); column-gap: 8px; align-items: start;
     padding: 0 24px 64px;
   }
-  main > :is(.viewport-card, .filter-bar, .filter-panel, .page-link) { grid-column: 1 / -1; }
+  main > :is(.viewport-card, .page-link) { grid-column: 1 / -1; }
   .col-side { display: block; grid-column: 1; }
   .col-main { display: block; grid-column: 2; min-width: 0; }
   /* The left column rides along under the dock, scrolling on its own if it
@@ -1897,6 +1917,7 @@ body.dialog-open { overflow: hidden; }
   body.map-full .jurisdiction-banner { margin: 0; background: var(--card); }
   .viewport { height: clamp(420px, 62vh, 720px); margin: 14px var(--pad) 0; border-radius: 28px; }
   .map-fs { top: 16px; right: 16px; }
+  .map-filters { top: 68px; right: 16px; }
   .map-locate { right: 16px; bottom: 16px; }
 
   /* What it holds, under it, as the page's heading. */
@@ -1908,8 +1929,6 @@ body.dialog-open { overflow: hidden; }
   .inview-text small { margin-top: 2px; font-size: 16px; letter-spacing: 0; }
   .inview.one .inview-text b { line-height: 1.15; }
   .inview-go svg { width: 22px; height: 22px; }
-  .filter-bar { padding-top: 12px; }
-  .filter-panel { max-width: 760px; }
 
   /* The right column's shelves: laid out, not scrolled sideways. */
   #shelf-collections .shelf-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; overflow: visible; }
@@ -1938,6 +1957,9 @@ body.dialog-open { overflow: hidden; }
   .sheet::before { display: none; }
   .sheet-scroll { padding-bottom: 24px; }
   .scrim { background: rgba(0, 0, 0, .18); }
+  /* The map is beside a card here, not in it: a painted card keeps no room for it. */
+  .sheet.ssr .card-map { display: none; }
+  .sheet.ssr.has-map .chero { padding-top: calc(84px + var(--sat)); }
 }
 
 /* The way to the lite version (public/lite.html), small, at the foot. */
