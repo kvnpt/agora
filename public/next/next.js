@@ -1131,6 +1131,8 @@
     box.className = 'card-map';
     el.querySelector('.glassbar').after(box);
     box.appendChild($('#map'));
+    // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
+    box.appendChild($('#btn-filters'));
     el.classList.add('has-map');
     S.mapCard = { el, ids: new Set(el._coll.ids) };
     map.resize();
@@ -1145,6 +1147,8 @@
     if (!own) return;
     S.mapCard = null;
     $('#viewport').prepend($('#map'));
+    $('#viewport').insertBefore($('#btn-filters'), $('#btn-locate'));
+    if (fpop && fpop.btn === $('#btn-filters')) closeFilters();
     const box = own.el.querySelector('.card-map');
     if (box) box.remove();
     own.el.classList.remove('has-map');
@@ -1161,13 +1165,15 @@
     b.setAttribute('aria-pressed', String(on));
     const t = b.querySelector('span');
     if (t) t.textContent = on ? 'Hide map' : 'Show on map';
+    syncCounts();
+    syncFilterBtns();
   }
 
   // ── Full screen ───────────────────────────────────────────────────────
 
   function setFullscreen(on) {
-    // The filters float on the full-screen map, so a panel open in the dock comes down to them.
-    if (on && panelInDock()) setPanel(true);
+    // The Filters pop out of a button that moves: closed, they open again from where it is.
+    closeFilters();
     document.body.classList.toggle('map-full', on);
     $('#btn-fullscreen').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
     syncDock();
@@ -1375,10 +1381,18 @@
    * 6 Nov 2026): which they are is the panel's, and the map's to show.
    */
   function renderActive() {
-    const n = filterCount();
-    $$('.fcount').forEach(count => { count.hidden = !n; count.textContent = n; });
-    $$('[data-filters]').forEach(b => b.classList.toggle('has', !!n));
+    syncCounts();
     renderPanel();
+  }
+  /** Each Filters button's count: the page's, or the card's the map is in. */
+  function syncCounts() {
+    const n = filterCount();
+    $$('.fcount').forEach(count => {
+      const card = count.closest('#sheets > .sheet');
+      const k = card ? cardFilterCount(card) : n;
+      count.hidden = !k;
+      count.textContent = k;
+    });
   }
 
   /** Repaint everything the filters touch. `url`: push a step, replace this one, or leave it. */
@@ -2040,6 +2054,7 @@
   function dropSheet() {
     const el = stack.pop();
     if (!el) return;
+    if (fpop && fpop.scope === el) closeFilters();
     if (S.mapCard && S.mapCard.el === el) mapToPage();
     el.classList.remove('open');
     setTimeout(() => el.remove(), 320);
@@ -2391,22 +2406,20 @@
   // The Calendar: this parish's days, from today or from a date picked, a
   // fortnight at a time. The date is in the card's link.
   const CU_DAYS = 14;
-  function comingUpHTML(pid, from, days, focus = null, panel = false) {
+  function comingUpHTML(pid, from, days, focus = null) {
     const p = S.byId.get(pid);
     const start = from || todayKey();
     const now = Date.now();
     const list = feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
     const body = daysHTML(list, { start, days, row: { here: pid, focus }, linkFor: (k) => pathOf(segsFor({ parish: p, focus, from: k })) });
-    return `${panel ? cardPanelHTML([pid], focus) : ''}
-      ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
+    return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
-  /** A card's Filters pill, with how many it asks, opening its panel under the Calendar's title. */
+  /** A card's Filters pill, with how many it asks, popping its Filters out. */
   const filtersPill = (n, panel) => `<button class="fpill fbtn" type="button" data-card-filters aria-expanded="${!!panel}">${I.filters}<span>Filters</span>${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
   /** What sits beside a card's Calendar title: Date, and Filters. */
   function calActsHTML(el) {
-    if (el._coll) return datePickHTML('card', el._from, filtersPill(collFilterCount(el._coll), el._fpanel));
-    return datePickHTML('card', el._from, filtersPill(focusCount(el._focus), el._fpanel));
+    return datePickHTML('card', el._from, filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el));
   }
   // The foot of a Calendar, which brings the next fortnight as it scrolls into view.
   const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days>Loading…</div>' : '';
@@ -2421,7 +2434,7 @@
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
     const m = box.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
-    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from, !!el._fpanel) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus, !!el._fpanel);
+    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
     const acts = el.querySelector('.cal-acts');
     if (acts) acts.innerHTML = calActsHTML(el);
     watchMore(el);
@@ -2655,7 +2668,7 @@
     const rows = [...ps.flatMap(p => rulesOf(p.id)).filter(liveRule).map(r => [r, true]),
       ...feedRange(todayKey(), CU_DAYS).filter(e => visible(e) && eventParishIds(e).some(id => here.has(id))).map(e => [e, false])];
     const has = (x) => rows.some(([r, isRule]) => whatMatches(r, { ...blankFilters(), ...x }, isRule));
-    const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
+    const group = fgroup;
     const langs = [...new Set(ps.flatMap(parishLangs))];
     const langPills = own && own.lang
       ? (own.langStrict || !f.lang ? '' : fpill('card:langStrict', '1', f.langStrict, `${esc(f.lang)} only`))
@@ -2665,14 +2678,12 @@
     const spans = own && own.days ? '' : SV.DAY_GROUPS.map(g => fpill('card:dayGroup', g.slug, f.dayGroup === g.slug, esc(g.label))).join('');
     const parts = own && own.part ? '' : SV.PARTS_OF_DAY.map(pt => fpill('card:part', pt.slug, f.part === pt.slug, esc(pt.label))).join('');
     const what = own && own.what ? '' : group('What', ...kindLines(f, SV, 'card:', (x) => has(x) || whatIs(f, x)));
-    const when = days || spans || parts ? group('When', days, spans, parts) : '';
+    const when = days || spans || parts ? group('Days', days, spans, parts) : '';
     // A collection's jurisdictions, each in its colour as its tab is: those its parishes are in.
     const jPills = juris ? juris.offer.map(j => fpill('card:juris', j, juris.on.includes(j), esc(JURIS[j].short), ' fpill-j', `--j:${shown(jColor(j))}`)).join('') : '';
-    return `<div class="filter-panel card-fpanel" role="group" aria-label="Filters">
-        ${what}${langPills ? group('Language', langPills) : ''}${when}${jPills ? group('Jurisdiction', jPills) : ''}
+    return `${what}${langPills ? group('Language', langPills) : ''}${when}${jPills ? group('Jurisdiction', jPills) : ''}
         <div class="fpanel-foot">${n ? '<button class="fpill fpill-ghost" type="button" data-act="card-filters-clear">Clear all</button>' : '<span></span>'}
-          <button class="fpill on" type="button" data-act="card-filters-done">Done</button></div>
-      </div>`;
+          <button class="fpill on" type="button" data-act="card-filters-done">Done</button></div>`;
   }
   /** Is this pill the one a filter has on? It is offered, held or not, so it can be turned off. */
   const whatIs = (f, x) => (x.service ? f.service === x.service : x.kindSub ? f.kind === x.kind && f.kindSub === x.kindSub : f.kind === x.kind);
@@ -2919,7 +2930,7 @@
     return focusCount(f) + extra + (jurisOffer(c) ? jList(c.juris).length : 0);
   }
   /** What is on at a collection's parishes, by its filters, from today or a date, a fortnight at a time. */
-  function collFeedHTML(c, days, from = null, panel = false) {
+  function collFeedHTML(c, days, from = null) {
     const start = from || todayKey();
     const now = Date.now();
     const f = { ...blankFilters(), ...(c.f || {}) };
@@ -2927,8 +2938,7 @@
     // A day's link, where the collection has one of its own.
     const linkFor = c.segs ? (k) => pathOf(collSegs(c, k)) : null;
     const body = daysHTML(list, { start, days, linkFor, row: { lang: f.lang }, byVenue: true });
-    return `${panel ? cardPanelHTML(c.ids, f, collFilterCount(c), { juris: jurisOffer(c), own: ownAsks(c) }) : ''}
-      ${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
+    return `${body || '<div class="tt-none sm">Nothing on file for these days.</div>'}
       ${MORE(days)}`;
   }
   /**
@@ -3019,7 +3029,7 @@
   }
 
   /** A collection's card as it now is: its bar's title, and everything under the bar. */
-  function collectionHTML(c, { from = null, panel = false } = {}) {
+  function collectionHTML(c, { from = null } = {}) {
     const o = sortOrigin();
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
@@ -3085,8 +3095,8 @@
         </section>
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
-          ${calHeadHTML(datePickHTML('card', from, filtersPill(collFilterCount(c), panel)))}
-          <div class="cu">${collFeedHTML(c, CU_DAYS, from, panel)}</div>
+          ${calHeadHTML(datePickHTML('card', from, filtersPill(collFilterCount(c), false)))}
+          <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
       </div>`;
@@ -3106,7 +3116,7 @@
   /** An open collection's card again, where it was scrolled to: its filters changed, or what it holds. */
   function repaintCollection(el) {
     const c = el._coll;
-    const { html, rest } = collectionHTML(c, { from: el._from, panel: !!el._fpanel });
+    const { html, rest } = collectionHTML(c, { from: el._from });
     const box = document.createElement('div');
     box.innerHTML = html;
     const scroller = el.querySelector('.sheet-scroll'), bar = el.querySelector('.gtitle');
@@ -3601,9 +3611,9 @@
   }
   function panelHTML() {
     const f = S.f, SV = window.AgoraServices;
-    // A group of pills per question, as the app's toolbar has, with no label:
-    // what, which language, when, where, which parishes. A break starts a line.
-    const group = (label, ...lines) => `<div class="frow" role="group" aria-label="${label}">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div>`;
+    // A heading per question: what, which language, when, whose, where,
+    // which parishes. A break starts a line of its pills.
+    const group = fgroup;
     const langs = LANGS.map(([l]) => l).map(l => fpill('lang', l, f.lang === l, esc(l))
       + (f.lang === l ? fpill('langStrict', '1', f.langStrict, 'only', ' fpill-only') : '')).join('');
     const days = `<span class="fdays">${WD.map((d, i) => fpill('day', i, SV.daysOf(f.day).includes(i), d)).join('')}</span>`;
@@ -3619,7 +3629,7 @@
       + fpill('monasteries', '1', f.monasteries, 'Monasteries')
       + fpill('timesOnly', '1', f.timesOnly, 'With service times')
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
-    return group('What', ...kindLines(f, SV)) + group('Language', langs) + group('When', days, spans, parts)
+    return group('What', ...kindLines(f, SV)) + group('Language', langs) + group('Days', days, spans, parts)
       + group('Jurisdiction', juris) + group('Where', regions) + group('Parishes', parishes)
       + `<div class="fpanel-foot">${filterCount() ? '<button class="fpill fpill-ghost" type="button" data-act="clear-filters">Clear all</button>' : '<span></span>'}
           <span class="fpanel-end">${saveViewHTML()}<button class="fpill on" type="button" data-act="filters-done">Done</button></span></div>`;
@@ -3633,28 +3643,103 @@
     const on = isSavedView(path);
     return `<button class="fpill fpill-ghost${on ? ' fpill-saved' : ''}" type="button" data-act="save-view" aria-pressed="${on}">${on ? `${CHECK}<span>Saved</span>` : 'Save'}</button>`;
   }
-  // Open, the panel is one step: the first change in it is a step back, the
-  // rest are written onto it, so back undoes a whole go at the filters.
-  const panelOpen = () => !!S.panel;
+  // ── Filters, popped out ───────────────────────────────────────────────
+  //
+  // The map's Filters (its button, the dock's) and a card's (its Filters, or
+  // the map's button in it, which goes where the map goes) open as a pop-out
+  // from the button, as the toolbar's ⋯ does: a heading per question saying
+  // what it is set to, opened one at a time (Kevin, 6 Nov 2026).
+
+  let fpop = null;        // { scope: 'page' or a card, btn }
+  let fpopSec = null;     // the question open in it
+  const fpopEl = () => $('#filter-panel');
+  /** A question: its heading, what it is set to (renderFilters), and its pills when open. */
+  function fgroup(label, ...lines) {
+    const open = fpopSec === label;
+    return `<div class="frow fsec${open ? ' open' : ''}" role="group" aria-label="${label}">
+        <button class="fhead" type="button" data-fsec="${label}" aria-expanded="${open}"><b>${label}</b><span class="fsum"></span>${I.chev}</button>
+        <div class="fbody">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div></div>`;
+  }
+  /** Whose a Filters button is: the card it is in, or the page's. */
+  const scopeOf = (b) => b.closest('#sheets > .sheet') || 'page';
+  /** How many a card's Filters ask. */
+  const cardFilterCount = (el) => (el._coll ? collFilterCount(el._coll) : focusCount(el._focus));
+  function openFilters(btn, scope) {
+    closeMenu();
+    const el = fpopEl();
+    if (el.parentNode !== document.body) document.body.appendChild(el);
+    if (!fpop || fpop.scope !== scope) fpopSec = null;
+    fpop = { scope, btn };
+    el.classList.toggle('card-fpanel', scope !== 'page');
+    el.hidden = false;
+    syncFilterBtns();
+    renderFilters();
+  }
+  function closeFilters() {
+    if (!fpop) return;
+    const was = fpop;
+    fpop = null;
+    const el = fpopEl();
+    el.hidden = true;
+    el.innerHTML = '';
+    if (was.scope === 'page') S.panel = null;
+    syncFilterBtns();
+    syncDock();
+  }
+  function cardFiltersHTML(el) {
+    if (!el._coll) return cardPanelHTML([el.dataset.pid], el._focus);
+    const c = el._coll;
+    return cardPanelHTML(c.ids, { ...blankFilters(), ...(c.f || {}) }, collFilterCount(c), { juris: jurisOffer(c), own: ownAsks(c) });
+  }
+  function renderFilters() {
+    if (!fpop) return;
+    const sc = fpop.scope, el = fpopEl();
+    if (sc !== 'page' && !stack.includes(sc)) return closeFilters();
+    el.innerHTML = sc === 'page' ? panelHTML() : cardFiltersHTML(sc);
+    el.querySelectorAll('.fsec').forEach(sec => {
+      const on = [...sec.querySelectorAll('.fbody .fpill.on')].map(x => x.textContent.trim());
+      sec.querySelector('.fsum').textContent = on.join(', ').replace(/, only\b/g, ' only') || 'Any';
+    });
+    syncFilterBtns();
+    placeFilters();
+  }
+  /** Out of its button, under it or above it as there is room, its right edge on the button's. */
+  function placeFilters() {
+    if (!fpop) return;
+    const sc = fpop.scope;
+    // A card's Calendar head is drawn again as it changes: its Filters pill with it.
+    if (!fpop.btn.isConnected) fpop.btn = (sc === 'page' ? pageFiltersBtn() : sc.querySelector('[data-card-filters]') || sc.querySelector('[data-filters]')) || fpop.btn;
+    const el = fpopEl(), r = fpop.btn.getBoundingClientRect();
+    const w = Math.min(380, window.innerWidth - 20);
+    const up = r.top > window.innerHeight * 0.55;
+    el.style.width = `${w}px`;
+    el.style.right = `${Math.max(10, Math.min(window.innerWidth - r.right, window.innerWidth - w - 10))}px`;
+    el.style.top = el.style.bottom = '';
+    if (up) { el.style.bottom = `${Math.max(10, window.innerHeight - r.top + 8)}px`; el.style.maxHeight = `${Math.max(200, r.top - 18)}px`; }
+    else { el.style.top = `${Math.max(10, r.bottom + 8)}px`; el.style.maxHeight = `${Math.max(200, window.innerHeight - Math.max(10, r.bottom + 8) - 10)}px`; }
+  }
+  window.addEventListener('resize', () => placeFilters());
+  document.addEventListener('scroll', (e) => { if (fpop && !(e.target instanceof Node && fpopEl().contains(e.target))) placeFilters(); }, { capture: true, passive: true });
+  function syncFilterBtns() {
+    $$('[data-filters], [data-card-filters]').forEach(b => b.setAttribute('aria-expanded', String(!!fpop && fpop.scope === scopeOf(b))));
+  }
+  /** The page's own Filters button: the map's, unless the map is in a card, then the dock's. */
+  const pageFiltersBtn = () => (S.mapCard || document.body.classList.contains('docked') ? $('#dock [data-filters]') : $('#btn-filters'));
+
+  // Open, the page's Filters are one step: the first change in them is a
+  // step back, the rest are written onto it, so back undoes a whole go.
+  const panelOpen = () => !!fpop && fpop.scope === 'page';
   // Opened from the dock, the panel opens under it, where you are, and goes
   // back under the page's button when it closes.
-  const panelInDock = () => $('#filter-panel').parentNode === $('#dock');
-  function setPanel(open, { dock = false } = {}) {
-    const el = $('#filter-panel');
-    if (!open || !dock) $('#viewport-card').after(el);
-    else $('#dock').appendChild(el);
-    // Moving it is not a new go at the filters: back still undoes the whole of it.
-    if (!open) S.panel = null;
-    else if (!S.panel) S.panel = { pushed: false };
-    el.hidden = !open;
-    $$('[data-filters]').forEach(b => b.setAttribute('aria-expanded', String(open)));
-    document.body.classList.toggle('filters-open', open);
-    if (open) renderPanel();
-    else el.innerHTML = '';
+  const panelInDock = () => panelOpen() && !!fpop.btn.closest('#dock');
+  function setPanel(open, { btn = null } = {}) {
+    if (!open) { if (panelOpen()) closeFilters(); return; }
+    if (!S.panel) S.panel = { pushed: false };
+    openFilters(btn || pageFiltersBtn(), 'page');
     syncDock();
   }
   function renderPanel() {
-    if (panelOpen()) $('#filter-panel').innerHTML = panelHTML();
+    if (panelOpen()) renderFilters();
   }
   /**
    * One pill of what, which language or when, tapped on `f`: on if it was
@@ -3977,6 +4062,9 @@
       closeMenu();
       if (own || !inside) return;
     }
+    // The Filters pop-out the same: a tap off it closes it, and does no more.
+    if (fpop && !fpopEl().contains(t) && !t.closest('[data-filters], [data-card-filters]')) { closeFilters(); return; }
+    if ((b = t.closest('[data-fsec]'))) { fpopSec = fpopSec === b.dataset.fsec ? null : b.dataset.fsec; renderFilters(); return; }
 
     // Search: a tap on any result remembers what was typed.
     if (top && top.classList.contains('search') && t.closest('[data-parish],[data-event],[data-coll],[data-place]')) {
@@ -4096,16 +4184,22 @@
 
     // The filters apply as you tap; the map is above them.
     // From the page's button or the dock's: a second tap on the same one puts it away.
-    if ((b = t.closest('[data-filters]'))) {
-      const fromDock = !!b.closest('#dock');
-      if (panelOpen() && fromDock === panelInDock()) setPanel(false);
-      else setPanel(true, { dock: fromDock });
+    if ((b = t.closest('[data-filters], [data-card-filters]'))) {
+      const scope = scopeOf(b);
+      if (fpop && fpop.scope === scope && fpop.btn === b) closeFilters();
+      else if (scope === 'page') setPanel(true, { btn: b });
+      else openFilters(b, scope);
       return;
     }
     if ((b = t.closest('[data-set="donate"]')) && top) { setDonate(top, b.dataset.val); return; }
-    // A parish card's own Filters, and its pills.
-    if ((b = t.closest('[data-card-filters]')) && top) { top._fpanel = !top._fpanel; refreshComingUp(top); return; }
-    if ((b = t.closest('[data-set^="card:"]')) && top) { setCardFilter(top, b.dataset.set.slice(5), b.dataset.val); return; }
+    // A card's own Filters' pills.
+    if ((b = t.closest('[data-set^="card:"]')) && (fpop || top)) {
+      const el = fpop && fpop.scope !== 'page' ? fpop.scope : top;
+      setCardFilter(el, b.dataset.set.slice(5), b.dataset.val);
+      syncCounts();
+      renderFilters();
+      return;
+    }
     if ((b = t.closest('[data-set]'))) { setFilter(b.dataset.set, b.dataset.val); return; }
 
     if ((b = t.closest('[data-inlist]'))) {
@@ -4124,8 +4218,8 @@
         return;
       }
       if (a === 'unfocus' && top) return unfocusCard(top);
-      if (a === 'card-filters-done' && top) { top._fpanel = false; refreshComingUp(top); return; }
-      if (a === 'card-filters-clear' && top) return unfocusCard(top);
+      if (a === 'card-filters-done') { closeFilters(); return; }
+      if (a === 'card-filters-clear' && (fpop || top)) { unfocusCard(fpop && fpop.scope !== 'page' ? fpop.scope : top); syncCounts(); renderFilters(); return; }
       if (a === 'search-coll' && searchState) {
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, tint: '#475569', ids: searchState.ps.map(p => p.id) });
@@ -4228,7 +4322,8 @@
     const line = (e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-line]') ? e.target : null;
     if (line) { e.preventDefault(); line.click(); return; }
     if (e.key !== 'Escape') return;
-    if (menu) closeMenu();
+    if (fpop) closeFilters();
+    else if (menu) closeMenu();
     else if (stack.length) popSheet();
     else if (document.body.classList.contains('map-full')) setFullscreen(false);
     else if (panelOpen()) setPanel(false);

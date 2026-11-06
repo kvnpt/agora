@@ -154,10 +154,6 @@ body.docked .dock { transform: none; visibility: visible; }
 .dock-chip-t b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-chip-t small { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-row .fbtn { min-height: 34px; }
-.dock .filter-panel {
-  max-width: calc(600px - 2 * var(--pad)); margin: 0 auto 10px; width: calc(100% - 2 * var(--pad));
-  max-height: calc(100dvh - var(--dock-h, 60px) - 16px); overflow-y: auto; overscroll-behavior: contain;
-}
 @media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 
 /* ── The viewport: tabs, map, in-view chip ───────────────────────────────
@@ -209,6 +205,7 @@ body.docked .dock { transform: none; visibility: visible; }
    card under its glass bar, the card's list scrolling under it (Kevin, 6 Nov
    2026). Back on the page when the card goes (next.js, mapToPage). */
 .card-map { position: relative; flex: none; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
+.card-map .map-filters { top: auto; bottom: 10px; right: 10px; }
 /* Its frame: a dark hairline, and inside it a white glow you can see. The
    dark scheme has the hairline alone: a white glow there is a smudge. */
 .viewport::after {
@@ -406,13 +403,6 @@ body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0;
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
 body.map-full .map-filters { top: calc(41px + 62px + env(safe-area-inset-top)); }
 body.map-full .inview { display: none; }
-/* The panel floats on it, under the tabs, clear of the map's buttons. */
-body.map-full #page > .filter-panel {
-  position: fixed; z-index: 31; left: 10px; right: 64px; margin: 0;
-  top: calc(41px + 10px + env(safe-area-inset-top));
-  max-height: calc(100dvh - 41px - 10px - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-lift);
-}
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
@@ -510,13 +500,30 @@ body.map-full .parish-row {
   display: inline-grid; place-items: center;
   background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
+/* Popped out of its button, as the toolbar's ⋯ menu is (Kevin, 6 Nov 2026):
+   glass, a heading per question saying what it is set to, one open at a
+   time, scrolling inside itself when it is taller than the room it has. */
 .filter-panel {
-  margin: 8px var(--pad) 0; padding: 2px 12px 10px;
-  background: var(--card); border: 1px solid var(--hair); border-radius: 14px;
-  animation: fpanel-in .16s ease-out;
+  position: fixed; z-index: 55; padding: 4px 12px 10px;
+  background: var(--glass-solid); border: 1px solid var(--hair); border-radius: 18px; box-shadow: var(--shadow-lift);
+  overflow-y: auto; overscroll-behavior: contain;
+  animation: pm-in .16s cubic-bezier(.2, .8, .2, 1);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .filter-panel { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); }
 }
 .filter-panel[hidden] { display: none; }
-@keyframes fpanel-in { from { opacity: 0; transform: translateY(-4px); } }
+.frow.fsec { display: block; padding: 0; }
+.fhead {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 8px 2px;
+  color: var(--text); text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.fhead b { font-size: 15.5px; font-weight: 600; }
+.fsum { flex: 1; min-width: 0; text-align: right; font-size: 13.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fhead svg { flex: none; width: 15px; height: 15px; color: var(--text-3); transition: transform .15s; }
+.fsec.open .fhead svg { transform: rotate(90deg); }
+.fbody { display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 0 14px; }
+.fsec.open .fbody { display: flex; }
 .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; }
 .frow + .frow { border-top: 1px solid var(--line); }
 .fbreak { flex-basis: 100%; height: 0; }
@@ -546,6 +553,7 @@ body.map-full .parish-row {
 .fpill-saved { color: var(--accent); border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .filter-panel, .fpill-only { animation: none; }
+  .fhead svg { transition: none; }
   .ftype { transition: none; }
 }
 
@@ -956,7 +964,6 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   display: inline-grid; place-items: center;
   background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.cu .card-fpanel { margin: 8px 0 6px; animation: none; }
 /* What's on at a parish: the page's posters, kept to it, under its timetable. */
 .p-whatson[hidden] { display: none; }
 .p-whatson .shelf-row { padding: 2px 18px 6px; scroll-padding: 0 18px; }
@@ -1878,15 +1885,13 @@ body.dialog-open { overflow: hidden; }
   main, .top { max-width: 1480px; }
   .top { padding: 14px 40px 8px; }
   .dock-head { max-width: 1480px; padding: 8px 40px 8px; }
-  .dock .filter-panel { max-width: min(760px, calc(100% - 80px)); width: auto; margin: 0 40px 12px; }
-  @media (min-width: 1560px) { .dock .filter-panel { margin-left: calc((100% - 1480px) / 2 + 40px); } }
 
   /* Every --pad inset lands 40px in; the columns' own insets make the gap. */
   main {
     display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); column-gap: 8px; align-items: start;
     padding: 0 24px 64px;
   }
-  main > :is(.viewport-card, .filter-panel, .page-link) { grid-column: 1 / -1; }
+  main > :is(.viewport-card, .page-link) { grid-column: 1 / -1; }
   .col-side { display: block; grid-column: 1; }
   .col-main { display: block; grid-column: 2; min-width: 0; }
   /* The left column rides along under the dock, scrolling on its own if it
@@ -1917,7 +1922,6 @@ body.dialog-open { overflow: hidden; }
   .inview-text small { margin-top: 2px; font-size: 16px; letter-spacing: 0; }
   .inview.one .inview-text b { line-height: 1.15; }
   .inview-go svg { width: 22px; height: 22px; }
-  .filter-panel { max-width: 760px; }
 
   /* The right column's shelves: laid out, not scrolled sideways. */
   #shelf-collections .shelf-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; overflow: visible; }

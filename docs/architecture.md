@@ -144,8 +144,11 @@ takes the focus of what was under it; a link that finds one parish opens as that
 parish's own link would (`/smg+smk/feast` with only SMK's ahead is `/smk/feast`).
 The map's own Filters and tabs are the map's, and its Today's, What's on's and
 the In view card's (Kevin, 6 Nov 2026), and no one else's. They are a button on
-the map with how many are on (`renderActive`), never a row of chips, and What's
-on comes before what does not follow them. Collections and Languages are every
+the map with how many are on (`syncCounts`), never a row of chips, and What's
+on comes before what does not follow them. Every Filters (the map's, the dock's,
+a card's) pops out of its button as the toolbar's ⋯ does (`openFilters`): a
+heading per question saying what it is set to, one open at a time. The map's
+button goes where the map goes, and in a card it asks the card's. Collections and Languages are every
 jurisdiction's whatever the map says; `/greek` is the Greek card, whose Show on
 map is the Greek tab. A collection's own Filters ask what its link does not
 (`ownAsks`): Sunday Liturgy's offer time of day, language and jurisdiction but
