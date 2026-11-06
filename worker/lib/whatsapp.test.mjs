@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import {
-  verifySignature, messagesOf, kindOf, groupOf, textsFor, codeIn, newCode, parishNamed, maskPhone,
+  verifySignature, messagesOf, kindOf, groupOf, picturesFor, codeIn, newCode, parishNamed, maskPhone,
   readSummary, draftLink, linkUrl, fetchMedia, WHATSAPP_DDL, GRAPH,
 } from './whatsapp.mjs';
 
@@ -79,13 +79,24 @@ test('a poster and its words a moment apart are one announcement', () => {
   assert.deepEqual(groupOf(rows, 't2').map(r => r.id), ['p1', 't1', 'p2', 't2']);
   assert.deepEqual(groupOf(rows, 'old').map(r => r.id), ['old']);
   assert.deepEqual(groupOf(rows, 'later').map(r => r.id), ['later']);
+});
+
+test('a forward of several pictures is one draft, of up to six', () => {
+  // As WhatsApp sent Kevin's two Cronulla pictures: the caption on the first,
+  // both at the same second.
   const isImage = (r) => r.type === 'image';
-  const group = groupOf(rows, 'p1');
-  assert.deepEqual(textsFor(group, 'p1', isImage).map(r => r.id), ['t1'], 'each text goes with the poster before it');
-  assert.deepEqual(textsFor(group, 'p2', isImage).map(r => r.id), ['t2']);
-  // Words first, then the poster: still one.
-  const first = [{ id: 't', type: 'text', sent_at: 10 }, { id: 'p', type: 'image', sent_at: 11 }];
-  assert.deepEqual(textsFor(first, 'p', isImage).map(r => r.id), ['t']);
+  const album = [
+    { id: 'a', type: 'image', body: 'ORC - Cronulla Beach', sent_at: 100 },
+    { id: 'b', type: 'image', sent_at: 100 },
+    { id: 't', type: 'text', sent_at: 101 },
+  ];
+  assert.deepEqual(picturesFor(album, 'a', isImage).map(r => r.id), ['a', 'b']);
+  assert.deepEqual(picturesFor(album, 'b', isImage).map(r => r.id), ['a', 'b'], 'whichever is handled first takes both');
+  assert.deepEqual(picturesFor(album.map(r => (r.id === 'a' ? { ...r, outcome: 'joined' } : r)), 'a', isImage), [],
+    'taken already');
+  const eight = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, type: 'image', sent_at: 100 }));
+  assert.deepEqual(picturesFor(eight, 'p2', isImage).map(r => r.id), ['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+  assert.deepEqual(picturesFor(eight, 'p7', isImage).map(r => r.id), ['p6', 'p7'], 'the rest, a draft of their own');
 });
 
 test('a link code, as the account menu writes it or as six digits', () => {

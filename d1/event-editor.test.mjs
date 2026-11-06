@@ -247,3 +247,35 @@ test('what a date changes on its service', () => {
   assert.deepStrictEqual([...E.dateChanges({ ...card, feast: '', description: rule.description, start_time: '10:30',
     title: 'Mums & Bubs', location_override: 'Church hall' }, rule, null)].sort(), ['start_time', 'title', 'where']);
 });
+
+// Kevin's Cronulla forward: two phone screenshots, and Crows Nest's two that
+// he put side by side by hand. joinPictures draws them where this says.
+test('several pictures sit side by side as one poster, at the shortest one’s height, no wider than 2048', () => {
+  const two = E.pictureLayout([{ w: 1080, h: 1350 }, { w: 1080, h: 1350 }]);
+  assert.deepStrictEqual([two.width, two.height], [2048, 1266]);
+  assert.strictEqual(two.boxes[0].x, 0);
+  assert.ok(two.boxes[1].x > two.boxes[0].x + two.boxes[0].w, 'a white gap between them');
+  assert.strictEqual(two.boxes[1].x + two.boxes[1].w, 2048);
+  assert.ok(two.boxes.every(b => b.y === 0 && b.h === 1266));
+
+  // A taller picture is brought down to the shorter's height, never the other way.
+  const mixed = E.pictureLayout([{ w: 800, h: 1000 }, { w: 1000, h: 2000 }]);
+  assert.deepStrictEqual(mixed.boxes.map(b => b.h), [1000, 1000]);
+  assert.deepStrictEqual(mixed.boxes.map(b => b.w), [800, 500]);
+  assert.strictEqual(mixed.width, 800 + 24 + 500, 'small enough already: not scaled');
+
+  // Four are two rows of two; five, a row of three over a centred two.
+  const four = E.pictureLayout(Array(4).fill({ w: 500, h: 500 }));
+  assert.deepStrictEqual(four.boxes.map(b => [b.x, b.y]), [[0, 0], [524, 0], [0, 524], [524, 524]]);
+  const five = E.pictureLayout(Array(5).fill({ w: 500, h: 500 }));
+  assert.deepStrictEqual(five.boxes.map(b => b.y), [0, 0, 0, 524, 524]);
+  assert.strictEqual(five.boxes[3].x, 262, 'the shorter row is centred');
+
+  // One is itself.
+  assert.deepStrictEqual(E.pictureLayout([{ w: 900, h: 1200 }]).boxes, [{ x: 0, y: 0, w: 900, h: 1200 }]);
+});
+
+test('a WhatsApp draft names who sent it by their WhatsApp name', () => {
+  assert.strictEqual(E.senderOf({ sender_name: 'Kevin', created_by: 'kpkevpat@gmail.com' }), 'Kevin');
+  assert.strictEqual(E.senderOf({ created_by: 'kpkevpat@gmail.com' }), 'kpkevpat', 'one made before 037');
+});

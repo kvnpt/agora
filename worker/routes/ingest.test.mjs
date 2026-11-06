@@ -322,15 +322,99 @@ test('words alone are read as the announcement, with no image', async () => {
 test('an owner’s poster lands at whose poster it is', async () => {
   const f = fresh({ role: 'owner', parishIds: null });
   f.link();
-  // Where they last drafted is the guess…
   f.raw.prepare("INSERT INTO drafts (parish_id, created_by) VALUES (?, 'dev')").run(A);
   const theirs = { ...READ, other_parish: { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong' } };
-  await withReader(theirs, async () => { await f.deliver([image('Vespers')]); });
-  // …and the poster says otherwise.
+  const calls = await withReader(theirs, async () => { await f.deliver([image('Vespers')]); });
+  // It started at no parish, and the reader was asked whose it is…
+  assert.match(calls[0].messages[0].content[1].text, /^No parish is chosen for this yet\./);
+  // …which the poster says.
   const d = f.drafts().find(x => x.source === 'whatsapp');
   assert.equal(d.parish_id, B);
   assert.equal(d.read_parish, null, 'no "move it there" once it is there');
   assert.match(f.graph.texts()[0], /It's a draft at St Elias, Wollongong until/);
+});
+
+// Kevin forwarded the Ocean Run Club's Cronulla poster, his last draft having
+// been Kamariani's: it went to Kamariani. Somebody who may edit every parish
+// has no parish of their own to guess.
+test('an owner’s poster that says no parish starts at none, not where they last drafted', async () => {
+  const f = fresh({ role: 'owner', parishIds: null });
+  f.link();
+  f.raw.prepare("INSERT INTO drafts (parish_id, created_by) VALUES (?, 'dev')").run(A);
+  await withReader(READ, async () => { await f.deliver([image('ORC - Cronulla Beach')]); });
+  const d = f.drafts().find(x => x.source === 'whatsapp');
+  assert.equal(d.parish_id, '_unassigned');
+  assert.match(f.graph.texts()[0], /It's a draft without a parish yet until it's published: https:\/\/orthodoxy\.au\/\?draft=/);
+  // A link in the words still says where.
+  const g = fresh({ role: 'owner', parishIds: null });
+  g.link();
+  await withReader(READ, async () => { await g.deliver([image('Mums Group orthodoxy.au/sew')]); });
+  assert.equal(g.drafts()[0].parish_id, B);
+});
+
+test('a contact of several parishes starts where they last drafted', async () => {
+  const f = fresh({ role: 'parish', parishIds: [A, B] });
+  f.link();
+  f.raw.prepare("INSERT INTO drafts (parish_id, created_by) VALUES (?, 'dev')").run(B);
+  await withReader(READ, async () => { await f.deliver([image('Mums Group')]); });
+  assert.equal(f.drafts().find(x => x.source === 'whatsapp').parish_id, B);
+});
+
+// ── a forward of several pictures ──
+
+const JPEG2 = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9]);
+
+test('a forward of two pictures and its caption is one draft, read together', async () => {
+  const f = fresh();
+  f.link();
+  f.graph.media.set('M2', { mime: 'image/jpeg', bytes: JPEG2 });
+  // As WhatsApp sent Kevin's: each picture its own message (and delivery),
+  // the caption on the first, both at the same second.
+  const calls = await withReader(READ, async () => {
+    await Promise.all([
+      f.deliver([image('ORC - Cronulla Beach. We’re heading south.', { at: 1762400000, context: { forwarded: true } })]),
+      f.deliver([{ type: 'image', image: { id: 'M2', mime_type: 'image/jpeg' }, at: 1762400000, context: { forwarded: true } }]),
+    ]);
+  });
+  assert.equal(f.drafts().length, 1, 'one draft');
+  const [d] = f.drafts();
+  assert.equal(d.message_text, 'ORC - Cronulla Beach. We’re heading south.');
+  assert.equal(d.sender_name, 'Kevin', 'their WhatsApp name, for the editor');
+  const rest = JSON.parse(d.images);
+  assert.equal(rest.length, 1, 'the second picture waits to be joined');
+  assert.notEqual(rest[0], d.poster_path);
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(d.poster_path.slice(1)).bytes], [0xff, 0xd8, 0xff, 0xe0, 1, 2], 'the first is the poster');
+  assert.deepEqual([...f.env.ASSETS_BUCKET.store.get(rest[0].slice(1)).bytes], [...JPEG2]);
+
+  assert.equal(calls.length, 1, 'one read');
+  const content = calls[0].messages[0].content;
+  assert.deepEqual(content.map(c => c.type), ['image', 'image', 'text'], 'both pictures, in the order sent');
+  assert.equal(content[1].source.data, Buffer.from(JPEG2).toString('base64'));
+  assert.match(content[2].text, /There are 2 images, sent together as one announcement/);
+  assert.match(content[2].text, /The words these images came with on WhatsApp/);
+  assert.match(content[2].text, /Read the images\.$/);
+
+  assert.equal(f.graph.sent.length, 1, 'one reply');
+  assert.deepEqual(f.raw.prepare('SELECT outcome, draft_id FROM whatsapp_messages ORDER BY rowid').all().map(r => r.outcome).sort(),
+    ['draft', 'joined']);
+  assert.ok(f.raw.prepare('SELECT draft_id FROM whatsapp_messages').all().every(r => r.draft_id === d.id));
+});
+
+test('a picture WhatsApp will not give is left out, and the reply says so', async () => {
+  const f = fresh();
+  f.link();
+  await withReader(READ, async () => {
+    await f.deliver([
+      image('Mums Group', { at: 1762400000 }),
+      { type: 'image', image: { id: 'GONE', mime_type: 'image/jpeg' }, at: 1762400000 },
+    ]);
+  });
+  const [d] = f.drafts();
+  assert.equal(f.drafts().length, 1);
+  assert.equal(d.images, null, 'only the one it got');
+  assert.ok(d.poster_path);
+  assert.match(f.graph.texts()[0], /I couldn't download one of the pictures; send it again for a draft of its own\.$/);
+  assert.equal(f.raw.prepare("SELECT outcome FROM whatsapp_messages WHERE media_id = 'GONE'").get().outcome, 'media-failed');
 });
 
 test('a parish contact’s poster from a parish not theirs stays at theirs', async () => {

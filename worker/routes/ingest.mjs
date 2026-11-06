@@ -16,11 +16,18 @@
 //
 // TIME. Meta wants its 200 at once, and work after a response gets 30
 // seconds (waitUntil). So the message is logged and answered first, and the
-// rest runs after: a wait of SETTLE_MS for the text that comes with a
-// poster, the image, the read (most take 7–10 seconds, a full programme
-// 25), and the reply, sent by REPLY_BY_MS whether the read has finished or
+// rest runs after: a wait of SETTLE_MS for the rest of the forward (its
+// other pictures, and the text that comes with them), the pictures, the read
+// (most take 7–10 seconds, a full programme 25), and the reply, sent by REPLY_BY_MS whether the read has finished or
 // not. A read cut short leaves the draft 'reading', which the editor shows as
 // one to read again.
+//
+// ONE FORWARD, ONE DRAFT. WhatsApp sends each picture of a forward as a
+// message of its own, the caption on the first. The first of them to be
+// handled takes the others and every word sent with them (whatsapp.mjs
+// picturesFor), and they are read together. The draft's poster is the first
+// picture; the rest wait in drafts.images until the editor joins them all,
+// side by side, into the one poster (docs/editing.md).
 //
 // lib/whatsapp.mjs has the API; lib/draft-read.mjs the read.
 
@@ -31,8 +38,8 @@ import { ensureDraftTables, draftPosterKey, getDraft, moveDraft } from '../lib/d
 import { readIntoDraft } from '../lib/draft-read.mjs';
 import {
   whatsappConfig, ensureWhatsappTables, verifySignature, messagesOf, kindOf, fetchMedia, sendText,
-  codeIn, groupOf, textsFor, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
-  IMAGE_TYPES, DAILY_LIMIT, LATE_TEXT_S,
+  codeIn, groupOf, picturesFor, parishNamed, pruneStatements, readSummary, draftLink, draftAt, REPLIES,
+  IMAGE_TYPES, DAILY_LIMIT, LATE_TEXT_S, READ_BYTES,
 } from '../lib/whatsapp.mjs';
 
 /** How long to wait for the rest of an announcement: a poster's text, sent a moment after it. */
@@ -135,11 +142,11 @@ async function handle(env, io, m) {
   if (kind === 'pdf') { await mark('refused'); return reply(REPLIES.pdf()); }
   if (kind === 'other') { await mark('refused'); return reply(REPLIES.other()); }
 
-  // The rest of the announcement: a poster's words come a moment after it,
-  // or a moment before.
+  // The rest of the announcement: a forward's other pictures, and its
+  // words, which come a moment after the pictures or a moment before.
   await io.sleep(SETTLE_MS);
   const recent = async () => (await db.prepare(
-    `SELECT id, type, body, sent_at, draft_id, outcome FROM whatsapp_messages
+    `SELECT id, type, body, media_id, media_type, sent_at, draft_id, outcome FROM whatsapp_messages
      WHERE phone = ? AND sent_at >= ? ORDER BY sent_at, rowid`
   ).bind(m.from, since(LATE_TEXT_S)).all()).results || [];
   const isImageRow = (r) => r.type === 'image';
@@ -148,16 +155,20 @@ async function handle(env, io, m) {
     for (let tries = 0; ; tries++) {
       const rows = await recent();
       const me = rows.find(r => r.id === m.id);
-      if (!me || me.outcome) return;                     // an image took it
+      if (!me || me.outcome) return;                     // a picture took it
       const group = groupOf(rows, m.id);
-      const owner = group.filter(isImageRow).find(img => textsFor(group, img.id, isImageRow).some(t => t.id === m.id));
-      if (owner && !owner.outcome && tries < 2) { await io.sleep(2500); continue; }   // it will take it
-      if (owner && owner.draft_id) return addToDraft(env, io, m, owner.draft_id, who, { mark, reply });
+      const pictures = group.filter(isImageRow);
+      if (pictures.some(r => !r.outcome) && tries < 2) { await io.sleep(2500); continue; }   // one will take it
+      // Here after its picture's draft was made: the nearest such picture
+      // before it, or after it when the words came first.
+      const before = pictures.filter(r => r.draft_id && r.sent_at <= m.sentAt).pop();
+      const owner = before || pictures.find(r => r.draft_id);
+      if (owner) return addToDraft(env, io, m, owner.draft_id, who, { mark, reply });
       // Typed after a poster rather than forwarded with it ("it's at the hall",
       // "/snp"): a word about the draft just made, not an announcement of its own.
-      const before = !m.forwarded && [...rows].reverse().find(r => r.id !== m.id && r.outcome === 'draft' && r.draft_id
+      const typed = !m.forwarded && [...rows].reverse().find(r => r.id !== m.id && r.outcome === 'draft' && r.draft_id
         && r.sent_at <= m.sentAt);
-      if (before) return addToDraft(env, io, m, before.draft_id, who, { mark, reply });
+      if (typed) return addToDraft(env, io, m, typed.draft_id, who, { mark, reply });
       break;
     }
     // Words alone: an announcement with no poster. The first of a run takes
@@ -171,13 +182,22 @@ async function handle(env, io, m) {
     return makeDraft(env, io, m, { who, link, text, claimed, mark, reply });
   }
 
-  // An image, with the texts that go with it.
+  // A picture: with the forward's other pictures and its words, one draft —
+  // unless another of its pictures has taken it.
   const rows = await recent();
   const group = groupOf(rows, m.id);
-  const texts = textsFor(group, m.id, isImageRow).filter(r => !r.outcome);
-  const claimed = await claim(db, texts.map(r => r.id), 'joined');
-  const text = [m.text, ...texts.filter(r => claimed.includes(r.id)).map(r => r.body)].filter(Boolean).join('\n\n');
-  return makeDraft(env, io, m, { who, link, text, claimed, image: true, mark, reply });
+  const pictures = picturesFor(group, m.id, isImageRow);
+  if (!pictures.length) return;
+  const texts = group.filter(r => r.type === 'text' && !r.outcome);
+  const claimed = await claim(db, [...pictures, ...texts].map(r => r.id), 'joined');
+  if (!claimed.includes(m.id)) return release(db, claimed);   // another picture's run has it
+  const mine = group.filter(r => claimed.includes(r.id));
+  const text = mine.map(r => r.body).filter(Boolean).join('\n\n');
+  return makeDraft(env, io, m, {
+    who, link, text, mark, reply,
+    claimed: mine.filter(r => !isImageRow(r)).map(r => r.id),
+    pictures: mine.filter(isImageRow).map(r => ({ id: r.id, mediaId: r.media_id, mediaType: r.media_type })),
+  });
 }
 
 /** Take these messages for one draft, if nobody has: the ids this call got. */
@@ -187,6 +207,13 @@ async function claim(db, ids, outcome) {
     `UPDATE whatsapp_messages SET outcome = ? WHERE id IN (${ids.map(() => '?').join(',')}) AND outcome IS NULL RETURNING id`
   ).bind(outcome, ...ids).all()).results || [];
   return rows.map(r => r.id);
+}
+
+/** Give messages back, for whoever comes for them next. */
+async function release(db, ids) {
+  if (!ids.length) return;
+  await db.prepare(`UPDATE whatsapp_messages SET outcome = NULL WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .bind(...ids).run();
 }
 
 async function linkPhone(db, m, code, { mark, reply }) {
@@ -209,9 +236,12 @@ async function linkPhone(db, m, code, { mark, reply }) {
 /**
  * Which parish a sender's draft starts at, and whether the read may move it.
  * A parish link in their words is theirs to say; a contact with one parish
- * has no choice to make. Otherwise it starts where they last drafted (or at
- * their first parish) and the read moves it to whose poster it is, if they
- * may edit that one (lib/draft-read.mjs `choose`).
+ * has no choice to make. A contact of several starts where they last drafted
+ * (or at their first parish). Somebody who may edit every parish (an owner,
+ * an editor) starts at no parish: their posters are anybody's, and the last
+ * one's parish says nothing about this one's — Kevin's run club poster went
+ * to Kamariani that way. Either way the read moves it to whose poster it is,
+ * if they may edit that one (lib/draft-read.mjs `choose`).
  */
 async function parishFor(db, who, email, text) {
   const mine = who.role === 'parish' ? who.parishIds : null;
@@ -221,71 +251,103 @@ async function parishFor(db, who, email, text) {
   const named = parishNamed(text, listed.filter(p => mayTouchParish(who, p.id)));
   if (named) return { parishId: named, fixed: true };
   if (mine && mine.length === 1) return { parishId: mine[0], fixed: true };
+  const none = async () => {
+    const row = await db.prepare("SELECT id FROM parishes WHERE id = '_unassigned'").first();
+    return row ? { parishId: row.id, fixed: false } : null;
+  };
+  if (!mine) return none();
   const last = (await db.prepare(
     "SELECT parish_id FROM drafts WHERE lower(created_by) = lower(?) AND parish_id != '_unassigned' ORDER BY id DESC LIMIT 20"
   ).bind(email).all()).results || [];
   const at = last.map(r => r.parish_id).find(id => mayTouchParish(who, id));
   if (at) return { parishId: at, fixed: false };
-  if (mine && mine.length) return { parishId: mine[0], fixed: false };
-  const none = await db.prepare("SELECT id FROM parishes WHERE id = '_unassigned'").first();
-  return none ? { parishId: none.id, fixed: false } : null;
+  if (mine.length) return { parishId: mine[0], fixed: false };
+  return none();
 }
 
 async function parishRow(db, id) {
   return db.prepare('SELECT id, name, acronym FROM parishes WHERE id = ?').bind(id).first();
 }
 
-async function makeDraft(env, io, m, { who, link, text, claimed, image = false, mark, reply }) {
+/**
+ * The draft, its pictures in R2, the read, and the reply.
+ *
+ * @param {object} o
+ * @param {string} o.text        every word of the forward, in the order sent
+ * @param {string[]} o.claimed   its texts, taken for this draft
+ * @param {{id, mediaId, mediaType}[]} [o.pictures]  its pictures, in the order sent (m among them); none for words alone
+ */
+async function makeDraft(env, io, m, { who, link, text, claimed, pictures = [], mark, reply }) {
   const db = env.DB;
   const { cfg, origin } = io;
+  const others = pictures.map(p => p.id).filter(id => id !== m.id);
+  const markAll = (outcome) => Promise.all([mark(outcome), others.length ? db.prepare(
+    `UPDATE whatsapp_messages SET outcome = ? WHERE id IN (${others.map(() => '?').join(',')})`
+  ).bind(outcome, ...others).run() : null]);
   const today = await db.prepare(
     "SELECT COUNT(*) AS n FROM whatsapp_messages WHERE phone = ? AND outcome = 'draft' AND sent_at > ? AND id != ?"
   ).bind(m.from, m.sentAt - 86400, m.id).first();
   if (today && today.n >= DAILY_LIMIT) {
-    await mark('limit');
+    await markAll('limit');
     return reply(REPLIES.limit(origin));
   }
 
-  let media = null;
-  if (image) {
-    media = await fetchMedia({ token: cfg.token, mediaId: m.mediaId, graph: cfg.graph, fetchImpl: io.fetchImpl });
-    if (!media.ok) {
-      console.error(`[whatsapp] ${m.id}: ${media.error}`);
-      await mark('media-failed');
-      // What it took goes back, to be read on its own.
-      if (claimed.length) {
-        await db.prepare(`UPDATE whatsapp_messages SET outcome = NULL WHERE id IN (${claimed.map(() => '?').join(',')})`)
-          .bind(...claimed).run();
-      }
-      return reply(media.tooLarge ? REPLIES.tooLarge() : REPLIES.mediaFailed());
-    }
-    if (!IMAGE_TYPES[media.mediaType]) media.mediaType = m.mediaType;
+  // Every picture, or as many as WhatsApp gives: one it will not is left out.
+  const fetched = await Promise.all(pictures.map(async (p) => {
+    const media = await fetchMedia({ token: cfg.token, mediaId: p.mediaId, graph: cfg.graph, fetchImpl: io.fetchImpl });
+    if (!media.ok) { console.error(`[whatsapp] ${p.id}: ${media.error}`); return { ...p, media }; }
+    if (!IMAGE_TYPES[media.mediaType]) media.mediaType = p.mediaType;
+    return { ...p, media };
+  }));
+  const got = fetched.filter(p => p.media.ok);
+  const failed = fetched.filter(p => !p.media.ok);
+  if (pictures.length && !got.length) {
+    await markAll('media-failed');
+    // What it took goes back, to be read on its own.
+    await release(db, claimed);
+    return reply(failed.some(p => p.media.tooLarge) ? REPLIES.tooLarge() : REPLIES.mediaFailed());
+  }
+  if (failed.length) {
+    await db.prepare(`UPDATE whatsapp_messages SET outcome = 'media-failed' WHERE id IN (${failed.map(() => '?').join(',')})`)
+      .bind(...failed.map(p => p.id)).run();
   }
 
   const place = await parishFor(db, who, link.email, text);
-  if (!place) { await mark('refused'); return reply(REPLIES.noRole(link.email, origin)); }
-  let posterPath = null;
-  if (media) {
-    const key = draftPosterKey(place.parishId, IMAGE_TYPES[media.mediaType] || 'jpg');
-    await env.ASSETS_BUCKET.put(key, media.bytes, {
-      httpMetadata: { contentType: media.mediaType, cacheControl: 'public, max-age=86400' },
+  if (!place) { await markAll('refused'); return reply(REPLIES.noRole(link.email, origin)); }
+  const paths = [];
+  for (const p of got) {
+    const key = draftPosterKey(place.parishId, IMAGE_TYPES[p.media.mediaType] || 'jpg');
+    await env.ASSETS_BUCKET.put(key, p.media.bytes, {
+      httpMetadata: { contentType: p.media.mediaType, cacheControl: 'public, max-age=86400' },
     });
-    posterPath = `/${key}`;
+    paths.push(`/${key}`);
   }
+  // Its poster is the first picture; the rest wait in images for the editor
+  // to join them all into one.
+  const [posterPath = null, ...rest] = paths;
   const d = await db.prepare(
-    `INSERT INTO drafts (parish_id, created_by, poster_path, source, message_text) VALUES (?, ?, ?, 'whatsapp', ?) RETURNING id`
-  ).bind(place.parishId, link.email, posterPath, text || null).first();
+    `INSERT INTO drafts (parish_id, created_by, poster_path, images, source, message_text, sender_name)
+     VALUES (?, ?, ?, ?, 'whatsapp', ?, ?) RETURNING id`
+  ).bind(place.parishId, link.email, posterPath, rest.length ? JSON.stringify(rest) : null, text || null,
+    m.name || link.name || null).first();
+  // The draft is the first picture's (one a day's count counts); the rest of
+  // the forward points at it.
+  const joined = [...claimed, ...got.map(p => p.id).filter(id => id !== m.id)];
   await db.batch([
     db.prepare("UPDATE whatsapp_messages SET outcome = 'draft', draft_id = ? WHERE id = ?").bind(d.id, m.id),
-    ...(claimed.length ? [db.prepare(
-      `UPDATE whatsapp_messages SET draft_id = ? WHERE id IN (${claimed.map(() => '?').join(',')})`
-    ).bind(d.id, ...claimed)] : []),
+    ...(joined.length ? [db.prepare(
+      `UPDATE whatsapp_messages SET outcome = 'joined', draft_id = ? WHERE id IN (${joined.map(() => '?').join(',')})`
+    ).bind(d.id, ...joined)] : []),
   ]);
   const draft = { id: d.id, parish_id: place.parishId };
 
+  // A picture WhatsApp would not give is said, since the draft lacks it.
+  const missing = failed.length
+    ? ` I couldn't download ${failed.length === 1 ? 'one of the pictures' : `${failed.length} of the pictures`}; send ${failed.length === 1 ? 'it' : 'them'} again for a draft of ${failed.length === 1 ? 'its' : 'their'} own.`
+    : '';
   const answer = async (draftNow, line) => {
     const p = await parishRow(db, (draftNow && draftNow.parish_id) || draft.parish_id);
-    return reply(line(draftAt(p), draftLink(origin, p, draft.id)));
+    return reply(line(draftAt(p), draftLink(origin, p, draft.id)) + missing);
   };
 
   const apiKey = await readSecret(env.ANTHROPIC_API_KEY);
@@ -295,10 +357,15 @@ async function makeDraft(env, io, m, { who, link, text, claimed, image = false, 
     const to = read.parish && read.parish.parish_id;
     return to && to !== '_unassigned' && mayTouchParish(who, to) ? to : null;
   };
-  const reading = readIntoDraft(env, draft, {
-    apiKey, bytes: media ? media.bytes : null, mediaType: media ? media.mediaType : null,
-    note: text, whatsapp: true, choose,
-  }).catch(e => {
+  // Read together, as many as the reader's request holds (READ_BYTES).
+  const images = [];
+  let bytes = 0;
+  for (const p of got) {
+    if (images.length && bytes + p.media.bytes.byteLength > READ_BYTES) break;
+    bytes += p.media.bytes.byteLength;
+    images.push({ bytes: p.media.bytes, mediaType: p.media.mediaType });
+  }
+  const reading = readIntoDraft(env, draft, { apiKey, images, note: text, whatsapp: true, choose }).catch(e => {
     console.error(`[whatsapp] read ${draft.id}: ${e && (e.stack || e.message)}`);
     return { ok: false, error: 'something went wrong', retry: true };
   });

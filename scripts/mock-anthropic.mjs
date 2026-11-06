@@ -288,6 +288,7 @@ http.createServer(async (req, res) => {
   const img = content.find(c => c.type === 'image');
   calls.push({ model: parsed.model, keys: Object.keys(parsed), headers: { key: req.headers['x-api-key'], version: req.headers['anthropic-version'] },
     image: img ? img.source.media_type : null, bytes: img ? img.source.data.length : 0,
+    images: content.filter(c => c.type === 'image').length,
     context: content[content.length - 1].text });
   if (mode === 'busy') {
     res.writeHead(529, { 'content-type': 'application/json' });

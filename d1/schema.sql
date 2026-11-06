@@ -1171,7 +1171,13 @@ CREATE TABLE drafts (
   -- takes it off the red badge on the parish's + and the sender's home page.
   source       TEXT,
   message_text TEXT,
-  seen_at      TEXT
+  seen_at      TEXT,
+  -- Migration 037: several pictures in one forward are one draft. `images`
+  -- is the pictures after the first, JSON '/posters/<key>' paths, until the
+  -- editor joins them all side by side into poster_path; NULL when there are
+  -- none. `sender_name` is the name WhatsApp has for whoever sent it.
+  images       TEXT,
+  sender_name  TEXT
 );
 CREATE INDEX idx_drafts_parish ON drafts(parish_id);
 

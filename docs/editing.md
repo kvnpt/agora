@@ -391,12 +391,32 @@ published: the draft waits for a person, like any other. What is worth knowing:
   within two minutes after a draft (not forwarded) are a note on it — added to
   its words, not read — and a parish link among them (`/sew`,
   `orthodoxy.au/sew`) moves it there.
+- **One forward, one draft.** WhatsApp sends each picture of a forward as its
+  own message, the caption on the first, all at the same second. The first of
+  them handled takes the others and every word in the group
+  (`picturesFor`, runs of six), and they are read **together**, in the order
+  sent, as one announcement (`posterContext`'s `pictures`: "read them as one
+  image"). The draft's poster is the first picture; the rest wait in
+  `drafts.images` (migration 037) until the editor opens it and **joins them
+  side by side into one poster** (`joinPictures`: one row up to three, two
+  rows past that, each row at its shortest picture's height, 2048px on the
+  long side), which `PUT …/drafts/:id/poster?from=` swaps in — the read
+  stands, since it was of the same pictures, and the pictures go. Kevin's
+  first forward, the Ocean Run Club's two Cronulla pictures, made two drafts,
+  one per picture; for Crows Nest he had joined two screenshots by hand. **Add
+  an image** takes several at once the same way, joined before the read.
 - **Which parish.** A parish link in the words; else a contact's only parish;
-  else where the sender last drafted (or their first parish), moved by the
-  read to **whose poster it is** if they may edit that one — before the read
-  is squared with a parish, so its services and events are matched to the
-  right one (`readIntoDraft`'s `choose`). An owner with nowhere to start drafts
-  at `_unassigned`, and the editor's picker chooses.
+  else, for a contact of several, where they last drafted (or their first
+  parish). **Somebody who may edit every parish (an owner, an editor) starts at
+  `_unassigned`**: their posters are anybody's, and the last one's parish says
+  nothing about this one's — the run club's poster went to Kamariani, Kevin's
+  last draft, that way. Either way the read moves it to **whose poster it is**
+  if they may edit that one — before the read is squared with a parish, so its
+  services and events are matched to the right one (`readIntoDraft`'s
+  `choose`; a draft at `_unassigned` asks the reader whose it is outright).
+  Otherwise the editor's picker chooses.
+- **Who sent it** is their WhatsApp name (`drafts.sender_name`, 037), not the
+  start of the account's email.
 - **Unopened, it shows.** `drafts.source = 'whatsapp'` and `seen_at` NULL:
   a red count on the parish card's + for whoever may edit the parish (one
   waiting opens it; several open the editor, which lists them), and a line on

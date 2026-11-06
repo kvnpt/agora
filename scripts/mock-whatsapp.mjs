@@ -19,7 +19,11 @@
 //   curl localhost:8789/__replies
 //
 // `send` takes --worker (default http://localhost:8787), --secret (default
-// local-secret), --from (default 61412345678) and --name (default Kevin).
+// local-secret), --from (default 61412345678), --name (default Kevin) and
+// --at (the message's second; a forward's pictures share one, so give each
+// `send --image` of a forward the same --at).
+//   AT=$(date +%s); node scripts/mock-whatsapp.mjs send --at $AT --image a.png --caption "…" &
+//   node scripts/mock-whatsapp.mjs send --at $AT --image b.png
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -87,7 +91,7 @@ if (cmd === 'serve') {
   const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'WABA', changes: [{ field: 'messages', value: {
     messaging_product: 'whatsapp', metadata: { display_phone_number: '15551234567', phone_number_id: '111' },
     contacts: [{ wa_id: from, profile: { name: arg('name', 'Kevin') } }],
-    messages: [{ from, id, timestamp: String(Math.floor(Date.now() / 1000)), ...message }],
+    messages: [{ from, id, timestamp: String(arg('at', Math.floor(Date.now() / 1000))), ...message }],
   } }] }] });
   const sig = `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
   const res = await fetch(`${worker}/api/ingest/whatsapp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sig }, body });

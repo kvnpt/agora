@@ -310,7 +310,12 @@ node scripts/mock-whatsapp.mjs send --image poster.png --caption "Mums Group, fi
 curl -s localhost:8789/__replies
 ```
 
-Apply `d1/migrations/036-whatsapp.sql` to the local database first, and give
+A forward of several pictures is several `send --image`s at the same
+`--at` second, the caption on the first; one draft should come of them, its
+pictures joined side by side when the editor opens it (watch for the
+`PUT …/poster?from=` and the thumbnail changing).
+
+Apply `d1/migrations/036-whatsapp.sql` and `037-whatsapp-pictures.sql` to the local database first, and give
 the parish an acronym so the reply's link has one. The home page should show
 the poster under **From WhatsApp**, the parish card's + a red 1, and the
 reply's `?draft=` link open the editor with the words in their box — and the

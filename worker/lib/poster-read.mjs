@@ -283,7 +283,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
  * @param {boolean} [o.whatsapp=false]  the note is what came with the image on
  *   WhatsApp — usually the announcement's own words, not a note about it
  */
-export function posterContext(parish, today, rules = [], note = '', { image = true, whatsapp = false } = {}) {
+export function posterContext(parish, today, rules = [], note = '', { image = true, whatsapp = false, pictures = 1 } = {}) {
   const said = String(note || '').trim().slice(0, 4000);
   const [y, m, d] = today.split('-').map(Number);
   const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
@@ -295,32 +295,47 @@ export function posterContext(parish, today, rules = [], note = '', { image = tr
     ? rules.map(r => `- ${WEEKDAYS[r.day_of_week]}s ${r.start_time}${r.end_time ? `–${r.end_time}` : ''} ${r.title}${weeks(r)}`).join('\n')
     : '- none on file';
   const kinds = KINDS.map(k => `- ${k.id}: ${k.hint}`).join('\n');
+  // No parish yet (an owner's WhatsApp forward): whose it is comes from the
+  // read, through other_parish, so it must be said whenever it can be.
+  const whose = parish.id === '_unassigned'
+    ? `No parish is chosen for this yet. Whenever the image says whose it is (a parish, a monastery, a group), give that in other_parish, as if it were another parish's poster. Time zone ${parish.timezone || 'Australia/Sydney'}.`
+    : `The parish: ${parish.name}${parish.address ? `, ${parish.address}` : ''}. Time zone ${parish.timezone || 'Australia/Sydney'}.`;
   return [
-    `The parish: ${parish.name}${parish.address ? `, ${parish.address}` : ''}. Time zone ${parish.timezone || 'Australia/Sydney'}.`,
+    whose,
     `Today there is ${weekday} ${d} ${MONTHS[m - 1]} ${y}.`,
     `Its regular services:\n${regular}`,
     `Kinds of event:\n${kinds}`,
-    ...(said ? [noteText(said, { image, whatsapp })] : []),
-    image ? 'Read the image.' : 'Read the message.',
+    // Several pictures forwarded at once are one announcement: a programme
+    // photographed page by page, or a poster and its translation. They are
+    // read as the one image the editor joins them into (docs/editing.md).
+    ...(image && pictures > 1 ? [`There are ${pictures} images, sent together as one announcement: read them as one image, as if they were printed side by side. They may be the pages of one programme, one poster and its translation, or a few posters at once. Each event is listed once, however many of them show it, and kind is what they are together.`] : []),
+    ...(said ? [noteText(said, { image, whatsapp, pictures })] : []),
+    image ? (pictures > 1 ? 'Read the images.' : 'Read the image.') : 'Read the message.',
   ].join('\n\n');
 }
 
 /** The sender's words, framed by where they came from. */
-function noteText(said, { image, whatsapp }) {
+function noteText(said, { image, whatsapp, pictures = 1 }) {
   const quoted = `\n"""\n${said}\n"""`;
   if (!image) {
     return `There is no image: this is a message sent to Agora on WhatsApp, often an announcement forwarded from a parish group. Read it as you would a poster — what it says is what the poster would print. If it announces nothing (a greeting, a question), the kind is not_an_event.${quoted}`;
   }
   if (whatsapp) {
-    return `The words this image came with on WhatsApp — usually the announcement's own, forwarded from a parish group. Read them with the image: they may give what the image leaves out (a time, a place, a description), or say which of its events is meant. Where the two disagree, the image wins.${quoted}`;
+    const these = pictures > 1 ? 'these images' : 'this image';
+    const them = pictures > 1 ? 'the images' : 'the image';
+    return `The words ${these} came with on WhatsApp — usually the announcement's own, forwarded from a parish group. Read them with ${them}: they may give what ${them} ${pictures > 1 ? 'leave' : 'leaves'} out (a time, a place, a description), or say which of ${pictures > 1 ? 'their' : 'its'} events is meant. Where the two disagree, ${them} ${pictures > 1 ? 'win' : 'wins'}.${quoted}`;
   }
   return `What the person sending this poster wrote beside it. Their words: they may say which event they mean, or add what the poster leaves out. What the poster prints is still read from the poster.${quoted}`;
 }
 
-/** The Messages API request body. */
-export function buildPosterRequest({ data, mediaType, context }) {
+/**
+ * The Messages API request body. One image (`data`, `mediaType`), several
+ * (`images`: [{ data, mediaType }], in the order they were sent), or none.
+ */
+export function buildPosterRequest({ data, mediaType, images = null, context }) {
   // No image: a WhatsApp message of words only, which the context carries.
-  const image = data ? [{ type: 'image', source: { type: 'base64', media_type: mediaType, data } }] : [];
+  const list = images || (data ? [{ data, mediaType }] : []);
+  const image = list.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.mediaType, data: i.data } }));
   return {
     model: POSTER_MODEL,
     max_tokens: 16000,
@@ -367,6 +382,7 @@ export function readFailure(status) {
  * @param {string} [o.baseUrl]  for `wrangler dev` against a local stand-in
  * @param {ArrayBuffer|Uint8Array|null} o.image  null for a message of words only
  * @param {string} o.mediaType
+ * @param {{bytes: ArrayBuffer|Uint8Array, mediaType: string}[]} [o.images]  several, read as one (in place of image)
  * @param {string} o.context    posterContext()
  * @param {Function} [o.fetchImpl]
  * @param {(event: string, payload: object) => void} emit
@@ -379,9 +395,10 @@ export async function readPoster(o, emit = () => {}) {
   const started = Date.now();
   const ms = () => Date.now() - started;
   const fetchImpl = o.fetchImpl || fetch;
+  const b64 = (bytes) => Buffer.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes).toString('base64');
+  const list = o.images && o.images.length ? o.images : (o.image ? [{ bytes: o.image, mediaType: o.mediaType }] : []);
   const body = buildPosterRequest({
-    data: o.image ? Buffer.from(o.image instanceof ArrayBuffer ? new Uint8Array(o.image) : o.image).toString('base64') : null,
-    mediaType: o.mediaType,
+    images: list.map(i => ({ data: b64(i.bytes), mediaType: i.mediaType })),
     context: o.context,
   });
 

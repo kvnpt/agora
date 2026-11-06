@@ -1923,7 +1923,7 @@ export function registerAdminRoutes(router) {
     const r = await draftInScope(c, c.params.id);
     if (r.response) return r.response;
     await c.env.DB.prepare('DELETE FROM drafts WHERE id = ?').bind(r.draft.id).run();
-    await releaseUnused(c.env, [r.draft.poster_path]);
+    await releaseUnused(c.env, [r.draft.poster_path, ...r.draft.images]);
     return json({ ok: true });
   }));
 
@@ -1958,12 +1958,51 @@ export function registerAdminRoutes(router) {
     const r = await draftInScope(c, c.params.id);
     if (r.response) return r.response;
     await c.env.DB.prepare(
-      `UPDATE drafts SET poster_path = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
+      `UPDATE drafts SET poster_path = NULL, images = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
          read_parish = NULL, read_language = NULL, read_services = NULL, read_details = NULL,
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
     ).bind(r.draft.id).run();
-    await releaseUnused(c.env, [r.draft.poster_path]);
+    await releaseUnused(c.env, [r.draft.poster_path, ...r.draft.images]);
     return json(await getDraft(c.env.DB, r.draft.id));
+  }));
+
+  // The pictures of a WhatsApp forward, joined into one poster by the editor
+  // (public/shared/event-editor.js joinPictures). They were read together
+  // when they came (routes/ingest.mjs), so the read stands: only the poster
+  // changes, from the first picture to all of them side by side, and the
+  // pictures go once nothing shows them. `?from=` is the poster the editor
+  // joined from; a draft that has moved on since — joined already in another
+  // tab, or given another poster — is 409, and this join is thrown away.
+  router.put('/api/admin/drafts/:id/poster', guarded('event.edit', async (c) => {
+    const { env, request } = c;
+    if (!env.ASSETS_BUCKET) return json({ error: 'Asset storage not configured' }, 503);
+    const r = await draftInScope(c, c.params.id);
+    if (r.response) return r.response;
+    const draft = r.draft;
+    const from = c.query.get('from') || '';
+    if (!draft.images.length || from !== draft.poster_path) {
+      return json({ error: 'This draft’s pictures were put together already.', draft }, 409);
+    }
+    const mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const ext = POSTER_TYPES[mediaType];
+    if (!ext) return json({ error: 'A poster has to be a JPEG, PNG, WebP or GIF image.' }, 415);
+    const bytes = await request.arrayBuffer();
+    if (!bytes.byteLength) return json({ error: 'No image received' }, 400);
+    if (bytes.byteLength > 5 * 1024 * 1024) return json({ error: 'That image is over 5 MB.' }, 413);
+    const key = draftPosterKey(draft.parish_id, ext);
+    await env.ASSETS_BUCKET.put(key, bytes, {
+      httpMetadata: { contentType: mediaType, cacheControl: 'public, max-age=86400' },
+    });
+    const done = await env.DB.prepare(
+      `UPDATE drafts SET poster_path = ?, images = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+       WHERE id = ? AND poster_path = ? AND images IS NOT NULL`
+    ).bind(`/${key}`, draft.id, from).run();
+    if (!(done.meta && done.meta.changes)) {
+      await env.ASSETS_BUCKET.delete(key);
+      return json({ error: 'This draft’s pictures were put together already.', draft: await getDraft(env.DB, draft.id) }, 409);
+    }
+    await releaseUnused(env, [from, ...draft.images]);
+    return json(await getDraft(env.DB, draft.id));
   }));
 
   // Store a poster on a draft and read it, streaming what is read.
@@ -1984,7 +2023,7 @@ export function registerAdminRoutes(router) {
     if (r.response) return r.response;
     const draft = r.draft;
 
-    let bytes = null, mediaType = null;
+    let bytes = null, mediaType = null, images = null;
     if (c.query.get('reread') === '1') {
       const key = posterKeyOf(draft.poster_path);
       const obj = key && await env.ASSETS_BUCKET.get(key);
@@ -1994,6 +2033,14 @@ export function registerAdminRoutes(router) {
       if (obj) {
         bytes = await obj.arrayBuffer();
         mediaType = (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
+      }
+      // A forward's pictures not yet joined are read together, as they came.
+      if (obj && draft.images.length) {
+        images = [{ bytes, mediaType }];
+        for (const path of draft.images) {
+          const more = posterKeyOf(path) && await env.ASSETS_BUCKET.get(posterKeyOf(path));
+          if (more) images.push({ bytes: await more.arrayBuffer(), mediaType: (more.httpMetadata && more.httpMetadata.contentType) || 'image/jpeg' });
+        }
       }
     } else {
       mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -2009,15 +2056,15 @@ export function registerAdminRoutes(router) {
       await env.ASSETS_BUCKET.put(key, bytes, {
         httpMetadata: { contentType: mediaType, cacheControl: 'public, max-age=86400' },
       });
-      const previous = draft.poster_path;
+      const previous = [draft.poster_path, ...draft.images].filter(Boolean);
       draft.poster_path = `/${key}`;
       await env.DB.prepare(
-        `UPDATE drafts SET poster_path = ?, read_status = NULL, read_kind = NULL, read_notes = NULL,
+        `UPDATE drafts SET poster_path = ?, images = NULL, read_status = NULL, read_kind = NULL, read_notes = NULL,
            read_parish = NULL, read_language = NULL, read_services = NULL, read_details = NULL,
            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
       ).bind(draft.poster_path, draft.id).run();
-      // A replaced poster goes once nothing shows it.
-      if (previous) await releaseUnused(env, [previous]);
+      // A replaced poster (and any pictures waiting to join it) goes once nothing shows it.
+      if (previous.length) await releaseUnused(env, previous);
     }
 
     const apiKey = await readSecret(env.ANTHROPIC_API_KEY);
@@ -2044,7 +2091,7 @@ export function registerAdminRoutes(router) {
       // A poster forwarded on WhatsApp is read again with what came with it.
       const whatsapp = draft.source === 'whatsapp';
       const read = await readIntoDraft(env, draft, {
-        apiKey, bytes, mediaType, send, whatsapp, note: whatsapp ? draft.message_text || '' : '',
+        apiKey, bytes, mediaType, images, send, whatsapp, note: whatsapp ? draft.message_text || '' : '',
       });
       if (!read.ok) {
         send('error', { error: read.error, retry: read.retry });
