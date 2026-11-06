@@ -80,7 +80,7 @@
   // ── State ─────────────────────────────────────────────────────────────
 
   const S = {
-    mapCard: null,           // the card the map is in (Show on map): { el, ids }
+    mapCard: null,           // the card of parishes the map is in: { el, ids }
     parishes: [],
     byId: new Map(),
     rules: [],               // the bundle's schedules, parish fields joined
@@ -91,7 +91,6 @@
     bounds: null,
     juris: null,             // a jurisdiction, or several from the filters: url-state.js's shape
     f: null,                 // the filters, in the app's shape (blankFilters)
-    focus: null,             // { title, ids:Set } — a collection no link can name, on the map
     loadedTo: null,          // the last day the bundle holds
     loads: 0,                // bumped as the bundle widens
     panel: null,             // the filters open under their button: { pushed }
@@ -547,7 +546,6 @@
     return true;
   }
   function parishPasses(p) {
-    if (S.focus && !S.focus.ids.has(p.id)) return false;
     return parishMatches(p, S.f, S.juris);
   }
   const visible = (e) => !e.is_tombstone && (!e.status || e.status === 'approved') && !e.break_from && !e.combined_into_event_id;
@@ -572,9 +570,8 @@
     const ids = isRule ? [row.parish_id] : eventParishIds(row);
     return ids.some(id => isFav(id) || !!(f && f.parishIds && f.parishIds.has(id)));
   }
-  /** Does an event answer the page's filters, and the collection on the map if there is one? */
+  /** Does an event answer the page's filters? */
   function eventPasses(e, opts) {
-    if (S.focus && !eventParishIds(e).some(id => S.focus.ids.has(id))) return false;
     return eventMatches(e, S.f, S.juris, opts);
   }
   /** Does an event answer these filters? A collection asks it of its own. */
@@ -611,7 +608,7 @@
     return eventParishIds(e).some(id => S.inView && S.inView.has(id));
   }
   // A chip each: each jurisdiction and each day its own.
-  const filterCount = () => { const f = S.f; return !!S.focus + jList(S.juris).length + window.AgoraServices.daysOf(f.day).length + [f.kind, f.lang, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
+  const filterCount = () => { const f = S.f; return jList(S.juris).length + window.AgoraServices.daysOf(f.day).length + [f.kind, f.lang, f.dayGroup, f.part, f.service, f.location, f.monasteries, f.parishIds, f.timesOnly].filter(Boolean).length; };
   const filtersOn = () => filterCount() > 0;
 
   // ── Links ─────────────────────────────────────────────────────────────
@@ -733,7 +730,7 @@
   function settle() {
     ignorePops = 0;
     clearTimeout(popTimer);
-    // What waited is written now: a step of its own (Show on map) leaves the
+    // What waited is written now: a step of its own leaves the
     // entry landed on as it was. With nothing waiting, that entry takes what
     // changed under the card (the filters screen), as the page is now.
     const waiting = afterPop.splice(0);
@@ -805,6 +802,19 @@
   }
 
   /**
+   * A saved view, from Your lists, is a card (Kevin, 6 Nov 2026): the one its
+   * link opens, or, for jurisdictions or a place alone (/greek+serbian),
+   * which the page's map would only turn to, a card of the parishes it
+   * means, as a list's is. Its filters stay in it.
+   */
+  function openView(path) {
+    if (panelOpen()) setPanel(false);
+    const route = readPath(path);
+    if (opensCard(route, path)) return openRoute(route, path);
+    openInView({ link: route, view: path });
+  }
+
+  /**
    * Does an address open a card? A parish, an event, the donations, a
    * search's words, a collection (/sun/liturgy, /greek), or parishes asked
    * something (/smg+smk/feast, /wed/evening, a date). A card's filters are
@@ -821,7 +831,6 @@
   function applyPage(route, { animate = true } = {}) {
     S.juris = route.juris;
     S.f = route.f;
-    S.focus = null;
     refilter({ url: 'none' });
     frameRoute(route, animate);
   }
@@ -836,7 +845,8 @@
    * it, in front of the parish's own, plain card.
    */
   function openRoute(route, path, { entry = true, animate = true } = {}) {
-    frameRoute(route, animate);
+    // A parish's card leaves the page's map looking at it; a card of parishes takes the map itself.
+    if (route.parish || route.eventId || route.donate) frameRoute(route, animate);
     if (route.parish && route.focus) return openMatch(route.parish, route.focus, { entry, from: route.from });
     if (route.parish) return openParish(route.parish, { entry, from: route.from, focus: null });
     if (route.eventId) return openEvent(route.eventId, { entry });
@@ -1056,9 +1066,9 @@
 
   function syncMap() {
     if (!map) return;
-    // In a card (Show on map), the card's parishes and nothing of the page's.
+    // In a card, the card's parishes and nothing of the page's.
     const own = S.mapCard;
-    const dim = S.juris || S.focus || filtersOn();
+    const dim = S.juris || filtersOn();
     mapState.parishes = own ? S.parishes.filter(p => own.ids.has(p.id)) : dim ? S.parishes.filter(parishPasses) : S.parishes;
     mapState.events = own ? feedFor(2).filter(e => eventParishIds(e).some(id => own.ids.has(id))) : feedFor(2);
     mapState.locationActive = !!S.loc;
@@ -1100,74 +1110,115 @@
     renderInView();
     renderFeeds();
   }
-  function fitTo(ids, animate = true, around = S.loc) {
+  function fitTo(ids, animate = true, around = S.loc, padding = 40) {
     const ps = [...ids].map(id => S.byId.get(id)).filter(p => p && isFinite(p.lat) && p.lat != null);
     if (!ps.length || !map) return;
     const near = around ? ps.filter(p => km(around, p) < 60) : [];
     const use = near.length >= 3 ? near : ps;
     const b = new maplibregl.LngLatBounds();
     use.forEach(p => b.extend([p.lng, p.lat]));
-    map.fitBounds(b, { padding: 40, maxZoom: 13, duration: animate ? 600 : 0 });
+    map.fitBounds(b, { padding, maxZoom: 13, duration: animate ? 600 : 0 });
   }
 
   // ── A card's own map ──────────────────────────────────────────────────
   //
-  // Show on map, on a card: the page's one map moves into the top of the
-  // card and shows that card's parishes alone, the list scrolling under it,
-  // as Google's and Apple's lists open on their map. Closing the card, or
-  // Hide map, puts it back on the page as it was: its view, its filters, its
-  // shelves, none of which a card ever touches (Kevin, 6 Nov 2026). One map
-  // moved, not a second one: a phone keeps one WebGL map and its tiles.
+  // Every card of parishes (a collection, a list, a saved view, a link's, a
+  // search's, In view) has the map at its top, showing its parishes and no
+  // others, the list scrolling under it, as Google's and Apple's lists open
+  // on their map (Kevin, 6 Nov 2026). Closing it puts the map back on the
+  // page as it was: its view, its filters, its shelves, none of which a card
+  // ever touches. One map moved, not a second one: a phone keeps one WebGL
+  // map and its tiles. On a wide screen the card is a panel beside the
+  // page's map, in full view: the map stays where it is, over the dimmed
+  // page, and is the card's until it closes (`beside`).
 
-  let pageView = null;
+  let pageView = null, pageScroll = null;
+  const viewOf = () => { const c = map.getCenter(); return { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() }; };
+  const pinned = (ids) => ids.some(id => { const p = S.byId.get(id); return p && p.lat != null && isFinite(p.lat); });
+  /** The map where it belongs: in the top card of parishes with any to show, else on the page. */
+  function mapFollow() {
+    if (!map) return;
+    const el = stack.filter(x => x._coll && pinned(x._coll.ids)).pop();
+    if (!el) mapToPage();
+    else if (!S.mapCard || S.mapCard.el !== el) mapToCard(el);
+  }
   function mapToCard(el) {
     if (document.body.classList.contains('map-full')) setFullscreen(false);
     if (S.mapCard) mapToPage({ view: false });
-    else {
-      const c = map.getCenter();
-      pageView = { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+    // Where the page's map was looking, kept while cards have it.
+    map.stop();
+    if (!pageView) pageView = viewOf();
+    const beside = WIDE.matches;
+    if (beside) {
+      // The page's map in view, above the scrim, its full screen not the card's.
+      if (pageScroll == null) pageScroll = window.scrollY;
+      window.scrollTo({ top: 0 });
+      document.body.classList.add('map-beside');
+      besideRoom();
+    } else {
+      const box = document.createElement('div');
+      box.className = 'card-map';
+      el.querySelector('.glassbar').after(box);
+      box.appendChild($('#map'));
+      // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
+      box.appendChild($('#btn-filters'));
+      el.classList.add('has-map');
     }
-    const box = document.createElement('div');
-    box.className = 'card-map';
-    el.querySelector('.glassbar').after(box);
-    box.appendChild($('#map'));
-    // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
-    box.appendChild($('#btn-filters'));
-    el.classList.add('has-map');
-    S.mapCard = { el, ids: new Set(el._coll.ids) };
+    S.mapCard = { el, ids: new Set(el._coll.ids), beside };
     map.resize();
     syncMap();
-    // Those near where you are, else near where the page's map was looking.
-    fitTo(el._coll.ids, false, S.loc || (pageView && { lng: pageView.center[0], lat: pageView.center[1] }));
-    mapBtn(el);
+    // Back on a card it was in, where it was there; else those near where
+    // you are, or near where the page's map was looking, clear of the card
+    // beside it.
+    const near = S.loc || { lng: pageView.center[0], lat: pageView.center[1] };
+    if (el._view) map.jumpTo(el._view);
+    else fitTo(el._coll.ids, false, near, beside ? besidePadding() : 40);
+    syncCounts();
+    syncFilterBtns();
   }
+  /** How much of the page's map the card beside it covers (next.css: .sheet at 1080px). */
+  function besideCover() {
+    const r = $('#viewport').getBoundingClientRect();
+    return Math.max(0, r.right - (window.innerWidth - 12 - Math.min(460, window.innerWidth - 24)));
+  }
+  /** Room on the page's map for the card over its right side. */
+  const besidePadding = () => ({ top: 40, bottom: 40, left: 40, right: besideCover() + 40 });
+  /** The map's own buttons out from under the card (next.css: --beside). */
+  function besideRoom() { $('#viewport').style.setProperty('--beside', `${Math.round(besideCover())}px`); }
+  window.addEventListener('resize', () => { if (S.mapCard && S.mapCard.beside) besideRoom(); });
   /** The map back on the page, where it was looking (`view`), unless another card takes it next. */
   function mapToPage({ view = true } = {}) {
     const own = S.mapCard;
     if (!own) return;
+    own.el._view = viewOf();
     S.mapCard = null;
-    $('#viewport').prepend($('#map'));
-    $('#viewport').insertBefore($('#btn-filters'), $('#btn-locate'));
     if (fpop && fpop.btn === $('#btn-filters')) closeFilters();
-    const box = own.el.querySelector('.card-map');
-    if (box) box.remove();
-    own.el.classList.remove('has-map');
-    mapBtn(own.el);
-    map.resize();
-    syncMap();
-    if (view && pageView) { map.jumpTo(pageView); pageView = null; }
-  }
-  /** A card's Show on map, which says Hide map while the map is in it. */
-  function mapBtn(el) {
-    const b = el.querySelector('[data-act="showmap"]');
-    if (!b) return;
-    const on = !!(S.mapCard && S.mapCard.el === el);
-    b.setAttribute('aria-pressed', String(on));
-    const t = b.querySelector('span');
-    if (t) t.textContent = on ? 'Hide map' : 'Show on map';
+    document.body.classList.remove('map-beside');
+    if (!own.beside) {
+      $('#viewport').prepend($('#map'));
+      $('#viewport').insertBefore($('#btn-filters'), $('#btn-locate'));
+      const box = own.el.querySelector('.card-map');
+      if (box) box.remove();
+      own.el.classList.remove('has-map');
+    }
     syncCounts();
     syncFilterBtns();
+    map.resize();
+    syncMap();
+    if (!view) return;
+    if (pageView) { map.jumpTo(pageView); pageView = null; }
+    if (pageScroll != null) { window.scrollTo({ top: pageScroll }); pageScroll = null; }
+    // What it shows again, which it stopped counting while it was away.
+    onView();
   }
+  // A window made wider or narrower than a panel's: the map goes where that one keeps it.
+  WIDE.addEventListener('change', () => {
+    if (!S.mapCard) return;
+    const el = S.mapCard.el;
+    mapToPage({ view: false });
+    el._view = null;
+    mapToCard(el);
+  });
 
   // ── Full screen ───────────────────────────────────────────────────────
 
@@ -1388,7 +1439,7 @@
   function syncCounts() {
     const n = filterCount();
     $$('.fcount').forEach(count => {
-      const card = count.closest('#sheets > .sheet');
+      const card = count.closest('#sheets > .sheet') || besideCard(count);
       const k = card ? cardFilterCount(card) : n;
       count.hidden = !k;
       count.textContent = k;
@@ -1785,7 +1836,7 @@
     const loc = regionOf(f);
     const list = f.listId && listById(f.listId);
     const named = !list && f.parishIds ? [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : [];
-    const where = loc ? ` in ${loc.label}` : list ? ` from ${list.name}` : S.focus ? ` from ${S.focus.title}`
+    const where = loc ? ` in ${loc.label}` : list ? ` from ${list.name}`
       : named.length > 3 ? ` at ${named.length} parishes` : named.length ? ` at ${named.map(p => p.name).join(', ').replace(/, ([^,]*)$/, ' and $1')}` : '';
     const line = where ? what + where : `nearby ${what}`;
     return line.charAt(0).toUpperCase() + line.slice(1);
@@ -1873,16 +1924,16 @@
    * Coming up from `k` (a date from a link, or tomorrow). One parish in view
    * is that parish's card. The page has no feed of its own.
    */
-  function openInView({ at = null, from = null, link = null, entry = true } = {}) {
+  function openInView({ at = null, from = null, link = null, view = null, entry = true } = {}) {
     // From a link (its route), the link's own filters, and the parishes it
     // means wherever they are when it asks something; else (a date alone, or
     // the chip) those the map is showing. From the chip or Today, the map's
     // own filters: it is the map's card.
     const f0 = link ? link.f : S.f, j0 = link ? link.juris : S.juris;
-    const only = link ? null : S.focus;
-    const everywhere = !!link && !!(f0.parishIds || asksWhat(f0) || f0.lang);
+    // A saved view (/greek+serbian) is its parishes wherever they are, as a list is.
+    const everywhere = !!link && !!(view || f0.parishIds || asksWhat(f0) || f0.lang);
     const inView = (p) => everywhere || !S.inView || S.inView.has(p.id);
-    const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && (!only || only.ids.has(p.id)) && parishMatches(p, f, juris)).map(p => p.id);
+    const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && parishMatches(p, f, juris)).map(p => p.id);
     const ids = pick(f0);
     const say = (xs, f, juris) => viewWords(xs, f, juris, { here: !everywhere });
     // One parish is that parish's card, asked what the card would have been:
@@ -1895,8 +1946,8 @@
       // Its own Filters ask again of the same place (pick). Shared, it is
       // those parishes by name under the same filters (/sgr+snb/en-only), not
       // the map's link; from a link, that link, which its address keeps.
-      openCollection(withWords({ id: 'inview', kicker: link ? 'From link' : 'In view', tint: '#475569', ids, f: { ...f0 }, juris: j0,
-        pick, say, ...(link ? { segs: segsFor({ juris: j0, f: f0 }) } : {}) }), { from, entry });
+      openCollection(withWords({ id: 'inview', kicker: view ? 'Your list' : link ? 'From link' : 'In view', tint: view ? VIEW_LOOK.tint : '#475569', ids, f: { ...f0 }, juris: j0,
+        pick, say, ...(link ? { segs: segsFor({ juris: j0, f: f0 }) } : {}), ...(view ? { viewPath: view } : {}) }), { from, entry });
     }
     if (at || from) toDay(stack[stack.length - 1], at || from);
   }
@@ -2055,7 +2106,7 @@
     const el = stack.pop();
     if (!el) return;
     if (fpop && fpop.scope === el) closeFilters();
-    if (S.mapCard && S.mapCard.el === el) mapToPage();
+    mapFollow();
     el.classList.remove('open');
     setTimeout(() => el.remove(), 320);
     if (!stack.length) { $('#scrim').hidden = true; document.body.classList.remove('sheet-open'); }
@@ -3078,11 +3129,11 @@
           <div class="ckind"><span class="ckicker">${esc(c.kicker || '')}</span>${badges.map(badgeHTML).join('')}</div>
           <h1>${esc(c.title)}</h1>
           <div class="chero-acts">
-            <button class="hbtn" type="button" data-act="showmap">${I.map}<span>Show on map</span></button>
-            ${c.listId ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Save as list</span></button>`}
+            ${c.listId || c.viewPath ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Save as list</span></button>`}
             <button class="hbtn" type="button" data-act="share">${I.share}<span>Share</span></button>
             ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
             <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
+            ${c.viewPath ? `<button class="hbtn" type="button" data-act="deleteview">${I.x}<span>Remove</span></button>` : ''}
           </div>
           <p>${esc(c.blurb || '')}${c.listId === 'fav' ? ` <span data-kept>${keptHTML()}</span>` : ''}</p>
         </div>
@@ -3110,6 +3161,7 @@
     el._days = CU_DAYS;
     el._rest = rest;
     watchMore(el);
+    mapFollow();
     // A date further out than the bundle holds fills in once it has it.
     if (from) refreshComingUp(el);
   }
@@ -3132,7 +3184,8 @@
     fitLinks(el);
     watchMore(el);
     if (S.mapCard && S.mapCard.el === el) { S.mapCard.ids = new Set(c.ids); syncMap(); }
-    mapBtn(el);
+    // Filtered down to none on the map, the map goes; widened again, it comes back.
+    mapFollow();
     if (el._from) refreshComingUp(el);
   }
   /**
@@ -3624,9 +3677,7 @@
     const regions = [...REGIONS, ...(f.location && !REGIONS.includes(f.location) ? [f.location] : [])]
       .map(r => fpill('location', r, f.location === r, esc(regionShort(r)))).join('');
     const lists = allLists().filter(l => l.ids.length);
-    // A card shown on the map (Show on map) is its parishes, a pill to let go.
-    const parishes = (S.focus ? fpill('focus', '1', true, esc(S.focus.title)) : '')
-      + fpill('monasteries', '1', f.monasteries, 'Monasteries')
+    const parishes = fpill('monasteries', '1', f.monasteries, 'Monasteries')
       + fpill('timesOnly', '1', f.timesOnly, 'With service times')
       + lists.map(l => fpill('list', l.id, f.listId === l.id, `${l.fav ? '<span class="fstar" aria-hidden="true">★</span>' : ''}${esc(l.name)}`)).join('');
     return group('What', ...kindLines(f, SV)) + group('Language', langs) + group('Days', days, spans, parts)
@@ -3661,7 +3712,8 @@
         <div class="fbody">${lines.filter(Boolean).join('<span class="fbreak"></span>')}</div></div>`;
   }
   /** Whose a Filters button is: the card it is in, or the page's. */
-  const scopeOf = (b) => b.closest('#sheets > .sheet') || 'page';
+  const besideCard = (b) => (S.mapCard && S.mapCard.beside && b.closest('#btn-filters') ? S.mapCard.el : null);
+  const scopeOf = (b) => b.closest('#sheets > .sheet') || besideCard(b) || 'page';
   /** How many a card's Filters ask. */
   const cardFilterCount = (el) => (el._coll ? collFilterCount(el._coll) : focusCount(el._focus));
   function openFilters(btn, scope) {
@@ -3780,7 +3832,6 @@
       S.juris = window.AgoraUrlState.jurisdictionValue(js.includes(v) ? js.filter(j => j !== v) : [...js, v]);
     }
     else if (k === 'location') flip(k, v);
-    else if (k === 'focus') S.focus = null;
     else if (k === 'timesOnly' || k === 'monasteries') f[k] = !f[k];
     else if (k === 'list') {
       const l = f.listId === v ? null : listById(v);
@@ -4152,7 +4203,7 @@
       afterMarks();
       return;
     }
-    if ((b = t.closest('[data-view]'))) { go(b.dataset.view); return; }
+    if ((b = t.closest('[data-view]'))) { openView(b.dataset.view); return; }
     if ((b = t.closest('[data-parish]'))) {
       // An event's Parish, over that parish's own card, is a step back to it.
       const top = stack[stack.length - 1], under = stack[stack.length - 2];
@@ -4224,7 +4275,7 @@
         rememberQuery(searchState.q);
         return openCollection({ id: 'search', title: `“${searchState.q}”`, kicker: 'Search', blurb: `Parishes matching “${searchState.q}”.`, tint: '#475569', ids: searchState.ps.map(p => p.id) });
       }
-      if (a === 'clear-filters') { S.f = blankFilters(); S.juris = null; S.focus = null; refilter(); return; }
+      if (a === 'clear-filters') { S.f = blankFilters(); S.juris = null; refilter(); return; }
       if (a === 'filters-done') { setPanel(false); return; }
       if (a === 'save-view') {
         const path = pathOf(viewSegs());
@@ -4260,19 +4311,12 @@
         popSheet();
         return;
       }
-      if (a === 'showmap') {
-        const c = top._coll;
-        // Its own map, in the card. A jurisdiction's card is its tab, the
-        // map's own filter, so its Show on map is the tab (Kevin, 6 Nov
-        // 2026). With no map (lite), the page's map takes the card's.
-        if (map && !/^j-/.test(c.id || '')) { if (S.mapCard && S.mapCard.el === top) mapToPage(); else mapToCard(top); return; }
-        // One with a link is its filters, and the page takes them; one without is its parishes.
-        if (c.segs) { S.juris = c.juris || null; S.f = { ...c.f }; S.focus = null; }
-        else S.focus = { title: c.title, ids: new Set(c.ids) };
-        closeAll();
-        refilter();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        fitTo(c.ids);
+      if (a === 'deleteview') {
+        const path = top._coll.viewPath;
+        if (path && isSavedView(path)) toggleSavedView(path);
+        renderLists();
+        popSheet();
+        toast('Removed from your lists');
         return;
       }
       if (a === 'savelist') {

@@ -149,20 +149,22 @@ on comes before what does not follow them. Every Filters (the map's, the dock's,
 a card's) pops out of its button as the toolbar's ⋯ does (`openFilters`): a
 heading per question saying what it is set to, one open at a time. The map's
 button goes where the map goes, and in a card it asks the card's. Collections and Languages are every
-jurisdiction's whatever the map says; `/greek` is the Greek card, whose Show on
-map is the Greek tab. A collection's own Filters ask what its link does not
+jurisdiction's whatever the map says; `/greek` is the Greek card. A collection's own Filters ask what its link does not
 (`ownAsks`): Sunday Liturgy's offer time of day, language and jurisdiction but
 no What or days, so it stays Sunday Liturgy; a language's offers "only"; Clear
 all is the collection as its link has it. A jurisdiction is narrowed inside a
 collection's card (`jurisOffer`). In view, a link's card and a list ask
-everything. Show on map moves the page's one map into the top of the card
-(`mapToCard`), showing that card's parishes alone, framed near where you are or
-where the page's map was looking; Hide map, closing the card or the back button
-puts it back on the page as it was (`mapToPage`), and the page's map, filters
-and shelves never see the card's (Kevin, 6 Nov 2026). A jurisdiction's card is
-the exception: its Show on map is its tab. With no map (lite), Show on map hands
-the card to the page's map as it used to: a card with a link gives it its
-filters, one without its parishes, which the panel names and lets go. A timetable line opens
+everything. Every card of parishes (a collection, a jurisdiction's, a list,
+a saved view, a link's, a search's, In view) has the page's one map at its
+top, showing its parishes and no others (`mapFollow`, `mapToCard`): there is
+no Show on map (Kevin, 6 Nov 2026). It is framed near where you are or where
+the page's map was looking; closing the card or the back button puts it back
+on the page as it was (`mapToPage`), and the page's map, filters and shelves
+never see the card's. On a wide screen the card is a panel and the map stays
+on the page beside it, in front of the scrim, its buttons clear of the panel
+(`beside`). A saved view from Your lists opens its card (`openView`): the one
+its link opens, or for jurisdictions or a place alone (`/greek+serbian`) a
+card of every parish it means, wherever they are. A timetable line opens
 its own card (`openLine`): the line's next date with its later dates under it,
 over the card it was tapped on, which stays as it was. Its link asks what the
 line is (`lineFocus`: `/smg/sun/liturgy`, `/spp/sun/liturgy/en-only` where the

@@ -143,7 +143,7 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
   return {
     status: 200, head,
     // A collection's link opens its card (next.js); any other mix of filters is the page itself.
-    card: m.collection && m.groups.length ? collectionCardHTML(m, { rules: rows.rules }) : '',
+    card: m.collection && m.groups.length ? collectionCardHTML(m, { rules: rows.rules, map: true }) : '',
   };
 }
 

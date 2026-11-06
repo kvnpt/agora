@@ -201,11 +201,18 @@ body.docked .dock { transform: none; visibility: visible; }
   isolation: isolate;
 }
 #map { position: absolute; inset: 0; touch-action: none; }
-/* A card's own map (Show on map): the page's map, moved in at the top of the
+/* A card of parishes' own map: the page's map, moved in at the top of the
    card under its glass bar, the card's list scrolling under it (Kevin, 6 Nov
-   2026). Back on the page when the card goes (next.js, mapToPage). */
+   2026). Back on the page when the card goes (next.js, mapFollow). */
 .card-map { position: relative; flex: none; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
 .card-map .map-filters { top: auto; bottom: 10px; right: 10px; }
+/* On a wide screen the card is a panel, and the page's map beside it is the
+   card's: in front of the dimmed page, to pan and tap, its full screen not
+   the card's (next.js, mapToCard). */
+body.map-beside .viewport { z-index: 41; }
+body.map-beside .map-fs { display: none; }
+body.map-beside .viewport :is(.map-filters, .map-locate) { right: calc(var(--beside, 0px) + 16px); }
+body.map-beside .viewport .map-filters { top: 16px; }
 /* Its frame: a dark hairline, and inside it a white glow you can see. The
    dark scheme has the hairline alone: a white glow there is a smudge. */
 .viewport::after {
@@ -1068,7 +1075,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   background: rgba(255, 255, 255, .18); font-weight: 650; font-size: 14.5px;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
-/* A label that wraps ("Show on map" beside three others) stays centred under
+/* A label that wraps ("Save as list" beside two others) stays centred under
    its icon, and the icons stay level along the row. */
 .hbtn span { text-align: center; line-height: 1.2; }
 /* Every head but a jurisdiction's is its tint (.soft): the words in the
@@ -1950,6 +1957,9 @@ body.dialog-open { overflow: hidden; }
   .sheet::before { display: none; }
   .sheet-scroll { padding-bottom: 24px; }
   .scrim { background: rgba(0, 0, 0, .18); }
+  /* The map is beside a card here, not in it: a painted card keeps no room for it. */
+  .sheet.ssr .card-map { display: none; }
+  .sheet.ssr.has-map .chero { padding-top: calc(84px + var(--sat)); }
 }
 
 /* The way to the lite version (public/lite.html), small, at the foot. */
