@@ -417,6 +417,14 @@ published: the draft waits for a person, like any other. What is worth knowing:
   Otherwise the editor's picker chooses.
 - **Who sent it** is their WhatsApp name (`drafts.sender_name`, 037), not the
   start of the account's email.
+- **A phone nobody linked makes a suggestion, not a draft**
+  (docs/people-and-access.md, "A phone on WhatsApp"): the same grouping, the
+  same read (`readForSuggestion`, which writes nothing and moves it to whose
+  poster it is, since anybody may suggest anywhere), and words typed after it
+  are added to it the same way. **Start a draft** from it is then a forwarded
+  poster's draft: `source = 'whatsapp'`, their words as `message_text`, a
+  forward's other pictures in `drafts.images` (from `parish_suggestions.images`,
+  migration 038), already seen by whoever started it.
 - **Unopened, it shows.** `drafts.source = 'whatsapp'` and `seen_at` NULL:
   a red count on the parish card's + for whoever may edit the parish (one
   waiting opens it; several open the editor, which lists them), and a line on

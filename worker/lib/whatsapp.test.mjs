@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import {
   verifySignature, messagesOf, kindOf, groupOf, picturesFor, codeIn, newCode, parishNamed, maskPhone,
   readSummary, draftLink, linkUrl, fetchMedia, WHATSAPP_DDL, GRAPH,
+  phoneIdentity, phoneOfIdentity, chatUrl, ticketIn, ticketText, ticketUrl, newSecret, keeperOf,
 } from './whatsapp.mjs';
 
 const require = createRequire(import.meta.url);
@@ -109,6 +110,32 @@ test('a link code, as the account menu writes it or as six digits', () => {
   assert.equal(linkUrl('15551234567', '004211'), 'https://wa.me/15551234567?text=LINK%20004211');
 });
 
+test('a phone with no account is its own sender, never an address', () => {
+  assert.equal(phoneIdentity('61412345678'), 'wa:61412345678');
+  assert.equal(phoneIdentity('+61 412 345 678'), 'wa:61412345678');
+  assert.equal(phoneOfIdentity('wa:61412345678'), '61412345678');
+  assert.equal(phoneOfIdentity('kevin@example.com'), null);
+  assert.equal(phoneOfIdentity('wa:'), null);
+  assert.equal(phoneOfIdentity('wa:abc@example.com'), null, 'an address that starts so is still an address');
+  assert.equal(chatUrl('61412345678'), 'https://wa.me/61412345678');
+  assert.equal(keeperOf({ id: 'snp', name: 'St Nicholas, Punchbowl' }), 'whoever keeps St Nicholas, Punchbowl');
+  assert.equal(keeperOf({ id: '_unassigned', name: 'Unassigned' }), null);
+});
+
+test('the Suggest dialog’s code, only in the message it writes', () => {
+  const said = ticketText('St Nicholas, Punchbowl', '482193');
+  assert.equal(said, 'Send my suggestion for St Nicholas, Punchbowl. Code: 482 193');
+  assert.equal(ticketIn(said), '482193');
+  assert.equal(ticketIn('send my suggestion code 482193'), '482193', 'however it was retyped');
+  assert.equal(ticketIn('Liturgy on Zoom. Access code: 482 193'), null, 'a forwarded announcement’s code is its own');
+  assert.equal(ticketIn('LINK 482193'), null, 'a link code is not one');
+  assert.equal(ticketIn('Send my suggestion. Code: 482 1934'), null);
+  assert.equal(ticketUrl('15551234567', 'St Elias', '000111'),
+    `https://wa.me/15551234567?text=${encodeURIComponent('Send my suggestion for St Elias. Code: 000 111')}`);
+  assert.match(newSecret(), /^[0-9a-f]{32}$/);
+  assert.notEqual(newSecret(), newSecret());
+});
+
 test('a parish named by its link, or by words that are only its link', () => {
   const ps = [{ id: 'snp', acronym: 'SNP' }, { id: 'smg', acronym: 'S MG' }, { id: 'none', acronym: null }];
   assert.equal(parishNamed('Details at orthodoxy.au/snp', ps), 'snp');
@@ -154,11 +181,38 @@ test('the first-use DDL builds the same tables as the baseline', () => {
   base.exec(fs.readFileSync('d1/schema.sql', 'utf8'));
   const lazy = new Database(':memory:');
   for (const sql of WHATSAPP_DDL) lazy.exec(sql);
-  const tables = ['whatsapp_links', 'whatsapp_codes', 'whatsapp_messages'];
+  const tables = ['whatsapp_links', 'whatsapp_codes', 'whatsapp_messages', 'whatsapp_tickets'];
   for (const t of tables) {
     const cols = (db) => db.prepare(`PRAGMA table_info(${t})`).all();
     assert.deepEqual(cols(lazy), cols(base), t);
   }
   const idx = (db) => db.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN (${tables.map(t => `'${t}'`).join(',')}) ORDER BY name`).all();
   assert.deepEqual(idx(lazy), idx(base));
+});
+
+test('a database made before 038 gets its columns on first use, so a deploy ahead of the migration reads every message', async () => {
+  const { ensureWhatsappTables } = await import('./whatsapp.mjs');
+  const { ensureSuggestionsTable, SUGGESTIONS_DDL } = await import('./suggestions.mjs');
+  const raw = new Database(':memory:');
+  raw.exec('CREATE TABLE parishes (id TEXT PRIMARY KEY)');
+  // As 036 and 024 made them.
+  raw.exec(WHATSAPP_DDL.find(s => s.includes('whatsapp_messages (')).replace(/,\s*suggestion_id INTEGER/, ''));
+  raw.exec(SUGGESTIONS_DDL[0].replace(/,\s*images\s+TEXT/, ''));
+  const has = (t, c) => raw.prepare(`PRAGMA table_info(${t})`).all().some(x => x.name === c);
+  assert.equal(has('whatsapp_messages', 'suggestion_id'), false);
+  assert.equal(has('parish_suggestions', 'images'), false);
+  const db = {
+    prepare: (sql) => {
+      const bind = (...a) => ({
+        all: async () => ({ results: raw.prepare(sql).all(...a) }),
+        run: async () => raw.prepare(sql).run(...a),
+      });
+      return { ...bind(), bind };
+    },
+    batch: async (stmts) => { for (const s of stmts) await s.run(); },
+  };
+  await ensureWhatsappTables(db);
+  await ensureSuggestionsTable(db);
+  assert.equal(has('whatsapp_messages', 'suggestion_id'), true);
+  assert.equal(has('parish_suggestions', 'images'), true);
 });

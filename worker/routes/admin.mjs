@@ -15,7 +15,7 @@ import { exactLocalToEpoch, localDateOf, localSpanToUtc } from '../../public/sha
 import { applyAdminEdit, hideInstance, setCombined, clearCombined } from '../lib/overrides.mjs';
 import { validateClaim, alreadyCovers, planGrant, describeClaim, ensureClaimsTable } from '../lib/claims.mjs';
 import { validateSuggestion, describeSuggestion, cardFromSuggestion, scopeClause, ensureSuggestionsTable,
-  formFromRead, suggestionPosterKey, OPEN_LIMIT, POSTER_DAILY_LIMIT, POSTER_SWEEP_MS } from '../lib/suggestions.mjs';
+  formFromRead, suggestionPosterKey, imagesOf, OPEN_LIMIT, POSTER_DAILY_LIMIT, POSTER_SWEEP_MS } from '../lib/suggestions.mjs';
 import { ruleChangesFrom, planCarry, carryQuestion, continuation, hasPastBefore, dayBefore, RULE_COLS }
   from '../lib/series.mjs';
 import { readRange, ruleTargets, oneOffTargets, overrideStatements, releaseUnused, posterKeyOf,
@@ -51,7 +51,8 @@ import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
 import { readContext, readIntoDraft } from '../lib/draft-read.mjs';
-import { whatsappConfig, ensureWhatsappTables, newCode, maskPhone, linkUrl, CODE_MINUTES } from '../lib/whatsapp.mjs';
+import { whatsappConfig, ensureWhatsappTables, newCode, maskPhone, linkUrl, CODE_MINUTES, phoneOfIdentity, chatUrl }
+  from '../lib/whatsapp.mjs';
 import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
 import { suggestAcronym } from '../lib/acronym-suggest.mjs';
 
@@ -676,13 +677,22 @@ const posterOwner = (c) => String(c.who.identity).trim().toLowerCase();
  * something else shows it (a draft started from it holds its own reference).
  */
 async function releaseSuggestionPoster(env, suggestionId) {
+  // A WhatsApp forward's other pictures (`images`) go the same way.
+  const s = await env.DB.prepare('SELECT images FROM parish_suggestions WHERE id = ?')
+    .bind(suggestionId).first().catch(() => null);
+  const images = imagesOf(s);
+  if (images.length) {
+    await env.DB.prepare('UPDATE parish_suggestions SET images = NULL WHERE id = ?').bind(suggestionId).run();
+  }
   const sp = await env.DB.prepare(
     'SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ? AND poster_path IS NOT NULL'
   ).bind(suggestionId).first().catch(() => null);
-  if (!sp) return;
-  await env.DB.prepare('UPDATE suggestion_posters SET poster_path = NULL WHERE suggestion_id = ?')
-    .bind(suggestionId).run();
-  await releaseUnused(env, [sp.poster_path]);
+  if (sp) {
+    await env.DB.prepare('UPDATE suggestion_posters SET poster_path = NULL WHERE suggestion_id = ?')
+      .bind(suggestionId).run();
+  }
+  const paths = [...(sp ? [sp.poster_path] : []), ...images];
+  if (paths.length) await releaseUnused(env, paths);
 }
 
 /**
@@ -1000,7 +1010,14 @@ export function registerAdminRoutes(router) {
        WHERE ${where}
        ORDER BY (s.status = 'open') DESC, s.created_at DESC, s.id DESC LIMIT 100`
     ).bind(...binds).all().catch(() => ({ results: [] }));
-    return json((r.results || []).map(s => ({ ...s, summary: describeSuggestion(s, s.parish_name) })));
+    return json((r.results || []).map(s => {
+      // Sent on WhatsApp alone: the number to write back to, in place of an address.
+      const phone = phoneOfIdentity(s.email);
+      return {
+        ...s, images: imagesOf(s), summary: describeSuggestion(s, s.parish_name),
+        ...(phone ? { whatsapp: { phone: `+${phone}`, url: chatUrl(phone) } } : {}),
+      };
+    }));
   }));
 
   /** A suggestion this person may act on, or the response saying why not. */
@@ -1043,7 +1060,11 @@ export function registerAdminRoutes(router) {
     if (r.response) return r.response;
     const s = r.suggestion;
     if (s.kind !== 'event') return json({ error: 'Only a suggested event can become a draft.' }, 400);
-    const v = validateCard(cardFromSuggestion(s));
+    // Sent on WhatsApp alone, it opens as a forwarded poster does: their words
+    // in the editor's WhatsApp box, read again with the poster, rather than
+    // poured into the event's description.
+    const onWhatsapp = !!phoneOfIdentity(s.email);
+    const v = validateCard(onWhatsapp ? { ...cardFromSuggestion(s), description: s.link || null } : cardFromSuggestion(s));
     if (!v.ok) return json({ error: v.error, field: v.field }, 400);
     await ensureDraftTables(c.env.DB);
     await ensureSuggestionsTable(c.env.DB);
@@ -1052,15 +1073,23 @@ export function registerAdminRoutes(router) {
     // Its poster goes with it, and is the draft's from now on: the editor can
     // read it again for anything the suggestion left out, and publishing puts
     // it on the event. The suggestion lets go of it, so a draft discarded
-    // later takes the poster with it rather than leaving it to nobody.
+    // later takes the poster with it rather than leaving it to nobody. A
+    // forward's other pictures go too, for the editor to join into it.
     const sp = await c.env.DB.prepare(
       'SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ? AND poster_path IS NOT NULL'
     ).bind(s.id).first();
-    if (sp) {
+    const [poster = null, ...images] = [...(sp ? [sp.poster_path] : []), ...imagesOf(s)];
+    if (poster || onWhatsapp) {
       await c.env.DB.batch([
-        c.env.DB.prepare("UPDATE drafts SET poster_path = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?")
-          .bind(sp.poster_path, draft.id),
+        c.env.DB.prepare(
+          `UPDATE drafts SET poster_path = ?, images = ?, source = ?, message_text = ?, sender_name = ?,
+             seen_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+        ).bind(poster, images.length ? JSON.stringify(images) : null,
+          onWhatsapp ? 'whatsapp' : null, onWhatsapp ? s.body : null, onWhatsapp ? s.name : null,
+          // Opened by whoever started it, this moment: not one for the + badge.
+          onWhatsapp ? NOW() : null, draft.id),
         c.env.DB.prepare('UPDATE suggestion_posters SET poster_path = NULL WHERE suggestion_id = ?').bind(s.id),
+        c.env.DB.prepare('UPDATE parish_suggestions SET images = NULL WHERE id = ?').bind(s.id),
       ]);
       draft = await getDraft(c.env.DB, draft.id);
     }

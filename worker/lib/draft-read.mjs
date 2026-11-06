@@ -123,3 +123,42 @@ export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, imag
   suggestLanguages(read.read, rules, past);
   return { ok: true, draft: await mergeRead(db, draft.id, read.read), read: read.read, moved };
 }
+
+/**
+ * Read what a phone with no account sent (routes/ingest.mjs) — pictures, or
+ * words alone — for a suggestion rather than a draft. Nothing is written:
+ * the suggestion takes its empty fields from the first event read
+ * (suggestions.mjs fillFromRead), and `parishId` is whose it is. Unless the
+ * sender named the parish (`fixed`), that is the one the read says the
+ * poster is for, when one on file clearly matches; anybody may suggest at
+ * any parish, so no role narrows it.
+ *
+ * @returns {Promise<{ok: true, read: object, parishId: string}|{ok: false, error: string}>}
+ */
+export async function readForSuggestion(env, parishId, { apiKey, images = [], note = '', whatsapp = true, fixed = false }) {
+  const db = env.DB;
+  let { parish, zone, today, rules } = await readContext(db, parishId);
+  const read = await readPoster({
+    apiKey,
+    baseUrl: env.ANTHROPIC_BASE_URL,
+    images,
+    context: posterContext({ id: parishId, ...(parish || {}), timezone: zone }, today, rules, note,
+      { image: images.length > 0, whatsapp, pictures: images.length }),
+  });
+  console.log(JSON.stringify({ poster_read: {
+    suggestion: true, parish: parishId, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),
+    ...(images.length > 1 ? { pictures: images.length } : {}),
+    ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
+  } }));
+  if (!read.ok) return { ok: false, error: read.error };
+  await placeRead(db, read.read, { id: parishId, ...(parish || {}) });
+  const to = !fixed && read.read.parish && read.read.parish.parish_id;
+  if (to && to !== parishId && to !== '_unassigned') {
+    parishId = to;
+    ({ parish, zone, today, rules } = await readContext(db, parishId));
+    await placeRead(db, read.read, { id: parishId, ...(parish || {}) });
+  }
+  afterServices(read.read, rules);
+  suggestEnds(read.read);
+  return { ok: true, read: read.read, parishId };
+}
