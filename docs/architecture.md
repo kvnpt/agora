@@ -128,12 +128,48 @@ in next.js): a step back, or the event's Parish, is the parish. Under the event,
 the others that answer ("More talks"), a season ahead at most (`matchFeedHTML`).
 The event's card keeps the link followed (`segsFor({ parish, focus })`), so sharing
 it shares that. With none on file, the parish's plain card is all there is, at
-`/sgr`, as if the link had named only the parish. A card opened by a
-tap is the parish's, with the focus of where it was (`focusAround`): the collection it was
-in, else the page's filters, so `/talks` then St George is `/sgr/talks`, St George's
-card with every line and date still on it, what answers lit (the next of it in
+`/sgr`, as if the link had named only the parish. A card's own Filters focus it
+(`/sgr/talks`): every line and date still on it, what answers lit (the next of it in
 Today under its day's name) and the rest dimmed, never hidden; its × in Today lets
 it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`).
+
+**A card's filters are that card's** (Kevin, 5 Nov 2026). A link that opens a
+card (`/sun/liturgy`, `/smg+smk/feast`, `/greek`, a date, a search's words) gives
+its filters to the card it opens and never to the page (`opensCard`, `openRoute`
+in next.js): the page under it is plain, and closing it is `/`. A link with no
+card (`/sydney`, `/greek/qld`) is a view of the map (`applyPage`). A history entry
+with no card (`depth` 0) is the map's filters; one with a card reopens the card.
+A card opened from another card, or from the map, starts plain: no parish card
+takes the focus of what was under it; a link that finds one parish opens as that
+parish's own link would (`/smg+smk/feast` with only SMK's ahead is `/smk/feast`).
+The map's own Filters and tabs are the map's, and its Today's, What's on's and
+the In view card's (Kevin, 6 Nov 2026), and no one else's. They are a button on
+the map with how many are on (`syncCounts`), never a row of chips, and What's
+on comes before what does not follow them. Every Filters (the map's, the dock's,
+a card's) pops out of its button as the toolbar's ⋯ does (`openFilters`): a
+heading per question saying what it is set to, one open at a time. The map's
+button goes where the map goes, and in a card it asks the card's. Collections and Languages are every
+jurisdiction's whatever the map says; `/greek` is the Greek card. A collection's own Filters ask what its link does not
+(`ownAsks`): Sunday Liturgy's offer time of day, language and jurisdiction but
+no What or days, so it stays Sunday Liturgy; a language's offers "only"; Clear
+all is the collection as its link has it. A jurisdiction is narrowed inside a
+collection's card (`jurisOffer`). In view, a link's card and a list ask
+everything. Every card of parishes (a collection, a jurisdiction's, a list,
+a saved view, a link's, a search's, In view) has the page's one map at its
+top, showing its parishes and no others (`mapFollow`, `mapToCard`): there is
+no Show on map (Kevin, 6 Nov 2026). It is framed near where you are or where
+the page's map was looking; closing the card or the back button puts it back
+on the page as it was (`mapToPage`), and the page's map, filters and shelves
+never see the card's. On a wide screen the card is a panel and the map stays
+on the page beside it, in front of the scrim, its buttons clear of the panel
+(`beside`). A saved view from Your lists opens its card (`openView`): the one
+its link opens, or for jurisdictions or a place alone (`/greek+serbian`) a
+card of every parish it means, wherever they are. A timetable line opens
+its own card (`openLine`): the line's next date with its later dates under it,
+over the card it was tapped on, which stays as it was. Its link asks what the
+line is (`lineFocus`: `/smg/sun/liturgy`, `/spp/sun/liturgy/en-only` where the
+parish holds that service in another language too), or is its date's own where
+no link can ask for it (a choir practice).
 
 **A word nothing else claims, beside one parish, is a search of it** (Kevin,
 28 Oct 2026). `/smmp/disco` is "disco" asked of St Mary's, read as the search

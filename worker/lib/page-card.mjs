@@ -376,9 +376,11 @@ export function eventCardHTML(m) {
  * look, then its parishes, each with its timetable, folded behind a stack of
  * their logos (a checkbox in its label, so it opens with no script). `rules` is every active rule, since a
  * card shows a parish's whole week. What is coming up under them is the
- * page's to add, once it holds the occurrences.
+ * page's to add, once it holds the occurrences. `map`: the room at its top
+ * the page's map moves into (next.js mapToCard), kept so nothing jumps
+ * when it comes; the lite version has no map.
  */
-export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes = [] } = {}) {
+export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes = [], map = false } = {}) {
   const c = m.collection;
   const colorOf = (j) => jurisColors.jurisdictionColorFrom(m.overrides, j);
   // The Calendar's rows each in the colour of where they are held: the venue
@@ -414,7 +416,7 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes
         ${tt}
       </article>`;
   };
-  return sheet('collection', c.title, '', `${glassBar(c.title, `${ps.length} places`)}
+  return sheet(map ? 'collection has-map' : 'collection', c.title, '', `${glassBar(c.title, `${ps.length} places`)}${map ? '<div class="card-map" aria-hidden="true"></div>' : ''}
     <div class="sheet-scroll">
       <div class="chero${look.tint ? ' soft' : ''}" style="${esc(collections.lookStyle(look))}">
         <span class="ckicker">${esc(c.kicker || '')}</span>
