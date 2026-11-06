@@ -205,6 +205,10 @@ body.docked .dock { transform: none; visibility: visible; }
   isolation: isolate;
 }
 #map { position: absolute; inset: 0; touch-action: none; }
+/* A card's own map (Show on map): the page's map, moved in at the top of the
+   card under its glass bar, the card's list scrolling under it (Kevin, 6 Nov
+   2026). Back on the page when the card goes (next.js, mapToPage). */
+.card-map { position: relative; flex: none; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
 /* Its frame: a dark hairline, and inside it a white glow you can see. The
    dark scheme has the hairline alone: a white glow there is a smudge. */
 .viewport::after {
@@ -1039,6 +1043,8 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* A collection's card. */
 .collection .sheet-scroll { padding-top: 0; }
 .chero { position: relative; padding: calc(84px + var(--sat)) 20px 22px; color: #fff; }
+/* Under its own map the bar is over the map, not the head. */
+.has-map .chero { padding-top: 22px; }
 /* A hairline over its head in its parishes' jurisdictions' colours and its
    filters' (next.js stripeOf), as a top border; the card's corners round it. */
 .cstripe { position: absolute; top: 0; left: 0; right: 0; height: 4px; }

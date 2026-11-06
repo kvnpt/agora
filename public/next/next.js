@@ -80,6 +80,7 @@
   // ── State ─────────────────────────────────────────────────────────────
 
   const S = {
+    mapCard: null,           // the card the map is in (Show on map): { el, ids }
     parishes: [],
     byId: new Map(),
     rules: [],               // the bundle's schedules, parish fields joined
@@ -1055,9 +1056,11 @@
 
   function syncMap() {
     if (!map) return;
+    // In a card (Show on map), the card's parishes and nothing of the page's.
+    const own = S.mapCard;
     const dim = S.juris || S.focus || filtersOn();
-    mapState.parishes = dim ? S.parishes.filter(parishPasses) : S.parishes;
-    mapState.events = feedFor(2);
+    mapState.parishes = own ? S.parishes.filter(p => own.ids.has(p.id)) : dim ? S.parishes.filter(parishPasses) : S.parishes;
+    mapState.events = own ? feedFor(2).filter(e => eventParishIds(e).some(id => own.ids.has(id))) : feedFor(2);
     mapState.locationActive = !!S.loc;
     mapState.userLat = S.loc ? S.loc.lat : null;
     mapState.userLng = S.loc ? S.loc.lng : null;
@@ -1088,7 +1091,7 @@
   }
 
   function onView() {
-    if (!map) return;
+    if (!map || S.mapCard) return;
     S.bounds = map.getBounds();
     S.inView = new Set(S.parishes.filter(p => isFinite(p.lat) && p.lat != null && S.bounds.contains([p.lng, p.lat])).map(p => p.id));
     // Where the map is looking, said in the parish chip under it.
@@ -1097,14 +1100,67 @@
     renderInView();
     renderFeeds();
   }
-  function fitTo(ids, animate = true) {
+  function fitTo(ids, animate = true, around = S.loc) {
     const ps = [...ids].map(id => S.byId.get(id)).filter(p => p && isFinite(p.lat) && p.lat != null);
     if (!ps.length || !map) return;
-    const near = S.loc ? ps.filter(p => km(S.loc, p) < 60) : [];
+    const near = around ? ps.filter(p => km(around, p) < 60) : [];
     const use = near.length >= 3 ? near : ps;
     const b = new maplibregl.LngLatBounds();
     use.forEach(p => b.extend([p.lng, p.lat]));
     map.fitBounds(b, { padding: 40, maxZoom: 13, duration: animate ? 600 : 0 });
+  }
+
+  // ── A card's own map ──────────────────────────────────────────────────
+  //
+  // Show on map, on a card: the page's one map moves into the top of the
+  // card and shows that card's parishes alone, the list scrolling under it,
+  // as Google's and Apple's lists open on their map. Closing the card, or
+  // Hide map, puts it back on the page as it was: its view, its filters, its
+  // shelves, none of which a card ever touches (Kevin, 6 Nov 2026). One map
+  // moved, not a second one: a phone keeps one WebGL map and its tiles.
+
+  let pageView = null;
+  function mapToCard(el) {
+    if (document.body.classList.contains('map-full')) setFullscreen(false);
+    if (S.mapCard) mapToPage({ view: false });
+    else {
+      const c = map.getCenter();
+      pageView = { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+    }
+    const box = document.createElement('div');
+    box.className = 'card-map';
+    el.querySelector('.glassbar').after(box);
+    box.appendChild($('#map'));
+    el.classList.add('has-map');
+    S.mapCard = { el, ids: new Set(el._coll.ids) };
+    map.resize();
+    syncMap();
+    // Those near where you are, else near where the page's map was looking.
+    fitTo(el._coll.ids, false, S.loc || (pageView && { lng: pageView.center[0], lat: pageView.center[1] }));
+    mapBtn(el);
+  }
+  /** The map back on the page, where it was looking (`view`), unless another card takes it next. */
+  function mapToPage({ view = true } = {}) {
+    const own = S.mapCard;
+    if (!own) return;
+    S.mapCard = null;
+    $('#viewport').prepend($('#map'));
+    const box = own.el.querySelector('.card-map');
+    if (box) box.remove();
+    own.el.classList.remove('has-map');
+    mapBtn(own.el);
+    map.resize();
+    syncMap();
+    if (view && pageView) { map.jumpTo(pageView); pageView = null; }
+  }
+  /** A card's Show on map, which says Hide map while the map is in it. */
+  function mapBtn(el) {
+    const b = el.querySelector('[data-act="showmap"]');
+    if (!b) return;
+    const on = !!(S.mapCard && S.mapCard.el === el);
+    b.setAttribute('aria-pressed', String(on));
+    const t = b.querySelector('span');
+    if (t) t.textContent = on ? 'Hide map' : 'Show on map';
   }
 
   // ── Full screen ───────────────────────────────────────────────────────
@@ -1949,6 +2005,7 @@
       const y = e.touches[0].clientY;
       const bar = el.querySelector('.glassbar');
       const onBar = y - el.getBoundingClientRect().top < (bar ? bar.offsetHeight : 64);
+      if (!onBar && e.target.closest('.card-map')) return;
       if (!onBar && scroller && scroller.scrollTop > 0) return;
       g = { y, x: e.touches[0].clientX, t: Date.now(), dy: 0, live: false };
     }, { passive: true });
@@ -1983,6 +2040,7 @@
   function dropSheet() {
     const el = stack.pop();
     if (!el) return;
+    if (S.mapCard && S.mapCard.el === el) mapToPage();
     el.classList.remove('open');
     setTimeout(() => el.remove(), 320);
     if (!stack.length) { $('#scrim').hidden = true; document.body.classList.remove('sheet-open'); }
@@ -3063,6 +3121,8 @@
     el._days = CU_DAYS;
     fitLinks(el);
     watchMore(el);
+    if (S.mapCard && S.mapCard.el === el) { S.mapCard.ids = new Set(c.ids); syncMap(); }
+    mapBtn(el);
     if (el._from) refreshComingUp(el);
   }
   /**
@@ -4108,6 +4168,10 @@
       }
       if (a === 'showmap') {
         const c = top._coll;
+        // Its own map, in the card. A jurisdiction's card is its tab, the
+        // map's own filter, so its Show on map is the tab (Kevin, 6 Nov
+        // 2026). With no map (lite), the page's map takes the card's.
+        if (map && !/^j-/.test(c.id || '')) { if (S.mapCard && S.mapCard.el === top) mapToPage(); else mapToCard(top); return; }
         // One with a link is its filters, and the page takes them; one without is its parishes.
         if (c.segs) { S.juris = c.juris || null; S.f = { ...c.f }; S.focus = null; }
         else S.focus = { title: c.title, ids: new Set(c.ids) };

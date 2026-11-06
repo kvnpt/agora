@@ -152,9 +152,14 @@ map is the Greek tab. A collection's own Filters ask what its link does not
 no What or days, so it stays Sunday Liturgy; a language's offers "only"; Clear
 all is the collection as its link has it. A jurisdiction is narrowed inside a
 collection's card (`jurisOffer`). In view, a link's card and a list ask
-everything. Show on map is the one hand-off, a button that says so: a card
-with a link gives the map its filters, one without its parishes, which the
-panel names and lets go. A timetable line opens
+everything. Show on map moves the page's one map into the top of the card
+(`mapToCard`), showing that card's parishes alone, framed near where you are or
+where the page's map was looking; Hide map, closing the card or the back button
+puts it back on the page as it was (`mapToPage`), and the page's map, filters
+and shelves never see the card's (Kevin, 6 Nov 2026). A jurisdiction's card is
+the exception: its Show on map is its tab. With no map (lite), Show on map hands
+the card to the page's map as it used to: a card with a link gives it its
+filters, one without its parishes, which the panel names and lets go. A timetable line opens
 its own card (`openLine`): the line's next date with its later dates under it,
 over the card it was tapped on, which stays as it was. Its link asks what the
 line is (`lineFocus`: `/smg/sun/liturgy`, `/spp/sun/liturgy/en-only` where the
