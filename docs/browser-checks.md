@@ -1,7 +1,7 @@
 # Checking the frontend in a browser
 
 CLAUDE.md names the limit: CI covers `public/shared/` and the Worker well and
-**executes none of** `next/next.js`, `next/editing.js`, `bundle.js` or `map.js`. So a change to rendering,
+**executes none of** `next/next.js`, `next/editing.js`, `next/month.js`, `bundle.js` or `map.js`. So a change to rendering,
 filtering or wiring merges on the strength of whatever its author did to check
 it. This is how to do that here, and what has already cost time.
 

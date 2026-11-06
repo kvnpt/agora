@@ -1214,6 +1214,7 @@
   }
   // A window made wider or narrower than a panel's: the map goes where that one keeps it.
   WIDE.addEventListener('change', () => {
+    monthFollow();
     if (!S.mapCard) return;
     const el = S.mapCard.el;
     mapToPage({ view: false });
@@ -1889,6 +1890,16 @@
    * re-drawn with the days (refreshComingUp), since it says the date.
    */
   const calHeadHTML = (acts) => `<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts">${acts}</div></div>`;
+  const MONTH_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 9.5v11M15 9.5v11M3 15h18"/></svg>';
+  /**
+   * What sits beside a Calendar's title: Date, Filters, and Month, which
+   * shows its days as a grid (next/month.js). In Month the grid picks the
+   * day, so Date goes (Kevin, 6 Nov 2026).
+   */
+  function calActsFor(from, filters, month) {
+    const pill = `<button class="fpill${month ? ' on' : ''}" type="button" data-cal-month aria-pressed="${!!month}">${MONTH_ICON}<span>Month</span></button>`;
+    return month ? `<div class="date-pick">${filters}${pill}</div>` : datePickHTML('card', from, filters + pill);
+  }
   /** A day's own link, copied with a tap, as the app's day headers have. */
   const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
   /**
@@ -2050,6 +2061,8 @@
     if (entry) syncURL({ push: true, step: true });
     else writeURL();
     fitLinks(el);
+    // A card over one in Month: the big month stays beside an event's card, and goes for anything else.
+    monthFollow();
     return el;
   }
   /**
@@ -2108,6 +2121,7 @@
     if (!el) return;
     if (fpop && fpop.scope === el) closeFilters();
     mapFollow();
+    monthFollow();
     el.classList.remove('open');
     setTimeout(() => el.remove(), 320);
     if (!stack.length) { $('#scrim').hidden = true; document.body.classList.remove('sheet-open'); }
@@ -2580,9 +2594,9 @@
   }
   /** A card's Filters pill, with how many it asks, popping its Filters out. */
   const filtersPill = (n, panel) => `<button class="fpill fbtn" type="button" data-card-filters aria-expanded="${!!panel}">${I.filters}<span>Filters</span>${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
-  /** What sits beside a card's Calendar title: Date, and Filters. */
+  /** What sits beside a card's Calendar title: Date, Filters and Month. */
   function calActsHTML(el) {
-    return datePickHTML('card', el._from, filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el));
+    return calActsFor(el._from, filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el), el._month);
   }
   // The foot of a Calendar, which brings the next fortnight as it scrolls into view.
   const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days>Loading…</div>' : '';
@@ -2597,10 +2611,11 @@
     try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
     const m = box.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
-    box.innerHTML = el._coll ? collFeedHTML(el._coll, el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
+    box.innerHTML = el._coll ? collFeedHTML(collOn(el), el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
     const acts = el.querySelector('.cal-acts');
     if (acts) acts.innerHTML = calActsHTML(el);
     watchMore(el);
+    if (el._month && window.NextMonth) window.NextMonth.paint(el);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
   function setCardDate(el, k) {
@@ -2608,12 +2623,124 @@
     el._days = CU_DAYS;
     const c = el._coll;
     // A collection with no link of its own (In view) has no date to put in one.
-    if (c && !c.segs) { refreshComingUp(el); return; }
+    if (c && !c.segs) return refreshComingUp(el);
     el._segs = c ? collSegs(c, el._from) : segsFor({ parish: S.byId.get(el.dataset.pid), focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     syncURL();
-    refreshComingUp(el);
+    return refreshComingUp(el);
+  }
+
+  // ── Month: a card's Calendar as a grid (next/month.js) ────────────────
+  //
+  // Loaded the first time somebody taps Month, as editing.js is for an
+  // editor: a visitor who never does downloads none of it. The grid asks this
+  // page for its days through the same lists the Calendar draws.
+
+  /** A collection less the parishes its Month has switched off. */
+  function collOn(el) {
+    return el._off && el._off.size ? { ...el._coll, ids: el._coll.ids.filter(id => !el._off.has(id)) } : el._coll;
+  }
+  /** What a card's Calendar holds on these days: the rows its list draws. */
+  function cardList(el, start, days) {
+    const now = Date.now();
+    if (el._coll) return feedRange(start, days).filter(e => endMs(e) > now).filter(inCollection(collOn(el)));
+    const pid = el.dataset.pid;
+    return feedRange(start, days).filter(e => (visible(e) || tombOf(e)) && eventParishIds(e).includes(pid) && endMs(e) > now);
+  }
+  let monthReady = null;
+  function loadMonth() {
+    if (!monthReady) {
+      const css = new Promise((resolve, reject) => {
+        const l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = '/next/month.css';
+        l.onload = resolve;
+        l.onerror = () => { l.remove(); reject(new Error('Could not load /next/month.css')); };
+        document.head.appendChild(l);
+      });
+      monthReady = Promise.all([css, loadScript('/next/month.js')]).then(() => {
+        window.NextMonth.init({
+          list: cardList,
+          parishes: (el) => (el._coll ? el._coll.ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean)),
+          ensure: ensureLoaded,
+          local,
+          colour: venueColor,
+          tomb: tombOf,
+          today: todayKey,
+          addDays,
+          weekday: weekdayOf,
+          timeHTML,
+          avatar,
+          pick: pickMonthDay,
+          refresh: refreshComingUp,
+          setMonth,
+          stack: () => stack,
+          wide: () => WIDE.matches,
+          viewport: () => $('#viewport'),
+          raise: raiseMonth,
+        });
+        return window.NextMonth;
+      });
+      monthReady.catch(() => { monthReady = null; });
+    }
+    return monthReady;
+  }
+  /** Month on or off on a card. Off, its parishes all come back. */
+  async function setMonth(el, on) {
+    el._month = !!on;
+    // Month takes the map's place: in a card on a phone (month.css), beside it when wide.
+    el.classList.toggle('month-on', el._month);
+    const off = !on && el._off && el._off.size;
+    if (!on) { el._off = null; el._notices = null; }
+    const acts = el.querySelector('.cal-acts');
+    if (acts) acts.innerHTML = calActsHTML(el);
+    if (on) {
+      try { await loadMonth(); } catch (err) {
+        console.warn(err);
+        el._month = false;
+        if (acts) acts.innerHTML = calActsHTML(el);
+        toast('Month could not load. Check your connection and try again.');
+        return;
+      }
+      if (!el.isConnected || !el._month) return;
+      window.NextMonth.paint(el);
+    } else if (window.NextMonth) {
+      window.NextMonth.follow();
+      if (map) map.resize();
+      if (off) refreshComingUp(el);
+    }
+  }
+  /** Month's grid wherever it belongs now: in its card, or beside it in the map's place. */
+  function monthFollow() { if (window.NextMonth) window.NextMonth.follow(); }
+  /**
+   * A day picked on a card's month: the card's list from it, as Date would
+   * have it. Wide, the card beside the big month goes to the day, and the
+   * cards opened over it from the grid make way.
+   */
+  async function pickMonthDay(el, k) {
+    let n = 0;
+    while (stack.length && stack[stack.length - 1] !== el) { dropSheet(); n++; }
+    if (n) goBack(n);
+    await setCardDate(el, k);
+    if (WIDE.matches) toDay(el, k);
+  }
+  /**
+   * Wide, the page's map box holds the big month: over the dimmed page, as
+   * the map is beside a card of parishes (mapToCard), clear of the card.
+   */
+  let monthScroll = null;
+  function raiseMonth(on) {
+    const body = document.body;
+    if (on) {
+      if (!body.classList.contains('map-beside') && monthScroll == null) { monthScroll = window.scrollY; window.scrollTo({ top: 0 }); }
+      body.classList.add('month-beside');
+      besideRoom();
+    } else {
+      body.classList.remove('month-beside');
+      if (monthScroll != null && !body.classList.contains('map-beside')) window.scrollTo({ top: monthScroll });
+      monthScroll = null;
+    }
   }
 
   function timesHTML(p, focus = null) {
@@ -3011,7 +3138,7 @@
         <section class="p-whatson"${won ? '' : ' hidden'}>${won}</section>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
-          ${calHeadHTML(datePickHTML('card', from, filtersPill(focusCount(focus), false)))}
+          ${calHeadHTML(calActsFor(from, filtersPill(focusCount(focus), false), false))}
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
@@ -3194,7 +3321,7 @@
   }
 
   /** A collection's card as it now is: its bar's title, and everything under the bar. */
-  function collectionHTML(c, { from = null } = {}) {
+  function collectionHTML(c, { from = null, month = false } = {}) {
     const o = sortOrigin();
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
@@ -3260,7 +3387,7 @@
         </section>
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
-          ${calHeadHTML(datePickHTML('card', from, filtersPill(collFilterCount(c), false)))}
+          ${calHeadHTML(calActsFor(from, filtersPill(collFilterCount(c), false), month))}
           <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
@@ -3282,7 +3409,7 @@
   /** An open collection's card again, where it was scrolled to: its filters changed, or what it holds. */
   function repaintCollection(el) {
     const c = el._coll;
-    const { html, rest } = collectionHTML(c, { from: el._from });
+    const { html, rest } = collectionHTML(c, { from: el._from, month: el._month });
     const box = document.createElement('div');
     box.innerHTML = html;
     const scroller = el.querySelector('.sheet-scroll'), bar = el.querySelector('.gtitle');
@@ -3300,7 +3427,8 @@
     if (S.mapCard && S.mapCard.el === el) { S.mapCard.ids = new Set(c.ids); syncMap(); }
     // Filtered down to none on the map, the map goes; widened again, it comes back.
     mapFollow();
-    if (el._from) refreshComingUp(el);
+    // Its month, and the parishes it has switched off, come back with its days.
+    if (el._from || el._month) refreshComingUp(el);
   }
   /**
    * A collection's own Filters changed (Kevin, 2 Nov 2026): its link and its
@@ -4332,6 +4460,9 @@
       return;
     }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
+    // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
+    if ((b = t.closest('[data-cal-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
+    if (window.NextMonth && window.NextMonth.click(t)) return;
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the
       // page's in the In view card's.

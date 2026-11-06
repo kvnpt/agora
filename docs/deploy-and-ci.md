@@ -25,7 +25,7 @@ What that buys has a limit worth naming, and it is not "CI cannot see the
 frontend". `public/shared/` is covered well — the projection, the timezone maths,
 the dedup and the slug tables are imported by the suite directly, which is half
 the point of the modules being shared. What nothing *executes* is the page built
-on top of them: `next/next.js`, `next/editing.js`, `bundle.js`, `map.js`. A few tests read
+on top of them: `next/next.js`, `next/editing.js`, `next/month.js`, `bundle.js`, `map.js`. A few tests read
 those as text, to assert they reach for the shared table rather than keeping a
 private copy, and that is not the same as running them.
 
