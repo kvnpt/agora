@@ -28,6 +28,19 @@ export const DAILY_LIMIT = 30;
 export const CODE_MINUTES = 15;
 /** A poster and a text this close together (seconds, each to the next) were sent as one. */
 export const GROUP_GAP_S = 5;
+/**
+ * Pictures in one draft. A forward of more is several drafts of this many:
+ * the editor joins a draft's pictures side by side into one poster, which
+ * past six is too small to read.
+ */
+export const MAX_PICTURES = 6;
+/**
+ * The most picture bytes sent to the reader at once. Its request takes 32 MB,
+ * and base64 makes 15 MB 20. WhatsApp's pictures are a few hundred KB, so
+ * this only ever leaves out a picture sent as a large file; it stays on the
+ * draft and is in the poster the editor joins.
+ */
+export const READ_BYTES = 15 * 1024 * 1024;
 /** A text this soon after a draft from the same phone (seconds) is added to it. */
 export const LATE_TEXT_S = 120;
 /** How long received messages are kept. */
@@ -248,21 +261,20 @@ export function groupOf(rows, id) {
 }
 
 /**
- * The texts in a group that go with this image: each text goes with the
- * image before it, or the first image if it came before them all. So
- * [poster, words] and [words, poster] are one each, and [poster 1, words 1,
- * poster 2, words 2] two.
+ * The pictures a forward's draft takes, in the order they were sent: every
+ * picture in the group that nobody has taken yet, in runs of MAX_PICTURES —
+ * the run this one is in. A forward of two pictures and its caption is one
+ * draft, read together (WhatsApp sends each picture as its own message, the
+ * caption on the first).
+ *
+ * @returns the rows, or [] when this picture is taken already
  */
-export function textsFor(group, imageId, isImageRow) {
-  const images = group.filter(isImageRow).map(r => r.id);
-  if (!images.includes(imageId)) return [];
-  let owner = images[0];
-  const out = [];
-  for (const r of group) {
-    if (isImageRow(r)) { owner = r.id; continue; }
-    if (r.type === 'text' && owner === imageId) out.push(r);
-  }
-  return out;
+export function picturesFor(group, imageId, isImageRow, max = MAX_PICTURES) {
+  const free = group.filter(r => isImageRow(r) && !r.outcome);
+  const at = free.findIndex(r => r.id === imageId);
+  if (at < 0) return [];
+  const start = Math.floor(at / max) * max;
+  return free.slice(start, start + max);
 }
 
 /**

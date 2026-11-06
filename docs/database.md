@@ -79,7 +79,9 @@ the merge, like any other. So does 023 (venues: `location_parish_id`,
 their `patch_` columns on `schedule_overrides`); its draft columns are also
 added on first use, as REAL for the two coordinates. So is 031's
 `draft_events.parish_scoped` (the Add event card's Public / Parish only pill), as
-INTEGER. 023 also backfills: an
+INTEGER. So are 037's `drafts.images` (a WhatsApp forward's pictures after the
+first, waiting to be joined into its poster) and `drafts.sender_name` (the
+sender's WhatsApp name), as TEXT. 023 also backfills: an
 event whose words already named a place and whose pin was not its parish's had
 been geocoded there, so that pin becomes the place's own, and the event a square.
 

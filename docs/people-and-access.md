@@ -202,7 +202,10 @@ account menu's **Link WhatsApp** shows to somebody signed in who may add events,
 sent from the phone within 15 minutes; it proves the same person holds both. A
 linked phone is its account for drafting and nothing else, and what the
 account may do is `admin_roles`', read again for every message: a role taken
-away stops the phone at the next poster. Unlinking is the same menu. Five codes
+away stops the phone at the next poster. It decides where a poster starts,
+too: a parish contact at their parish, an owner or editor — who may edit every
+parish — at none, until the words or the read say whose it is
+(docs/editing.md, "A poster forwarded on WhatsApp"). Unlinking is the same menu. Five codes
 that did not work in a day and a phone is told to stop; a phone nobody linked
 is told how, once an hour, and nothing it sends is read.
 

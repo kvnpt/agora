@@ -429,6 +429,82 @@ test('discarding deletes the draft and its poster — unless an event published 
   assert.deepEqual(g.bucket.deleted, [], 'the published event still shows the poster');
 });
 
+// ── a WhatsApp forward's pictures, joined ──
+
+/** A draft as a forward of three pictures leaves it: the first its poster, the rest waiting. */
+function forwarded(f, parishId) {
+  const put = (k) => f.bucket.store.set(k, { bytes: jpeg(), opts: { httpMetadata: { contentType: 'image/jpeg' } } });
+  ['posters/p1.jpg', 'posters/p2.jpg', 'posters/p3.jpg'].forEach(put);
+  const { id } = f.raw.prepare(
+    `INSERT INTO drafts (parish_id, created_by, poster_path, images, source, message_text, sender_name, read_status, read_kind)
+     VALUES (?, 'dev', '/posters/p1.jpg', '["/posters/p2.jpg","/posters/p3.jpg"]', 'whatsapp', 'ORC - Cronulla Beach', 'Kevin', 'read', 'poster')
+     RETURNING id`).get(parishId);
+  f.raw.prepare("INSERT INTO draft_events (draft_id, position, title) VALUES (?, 0, 'Run club')").run(id);
+  return id;
+}
+
+test('a forward’s pictures join into one poster; the read stands and the pictures go', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  const id = forwarded(f, a);
+  const got = (await f.call('GET', `/api/admin/drafts/${id}`)).body;
+  assert.deepEqual(got.images, ['/posters/p2.jpg', '/posters/p3.jpg']);
+  assert.equal(got.sender_name, 'Kevin');
+
+  const join = (from, bytes = jpeg()) => f.send('PUT', `/api/admin/drafts/${id}/poster?from=${encodeURIComponent(from)}`,
+    { body: bytes, headers: { 'Content-Type': 'image/jpeg' } });
+  const res = await join('/posters/p1.jpg');
+  assert.equal(res.status, 200);
+  const d = await res.json();
+  assert.match(d.poster_path, /^\/posters\/.+\.jpg$/);
+  assert.notEqual(d.poster_path, '/posters/p1.jpg');
+  assert.deepEqual(d.images, []);
+  assert.equal(d.read_status, 'read', 'read already, together: not read again');
+  assert.equal(d.read_kind, 'poster');
+  assert.equal(d.cards.length, 1, 'the cards stay');
+  assert.deepEqual(f.bucket.deleted.sort(), ['posters/p1.jpg', 'posters/p2.jpg', 'posters/p3.jpg']);
+  assert.ok(f.bucket.store.has(d.poster_path.slice(1)));
+
+  // Joined already (another tab): this one is thrown away, nothing changes.
+  const again = await join('/posters/p1.jpg');
+  assert.equal(again.status, 409);
+  assert.equal((await again.json()).draft.poster_path, d.poster_path);
+  assert.equal(f.bucket.store.size, 1, 'the second join left nothing behind');
+});
+
+test('a forward’s waiting pictures go with the draft, or with the poster replaced or taken off', async () => {
+  const f = fresh({ role: 'editor' }, { key: null });
+  const [a] = parishes(f.raw);
+  assert.equal((await f.call('DELETE', `/api/admin/drafts/${forwarded(f, a)}`)).status, 200);
+  assert.deepEqual(f.bucket.deleted.sort(), ['posters/p1.jpg', 'posters/p2.jpg', 'posters/p3.jpg']);
+
+  const g = fresh({ role: 'editor' }, { key: null });
+  const off = (await g.call('DELETE', `/api/admin/drafts/${forwarded(g, a)}/poster`)).body;
+  assert.equal(off.poster_path, null);
+  assert.deepEqual(off.images, []);
+  assert.deepEqual(g.bucket.deleted.sort(), ['posters/p1.jpg', 'posters/p2.jpg', 'posters/p3.jpg']);
+
+  const h = fresh({ role: 'editor' }, { key: null });
+  const id = forwarded(h, a);
+  await h.poster(id);
+  const d = (await h.call('GET', `/api/admin/drafts/${id}`)).body;
+  assert.deepEqual(d.images, []);
+  assert.deepEqual(h.bucket.deleted.sort(), ['posters/p1.jpg', 'posters/p2.jpg', 'posters/p3.jpg']);
+});
+
+test('reading a forward again before its pictures are joined reads them all', async () => {
+  const f = fresh({ role: 'editor' });
+  const [a] = parishes(f.raw);
+  const id = forwarded(f, a);
+  const calls = [];
+  await withFetch(async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return new Response(haikuStream(JSON.stringify(TWO)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  }, () => f.poster(id, null, 'image/jpeg', '?reread=1'));
+  assert.deepEqual(calls[0].messages[0].content.map(c => c.type), ['image', 'image', 'image', 'text']);
+  assert.match(calls[0].messages[0].content[3].text, /There are 3 images, sent together/);
+});
+
 // ── plumbing ──
 
 test('draft writes leave the public data version alone; publishing moves it', () => {
@@ -439,6 +515,7 @@ test('draft writes leave the public data version alone; publishing moves it', ()
   assert.equal(w('POST', '/api/admin/drafts/3/poster'), false);
   assert.equal(w('PATCH', '/api/admin/drafts/3'), false, 'moving a draft is still a draft');
   assert.equal(w('DELETE', '/api/admin/drafts/3'), false);
+  assert.equal(w('PUT', '/api/admin/drafts/3/poster'), false, 'joining a forward’s pictures is still a draft');
   assert.equal(w('POST', '/api/admin/draft-events/4/publish'), true);
   assert.equal(w('POST', '/api/admin/events'), true);
   assert.equal(w('POST', '/api/admin/draftsman'), true, 'only the draft routes themselves');
@@ -1069,8 +1146,8 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   const cols = (t) => raw.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
-  assert.deepEqual(cols('drafts').slice(-7), ['read_parish', 'read_language', 'read_services', 'read_details',
-    'source', 'message_text', 'seen_at']);
+  assert.deepEqual(cols('drafts').slice(-9), ['read_parish', 'read_language', 'read_services', 'read_details',
+    'source', 'message_text', 'seen_at', 'images', 'sender_name']);
   assert.deepEqual(cols('draft_events').slice(-10), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
     'host_parish_id', 'host_event_id']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));

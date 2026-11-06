@@ -313,17 +313,19 @@
         ${canPaste ? EE.pastePillHTML('data-sign-paste') : ''}
       </div>
       <p class="paste-note" data-sign-note aria-live="polite" hidden></p>
-      <input type="file" accept="image/*" hidden data-sign-input>
+      <input type="file" accept="image/*" multiple hidden data-sign-input>
       <div class="schedule-add-or">or type it in</div>`);
     const sign = d.form.querySelector('[data-sign-input]');
     const signNote = d.form.querySelector('[data-sign-note]');
-    const fromSign = (file) => {
-      if (!file || !/^image\//.test(file.type || '')) return;
+    // One photo, or several of one board: the editor puts them side by side.
+    const fromSign = (files) => {
+      const images = [].concat(files || []).filter(f => f && /^image\//.test(f.type || ''));
+      if (!images.length) return;
       d.f.close();
-      addEvent(parishId, { file, intent: 'timetable' });
+      addEvent(parishId, { file: images, intent: 'timetable' });
     };
     d.form.querySelector('[data-sign]').addEventListener('click', () => { sign.value = ''; sign.click(); });
-    sign.addEventListener('change', () => fromSign(sign.files && sign.files[0]));
+    sign.addEventListener('change', () => fromSign([...(sign.files || [])]));
     if (canPaste) d.form.querySelector('[data-sign-paste]').addEventListener('click', () => {
       signNote.hidden = true;
       // Straight from the tap, nothing awaited first: Safari's Paste bubble needs it.
@@ -340,7 +342,7 @@
     drop.addEventListener('drop', (e) => {
       e.preventDefault();
       drop.classList.remove('is-dragging');
-      fromSign([...((e.dataTransfer && e.dataTransfer.files) || [])].find(x => /^image\//.test(x.type)));
+      fromSign([...((e.dataTransfer && e.dataTransfer.files) || [])]);
     });
 
     const block = exceptionsBlock(d, { ids: [], parishId });

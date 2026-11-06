@@ -376,6 +376,15 @@
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  /**
+   * Who sent a WhatsApp draft, as the editor names them: their WhatsApp name
+   * ("Kevin"), kept with the draft (migration 037); before that, the start of
+   * the account's email.
+   */
+  function senderOf(d) {
+    return (d && d.sender_name) || String((d && d.created_by) || '').split('@')[0];
+  }
+
   function loadImage(src) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -418,6 +427,88 @@
       return blob;
     } finally {
       URL.revokeObjectURL(url);
+    }
+  }
+
+  /** The most pictures joined into one poster: past six, each is too small to read. */
+  const MAX_PICTURES = 6;
+
+  /**
+   * Where each picture goes when several are joined into one poster: side by
+   * side in one row up to three, in two rows past that (four as two and
+   * two), each row at the height of its shortest picture so none is scaled
+   * up, rows centred on white, and the whole of it scaled to MAX_EDGE on its
+   * long side. `sizes` are [{w, h}] in natural pixels; the boxes are in the
+   * poster's.
+   */
+  function pictureLayout(sizes, { maxEdge = MAX_EDGE, gap = 24 } = {}) {
+    const n = sizes.length;
+    const perRow = n <= 3 ? n : Math.ceil(n / 2);
+    const rows = [];
+    for (let i = 0; i < n; i += perRow) rows.push(sizes.slice(i, i + perRow).map((s, j) => ({ ...s, i: i + j })));
+    let y = 0, width = 0;
+    const laid = rows.map((row) => {
+      const h = Math.min(...row.map(s => s.h));
+      let x = 0;
+      const boxes = row.map((s) => {
+        const w = s.w * (h / s.h);
+        const b = { i: s.i, x, y, w, h };
+        x += w + gap;
+        return b;
+      });
+      const rowWidth = x - gap;
+      width = Math.max(width, rowWidth);
+      y += h + gap;
+      return { boxes, rowWidth };
+    });
+    const height = y - gap;
+    const scale = Math.min(1, maxEdge / Math.max(width, height));
+    const boxes = [];
+    for (const { boxes: row, rowWidth } of laid) {
+      const shift = (width - rowWidth) / 2;
+      for (const b of row) {
+        boxes[b.i] = { x: Math.round((b.x + shift) * scale), y: Math.round(b.y * scale),
+          w: Math.round(b.w * scale), h: Math.round(b.h * scale) };
+      }
+    }
+    return { width: Math.round(width * scale), height: Math.round(height * scale), boxes };
+  }
+
+  /**
+   * Several pictures as one poster, the way Kevin put Crows Nest's two
+   * together by hand: a WhatsApp forward's (its poster and the pictures
+   * waiting in drafts.images, worker/routes/ingest.mjs), or several chosen
+   * at once under "Add an image". `sources` are Files or this site's URLs.
+   */
+  async function joinPictures(sources) {
+    const urls = [];
+    try {
+      const imgs = [];
+      for (const src of sources) {
+        const url = typeof src === 'string' ? src : URL.createObjectURL(src);
+        if (typeof src !== 'string') urls.push(url);
+        imgs.push(await loadImage(url));
+      }
+      const plan = pictureLayout(imgs.map(img => ({ w: img.naturalWidth, h: img.naturalHeight })));
+      const canvas = document.createElement('canvas');
+      canvas.width = plan.width;
+      canvas.height = plan.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingQuality = 'high';
+      imgs.forEach((img, i) => {
+        const b = plan.boxes[i];
+        ctx.drawImage(img, b.x, b.y, b.w, b.h);
+      });
+      let blob = root.AgoraLogo
+        ? await root.AgoraLogo.encodeCanvas(canvas)
+        : await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
+      if (blob && blob.size > 4.5 * 1024 * 1024) blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+      if (!blob) throw new Error('Could not encode the pictures');
+      return blob;
+    } finally {
+      urls.forEach(u => URL.revokeObjectURL(u));
     }
   }
 
@@ -589,6 +680,7 @@
       // is, and the picker moves the draft there — so this is state, not a given.
       parish: opts.parish || null,
       draft: null,            // {id, poster_path, read_status, read_kind, read_notes, read_parish}
+      joined: null,           // {from, to}: a WhatsApp forward's pictures, joined into one poster here
       creating: null,         // the POST that makes the draft, while it is in flight
       cards: [],
       nextKey: 1,
@@ -634,11 +726,11 @@
       <div class="ee-suggest ee-intent" data-ee="intent" aria-live="polite" hidden></div>
       <div class="ee-strip" data-ee="strip" hidden></div>
       <div class="ee-poster">
-        <input type="file" accept="image/*" data-ee="poster-input" hidden>
+        <input type="file" accept="image/*" multiple data-ee="poster-input" hidden>
         <div class="drop-box${canReadClipboard() ? ' can-paste' : ''}" data-ee="drop-box">
           <button type="button" class="ee-drop" data-ee="drop">
             <span class="ee-drop-title">Add an image</span>
-            <span class="ee-drop-sub">A poster, flyer or programme: tap to choose one, drop it here, or paste it. The details are read into the form for you to check — nothing is published until you say so.</span>
+            <span class="ee-drop-sub">A poster, flyer or programme: tap to choose one, drop it here, or paste it. Several pictures of one announcement are put side by side as one poster. The details are read into the form for you to check — nothing is published until you say so.</span>
           </button>
           ${canReadClipboard() ? pastePillHTML('data-ee="paste"') : ''}
         </div>
@@ -733,9 +825,9 @@
       else window.open(url, '_blank', 'noopener');
     });
     fileInput.addEventListener('change', () => {
-      const f = fileInput.files && fileInput.files[0];
+      const files = [...(fileInput.files || [])];
       fileInput.value = '';
-      if (f) dropFile(f);
+      if (files.length) dropFile(files);
     });
     el.addEventListener('dragover', (e) => {
       if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
@@ -746,17 +838,17 @@
     el.addEventListener('dragleave', (e) => { if (e.target === el) el.classList.remove('is-dragging'); });
     el.addEventListener('drop', (e) => {
       el.classList.remove('is-dragging');
-      const f = e.dataTransfer && [...(e.dataTransfer.files || [])].find(x => /^image\//.test(x.type));
-      if (!f) return;
+      const files = e.dataTransfer ? [...(e.dataTransfer.files || [])].filter(x => /^image\//.test(x.type)) : [];
+      if (!files.length) return;
       e.preventDefault();
-      dropFile(f);
+      dropFile(files);
     });
     // A poster copied out of WhatsApp Web or Facebook pastes straight in.
     const onPaste = (e) => {
-      const f = e.clipboardData && [...(e.clipboardData.files || [])].find(x => /^image\//.test(x.type));
-      if (!f) return;
+      const files = e.clipboardData ? [...(e.clipboardData.files || [])].filter(x => /^image\//.test(x.type)) : [];
+      if (!files.length) return;
       e.preventDefault();
-      dropFile(f);
+      dropFile(files);
     };
     document.addEventListener('paste', onPaste);
 
@@ -818,10 +910,14 @@
     }
 
     function setDraft(d) {
-      state.draft = { id: d.id, poster_path: d.poster_path, read_status: d.read_status,
+      // A read that finished while the pictures were being joined answers
+      // with the draft as it was: the joined poster stands.
+      const joined = state.joined && d.poster_path === state.joined.from ? state.joined : null;
+      state.draft = { id: d.id, poster_path: joined ? joined.to : d.poster_path, read_status: d.read_status,
         read_kind: d.read_kind, read_notes: d.read_notes || [], read_parish: d.read_parish || null,
         read_language: d.read_language || null, read_details: d.read_details || null,
         source: d.source || null, message_text: d.message_text || null,
+        images: joined ? [] : (d.images || []), sender_name: d.sender_name || null,
         created_by: d.created_by || null, created_at: d.created_at || null };
       // What the person is still correcting stays theirs until it has saved.
       if (!state.svcTimer) state.services = (d.read_services || []).map(x => ({ ...x }));
@@ -855,7 +951,7 @@
       if (!d.poster_path && box.nextElementSibling !== poster) poster.before(box);
       else if (d.poster_path && box.previousElementSibling !== poster) poster.after(box);
       const words = String(d.message_text || '').trim();
-      const who = String(d.created_by || '').split('@')[0];
+      const who = senderOf(d);
       const at = sentWhen(d.created_at);
       box.innerHTML = `<div class="ee-wa-head">${WA_ICON}<span>From WhatsApp${who ? ` · ${esc(who)}` : ''}${at ? ` · ${esc(at)}` : ''}</span></div>`
         + (words ? `<div class="ee-wa-text" data-ee="wa-text">${esc(words)}</div>` : '<div class="ee-wa-text ee-wa-none">Nothing was written with it.</div>')
@@ -2087,22 +2183,35 @@
       if (state.read) state.read.active = false;
     }
 
-    async function dropFile(file) {
+    /**
+     * A poster to read: one picture, or several (chosen, dropped or pasted at
+     * once) put side by side as one — joinPictures — and read as one.
+     */
+    async function dropFile(fileOrFiles) {
       // The draft a poster goes on belongs to a parish; until one is chosen
       // there is nowhere to put it (the poster panel is not shown either).
       if (state.publishing || !state.parish) return;
-      if (!/^image\//.test(file.type || '')) return showError('That is not an image — a poster has to be a photo or a picture file.');
-      showError('');
+      const all = (Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]).filter(Boolean);
+      const files = all.filter(f => /^image\//.test(f.type || ''));
+      if (!files.length) return showError('That is not an image — a poster has to be a photo or a picture file.');
+      const some = files.slice(0, MAX_PICTURES);
+      showError(files.length > some.length ? `That is ${files.length} pictures; the first ${MAX_PICTURES} are put together, the most for one poster.` : '');
       showPasteNote('');
       if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
-      state.objectUrl = URL.createObjectURL(file);
+      state.objectUrl = URL.createObjectURL(some[0]);
       showPoster(state.objectUrl);
-      setStatus('Getting the poster ready…', 'busy');
+      setStatus(some.length > 1 ? `Putting the ${some.length} pictures together…` : 'Getting the poster ready…', 'busy');
       let blob;
       try {
-        blob = await shrinkPoster(file);
+        blob = some.length > 1 ? await joinPictures(some) : await shrinkPoster(some[0]);
       } catch {
-        return setStatus('This image cannot be opened here — try a JPEG or PNG.', 'error');
+        return setStatus(some.length > 1 ? 'These pictures cannot be opened here — try JPEGs or PNGs.'
+          : 'This image cannot be opened here — try a JPEG or PNG.', 'error');
+      }
+      if (some.length > 1) {
+        URL.revokeObjectURL(state.objectUrl);
+        state.objectUrl = URL.createObjectURL(blob);
+        showPoster(state.objectUrl);
       }
       await flushAll();
       if (!(await ensureDraft())) return setStatus('The poster could not be saved — check the connection.', 'error', { retry: false });
@@ -2891,9 +3000,50 @@
       const mins = Math.round((Date.now() - Date.parse(d.updated_at)) / 60000);
       const ago = mins < 2 ? 'just now' : mins < 60 ? `${mins} minutes ago` : mins < 1440
         ? `${Math.round(mins / 60)} hours ago` : `${Math.round(mins / 1440)} days ago`;
+      if (d.source === 'whatsapp') {
+        const sender = senderOf(d);
+        return `From WhatsApp ${ago}${sender ? ` · sent by ${sender}` : ''}`;
+      }
       const who = String(d.created_by || '').split('@')[0];
-      if (d.source === 'whatsapp') return `From WhatsApp ${ago}${who ? ` · sent by ${who}` : ''}`;
       return `Saved ${ago}${who ? ` · started by ${who}` : ''}`;
+    }
+
+    /**
+     * The pictures of a WhatsApp forward, joined into the draft's one poster
+     * (PUT …/poster?from=, worker/routes/admin.mjs). The read stands: it was
+     * of the same pictures. Two tabs joining at once is one join; the other
+     * is told so and shows it.
+     */
+    async function joinForward(d) {
+      const from = d.poster_path;
+      const n = 1 + d.images.length;
+      const prev = state.status || {};
+      const busy = `Putting the ${n} pictures together…`;
+      setStatus(busy, 'busy');
+      const settle = (text, tone, o) => { if (state.status && state.status.text === busy) setStatus(text, tone, o); };
+      let blob;
+      try {
+        blob = await joinPictures([from, ...d.images]);
+      } catch {
+        return settle('The pictures could not be put together here; the first is shown. Open the draft again to try again.', 'note');
+      }
+      if (state.closed || !state.draft || state.draft.id !== d.id) return;
+      let res = null;
+      try {
+        res = await fetch(`/api/admin/drafts/${d.id}/poster?from=${encodeURIComponent(from)}`, {
+          method: 'PUT', body: blob, headers: { 'Content-Type': blob.type || 'image/jpeg' },
+        });
+      } catch { /* below */ }
+      const body = res ? await res.json().catch(() => null) : null;
+      if (state.closed || !state.draft || state.draft.id !== d.id) return;
+      const now = res && res.ok ? body : res && res.status === 409 && body && body.draft;
+      if (!now) return settle('The pictures could not be put together — check the connection, then open the draft again.', 'note');
+      state.joined = { from, to: now.poster_path };
+      state.draft.poster_path = now.poster_path;
+      state.draft.images = [];
+      if (state.objectUrl) { URL.revokeObjectURL(state.objectUrl); state.objectUrl = null; }
+      showPoster(now.poster_path || null);
+      settle(prev.text || '', prev.tone || '', { retry: !!prev.retry });
     }
 
     async function loadDraft(id) {
@@ -2902,6 +3052,7 @@
       abortRead();
       const r = await http('GET', `/api/admin/drafts/${id}`);
       if (!r.ok) return showError((r.body && r.body.error) || 'That draft could not be opened.');
+      state.joined = null;
       for (const c of state.cards) c.els.root.remove();
       state.cards = [];
       state.multi = false;
@@ -2931,6 +3082,9 @@
         setStatus(readSummary(r.body), 'done');
       } else setStatus('');
       state.readFinished = r.body.read_status === 'read';
+      // A WhatsApp forward of several pictures: read together already, and
+      // put side by side into its one poster now.
+      if ((r.body.images || []).length && r.body.poster_path) joinForward(r.body);
       state.cards.forEach(refreshCard);
       renderSign();
       renderIntent();
@@ -3289,7 +3443,8 @@
   // readClipboardImage and friends too: the timetable's "Add an image"
   // (editing.js addService) has the same Paste pill.
   const api = { open, summaryLine, summaryParts, serviceLine, serviceWhen, dateChanges, draftTitle, timeRange, dateLabel, orderParishRows, kmLabel, askNeeded,
-    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, cardWeekday, serviceFromCard,
+    textToLangs, langsToText, takesRead, editableParishes, parishSuggestion, shrinkPoster, joinPictures, pictureLayout, senderOf,
+    MAX_PICTURES, cardWeekday, serviceFromCard,
     occDate, occOf, isNewOcc, serviceRunsOn,
     canReadClipboard, readClipboardImage, pasteNote, pastePillHTML };
   if (typeof module === 'object' && module.exports) module.exports = api;

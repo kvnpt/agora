@@ -46,6 +46,8 @@ export async function readContext(db, parishId) {
  * @param {string} o.apiKey
  * @param {ArrayBuffer|null} o.bytes   the image; null for words only
  * @param {string} [o.mediaType]
+ * @param {{bytes, mediaType}[]} [o.images]  several pictures sent as one announcement, read together
+ *                                     (in place of bytes; a WhatsApp forward's)
  * @param {string} [o.note]            words sent with it: a suggestion's note, a WhatsApp caption
  * @param {boolean} [o.whatsapp]       the note came with the image on WhatsApp
  * @param {Function} [o.send]          the editor's stream: 'kind', 'field', 'item' as they are written
@@ -58,22 +60,24 @@ export async function readContext(db, parishId) {
  *                   |{ok: false, error: string, retry: boolean}>}
  *   `draft` null when it was discarded while it was being read.
  */
-export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, note = '', whatsapp = false, send = () => {}, choose = null }) {
+export async function readIntoDraft(env, draft, { apiKey, bytes, mediaType, images = null, note = '', whatsapp = false, send = () => {}, choose = null }) {
   const db = env.DB;
   await setReadStatus(db, draft.id, 'reading');
   let parishId = draft.parish_id;
   let { parish, zone, today, rules } = await readContext(db, parishId);
 
+  const pictures = images && images.length ? images : (bytes ? [{ bytes, mediaType }] : []);
   const read = await readPoster({
     apiKey,
     baseUrl: env.ANTHROPIC_BASE_URL,
-    image: bytes || null,
-    mediaType,
-    context: posterContext({ ...parish, timezone: zone }, today, rules, note, { image: !!bytes, whatsapp }),
+    images: pictures,
+    context: posterContext({ ...parish, timezone: zone }, today, rules, note,
+      { image: pictures.length > 0, whatsapp, pictures: pictures.length }),
   }, send);
   // One line per read, for Workers Observability: what it cost and how long.
   console.log(JSON.stringify({ poster_read: {
     draft: draft.id, parish: parishId, ok: read.ok, ms: read.ms, ...(whatsapp ? { whatsapp: true } : {}),
+    ...(pictures.length > 1 ? { pictures: pictures.length } : {}),
     ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
   } }));
   if (!read.ok) {

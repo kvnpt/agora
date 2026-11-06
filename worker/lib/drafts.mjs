@@ -45,7 +45,9 @@ export const DRAFTS_DDL = [
   read_details TEXT,
   source       TEXT,
   message_text TEXT,
-  seen_at      TEXT
+  seen_at      TEXT,
+  images       TEXT,
+  sender_name  TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_drafts_parish ON drafts(parish_id)',
   `CREATE TABLE IF NOT EXISTS draft_events (
@@ -91,7 +93,8 @@ export const DRAFTS_DDL = [
 // the migration lacks them. A read rather than a bare ALTER, so the usual
 // answer is a query that works rather than one that errors.
 const LATER_COLUMNS = {
-  drafts: ['read_parish', 'read_language', 'read_services', 'read_details', 'source', 'message_text', 'seen_at'],
+  drafts: ['read_parish', 'read_language', 'read_services', 'read_details', 'source', 'message_text', 'seen_at',
+    'images', 'sender_name'],
   draft_events: ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
     'host_parish_id', 'host_event_id'],
 };
@@ -291,6 +294,10 @@ export function draftOut(d, cards = []) {
     source: d.source || null,
     message_text: d.message_text || null,
     seen_at: d.seen_at || null,
+    // The other pictures sent with it, until the editor joins them into the
+    // poster (migration 037), and the name WhatsApp has for its sender.
+    images: parseList(d.images),
+    sender_name: d.sender_name || null,
     created_by: d.created_by,
     created_at: d.created_at,
     updated_at: d.updated_at,
