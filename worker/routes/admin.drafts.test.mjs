@@ -1069,7 +1069,8 @@ test('a database made before 020 gets the sign and programme columns (and 022’
   const cols = (t) => raw.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   assert.ok(!cols('drafts').includes('read_services') && !cols('draft_events').includes('occurrence'));
   await ensureDraftTables(new D1(raw));
-  assert.deepEqual(cols('drafts').slice(-4), ['read_parish', 'read_language', 'read_services', 'read_details']);
+  assert.deepEqual(cols('drafts').slice(-7), ['read_parish', 'read_language', 'read_services', 'read_details',
+    'source', 'message_text', 'seen_at']);
   assert.deepEqual(cols('draft_events').slice(-10), ['occurrence', 'feast', 'end_date', 'location_parish_id', 'location_lat', 'location_lng', 'parish_scoped', 'discard',
     'host_parish_id', 'host_event_id']);
   const types = Object.fromEntries(raw.prepare('PRAGMA table_info(draft_events)').all().map(c => [c.name, c.type]));

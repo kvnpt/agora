@@ -993,6 +993,7 @@
     up: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
     share: '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.4A8.5 8.5 0 1 1 21 11.5z"/></svg>',
     pencil: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
     signIn: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l4-4-4-4M14 12H4"/></svg>',
     signOut: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M16 16l4-4-4-4M20 12H10"/></svg>',
@@ -2220,7 +2221,8 @@
   // editing: what this decides is which controls a card offers, never whether
   // a write is allowed.
 
-  const NOBODY = { signedIn: false, identity: null, role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0, suggestions: 0 };
+  const NOBODY = { signedIn: false, identity: null, role: null, parishIds: [], can: {}, openAsks: 0, parishNotices: 0, suggestions: 0,
+    whatsapp: { ready: false, drafts: [] } };
   S.who = NOBODY;
   async function checkSignIn() {
     const ping = await fetch('/api/admin/ping', { cache: 'no-store' }).catch(() => null);
@@ -2240,8 +2242,13 @@
       openAsks: who.openAsks || 0,
       parishNotices: who.parishNotices || 0,
       suggestions: who.suggestions || 0,
+      // Posters forwarded to the WhatsApp number that nobody has opened
+      // (worker/routes/ingest.mjs): the badge on a parish's +, and the
+      // sender's own line on the home page.
+      whatsapp: who.whatsapp && Array.isArray(who.whatsapp.drafts) ? who.whatsapp : NOBODY.whatsapp,
     } : NOBODY;
     syncAccount();
+    paintWhatsapp();
     // Somebody who may edit anything: the editor comes now, so the first
     // pencil they press opens at once.
     if (Object.values(S.who.can).some(Boolean)) editing().catch(() => {});
@@ -2326,9 +2333,114 @@
     const rows = S.who.signedIn
       ? `${S.who.identity ? `<div class="pm-note">${esc(S.who.identity)}</div>` : ''}
          ${S.who.role ? `<a class="pm-row" role="menuitem" href="/admin">${I.sliders}<span class="pm-t"><b>Admin panel</b>${w ? `<small class="pm-wait">${esc(w)}</small>` : ''}</span></a>` : ''}
+         ${S.who.whatsapp.ready && S.who.can['event.edit'] ? `<button class="pm-row" type="button" role="menuitem" data-wa-link>${I.chat}<span class="pm-t"><b>Link WhatsApp</b><small>Forward posters to Agora as drafts</small></span></button>` : ''}
          <a class="pm-row" role="menuitem" href="/cdn-cgi/access/logout">${I.signOut}<span class="pm-t"><b>Sign out</b></span></a>`
       : `<a class="pm-row" role="menuitem" href="${esc(signInHref())}" data-sign-in>${I.signIn}<span class="pm-t"><b>Sign in</b></span></a>`;
     openMenu(btn, rows);
+  }
+
+  // ── WhatsApp: posters forwarded to Agora's number ─────────────────────
+  //
+  // Somebody who may add events links their phone here once; a poster they
+  // forward to the number is then read into a draft at their parish
+  // (worker/routes/ingest.mjs), and the reply links to it: /snp?draft=241.
+  // Until somebody opens it, it shows as a red count on the parish card's +
+  // for whoever may edit the parish, and as a line on the sender's home page.
+
+  /** The account menu's Link WhatsApp: a code to send from the phone, and the phones linked already. */
+  async function openWhatsappLink(btn) {
+    const [made, linked] = await Promise.all([
+      fetch('/api/admin/whatsapp/code', { method: 'POST' }).then(r => r.json().then(b => ({ ok: r.ok, b }))).catch(() => null),
+      fetch('/api/admin/whatsapp', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+    if (!made || !made.ok) { toast((made && made.b && made.b.error) || 'Could not make a code. Try again.'); return; }
+    const { code, url, number } = made.b;
+    const phones = (linked && linked.phones) || [];
+    const shown = `${code.slice(0, 3)} ${code.slice(3)}`;
+    openMenu(btn, `<div class="pm-note wa-link">
+        <b>Link your phone</b>
+        <span>Send <b class="wa-code">LINK ${esc(shown)}</b> to +${esc(number)} on WhatsApp in the next 15 minutes. Then forward a poster, with its words, and it comes back here as a draft.</span>
+      </div>
+      <a class="pm-row" role="menuitem" href="${esc(url)}" target="_blank" rel="noopener">${I.chat}<span class="pm-t"><b>Open WhatsApp</b><small>With the message written</small></span></a>
+      ${phones.map(p => `<button class="pm-row" type="button" role="menuitem" data-wa-unlink="${esc(p.phone)}">${I.signOut}<span class="pm-t"><b>Unlink ${esc(p.shown)}</b>${p.name ? `<small>${esc(p.name)}</small>` : ''}</span></button>`).join('')}`);
+  }
+  async function unlinkWhatsapp(phone) {
+    const r = await fetch(`/api/admin/whatsapp/phones/${encodeURIComponent(phone)}`, { method: 'DELETE' }).catch(() => null);
+    closeMenu();
+    toast(r && r.ok ? 'Unlinked' : 'Could not unlink it. Try again.');
+  }
+
+  /** Unopened WhatsApp drafts at this parish. */
+  const whatsappAt = (pid) => S.who.whatsapp.drafts.filter(d => d.parish_id === pid);
+  /** The red count on a parish card's +: posters waiting there, for whoever may add them. */
+  function paintAddBadge(el) {
+    const btn = el && el.querySelector('.floatbar [data-act="addevent"]');
+    if (!btn) return;
+    const pid = el.dataset.pid;
+    const n = may('event.edit', pid) ? whatsappAt(pid).length : 0;
+    let badge = btn.querySelector('.fab-badge');
+    if (!n) { if (badge) badge.remove(); btn.setAttribute('aria-label', may('event.edit', pid) ? 'Add an event' : 'Suggest an event'); return; }
+    if (!badge) { badge = document.createElement('span'); badge.className = 'fab-badge'; btn.appendChild(badge); }
+    badge.textContent = n > 9 ? '9+' : String(n);
+    btn.setAttribute('aria-label', `Add an event: ${n} ${n === 1 ? 'poster' : 'posters'} from WhatsApp to look at`);
+  }
+  /** The sender's own posters, waiting: a line each at the top of the home page. */
+  function paintWhatsappHome() {
+    const box = $('#wa-drafts');
+    if (!box) return;
+    const mine = S.who.whatsapp.drafts.filter(d => d.mine);
+    box.hidden = !mine.length;
+    box.innerHTML = mine.length ? `<h2 class="sec">From WhatsApp</h2>` + mine.slice(0, 5).map(d => {
+      const p = S.byId.get(d.parish_id);
+      const what = d.read_status === 'reading' ? 'Still being read' : d.title ? d.title : d.cards > 1 ? `${d.cards} events` : 'A poster to look at';
+      return `<button class="wa-row" type="button" data-wa-draft="${d.id}" data-pid="${esc(d.parish_id)}">
+        <span class="wa-dot" aria-hidden="true"></span>
+        <span class="wa-t"><b>${esc(what)}</b><small>${esc(p ? p.name : 'Choose its parish')} · a draft until it’s published</small></span>
+        <span class="wa-go">Review</span></button>`;
+    }).join('') : '';
+  }
+  function paintWhatsapp() {
+    paintWhatsappHome();
+    for (const el of stack) if (el.classList.contains('parish')) paintAddBadge(el);
+  }
+  /**
+   * Open a draft in the add-event editor: at its parish, or — one with none
+   * yet, which the bundle does not hold — at any the person may edit, since
+   * the draft's own parish wins once it loads.
+   */
+  function openDraft(id, pid) {
+    const at = S.byId.has(pid) && may('event.edit', pid) ? pid
+      : (S.parishes.find(p => p.id !== '_unassigned' && may('event.edit', p.id)) || {}).id;
+    if (!at) return toast('That draft is at a parish you cannot edit.');
+    S.who.whatsapp = { ...S.who.whatsapp, drafts: S.who.whatsapp.drafts.filter(d => String(d.id) !== String(id)) };
+    paintWhatsapp();
+    return edit('addEvent', at, { draftId: Number(id) });
+  }
+  /** The +: one poster waiting opens it; several open the editor, which lists them. */
+  function addEventAt(pid) {
+    const waiting = whatsappAt(pid);
+    if (waiting.length === 1) return openDraft(waiting[0].id, pid);
+    return edit('addEvent', pid);
+  }
+  /**
+   * ?draft=241, the WhatsApp reply's link: the draft, open in the editor,
+   * once the sign-in has answered. Signed out, Sign in first and back here.
+   */
+  async function openLinkedDraft(signedIn, id, arrivedAt) {
+    if (!id || !/^\d+$/.test(id)) return;
+    await signedIn.catch(() => null);
+    if (!S.who.signedIn) {
+      // Once: a sign-in that comes back still signed out is not sent round again.
+      let tried = null;
+      try { tried = sessionStorage.getItem('agora-draft-sign-in'); sessionStorage.setItem('agora-draft-sign-in', id); } catch { /* storage refused */ }
+      if (tried !== id) { location.href = `/admin?back=${encodeURIComponent(arrivedAt)}`; return; }
+      return toast('Sign in to open the draft.');
+    }
+    try { sessionStorage.removeItem('agora-draft-sign-in'); } catch { /* storage refused */ }
+    const r = await fetch(`/api/admin/drafts/${id}`, { cache: 'no-store' }).catch(() => null);
+    const d = r && r.ok ? await r.json().catch(() => null) : null;
+    if (!d) return toast(r && r.status === 404 ? 'That draft is gone: published or discarded already.' : 'That draft could not be opened.');
+    return openDraft(d.id, d.parish_id);
   }
 
   // ── Menus ─────────────────────────────────────────────────────────────
@@ -2648,6 +2760,7 @@
     if (details) details.innerHTML = detailsHTML(p);
     const sug = el.querySelector('.p-suggest');
     if (sug) sug.innerHTML = suggestEditHTML(p.id);
+    paintAddBadge(el);
     refreshComingUp(el);
   }
 
@@ -2915,6 +3028,7 @@
     el._focus = focus;
     el._days = CU_DAYS;
     watchMore(el);
+    paintAddBadge(el);
     paintParishToday(el);
     loadFavCount(pid);
     // A date further out than the bundle holds fills in once it has it.
@@ -4108,8 +4222,10 @@
 
     // An open menu goes with any tap: off it, that is all the tap does (on
     // its own button, it closes it); on one of its rows, the row does its part.
+    let fromMenu = null;
     if (menu) {
       const own = menu._btn.contains(t), inside = menu.contains(t);
+      fromMenu = menu._btn;
       closeMenu();
       if (own || !inside) return;
     }
@@ -4124,6 +4240,10 @@
     if ((b = t.closest('[data-copy]'))) { copyLink(b); return; }
     if (t.closest('[data-search]')) { openSearch(); return; }
     if ((b = t.closest('[data-account]'))) { openAccount(b); return; }
+    // Link WhatsApp opens out of the account button its menu came from.
+    if (t.closest('[data-wa-link]')) { openWhatsappLink(fromMenu || $('[data-account]')); return; }
+    if ((b = t.closest('[data-wa-unlink]'))) { unlinkWhatsapp(b.dataset.waUnlink); return; }
+    if ((b = t.closest('[data-wa-draft]'))) { openDraft(b.dataset.waDraft, b.dataset.pid); return; }
     if ((b = t.closest('[data-q]'))) {
       setSearch(b.dataset.q);
       if (/near me/i.test(b.dataset.q) && !S.loc) locate();
@@ -4300,7 +4420,7 @@
       }
       if (a === 'addlist') return openAddToList(top.dataset.pid);
       // The bar's +: whoever may add an event adds one; anybody else suggests one.
-      if (a === 'addevent') return may('event.edit', top.dataset.pid) ? edit('addEvent', top.dataset.pid) : suggest(top.dataset.pid, SUGGEST.event);
+      if (a === 'addevent') return may('event.edit', top.dataset.pid) ? addEventAt(top.dataset.pid) : suggest(top.dataset.pid, SUGGEST.event);
       if (a === 'more') return openMore(top.dataset.pid, b);
       if (a === 'juris-of') { const p = S.byId.get(top.dataset.pid); const c = COLL.get('j-' + p.jurisdiction); if (c) openCollection(c); return; }
       if (a === 'newlist') {
@@ -4495,6 +4615,9 @@
   // ── Boot ──────────────────────────────────────────────────────────────
 
   async function boot() {
+    // The WhatsApp reply's ?draft=241, before the address is tidied.
+    const linkedDraft = new URLSearchParams(location.search).get('draft');
+    const arrivedAt = location.pathname + location.search;
     // Back from a Sign in: read before the map uses it up (startMap).
     const kept = readSignInView();
     // Who is looking, alongside everything else; the cards ask it as they open.
@@ -4527,11 +4650,14 @@
     renderInView();
     renderActive();
     renderFeeds();
+    // The sign-in can answer before the parishes are here to name.
+    paintWhatsapp();
     // The page's own address first, so a card opened from a link is one step
     // back from the page rather than from wherever the person came from.
     // ?app was the old lite card's way into the app, and means nothing now.
     const q = new URLSearchParams(location.search);
     q.delete('app');
+    q.delete('draft');
     try { history.replaceState({ depth: 0 }, '', pathOf(pageSegs()) + (q.toString() ? `?${q}` : '')); } catch { /* sandboxed */ }
     renderLink();
     step('✓ page drawn', 0.7);
@@ -4557,6 +4683,8 @@
     if (made && made === route.parish) {
       signedIn.then(() => { if (may('parish.edit', made)) edit('editDetails', made); }).catch(() => {});
     }
+    // The WhatsApp reply's link: its draft, over the parish card it opened.
+    openLinkedDraft(signedIn, linkedDraft, arrivedAt);
     // A map that settled before the parishes came counted none in view: count again.
     onView();
     // The loader is the map's: it goes when the map has drawn, its tiles in

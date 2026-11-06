@@ -292,6 +292,34 @@ image/jpeg' --data-binary @poster.jpg` prints the frames as they arrive.
 Drafts accumulate between runs and fill the "Saved drafts here" strip; clear
 them with `DELETE FROM draft_events; DELETE FROM drafts;`.
 
+**A poster forwarded on WhatsApp.** `scripts/mock-whatsapp.mjs` stands in for
+Meta: it serves an image as a media id, records the Worker's replies, and sends
+the Worker webhook POSTs signed as Meta signs them.
+
+```bash
+node scripts/mock-whatsapp.mjs serve 8789 &
+npx wrangler dev --local --var AGORA_DEV_ADMIN:true \
+  --var ANTHROPIC_BASE_URL:http://127.0.0.1:8788 \
+  --var WHATSAPP_GRAPH_URL:http://127.0.0.1:8789 --var WHATSAPP_TOKEN:local \
+  --var WHATSAPP_APP_SECRET:local-secret --var WHATSAPP_VERIFY_TOKEN:local \
+  --var WHATSAPP_PHONE_NUMBER_ID:111 --var WHATSAPP_NUMBER:15551234567
+# Link the stand-in phone, then forward a poster with its words:
+CODE=$(curl -s -X POST localhost:8787/api/admin/whatsapp/code | node -pe 'JSON.parse(require("fs").readFileSync(0)).code')
+node scripts/mock-whatsapp.mjs send --text "LINK $CODE"
+node scripts/mock-whatsapp.mjs send --image poster.png --caption "Mums Group, first Fridays…"
+curl -s localhost:8789/__replies
+```
+
+Apply `d1/migrations/036-whatsapp.sql` to the local database first, and give
+the parish an acronym so the reply's link has one. The home page should show
+the poster under **From WhatsApp**, the parish card's + a red 1, and the
+reply's `?draft=` link open the editor with the words in their box — and the
+ping list it no more. `--forwarded --text …` sends words alone; a mode with
+`"delay": 900` on the reader stand-in keeps the read going long enough to open
+the link mid-read and watch it fill. Editing a file under `public/` reloads
+`wrangler dev`, which drops a message still waiting under `waitUntil`: send
+again.
+
 **Signs and programmes.** Three more modes are written from real photos —
 `sign_rookwood` (St Athanasios, Rookwood's board: Saturdays 8–10, Sundays 8–11,
 in Greek), `sign_doonside` (Sts Peter & Paul, Doonside's: Sunday 10am in Arabic

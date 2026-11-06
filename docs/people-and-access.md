@@ -193,6 +193,19 @@ last person's things are already on theirs. The page tells a person with no role
 from a visitor by `/api/admin/ping`'s 403 (Access let the request through,
 `admin_roles` did not); their account menu has no Admin panel, only Sign out.
 
+## A phone on WhatsApp
+
+`/api/ingest/whatsapp` is **outside Access** — Meta calls it — and trusts two
+things only: the app secret's signature on the POST, and a phone that has been
+linked to an account (`whatsapp_links`). Linking is a six-digit code the
+account menu's **Link WhatsApp** shows to somebody signed in who may add events,
+sent from the phone within 15 minutes; it proves the same person holds both. A
+linked phone is its account for drafting and nothing else, and what the
+account may do is `admin_roles`', read again for every message: a role taken
+away stops the phone at the next poster. Unlinking is the same menu. Five codes
+that did not work in a day and a phone is told to stop; a phone nobody linked
+is told how, once an hour, and nothing it sends is read.
+
 ## Emails about claims
 
 Without them a claimant learned the outcome only by signing in again, and an

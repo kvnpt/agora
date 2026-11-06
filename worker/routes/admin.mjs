@@ -43,13 +43,15 @@ import timezones from '../../public/shared/timezones.js';
 import eventChecks from '../../public/shared/event-checks.js';
 import sse from '../../public/shared/sse.js';
 import { ensureDraftTables, validateCard, getDraft, listDrafts, createDraft, insertCard, cardWithDraft,
-  updateCard, touchDraft, mergeRead, setReadStatus, draftPosterKey, publishBody,
-  placeRead, afterServices, placeHosts, moveDraft, matchOccurrences, matchOnFile, onFileHere, oneOffFeast,
-  suggestLanguages, suggestEnds, occurrenceBody, isNewOccurrence } from '../lib/drafts.mjs';
+  updateCard, touchDraft, setReadStatus, draftPosterKey, publishBody,
+  placeRead, afterServices, moveDraft, onFileHere, oneOffFeast,
+  suggestEnds, occurrenceBody, isNewOccurrence } from '../lib/drafts.mjs';
 import signs from '../../public/shared/signs.js';
 import { readVenue, sameVenue, venueOf } from '../lib/venues.mjs';
 import { matchesWeekOfMonth } from '../../public/shared/recurrence.mjs';
 import { readPoster, posterContext } from '../lib/poster-read.mjs';
+import { readContext, readIntoDraft } from '../lib/draft-read.mjs';
+import { whatsappConfig, ensureWhatsappTables, newCode, maskPhone, linkUrl, CODE_MINUTES } from '../lib/whatsapp.mjs';
 import { sendMail, canMail, isEmail, claimFiledMail, claimDecidedMail } from '../lib/mail.mjs';
 import { suggestAcronym } from '../lib/acronym-suggest.mjs';
 
@@ -110,6 +112,37 @@ async function acronymConflict(db, acronym, parishId) {
 // an empty table is nobody (lib/roles.mjs).
 const roleOf = (c, identity) =>
   resolveRole(c.env.DB, identity, { bootstrap: c.env.AGORA_DEV_ADMIN === 'true' });
+
+/**
+ * What the app needs about WhatsApp for this person: whether the number is
+ * set up (the account menu's Link WhatsApp), and the drafts it made that
+ * nobody has opened, at the parishes they may add events to. Never fails the
+ * ping it is part of: a database without migration 036 answers none.
+ */
+async function whatsappPing(c) {
+  if (!can(c.who.role, 'event.edit')) return { ready: false, drafts: [] };
+  const ready = (await whatsappConfig(c.env, readSecret)).ready;
+  const scoped = c.who.role === 'parish';
+  const ids = scoped ? c.who.parishIds : [];
+  if (scoped && !ids.length) return { ready, drafts: [] };
+  const rows = await c.env.DB.prepare(
+    `SELECT d.id, d.parish_id, d.created_by, d.created_at, d.read_status,
+       (SELECT e.title FROM draft_events e WHERE e.draft_id = d.id AND e.title IS NOT NULL AND e.title != ''
+         ORDER BY e.position, e.id LIMIT 1) AS title,
+       (SELECT COUNT(*) FROM draft_events e WHERE e.draft_id = d.id) AS cards
+     FROM drafts d WHERE d.source = 'whatsapp' AND d.seen_at IS NULL
+     ${scoped ? `AND d.parish_id IN (${ids.map(() => '?').join(',')})` : ''}
+     ORDER BY d.id DESC LIMIT 50`
+  ).bind(...ids).all().catch(() => null);
+  const me = String(c.who.identity || '').toLowerCase();
+  return {
+    ready,
+    drafts: ((rows && rows.results) || []).map(r => ({
+      id: r.id, parish_id: r.parish_id, title: r.title || null, cards: r.cards, read_status: r.read_status,
+      created_at: r.created_at, mine: String(r.created_by || '').toLowerCase() === me,
+    })),
+  };
+}
 
 const guarded = (capability, fn) => {
   // Called as guarded(fn) by every route that predates roles.
@@ -609,26 +642,6 @@ async function openSuggestionCount(db, who) {
 /** What a poster may be, and the extension it is stored under. */
 const POSTER_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
-/**
- * What the poster reader needs about a parish that is not on the poster: the
- * parish, its zone, its own today, and the services it holds every week.
- */
-async function readContext(db, parishId) {
-  const parish = await db.prepare('SELECT id, name, address, timezone FROM parishes WHERE id = ?')
-    .bind(parishId).first();
-  const zone = (parish && parish.timezone) || DEFAULT_TIMEZONE;
-  const today = localDateOf(zone, Date.now());
-  // Whole rows: the context names them, and a programme's dated services
-  // are matched to their occurrences (matchOccurrences) — which needs the
-  // weeks and the dates a rule runs between, not just its day and time.
-  const rules = (await db.prepare(
-    `SELECT id, day_of_week, start_time, end_time, title, event_type, languages, active, week_of_month,
-            week_parity, effective_from, effective_to FROM schedules
-     WHERE parish_id = ? AND active = 1 AND (effective_to IS NULL OR effective_to >= ?)
-     ORDER BY day_of_week, start_time`
-  ).bind(parishId, today).all()).results || [];
-  return { parish, zone, today, rules };
-}
 
 /**
  * Signed in, role or not. For the few routes a person with NO role must reach:
@@ -745,6 +758,10 @@ export function registerAdminRoutes(router) {
     // Whether deciding a claim emails the claimant (lib/mail.mjs), so the
     // panel says so only when it does.
     mail: canMail(c.env),
+    // Posters forwarded to the WhatsApp number that nobody has opened, at the
+    // parishes this person may add events to: the red badge on a parish's +,
+    // and the sender's own line on the home page (routes/ingest.mjs).
+    whatsapp: await whatsappPing(c),
   })));
 
   // ── "Suggest edits": suggestions, and claims behind its box ──
@@ -1817,7 +1834,63 @@ export function registerAdminRoutes(router) {
 
   router.get('/api/admin/drafts/:id', guarded('event.edit', async (c) => {
     const r = await draftInScope(c, c.params.id);
-    return r.response || json(r.draft);
+    if (r.response) return r.response;
+    // A poster from WhatsApp, opened: off the badge on its parish's +, and off
+    // the home page of whoever sent it — whoever it is that opens it.
+    if (r.draft.source === 'whatsapp' && !r.draft.seen_at) {
+      await c.env.DB.prepare(`UPDATE drafts SET seen_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND seen_at IS NULL`)
+        .bind(r.draft.id).run();
+      return json(await getDraft(c.env.DB, r.draft.id));
+    }
+    return json(r.draft);
+  }));
+
+  // ── a phone on WhatsApp, linked to this account ──
+  //
+  // routes/ingest.mjs reads what the phone sends as this account's. Linking
+  // is a code shown here and sent from the phone, so only somebody holding
+  // both the account and the phone can do it. Anybody who may add events at
+  // a parish may link one; what a draft may then do is still their role's.
+
+  router.get('/api/admin/whatsapp', guarded('event.edit', async (c) => {
+    const cfg = await whatsappConfig(c.env, readSecret);
+    await ensureWhatsappTables(c.env.DB);
+    const phones = (await c.env.DB.prepare(
+      'SELECT phone, name, linked_at FROM whatsapp_links WHERE lower(email) = lower(?) ORDER BY linked_at'
+    ).bind(c.who.identity || '').all()).results || [];
+    return json({
+      ready: cfg.ready,
+      number: cfg.ready ? cfg.number : null,
+      phones: phones.map(p => ({ phone: p.phone, shown: maskPhone(p.phone), name: p.name, linked_at: p.linked_at })),
+    });
+  }));
+
+  router.post('/api/admin/whatsapp/code', guarded('event.edit', async (c) => {
+    const cfg = await whatsappConfig(c.env, readSecret);
+    if (!cfg.ready) return json({ error: 'WhatsApp is not set up on this site yet.' }, 503);
+    const email = c.who.identity;
+    if (!email) return json({ error: 'Sign in again, then link your phone.' }, 401);
+    await ensureWhatsappTables(c.env.DB);
+    const expires = new Date(Date.now() + CODE_MINUTES * 60e3).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    // One code per account: a new one replaces the last. A clash with
+    // somebody else's live code is drawn again.
+    for (let i = 0; i < 5; i++) {
+      const code = newCode();
+      const row = await c.env.DB.prepare(
+        `INSERT INTO whatsapp_codes (code, email, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at
+         RETURNING code`
+      ).bind(code, email, expires).first().catch(() => null);
+      if (row) return json({ code, expires_at: expires, number: cfg.number, url: linkUrl(cfg.number, code) }, 201);
+    }
+    return json({ error: 'Could not make a code — try again.' }, 503);
+  }));
+
+  router.delete('/api/admin/whatsapp/phones/:phone', guarded('event.edit', async (c) => {
+    await ensureWhatsappTables(c.env.DB);
+    const r = await c.env.DB.prepare('DELETE FROM whatsapp_links WHERE phone = ? AND lower(email) = lower(?) RETURNING phone')
+      .bind(String(c.params.phone).replace(/[^\d]/g, ''), c.who.identity || '').first();
+    return r ? json({ ok: true }) : json({ error: 'That phone is not linked to this account.' }, 404);
   }));
 
   // Move a draft to another parish: the poster was dropped at the wrong one.
@@ -1911,13 +1984,17 @@ export function registerAdminRoutes(router) {
     if (r.response) return r.response;
     const draft = r.draft;
 
-    let bytes, mediaType;
+    let bytes = null, mediaType = null;
     if (c.query.get('reread') === '1') {
       const key = posterKeyOf(draft.poster_path);
       const obj = key && await env.ASSETS_BUCKET.get(key);
-      if (!obj) return json({ error: 'This draft has no poster to read.' }, 400);
-      bytes = await obj.arrayBuffer();
-      mediaType = (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
+      // Words alone, from WhatsApp, are read again without an image.
+      const wordsOnly = !draft.poster_path && draft.source === 'whatsapp' && !!draft.message_text;
+      if (!obj && !wordsOnly) return json({ error: 'This draft has no poster to read.' }, 400);
+      if (obj) {
+        bytes = await obj.arrayBuffer();
+        mediaType = (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg';
+      }
     } else {
       mediaType = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       const ext = POSTER_TYPES[mediaType];
@@ -1964,54 +2041,18 @@ export function registerAdminRoutes(router) {
           error: 'Reading posters is not set up on this site — fill in the details by hand.' });
         return finish();
       }
-      await setReadStatus(env.DB, draft.id, 'reading');
-      const { parish, zone, today, rules } = await readContext(env.DB, draft.parish_id);
-
-      const read = await readPoster({
-        apiKey,
-        baseUrl: env.ANTHROPIC_BASE_URL,
-        image: bytes,
-        mediaType,
-        context: posterContext({ ...parish, timezone: zone }, today, rules),
-      }, send);
-      // One line per read, for Workers Observability: what it cost and how long.
-      console.log(JSON.stringify({ poster_read: {
-        draft: draft.id, parish: draft.parish_id, ok: read.ok, ms: read.ms,
-        ...(read.usage || {}), ...(read.ok ? { events: read.read.events.length } : { error: read.error }),
-      } }));
+      // A poster forwarded on WhatsApp is read again with what came with it.
+      const whatsapp = draft.source === 'whatsapp';
+      const read = await readIntoDraft(env, draft, {
+        apiKey, bytes, mediaType, send, whatsapp, note: whatsapp ? draft.message_text || '' : '',
+      });
       if (!read.ok) {
-        await setReadStatus(env.DB, draft.id, 'failed');
         send('error', { error: read.error, retry: read.retry });
         send('result', { draft: await getDraft(env.DB, draft.id) });
         return finish();
       }
-      // The parish's own address is not a venue, and "another parish's poster"
-      // becomes a parish on file when one clearly matches.
-      await placeRead(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) });
-      // Something held after a service starts when it ends, not at the time
-      // printed for the service — and is never that service's date.
-      afterServices(read.read, rules);
-      // An event at another parish's church is that parish's, with this one
-      // taking part: the one of theirs on file, or one to add there.
-      await placeHosts(env.DB, read.read, { id: draft.parish_id, ...(parish || {}) }, rules);
-      // A dated regular service — a programme's Sunday and its saint — is a
-      // change to that Sunday, not an event beside it.
-      matchOccurrences(read.read, rules);
-      // A one-off this parish already has on file is that one, filled in
-      // rather than made twice.
-      await matchOnFile(env.DB, read.read, { id: draft.parish_id, ...(parish || {}), timezone: zone });
-      // No end printed: how long such a thing usually runs (a Liturgy 1½
-      // hours, a fair 4), as a suggestion to check.
-      suggestEnds(read.read);
-      // A one-off service the poster gives no language for: the parish's
-      // usual, as a suggestion to check (publishing needs one).
-      const past = (await env.DB.prepare(
-        `SELECT event_type, languages FROM events WHERE parish_id = ? AND languages IS NOT NULL
-         ORDER BY start_utc DESC LIMIT 40`).bind(draft.parish_id).all()).results || [];
-      suggestLanguages(read.read, rules, past);
       // Null when the draft was discarded while it was being read.
-      const merged = await mergeRead(env.DB, draft.id, read.read);
-      send('result', { draft: merged });
+      send('result', { draft: read.draft });
       finish();
     })().catch(async (e) => {
       console.error(`[poster-read] ${e && (e.stack || e.message)}`);

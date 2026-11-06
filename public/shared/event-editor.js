@@ -543,6 +543,8 @@
    */
   // A card's link to its regular service, and the link undone (refreshOccurrence).
   const LINK_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+  // A speech bubble: words that came by message (WhatsApp, routes/ingest.mjs).
+  const WA_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.4A8.5 8.5 0 1 1 21 11.5z"/></svg>';
   const UNLINK_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="M8 2v3M2 8h3M16 19v3M19 16h3"/></svg>';
   const REPEAT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>';
   const convertPillHTML = () =>
@@ -655,6 +657,7 @@
           </div>
         </div>
       </div>
+      <div class="ee-wa" data-ee="whatsapp" hidden></div>
       <div class="ee-main">
         <div class="ee-sign" data-ee="sign" aria-live="polite" hidden></div>
         <div class="ee-head" data-ee="head" hidden></div>
@@ -684,6 +687,10 @@
       s.className = `ee-status${tone ? ` ee-status-${tone}` : ''}`;
       $('retry').hidden = !retry;
       $('stop').hidden = !stop;
+      // Words from WhatsApp with no poster: the poster panel is not shown, so
+      // the line goes in the box that shows the words.
+      state.status = { text: text || '', tone, retry };
+      renderWhatsappStatus();
     }
     /** The line above the buttons: what publishing or saving has to say. */
     function showMessage(text, tone = 'error') {
@@ -813,11 +820,97 @@
     function setDraft(d) {
       state.draft = { id: d.id, poster_path: d.poster_path, read_status: d.read_status,
         read_kind: d.read_kind, read_notes: d.read_notes || [], read_parish: d.read_parish || null,
-        read_language: d.read_language || null, read_details: d.read_details || null };
+        read_language: d.read_language || null, read_details: d.read_details || null,
+        source: d.source || null, message_text: d.message_text || null,
+        created_by: d.created_by || null, created_at: d.created_at || null };
       // What the person is still correcting stays theirs until it has saved.
       if (!state.svcTimer) state.services = (d.read_services || []).map(x => ({ ...x }));
       renderSuggestion();
       renderSign();
+      renderWhatsapp();
+    }
+
+    // ── a poster that came by WhatsApp ──
+    //
+    // Forwarded to Agora's number (worker/routes/ingest.mjs): the words it
+    // came with, read with it, shown as they were sent — to check the read
+    // against, or to copy what it left out.
+
+    function sentWhen(iso) {
+      const t = Date.parse(iso || '');
+      if (!Number.isFinite(t)) return '';
+      return new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+        .format(new Date(t)).replace(/\s?(am|pm)$/i, (m) => m.trim().toLowerCase());
+    }
+
+    function renderWhatsapp() {
+      const box = $('whatsapp');
+      const d = state.draft;
+      const from = !!(d && d.source === 'whatsapp');
+      box.hidden = !from;
+      if (!from) { box.innerHTML = ''; return; }
+      // Words alone are what was read: above the box that offers an image.
+      // With a poster, under it, where its read is.
+      const poster = el.querySelector('.ee-poster');
+      if (!d.poster_path && box.nextElementSibling !== poster) poster.before(box);
+      else if (d.poster_path && box.previousElementSibling !== poster) poster.after(box);
+      const words = String(d.message_text || '').trim();
+      const who = String(d.created_by || '').split('@')[0];
+      const at = sentWhen(d.created_at);
+      box.innerHTML = `<div class="ee-wa-head">${WA_ICON}<span>From WhatsApp${who ? ` · ${esc(who)}` : ''}${at ? ` · ${esc(at)}` : ''}</span></div>`
+        + (words ? `<div class="ee-wa-text" data-ee="wa-text">${esc(words)}</div>` : '<div class="ee-wa-text ee-wa-none">Nothing was written with it.</div>')
+        + '<div class="ee-wa-status" data-ee="wa-status" aria-live="polite" hidden></div>'
+        + '<div class="ee-wa-actions">'
+        + (words ? '<button type="button" class="ee-link" data-act="wa-more" hidden>Show all</button>'
+          + '<button type="button" class="ee-link" data-act="wa-copy">Copy the words</button>' : '')
+        + (!d.poster_path && words ? '<button type="button" class="ee-link" data-act="wa-read">Read them again</button>' : '')
+        + '</div>';
+      const text = box.querySelector('[data-ee="wa-text"]');
+      const more = box.querySelector('[data-act="wa-more"]');
+      if (text && more) {
+        // Long words fold to a few lines, with the way to see them all.
+        requestAnimationFrame(() => { more.hidden = text.scrollHeight <= text.clientHeight + 2; });
+        more.addEventListener('click', () => { text.classList.add('is-open'); more.hidden = true; });
+      }
+      const copy = box.querySelector('[data-act="wa-copy"]');
+      if (copy) copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(words); copy.textContent = 'Copied'; } catch { copy.textContent = 'Could not copy'; }
+        setTimeout(() => { copy.textContent = 'Copy the words'; }, 2000);
+      });
+      const again = box.querySelector('[data-act="wa-read"]');
+      if (again) again.addEventListener('click', () => { if (!(state.read && state.read.active)) startRead(null); });
+      renderWhatsappStatus();
+    }
+
+    /** The status line, in the WhatsApp box, when there is no poster panel to show it. */
+    function renderWhatsappStatus() {
+      const line = el.querySelector('[data-ee="wa-status"]');
+      if (!line) return;
+      const st = state.status || {};
+      const show = !state.posterUrl && !!st.text;
+      line.hidden = !show;
+      line.textContent = show ? st.text : '';
+      line.className = `ee-wa-status${st.tone ? ` ee-status-${st.tone}` : ''}`;
+      const again = el.querySelector('[data-act="wa-read"]');
+      if (again) again.hidden = !!(state.read && state.read.active) || !!(state.draft && state.draft.read_status === 'reading');
+    }
+
+    /**
+     * A draft being read by somebody else's request — a poster forwarded on
+     * WhatsApp, opened from the reply's link while it is still being read:
+     * looked at every few seconds, and shown as soon as it is done.
+     */
+    function watchRead(id) {
+      clearTimeout(state.watchTimer);
+      let tries = 0;
+      const tick = async () => {
+        if (state.closed || !state.draft || state.draft.id !== id || (state.read && state.read.active)) return;
+        const r = await http('GET', `/api/admin/drafts/${id}`);
+        if (state.closed || !state.draft || state.draft.id !== id || (state.read && state.read.active)) return;
+        if (r.ok && r.body.read_status !== 'reading') return loadDraft(id);
+        if (++tries < 40) state.watchTimer = setTimeout(tick, 3000);
+      };
+      state.watchTimer = setTimeout(tick, 3000);
     }
 
     function takePending(card) {
@@ -2024,7 +2117,7 @@
       renderIntent();
       renderReadNotes(null);
       for (const c of state.cards) c.readFilling = new Set();
-      setStatus('Reading the poster…', 'busy', { stop: true });
+      setStatus(state.posterUrl || blob ? 'Reading the poster…' : 'Reading the message…', 'busy', { stop: true });
       sync();
       const url = `/api/admin/drafts/${state.draft.id}/poster${blob ? '' : '?reread=1'}`;
       let res;
@@ -2799,10 +2892,12 @@
       const ago = mins < 2 ? 'just now' : mins < 60 ? `${mins} minutes ago` : mins < 1440
         ? `${Math.round(mins / 60)} hours ago` : `${Math.round(mins / 1440)} days ago`;
       const who = String(d.created_by || '').split('@')[0];
+      if (d.source === 'whatsapp') return `From WhatsApp ${ago}${who ? ` · sent by ${who}` : ''}`;
       return `Saved ${ago}${who ? ` · started by ${who}` : ''}`;
     }
 
     async function loadDraft(id) {
+      clearTimeout(state.watchTimer);
       await flushAll();
       abortRead();
       const r = await http('GET', `/api/admin/drafts/${id}`);
@@ -2824,11 +2919,13 @@
       if (state.cards.length > 1) enterMulti();
       if (state.objectUrl) { URL.revokeObjectURL(state.objectUrl); state.objectUrl = null; }
       showPoster(r.body.poster_path || null);
+      const what = r.body.poster_path ? 'poster' : 'message';
       if (r.body.read_status === 'reading') {
-        setStatus('This poster is still being read. Read it again if nothing appears in a minute.', 'note', { retry: true });
+        setStatus(`This ${what} is still being read. It will be filled in here when it is done.`, 'note', { retry: true });
         state.read = { ctrl: null, active: false, blob: null };
+        watchRead(r.body.id);
       } else if (r.body.read_status === 'failed') {
-        setStatus('Reading this poster did not finish.', 'error', { retry: true });
+        setStatus(`Reading this ${what} did not finish.`, 'error', { retry: true });
         state.read = { ctrl: null, active: false, blob: null };
       } else if (r.body.poster_path) {
         setStatus(readSummary(r.body), 'done');
@@ -3150,6 +3247,7 @@
       for (const c of state.cards) flush(c);
       if (state.svcTimer) { clearTimeout(state.svcTimer); saveServices(); }
       abortRead();
+      clearTimeout(state.watchTimer);
       state.closed = true;
       document.removeEventListener('paste', onPaste);
       if (state.objectUrl) setTimeout(() => URL.revokeObjectURL(state.objectUrl), 60000);

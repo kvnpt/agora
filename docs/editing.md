@@ -370,6 +370,49 @@ says what is worth a look — above all a printed weekday that disagrees with th
 date, which is how a misread date usually shows itself. Missing title, date or
 start time blocks Publish; the Worker runs the same checker before it writes.
 
+**A poster forwarded on WhatsApp is a draft too** (Kevin, 6 Nov 2026:
+copying a WhatsApp image into the editor and then its caption was two trips).
+Somebody who may add events links their phone once — the account menu's **Link
+WhatsApp** shows `LINK 482 193`, which they send to Agora's number — and from
+then on a poster they forward there, with the words it came with, is read into
+a draft exactly as if they had dropped it on the editor
+(`worker/routes/ingest.mjs`, `worker/lib/whatsapp.mjs`; the read is
+`worker/lib/draft-read.mjs`, shared with the editor's own). The number replies
+with what it read and the draft's link (`/snp?draft=241`). Nothing is
+published: the draft waits for a person, like any other. What is worth knowing:
+
+- **The words are read with the image.** A caption, and a text sent within
+  five seconds of the poster (forwarding two messages sends them a second
+  apart), go to the reader as the announcement's own words (`posterContext`'s
+  `whatsapp` framing: they may give what the image leaves out; where the two
+  disagree, the image wins) and onto the draft as `drafts.message_text`, which
+  the editor shows in a box of its own with **Copy the words**. Words alone,
+  forwarded, are read as the poster itself, with no image. Words *typed*
+  within two minutes after a draft (not forwarded) are a note on it — added to
+  its words, not read — and a parish link among them (`/sew`,
+  `orthodoxy.au/sew`) moves it there.
+- **Which parish.** A parish link in the words; else a contact's only parish;
+  else where the sender last drafted (or their first parish), moved by the
+  read to **whose poster it is** if they may edit that one — before the read
+  is squared with a parish, so its services and events are matched to the
+  right one (`readIntoDraft`'s `choose`). An owner with nowhere to start drafts
+  at `_unassigned`, and the editor's picker chooses.
+- **Unopened, it shows.** `drafts.source = 'whatsapp'` and `seen_at` NULL:
+  a red count on the parish card's + for whoever may edit the parish (one
+  waiting opens it; several open the editor, which lists them), and a line on
+  the **sender's** home page, from `GET /api/admin/ping`. Opening it
+  (`GET /api/admin/drafts/:id`) sets `seen_at`, whoever opens it.
+- **Thirty seconds.** Meta wants its 200 at once, and work after a response
+  gets 30 seconds (`waitUntil`). The message is logged and answered first; the
+  reply goes at 22 seconds whether the read has finished or not ("still being
+  read"). Most posters read in 7–10 seconds and a full programme in about 25;
+  one cut short stays `reading`, which the editor offers to read again. A
+  draft opened from the link while it is still being read is looked at every
+  few seconds and filled in when it is done.
+- **Once, by WhatsApp's id.** Every message is a `whatsapp_messages` row keyed
+  by its id, so a delivery Meta repeats does nothing; a phone may make 30
+  drafts a day; rows go after 30 days.
+
 **A draft can change parish until it is published.** The editor's first row is
 a **Parish** picker — the parishes this person may publish at, by name — in both
 hosts; /admin's own select, which fixed the parish once a draft existed, is

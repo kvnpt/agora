@@ -529,6 +529,14 @@ What changed from the sketch above, and why:
 Doors 1 and 2 would make a draft the same way: store the image, call the same
 reader, and point the sender at the draft.
 
+**Door 1 built (November 2026)** as `POST /api/ingest/whatsapp`
+(`worker/routes/ingest.mjs`; docs/editing.md, "A poster forwarded on WhatsApp
+is a draft too"). Where it differs from the sketch: the sender is a phone
+*linked to an account* by a code the account menu shows, not a number in
+`admin_roles`, so admin_roles keeps one key (the email) and the role is read
+per message; the image is fetched into memory and base64'd, as the editor's is;
+and the words that come with it are read with it.
+
 **The review is not optional**, and it is not a moderation queue for ordinary
 edits either. It exists because what is being approved was *read by a model*
 from a photograph: a misread "7:30" as "1:30" sends somebody to a locked church,

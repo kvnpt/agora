@@ -113,6 +113,34 @@
 .paste-note { margin: 6px 2px 0; font-size: 12.5px; line-height: 1.45; color: var(--text-2, var(--muted, #6b7280)); }
 .paste-note[hidden] { display: none; }
 
+/* A poster that came by WhatsApp: the words it was sent with, as sent. */
+.ee-wa {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--ee-field);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.ee-wa[hidden] { display: none; }
+.ee-wa-head { display: flex; align-items: center; gap: 6px; color: var(--text-2, var(--muted, #6b7280)); font-size: 12.5px; margin-bottom: 4px; }
+.ee-wa-head svg { flex: 0 0 auto; }
+.ee-wa-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ee-wa-text.is-open { display: block; -webkit-line-clamp: unset; }
+.ee-wa-none { color: var(--text-2, var(--muted, #6b7280)); font-style: italic; }
+.ee-wa-status { margin-top: 6px; font-size: 13px; }
+.ee-wa-status[hidden] { display: none; }
+.ee-wa-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+.ee-wa-actions:empty { display: none; }
+
 .ee-poster-card { display: flex; gap: 12px; align-items: flex-start; }
 .ee-thumb-btn { flex: 0 0 auto; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .ee-thumb {

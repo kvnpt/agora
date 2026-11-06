@@ -663,6 +663,24 @@ body.map-full .parish-row {
    each a tint and its sign; one of posters, the title under the art; the
    languages and the jurisdictions as links in a row. */
 
+/* The sender's posters from WhatsApp, waiting (next.js paintWhatsappHome). */
+.wa-drafts[hidden] { display: none; }
+.wa-drafts .sec { padding-top: 18px; }
+.wa-row {
+  display: flex; align-items: center; gap: 12px; width: calc(100% - 2 * var(--pad)); margin: 0 var(--pad) 8px;
+  padding: 11px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); text-align: left; color: var(--text);
+}
+.wa-row:active { background: var(--line); }
+.wa-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+.wa-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wa-t b { font-size: 15.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wa-t small { font-size: 13px; color: var(--text-2); }
+.wa-go { flex: none; color: var(--accent); font-weight: 600; font-size: 14.5px; }
+/* Link WhatsApp's code, in the account menu. */
+.pm-note.wa-link { white-space: normal; max-width: 300px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); font-size: 13.5px; line-height: 1.45; }
+.pm-note.wa-link > b { color: var(--text); font-size: 15px; }
+.wa-code { color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+
 .favs { margin-top: 26px; }
 .shelf { margin-top: 26px; }
 .shelf:empty { display: none; }
@@ -1053,6 +1071,13 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .floatbar button:active { background: var(--line); }
 .floatbar button.on { color: #f5a400; }
 .floatbar button.bm.on { color: var(--accent); }
+/* Posters from WhatsApp nobody has opened at this parish (next.js paintAddBadge). */
+.floatbar button { position: relative; }
+.fab-badge {
+  position: absolute; top: 1px; right: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--danger); color: #fff; font-size: 11.5px; font-weight: 700; line-height: 18px; text-align: center;
+  box-shadow: 0 0 0 2px var(--card); pointer-events: none;
+}
 
 /* A collection's card. */
 .collection .sheet-scroll { padding-top: 0; }
