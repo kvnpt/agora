@@ -211,11 +211,12 @@ secret_name = "ANTHROPIC_API_KEY"
 [vars]
 GITHUB_REPO = "kvnpt/agora"
 # Agora's WhatsApp number (worker/routes/ingest.mjs; docs/deploy-and-ci.md):
-# Meta's id for the number, and the number itself in digits. Forwarding
+# Meta's id for the number, and the number itself in digits (for now Meta's
+# developer test number, which answers only its listed recipients). Forwarding
 # posters stays off until both are set and so are the WHATSAPP_TOKEN,
 # WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN Worker secrets.
-WHATSAPP_PHONE_NUMBER_ID = ""
-WHATSAPP_NUMBER = ""
+WHATSAPP_PHONE_NUMBER_ID = "1473656299164279"
+WHATSAPP_NUMBER = "15551549124"
 
 # GITHUB_ACTIONS_TOKEN is declared above, and remains OPTIONAL in the code.
 #
