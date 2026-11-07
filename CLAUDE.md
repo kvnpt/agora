@@ -126,7 +126,7 @@ for them, are in the doc it links to — read that before changing the area.
 - Every push to `main` deploys (Workers Builds). Green CI is the merge gate.
 - Every PR gets a Worker Preview on a copy of the data. A Preview binds only
   `[previews]` in `wrangler.toml`; never put a secret there.
-- CI runs none of `next/next.js`, `next/editing.js`, `bundle.js`, `map.js`: a change there
+- CI runs none of `next/next.js`, `next/editing.js`, `next/month.js`, `bundle.js`, `map.js`: a change there
   is checked in a browser ([docs/browser-checks.md](docs/browser-checks.md)) and
   the PR says how. Check the way in, not just the behaviour.
 - A schema change is two files (baseline + `d1/migrations/`), and the migration
