@@ -2,8 +2,8 @@
 //
 // List and Month are two views of one Calendar, as in any calendar app: the
 // same days, the same rows, the same filters and the same editing controls.
-// Month lets you pick a day by where it sits, so in Month it takes Date's
-// place, and the list under it carries on from the day picked, a FROM as
+// Month is where a day is picked (there is no Date button; Kevin, 7 Nov
+// 2026), and the list under it carries on from the day picked, a FROM as
 // every date is. It is for everyone, and not in index.html: next.js fetches
 // this file (and month.css) the first time somebody taps Month, as it does
 // editing.js for an editor, so a visitor who never taps it downloads nothing.
@@ -13,6 +13,7 @@
 // a wide screen, the page's map beside the card gives way to a big month
 // with each day's services in it, a Map button to have the map back, and the
 // card's list beside it following the day picked (#194 put the map there).
+// A phone's card has its map at the top, scrolled away by then: no Map.
 //
 // Notices: with more than a few parishes a day holds dozens of regular
 // services, which say nothing a timetable does not. So a card of several
@@ -25,6 +26,7 @@
 //   list(el, start, days)  what the card's Calendar holds on those days (its filters, its parishes on)
 //   parishes(el)           the card's parishes, all of them
 //   ensure(end)            the bundle holds every day to `end`
+//   holds(end)             does it already (no wait)
 //   local(e)               { date, hm } in the parish's own zone
 //   colour(e)              the jurisdiction colour of where it is held
 //   tomb(e)                'Cancelled', 'Combined', 'Break', or null
@@ -112,7 +114,7 @@
 
   // ── Drawing ───────────────────────────────────────────────────────────
 
-  function headHTML(el, m, { wide, mapBack }) {
+  function headHTML(el, m, { wide }) {
     const t = host.today();
     const many = parishesOf(el).length > 1;
     const notices = noticesOn(el);
@@ -120,12 +122,13 @@
     const picked = el._from || t;
     return `<div class="mg-head">
         <button class="mg-nav" type="button" data-mg-step="-1" aria-label="Previous month"${here ? ' disabled' : ''}>‹</button>
-        <h3 class="mg-title" aria-live="polite">${esc(monthTitle(m))}</h3>
+        <h3 class="mg-title" aria-live="polite">${esc(monthTitle(m))}<span class="mg-wait" aria-hidden="true"><i></i><i></i><i></i></span></h3>
         <button class="mg-nav" type="button" data-mg-step="1" aria-label="Next month"${m >= monthOf(host.addDays(t, AHEAD)) ? ' disabled' : ''}>›</button>
-        <span class="mg-sp"></span>
-        ${!here || picked !== t ? '<button class="fpill" type="button" data-mg-today>Today</button>' : ''}
-        ${many ? `<button class="fpill${notices ? ' on' : ''}" type="button" data-mg-notices aria-pressed="${notices}" title="Only what is new or changed: one-offs, and dates moved or cancelled">Notices</button>` : ''}
-        ${mapBack ? '<button class="fpill" type="button" data-mg-map>Map</button>' : ''}
+        <span class="mg-acts">
+          ${!here || picked !== t ? '<button class="fpill" type="button" data-mg-today>Today</button>' : ''}
+          ${many ? `<button class="fpill${notices ? ' on' : ''}" type="button" data-mg-notices aria-pressed="${notices}" title="Only what is new or changed: one-offs, and dates moved or cancelled">Notices</button>` : ''}
+          ${wide ? '<button class="fpill" type="button" data-mg-map>Map</button>' : ''}
+        </span>
       </div>`;
   }
 
@@ -180,9 +183,7 @@
     const sel = el._from || host.today();
     const notices = noticesOn(el);
     const { days } = monthDays(el, m);
-    // Map, where Month has taken its place: beside the card, or at the top of a card of parishes.
-    const mapBack = wide || el.classList.contains('has-map');
-    return `${headHTML(el, m, { wide, mapBack })}
+    return `${headHTML(el, m, { wide })}
       ${layersHTML(el)}
       <div class="mg-wk" aria-hidden="true">${(wide ? HEAD_WIDE : HEAD).map((x, i) => `<span${i === 6 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
       <div class="mg-grid" style="--weeks:${days.length / 7}">${days.map(d => wide ? bigDay(d, sel, notices, fit) : smallDay(d, sel, notices)).join('')}</div>`;
@@ -257,16 +258,33 @@
     for (const el of host.stack()) paintSmall(el);
     paintWide();
   }
+  /** The day after a month's last, which the bundle must reach for the month to be whole. */
+  const pastEnd = (m) => host.addDays(`${m}-${String(lastDay(m)).padStart(2, '0')}`, 1);
+  /** A card's month faded a little, its days not in yet (month.css .mg.waiting): nothing goes blank. */
+  function waiting(el, on) {
+    const box = el.querySelector(':scope .cu-band > .mg');
+    if (box) box.classList.toggle('waiting', on);
+    if (wideEl && wideFor === el) wideEl.classList.toggle('waiting', on);
+  }
   /** One card's month again (its days, its parishes, its date), and the bundle asked for the month shown. */
   async function paint(el) {
     if (!el || !el._month) { follow(); return; }
     const m = shownMonth(el);
     paintSmall(el);
     paintWide();
-    // A month further out than the bundle holds fills in once it has it.
-    const end = `${m}-${String(lastDay(m)).padStart(2, '0')}`;
-    try { await host.ensure(host.addDays(end, 1)); } catch (err) { console.warn(err); return; }
-    if (el._monthAt === m && el._month) { paintSmall(el); if (wideFor === el) paintWide(); }
+    // A month further out than the bundle holds fills in once it has it,
+    // quietly: its days drawn, faded until their services are in.
+    if (!host.holds(pastEnd(m))) {
+      waiting(el, true);
+      try { await host.ensure(pastEnd(m)); } catch (err) { console.warn(err); }
+      if (!el._month || shownMonth(el) !== m) return;
+      paintSmall(el);
+      if (wideFor === el) paintWide();
+      waiting(el, false);
+    }
+    // The month after, asked for now, so that › shows it at once.
+    const next = addMonths(m, 1);
+    if (next <= monthOf(host.addDays(host.today(), AHEAD))) host.ensure(pastEnd(next)).catch(() => {});
   }
 
   /** A tap the page passes on: true when it was one of the month's own. */

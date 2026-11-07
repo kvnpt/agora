@@ -60,7 +60,10 @@ existed as a row resolves — client-side, from rules the browser already holds.
 **The feed has no last page.** The page has no feed of its own: Today's button
 opens the In view card (or the one parish in view), and a card's Calendar grows a
 fortnight at a time as it is scrolled (`moreIO` in `next.js`, to a year), and
-nothing takes it away. The step
+nothing takes it away: the new days are added under the ones on screen
+(`growComingUp`), never the whole list drawn again, which flashed every
+picture in it (Kevin, 7 Nov 2026). A wait for days the bundle lacks leaves
+what is on screen and fades it a little after a moment (`loadQuietly`). The step
 costs a request only for what is genuinely window-bound — the overrides and
 stored one-offs in the new stretch — because the rules that produce the
 occurrences are already in the browser, which is the whole point of the lens.
@@ -72,11 +75,14 @@ to.
 view all along; **Month**, beside a card's Filters, shows the card's Calendar as
 a month of days (`public/next/month.js` and `month.css`, loaded on the first tap
 as `editing.js` is, and kept by `sw.js`). It reads what the list reads
-(`cardList` in `next.js`, the card's filters included) and stores nothing. A
-picked day is the list's FROM, as Date's was, and Date goes while Month is on.
-On a phone the grid sits under the Calendar's title, dots for a day's services
-(hollow for one not held), and takes the map's place in a card of parishes; on
-a laptop (≥1080px) it takes the map's place beside the card, titles in the
+(`cardList` in `next.js`, the card's filters included) and stores nothing.
+Month is where a day is picked, and the picked day is the list's FROM: there
+is no Date button (Kevin, 7 Nov 2026). Open, or with the list from a later
+day, Month carries an X, which closes it and has the list from today again,
+so the list alone has no Today. On a phone the grid sits under the Calendar's
+title, dots for a day's services (hollow for one not held); a card of
+parishes keeps its map at its top, scrolled away with the card. On a laptop
+(≥1080px) the grid takes the map's place beside the card, titles in the
 cells, and **Map** has the map back. A card of more than four parishes starts
 on **Notices** (each day's one-offs, changes and cancellations, with a grey
 count of its regular services), and a card of a few can switch each parish off

@@ -128,8 +128,8 @@ The page's card of a collection, a list, a search or the parishes in view is lai
 out as a parish's (Kevin, 2 Nov 2026): its head, with the filters it asks as pills
 over its title (Feast, English, Wednesdays) and a hairline over it in its parishes'
 jurisdiction colours and the pills'; Today; the parishes behind their logos; What's
-on (their posters, under its filters); and the Calendar, with **Date** and the card's
-own **Filters** beside the title. Changing them changes the card's link and words: a
+on (their posters, under its filters); and the Calendar, with the card's own
+**Filters** and **Month** (where a day is picked) beside the title. Changing them changes the card's link and words: a
 collection's parishes are asked again, a list keeps them (`filters`, a path, in
 `saved.js`) and opens with them, and Clear all leaves only whose and where.
 
