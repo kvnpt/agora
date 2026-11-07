@@ -57,3 +57,12 @@ test('with no IndexedDB, a poster is not kept and none is found — and nothing 
   assert.equal(await S.takePoster('p1', { idb: null }), null);
   await S.dropPoster('p1', { idb: null });
 });
+
+test('Confirm on WhatsApp sends what the suggest page would: a poster makes it an event, its words the details', () => {
+  const change = S.whatsappPayload('snp', { about: 'An event', change_body: 'Vespers is at 6', name: 'Kev' });
+  assert.deepEqual(change, { parish_id: 'snp', about: 'An event', body: 'Vespers is at 6', name: 'Kev', poster: false });
+  const event = S.whatsappPayload('snp', { about: 'Sunday 9:30am · Divine Liturgy', change_body: 'Followed by a lunch', name: '', poster: true });
+  assert.equal(event.body, 'Sunday 9:30am · Divine Liturgy: Followed by a lunch', 'the service time it names, first');
+  assert.equal(event.poster, true);
+  assert.equal(S.whatsappPayload('snp', { about: 'An event', change_body: '', poster: true }).body, '', 'a topic says nothing here');
+});

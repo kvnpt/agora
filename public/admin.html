@@ -4045,8 +4045,11 @@
           ${x.kind === 'event' && when(x) ? `<div class="ask-why">${esc(when(x))}</div>` : ''}
           ${x.body ? `<div class="ask-why" style="white-space:pre-line;">\u201c${esc(x.body)}\u201d</div>` : ''}
           ${x.link ? `<div class="ask-why"><a href="${attr(x.link)}" target="_blank" rel="noopener nofollow">${esc(x.link)}</a></div>` : ''}
-          ${x.poster_path ? `<div class="ask-why"><a href="${attr(x.poster_path)}" target="_blank" rel="noopener" title="Open the poster"><img src="${attr(x.poster_path)}" alt="Their poster" loading="lazy" style="display:block;width:84px;max-height:120px;object-fit:cover;object-position:top;border:1px solid var(--border);border-radius:8px;"></a></div>` : ''}
-          <div class="ask-meta">${esc(x.email)} \u00b7 ${relativeTime(x.created_at)}</div>
+          ${x.poster_path ? `<div class="ask-why" style="display:flex;gap:6px;flex-wrap:wrap;">${[x.poster_path, ...(x.images || [])].map((src, i) => `<a href="${attr(src)}" target="_blank" rel="noopener" title="Open the poster"><img src="${attr(src)}" alt="${i ? 'Another of their pictures' : 'Their poster'}" loading="lazy" style="display:block;width:84px;max-height:120px;object-fit:cover;object-position:top;border:1px solid var(--border);border-radius:8px;"></a>`).join('')}</div>` : ''}
+          <div class="ask-meta">${x.whatsapp
+            // Sent on WhatsApp alone: no address, so write back on WhatsApp.
+            ? `On WhatsApp, <a href="${attr(x.whatsapp.url)}" target="_blank" rel="noopener">${esc(x.whatsapp.phone)}</a>`
+            : esc(x.email)} \u00b7 ${relativeTime(x.created_at)}</div>
           ${decided
             ? `<div class="ask-meta"><b>${esc(x.status)}</b>${x.decided_by ? ' by ' + esc(x.decided_by) : ''}${x.decision_note ? ' \u2014 \u201c' + esc(x.decision_note) + '\u201d' : ''}</div>`
             : `<div class="btn-row">
@@ -4066,7 +4069,11 @@
     async function decideSuggestion(id, decision) {
       let note = null;
       if (decision === 'dismiss') {
-        note = prompt('Why not? (They will see this.)');
+        // Somebody on WhatsApp alone has no page to read it on.
+        const x = suggestions.find(y => y.id === id);
+        note = prompt(x && x.whatsapp
+          ? 'Why not? (Kept with the suggestion. They sent it on WhatsApp, so write back there if they should know.)'
+          : 'Why not? (They will see this.)');
         if (note === null) return;
       }
       const res = await fetch(`/api/admin/suggestions/${id}/decide`, {

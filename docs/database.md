@@ -81,7 +81,10 @@ added on first use, as REAL for the two coordinates. So is 031's
 `draft_events.parish_scoped` (the Add event card's Public / Parish only pill), as
 INTEGER. So are 037's `drafts.images` (a WhatsApp forward's pictures after the
 first, waiting to be joined into its poster) and `drafts.sender_name` (the
-sender's WhatsApp name), as TEXT. 023 also backfills: an
+sender's WhatsApp name), as TEXT. And 038's `whatsapp_messages.suggestion_id`
+and `parish_suggestions.images` (`lib/whatsapp.mjs` `addLaterColumns`): the
+webhook reads `suggestion_id` for every message, linked phones' too, so a
+deploy ahead of the migration must not stop it. 023 also backfills: an
 event whose words already named a place and whose pin was not its parish's had
 been geocoded there, so that pin becomes the place's own, and the event a square.
 

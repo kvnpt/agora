@@ -895,6 +895,13 @@ CREATE INDEX idx_parish_claims_open ON parish_claims(status, created_at);
 -- Access vouched for. Becoming a parish contact is a box on the same form, and
 -- a ticked box writes a parish_claims row beside this one.
 --
+-- Or by a phone, on WhatsApp alone (migration 038): `email` is then
+-- "wa:61412345678", the number WhatsApp vouched for (worker/lib/whatsapp.mjs
+-- phoneIdentity), never an address and never anybody's sign-in. `images` is
+-- the pictures of a WhatsApp forward after the first, which is the poster: a
+-- JSON list of '/posters/<key>' paths, NULL when there are none, handed to
+-- the draft started from it (drafts.images).
+--
 -- worker/lib/suggestions.mjs also creates this table IF NOT EXISTS on first
 -- use, with the same DDL, so a deploy that lands before migration 024 does not
 -- fail the first suggestion.
@@ -917,7 +924,8 @@ CREATE TABLE parish_suggestions (
   decided_by    TEXT,
   decided_at    TEXT,
   decision_note TEXT,
-  draft_id      INTEGER
+  draft_id      INTEGER,
+  images        TEXT
 );
 CREATE INDEX idx_parish_suggestions_open ON parish_suggestions(status, parish_id, created_at);
 
@@ -1306,7 +1314,9 @@ CREATE TABLE whatsapp_codes (
 -- read together, and a phone is held to 30 drafts a day. `sent_at` is
 -- WhatsApp's timestamp (unix seconds); `draft_id` the draft it went into, and
 -- `outcome` what became of it ('draft', 'joined', 'linked', 'unlinked', …).
--- Rows older than 30 days are deleted as new ones arrive.
+-- `suggestion_id` (migration 038) the suggestion it went into instead, from a
+-- phone nobody linked ('suggestion'). Rows older than 30 days are deleted as
+-- new ones arrive.
 CREATE TABLE whatsapp_messages (
   id          TEXT PRIMARY KEY,
   phone       TEXT NOT NULL,
@@ -1317,6 +1327,32 @@ CREATE TABLE whatsapp_messages (
   sent_at     INTEGER NOT NULL,
   received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   draft_id    INTEGER,
-  outcome     TEXT
+  outcome     TEXT,
+  suggestion_id INTEGER
 );
 CREATE INDEX idx_whatsapp_messages_phone ON whatsapp_messages(phone, sent_at);
+
+-- The Suggest dialog's "Confirm on WhatsApp" (migration 038): what somebody
+-- wrote, waiting for the six digits it showed them to arrive from a phone.
+-- The phone that sends `code` is the sender, and the suggestion is filed
+-- then, under it. `secret` is the browser's own handle, for its poster and
+-- for asking whether it went; the dialog is outside Access, so `ip` holds an
+-- address to ten an hour. `poster_path` waits in R2 unread until the code
+-- comes (deleted with the row if it never does); `outcome` is 'sent', or why
+-- not. Rows go a day after `expires_at`.
+CREATE TABLE whatsapp_tickets (
+  code          TEXT PRIMARY KEY,
+  secret        TEXT NOT NULL UNIQUE,
+  parish_id     TEXT NOT NULL,
+  about         TEXT,
+  body          TEXT,
+  name          TEXT,
+  poster_path   TEXT,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  expires_at    TEXT NOT NULL,
+  phone         TEXT,
+  suggestion_id INTEGER,
+  outcome       TEXT
+);
+CREATE INDEX idx_whatsapp_tickets_ip ON whatsapp_tickets(ip, created_at);

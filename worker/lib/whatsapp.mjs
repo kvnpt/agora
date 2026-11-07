@@ -4,8 +4,10 @@
 // in a message beside it. Copying the image into the editor and then the
 // words is two trips (Kevin, 6 Nov 2026); forwarding the post to Agora's
 // number is one. routes/ingest.mjs turns what arrives into a draft at the
-// sender's parish; this file is everything about WhatsApp it needs, kept
-// apart so the tests can drive it with a fake Graph API.
+// sender's parish — or, from a phone nobody has linked, a suggestion to
+// whoever keeps the parish (Kevin, 6 Nov 2026: WhatsApp alone, no email);
+// this file is everything about WhatsApp it needs, kept apart so the tests
+// can drive it with a fake Graph API.
 //
 // Meta's Cloud API (developers.facebook.com/docs/whatsapp/cloud-api):
 //   * a webhook: GET to verify it once (hub.verify_token), then a POST per
@@ -26,6 +28,13 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const DAILY_LIMIT = 30;
 /** How long a link code lasts. */
 export const CODE_MINUTES = 15;
+/**
+ * How long the Suggest dialog's code waits to be sent from the phone: long
+ * enough to find WhatsApp, or the phone itself when the page is on a laptop.
+ */
+export const TICKET_MINUTES = 30;
+/** Codes the Suggest dialog may hand one address in an hour (the dialog is outside Access). */
+export const TICKETS_PER_HOUR = 10;
 /** A poster and a text this close together (seconds, each to the next) were sent as one. */
 export const GROUP_GAP_S = 5;
 /**
@@ -74,16 +83,53 @@ export const WHATSAPP_DDL = [
   sent_at     INTEGER NOT NULL,
   received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   draft_id    INTEGER,
-  outcome     TEXT
+  outcome     TEXT,
+  suggestion_id INTEGER
 )`,
   'CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone ON whatsapp_messages(phone, sent_at)',
+  `CREATE TABLE IF NOT EXISTS whatsapp_tickets (
+  code          TEXT PRIMARY KEY,
+  secret        TEXT NOT NULL UNIQUE,
+  parish_id     TEXT NOT NULL,
+  about         TEXT,
+  body          TEXT,
+  name          TEXT,
+  poster_path   TEXT,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  expires_at    TEXT NOT NULL,
+  phone         TEXT,
+  suggestion_id INTEGER,
+  outcome       TEXT
+)`,
+  'CREATE INDEX IF NOT EXISTS idx_whatsapp_tickets_ip ON whatsapp_tickets(ip, created_at)',
 ];
 
+// A column a table got later (038: the suggestion a message went into) is
+// looked for and added when a database made before the migration lacks it —
+// CREATE TABLE IF NOT EXISTS adds none — as drafts.mjs does for its own, so a
+// deploy ahead of the migration still reads every message.
+const LATER_COLUMNS = { whatsapp_messages: { suggestion_id: 'INTEGER' } };
 const ensured = new WeakSet();
 export async function ensureWhatsappTables(db) {
   if (ensured.has(db)) return;
   await db.batch(WHATSAPP_DDL.map(sql => db.prepare(sql)));
+  await addLaterColumns(db, LATER_COLUMNS);
   ensured.add(db);
+}
+
+/** Columns added since a table was made, added where missing: a read first, so the usual answer is a query that works. */
+export async function addLaterColumns(db, tables) {
+  for (const [table, cols] of Object.entries(tables)) {
+    try {
+      await db.prepare(`SELECT ${Object.keys(cols).join(', ')} FROM ${table} LIMIT 0`).all();
+    } catch {
+      const have = new Set(((await db.prepare(`PRAGMA table_info(${table})`).all()).results || []).map(c => c.name));
+      for (const [c, type] of Object.entries(cols)) {
+        if (!have.has(c)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${c} ${type}`).run();
+      }
+    }
+  }
 }
 
 /** What the number needs to work. Null when any of it is missing: the feature is off. */
@@ -242,6 +288,53 @@ export function maskPhone(phone) {
 /** https://wa.me/<number>?text=LINK%20482193: opens WhatsApp with the message written. */
 export const linkUrl = (number, code) => `https://wa.me/${number}?text=${encodeURIComponent(`LINK ${code}`)}`;
 
+// ── a phone with no account behind it ──
+//
+// Somebody who only has WhatsApp can still suggest: a phone nobody linked
+// is its own sender. Its suggestions are filed under this identity where an
+// emailed one has the address Access verified. It can never be an Access
+// identity (those are addresses, or Access's own ids), so nobody signs in
+// as one; and it is not an address, so nothing ever emails it.
+
+const PHONE_ID = 'wa:';
+
+/** The sender a phone is: "wa:61412345678". */
+export const phoneIdentity = (phone) => `${PHONE_ID}${String(phone || '').replace(/[^\d]/g, '')}`;
+
+/** The phone a sender is, or null for an address. */
+export function phoneOfIdentity(identity) {
+  const s = String(identity || '');
+  return s.startsWith(PHONE_ID) && /^\d{6,}$/.test(s.slice(PHONE_ID.length)) ? s.slice(PHONE_ID.length) : null;
+}
+
+/** A chat with that phone, for whoever keeps the parish to write back. */
+export const chatUrl = (phone) => `https://wa.me/${String(phone || '').replace(/[^\d]/g, '')}`;
+
+/**
+ * The code in the message the Suggest dialog writes ("Send my suggestion for
+ * …. Code: 482 193"), or null. Only that message: a forwarded announcement
+ * can carry a "code: 123 456" of its own (a call's), and is a poster's words.
+ * Distinct from a link code, which is the message's only words.
+ */
+export function ticketIn(text) {
+  const m = /^\s*send my suggestion\b[\s\S]*?\bcode\b\W{0,3}(\d{3})\s?(\d{3})(?!\d)/i.exec(String(text || ''));
+  return m ? m[1] + m[2] : null;
+}
+
+/** The message the Suggest dialog opens WhatsApp with. */
+export const ticketText = (parishName, code) =>
+  `Send my suggestion for ${parishName || 'the parish'}. Code: ${code.slice(0, 3)} ${code.slice(3)}`;
+
+export const ticketUrl = (number, parishName, code) =>
+  `https://wa.me/${number}?text=${encodeURIComponent(ticketText(parishName, code))}`;
+
+/** Thirty-two hex digits: the browser's handle on its code, which nobody else sees. */
+export function newSecret() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
 // ── what goes with what ──
 
 /**
@@ -302,6 +395,9 @@ export function pruneStatements(db) {
   ];
 }
 
+/** A Suggest dialog's code is kept a day past its end, so the page can still say what became of it. */
+export const ticketsPastKeeping = () => new Date(Date.now() - 86400e3).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
 // ── what we say back ──
 //
 // Plain, short, and always with the link: the person is on their phone.
@@ -337,7 +433,6 @@ export function readSummary(draft) {
 }
 
 export const REPLIES = {
-  notLinked: (origin) => `This is Agora (${host(origin)}). To add a parish's posters by sending them here, link this phone first: sign in at ${origin}, open the account menu, choose Link WhatsApp, and send the code it shows.`,
   linked: (email) => `Linked. Posters you send here become drafts for ${email}. Forward a poster with its words and I'll read it.`,
   badCode: () => 'That code didn\'t work. It may have run out: open Link WhatsApp again for a new one.',
   tooManyCodes: () => 'Too many codes that didn\'t work from this phone today. Try again tomorrow.',
@@ -356,7 +451,23 @@ export const REPLIES = {
   unread: (at, link) => `Got it. It's a draft ${at}: ${link}`,
   added: (at, link) => `Added that to the draft ${at}: ${link}`,
   moved: (at, link) => `Moved the draft to ${at.replace(/^at /, '')}: ${link}`,
+
+  // A phone with no account: what it sends is a suggestion. `keeper` is
+  // "whoever keeps St Nicholas, Punchbowl", or null when no parish is known.
+  suggested: (keeper, summary) => keeper
+    ? `Thank you. ${summary ? `Got it: ${summary}. ` : ''}It's with ${keeper} now, and nothing on the page changes until one of them has looked.`
+    : `Thank you. ${summary ? `Got it: ${summary}. ` : ''}I couldn't tell which parish it's for, so it's with Agora's editors. If you know, reply with the parish's link, like orthodoxy.au/snp.`,
+  suggestReading: (keeper) => `Thank you. It's still being read, and goes to ${keeper || "Agora's editors"} as soon as it is.`,
+  suggestionAdded: (keeper) => `Added that to your suggestion. It's with ${keeper || "Agora's editors"}.`,
+  suggestionMoved: (keeper) => `Thanks. Your suggestion is with ${keeper} now.`,
+  howToSuggest: (origin) => `This is Agora (${host(origin)}). To tell a parish its page is wrong or something is coming up, send it here with the parish's link (like orthodoxy.au/snp), or forward its poster, and it goes to whoever keeps the parish. If you keep a parish's page, link this phone and your posters become drafts: sign in at ${origin}, open the account menu, choose Link WhatsApp, and send the code it shows.`,
+  suggestLimit: (n) => `That's ${n} suggestions from this phone today, the most I read in a day. Send it again tomorrow.`,
+  tooManyOpen: (n) => `You have ${n} suggestions waiting already. Once some have been looked at, send more.`,
+  badTicket: () => 'That code didn\'t work. It may have run out: send your suggestion from the parish\'s page again.',
 };
+
+/** Who a phone's suggestion goes to, for a reply. */
+export const keeperOf = (parish) => (parish && parish.id !== '_unassigned' ? `whoever keeps ${parish.name}` : null);
 
 /** Where a draft is, for a reply. */
 export const draftAt = (parish) => (parish && parish.id !== '_unassigned' ? `at ${parish.name}` : 'without a parish yet');

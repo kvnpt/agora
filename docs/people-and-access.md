@@ -79,6 +79,8 @@ no lead or labels. Only then **Confirm
 email and submit** goes to `/admin?suggest=`, through Access; what was typed
 waits in this browser's `localStorage` for two hours and the suggest page fills
 it in and sends it the moment it loads (`takeDraft`), so the person writes once.
+Somebody with no email has **No email? Confirm on WhatsApp** beside it, which
+sends the same thing through Agora's number instead (below).
 Going straight to the sign-in lost most people at an email box from a company
 they had not heard of, before they had said anything.
 
@@ -206,8 +208,41 @@ away stops the phone at the next poster. It decides where a poster starts,
 too: a parish contact at their parish, an owner or editor — who may edit every
 parish — at none, until the words or the read say whose it is
 (docs/editing.md, "A poster forwarded on WhatsApp"). Unlinking is the same menu. Five codes
-that did not work in a day and a phone is told to stop; a phone nobody linked
-is told how, once an hour, and nothing it sends is read.
+that did not work in a day and a phone is told to stop.
+
+**A phone nobody linked suggests** (Kevin, 6 Nov 2026: "what if they just
+solely used WhatsApp for their verification and suggestion flow?"). Linking
+needs an account and an account needs an email, and plenty of the people who
+know a parish's times have WhatsApp and no wish for either. So what an unlinked
+phone sends is a **suggestion** (below), never a draft: a poster — read, and
+filed at the parish its words link (`/snp`), else whose the read says it is,
+else at none, where owners and editors see it and the reply asks for the link —
+or words that link a parish, or that a read finds an event or a service in.
+Anything else (a greeting, a question) is told how, once an hour. WhatsApp is
+what vouches for the sender: Meta signed the message, and the number is the one
+it came from. So it is filed under the phone itself, `wa:61412345678`
+(`lib/whatsapp.mjs` `phoneIdentity`), where an emailed suggestion has the
+address Access verified. That is never an address and never an Access identity:
+nobody signs in as it and nothing emails it. Asks shows the number as a WhatsApp
+link to write back on, and its dismiss note says they will not see it; **Start
+a draft** opens it as a forwarded poster, with their words in the editor's
+WhatsApp box and a forward's other pictures to join. Every read is paid for and
+anybody can message a number, so a phone has an emailed sender's limits: ten
+reads a day, twenty suggestions waiting. A phone-only person can tell a parish
+something this way; keeping its page still takes an account.
+
+**"Confirm on WhatsApp"** is the Suggest dialog's other way to send, beside
+**Confirm email and submit**, for anybody without an email to hand. What they
+wrote is held under a six-digit code (`POST /api/suggest/whatsapp`, outside
+Access, so it holds nothing but that: `whatsapp_tickets`, half an hour, ten
+codes an hour to an address) and WhatsApp opens with "Send my suggestion for St
+Nicholas, Punchbowl. Code: 482 193" written. Whichever phone sends it is the
+sender, and the suggestion is filed the moment it arrives — under the phone, or
+its account when the phone is linked. A poster goes up with it and waits in R2
+**unread** until the code comes, then is read like the suggest page's; a code
+nobody sends takes its poster with it. The card waits for the message, says when
+it went, and can be closed without stopping anything. It is not offered with
+**Add me as a permanent editor** ticked: a claim is for an account.
 
 ## Emails about claims
 

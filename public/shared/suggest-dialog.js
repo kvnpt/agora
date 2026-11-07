@@ -19,6 +19,15 @@
 // confirmed the address, has it read with what they wrote beside it, and
 // sends the suggestion as an event with its poster.
 //
+// Or on WhatsApp alone (Kevin, 6 Nov 2026: no email at all). Where the site
+// has Agora's number, "No email? Confirm on WhatsApp" holds what they wrote
+// on the site under a code (POST /api/suggest/whatsapp, outside Access) and
+// opens WhatsApp with a message that carries it. The phone that sends it is
+// who it is from, and the suggestion goes the moment the message arrives
+// (worker/routes/ingest.mjs). Their poster goes up with it, unread until
+// then. The card waits, says when it has gone, and can be closed: closing
+// it sends nothing and stops nothing.
+//
 // A card that slides up, like the editors' (form-sheet.js, 23 Oct 2026),
 // its Submit in the bar and Cancel turning into Discard once typed in.
 //
@@ -56,6 +65,18 @@
     if (!out.contact && !out.change_body && !out.poster) return { error: 'Say what should change.', field: 'change_body' };
     if (out.contact && !out.name) return { error: 'Tell us your name, so the owner knows who is asking.', field: 'name' };
     return { draft: out };
+  }
+
+  /**
+   * What "Confirm on WhatsApp" holds for them, from a draft: as the suggest
+   * page sends it after the sign-in (admin.html). With a poster it is an
+   * event, and what they wrote is its details, a service time it names
+   * first; without one, the change.
+   */
+  function whatsappPayload(parishId, d) {
+    const topic = d.about && !OTHER_TOPICS.includes(d.about) ? d.about : '';
+    const body = d.poster ? [topic, d.change_body].map(x => String(x || '').trim()).filter(Boolean).join(': ') : d.change_body;
+    return { parish_id: parishId, about: d.about || '', body, name: d.name, poster: !!d.poster };
   }
 
   /** Read and forget the draft for a parish: null if there is none, or it went stale. */
@@ -125,7 +146,7 @@
     try { (await posterStore('readwrite', idb)).delete(parishId); } catch { /* nothing kept */ }
   }
 
-  const api = { KEY, MAX_AGE_MS, OTHER_TOPICS, draftFrom, takeDraft, saveDraft, savePoster, takePoster, dropPoster };
+  const api = { KEY, MAX_AGE_MS, OTHER_TOPICS, draftFrom, whatsappPayload, takeDraft, saveDraft, savePoster, takePoster, dropPoster };
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.AgoraSuggest = api;
   if (typeof document === 'undefined') return;
@@ -136,10 +157,45 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   let current = null;
+  const CHAT = '<svg class="sg-wa-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4.1A8 8 0 1 1 20 11.5Z"/></svg>';
   const PICTURE = '<svg class="sg-poster-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.75"/><path d="m21 15-5-5L5 21"/></svg>';
 
   function close() {
     if (current) current.close();
+  }
+
+  // Whether this site has Agora's WhatsApp number: asked once a page.
+  let whatsappAsked = null;
+  const whatsapp = () => whatsappAsked || (whatsappAsked = fetch('/api/suggest/whatsapp', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null)).then(b => (b && b.ready ? b : null)).catch(() => null));
+
+  /**
+   * A poster small enough to send (the editor's shrink, when the page has
+   * it): a phone's photo can be twice what the reader takes.
+   */
+  async function shrink(file) {
+    if (root.AgoraEventEditor && root.AgoraEventEditor.shrinkPoster) {
+      try { return await root.AgoraEventEditor.shrinkPoster(file); } catch { return file; }
+    }
+    if (file.size <= 1.5 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = reject;
+        i.src = url;
+      });
+      const scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return (await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85))) || file;
+    } catch { return file; } finally { URL.revokeObjectURL(url); }
   }
 
   /**
@@ -163,12 +219,16 @@
     const picking = Array.isArray(parishes) && parishes.length > 0;
     let pid = parishId || '';
     let preview = null;
+    // Typed in, and not yet handed to WhatsApp: Cancel asks before it goes.
+    let typed = false, handed = false, polling = null;
     const sheet = root.AgoraFormSheet.open({
       title,
       sub: picking ? '' : parishName,
       cls: 'suggest-dialog',
+      leave: () => (typed && !handed ? [{ label: 'Discard', danger: true, run: () => sheet.close() }] : null),
       onClose: () => {
         if (preview) URL.revokeObjectURL(preview);
+        if (polling) polling();
         if (current === sheet) current = null;
       },
     });
@@ -214,6 +274,9 @@
             <button type="submit" class="btn-save sg-submit" data-fs-label="Submit">Confirm email and submit</button>
           </div>
           <p class="edit-row-hint sg-next">Next, our sign-in (Cloudflare) emails you a one-time code to confirm the address is yours. What you wrote here is sent the moment you are confirmed, and whoever keeps the parish can write back to you. Nothing on the page changes until one of them has looked.</p>
+          <div class="sg-wa" data-sg-wa hidden>
+            <button type="button" class="sg-wa-pick" data-sg-wa-go>${CHAT}<span><b>No email? Confirm on WhatsApp</b><small>Send one message from your phone instead</small></span></button>
+          </div>
           ${signInHref ? `<p class="edit-row-hint sg-signin">Already keep this parish? <a href="${esc(signInHref)}">Just sign in</a>.</p>` : ''}
         </form>`;
 
@@ -221,7 +284,18 @@
     const f = form.elements;
     const err = wrap.querySelector('.sg-error');
     const contactRow = wrap.querySelector('[data-sg-contact]');
-    const sync = () => { contactRow.hidden = !f.contact.checked; };
+    const waRow = wrap.querySelector('[data-sg-wa]');
+    let wa = null;
+    // Becoming an editor is an account, and an account an email: WhatsApp
+    // alone sends a suggestion, so it is not offered with the box ticked.
+    const sync = () => {
+      contactRow.hidden = !f.contact.checked;
+      waRow.hidden = !wa || f.contact.checked;
+    };
+    const typing = (e) => { if (e.isTrusted) typed = true; };
+    form.addEventListener('input', typing);
+    form.addEventListener('change', typing);
+    whatsapp().then((ready) => { wa = ready; if (current === sheet) sync(); });
     if (about && [...f.about.options].some(o => o.value === about)) f.about.value = about;
     f.contact.checked = !!editor;
     sync();
@@ -276,13 +350,13 @@
       addPoster(img);
     });
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    /** The form as a draft, or null when it says what is missing. */
+    const checked = () => {
       if (!pid) {
         err.textContent = 'Choose the parish.';
         err.hidden = false;
         f.parish.focus();
-        return;
+        return null;
       }
       const v = {};
       for (const n of FIELDS) v[n] = f[n] ? f[n].value : '';
@@ -293,8 +367,15 @@
         err.textContent = r.error;
         err.hidden = false;
         if (f[r.field]) f[r.field].focus();
-        return;
+        return null;
       }
+      return r;
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const r = checked();
+      if (!r) return;
       const btn = wrap.querySelector('.sg-submit');
       btn.disabled = true;
       // Kept in this browser — the same origin the suggest page is on — and
@@ -312,6 +393,84 @@
       btn.textContent = 'Going to confirm your email…';
       root.location.href = href || `/admin?suggest=${encodeURIComponent(pid)}`;
     });
+
+    // ── or on WhatsApp ──
+    const waGo = wrap.querySelector('[data-sg-wa-go]');
+    waGo.addEventListener('click', async () => {
+      const r = checked();
+      if (!r || !wa) return;
+      err.hidden = true;
+      waGo.disabled = true;
+      const fail = (msg) => { waGo.disabled = false; err.textContent = msg; err.hidden = false; };
+      const made = await fetch('/api/suggest/whatsapp', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(whatsappPayload(pid, r.draft)),
+      }).then(res => res.json().then(b => ({ ok: res.ok, b }))).catch(() => null);
+      if (!made || !made.ok) return fail((made && made.b && made.b.error) || 'That did not reach the site. Try again.');
+      const t = made.b;
+      if (poster) {
+        const blob = await shrink(poster);
+        const up = await fetch(`/api/suggest/whatsapp/${encodeURIComponent(t.secret)}/poster`, {
+          method: 'POST', headers: { 'content-type': blob.type || 'image/jpeg' }, body: blob,
+        }).then(res => res.json().then(b => ({ ok: res.ok, b }))).catch(() => null);
+        if (!up || !up.ok) return fail(`${(up && up.b && up.b.error) || 'Your poster did not reach the site.'} Remove it and send what you wrote, or try again.`);
+      }
+      handed = true;
+      dropPoster(pid);
+      waiting(t);
+    });
+
+    /** Their message to send, and the card watching for it to arrive. */
+    function waiting(t) {
+      const name = parishName || ((f.parish && f.parish.selectedOptions[0]) || {}).textContent || 'the parish';
+      const shown = `+${t.number}`;
+      sheet.body.innerHTML = `
+        <div class="sg-wa-step">
+          <p class="sg-wa-lead"><b>Send this on WhatsApp</b></p>
+          <p class="sg-wa-msg">${esc(t.text)}</p>
+          <a class="sg-wa-open" href="${esc(t.url)}" target="_blank" rel="noopener">${CHAT}<span>Open WhatsApp</span></a>
+          <p class="edit-row-hint">WhatsApp opens with it written, to Agora's number: just send it. On another phone, send it to ${esc(shown)} in the next half hour. What you wrote goes to whoever keeps ${esc(name)} the moment it arrives, from your WhatsApp number, and they can write back to you there. Nothing on the page changes until one of them has looked.</p>
+          <p class="sg-wa-status" data-sg-wa-status aria-live="polite">Waiting for your message. You can close this: it still goes when you send it.</p>
+        </div>`;
+      // Nothing here is undone by leaving: the bar's way out says so.
+      const way = wrap.querySelector('[data-frame-cancel]');
+      if (way) way.textContent = 'Close';
+      const status = sheet.body.querySelector('[data-sg-wa-status]');
+      const until = Date.parse(t.expires_at) || (Date.now() + 30 * 60e3);
+      let stopped = false, timer = null;
+      const stop = () => { stopped = true; clearTimeout(timer); document.removeEventListener('visibilitychange', ask); };
+      polling = stop;
+      const ask = async () => {
+        clearTimeout(timer);
+        if (stopped || document.hidden) return;
+        const b = await fetch(`/api/suggest/whatsapp/${encodeURIComponent(t.secret)}`, { cache: 'no-store' })
+          .then(res => res.json()).catch(() => null);
+        if (stopped) return;
+        const st = b && b.status;
+        if (st === 'sent') {
+          stop();
+          status.classList.add('is-done');
+          status.innerHTML = `<b>Sent. Thank you.</b> It's with whoever keeps ${esc(name)} now. WhatsApp has the message we sent back.`;
+          return;
+        }
+        if (st === 'refused') {
+          stop();
+          status.classList.add('is-error');
+          status.textContent = 'Your message arrived, but it could not be sent on. WhatsApp has the message we sent back saying why.';
+          return;
+        }
+        if (st === 'expired' || Date.now() > until) {
+          stop();
+          status.classList.add('is-error');
+          status.textContent = 'That code has run out. Close this and send your suggestion again.';
+          return;
+        }
+        timer = setTimeout(ask, st === 'sending' ? 1500 : 3000);
+      };
+      // Back from WhatsApp: asked at once, rather than at the next tick.
+      document.addEventListener('visibilitychange', ask);
+      timer = setTimeout(ask, 3000);
+    }
     // Not on a phone: the keyboard would come up over the card before they chose to type.
     if (!root.AgoraFormSheet.touchFirst()) setTimeout(() => f.change_body.focus({ preventScroll: true }), 50);
     return wrap;

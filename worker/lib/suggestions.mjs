@@ -24,6 +24,13 @@
 // first, and the email on a suggestion is the one Access vouched for, never
 // one typed into the form. That is what lets whoever reads it write back.
 //
+// OR A PHONE (Kevin, 6 Nov 2026: WhatsApp alone, no email). Somebody with
+// only WhatsApp sends it to Agora's number — forwarded, written, or the
+// dialog's own message with its code — and WhatsApp is what vouches for the
+// sender: `email` is then "wa:61412345678" (lib/whatsapp.mjs phoneIdentity),
+// and whoever reads it writes back on WhatsApp. routes/ingest.mjs files
+// those; everything after (the list, Done, Start a draft) is the same.
+//
 // Dates and times are the parish's LOCAL wall clock, as the person sees the
 // page — the same as a draft's, which is what one becomes.
 //
@@ -38,6 +45,7 @@
 
 import checks from '../../public/shared/event-checks.js';
 import { posterKeyOf } from './poster-range.mjs';
+import { phoneOfIdentity, addLaterColumns } from './whatsapp.mjs';
 
 const { isLocalDate, isLocalTime } = checks;
 
@@ -115,7 +123,7 @@ export function validateSuggestion(body) {
 
 /** One line for the list it lands in. */
 export function describeSuggestion(s, parishName) {
-  const who = s.name || 'Somebody';
+  const who = s.name || (phoneOfIdentity(s.email) ? 'Somebody on WhatsApp' : 'Somebody');
   const at = parishName || s.parish_id;
   if (s.kind === 'event') {
     const when = [s.date, s.start_time].filter(Boolean).join(' ');
@@ -154,6 +162,36 @@ export function formFromRead(read) {
     place: e.location_override || '',
     body: e.description || '',
   })).filter(e => e.title || e.date);
+}
+
+/**
+ * A suggestion's empty fields, filled from a read's first event — what the
+ * suggest page does with a poster sent from the dialog before the sign-in.
+ * Only what is empty: what the sender wrote stands.
+ */
+export function fillFromRead(s, read) {
+  const [first] = formFromRead(read || {});
+  if (!first) return s;
+  const out = { ...s };
+  const fits = {
+    title: (v) => clean(v, MAX.title),
+    date: (v) => (isLocalDate(v) ? v : ''),
+    start_time: (v) => (isLocalTime(v) ? v : ''),
+    end_time: (v) => (isLocalTime(v) ? v : ''),
+    place: (v) => clean(v, MAX.place),
+  };
+  for (const [k, fit] of Object.entries(fits)) {
+    if (!out[k] && first[k]) out[k] = fit(first[k]) || out[k] || null;
+  }
+  return out;
+}
+
+/** The pictures after a suggestion's poster, from its `images` (a JSON list of paths). */
+export function imagesOf(s) {
+  try {
+    const v = JSON.parse((s && s.images) || '[]');
+    return Array.isArray(v) ? v.filter(p => typeof p === 'string' && posterKeyOf(p)) : [];
+  } catch { return []; }
 }
 
 /** An R2 key for a suggester's poster: one path segment, like a draft's. */
@@ -201,7 +239,8 @@ export const SUGGESTIONS_DDL = [
   decided_by    TEXT,
   decided_at    TEXT,
   decision_note TEXT,
-  draft_id      INTEGER
+  draft_id      INTEGER,
+  images        TEXT
 )`,
   'CREATE INDEX IF NOT EXISTS idx_parish_suggestions_open ON parish_suggestions(status, parish_id, created_at)',
   `CREATE TABLE IF NOT EXISTS suggestion_posters (
@@ -218,9 +257,12 @@ export const SUGGESTIONS_DDL = [
 
 // Once per database per isolate, like drafts.mjs: the reads join the posters
 // table, so they make sure of it too, and a round trip each time is a cost.
+// 038's `images` (a WhatsApp forward's other pictures) is added where a
+// database made before the migration lacks it, as whatsapp.mjs does.
 const ensured = new WeakSet();
 export async function ensureSuggestionsTable(db) {
   if (ensured.has(db)) return;
   await db.batch(SUGGESTIONS_DDL.map(sql => db.prepare(sql)));
+  await addLaterColumns(db, { parish_suggestions: { images: 'TEXT' } });
   ensured.add(db);
 }

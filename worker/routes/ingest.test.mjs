@@ -42,14 +42,16 @@ class S {
 
 function bucket() {
   const store = new Map();
+  const deleted = [];
   return {
     store,
+    deleted,
     async put(key, body, opts) { store.set(key, { bytes: new Uint8Array(body), opts }); },
     async get(key) {
       const o = store.get(key);
       return o ? { arrayBuffer: async () => o.bytes.buffer, httpMetadata: o.opts.httpMetadata } : null;
     },
-    async delete() {},
+    async delete(keys) { deleted.push(...[].concat(keys)); },
   };
 }
 
@@ -118,7 +120,8 @@ function fresh({ role = 'parish', parishIds = [A], configured = true, key = 'tes
   };
   const link = () => raw.prepare("INSERT INTO whatsapp_links (phone, email, name) VALUES (?, 'dev', 'Kevin')").run(PHONE);
   const drafts = () => raw.prepare('SELECT * FROM drafts ORDER BY id').all();
-  return { raw, env, graph: g, call, send, deliver, link, drafts };
+  const suggestions = () => raw.prepare('SELECT * FROM parish_suggestions ORDER BY id').all();
+  return { raw, env, graph: g, call, send, deliver, link, drafts, suggestions };
 }
 
 const image = (caption = null, extra = {}) => ({ type: 'image', image: { id: 'M1', mime_type: 'image/jpeg', ...(caption ? { caption } : {}) }, ...extra });
@@ -168,19 +171,6 @@ test('an unsigned POST, or one on a site without the number, does nothing', asyn
 });
 
 // ── a phone, linked to an account ──
-
-test('a phone nobody linked is told how, once an hour, and nothing is read', async () => {
-  const f = fresh();
-  await withReader(READ, async (calls) => {
-    assert.equal(await f.deliver([image('Mums Group')]), 200);
-    assert.equal(await f.deliver([text('hello?')]), 200);
-    assert.equal(calls.length, 0);
-  });
-  assert.equal(f.graph.sent.length, 1);
-  assert.match(f.graph.texts()[0], /link this phone first: sign in at https:\/\/orthodoxy\.au, open the account menu, choose Link WhatsApp/);
-  assert.equal(f.graph.sent[0].to, PHONE);
-  assert.equal(f.drafts().length, 0);
-});
 
 test('the code Link WhatsApp shows, sent from the phone, links it to the account', async () => {
   const f = fresh();
@@ -486,6 +476,7 @@ test('the link routes are drafts’ kind of write: no new data version', async (
   assert.equal(w('POST', '/api/admin/whatsapp/code'), false);
   assert.equal(w('DELETE', '/api/admin/whatsapp/phones/614'), false);
   assert.equal(w('POST', '/api/ingest/whatsapp'), false);
+  assert.equal(w('POST', '/api/suggest/whatsapp'), false);
 });
 
 test('a read that runs long is answered while it runs, and still lands', async () => {
@@ -502,4 +493,259 @@ test('a read that runs long is answered while it runs, and still lands', async (
   assert.equal(f.graph.texts()[0], `Got it. It's still being read, and will be a draft at St Nicholas, Punchbowl: https://orthodoxy.au/snp?draft=${d.id}`);
   assert.equal(f.graph.sent.length, 1, 'one reply, not two');
   assert.equal(d.read_status, 'read');
+});
+
+// ── a phone nobody linked: suggestions ──
+
+const ID = `wa:${PHONE}`;
+const KEEPS_A = 'whoever keeps St Nicholas, Punchbowl';
+
+test('a poster from a phone nobody linked is a suggestion to whoever keeps its parish', async () => {
+  const f = fresh();
+  const calls = await withReader(READ, async () => {
+    assert.equal(await f.deliver([image('Mums Group, first Fridays. orthodoxy.au/snp', { context: { forwarded: true } })]), 200);
+  });
+  assert.equal(f.drafts().length, 0, 'never a draft');
+  const [s] = f.suggestions();
+  assert.equal(s.parish_id, A, 'the parish its words link');
+  assert.equal(s.email, ID, 'filed under the phone');
+  assert.equal(s.name, 'Kevin', 'their WhatsApp name');
+  assert.equal(s.kind, 'event');
+  assert.equal(s.status, 'open');
+  assert.equal(s.body, 'Mums Group, first Fridays. orthodoxy.au/snp');
+  assert.deepEqual([s.title, s.date, s.start_time, s.end_time], ['Mums Group', '2026-12-04', '10:00', '12:00'], 'filled from the read');
+  const sp = f.raw.prepare('SELECT * FROM suggestion_posters').get();
+  assert.equal(sp.suggestion_id, s.id);
+  assert.equal(sp.email, ID);
+  assert.match(sp.poster_path, new RegExp(`^/posters/suggested-${A}-.+\\.jpg$`));
+  assert.ok(f.env.ASSETS_BUCKET.store.has(sp.poster_path.slice(1)));
+
+  assert.equal(calls.length, 1);
+  const content = calls[0].messages[0].content;
+  assert.deepEqual(content.map(c => c.type), ['image', 'text']);
+  assert.match(content[1].text, /The parish: St Nicholas/, 'read as that parish’s poster');
+  assert.match(content[1].text, /The words this image came with on WhatsApp/);
+
+  assert.deepEqual(f.graph.texts(), [
+    `Thank you. Got it: Mums Group, Fri 4 Dec 10am. It's with ${KEEPS_A} now, and nothing on the page changes until one of them has looked.`,
+  ]);
+  const msg = f.raw.prepare('SELECT outcome, suggestion_id, draft_id FROM whatsapp_messages').get();
+  assert.deepEqual(msg, { outcome: 'suggestion', suggestion_id: s.id, draft_id: null });
+});
+
+test('with no parish named it goes where the read says; with none, to the editors, until a link typed after moves it', async () => {
+  const f = fresh();
+  const theirs = { ...READ, other_parish: { name: 'St Elias Antiochian Orthodox Church', place: 'Wollongong' } };
+  await withReader(theirs, async () => { await f.deliver([image('Run club this Saturday', { at: 1762400000 })]); });
+  assert.equal(f.suggestions()[0].parish_id, B, 'whose poster it is');
+  assert.equal(f.raw.prepare('SELECT parish_id FROM suggestion_posters').get().parish_id, B);
+  assert.match(f.graph.texts()[0], /It's with whoever keeps St Elias/);
+
+  await withReader(READ, async () => { await f.deliver([image('Mums Group', { at: 1762401000 })]); });
+  const second = f.suggestions()[1];
+  assert.equal(second.parish_id, '_unassigned', 'nobody’s yet: owners and editors see it');
+  assert.equal(f.graph.texts()[1],
+    'Thank you. Got it: Mums Group, Fri 4 Dec 10am. I couldn\'t tell which parish it\'s for, so it\'s with Agora\'s editors. If you know, reply with the parish\'s link, like orthodoxy.au/snp.');
+
+  await withReader(READ, async (calls) => {
+    await f.deliver([text('/snp', { at: 1762401030 })]);
+    assert.equal(calls.length, 0, 'a word about it, not read');
+  });
+  const moved = f.suggestions()[1];
+  assert.equal(moved.parish_id, A);
+  assert.equal(moved.body, 'Mums Group', 'a link alone is only that');
+  assert.equal(f.raw.prepare('SELECT parish_id FROM suggestion_posters WHERE suggestion_id = ?').get(moved.id).parish_id, A);
+  assert.equal(f.graph.texts()[2], `Thanks. Your suggestion is with ${KEEPS_A} now.`);
+  assert.equal(f.suggestions().length, 2);
+
+  await f.deliver([text('It’s in the hall', { at: 1762401060 })]);
+  assert.equal(f.suggestions()[1].body, 'Mums Group\n\nIt’s in the hall');
+  assert.equal(f.graph.texts()[3], `Added that to your suggestion. It's with ${KEEPS_A}.`);
+});
+
+test('words alone: a greeting is told how, once an hour; words naming a parish, or that a read finds an event in, are suggestions', async () => {
+  const f = fresh();
+  const nothing = { ...READ, kind: 'not_an_event', events: [] };
+  await withReader(nothing, async (calls) => {
+    await f.deliver([text('hello?', { at: 1762400000 })]);
+    await f.deliver([text('anyone there?', { at: 1762400100 })]);
+    assert.equal(calls.length, 2, 'each was read');
+  });
+  assert.equal(f.suggestions().length, 0);
+  assert.equal(f.graph.sent.length, 1, 'told once');
+  assert.match(f.graph.texts()[0], /^This is Agora \(orthodoxy\.au\)\. To tell a parish its page is wrong or something is coming up, send it here with the parish's link/);
+  assert.match(f.graph.texts()[0], /link this phone and your posters become drafts: sign in at https:\/\/orthodoxy\.au, open the account menu, choose Link WhatsApp/);
+
+  await withReader(READ, async (calls) => {
+    await f.deliver([text('The Liturgy at orthodoxy.au/snp is at 10 this Sunday, not 9:30', { at: 1762405000 })]);
+    assert.equal(calls.length, 0, 'it names its parish: nothing to read');
+  });
+  const [change] = f.suggestions();
+  assert.deepEqual([change.parish_id, change.kind, change.email, change.title], [A, 'change', ID, null]);
+  assert.equal(change.body, 'The Liturgy at orthodoxy.au/snp is at 10 this Sunday, not 9:30');
+  assert.equal(f.graph.texts()[1], `Thank you. It's with ${KEEPS_A} now, and nothing on the page changes until one of them has looked.`);
+
+  await withReader(READ, async () => { await f.deliver([text('Mums Group, Friday 4 December, 10 to 12', { at: 1762410000 })]); });
+  const event = f.suggestions()[1];
+  assert.deepEqual([event.kind, event.title, event.date, event.parish_id], ['event', 'Mums Group', '2026-12-04', '_unassigned'],
+    'an event read from words is one');
+});
+
+test('a phone nobody linked has ten reads a day and twenty suggestions waiting, an emailed sender’s limits', async () => {
+  const f = fresh();
+  const old = f.raw.prepare("INSERT INTO whatsapp_messages (id, phone, type, sent_at, outcome) VALUES (?, ?, 'image', ?, 'suggestion')");
+  for (let i = 0; i < 10; i++) old.run(`wamid.old${i}`, PHONE, 1762390000 + i);
+  await withReader(READ, async (calls) => {
+    await f.deliver([image('Mums Group', { at: 1762400000 })]);
+    assert.equal(calls.length, 0);
+  });
+  assert.equal(f.suggestions().length, 0);
+  assert.equal(f.graph.texts()[0], "That's 10 suggestions from this phone today, the most I read in a day. Send it again tomorrow.");
+  assert.equal(f.env.ASSETS_BUCKET.store.size, 0, 'nothing fetched');
+
+  const g = fresh();
+  const open = g.raw.prepare("INSERT INTO parish_suggestions (parish_id, email, kind, body) VALUES (?, ?, 'change', 'x')");
+  for (let i = 0; i < 20; i++) open.run(A, ID);
+  await g.deliver([text('orthodoxy.au/snp has the wrong phone number')]);
+  assert.equal(g.suggestions().length, 20);
+  assert.equal(g.graph.texts()[0], 'You have 20 suggestions waiting already. Once some have been looked at, send more.');
+});
+
+// ── the Suggest dialog's "Confirm on WhatsApp" ──
+
+test('the Suggest dialog’s code, sent from the phone, files what was typed there under it', async () => {
+  const f = fresh();
+  assert.deepEqual((await f.call('GET', '/api/suggest/whatsapp')).body, { ready: true, number: '15551234567' });
+  assert.deepEqual((await fresh({ configured: false }).call('GET', '/api/suggest/whatsapp')).body, { ready: false, number: null });
+
+  assert.equal((await f.call('POST', '/api/suggest/whatsapp', { parish_id: A, body: '' })).status, 400, 'nothing said');
+  assert.equal((await f.call('POST', '/api/suggest/whatsapp', { parish_id: 'nope', body: 'x' })).status, 404);
+  assert.equal((await f.call('POST', '/api/suggest/whatsapp', { parish_id: '_unassigned', body: 'x' })).status, 404);
+
+  const made = await f.call('POST', '/api/suggest/whatsapp',
+    { parish_id: A, about: 'Sunday 9:30am · Divine Liturgy', body: 'It is at 10 now', name: 'Maria', poster: false });
+  assert.equal(made.status, 201);
+  const t = made.body;
+  assert.match(t.code, /^\d{6}$/);
+  assert.match(t.secret, /^[0-9a-f]{32}$/);
+  assert.equal(t.text, `Send my suggestion for St Nicholas, Punchbowl. Code: ${t.code.slice(0, 3)} ${t.code.slice(3)}`);
+  assert.equal(t.url, `https://wa.me/15551234567?text=${encodeURIComponent(t.text)}`);
+  assert.equal(f.suggestions().length, 0, 'nothing filed until the phone sends it');
+  assert.equal((await f.call('GET', `/api/suggest/whatsapp/${t.secret}`)).body.status, 'waiting');
+
+  const wrong = t.code === '000000' ? '111111' : '000000';
+  await f.deliver([text(`Send my suggestion for St Nicholas, Punchbowl. Code: ${wrong}`, { at: 1762400000 })]);
+  assert.equal(f.graph.texts()[0], "That code didn't work. It may have run out: send your suggestion from the parish's page again.");
+  assert.equal(f.suggestions().length, 0);
+
+  await f.deliver([text(t.text, { at: 1762400100 })]);
+  const [s] = f.suggestions();
+  assert.deepEqual([s.parish_id, s.email, s.name, s.kind, s.about, s.body],
+    [A, ID, 'Maria', 'change', 'Sunday 9:30am · Divine Liturgy', 'It is at 10 now'], 'the name they gave');
+  assert.equal(f.graph.texts()[1], `Thank you. It's with ${KEEPS_A} now, and nothing on the page changes until one of them has looked.`);
+  assert.deepEqual((await f.call('GET', `/api/suggest/whatsapp/${t.secret}`)).body, { status: 'sent', parish: 'St Nicholas, Punchbowl' });
+
+  await f.deliver([text(t.text, { at: 1762400200 })]);
+  assert.match(f.graph.texts()[2], /^That code didn't work/, 'a code goes once');
+  assert.equal(f.suggestions().length, 1);
+  assert.equal((await f.call('GET', '/api/suggest/whatsapp/nope')).status, 404);
+});
+
+test('the dialog’s poster goes up unread, and is read once the code comes, as an event', async () => {
+  const f = fresh();
+  const t = (await f.call('POST', '/api/suggest/whatsapp',
+    { parish_id: A, about: 'An event', body: 'Our mums group', name: '', poster: true })).body;
+  const up = await f.send('POST', `/api/suggest/whatsapp/${t.secret}/poster`,
+    { body: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9]), headers: { 'content-type': 'image/jpeg' } });
+  assert.equal(up.status, 201);
+  const held = f.raw.prepare('SELECT poster_path FROM whatsapp_tickets').get().poster_path;
+  assert.ok(f.env.ASSETS_BUCKET.store.has(held.slice(1)));
+  assert.equal((await f.send('POST', `/api/suggest/whatsapp/${t.secret}/poster`,
+    { body: 'x', headers: { 'content-type': 'application/pdf' } })).status, 415);
+
+  const calls = await withReader(READ, async () => { await f.deliver([text(t.text)]); });
+  const [s] = f.suggestions();
+  assert.deepEqual([s.kind, s.title, s.date, s.body, s.name, s.about], ['event', 'Mums Group', '2026-12-04', 'Our mums group', 'Kevin', null],
+    'no name given: their WhatsApp one');
+  assert.equal(f.raw.prepare('SELECT poster_path FROM suggestion_posters WHERE suggestion_id = ?').get(s.id).poster_path, held);
+  assert.equal(calls.length, 1, 'read now, not before');
+  assert.match(calls[0].messages[0].content[1].text, /Our mums group/);
+  assert.match(f.graph.texts()[0], /^Thank you\. Got it: Mums Group, Fri 4 Dec 10am\. It's with whoever keeps St Nicholas/);
+  assert.equal((await f.send('POST', `/api/suggest/whatsapp/${t.secret}/poster`,
+    { body: new Uint8Array([1]), headers: { 'content-type': 'image/jpeg' } })).status, 404, 'too late to add one');
+
+  // A phone linked to an account files under the account.
+  const g = fresh();
+  g.link();
+  const u = (await g.call('POST', '/api/suggest/whatsapp', { parish_id: B, body: 'Wrong phone number' })).body;
+  await g.deliver([text(u.text)]);
+  assert.equal(g.suggestions()[0].email, 'dev');
+});
+
+test('ten codes an hour to an address; a code nobody sends runs out, and its poster goes', async () => {
+  const f = fresh();
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await f.call('POST', '/api/suggest/whatsapp', { parish_id: A, body: `x${i}` })).status, 201);
+  }
+  assert.equal((await f.call('POST', '/api/suggest/whatsapp', { parish_id: A, body: 'one more' })).status, 429);
+
+  const g = fresh();
+  const t = (await g.call('POST', '/api/suggest/whatsapp', { parish_id: A, body: 'x', poster: true })).body;
+  await g.send('POST', `/api/suggest/whatsapp/${t.secret}/poster`, { body: new Uint8Array([1, 2]), headers: { 'content-type': 'image/png' } });
+  const held = g.raw.prepare('SELECT poster_path FROM whatsapp_tickets').get().poster_path;
+  // Run out a minute ago: its row is kept a day, to say so; its poster is not.
+  g.raw.prepare('UPDATE whatsapp_tickets SET expires_at = ?').run(new Date(Date.now() - 60e3).toISOString().replace(/\.\d{3}Z$/, 'Z'));
+  assert.equal((await g.call('GET', `/api/suggest/whatsapp/${t.secret}`)).body.status, 'expired');
+  await g.deliver([text(t.text)]);
+  assert.match(g.graph.texts()[0], /^That code didn't work/);
+  assert.equal(g.suggestions().length, 0);
+  // The next code made sweeps it.
+  await g.call('POST', '/api/suggest/whatsapp', { parish_id: A, body: 'y' });
+  assert.deepEqual(g.env.ASSETS_BUCKET.deleted, [held.slice(1)]);
+  assert.equal(g.raw.prepare('SELECT poster_path FROM whatsapp_tickets WHERE code = ?').get(t.code).poster_path, null);
+});
+
+// ── what whoever keeps the parish does with one ──
+
+test('Asks shows a WhatsApp sender’s number; Start a draft opens it as a forwarded poster, pictures and all', async () => {
+  const f = fresh({ role: 'owner', parishIds: null });
+  f.graph.media.set('M2', { mime: 'image/jpeg', bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7]) });
+  await withReader(READ, async () => {
+    await Promise.all([
+      f.deliver([image('Mums Group. orthodoxy.au/snp', { at: 1762400000 })]),
+      f.deliver([{ type: 'image', image: { id: 'M2', mime_type: 'image/jpeg' }, at: 1762400000 }]),
+    ]);
+  });
+  assert.equal(f.suggestions().length, 1, 'one forward, one suggestion');
+  const list = (await f.call('GET', '/api/admin/suggestions')).body;
+  assert.equal(list.length, 1);
+  const [x] = list;
+  assert.deepEqual(x.whatsapp, { phone: '+61412345678', url: 'https://wa.me/61412345678' });
+  assert.equal(x.images.length, 1, 'the second picture');
+  assert.match(x.poster_path, /^\/posters\/suggested-/);
+  assert.equal(x.summary, 'Kevin suggests an event at St Nicholas, Punchbowl: Mums Group, 2026-12-04 10:00.');
+
+  const made = await f.call('POST', `/api/admin/suggestions/${x.id}/draft`);
+  assert.equal(made.status, 201);
+  const d = f.drafts()[0];
+  assert.deepEqual([d.source, d.message_text, d.sender_name, d.poster_path], ['whatsapp', 'Mums Group. orthodoxy.au/snp', 'Kevin', x.poster_path]);
+  assert.deepEqual(JSON.parse(d.images), x.images, 'for the editor to join');
+  assert.ok(d.seen_at, 'opened by whoever started it: no + badge');
+  const card = f.raw.prepare('SELECT title, date, description FROM draft_events WHERE draft_id = ?').get(d.id);
+  assert.deepEqual(card, { title: 'Mums Group', date: '2026-12-04', description: null }, 'their words are in the WhatsApp box');
+  const after = f.suggestions()[0];
+  assert.deepEqual([after.status, after.images], ['done', null]);
+
+  // Dismissed instead, its pictures go.
+  const g = fresh({ role: 'owner', parishIds: null });
+  g.graph.media.set('M2', { mime: 'image/jpeg', bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7]) });
+  await withReader(READ, async () => {
+    await Promise.all([
+      g.deliver([image('orthodoxy.au/snp', { at: 1762400000 })]),
+      g.deliver([{ type: 'image', image: { id: 'M2', mime_type: 'image/jpeg' }, at: 1762400000 }]),
+    ]);
+  });
+  const y = (await g.call('GET', '/api/admin/suggestions')).body[0];
+  assert.equal((await g.call('POST', `/api/admin/suggestions/${y.id}/decide`, { decision: 'dismiss', note: 'Old' })).status, 200);
+  assert.deepEqual(g.env.ASSETS_BUCKET.deleted.sort(), [y.poster_path.slice(1), y.images[0].slice(1)].sort());
 });
