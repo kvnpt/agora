@@ -416,8 +416,8 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes
         ${tt}
       </article>`;
   };
-  return sheet(map ? 'collection has-map' : 'collection', c.title, '', `${glassBar(c.title, `${ps.length} places`)}${map ? '<div class="card-map" aria-hidden="true"></div>' : ''}
-    <div class="sheet-scroll">
+  return sheet(map ? 'collection has-map' : 'collection', c.title, '', `${glassBar(c.title, `${ps.length} places`)}
+    <div class="sheet-scroll">${map ? '<div class="card-map" aria-hidden="true"></div>' : ''}
       <div class="chero${look.tint ? ' soft' : ''}" style="${esc(collections.lookStyle(look))}">
         <span class="ckicker">${esc(c.kicker || '')}</span>
         <h1>${esc(c.title)}</h1>

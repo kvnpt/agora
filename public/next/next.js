@@ -1125,8 +1125,9 @@
   //
   // Every card of parishes (a collection, a list, a saved view, a link's, a
   // search's, In view) has the map at its top, showing its parishes and no
-  // others, the list scrolling under it, as Google's and Apple's lists open
-  // on their map (Kevin, 6 Nov 2026). Closing it puts the map back on the
+  // others, as Google's and Apple's lists open on their map (Kevin, 6 Nov
+  // 2026). It scrolls away with the card, not held at its top (Kevin, 7 Nov
+  // 2026); out of sight it draws nothing (map.js setupHaloGates). Closing it puts the map back on the
   // page as it was: its view, its filters, its shelves, none of which a card
   // ever touches. One map moved, not a second one: a phone keeps one WebGL
   // map and its tiles. On a wide screen the card is a panel beside the
@@ -1159,7 +1160,7 @@
     } else {
       const box = document.createElement('div');
       box.className = 'card-map';
-      el.querySelector('.glassbar').after(box);
+      el.querySelector('.sheet-scroll').prepend(box);
       box.appendChild($('#map'));
       // Its Filters go with it, and ask the card's (Kevin, 6 Nov 2026).
       box.appendChild($('#btn-filters'));
@@ -1875,30 +1876,24 @@
   }
   const shortDate = (k) => { const d = new Date(k + 'T00:00:00Z'); return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
   const CHECK = '<svg viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32"/></svg>';
-  const CAL = '<svg viewBox="0 0 256 256" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M208 32h-24v-8a8 8 0 0 0-16 0v8H88v-8a8 8 0 0 0-16 0v8H48a16 16 0 0 0-16 16v160a16 16 0 0 0 16 16h160a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16M72 48v8a8 8 0 0 0 16 0v-8h80v8a8 8 0 0 0 16 0v-8h24v32H48V48Zm136 160H48V96h160z"/></svg>';
-  /** Where a list of days starts: today, or a date picked from the calendar (Date). */
-  function datePickHTML(scope, from, beside = '') {
-    const t = todayKey();
-    return `<div class="date-pick">
-        <span class="date-btn"><button class="fpill${from ? ' on' : ''}" type="button" data-pick-date="${scope}" aria-label="${from ? esc(`From ${shortDate(from)}: pick another date`) : 'Pick a date to start from'}">${CAL}<span>${from ? esc(`From ${shortDate(from)}`) : 'Date'}</span></button><input class="date-input" type="date" data-date-input="${scope}" min="${t}" max="${addDays(t, 365)}" value="${esc(from || t)}" tabindex="-1" aria-label="Start from a date"></span>
-        ${from ? `<button class="fpill" type="button" data-date-clear="${scope}">Today</button>` : ''}${beside}
-      </div>`;
-  }
   /**
    * A card's Calendar (it was Coming up; Kevin, 2 Nov 2026): the title, and
-   * beside it Date and, on a card that has them, Filters. `acts` is
-   * re-drawn with the days (refreshComingUp), since it says the date.
+   * beside it Filters and Month. `acts` is re-drawn with the days
+   * (refreshComingUp), since Month says whether they start today.
    */
   const calHeadHTML = (acts) => `<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts">${acts}</div></div>`;
   const MONTH_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 9.5v11M15 9.5v11M3 15h18"/></svg>';
   /**
-   * What sits beside a Calendar's title: Date, Filters, and Month, which
-   * shows its days as a grid (next/month.js). In Month the grid picks the
-   * day, so Date goes (Kevin, 6 Nov 2026).
+   * What sits beside a Calendar's title: Filters, and Month, which shows its
+   * days as a grid (next/month.js) and is where a day is picked: there is no
+   * Date (Kevin, 7 Nov 2026). Open, or with the list from a later day, Month
+   * carries an X, which closes it and has the list from today again, so the
+   * list alone needs no Today.
    */
   function calActsFor(from, filters, month) {
-    const pill = `<button class="fpill${month ? ' on' : ''}" type="button" data-cal-month aria-pressed="${!!month}">${MONTH_ICON}<span>Month</span></button>`;
-    return month ? `<div class="date-pick">${filters}${pill}</div>` : datePickHTML('card', from, filters + pill);
+    const x = month || !!from;
+    const pill = `<span class="fpill mpill${month ? ' on' : ''}${x ? ' has-x' : ''}"><button type="button" data-cal-month aria-pressed="${!!month}"${from && !month ? ` aria-label="${esc(`Month, from ${shortDate(from)}`)}"` : ''}>${MONTH_ICON}<span>Month</span></button>${x ? `<button class="mpill-x" type="button" data-cal-reset aria-label="${month ? 'Close Month, from today' : 'From today'}" title="${month ? 'Close Month' : 'From today'}">${I.x}</button>` : ''}</span>`;
+    return `<div class="cal-pills">${filters}${pill}</div>`;
   }
   /** A day's own link, copied with a tap, as the app's day headers have. */
   const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
@@ -2593,22 +2588,35 @@
       ${MORE(days)}`;
   }
   /** A card's Filters pill, with how many it asks, popping its Filters out. */
-  const filtersPill = (n, panel) => `<button class="fpill fbtn" type="button" data-card-filters aria-expanded="${!!panel}">${I.filters}<span>Filters</span>${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
-  /** What sits beside a card's Calendar title: Date, Filters and Month. */
+  const filtersPill = (n, panel) => `<button class="fpill fbtn ficon" type="button" data-card-filters aria-expanded="${!!panel}" aria-label="${n ? `Filters, ${n} on` : 'Filters'}" title="Filters">${I.filters}${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
+  /** What sits beside a card's Calendar title: Filters and Month. */
   function calActsHTML(el) {
     return calActsFor(el._from, filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el), el._month);
   }
-  // The foot of a Calendar, which brings the next fortnight as it scrolls into view.
-  const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days>Loading…</div>' : '';
+  // The foot of a Calendar, which brings the next fortnight as it scrolls into
+  // view: three quiet dots, not words, since it is usually done before it is seen.
+  const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days role="status" aria-label="Loading more days"><i></i><i></i><i></i></div>' : '';
   /** A card's Calendar grows as its foot comes into view (moreIO). */
   function watchMore(el) {
     const m = el.querySelector('[data-more-days]');
     if (m) moreIO.observe(m);
   }
+  /** Has the bundle every day to `end` already? */
+  const holds = (end) => !!S.loadedTo && end <= S.loadedTo;
+  /**
+   * While the bundle is asked for days it lacks (a date far ahead), what is
+   * on screen stays and only fades a little, after a moment, so a quick
+   * answer shows no change at all (next.css .cu.waiting).
+   */
+  async function loadQuietly(box, end) {
+    if (holds(end)) return;
+    box.classList.add('waiting');
+    try { await ensureLoaded(end); } catch (err) { console.warn(err); } finally { box.classList.remove('waiting'); }
+  }
   async function refreshComingUp(el) {
     const box = el.querySelector('.cu');
     if (!box) return;
-    try { await ensureLoaded(addDays(el._from || todayKey(), el._days)); } catch (err) { console.warn(err); }
+    await loadQuietly(box, addDays(el._from || todayKey(), el._days));
     const m = box.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
     box.innerHTML = el._coll ? collFeedHTML(collOn(el), el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
@@ -2616,6 +2624,37 @@
     if (acts) acts.innerHTML = calActsHTML(el);
     watchMore(el);
     if (el._month && window.NextMonth) window.NextMonth.paint(el);
+  }
+  /**
+   * The next fortnight under the days a card's Calendar shows, added below
+   * them: nothing on screen is drawn again, its pictures included, and its
+   * month stays as it is (Kevin, 7 Nov 2026: the whole Calendar flashed as
+   * it grew).
+   */
+  async function growComingUp(el) {
+    const box = el.querySelector('.cu');
+    const foot = box && box.querySelector('[data-more-days]');
+    if (!foot) return;
+    const start = el._from || todayKey(), had = el._days;
+    const days = Math.min(365, had + CU_DAYS);
+    try { await ensureLoaded(addDays(start, days)); } catch (err) { console.warn(err); return; }
+    if (!foot.isConnected || el._days !== had) return;
+    el._days = days;
+    const from = addDays(start, had), more = days - had;
+    // The rows the card's list draws (collFeedHTML, comingUpHTML), on the new days only.
+    const list = cardList(el, from, more), c = el._coll && collOn(el);
+    const html = c
+      ? daysHTML(list, { start: from, days: more, linkFor: c.segs ? (k) => pathOf(collSegs(c, k)) : null, row: { lang: (c.f || {}).lang || null }, byVenue: true })
+      : daysHTML(list, { start: from, days: more, row: { here: el.dataset.pid, focus: el._focus }, linkFor: (k) => pathOf(segsFor({ parish: S.byId.get(el.dataset.pid), focus: el._focus, from: k })) });
+    if (html) {
+      const none = box.querySelector(':scope > .tt-none');
+      if (none) none.remove();
+      foot.insertAdjacentHTML('beforebegin', html);
+    }
+    moreIO.unobserve(foot);
+    if (days >= 365) foot.remove();
+    // Watched afresh: a foot still in reach asks again for the fortnight after.
+    else moreIO.observe(foot);
   }
   /** The card's days from a date, or from today again. The card's link says which. */
   function setCardDate(el, k) {
@@ -2664,6 +2703,7 @@
           list: cardList,
           parishes: (el) => (el._coll ? el._coll.ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean)),
           ensure: ensureLoaded,
+          holds,
           local,
           colour: venueColor,
           tomb: tombOf,
@@ -2689,8 +2729,6 @@
   /** Month on or off on a card. Off, its parishes all come back. */
   async function setMonth(el, on) {
     el._month = !!on;
-    // Month takes the map's place: in a card on a phone (month.css), beside it when wide.
-    el.classList.toggle('month-on', el._month);
     const off = !on && el._off && el._off.size;
     if (!on) { el._off = null; el._notices = null; }
     const acts = el.querySelector('.cal-acts');
@@ -2710,6 +2748,12 @@
       if (map) map.resize();
       if (off) refreshComingUp(el);
     }
+  }
+  /** Month's X: Month closed and the list from today, as the card opened. */
+  async function closeMonth(el) {
+    const dated = !!el._from;
+    await setMonth(el, false);
+    if (dated) await setCardDate(el, null);
   }
   /** Month's grid wherever it belongs now: in its card, or beside it in the map's place. */
   function monthFollow() { if (window.NextMonth) window.NextMonth.follow(); }
@@ -3417,7 +3461,10 @@
     if (m) moreIO.unobserve(m);
     // Its timetables stay open if they were.
     const open = !!scroller.querySelector('.cstack input:checked');
-    scroller.innerHTML = box.querySelector('.sheet-scroll').innerHTML;
+    // Everything again but the map at its top, which stays as it is.
+    const keep = scroller.querySelector(':scope > .card-map');
+    for (const n of [...scroller.childNodes]) if (n !== keep) n.remove();
+    scroller.insertAdjacentHTML('beforeend', box.querySelector('.sheet-scroll').innerHTML);
     if (open) { const i = scroller.querySelector('.cstack input'); if (i) i.checked = true; }
     if (bar) bar.innerHTML = box.querySelector('.gtitle').innerHTML;
     el._rest = rest;
@@ -4462,6 +4509,7 @@
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
     if ((b = t.closest('[data-cal-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
+    if ((b = t.closest('[data-cal-reset]'))) { const el = b.closest('.sheet'); if (el) closeMonth(el); return; }
     if (window.NextMonth && window.NextMonth.click(t)) return;
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the
@@ -4472,16 +4520,7 @@
       return;
     }
 
-    // Days: a date to start from, a day's own link, more days.
-    if ((b = t.closest('[data-pick-date]'))) {
-      const input = b.parentNode.querySelector('.date-input');
-      try { input.showPicker(); } catch { input.focus(); input.click(); }
-      return;
-    }
-    if ((b = t.closest('[data-date-clear]'))) {
-      if (top) setCardDate(top, null);
-      return;
-    }
+    // Days: a day's own link.
     if ((b = t.closest('[data-copy-day]'))) { copyDay(b); return; }
 
     // The filters apply as you tap; the map is above them.
@@ -4606,12 +4645,6 @@
       if (a === 'coll-all') { const c = top._coll; openCollection(byFilters({ ...c, ids: null, juris: null })); return; }
     }
   });
-  document.addEventListener('change', (e) => {
-    const input = e.target.closest && e.target.closest('[data-date-input]');
-    if (!input || !input.value) return;
-    const top = stack[stack.length - 1];
-    if (top) setCardDate(top, input.value);
-  });
   $('#scrim').addEventListener('click', () => popSheet());
   document.addEventListener('keydown', (e) => {
     const line = (e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-line]') ? e.target : null;
@@ -4636,8 +4669,7 @@
       const el = en.isIntersecting && en.target.closest('.sheet');
       if (!el || el._growing || el._days >= 365) continue;
       el._growing = true;
-      el._days = Math.min(365, el._days + CU_DAYS);
-      refreshComingUp(el).finally(() => { el._growing = false; });
+      growComingUp(el).finally(() => { el._growing = false; });
     }
   }, { rootMargin: '400px' });
 

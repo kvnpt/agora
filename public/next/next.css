@@ -202,9 +202,9 @@ body.docked .dock { transform: none; visibility: visible; }
 }
 #map { position: absolute; inset: 0; touch-action: none; }
 /* A card of parishes' own map: the page's map, moved in at the top of the
-   card under its glass bar, the card's list scrolling under it (Kevin, 6 Nov
-   2026). Back on the page when the card goes (next.js, mapFollow). */
-.card-map { position: relative; flex: none; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
+   card under its glass bar (Kevin, 6 Nov 2026), scrolling away with the
+   card (7 Nov). Back on the page when the card goes (next.js, mapFollow). */
+.card-map { position: relative; height: min(42dvh, 380px); background: var(--card-2); border-bottom: 1px solid var(--hair); }
 .card-map .map-filters { top: auto; bottom: 10px; right: 10px; }
 /* On a wide screen the card is a panel, and the page's map beside it is the
    card's: in front of the dimmed page, to pan and tap, its full screen not
@@ -805,11 +805,16 @@ body.map-full .parish-row {
 .sday.empty { display: flex; justify-content: space-between; align-items: center; padding-right: var(--pad); }
 .sday.empty .dh { position: static; padding-top: 10px; padding-bottom: 10px; color: var(--text-2); font-weight: 600; }
 .sday.empty p { margin: 0; color: var(--text-3); font-size: 13px; }
-/* From today, or from a date: the filter pill, opening the calendar. */
-.date-pick { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.date-pick .fpill svg { flex: none; }
-.date-btn { position: relative; display: inline-flex; }
-.date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+/* Beside a Calendar's title: Filters, as its icon, and Month (next.js calActsFor). */
+.cal-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.cal-pills .fpill svg { flex: none; }
+.fpill.ficon { padding: 5px 9px; }
+/* Month, and its X when open or from a later day: one pill, two buttons. */
+.fpill.mpill { padding: 0; gap: 0; }
+.mpill > button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 12px; border-radius: 999px; -webkit-tap-highlight-color: transparent; }
+.mpill.has-x > [data-cal-month] { padding-right: 4px; }
+.mpill > .mpill-x { padding: 4px 10px 4px 6px; }
+.mpill-x svg { width: 13px; height: 13px; }
 
 /* ── Sheets ──────────────────────────────────────────────────────────── */
 
@@ -977,10 +982,9 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .cu-band { margin-top: 26px; padding-bottom: 18px; background: var(--card); border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
 .cu-band .sec { padding-top: 18px; }
 .cu { margin: 0 18px; }
-/* Its title, Calendar, with Date and Filters beside it (next.js calHeadHTML). */
+/* Its title, Calendar, with Filters and Month beside it (next.js calHeadHTML). */
 .cal-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 18px 18px 8px; }
 .cu-band .cal-head .sec { padding: 0; }
-.cal-head .date-pick { margin: 0; }
 .cal-acts:empty { display: none; }
 /* A parish card's Filters, beside Pick a date, its panel under them: what,
    which language and when, as the page's panel asks (next.js cardPanelHTML). */
@@ -1021,7 +1025,16 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 }
 /* Said once by its slot, the time is still read out on every row. */
 .etime.same .t-time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.more-days { padding: 18px 0 6px; text-align: center; color: var(--text-3); font-size: 13px; }
+.more-days { display: flex; justify-content: center; gap: 4px; padding: 22px 0 10px; }
+.more-days i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); opacity: .25; animation: more-days 1.2s ease-in-out infinite; }
+.more-days i:nth-child(2) { animation-delay: .2s; }
+.more-days i:nth-child(3) { animation-delay: .4s; }
+@keyframes more-days { 0%, 80%, 100% { opacity: .25; } 40% { opacity: .9; } }
+/* A list asked for days the bundle lacks (a date far ahead) stays on screen,
+   faded a little after a moment, until they are in (next.js loadQuietly). */
+.cu { transition: opacity .15s ease-out; }
+.cu.waiting { opacity: .5; transition: opacity .3s ease-in .3s; }
+@media (prefers-reduced-motion: reduce) { .more-days i { animation: none; opacity: .5; } }
 .tt-none { margin: 0 18px; padding: 16px; border-radius: 16px; background: var(--card); color: var(--text-2); font-size: 14.5px; }
 .tt-none.sm { margin: 0; padding: 4px 0 0; background: none; font-size: 13.5px; }
 .details { margin: 0 18px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); }
@@ -1693,7 +1706,7 @@ body.dialog-open { overflow: hidden; }
    lack it), and a real tap on the field opens the calendar in every one.
    16px keeps iOS from zooming in on it. */
 @media (pointer: coarse) {
-  .date-input, .df-native {
+  .df-native {
     top: 0; bottom: auto; width: 100%; height: 100%; pointer-events: auto;
     font-size: 16px; -webkit-appearance: none; appearance: none; background: transparent; color: transparent;
   }

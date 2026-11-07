@@ -818,7 +818,7 @@ test('a collection is indexed, under its own name, with its own preview and its 
   assert.equal(meta(en, 'property', 'og:image'), 'https://orthodoxy.au/og/c-english.jpg');
   const c = card(en);
   assert.match(c, /^<section class="sheet collection has-map open ssr" role="dialog" aria-label="English services">/);
-  assert.match(c, /<\/div><div class="card-map" aria-hidden="true"><\/div>\s*<div class="sheet-scroll">/, "room for the page's map at its top, under its bar");
+  assert.match(c, /<div class="sheet-scroll"><div class="card-map" aria-hidden="true"><\/div>/, "room for the page's map at its top, under its bar, scrolling with the card");
   assert.match(c, /<div class="chero soft" style="--c:#1d4ed8">\s*<span class="ckicker">Language<\/span>\s*<h1>English services<\/h1>/,
     "in the collection's own look (collections.js)");
   assert.match(c, /<a class="citem-head" href="\/sgr">[\s\S]*?<b>St George Cathedral, Redfern<\/b>/, 'each parish a link to its card');
