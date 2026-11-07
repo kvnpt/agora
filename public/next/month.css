@@ -48,7 +48,6 @@
 .mg-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .mg-n { display: inline-block; font-variant-numeric: tabular-nums; text-align: center; border-radius: 50%; }
 .mg-d.today .mg-n { font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--text-3); }
-.mg-d.sel .mg-n { background: var(--text); color: var(--card); box-shadow: none; font-weight: 700; }
 .mg-d.past .mg-n { color: var(--text-3); }
 
 /* In a card: the month open in the week bar, a dot for each service,
@@ -99,7 +98,6 @@ body.month-beside .viewport { z-index: 41; }
 .mg-wide .mg-d[data-mg-day] { cursor: pointer; }
 .mg-wide .mg-d[data-mg-day]:hover { background: color-mix(in srgb, var(--card-2) 60%, transparent); }
 .mg-wide .mg-d.past, .mg-wide .mg-d.out { background: color-mix(in srgb, var(--card-2) 55%, transparent); }
-.mg-wide .mg-d.sel { background: var(--card-2); }
 .mg-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 26px; }
 .mg-wide .mg-n { width: 25px; height: 25px; line-height: 25px; font-size: 13px; font-weight: 600; color: inherit; }
 .mg-wide .mg-c { padding-right: 3px; }

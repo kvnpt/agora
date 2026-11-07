@@ -293,7 +293,7 @@ export function parishCardHTML(m) {
         ${sourceLine.timetableSourceHTML(m.rules, { cls: 'src-line', now: m.now })}
         ${addBox(p.id, 'Add a service time')}</div>
       <section class="cu-band" id="coming-up">
-        ${calHeadHTML()}
+        ${calHeadHTML(start, today)}
         <div class="cu" style="--pc:${m.color}">${comingUpHTML(m, start, today)}</div>
         ${addBox(p.id, 'Add an event')}
       </section>
@@ -429,17 +429,19 @@ export function collectionCardHTML(m, { rules, limit = 30, feed = null, parishes
         <div class="clist">${ps.slice(0, limit).map(item).join('') || '<div class="tt-none">Nothing here yet.</div>'}</div>
       </section>
       ${feed ? `<section class="cu-band" id="coming-up">
-        ${calHeadHTML()}
+        ${calHeadHTML(localDateOf('Australia/Sydney', m.now), localDateOf('Australia/Sydney', m.now))}
         <div class="cu">${collectionComingUpHTML(feed, m.now, venueColor)}</div>
       </section>` : ''}
     </div>`);
 }
 
+const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 /**
- * A card's Calendar (it was Coming up; Kevin, 2 Nov 2026). Its Date and
- * Filters beside the title are the page's, which need a script.
+ * A card's Calendar, titled with the month it starts in, as the page's week
+ * bar is (Kevin, 7 Nov 2026): "November", or "January 2027" out of this
+ * year. Its Filters and its weeks are the page's, which need a script.
  */
-const calHeadHTML = () => '<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts"></div></div>';
+const calHeadHTML = (k, today) => `<div class="cal-head"><h2 class="sec">${MONTH_LONG[+k.slice(5, 7) - 1]}${k.slice(0, 4) === today.slice(0, 4) ? '' : ` ${k.slice(0, 4)}`}</h2><div class="cal-acts"></div></div>`;
 /**
  * A collection's parishes folded behind their logos, as the page's card has
  * them (next.js stackHTML): logos first, then those with times. The fold is

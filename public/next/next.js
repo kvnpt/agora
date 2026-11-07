@@ -1876,23 +1876,6 @@
   }
   const shortDate = (k) => { const d = new Date(k + 'T00:00:00Z'); return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
   const CHECK = '<svg viewBox="0 0 256 256" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32"/></svg>';
-  /**
-   * A card's Calendar (it was Coming up; Kevin, 2 Nov 2026): the title, and
-   * beside it Filters and Month. `acts` is re-drawn with the days
-   * (refreshComingUp), since Month says whether they start today.
-   */
-  const calHeadHTML = (acts) => `<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts">${acts}</div></div>`;
-  const MONTH_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 9.5v11M15 9.5v11M3 15h18"/></svg>';
-  /**
-   * What sits beside a Calendar's title: Filters, and Month, which opens the
-   * whole month (next/month.js) as the week bar's month name does. There is
-   * no Date (Kevin, 7 Nov 2026): a day is picked on the week bar or in the
-   * month, and Month has no X.
-   */
-  function calActsFor(from, filters, month) {
-    const pill = `<button class="fpill${month ? ' on' : ''}" type="button" data-cal-month aria-pressed="${!!month}">${MONTH_ICON}<span>Month</span></button>`;
-    return `<div class="cal-pills">${filters}${pill}</div>`;
-  }
   /** A day's own link, copied with a tap, as the app's day headers have. */
   const dayLink = (k, path) => `<button class="day-link" type="button" data-copy-day="${esc(path)}" aria-label="${esc(`Copy the link from ${shortDate(k)}`)}" title="Copy the link from this day">${COPY_ICON}</button>`;
   /**
@@ -2592,10 +2575,8 @@
   }
   /** A card's Filters pill, with how many it asks, popping its Filters out. */
   const filtersPill = (n, panel) => `<button class="fpill fbtn ficon" type="button" data-card-filters aria-expanded="${!!panel}" aria-label="${n ? `Filters, ${n} on` : 'Filters'}" title="Filters">${I.filters}${n ? `<span class="fcount-card">${n}</span>` : ''}</button>`;
-  /** What sits beside a card's Calendar title: Filters and Month. */
-  function calActsHTML(el) {
-    return calActsFor(el._from, filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el), el._month);
-  }
+  /** What sits beside a card's Calendar title, the month's name: its Filters. */
+  const calActsHTML = (el) => filtersPill(cardFilterCount(el), !!fpop && fpop.scope === el);
   // The foot of a Calendar, which brings the next fortnight as it scrolls into
   // view: three quiet dots, not words, since it is usually done before it is seen.
   const MORE = (days) => days < 365 ? '<div class="more-days" data-more-days role="status" aria-label="Loading more days"><i></i><i></i><i></i></div>' : '';
@@ -2732,6 +2713,7 @@
           redot: weekAfterList,
           local,
           colour: venueColor,
+          dots: dotsHTML,
           tomb: tombOf,
           today: todayKey,
           addDays,
@@ -2773,17 +2755,23 @@
       window.NextMonth.follow();
       if (map) map.resize();
       // The week again: its dots as Notices was, its name the day's.
-      if (off) refreshComingUp(el);
+      if (off) await refreshComingUp(el);
       else weekAfterList(el);
     }
   }
   /** Month's grid wherever it belongs now: in its card, or beside it in the map's place. */
   function monthFollow() { if (window.NextMonth) window.NextMonth.follow(); }
-  /** A day picked on a card's month: the card's list goes to it, and the cards opened over it from the big month make way. */
+  /**
+   * A day picked on a card's month: the card's list goes to it, and the cards
+   * opened over it from the big month make way. The month in the week bar
+   * closes back to the week (Kevin, 7 Nov 2026); the big one beside the card
+   * stays.
+   */
   async function pickMonthDay(el, k) {
     let n = 0;
     while (stack.length && stack[stack.length - 1] !== el) { dropSheet(); n++; }
     if (n) goBack(n);
+    if (el._month && !WIDE.matches) await setMonth(el, false);
     return goToDay(el, k);
   }
   /**
@@ -2806,17 +2794,19 @@
 
   // ── The week bar ──────────────────────────────────────────────────────
   //
-  // Over a card's Calendar, held there as its list scrolls under it, as
-  // Fantastical's week drawer is (Kevin, 7 Nov 2026): the month's name, the
-  // week's days Sunday first, swiped a week at a time, and the day the list
-  // is on marked as it scrolls. A day tapped takes the list to it, as
-  // Tomorrow does in a Today box. The month's name opens the whole month
-  // (next/month.js; Month beside Filters does the same), and closes it.
+  // A card's Calendar, its head held there as its list scrolls under it, as
+  // Fantastical's week drawer is (Kevin, 7 Nov 2026): the month's name as
+  // its title, Filters beside it, then the week's days Sunday first, swiped
+  // a week at a time and following the list. No day is marked: the list's
+  // day headers, held under it, say where it is. A day tapped takes the list
+  // to it, as Tomorrow does in a Today box. The month's name opens the whole
+  // month (next/month.js), and closes it; a day tapped in it closes it too.
   // It is in the card's own scroll, not a box of its own: scrolled back up
   // past the Calendar, the rest of the card is there, and ↑ takes you to it.
 
   const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const CHEV = '<svg class="wk-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+  // Up and down: it opens and closes (the iOS picker's chevrons).
+  const CHEV = '<svg class="wk-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 9.5 12 5l4.5 4.5M7.5 14.5 12 19l4.5-4.5"/></svg>';
   const sundayOf = (k) => addDays(k, -weekdayOf(k));
   /** "November", or "January 2027" out of this year. */
   const monthWords = (k) => `${MONTH_LONG[+k.slice(5, 7) - 1]}${k.slice(0, 4) === todayKey().slice(0, 4) ? '' : ` ${k.slice(0, 4)}`}`;
@@ -2827,7 +2817,12 @@
   /** A card of more than four parishes marks only its notices, unless told otherwise (Month's Notices). */
   const noticesOn = (el) => (el._notices != null ? el._notices : cardParishes(el).length > 4);
 
-  function weekBarHTML() {
+  /** What a day's dots are: up to four, in the colour of each one's kind, and + for a fifth. */
+  const kindColour = (e) => window.AgoraEventTypes.kindColors(e.event_type || 'other', dark()).fg;
+  const dotsHTML = (es) => es.slice(0, 4).map(e => `<i class="${tombOf(e) ? 'tomb' : ''}" style="--c:${kindColour(e)}"></i>`).join('') + (es.length > 4 ? '<b>+</b>' : '');
+
+  /** A card's Calendar head: the month's name (it opens the month), Today when the list is elsewhere, its Filters (`acts`), and its weeks. */
+  function weekBarHTML(from, acts) {
     const t = todayKey(), last = addDays(t, 365);
     const weeks = [];
     for (let w = sundayOf(t); w <= last; w = addDays(w, 7)) {
@@ -2840,8 +2835,11 @@
     }
     return `<div class="wk">
         <div class="wk-head">
-          <button class="wk-month" type="button" data-wk-month aria-expanded="false"><span>${esc(monthWords(t))}</span>${CHEV}</button>
-          <button class="fpill wk-today" type="button" data-wk-today hidden>Today</button>
+          <h2 class="wk-title"><button class="wk-month" type="button" data-wk-month aria-expanded="false" title="The whole month"><span>${esc(monthWords(from || t))}</span>${CHEV}</button></h2>
+          <div class="wk-acts">
+            <button class="fpill wk-today" type="button" data-wk-today hidden>Today</button>
+            <div class="cal-acts">${acts}</div>
+          </div>
         </div>
         <div class="wk-names" aria-hidden="true">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
         <div class="wk-strip">${weeks.join('')}</div>
@@ -2891,9 +2889,9 @@
   function setWeekTitle(el, k) {
     const span = el.querySelector('.wk-month > span');
     const words = monthWords(k);
-    if (span && span.textContent !== words) span.textContent = words;
+    if (span && span.textContent !== words) { span.textContent = words; placeTop(el); }
   }
-  /** A week's dots: up to three a day, in the colour of where each is held; notices only, on Notices. */
+  /** A week's dots (dotsHTML): notices only, on Notices. */
   async function fillWeek(el, w) {
     const start = w.dataset.week, end = addDays(start, 7), ver = el._wkVer || 0;
     if (w._filled === ver) return;
@@ -2909,7 +2907,7 @@
     }
     for (const b of w.children) {
       const es = byDay.get(b.dataset.wkDay) || [];
-      const html = es.slice(0, 3).map(e => `<i class="${tombOf(e) ? 'tomb' : ''}" style="--c:${venueColor(e)}"></i>`).join('');
+      const html = dotsHTML(es);
       const dots = b.querySelector('.wk-dots');
       if (dots.innerHTML !== html) dots.innerHTML = html;
     }
@@ -2943,16 +2941,16 @@
     if (pin && pin <= k && (at === 0 || days[at - 1].dataset.date < pin)) return pin;
     return k < first ? first : k;
   }
-  /** The day the list is on, marked in the week bar (its week swiped into view) and in the month. */
+  /**
+   * The day the list is on: its week swiped into view, its month named, and
+   * the month open brought to it. Not marked (Kevin, 7 Nov 2026): the day
+   * headers say it.
+   */
   function markWeek(el, k, { align = true, smooth = true } = {}) {
     const wk = el.querySelector('.cu-band > .wk');
     if (!wk || !k) return;
     const t = todayKey();
     if (el._wkCur !== k) {
-      const old = wk.querySelector('.wk-d.cur');
-      if (old) old.classList.remove('cur');
-      const b = wk.querySelector(`.wk-d[data-wk-day="${k}"]`);
-      if (b) b.classList.add('cur');
       el._wkCur = k;
       wk.querySelector('[data-wk-today]').hidden = k === t;
       if (window.NextMonth && el._month) window.NextMonth.mark(el, k);
@@ -2967,6 +2965,17 @@
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (Math.abs(strip.scrollLeft - left) > 2) strip.scrollTo({ left, behavior: smooth && !still ? 'smooth' : 'auto' });
   }
+  /**
+   * The card's ↑, while the Calendar's head is held under the card's bar,
+   * in the room between the month's name and Today/Filters, not over them.
+   */
+  function placeTop(el) {
+    const wk = el.querySelector('.cu-band > .wk'), bar = el.querySelector('.glassbar');
+    if (!wk || !bar || !el.querySelector(':scope > .totop')) return;
+    if (wk.getBoundingClientRect().top > bar.getBoundingClientRect().bottom + 1) { el.style.removeProperty('--totop-x'); return; }
+    const a = wk.querySelector('.wk-month').getBoundingClientRect().right, b = wk.querySelector('.wk-acts').getBoundingClientRect().left;
+    el.style.setProperty('--totop-x', `${Math.round((a + b) / 2 - el.getBoundingClientRect().left)}px`);
+  }
   /** As the card scrolls: the day its list is on, once a frame at most. */
   function weekScroll(el) {
     if (el._wkRaf) return;
@@ -2974,6 +2983,7 @@
       el._wkRaf = 0;
       const k = dayInView(el);
       if (k !== el._wkCur) markWeek(el, k);
+      placeTop(el);
     });
   }
   /**
@@ -3399,8 +3409,7 @@
         <section class="p-whatson"${won ? '' : ' hidden'}>${won}</section>
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
-          ${calHeadHTML(calActsFor(from, filtersPill(focusCount(focus), false), false))}
-          ${weekBarHTML()}
+          ${weekBarHTML(from, filtersPill(focusCount(focus), false))}
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
@@ -3584,7 +3593,7 @@
   }
 
   /** A collection's card as it now is: its bar's title, and everything under the bar. */
-  function collectionHTML(c, { from = null, month = false } = {}) {
+  function collectionHTML(c, { from = null } = {}) {
     const o = sortOrigin();
     // What the collection asks of a parish's services (/services, /sun/liturgy,
     // /en), its timetables and its Next keep to; /greek and /monasteries ask nothing.
@@ -3650,8 +3659,7 @@
         </section>
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
-          ${calHeadHTML(calActsFor(from, filtersPill(collFilterCount(c), false), month))}
-          ${weekBarHTML()}
+          ${weekBarHTML(from, filtersPill(collFilterCount(c), false))}
           <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
@@ -3674,7 +3682,7 @@
   /** An open collection's card again, where it was scrolled to: its filters changed, or what it holds. */
   function repaintCollection(el) {
     const c = el._coll;
-    const { html, rest } = collectionHTML(c, { from: el._from, month: el._month });
+    const { html, rest } = collectionHTML(c, { from: el._from });
     const box = document.createElement('div');
     box.innerHTML = html;
     const scroller = el.querySelector('.sheet-scroll'), bar = el.querySelector('.gtitle');
@@ -4730,7 +4738,6 @@
     }
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
-    if ((b = t.closest('[data-cal-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
     if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
     if ((b = t.closest('[data-wk-day]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, b.dataset.wkDay); return; }
     if ((b = t.closest('[data-wk-today]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, todayKey()); return; }

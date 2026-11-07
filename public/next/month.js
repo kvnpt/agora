@@ -155,22 +155,25 @@
     if (n) { const on = host.notices(el); n.classList.toggle('on', on); n.setAttribute('aria-pressed', on); }
   }
 
-  /** What a small day holds: a dot for each service (each notice, on Notices), up to three, and on Notices the rest as a count. */
-  function smallDay(d, sel, notices) {
+  /**
+   * What a small day holds: a dot for each service (each notice, on Notices)
+   * in its kind's colour, up to four and + for a fifth (the page's dotsHTML,
+   * as its week bar), and on Notices the rest as a count.
+   */
+  function smallDay(d, notices) {
     if (!d.inMonth) return '<span class="mg-d out" aria-hidden="true"></span>';
     const n = +d.k.slice(8);
     if (!d.open) return `<span class="mg-d past"><span class="mg-n">${n}</span></span>`;
     const shown = notices ? d.es.filter(host.isNotice) : d.es;
     const rest = notices ? d.es.length - shown.length : 0;
-    const dots = shown.slice(0, 3).map(e => `<i class="${host.tomb(e) ? 'tomb' : ''}" style="--c:${host.colour(e)}"></i>`).join('');
     const say = `${dayWords(d.k)}: ${d.es.length ? `${d.es.length} on` : 'nothing on file'}${notices && shown.length ? `, ${shown.length} new or changed` : ''}`;
-    return `<button class="mg-d${d.k === host.today() ? ' today' : ''}${d.k === sel ? ' sel' : ''}" type="button" data-mg-day="${d.k}" aria-label="${esc(say)}">
-        <span class="mg-n">${n}</span><span class="mg-dots">${dots}${shown.length > 3 ? '<b>+</b>' : ''}</span>${rest ? `<span class="mg-c">${rest}</span>` : ''}
+    return `<button class="mg-d${d.k === host.today() ? ' today' : ''}" type="button" data-mg-day="${d.k}" aria-label="${esc(say)}">
+        <span class="mg-n">${n}</span><span class="mg-dots">${host.dots(shown)}</span>${rest ? `<span class="mg-c">${rest}</span>` : ''}
       </button>`;
   }
 
   /** What a big day holds: its first few rows, each opening its card, and how many more. */
-  function bigDay(d, sel, notices, fit) {
+  function bigDay(d, notices, fit) {
     if (!d.inMonth) return '<div class="mg-d out" aria-hidden="true"></div>';
     const n = +d.k.slice(8);
     if (!d.open) return `<div class="mg-d past"><div class="mg-top"><span class="mg-n">${n}</span></div></div>`;
@@ -184,20 +187,10 @@
       return `<button class="mg-e${tomb ? ' tomb' : ''}${e.schedule_id ? '' : ' one'}" type="button" data-event="${esc(e.id)}" style="--c:${host.colour(e)}" title="${esc(`${e.title}${tomb ? ` (${tomb})` : ''}`)}">${host.timeHTML(l.hm)} <span>${esc(e.title)}</span></button>`;
     }).join('');
     const more = shown.length - take;
-    return `<div class="mg-d${d.k === host.today() ? ' today' : ''}${d.k === sel ? ' sel' : ''}" data-mg-day="${d.k}">
+    return `<div class="mg-d${d.k === host.today() ? ' today' : ''}" data-mg-day="${d.k}">
         <div class="mg-top"><button class="mg-n" type="button" data-mg-day="${d.k}" aria-label="${esc(`${dayWords(d.k)}: ${d.es.length ? `${d.es.length} on` : 'nothing on file'}`)}">${n}</button>${rest ? `<span class="mg-c" title="${rest} regular ${rest === 1 ? 'service' : 'services'}">${rest}</span>` : ''}</div>
         ${rows}${more > 0 ? `<button class="mg-more" type="button" data-mg-day="${d.k}">+ ${more} more</button>` : ''}
       </div>`;
-  }
-
-  /** The day the list is on, marked in a month without drawing it again. */
-  function markIn(box, k) {
-    if (!box) return;
-    const old = box.querySelector('.mg-d.sel');
-    if (old && old.dataset.mgDay === k) return;
-    if (old) old.classList.remove('sel');
-    const d = box.querySelector(`.mg-d[data-mg-day="${k}"]`);
-    if (d) d.classList.add('sel');
   }
 
   // ── In a card: the month in the week bar ──────────────────────────────
@@ -232,7 +225,7 @@
     const tools = `${layersHTML(el)}${noticesPill(el)}`;
     box.innerHTML = `${tools ? `<div class="mg-tools">${tools}</div>` : ''}
       <div class="mg-wk" aria-hidden="true">${HEAD.map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
-      <div class="mg-months">${monthsAhead().map(m => `<div class="mg-month" data-m="${m}" aria-label="${esc(monthTitle(m))}"><div class="mg-grid">${monthDays(el, m, { weeks: 6, empty: true }).map(d => smallDay(d, '', false)).join('')}</div></div>`).join('')}</div>`;
+      <div class="mg-months">${monthsAhead().map(m => `<div class="mg-month" data-m="${m}" aria-label="${esc(monthTitle(m))}"><div class="mg-grid">${monthDays(el, m, { weeks: 6, empty: true }).map(d => smallDay(d, false)).join('')}</div></div>`).join('')}</div>`;
     wk.querySelector('.wk-head').after(box);
     box._ver = 0;
     const months = box.querySelector('.mg-months');
@@ -252,7 +245,6 @@
       });
     }, { passive: true });
     showMonth(el, box, monthOf(host.current(el)), false);
-    markIn(box, host.current(el));
   }
   /** A small month's days, with what is on them. Its own picture, drawn again: there are none in it. */
   async function fillMonth(el, box, g) {
@@ -266,8 +258,8 @@
       g.classList.remove('waiting');
       if (!g.isConnected || g._ver !== ver) return;
     }
-    const sel = host.current(el), notices = host.notices(el);
-    g.querySelector('.mg-grid').innerHTML = monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, sel, notices)).join('');
+    const notices = host.notices(el);
+    g.querySelector('.mg-grid').innerHTML = monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, notices)).join('');
   }
   function showMonth(el, box, m, smooth) {
     const months = box.querySelector('.mg-months');
@@ -309,9 +301,9 @@
   }
   function wideBodyHTML(el, m, fit) {
     const days = monthDays(el, m);
-    const sel = host.current(el), notices = host.notices(el);
+    const notices = host.notices(el);
     return `<div class="mg-wk" aria-hidden="true">${HEAD_WIDE.map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
-      <div class="mg-grid" style="--weeks:${days.length / 7}">${days.map(d => bigDay(d, sel, notices, fit)).join('')}</div>`;
+      <div class="mg-grid" style="--weeks:${days.length / 7}">${days.map(d => bigDay(d, notices, fit)).join('')}</div>`;
   }
   function paintWide() {
     const el = wideCard();
@@ -382,16 +374,13 @@
     const next = addMonths(m, 1);
     if (next <= lastMonth()) host.ensure(pastEnd(next)).catch(() => {});
   }
-  /** The day the list is on, as it scrolls: marked, and its month brought into view. */
+  /** The day the list is on, as it scrolls: the month open in the week bar brought to its month. Nothing is marked (Kevin, 7 Nov 2026). */
   function mark(el, k) {
     const box = smallOf(el);
-    if (box) {
-      markIn(box, k);
-      const months = box.querySelector('.mg-months');
-      const shown = months.children[Math.round(months.scrollLeft / Math.max(1, months.clientWidth))];
-      if (!shown || shown.dataset.m !== monthOf(k)) showMonth(el, box, monthOf(k), true);
-    }
-    if (wideEl && wideFor === el) markIn(wideEl, k);
+    if (!box) return;
+    const months = box.querySelector('.mg-months');
+    const shown = months.children[Math.round(months.scrollLeft / Math.max(1, months.clientWidth))];
+    if (!shown || shown.dataset.m !== monthOf(k)) showMonth(el, box, monthOf(k), true);
   }
 
   /** A tap the page passes on: true when it was one of the month's own. */
@@ -424,9 +413,8 @@
       return true;
     }
     if ((b = t.closest('[data-mg-day]'))) {
-      const k = b.dataset.mgDay;
-      markIn(box, k);
-      host.pick(el, k);
+      // The list goes to it; in the week bar, the month closes back to the week (host.pick).
+      host.pick(el, b.dataset.mgDay);
       return true;
     }
     return box.contains(t);

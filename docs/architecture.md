@@ -72,29 +72,34 @@ a parish card asking for its weeks must not shrink what the stream has grown
 to.
 
 **Month is the same Calendar as a grid.** The list was a calendar app's agenda
-view all along, and a card's Calendar carries a **week bar** over it, as
-Fantastical's week drawer did (Kevin, 7 Nov 2026): the month's name and a
-chevron, then S M T W T F S over a week of days, Sunday first, dots for what is
-on. It is held under the card's bar while the list scrolls under it, marks the
-day the list is on, and swipes a week at a time; a tapped day has the list go
-to it, as Tomorrow does in Today, growing the list in place when it has not
-got that far (`goToDay` in `next.js`). **Today** shows in the bar when the list
-is on another day. The way back up to the rest of the card is the card's ↑, or
-scrolling up past the Calendar. The month's name (or **Month**, beside the
-card's Filters: they do the same) opens the whole month
-(`public/next/month.js` and `month.css`, loaded on the first tap as
-`editing.js` is, and kept by `sw.js`); it reads what the list reads
-(`cardList`, the card's filters included) and stores nothing. On a phone the
-month opens in the week bar's place, months swiped like a gallery, and the
-name closes it again; on a laptop (≥1080px) the grid takes the map's place
-beside the card, titles in the cells, while the week bar stays in the card,
-and **Map** has the map back. The month is where a day is picked: there is no
-Date button and no X. A card of more than four parishes marks only
-**Notices** (each day's one-offs, changes and cancellations, with a grey count
-of its regular services, in the month), and a card of a few can switch each
-parish off and on, as a calendar app's calendars. Neither is remembered. A
-re-drawn list waits for its logos to decode before it swaps in
-(`swapDecoded`), so nothing flashes.
+view all along, and a card's Calendar is headed as one (Kevin, 7 Nov 2026): one
+row with the month's name for its title (an up-and-down chevron beside it),
+**Today** when the list is on another day, and the card's Filters; under it
+S M T W T F S over a week of days, Sunday first, with up to four dots a day in
+the colour of each one's kind and a + from the fifth. The whole head is held
+under the card's bar while the list scrolls under it, as Fantastical's week
+drawer was, and each day's header is held under the head till the next one
+comes up. No day is marked in the week or the month: the day headers say
+where the list is. The week swipes a week at a time and follows the list; a
+tapped day has the list go to it, as Tomorrow does in Today, growing the list
+in place when it has not got that far (`goToDay` in `next.js`). The way back
+up to the rest of the card is the card's ↑ (placed between the name and
+Today while the head is held), or scrolling up past the Calendar. The month's
+name opens the whole month (`public/next/month.js` and `month.css`, loaded on
+the first tap as `editing.js` is, and kept by `sw.js`); it reads what the
+list reads (`cardList`, the card's filters included) and stores nothing. On a
+phone the month opens in the week's place, months swiped like a gallery, and
+the name, or a day tapped in it, closes it back to the week; on a laptop
+(≥1080px) the grid takes the map's place beside the card, titles in the cells
+(their lines the jurisdiction's, as the list's), while the week stays in the
+card, and **Map** has the map back. There is no Date button, no Month button
+and no X. A card of more than four parishes marks only **Notices** (each
+day's one-offs, changes and cancellations, with a grey count of its regular
+services, in the month), and a card of a few can switch each parish off and
+on, as a calendar app's calendars, until the month closes. Neither is
+remembered. A re-drawn list waits for its logos to decode before it swaps in
+(`swapDecoded`), so nothing flashes. The Worker's first paint titles the
+Calendar with its month too (`page-card.mjs` `calHeadHTML`).
 
 **A date segment says where the stream starts.** `/smg/2026-07`,
 `/next-thursday`, `/liturgy/wednesday/march` — `public/shared/dates.js` resolves

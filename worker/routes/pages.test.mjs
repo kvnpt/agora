@@ -1021,7 +1021,8 @@ test('the lite version of a collection lists what is on at its parishes this wee
   const { lite } = freshLite();
   const { html } = await lite('/sun/liturgy');
   const cu = between(html, '<section class="cu-band" id="coming-up">');
-  assert.match(cu, /<h2 class="sec">Calendar<\/h2>/, 'Calendar, as the page calls it (it was Coming up)');
+  // Titled with its month, as the page's week bar is (it was Calendar, and Coming up before that).
+  assert.match(cu, /<h2 class="sec">(January|February|March|April|May|June|July|August|September|October|November|December)( \d{4})?<\/h2>/);
   // Sunday 4 October: the seed's Sunday Liturgies, each naming its parish; no Vespers.
   assert.match(cu, /<section class="sday" data-date="2026-10-04">/);
   assert.match(cu, /Sunday Divine Liturgy/);
