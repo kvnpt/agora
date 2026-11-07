@@ -68,6 +68,20 @@ occurrences are already in the browser, which is the whole point of the lens.
 a parish card asking for its weeks must not shrink what the stream has grown
 to.
 
+**Month is the same Calendar as a grid.** The list was a calendar app's agenda
+view all along; **Month**, beside a card's Filters, shows the card's Calendar as
+a month of days (`public/next/month.js` and `month.css`, loaded on the first tap
+as `editing.js` is, and kept by `sw.js`). It reads what the list reads
+(`cardList` in `next.js`, the card's filters included) and stores nothing. A
+picked day is the list's FROM, as Date's was, and Date goes while Month is on.
+On a phone the grid sits under the Calendar's title, dots for a day's services
+(hollow for one not held), and takes the map's place in a card of parishes; on
+a laptop (≥1080px) it takes the map's place beside the card, titles in the
+cells, and **Map** has the map back. A card of more than four parishes starts
+on **Notices** (each day's one-offs, changes and cancellations, with a grey
+count of its regular services), and a card of a few can switch each parish off
+and on, as a calendar app's calendars. Neither is remembered.
+
 **A date segment says where the stream starts.** `/smg/2026-07`,
 `/next-thursday`, `/liturgy/wednesday/march` — `public/shared/dates.js` resolves
 them, and a focus is a *from*, never a single day: a parish does not publish a
