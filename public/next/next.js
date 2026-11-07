@@ -1884,15 +1884,13 @@
   const calHeadHTML = (acts) => `<div class="cal-head"><h2 class="sec">Calendar</h2><div class="cal-acts">${acts}</div></div>`;
   const MONTH_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 9.5v11M15 9.5v11M3 15h18"/></svg>';
   /**
-   * What sits beside a Calendar's title: Filters, and Month, which shows its
-   * days as a grid (next/month.js) and is where a day is picked: there is no
-   * Date (Kevin, 7 Nov 2026). Open, or with the list from a later day, Month
-   * carries an X, which closes it and has the list from today again, so the
-   * list alone needs no Today.
+   * What sits beside a Calendar's title: Filters, and Month, which opens the
+   * whole month (next/month.js) as the week bar's month name does. There is
+   * no Date (Kevin, 7 Nov 2026): a day is picked on the week bar or in the
+   * month, and Month has no X.
    */
   function calActsFor(from, filters, month) {
-    const x = month || !!from;
-    const pill = `<span class="fpill mpill${month ? ' on' : ''}${x ? ' has-x' : ''}"><button type="button" data-cal-month aria-pressed="${!!month}"${from && !month ? ` aria-label="${esc(`Month, from ${shortDate(from)}`)}"` : ''}>${MONTH_ICON}<span>Month</span></button>${x ? `<button class="mpill-x" type="button" data-cal-reset aria-label="${month ? 'Close Month, from today' : 'From today'}" title="${month ? 'Close Month' : 'From today'}">${I.x}</button>` : ''}</span>`;
+    const pill = `<button class="fpill${month ? ' on' : ''}" type="button" data-cal-month aria-pressed="${!!month}">${MONTH_ICON}<span>Month</span></button>`;
     return `<div class="cal-pills">${filters}${pill}</div>`;
   }
   /** A day's own link, copied with a tap, as the app's day headers have. */
@@ -1970,10 +1968,10 @@
     return out;
   }
   /** A card's Calendar, scrolled to the first day from `k` on. */
-  function toDay(el, k) {
+  function toDay(el, k, { smooth = true } = {}) {
     if (!el || !el.querySelector('.cu')) return;
     const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
-    (day || el.querySelector('.cu-band')).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    (day || el.querySelector('.cu-band')).scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
   }
   /**
    * A link that names a collection opens its card. One that names parishes
@@ -2049,7 +2047,12 @@
         el.classList.toggle('scrolled', scroller.scrollTop > 40);
         if (tall) el.classList.toggle('deep', scroller.scrollTop > scroller.clientHeight);
         titled();
+        if (el._wkIO) weekScroll(el);
       }, { passive: true });
+      // The list moved by hand: a day tapped is no longer held as the day.
+      const loose = () => { el._wkPin = null; };
+      scroller.addEventListener('wheel', loose, { passive: true });
+      scroller.addEventListener('touchmove', loose, { passive: true });
       titled();
     }
     swipeToClose(el);
@@ -2613,17 +2616,35 @@
     box.classList.add('waiting');
     try { await ensureLoaded(end); } catch (err) { console.warn(err); } finally { box.classList.remove('waiting'); }
   }
-  async function refreshComingUp(el) {
+  async function refreshComingUp(el, { keep = true } = {}) {
     const box = el.querySelector('.cu');
     if (!box) return;
     await loadQuietly(box, addDays(el._from || todayKey(), el._days));
     const m = box.querySelector('[data-more-days]');
     if (m) moreIO.unobserve(m);
-    box.innerHTML = el._coll ? collFeedHTML(collOn(el), el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus);
+    // Read in the list (its week bar held at the top), the same day is in view after.
+    const wk = keep && el.querySelector('.cu-band > .wk'), bar = el.querySelector('.glassbar');
+    const stay = wk && bar && wk.getBoundingClientRect().top <= bar.getBoundingClientRect().bottom + 1 ? dayInView(el) : null;
+    await swapDecoded(box, el._coll ? collFeedHTML(collOn(el), el._days, el._from) : comingUpHTML(el.dataset.pid, el._from, el._days, el._focus));
+    if (stay) toDay(el, stay, { smooth: false });
     const acts = el.querySelector('.cal-acts');
     if (acts) acts.innerHTML = calActsHTML(el);
     watchMore(el);
+    weekAfterList(el);
     if (el._month && window.NextMonth) window.NextMonth.paint(el);
+  }
+  /**
+   * A box's contents drawn again with its pictures already decoded, so the
+   * parishes' logos and the posters do not blink out and back as the new
+   * ones load (Kevin, 7 Nov 2026). The browser has them already; a picture
+   * that takes longer than a moment is not waited for.
+   */
+  async function swapDecoded(box, html) {
+    const next = document.createElement('div');
+    next.innerHTML = html;
+    const imgs = [...next.querySelectorAll('img')];
+    if (imgs.length) await Promise.race([Promise.all(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : null))), new Promise(r => setTimeout(r, 250))]);
+    box.replaceChildren(...next.childNodes);
   }
   /**
    * The next fortnight under the days a card's Calendar shows, added below
@@ -2631,12 +2652,12 @@
    * month stays as it is (Kevin, 7 Nov 2026: the whole Calendar flashed as
    * it grew).
    */
-  async function growComingUp(el) {
+  async function growComingUp(el, want = 0) {
     const box = el.querySelector('.cu');
     const foot = box && box.querySelector('[data-more-days]');
     if (!foot) return;
     const start = el._from || todayKey(), had = el._days;
-    const days = Math.min(365, had + CU_DAYS);
+    const days = Math.min(365, Math.max(had + CU_DAYS, want));
     try { await ensureLoaded(addDays(start, days)); } catch (err) { console.warn(err); return; }
     if (!foot.isConnected || el._days !== had) return;
     el._days = days;
@@ -2662,12 +2683,12 @@
     el._days = CU_DAYS;
     const c = el._coll;
     // A collection with no link of its own (In view) has no date to put in one.
-    if (c && !c.segs) return refreshComingUp(el);
+    if (c && !c.segs) return refreshComingUp(el, { keep: false });
     el._segs = c ? collSegs(c, el._from) : segsFor({ parish: S.byId.get(el.dataset.pid), focus: el._focus, from: el._from });
     const link = el.querySelector('.sheet-link');
     if (link) { link.innerHTML = linkChip(el._segs); fitLinks(link); }
     syncURL();
-    return refreshComingUp(el);
+    return refreshComingUp(el, { keep: false });
   }
 
   // ── Month: a card's Calendar as a grid (next/month.js) ────────────────
@@ -2704,6 +2725,11 @@
           parishes: (el) => (el._coll ? el._coll.ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean)),
           ensure: ensureLoaded,
           holds,
+          notices: noticesOn,
+          isNotice,
+          current: (el) => el._wkCur || el._from || todayKey(),
+          title: setWeekTitle,
+          redot: weekAfterList,
           local,
           colour: venueColor,
           tomb: tombOf,
@@ -2746,28 +2772,19 @@
     } else if (window.NextMonth) {
       window.NextMonth.follow();
       if (map) map.resize();
+      // The week again: its dots as Notices was, its name the day's.
       if (off) refreshComingUp(el);
+      else weekAfterList(el);
     }
-  }
-  /** Month's X: Month closed and the list from today, as the card opened. */
-  async function closeMonth(el) {
-    const dated = !!el._from;
-    await setMonth(el, false);
-    if (dated) await setCardDate(el, null);
   }
   /** Month's grid wherever it belongs now: in its card, or beside it in the map's place. */
   function monthFollow() { if (window.NextMonth) window.NextMonth.follow(); }
-  /**
-   * A day picked on a card's month: the card's list from it, as Date would
-   * have it. Wide, the card beside the big month goes to the day, and the
-   * cards opened over it from the grid make way.
-   */
+  /** A day picked on a card's month: the card's list goes to it, and the cards opened over it from the big month make way. */
   async function pickMonthDay(el, k) {
     let n = 0;
     while (stack.length && stack[stack.length - 1] !== el) { dropSheet(); n++; }
     if (n) goBack(n);
-    await setCardDate(el, k);
-    if (WIDE.matches) toDay(el, k);
+    return goToDay(el, k);
   }
   /**
    * Wide, the page's map box holds the big month: over the dimmed page, as
@@ -2785,6 +2802,206 @@
       if (monthScroll != null && !body.classList.contains('map-beside')) window.scrollTo({ top: monthScroll });
       monthScroll = null;
     }
+  }
+
+  // ── The week bar ──────────────────────────────────────────────────────
+  //
+  // Over a card's Calendar, held there as its list scrolls under it, as
+  // Fantastical's week drawer is (Kevin, 7 Nov 2026): the month's name, the
+  // week's days Sunday first, swiped a week at a time, and the day the list
+  // is on marked as it scrolls. A day tapped takes the list to it, as
+  // Tomorrow does in a Today box. The month's name opens the whole month
+  // (next/month.js; Month beside Filters does the same), and closes it.
+  // It is in the card's own scroll, not a box of its own: scrolled back up
+  // past the Calendar, the rest of the card is there, and ↑ takes you to it.
+
+  const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const CHEV = '<svg class="wk-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+  const sundayOf = (k) => addDays(k, -weekdayOf(k));
+  /** "November", or "January 2027" out of this year. */
+  const monthWords = (k) => `${MONTH_LONG[+k.slice(5, 7) - 1]}${k.slice(0, 4) === todayKey().slice(0, 4) ? '' : ` ${k.slice(0, 4)}`}`;
+  /** A day changed or cancelled, or a one-off: what the rhythm does not already say. */
+  const isNotice = (e) => !e.schedule_id || e.mutation_type === 'adapted' || !!tombOf(e);
+  /** The card's parishes, all of them. */
+  const cardParishes = (el) => (el._coll ? el._coll.ids.map(id => S.byId.get(id)).filter(Boolean) : [S.byId.get(el.dataset.pid)].filter(Boolean));
+  /** A card of more than four parishes marks only its notices, unless told otherwise (Month's Notices). */
+  const noticesOn = (el) => (el._notices != null ? el._notices : cardParishes(el).length > 4);
+
+  function weekBarHTML() {
+    const t = todayKey(), last = addDays(t, 365);
+    const weeks = [];
+    for (let w = sundayOf(t); w <= last; w = addDays(w, 7)) {
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const k = addDays(w, i), off = k < t || k > last;
+        days.push(`<button class="wk-d${k === t ? ' today' : ''}" type="button" data-wk-day="${k}"${off ? ' disabled' : ''} aria-label="${esc(dayLabel(k, true))}"><b>${+k.slice(8)}</b><span class="wk-dots"></span></button>`);
+      }
+      weeks.push(`<div class="wk-week" data-week="${w}">${days.join('')}</div>`);
+    }
+    return `<div class="wk">
+        <div class="wk-head">
+          <button class="wk-month" type="button" data-wk-month aria-expanded="false"><span>${esc(monthWords(t))}</span>${CHEV}</button>
+          <button class="fpill wk-today" type="button" data-wk-today hidden>Today</button>
+        </div>
+        <div class="wk-names" aria-hidden="true">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
+        <div class="wk-strip">${weeks.join('')}</div>
+      </div>`;
+  }
+  /** A card's week bar wired up: its dots as its weeks come into view, its size for what sticks under it. */
+  function initWeek(el) {
+    const wk = el.querySelector('.cu-band > .wk');
+    if (!wk) return;
+    if (el._wkIO) el._wkIO.disconnect();
+    if (el._wkRO) el._wkRO.disconnect();
+    const strip = wk.querySelector('.wk-strip');
+    el._wkIO = new IntersectionObserver((ents) => {
+      for (const en of ents) if (en.isIntersecting) fillWeek(el, en.target);
+    }, { root: strip, rootMargin: '0px 100%' });
+    strip.querySelectorAll('.wk-week').forEach(w => el._wkIO.observe(w));
+    // What is held under the card's bar: the bar, then this (next.css --bar-h,
+    // --wk-h). A parish card's scroller is padded down past its bar, and a
+    // sticky top counts from inside that padding (--wk-top).
+    const bar = el.querySelector('.glassbar'), sc = el.querySelector('.sheet-scroll');
+    el._wkRO = new ResizeObserver(() => {
+      if (bar && sc) {
+        const h = bar.getBoundingClientRect().bottom - sc.getBoundingClientRect().top;
+        el.style.setProperty('--bar-h', `${h}px`);
+        el.style.setProperty('--wk-top', `${h - (parseFloat(getComputedStyle(sc).paddingTop) || 0)}px`);
+      }
+      el.style.setProperty('--wk-h', `${wk.offsetHeight}px`);
+    });
+    el._wkRO.observe(wk);
+    if (bar) el._wkRO.observe(bar);
+    // Swiped to another week: its month's name, unless the day the list is on is in it.
+    let raf = 0;
+    strip.addEventListener('scroll', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (el._month && !WIDE.matches) return;
+        const w = strip.children[Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth))];
+        if (!w) return;
+        const k = w.dataset.week, cur = el._wkCur;
+        setWeekTitle(el, cur && cur >= k && cur < addDays(k, 7) ? cur : addDays(k, 3));
+      });
+    }, { passive: true });
+    el._wkCur = null;
+    markWeek(el, dayInView(el), { align: true, smooth: false });
+  }
+  function setWeekTitle(el, k) {
+    const span = el.querySelector('.wk-month > span');
+    const words = monthWords(k);
+    if (span && span.textContent !== words) span.textContent = words;
+  }
+  /** A week's dots: up to three a day, in the colour of where each is held; notices only, on Notices. */
+  async function fillWeek(el, w) {
+    const start = w.dataset.week, end = addDays(start, 7), ver = el._wkVer || 0;
+    if (w._filled === ver) return;
+    w._filled = ver;
+    if (!holds(end)) { try { await ensureLoaded(end); } catch (err) { console.warn(err); } }
+    if (!w.isConnected || w._filled !== ver) return;
+    const t = todayKey(), byDay = new Map(), only = noticesOn(el);
+    for (const e of cardList(el, start < t ? t : start, daysBetween(start < t ? t : start, end))) {
+      if (only && !isNotice(e)) continue;
+      const k = local(e).date;
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(e);
+    }
+    for (const b of w.children) {
+      const es = byDay.get(b.dataset.wkDay) || [];
+      const html = es.slice(0, 3).map(e => `<i class="${tombOf(e) ? 'tomb' : ''}" style="--c:${venueColor(e)}"></i>`).join('');
+      const dots = b.querySelector('.wk-dots');
+      if (dots.innerHTML !== html) dots.innerHTML = html;
+    }
+  }
+  /** The list changed (its filters, its parishes, its days): the dots in view again, and the day it is on. */
+  function weekAfterList(el) {
+    const strip = el.querySelector('.cu-band > .wk .wk-strip');
+    if (!strip) return;
+    el._wkVer = (el._wkVer || 0) + 1;
+    const i = Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth));
+    for (const w of [strip.children[i - 1], strip.children[i], strip.children[i + 1]]) if (w) fillWeek(el, w);
+    markWeek(el, dayInView(el), { align: true, smooth: false });
+  }
+  /** The day the list is on: the first whose rows are still below the week bar. */
+  function dayInView(el) {
+    const wk = el.querySelector('.cu-band > .wk'), box = el.querySelector('.cu');
+    const first = el._from || todayKey();
+    if (!wk || !box) return first;
+    const days = box.querySelectorAll(':scope > .sday');
+    if (!days.length) return first;
+    const line = wk.getBoundingClientRect().bottom + 2;
+    let lo = 0, hi = days.length - 1, at = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (days[mid].getBoundingClientRect().bottom > line) { at = mid; hi = mid - 1; } else lo = mid + 1;
+    }
+    if (at < 0) return days[days.length - 1].dataset.date;
+    const k = days[at].dataset.date;
+    // A day tapped with nothing on it stays the day, while the list shows the next that has.
+    const pin = el._wkPin;
+    if (pin && pin <= k && (at === 0 || days[at - 1].dataset.date < pin)) return pin;
+    return k < first ? first : k;
+  }
+  /** The day the list is on, marked in the week bar (its week swiped into view) and in the month. */
+  function markWeek(el, k, { align = true, smooth = true } = {}) {
+    const wk = el.querySelector('.cu-band > .wk');
+    if (!wk || !k) return;
+    const t = todayKey();
+    if (el._wkCur !== k) {
+      const old = wk.querySelector('.wk-d.cur');
+      if (old) old.classList.remove('cur');
+      const b = wk.querySelector(`.wk-d[data-wk-day="${k}"]`);
+      if (b) b.classList.add('cur');
+      el._wkCur = k;
+      wk.querySelector('[data-wk-today]').hidden = k === t;
+      if (window.NextMonth && el._month) window.NextMonth.mark(el, k);
+    }
+    // The month open in the week bar has its own name and its own days.
+    if (el._month && !WIDE.matches) return;
+    setWeekTitle(el, k);
+    if (!align) return;
+    const strip = wk.querySelector('.wk-strip');
+    const i = Math.round(daysBetween(sundayOf(t), sundayOf(k)) / 7);
+    const left = i * strip.clientWidth;
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (Math.abs(strip.scrollLeft - left) > 2) strip.scrollTo({ left, behavior: smooth && !still ? 'smooth' : 'auto' });
+  }
+  /** As the card scrolls: the day its list is on, once a frame at most. */
+  function weekScroll(el) {
+    if (el._wkRaf) return;
+    el._wkRaf = requestAnimationFrame(() => {
+      el._wkRaf = 0;
+      const k = dayInView(el);
+      if (k !== el._wkCur) markWeek(el, k);
+    });
+  }
+  /**
+   * A day tapped (the week bar, the month): the list goes to it, as Tomorrow
+   * does. Days the list has not reached yet are added under it, with a
+   * fortnight more for it to come up under the week bar, and one further
+   * out than a couple of months starts the list there; a day before where
+   * the list starts starts it there.
+   */
+  async function goToDay(el, k) {
+    const t = todayKey();
+    if (!k || k < t) k = t;
+    el._wkPin = k;
+    markWeek(el, k);
+    if (el._growing) await el._growing;
+    const start = el._from || t, end = addDays(start, el._days);
+    if (k < start) await setCardDate(el, k > t ? k : null);
+    // A fortnight under it at least, so it can come up under the week bar.
+    else if (k >= addDays(end, -CU_DAYS) && el._days < 365) {
+      const want = daysBetween(start, k) + 2 * CU_DAYS;
+      if (want <= el._days + 60) {
+        el._growing = growComingUp(el, want).finally(() => { el._growing = null; });
+        await el._growing;
+      } else await setCardDate(el, k);
+    }
+    el._wkPin = k;
+    markWeek(el, k);
+    toDay(el, k);
   }
 
   function timesHTML(p, focus = null) {
@@ -3183,6 +3400,7 @@
         <!-- What is coming up changes; the timetable above is the parish's for good. -->
         <section class="cu-band">
           ${calHeadHTML(calActsFor(from, filtersPill(focusCount(focus), false), false))}
+          ${weekBarHTML()}
           <div class="cu" style="--pc:${parishColor(p)}">${comingUpHTML(pid, from, CU_DAYS, focus)}</div>
           ${addBox(SUGGEST.event, 'Add an event')}
         </section>
@@ -3199,6 +3417,7 @@
     el._focus = focus;
     el._days = CU_DAYS;
     watchMore(el);
+    initWeek(el);
     paintAddBadge(el);
     paintParishToday(el);
     loadFavCount(pid);
@@ -3432,6 +3651,7 @@
         ${won ? `<section class="p-whatson">${won}</section>` : ''}
         ${ps.length ? `<section class="cu-band">
           ${calHeadHTML(calActsFor(from, filtersPill(collFilterCount(c), false), month))}
+          ${weekBarHTML()}
           <div class="cu">${collFeedHTML(c, CU_DAYS, from)}</div>
         </section>` : ''}
         <div class="toolbar-space"></div>
@@ -3446,6 +3666,7 @@
     el._days = CU_DAYS;
     el._rest = rest;
     watchMore(el);
+    initWeek(el);
     mapFollow();
     // A date further out than the bundle holds fills in once it has it.
     if (from) refreshComingUp(el);
@@ -3471,6 +3692,7 @@
     el._days = CU_DAYS;
     fitLinks(el);
     watchMore(el);
+    initWeek(el);
     if (S.mapCard && S.mapCard.el === el) { S.mapCard.ids = new Set(c.ids); syncMap(); }
     // Filtered down to none on the map, the map goes; widened again, it comes back.
     mapFollow();
@@ -4509,7 +4731,9 @@
     if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
     // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
     if ((b = t.closest('[data-cal-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
-    if ((b = t.closest('[data-cal-reset]'))) { const el = b.closest('.sheet'); if (el) closeMonth(el); return; }
+    if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
+    if ((b = t.closest('[data-wk-day]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, b.dataset.wkDay); return; }
+    if ((b = t.closest('[data-wk-today]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, todayKey()); return; }
     if (window.NextMonth && window.NextMonth.click(t)) return;
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the
@@ -4668,8 +4892,7 @@
     for (const en of ents) {
       const el = en.isIntersecting && en.target.closest('.sheet');
       if (!el || el._growing || el._days >= 365) continue;
-      el._growing = true;
-      growComingUp(el).finally(() => { el._growing = false; });
+      el._growing = growComingUp(el).finally(() => { el._growing = null; });
     }
   }, { rootMargin: '400px' });
 

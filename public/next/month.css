@@ -1,5 +1,6 @@
 /* Month: a card's Calendar as a grid of days (next/month.js). Loaded with it,
-   the first time somebody taps Month; nothing here is in next.css. */
+   the first time somebody opens a month; nothing here is in next.css. The
+   week bar it opens in is next.css's (.wk). */
 
 .mg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 2px 10px; }
 .mg-title { position: relative; margin: 0 2px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
@@ -17,7 +18,7 @@
 /* A month whose days are not in yet: drawn, faded a little after a moment,
    with three quiet dots by its name; a quick answer shows no change. */
 .mg-grid { transition: opacity .15s ease-out; }
-.mg.waiting .mg-grid { opacity: .45; transition: opacity .3s ease-in .3s; }
+.mg.waiting .mg-grid, .mg-month.waiting .mg-grid { opacity: .45; transition: opacity .3s ease-in .3s; }
 /* Under the month's name, taking no room in the row. */
 .mg-wait { position: absolute; left: 50%; bottom: -7px; display: flex; gap: 3px; transform: translateX(-50%); opacity: 0; transition: opacity .15s; pointer-events: none; }
 .mg.waiting .mg-wait { opacity: 1; transition: opacity .3s .3s; }
@@ -28,7 +29,11 @@
 @media (prefers-reduced-motion: reduce) { .mg-wait i { animation: none; opacity: .6; } }
 
 /* A few parishes, each one on or off, as a calendar app's calendars. */
-.mg-layers { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px 10px; }
+.mg-layers { display: flex; flex-wrap: wrap; gap: 6px; }
+.mg-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mg-tools[hidden] { display: none; }
+.mg-tools .mg-layers { display: contents; }
+.mg-tools .fpill { min-height: 28px; padding: 4px 10px; }
 .mg-layer {
   display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px 3px 4px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--fab-bg);
@@ -43,15 +48,20 @@
 .mg-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .mg-n { display: inline-block; font-variant-numeric: tabular-nums; text-align: center; border-radius: 50%; }
 .mg-d.today .mg-n { font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--text-3); }
-.mg-d.sel .mg-n { background: var(--text); color: var(--bg); box-shadow: none; font-weight: 700; }
+.mg-d.sel .mg-n { background: var(--text); color: var(--card); box-shadow: none; font-weight: 700; }
 .mg-d.past .mg-n { color: var(--text-3); }
 
-/* In a card: a small month, a dot for each service. */
-.mg-small { padding: 0 12px 6px; }
-.mg-small .mg-grid { row-gap: 2px; }
+/* In a card: the month open in the week bar, a dot for each service,
+   swiped sideways a month at a time; every month six weeks, one height. */
+.mg-small { padding: 2px 0 0; }
+.mg-small .mg-tools { padding: 2px 6px 8px; }
+.mg-months { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.mg-months::-webkit-scrollbar { display: none; }
+.mg-month { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.mg-small .mg-grid { row-gap: 1px; }
 .mg-small .mg-d {
   position: relative; display: flex; flex-direction: column; align-items: center;
-  height: 48px; padding-top: 4px; border-radius: 10px; color: var(--text);
+  height: 44px; padding-top: 2px; border-radius: 10px; color: var(--text);
   -webkit-tap-highlight-color: transparent;
 }
 .mg-small button.mg-d:hover { background: var(--card-2); }
@@ -74,6 +84,8 @@ body.month-beside .viewport { z-index: 41; }
 @keyframes mg-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .mg-wide { animation: none; } }
 .mg-wide .mg-title { font-size: 20px; }
+.mg-wide .mg-tools { padding: 0 2px 10px; }
+.mg-wide .mg-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mg-wide .mg-wk { padding: 0 0 6px; text-align: left; font-size: 12px; }
 .mg-wide .mg-wk span { padding-left: 8px; }
 .mg-wide .mg-grid {

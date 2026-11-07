@@ -605,7 +605,9 @@ body.map-full .parish-row {
 }
 .tfocus span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tfocus svg { flex: none; width: 14px; height: 14px; }
-.sheet .cu .sday, .sheet .cu-band { scroll-margin-top: 72px; }
+.sheet .cu-band { scroll-margin-top: 72px; }
+/* A day gone to lands under the card's bar and the week bar held under it. */
+.sheet .cu .sday { scroll-margin-top: calc(var(--bar-h, 72px) + var(--wk-h, 0px)); }
 .etime { width: 50px; margin-right: -4px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
 /* Search results say the day under the time ("Sat 25 Oct"): room for it. */
@@ -809,12 +811,6 @@ body.map-full .parish-row {
 .cal-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .cal-pills .fpill svg { flex: none; }
 .fpill.ficon { padding: 5px 9px; }
-/* Month, and its X when open or from a later day: one pill, two buttons. */
-.fpill.mpill { padding: 0; gap: 0; }
-.mpill > button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 12px; border-radius: 999px; -webkit-tap-highlight-color: transparent; }
-.mpill.has-x > [data-cal-month] { padding-right: 4px; }
-.mpill > .mpill-x { padding: 4px 10px 4px 6px; }
-.mpill-x svg { width: 13px; height: 13px; }
 
 /* ── Sheets ──────────────────────────────────────────────────────────── */
 
@@ -980,6 +976,37 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* Coming up on white, lifted off the grey the timetable sits on: the one
    changes week to week, the other is the parish's for good. */
 .cu-band { margin-top: 26px; padding-bottom: 18px; background: var(--card); border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+/* The week bar (next.js weekBarHTML), Fantastical's week drawer: held under
+   the card's bar while the Calendar's list scrolls under it, the month's
+   name over a week of days, Sunday first, swiped a week at a time. */
+.wk {
+  position: sticky; top: var(--wk-top, var(--bar-h, 72px)); z-index: 3;
+  padding: 4px 12px 6px; background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.wk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 42px; padding: 0 6px; }
+.wk-month { display: inline-flex; align-items: center; gap: 3px; padding: 4px 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; color: var(--text); -webkit-tap-highlight-color: transparent; }
+.wk-chev { flex: none; color: var(--text-2); transition: transform .2s ease-out; }
+.wk-month[aria-expanded="true"] .wk-chev { transform: rotate(90deg); }
+.wk-today { min-height: 26px; padding: 3px 10px; }
+.wk-today[hidden] { display: none; }
+.wk-names, .wk-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.wk-names { padding: 4px 0 2px; font-size: 11px; font-weight: 600; text-align: center; color: var(--text-3); }
+.wk-names .sun { color: var(--text-2); }
+.wk-strip { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.wk-strip::-webkit-scrollbar { display: none; }
+.wk-week { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.wk-d { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 0 1px; color: var(--text); -webkit-tap-highlight-color: transparent; }
+.wk-d b { width: 32px; height: 32px; border-radius: 50%; font-size: 15px; font-weight: 500; line-height: 32px; text-align: center; font-variant-numeric: tabular-nums; }
+.wk-d:disabled { cursor: default; }
+.wk-d:disabled b { color: var(--text-3); }
+.wk-d.today b { font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+.wk-d.cur b { background: var(--text); color: var(--card); box-shadow: none; font-weight: 700; }
+.wk-dots { display: flex; align-items: center; gap: 3px; height: 5px; }
+.wk-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--text-3)); }
+.wk-dots i.tomb { background: transparent; box-shadow: inset 0 0 0 1.25px var(--c, var(--text-3)); }
+/* The whole month open in its place (month.css .mg-small). */
+.wk.open .wk-names, .wk.open .wk-strip { display: none; }
 .cu-band .sec { padding-top: 18px; }
 .cu { margin: 0 18px; }
 /* Its title, Calendar, with Filters and Month beside it (next.js calHeadHTML). */

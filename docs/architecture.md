@@ -72,21 +72,29 @@ a parish card asking for its weeks must not shrink what the stream has grown
 to.
 
 **Month is the same Calendar as a grid.** The list was a calendar app's agenda
-view all along; **Month**, beside a card's Filters, shows the card's Calendar as
-a month of days (`public/next/month.js` and `month.css`, loaded on the first tap
-as `editing.js` is, and kept by `sw.js`). It reads what the list reads
-(`cardList` in `next.js`, the card's filters included) and stores nothing.
-Month is where a day is picked, and the picked day is the list's FROM: there
-is no Date button (Kevin, 7 Nov 2026). Open, or with the list from a later
-day, Month carries an X, which closes it and has the list from today again,
-so the list alone has no Today. On a phone the grid sits under the Calendar's
-title, dots for a day's services (hollow for one not held); a card of
-parishes keeps its map at its top, scrolled away with the card. On a laptop
-(≥1080px) the grid takes the map's place beside the card, titles in the
-cells, and **Map** has the map back. A card of more than four parishes starts
-on **Notices** (each day's one-offs, changes and cancellations, with a grey
-count of its regular services), and a card of a few can switch each parish off
-and on, as a calendar app's calendars. Neither is remembered.
+view all along, and a card's Calendar carries a **week bar** over it, as
+Fantastical's week drawer did (Kevin, 7 Nov 2026): the month's name and a
+chevron, then S M T W T F S over a week of days, Sunday first, dots for what is
+on. It is held under the card's bar while the list scrolls under it, marks the
+day the list is on, and swipes a week at a time; a tapped day has the list go
+to it, as Tomorrow does in Today, growing the list in place when it has not
+got that far (`goToDay` in `next.js`). **Today** shows in the bar when the list
+is on another day. The way back up to the rest of the card is the card's ↑, or
+scrolling up past the Calendar. The month's name (or **Month**, beside the
+card's Filters: they do the same) opens the whole month
+(`public/next/month.js` and `month.css`, loaded on the first tap as
+`editing.js` is, and kept by `sw.js`); it reads what the list reads
+(`cardList`, the card's filters included) and stores nothing. On a phone the
+month opens in the week bar's place, months swiped like a gallery, and the
+name closes it again; on a laptop (≥1080px) the grid takes the map's place
+beside the card, titles in the cells, while the week bar stays in the card,
+and **Map** has the map back. The month is where a day is picked: there is no
+Date button and no X. A card of more than four parishes marks only
+**Notices** (each day's one-offs, changes and cancellations, with a grey count
+of its regular services, in the month), and a card of a few can switch each
+parish off and on, as a calendar app's calendars. Neither is remembered. A
+re-drawn list waits for its logos to decode before it swaps in
+(`swapDecoded`), so nothing flashes.
 
 **A date segment says where the stream starts.** `/smg/2026-07`,
 `/next-thursday`, `/liturgy/wednesday/march` — `public/shared/dates.js` resolves
