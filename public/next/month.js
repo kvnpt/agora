@@ -1,40 +1,51 @@
-// Month: a card's Calendar as a grid of days (Kevin, 6 Nov 2026).
+// Month: a card's Calendar as a grid of days (Kevin, 6–7 Nov 2026).
 //
 // List and Month are two views of one Calendar, as in any calendar app: the
 // same days, the same rows, the same filters and the same editing controls.
-// Month is where a day is picked (there is no Date button; Kevin, 7 Nov
-// 2026), and the list under it carries on from the day picked, a FROM as
-// every date is. It is for everyone, and not in index.html: next.js fetches
-// this file (and month.css) the first time somebody taps Month, as it does
-// editing.js for an editor, so a visitor who never taps it downloads nothing.
+// Over the list sits the week bar (next.js weekBarHTML), Fantastical's week
+// drawer: the month's name, a week of days, the day the list is on. The
+// month's name, or Month beside Filters, opens the whole month, and a day
+// tapped in it takes the list there as a day in the week bar does. It is for
+// everyone, and not in index.html: next.js fetches this file (and month.css)
+// the first time somebody opens a month, as it does editing.js for an editor,
+// so a visitor who never does downloads nothing.
 //
-// Two sizes. In a card (a phone, or a card with no map beside it), a small
-// month under the Calendar's title: a dot for each service, up to three. On
-// a wide screen, the page's map beside the card gives way to a big month
-// with each day's services in it, a Map button to have the map back, and the
-// card's list beside it following the day picked (#194 put the map there).
-// A phone's card has its map at the top, scrolled away by then: no Map.
+// Two sizes. In a card (a phone, or a card with no map beside it), the month
+// opens in the week bar in place of its week, a dot for each service, up to
+// three, and swiped sideways like a gallery to the month after. On a wide
+// screen, the page's map beside the card gives way to a big month with each
+// day's services in it, and a Map button to have the map back (#194 put the
+// map there).
 //
 // Notices: with more than a few parishes a day holds dozens of regular
 // services, which say nothing a timetable does not. So a card of several
-// parishes starts on Notices: a day's one-offs, and the dates changed or
-// cancelled, with the rest as a grey count. A card of a few parishes (a
-// list, Favourites) can switch each one off and on, like the calendars in a
-// calendar app; the list under it follows.
+// parishes marks only its notices: a day's one-offs, and the dates changed or
+// cancelled, with the rest as a grey count (next.js noticesOn). A card of a
+// few parishes (a list, Favourites) can switch each one off and on, like the
+// calendars in a calendar app; the list under it follows.
+//
+// Nothing here draws a picture twice: a parish's chip, logo and all, is drawn
+// when the month opens and only its state changes after (Kevin, 7 Nov 2026:
+// the logos flashed as days were tapped).
 //
 // next.js hands this its page through init(host):
 //   list(el, start, days)  what the card's Calendar holds on those days (its filters, its parishes on)
 //   parishes(el)           the card's parishes, all of them
 //   ensure(end)            the bundle holds every day to `end`
 //   holds(end)             does it already (no wait)
+//   notices(el)            does the card mark only its notices
+//   isNotice(e)            a one-off, or a date changed or cancelled
+//   current(el)            the day the card's list is on
+//   title(el, k)           the week bar's month name, for the month of `k`
 //   local(e)               { date, hm } in the parish's own zone
 //   colour(e)              the jurisdiction colour of where it is held
 //   tomb(e)                'Cancelled', 'Combined', 'Break', or null
 //   today(), addDays(k, n), weekday(k)  dates as the page keeps them
 //   timeHTML(hm), avatar(p, size)
-//   pick(el, k)            the card's list from that day
+//   pick(el, k)            the card's list to that day
 //   refresh(el)            the card's Calendar again (its parishes switched)
-//   setMonth(el, on)       Month on or off
+//   redot(el)              the week bar's dots again (Notices)
+//   setMonth(el, on)       the month open or closed
 //   stack()                the open cards, bottom first
 //   wide()                 is the page wide (the card a panel beside the map)
 //   raise(on)              the page's map box over the dimmed page, and the room the card takes
@@ -44,12 +55,12 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const HEAD = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const HEAD_WIDE = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  // How far ahead a card's Calendar goes (next.js: Date's max, moreIO's year).
+  // Sunday first, as the week bar (Kevin, 7 Nov 2026).
+  const HEAD = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const HEAD_WIDE = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // How far ahead a card's Calendar goes (next.js moreIO's year).
   const AHEAD = 365;
-  // More parishes than this start on Notices; up to LAYERS can be switched one by one.
-  const MANY = 4;
+  // Up to this many parishes can be switched one by one.
   const LAYERS = 12;
   // A day's rows in a big cell before it is measured; then as many as fit (fitRows).
   const ROWS = 3;
@@ -63,41 +74,43 @@
   const monthTitle = (m) => `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`;
   const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
   const dayWords = (k) => { const d = new Date(k + 'T00:00:00Z'); return `${WD_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`; };
-
-  /** A date changed or cancelled, or a one-off: what the rhythm does not already say. */
-  const isNotice = (e) => !e.schedule_id || e.mutation_type === 'adapted' || !!host.tomb(e);
+  /** The day after a month's last, which the bundle must reach for the month to be whole. */
+  const pastEnd = (m) => host.addDays(`${m}-${String(lastDay(m)).padStart(2, '0')}`, 1);
+  const firstMonth = () => monthOf(host.today());
+  const lastMonth = () => monthOf(host.addDays(host.today(), AHEAD));
 
   function init(h) { host = h; }
-
-  /** The card's parishes, and whether it starts on Notices. */
   const parishesOf = (el) => host.parishes(el);
-  const noticesOn = (el) => (el._notices != null ? el._notices : parishesOf(el).length > MANY);
 
-  /**
-   * The month on show: the one the card was turned to, else the one with
-   * its picked day (its FROM), else this one; never before this month or
-   * past the Calendar's year.
-   */
+  /** The months a card's month goes through: this one to the Calendar's last. */
+  function monthsAhead() {
+    const out = [];
+    for (let m = firstMonth(); m <= lastMonth(); m = addMonths(m, 1)) out.push(m);
+    return out;
+  }
+  /** The big month on show: the one it was turned to, else the one the list is on. */
   function shownMonth(el) {
-    const t = host.today();
-    const first = monthOf(t), last = monthOf(host.addDays(t, AHEAD));
-    let m = el._monthAt || monthOf(el._from || t);
-    if (m < first) m = first;
-    if (m > last) m = last;
+    let m = el._monthAt || monthOf(host.current(el));
+    if (m < firstMonth()) m = firstMonth();
+    if (m > lastMonth()) m = lastMonth();
     el._monthAt = m;
     return m;
   }
 
-  /** The days a month's grid shows, Monday first, and what is on each from today on. */
-  function monthDays(el, m) {
+  /**
+   * The days a month's grid shows, Sunday first, and what is on each from
+   * today on. `weeks`: always that many rows (the small months, all one
+   * height as they are swiped), else as many as the month needs.
+   */
+  function monthDays(el, m, { weeks = 0, empty = false } = {}) {
     const t = host.today(), end = host.addDays(t, AHEAD);
     const first = `${m}-01`, last = `${m}-${String(lastDay(m)).padStart(2, '0')}`;
-    const lead = (host.weekday(first) + 6) % 7;
+    const lead = host.weekday(first);
     const gridStart = host.addDays(first, -lead);
-    const cells = Math.ceil((lead + lastDay(m)) / 7) * 7;
+    const cells = (weeks || Math.ceil((lead + lastDay(m)) / 7)) * 7;
     const from = first > t ? first : t, to = last < end ? last : end;
     const byDay = new Map();
-    if (from <= to) {
+    if (!empty && from <= to) {
       for (const e of host.list(el, from, daysBetween(from, to) + 1)) {
         const k = host.local(e).date;
         if (!byDay.has(k)) byDay.set(k, []);
@@ -109,29 +122,16 @@
       const k = host.addDays(gridStart, i);
       days.push({ k, inMonth: monthOf(k) === m, open: k >= t && k <= end, es: byDay.get(k) || [] });
     }
-    return { days, last };
+    return days;
   }
 
   // ── Drawing ───────────────────────────────────────────────────────────
 
-  function headHTML(el, m, { wide }) {
-    const t = host.today();
-    const many = parishesOf(el).length > 1;
-    const notices = noticesOn(el);
-    const here = m === monthOf(t);
-    const picked = el._from || t;
-    return `<div class="mg-head">
-        <button class="mg-nav" type="button" data-mg-step="-1" aria-label="Previous month"${here ? ' disabled' : ''}>‹</button>
-        <h3 class="mg-title" aria-live="polite">${esc(monthTitle(m))}<span class="mg-wait" aria-hidden="true"><i></i><i></i><i></i></span></h3>
-        <button class="mg-nav" type="button" data-mg-step="1" aria-label="Next month"${m >= monthOf(host.addDays(t, AHEAD)) ? ' disabled' : ''}>›</button>
-        <span class="mg-acts">
-          ${!here || picked !== t ? '<button class="fpill" type="button" data-mg-today>Today</button>' : ''}
-          ${many ? `<button class="fpill${notices ? ' on' : ''}" type="button" data-mg-notices aria-pressed="${notices}" title="Only what is new or changed: one-offs, and dates moved or cancelled">Notices</button>` : ''}
-          ${wide ? '<button class="fpill" type="button" data-mg-map>Map</button>' : ''}
-        </span>
-      </div>`;
-  }
-
+  const noticesPill = (el) => {
+    if (parishesOf(el).length < 2) return '';
+    const on = host.notices(el);
+    return `<button class="fpill${on ? ' on' : ''}" type="button" data-mg-notices aria-pressed="${on}" title="Only what is new or changed: one-offs, and dates moved or cancelled">Notices</button>`;
+  };
   /** A card of a few parishes: each one switched on or off, as a calendar app's calendars are. */
   function layersHTML(el) {
     const ps = parishesOf(el);
@@ -142,27 +142,42 @@
       return `<button class="mg-layer${on ? '' : ' off'}" type="button" data-mg-layer="${esc(p.id)}" aria-pressed="${on}" title="${esc(p.name)}">${host.avatar(p, 'xs')}<span>${esc(p.acronym || p.name)}</span></button>`;
     }).join('')}</div>`;
   }
+  /** The chips and Notices as they now are, the chips' pictures left alone. */
+  function syncTools(box, el) {
+    if (!box) return;
+    const off = el._off || new Set();
+    box.querySelectorAll('[data-mg-layer]').forEach(b => {
+      const on = !off.has(b.dataset.mgLayer);
+      b.classList.toggle('off', !on);
+      b.setAttribute('aria-pressed', on);
+    });
+    const n = box.querySelector('[data-mg-notices]');
+    if (n) { const on = host.notices(el); n.classList.toggle('on', on); n.setAttribute('aria-pressed', on); }
+  }
 
-  /** What a small day holds: a dot for each service (each notice, on Notices), up to three, and on Notices the rest as a count. */
-  function smallDay(d, sel, notices) {
+  /**
+   * What a small day holds: a dot for each service (each notice, on Notices)
+   * in its kind's colour, up to four and + for a fifth (the page's dotsHTML,
+   * as its week bar), and on Notices the rest as a count.
+   */
+  function smallDay(d, notices) {
     if (!d.inMonth) return '<span class="mg-d out" aria-hidden="true"></span>';
     const n = +d.k.slice(8);
     if (!d.open) return `<span class="mg-d past"><span class="mg-n">${n}</span></span>`;
-    const shown = notices ? d.es.filter(isNotice) : d.es;
+    const shown = notices ? d.es.filter(host.isNotice) : d.es;
     const rest = notices ? d.es.length - shown.length : 0;
-    const dots = shown.slice(0, 3).map(e => `<i class="${host.tomb(e) ? 'tomb' : ''}" style="--c:${host.colour(e)}"></i>`).join('');
     const say = `${dayWords(d.k)}: ${d.es.length ? `${d.es.length} on` : 'nothing on file'}${notices && shown.length ? `, ${shown.length} new or changed` : ''}`;
-    return `<button class="mg-d${d.k === host.today() ? ' today' : ''}${d.k === sel ? ' sel' : ''}${host.weekday(d.k) === 0 ? ' sun' : ''}" type="button" data-mg-day="${d.k}" aria-label="${esc(say)}"${d.k === sel ? ' aria-current="date"' : ''}>
-        <span class="mg-n">${n}</span><span class="mg-dots">${dots}${shown.length > 3 ? '<b>+</b>' : ''}</span>${rest ? `<span class="mg-c">${rest}</span>` : ''}
+    return `<button class="mg-d${d.k === host.today() ? ' today' : ''}" type="button" data-mg-day="${d.k}" aria-label="${esc(say)}">
+        <span class="mg-n">${n}</span><span class="mg-dots">${host.dots(shown)}</span>${rest ? `<span class="mg-c">${rest}</span>` : ''}
       </button>`;
   }
 
   /** What a big day holds: its first few rows, each opening its card, and how many more. */
-  function bigDay(d, sel, notices, fit) {
+  function bigDay(d, notices, fit) {
     if (!d.inMonth) return '<div class="mg-d out" aria-hidden="true"></div>';
     const n = +d.k.slice(8);
     if (!d.open) return `<div class="mg-d past"><div class="mg-top"><span class="mg-n">${n}</span></div></div>`;
-    const shown = notices ? d.es.filter(isNotice) : d.es;
+    const shown = notices ? d.es.filter(host.isNotice) : d.es;
     const rest = notices ? d.es.length - shown.length : 0;
     // A day with more than fits gives its last row to "+ n more".
     const take = shown.length > fit ? Math.max(0, fit - 1) : shown.length;
@@ -172,24 +187,90 @@
       return `<button class="mg-e${tomb ? ' tomb' : ''}${e.schedule_id ? '' : ' one'}" type="button" data-event="${esc(e.id)}" style="--c:${host.colour(e)}" title="${esc(`${e.title}${tomb ? ` (${tomb})` : ''}`)}">${host.timeHTML(l.hm)} <span>${esc(e.title)}</span></button>`;
     }).join('');
     const more = shown.length - take;
-    return `<div class="mg-d${d.k === host.today() ? ' today' : ''}${d.k === sel ? ' sel' : ''}${host.weekday(d.k) === 0 ? ' sun' : ''}" data-mg-day="${d.k}">
+    return `<div class="mg-d${d.k === host.today() ? ' today' : ''}" data-mg-day="${d.k}">
         <div class="mg-top"><button class="mg-n" type="button" data-mg-day="${d.k}" aria-label="${esc(`${dayWords(d.k)}: ${d.es.length ? `${d.es.length} on` : 'nothing on file'}`)}">${n}</button>${rest ? `<span class="mg-c" title="${rest} regular ${rest === 1 ? 'service' : 'services'}">${rest}</span>` : ''}</div>
         ${rows}${more > 0 ? `<button class="mg-more" type="button" data-mg-day="${d.k}">+ ${more} more</button>` : ''}
       </div>`;
   }
 
-  function gridHTML(el, { wide, fit = ROWS }) {
-    const m = shownMonth(el);
-    const sel = el._from || host.today();
-    const notices = noticesOn(el);
-    const { days } = monthDays(el, m);
-    return `${headHTML(el, m, { wide })}
-      ${layersHTML(el)}
-      <div class="mg-wk" aria-hidden="true">${(wide ? HEAD_WIDE : HEAD).map((x, i) => `<span${i === 6 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
-      <div class="mg-grid" style="--weeks:${days.length / 7}">${days.map(d => wide ? bigDay(d, sel, notices, fit) : smallDay(d, sel, notices)).join('')}</div>`;
+  // ── In a card: the month in the week bar ──────────────────────────────
+
+  const smallOf = (el) => el.querySelector(':scope .cu-band > .wk > .mg');
+  /** The month open in a card's week bar, in place of its week; or closed. */
+  function paintSmall(el) {
+    const wk = el.querySelector('.cu-band > .wk');
+    if (!wk) return;
+    let box = smallOf(el);
+    const open = !!el._month && !host.wide();
+    wk.classList.toggle('open', open);
+    const head = wk.querySelector('[data-wk-month]');
+    if (head) head.setAttribute('aria-expanded', !!el._month);
+    if (!open) {
+      if (box) { if (box._io) box._io.disconnect(); box.remove(); }
+      return;
+    }
+    if (box) {
+      // Open already: its days again (the parishes switched, Notices), the
+      // chips left alone. The month in view and those beside it now; the
+      // rest as they are swiped to.
+      syncTools(box, el);
+      box._ver = (box._ver || 0) + 1;
+      const months = box.querySelector('.mg-months');
+      const i = Math.round(months.scrollLeft / Math.max(1, months.clientWidth));
+      for (const g of [months.children[i - 1], months.children[i], months.children[i + 1]]) if (g) fillMonth(el, box, g);
+      return;
+    }
+    box = document.createElement('div');
+    box.className = 'mg mg-small';
+    const tools = `${layersHTML(el)}${noticesPill(el)}`;
+    box.innerHTML = `${tools ? `<div class="mg-tools">${tools}</div>` : ''}
+      <div class="mg-wk" aria-hidden="true">${HEAD.map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
+      <div class="mg-months">${monthsAhead().map(m => `<div class="mg-month" data-m="${m}" aria-label="${esc(monthTitle(m))}"><div class="mg-grid">${monthDays(el, m, { weeks: 6, empty: true }).map(d => smallDay(d, false)).join('')}</div></div>`).join('')}</div>`;
+    wk.querySelector('.wk-head').after(box);
+    box._ver = 0;
+    const months = box.querySelector('.mg-months');
+    // Each month's dots as it comes into view, and the next one's ready.
+    box._io = new IntersectionObserver((ents) => {
+      for (const en of ents) if (en.isIntersecting) fillMonth(el, box, en.target);
+    }, { root: months, rootMargin: '0px 100%' });
+    months.querySelectorAll('.mg-month').forEach(g => box._io.observe(g));
+    // Swiped to another month: its name over it.
+    let raf = 0;
+    months.addEventListener('scroll', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const g = months.children[Math.round(months.scrollLeft / Math.max(1, months.clientWidth))];
+        if (g) host.title(el, `${g.dataset.m}-01`);
+      });
+    }, { passive: true });
+    showMonth(el, box, monthOf(host.current(el)), false);
+  }
+  /** A small month's days, with what is on them. Its own picture, drawn again: there are none in it. */
+  async function fillMonth(el, box, g) {
+    const ver = box._ver;
+    if (g._ver === ver) return;
+    g._ver = ver;
+    const m = g.dataset.m;
+    if (!host.holds(pastEnd(m))) {
+      g.classList.add('waiting');
+      try { await host.ensure(pastEnd(m)); } catch (err) { console.warn(err); }
+      g.classList.remove('waiting');
+      if (!g.isConnected || g._ver !== ver) return;
+    }
+    const notices = host.notices(el);
+    g.querySelector('.mg-grid').innerHTML = monthDays(el, m, { weeks: 6 }).map(d => smallDay(d, notices)).join('');
+  }
+  function showMonth(el, box, m, smooth) {
+    const months = box.querySelector('.mg-months');
+    const i = monthsAhead().indexOf(m);
+    if (i < 0) return;
+    const left = i * months.clientWidth;
+    if (Math.abs(months.scrollLeft - left) > 2) months.scrollTo({ left, behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+    host.title(el, `${m}-01`);
   }
 
-  // ── Where it goes ─────────────────────────────────────────────────────
+  // ── Wide: the big month in the map's place ────────────────────────────
 
   /** The card whose month the wide page shows: the top one in Month, with only event cards over it. */
   function wideCard() {
@@ -206,18 +287,23 @@
   let wideFor = null;     // whose it is
   let wideFit = ROWS;     // rows a big day has room for, as last measured
 
-  /** The small month in a card, under its Calendar's title. */
-  function paintSmall(el) {
-    let box = el.querySelector(':scope .cu-band > .mg');
-    if (!el._month || host.wide()) { if (box) box.remove(); return; }
-    if (!box) {
-      const head = el.querySelector('.cu-band > .cal-head');
-      if (!head) return;
-      box = document.createElement('div');
-      box.className = 'mg mg-small';
-      head.after(box);
-    }
-    box.innerHTML = gridHTML(el, { wide: false });
+  function wideHeadHTML(el, m) {
+    const t = host.today();
+    const here = m === monthOf(t);
+    return `<button class="mg-nav" type="button" data-mg-step="-1" aria-label="Previous month"${here ? ' disabled' : ''}>‹</button>
+        <h3 class="mg-title" aria-live="polite">${esc(monthTitle(m))}<span class="mg-wait" aria-hidden="true"><i></i><i></i><i></i></span></h3>
+        <button class="mg-nav" type="button" data-mg-step="1" aria-label="Next month"${m >= lastMonth() ? ' disabled' : ''}>›</button>
+        <span class="mg-acts">
+          ${!here || host.current(el) !== t ? '<button class="fpill" type="button" data-mg-today>Today</button>' : ''}
+          ${noticesPill(el)}
+          <button class="fpill" type="button" data-mg-map>Map</button>
+        </span>`;
+  }
+  function wideBodyHTML(el, m, fit) {
+    const days = monthDays(el, m);
+    const notices = host.notices(el);
+    return `<div class="mg-wk" aria-hidden="true">${HEAD_WIDE.map((x, i) => `<span${i === 0 ? ' class="sun"' : ''}>${x}</span>`).join('')}</div>
+      <div class="mg-grid" style="--weeks:${days.length / 7}">${days.map(d => bigDay(d, notices, fit)).join('')}</div>`;
   }
   function paintWide() {
     const el = wideCard();
@@ -230,15 +316,23 @@
       wideEl.className = 'mg mg-wide';
       wideEl.setAttribute('role', 'region');
       wideEl.setAttribute('aria-label', 'Month');
+      wideEl.innerHTML = '<div class="mg-head"></div><div class="mg-tools"></div><div class="mg-body"></div>';
       host.viewport().appendChild(wideEl);
       host.raise(true);
       // The map's place is as tall as the window allows: a resize may fit more rows, or fewer.
       if (window.ResizeObserver) new ResizeObserver(() => { if (wideEl && fitRows() !== wideFit) paintWide(); }).observe(wideEl);
     }
+    const m = shownMonth(el);
+    const tools = wideEl.querySelector('.mg-tools');
+    // The chips are drawn once for the card, then only switched.
+    if (wideFor !== el) { tools.innerHTML = layersHTML(el); tools.hidden = !tools.innerHTML; }
+    else syncTools(tools, el);
     wideFor = el;
-    wideEl.innerHTML = gridHTML(el, { wide: true, fit: wideFit });
+    wideEl.querySelector('.mg-head').innerHTML = wideHeadHTML(el, m);
+    const body = wideEl.querySelector('.mg-body');
+    body.innerHTML = wideBodyHTML(el, m, wideFit);
     const fit = fitRows();
-    if (fit !== wideFit) { wideFit = fit; wideEl.innerHTML = gridHTML(el, { wide: true, fit }); }
+    if (fit !== wideFit) { wideFit = fit; body.innerHTML = wideBodyHTML(el, m, fit); }
   }
   /** How many rows a big day has room for under its number: every day is as tall as the others. */
   function fitRows() {
@@ -253,38 +347,40 @@
     return Math.max(1, Math.floor((room + gap) / row));
   }
 
+  // ── Both ──────────────────────────────────────────────────────────────
+
   /** Everything in Month drawn where it belongs, from the bundle as it is. */
   function follow() {
     for (const el of host.stack()) paintSmall(el);
     paintWide();
   }
-  /** The day after a month's last, which the bundle must reach for the month to be whole. */
-  const pastEnd = (m) => host.addDays(`${m}-${String(lastDay(m)).padStart(2, '0')}`, 1);
-  /** A card's month faded a little, its days not in yet (month.css .mg.waiting): nothing goes blank. */
-  function waiting(el, on) {
-    const box = el.querySelector(':scope .cu-band > .mg');
-    if (box) box.classList.toggle('waiting', on);
-    if (wideEl && wideFor === el) wideEl.classList.toggle('waiting', on);
-  }
-  /** One card's month again (its days, its parishes, its date), and the bundle asked for the month shown. */
+  /** One card's month again (its days, its parishes), and the bundle asked for the big month shown. */
   async function paint(el) {
     if (!el || !el._month) { follow(); return; }
-    const m = shownMonth(el);
     paintSmall(el);
     paintWide();
-    // A month further out than the bundle holds fills in once it has it,
+    if (wideFor !== el) return;
+    // A big month further out than the bundle holds fills in once it has it,
     // quietly: its days drawn, faded until their services are in.
+    const m = shownMonth(el);
     if (!host.holds(pastEnd(m))) {
-      waiting(el, true);
+      wideEl.classList.add('waiting');
       try { await host.ensure(pastEnd(m)); } catch (err) { console.warn(err); }
-      if (!el._month || shownMonth(el) !== m) return;
-      paintSmall(el);
-      if (wideFor === el) paintWide();
-      waiting(el, false);
+      if (!el._month || shownMonth(el) !== m || wideFor !== el) return;
+      paintWide();
+      wideEl.classList.remove('waiting');
     }
     // The month after, asked for now, so that › shows it at once.
     const next = addMonths(m, 1);
-    if (next <= monthOf(host.addDays(host.today(), AHEAD))) host.ensure(pastEnd(next)).catch(() => {});
+    if (next <= lastMonth()) host.ensure(pastEnd(next)).catch(() => {});
+  }
+  /** The day the list is on, as it scrolls: the month open in the week bar brought to its month. Nothing is marked (Kevin, 7 Nov 2026). */
+  function mark(el, k) {
+    const box = smallOf(el);
+    if (!box) return;
+    const months = box.querySelector('.mg-months');
+    const shown = months.children[Math.round(months.scrollLeft / Math.max(1, months.clientWidth))];
+    if (!shown || shown.dataset.m !== monthOf(k)) showMonth(el, box, monthOf(k), true);
   }
 
   /** A tap the page passes on: true when it was one of the month's own. */
@@ -301,24 +397,28 @@
     }
     if (t.closest('[data-mg-today]')) {
       el._monthAt = monthOf(host.today());
-      host.pick(el, host.today());
+      Promise.resolve(host.pick(el, host.today())).then(() => paint(el));
       return true;
     }
-    if (t.closest('[data-mg-notices]')) { el._notices = !noticesOn(el); paint(el); return true; }
+    // Notices changes the dots, not the list.
+    if (t.closest('[data-mg-notices]')) { el._notices = !host.notices(el); host.redot(el); paint(el); return true; }
     if (t.closest('[data-mg-map]')) { host.setMonth(el, false); return true; }
     if ((b = t.closest('[data-mg-layer]'))) {
       const off = el._off || (el._off = new Set());
       const id = b.dataset.mgLayer;
       if (off.has(id)) off.delete(id); else off.add(id);
+      // Its state at once; the list, and the days, as they come.
+      syncTools(box.querySelector('.mg-tools') || box, el);
       host.refresh(el);
       return true;
     }
     if ((b = t.closest('[data-mg-day]'))) {
+      // The list goes to it; in the week bar, the month closes back to the week (host.pick).
       host.pick(el, b.dataset.mgDay);
       return true;
     }
     return box.contains(t);
   }
 
-  root.NextMonth = { init, paint, follow, click, isNotice };
+  root.NextMonth = { init, paint, follow, click, mark };
 })(window);

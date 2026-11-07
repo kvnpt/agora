@@ -605,7 +605,9 @@ body.map-full .parish-row {
 }
 .tfocus span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tfocus svg { flex: none; width: 14px; height: 14px; }
-.sheet .cu .sday, .sheet .cu-band { scroll-margin-top: 72px; }
+.sheet .cu-band { scroll-margin-top: 72px; }
+/* A day gone to lands under the card's bar and the week bar held under it. */
+.sheet .cu .sday { scroll-margin-top: calc(var(--bar-h, 72px) + var(--wk-h, 0px)); }
 .etime { width: 50px; margin-right: -4px; flex: none; font-size: 14.5px; display: flex; flex-direction: column; }
 .etime small { font-weight: 500; font-size: 12px; color: var(--text-2); }
 /* Search results say the day under the time ("Sat 25 Oct"): room for it. */
@@ -805,16 +807,10 @@ body.map-full .parish-row {
 .sday.empty { display: flex; justify-content: space-between; align-items: center; padding-right: var(--pad); }
 .sday.empty .dh { position: static; padding-top: 10px; padding-bottom: 10px; color: var(--text-2); font-weight: 600; }
 .sday.empty p { margin: 0; color: var(--text-3); font-size: 13px; }
-/* Beside a Calendar's title: Filters, as its icon, and Month (next.js calActsFor). */
-.cal-pills { display: flex; flex-wrap: wrap; gap: 6px; }
-.cal-pills .fpill svg { flex: none; }
+/* Beside a Calendar's title, the month's name: its Filters, as its icon (next.js calActsHTML). */
+.cal-acts { display: flex; }
+.cal-acts .fpill svg { flex: none; }
 .fpill.ficon { padding: 5px 9px; }
-/* Month, and its X when open or from a later day: one pill, two buttons. */
-.fpill.mpill { padding: 0; gap: 0; }
-.mpill > button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 12px; border-radius: 999px; -webkit-tap-highlight-color: transparent; }
-.mpill.has-x > [data-cal-month] { padding-right: 4px; }
-.mpill > .mpill-x { padding: 4px 10px 4px 6px; }
-.mpill-x svg { width: 13px; height: 13px; }
 
 /* ── Sheets ──────────────────────────────────────────────────────────── */
 
@@ -847,13 +843,14 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 .sheet.mini { --sat: 0px; height: auto; max-height: 75%; }
 .sheet-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .sheet::before {
-  content: ''; position: absolute; top: calc(6px + var(--sat)); left: 50%; z-index: 3;
+  content: ''; position: absolute; top: calc(6px + var(--sat)); left: 50%; z-index: 5;
   width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: var(--text-3); opacity: .5;
 }
 
-/* Apple's toolbar: share, title, X — in glass where the browser can. */
+/* Apple's toolbar: share, title, X — in glass where the browser can. Over
+   what the card holds that sticks (a Calendar's head and day headers). */
 .glassbar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 4;
   display: flex; align-items: center; gap: 10px;
   padding: calc(16px + var(--sat)) 14px 10px;
   background: var(--glass-solid);
@@ -980,9 +977,41 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* Coming up on white, lifted off the grey the timetable sits on: the one
    changes week to week, the other is the parish's for good. */
 .cu-band { margin-top: 26px; padding-bottom: 18px; background: var(--card); border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
-.cu-band .sec { padding-top: 18px; }
+/* The Calendar's head (next.js weekBarHTML), Fantastical's week drawer: held
+   under the card's bar while its list scrolls under it, one row of the
+   month's name (its title) and Filters over a week of days, Sunday first,
+   swiped a week at a time. No day is marked: the day headers say it. */
+.wk {
+  position: sticky; top: var(--wk-top, var(--bar-h, 72px)); z-index: 3;
+  padding: 6px 12px 6px; background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.wk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 6px; }
+.wk-title { margin: 0; min-width: 0; font: inherit; }
+.wk-month { display: inline-flex; align-items: center; gap: 4px; padding: 4px 0; font-size: 20px; font-weight: 750; letter-spacing: -.015em; color: var(--text); white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+.wk-chev { flex: none; color: var(--text-2); }
+.wk-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+.wk-today { min-height: 26px; padding: 3px 10px; }
+.wk-today[hidden] { display: none; }
+.wk-names, .wk-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.wk-names { padding: 4px 0 2px; font-size: 11px; font-weight: 600; text-align: center; color: var(--text-3); }
+.wk-names .sun { color: var(--text-2); }
+.wk-strip { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.wk-strip::-webkit-scrollbar { display: none; }
+.wk-week { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.wk-d { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 0 1px; color: var(--text); -webkit-tap-highlight-color: transparent; }
+.wk-d > b { width: 32px; height: 32px; border-radius: 50%; font-size: 15px; font-weight: 500; line-height: 32px; text-align: center; font-variant-numeric: tabular-nums; }
+.wk-d:disabled { cursor: default; }
+.wk-d:disabled > b { color: var(--text-3); }
+.wk-d.today > b { font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+.wk-dots { display: flex; align-items: center; gap: 3px; height: 5px; }
+.wk-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--text-3)); }
+.wk-dots i.tomb { background: transparent; box-shadow: inset 0 0 0 1.25px var(--c, var(--text-3)); }
+.wk-dots b { font-size: 10px; font-weight: 700; line-height: 1; color: var(--text-3); }
+/* The whole month open in its place (month.css .mg-small). */
+.wk.open .wk-names, .wk.open .wk-strip { display: none; }
 .cu { margin: 0 18px; }
-/* Its title, Calendar, with Filters and Month beside it (next.js calHeadHTML). */
+/* The Worker's first paint of the Calendar's head, the month's name (page-card.mjs calHeadHTML), till the page draws the week bar. */
 .cal-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 18px 18px 8px; }
 .cu-band .cal-head .sec { padding: 0; }
 .cal-acts:empty { display: none; }
@@ -1001,6 +1030,15 @@ body:has(#sheets > .ssr) #scrim { display: block; }
    of it, the time said once (next.js slotsHTML). The Evening is a header too. */
 .cu .sday { background: none; border: 0; }
 .cu .dh { position: static; padding: 18px 0 4px; background: none; }
+/* In a card's Calendar, a day's header is held under its head till the next
+   day's comes up under it, so where the list is reads off them (Kevin,
+   7 Nov 2026). */
+.cu-band .cu .sday + .sday { margin-top: 8px; }
+.cu-band .cu .dh {
+  position: sticky; top: calc(var(--wk-top, var(--bar-h, 72px)) + var(--wk-h, 0px)); z-index: 2;
+  margin: 0 -18px; padding: 10px 18px 6px; background: var(--card);
+}
+.cu-band .cu .sday.empty .dh { position: static; margin: 0; padding: 10px 0; }
 .cu .slot { position: relative; padding: 5px 0 5px 13px; }
 .cu .slot::before {
   content: ''; position: absolute; left: 0; top: 11px; bottom: 11px;
@@ -1054,7 +1092,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 /* Back to the top of a card scrolled a screen down: under its bar, at the
    middle, clear of the toolbar at its foot. */
 .totop {
-  position: absolute; left: 50%; top: calc(76px + var(--sat)); z-index: 3;
+  position: absolute; left: var(--totop-x, 50%); top: calc(76px + var(--sat)); z-index: 3;
   width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
   background: var(--glass-solid); border: 1px solid var(--glass-line); box-shadow: 0 4px 16px rgba(0, 0, 0, .16); color: var(--text);
   opacity: 0; transform: translate(-50%, -10px) scale(.9); pointer-events: none;
