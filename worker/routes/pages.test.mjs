@@ -432,8 +432,16 @@ test('an event link — projected or stored — is its card, never indexed', asy
   assert.equal(meta(proj.html, 'property', 'og:type'), 'article');
   const c = card(proj.html);
   assert.match(c, /^<section class="sheet event open ssr"/);
-  assert.match(c, /<h1>Sunday Divine Liturgy<\/h1>\s*<p class="ev-when">Sunday 4 Oct · 10am/);
+  // Its day, then its time, a line each under its title (Kevin, 9 Nov 2026).
+  assert.match(c, /<h1>Sunday Divine Liturgy<\/h1>\s*<div class="ev-facts">\s*<p class="ev-fact ev-day"><svg[^]*?<\/svg><span>Sunday 4 October<\/span><\/p>\s*<p class="ev-fact ev-time"><svg[^]*?<\/svg><span>10am/);
   assert.match(c, /<a class="abtn" href="\/sgr">/, 'the way to its parish');
+  // Its Calendar: this date first, outlined, then the Sundays after it.
+  const cal = between(c, '<section class="cu-band ev-cal">', '<div class="toolbar-space');
+  assert.match(cal, /<h2 class="sec">Calendar<\/h2>/);
+  const dates = [...cal.matchAll(/<a class="erow([^"]*)" href="\/(\d+:[\d-]+)"/g)].map(x => [x[2], x[1].trim()]);
+  assert.deepEqual(dates[0], [`${sid}:2026-10-04`, 'cur'], 'the date open first, and only it marked');
+  assert.ok(dates.length > 1 && dates.slice(1).every(([id, cls]) => id.startsWith(`${sid}:`) && id > `${sid}:2026-10-04` && cls === ''), 'then its own later dates');
+  assert.match(cal, /aria-current="true"/);
 
   const id = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc,
       event_type, status, mutation_type, poster_path, description)
@@ -442,7 +450,8 @@ test('an event link — projected or stored — is its card, never indexed', asy
   const stored = (await get(`/${id}`)).html;
   assert.match(card(stored), /<a class="ev-poster" href="\/posters\/x\.jpg" target="_blank" rel="noopener" aria-label="The poster, full size"><img src="\/posters\/x\.jpg" alt=""><\/a>/,
     'the poster opens full size');
-  assert.match(card(stored), /<h1>Feast of St George<\/h1>\s*<p class="ev-when">Sunday 11 Oct · 10am–12pm/);
+  assert.match(card(stored), /<h1>Feast of St George<\/h1>\s*<div class="ev-facts">\s*<p class="ev-fact ev-day"><svg[^]*?<\/svg><span>Sunday 11 October<\/span><\/p>\s*<p class="ev-fact ev-time"><svg[^]*?<\/svg><span>10am – 12pm<\/span>/);
+  assert.doesNotMatch(card(stored), /ev-cal"/, 'a one-off has no Calendar');
   assert.match(card(stored), /<div class="ev-desc">Vespers, then a meal\.<\/div>/);
   assert.equal(meta(stored, 'property', 'og:image'), 'https://orthodoxy.au/cdn-cgi/image/width=1200,quality=80,format=jpeg,fit=scale-down/posters/x.jpg', 'the poster previews');
   assert.equal(meta(stored, 'name', 'twitter:card'), 'summary_large_image');
@@ -505,8 +514,8 @@ test('an event and a rule held at another parish, or a place, say where', async 
     VALUES (?, 'manual', 'Youth retreat', '2026-10-04T00:00:00Z', 'youth', 'approved', 'headless',
       'Antiochian Village, Kangaroo Valley', -34.75, 150.53) RETURNING id`).get(PARISH).id;
   const atPage = await get(`/${at}`);
-  assert.ok(card(atPage.html).includes(`<small>Where</small><span>${venue.name} — ${venue.address}</span>`.replace(/&/g, '&amp;')),
-    "the parish it is at, by that parish's own address");
+  assert.ok(card(atPage.html).includes(`<span><b>${venue.name}</b><small>${venue.address}</small></span>`.replace(/&/g, '&amp;')),
+    "the parish it is at, by name over that parish's own address");
   assert.ok(meta(atPage.html, 'name', 'description').includes(venue.address), 'and its preview says that address, not the host\'s');
   assert.match(card(atPage.html), /<h2 class="sec">Parishes<\/h2>[\s\S]*<small>Hosting<\/small>[\s\S]*<small>Held here<\/small>/,
     'both parishes are named, each with its part');
@@ -519,7 +528,7 @@ test('an event and a rule held at another parish, or a place, say where', async 
   assert.match(comingUp((await get(`/${String(vslug).toLowerCase().replace(/\s+/g, '')}/2026-10-03`)).html),
     new RegExp(`href="/${at}"[\\s\\S]*?Hosted by `), "the venue's Coming up lists it, hosted by its parish");
   const place = card((await get(`/${away}`)).html);
-  assert.match(place, /<small>Where<\/small><span>Antiochian Village, Kangaroo Valley<\/span>/);
+  assert.match(place, /<p class="ev-fact ev-where"><svg[^]*?<\/svg><span>Antiochian Village, Kangaroo Valley<\/span><\/p>/);
   assert.match(place, /maps\/search\/\?api=1&amp;query=-34\.75,150\.53"[^>]*>.*<span>Google Maps<\/span>/, 'and Google Maps opens there, not directions to it');
 });
 
@@ -893,9 +902,10 @@ test('a multi-day event says its span; a vigil past midnight does not', async ()
   const add = (t, start, end) => raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, end_utc, event_type, status, mutation_type)
     VALUES (?, 'manual', ?, ?, ?, 'social', 'approved', 'headless') RETURNING id`).get(PARISH, t, start, end).id;
   const camp = add('Youth camp', '2026-11-13T07:00:00Z', '2026-11-15T05:00:00Z');
-  assert.match(card((await get(`/${camp}`)).html), /<p class="ev-when">Fri 13 Nov 6pm – Sun 15 Nov 4pm<\/p>/);
+  const said = (c) => [...c.matchAll(/<p class="ev-fact ev-(?:day|time)"><svg[^]*?<\/svg><span>([^<]*)<\/span>/g)].map(x => x[1]);
+  assert.deepEqual(said(card((await get(`/${camp}`)).html)), ['Friday 13 – Sunday 15 November', '6pm Fri – 4pm Sun']);
   const vigil = add('Vigil', '2026-11-14T12:00:00Z', '2026-11-14T16:00:00Z');
-  assert.match(card((await get(`/${vigil}`)).html), /<p class="ev-when">Saturday 14 Nov · 11pm–3am<\/p>/);
+  assert.deepEqual(said(card((await get(`/${vigil}`)).html)), ['Saturday 14 November', '11pm – 3am']);
 });
 
 test('a timetable reads from today round the week', async () => {

@@ -79,8 +79,10 @@ Website, the stream, Donate), its Today (as the page's: "Happening now" then
 "Later today", else the rest of the day under "This evening" when it is all the
 evening, else "Tomorrow"; the Evening divider where the day has both; nothing today or
 tomorrow, no box), its timetable, its own links as small buttons above its details, what is
-coming up and its details; an event's when and where, its poster and its description with its links
-as links (`public/shared/linkify.js`); a collection's parishes and their times. Nothing
+coming up and its details; an event's day, time, place and languages, a line each under its
+title, its poster, its description with its links as links (`public/shared/linkify.js`), and,
+for a date of a regular service, its Calendar (that date outlined, then its timetable line's
+dates in the window); a collection's parishes and their times. Nothing
 on it is a control that needs the page's script, except Close, which is a link home.
 While it is up the page's scrim shows under it (`.ssr` in `next.css`), and next.js
 replaces it with its own sheet (`pushSheet`) with no slide.
@@ -102,9 +104,9 @@ keep them saying the same thing.
   search box reads it, a season ahead, noindex) pins the next that answers, which is the event the page
   opens in front of the parish's card, and its head names it; the card painted is
   still the parish's; a synthetic id lists the other dates of the same rule;
-- times in the parish's zone. An event over more than one day reads as its span ("Fri 13
-  Nov 6pm – Sun 15 Nov 4pm"); one that only runs past midnight keeps its day ("Saturday
-  14 Nov · 11pm–3am").
+- times in the parish's zone. An event over more than one day reads as its span ("Friday
+  13 – Sunday 15 November" over "6pm Fri – 4pm Sun"); one that only runs past midnight
+  keeps its day ("Saturday 14 November" over "11pm – 3am").
 
 **Its colours are the page's.** `/admin`'s overrides (`jurisdiction_colors`) over the
 shared table — the jurisdiction's, since a parish has no colour of its own — and the

@@ -59,6 +59,11 @@ const I = {
   heart: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>',
   chev: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>',
   link: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>',
+  // An event's what, when and where (next.js eventFactsHTML).
+  cal: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  where: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 21s-6.5-6.4-6.5-11.3a6.5 6.5 0 0 1 13 0C18.5 14.6 12 21 12 21z"/><circle cx="12" cy="9.7" r="2.3"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.4A8.5 8.5 0 1 1 21 11.5z"/></svg>',
 };
 const MOON = '<svg class="moon" viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5,5 A3.5,3.5 0 1,0 1.5,5 A3.5,3.5 0 1,0 8.5,5Z M9.1,4.5 A2.9,2.9 0 1,0 3.3,4.5 A2.9,2.9 0 1,0 9.1,4.5Z"/></svg>';
 const EVENING = `<div class="eve">${MOON}<span>Evening</span></div>`;
@@ -82,10 +87,24 @@ function dayLabel(k, today) {
   const base = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
   return k === today ? `Today · ${base}` : k === addDays(today, 1) ? `Tomorrow · ${base}` : base;
 }
-/** "Fri 13 Nov", "Today": next.js's dayLabel without `long`. */
-function shortDay(k, today) {
+/** "Thursday 19 November", with its year when it is not this one (next.js fullDate). */
+function fullDate(k, today) {
   const d = new Date(`${k}T00:00:00Z`);
-  return k === today ? 'Today' : k === addDays(today, 1) ? 'Tomorrow' : `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
+  return `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_LONG[d.getUTCMonth()]}${k.slice(0, 4) === today.slice(0, 4) ? '' : ` ${k.slice(0, 4)}`}`;
+}
+/**
+ * An event's day and time, a line each, as next.js's eventWhen says them:
+ * "Today · Monday 9 November" over "6:30pm – 8:30pm"; over days, the span
+ * over each end's time and day. `start` and `last` are { date, time }.
+ */
+export function eventWhen(start, last, overDays, today) {
+  if (overDays) {
+    const a = new Date(`${start.date}T00:00:00Z`), b = new Date(`${last.date}T00:00:00Z`);
+    const from = start.date.slice(0, 7) === last.date.slice(0, 7) ? `${WD_LONG[a.getUTCDay()]} ${a.getUTCDate()}` : fullDate(start.date, today);
+    return { day: `${from} – ${fullDate(last.date, today)}`, time: `${hm12(start.time)} ${WD[a.getUTCDay()]} – ${hm12(last.time)} ${WD[b.getUTCDay()]}` };
+  }
+  const rel = start.date === today ? 'Today · ' : start.date === addDays(today, 1) ? 'Tomorrow · ' : '';
+  return { day: rel + fullDate(start.date, today), time: `${hm12(start.time)}${last && last.time ? ` – ${hm12(last.time)}` : ''}` };
 }
 function roundel(kind, big) {
   const c = eventTypes.kindColors(kind || 'other', false);
@@ -144,7 +163,7 @@ export function timetableHTML(rules, { today, color, compact = false } = {}) {
 
 // ── a parish ─────────────────────────────────────────────────────────────
 
-function eventRowHTML(e, here, { now = false, same = false, tint = null } = {}) {
+function eventRowHTML(e, here, { now = false, same = false, tint = null, current = null } = {}) {
   const tomb = TOMB[e.status] || null;
   // Its own languages first on the line under its name, then another parish's name.
   const langs = ruleFilters.serviceLangs(e) || [];
@@ -154,7 +173,9 @@ function eventRowHTML(e, here, { now = false, same = false, tint = null } = {}) 
     : lang ? `<span class="esub">${lang}</span>` : '';
   // No roundel: its kind is a word under its time where its name does not say it (next.js eventRow).
   const kind = eventTypes.rowWord(e.event_type);
-  return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}" href="/${esc(e.id)}"${tint ? ` style="--pc:${esc(tint)}"` : ''}>
+  // The date an event's card is open on, first in its Calendar, outlined.
+  const cur = current != null && String(current) === String(e.id);
+  return `<a class="erow${now ? ' now' : ''}${tomb ? ` tomb ${esc(e.status)}` : ''}${cur ? ' cur' : ''}" href="/${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${esc(tint)}"` : ''}>
       <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(e._local.time)}${kind ? `<span class="ekind" style="color:${eventTypes.kindColors(e.event_type, false).fg}">${esc(kind)}</span>` : ''}</span>
       <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(e.title)}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
         ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
@@ -169,27 +190,31 @@ function eventRowHTML(e, here, { now = false, same = false, tint = null } = {}) 
  * the time said once (next.js slotsHTML). `tintOf` (a collection's): each row
  * its own stretch, in the colour of the jurisdiction it is held in.
  */
-const slotsHTML = (rows, here, tintOf = null) => lines.slotsOf(rows, e => e._local.time)
-  .map(s => `<div class="slot${tintOf ? ' rows' : ''}">${s.rows.map((e, i) => eventRowHTML(e, here, { same: i > 0, tint: tintOf && tintOf(e) })).join('')}</div>`).join('');
+const slotsHTML = (rows, here, tintOf = null, current = null) => lines.slotsOf(rows, e => e._local.time)
+  .map(s => `<div class="slot${tintOf ? ' rows' : ''}">${s.rows.map((e, i) => eventRowHTML(e, here, { same: i > 0, tint: tintOf && tintOf(e), current })).join('')}</div>`).join('');
+
+/** A list's days, each under its header, morning then evening, as next.js's daysHTML. */
+function daysListHTML(list, m, today, current = null) {
+  const byDay = new Map();
+  for (const e of list) {
+    if (!byDay.has(e._local.date)) byDay.set(e._local.date, []);
+    byDay.get(e._local.date).push(e);
+  }
+  return [...byDay.keys()].sort().map(k => {
+    const es = byDay.get(k);
+    const evening = es.filter(e => services.partOfDayOf(e, m.zone) === 'evening');
+    const morning = es.filter(e => !evening.includes(e));
+    const sun = new Date(`${k}T00:00:00Z`).getUTCDay() === 0;
+    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${slotsHTML(morning, m.parish.id, null, current)}${evening.length ? EVENING + slotsHTML(evening, m.parish.id, null, current) : ''}</section>`;
+  }).join('');
+}
 
 /** Coming up on a parish's card: its days from `start`, morning then evening, tombstones struck through. */
 function comingUpHTML(m, start, today) {
   const end = addDays(start, CARD_DAYS);
   const list = (m.feed || []).filter(e => (shown(e) || TOMB[e.status]) && e._local.date >= start && e._local.date < end
     && endMs(e) > m.now);
-  const byDay = new Map();
-  for (const e of list) {
-    if (!byDay.has(e._local.date)) byDay.set(e._local.date, []);
-    byDay.get(e._local.date).push(e);
-  }
-  const days = [...byDay.keys()].sort().map(k => {
-    const es = byDay.get(k);
-    const evening = es.filter(e => services.partOfDayOf(e, m.zone) === 'evening');
-    const morning = es.filter(e => !evening.includes(e));
-    const sun = new Date(`${k}T00:00:00Z`).getUTCDay() === 0;
-    return `<section class="sday" data-date="${k}"><h3 class="dh${sun ? ' sun' : ''}"><span>${esc(dayLabel(k, today))}</span></h3>${slotsHTML(morning, m.parish.id)}${evening.length ? EVENING + slotsHTML(evening, m.parish.id) : ''}</section>`;
-  });
-  return days.join('') || '<div class="tt-none sm">Nothing on file for these days.</div>';
+  return daysListHTML(list, m, today) || '<div class="tt-none sm">Nothing on file for these days.</div>';
 }
 
 /**
@@ -320,7 +345,9 @@ export function eventCardHTML(m) {
   // Over days (a weekend camp), each end says its day. A vigil past midnight is one night.
   const overDays = last && e.end_utc && last.date > e._local.date && Date.parse(e.end_utc) - Date.parse(e.start_utc) >= 12 * 3600000;
   const venue = e.location_parish_id && e.location_parish_id !== e.parish_id && m.venues[e.location_parish_id];
-  const where = e.location_override || (venue ? `${venue.name} — ${venue.address || ''}` : p.address) || '';
+  // Where: a place of its own, the church it is held in (its name over its address), or its parish's.
+  const where = e.location_override ? esc(e.location_override)
+    : venue ? `<b>${esc(venue.name)}</b>${venue.address ? `<small>${esc(venue.address)}</small>` : ''}` : esc(p.address || '');
   // Every parish it is at, once each, as next.js's eventParishes lists them.
   const seen = new Set([p.id]);
   const parishes = [{ ...p, slug: m.slug, color: m.color, role: 'Hosting' }];
@@ -351,8 +378,7 @@ export function eventCardHTML(m) {
         ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
         <h1>${esc(e.title)}</h1>
         ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
-        <p class="ev-when">${overDays ? `${esc(shortDay(e._local.date, today))} ${esc(hm12(e._local.time))} – ${esc(shortDay(last.date, today))} ${esc(hm12(end))}`
-          : `${esc(dayLabel(e._local.date, today))} · ${esc(hm12(e._local.time))}${end ? `–${esc(hm12(end))}` : ''}`}</p>
+        ${eventFactsHTML(eventWhen(e._local, end ? last : null, overDays, today), where, langs)}
         ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
       </div>
       ${linkChipHTML(m.origin, `/${e.id}`)}
@@ -361,12 +387,45 @@ export function eventCardHTML(m) {
         ${!e.hide_live && p.live_url ? outBtn(p.live_url, I.live, 'Watch live') : ''}
         <a class="abtn" href="/${esc(m.slug)}">${avatar(p, 'xs', m.color)}<span>Parish</span></a>
       </div>
-      ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
       ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
         : `<div class="ev-desc">${linkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}
       ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2>${parishFold(parishes.length, `<div class="lists">${parishes.map(x => `<a class="lrow" href="/${esc(x.slug)}">${avatar(x, 'sm', x.color)}
         <span class="ln"><b>${esc(x.name)}</b><small>${esc(x.role)}</small></span>${I.chev}</a>`).join('')}</div>`)}` : ''}
+      <div class="ev-cal-box">${eventCalendarHTML(m, today)}</div>
     </div>`);
+}
+/** Under an event's title: its day, time, place and languages, a line each with its sign (next.js eventFactsHTML). `where` is markup. */
+function eventFactsHTML(when, where, langs) {
+  return `<div class="ev-facts">
+          <p class="ev-fact ev-day">${I.cal}<span>${esc(when.day)}</span></p>
+          <p class="ev-fact ev-time">${I.clock}<span>${esc(when.time)}</span></p>
+          ${where ? `<p class="ev-fact ev-where">${I.where}<span>${where}</span></p>` : ''}
+          ${langs.length ? `<p class="ev-fact ev-langs">${I.chat}<span>${esc(langs.join(', '))}</span></p>` : ''}
+        </div>`;
+}
+/** As next.js's MATCH_CAP: the dates a Calendar lists after the one open. */
+const CAL_AFTER = 10;
+/**
+ * A date of a regular service has its Calendar under it, as next.js's
+ * calendarHTML: that date first, outlined, then its line's dates after it
+ * (the rules a timetable line holds together, as the page finds them), as
+ * far as the card's window reads. A one-off has none here, nor a date with
+ * none after it.
+ */
+function eventCalendarHTML(m, today) {
+  const e = m.pinned;
+  if (e.schedule_id == null) return '';
+  const line = lines.linesOf((m.rules || []).filter(r => lines.isLive(r, today)), { today })
+    .find(l => l.ids.some(id => String(id) === String(e.schedule_id)));
+  const ids = new Set((line ? line.ids : [e.schedule_id]).map(String));
+  const t0 = Date.parse(e.start_utc);
+  const after = (m.feed || []).filter(x => x.schedule_id != null && ids.has(String(x.schedule_id)) && String(x.id) !== String(e.id)
+    && (shown(x) || TOMB[x.status]) && endMs(x) > m.now && Date.parse(x.start_utc) > t0).slice(0, CAL_AFTER);
+  if (!after.length) return '';
+  return `<section class="cu-band ev-cal">
+        <h2 class="sec">Calendar</h2>
+        <div class="cu" style="--pc:${m.color}">${daysListHTML([e, ...after], m, today, e.id)}</div>
+      </section>`;
 }
 
 // ── a collection ─────────────────────────────────────────────────────────

@@ -1239,7 +1239,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 }
 .ev-at .av { --s: 36px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .9); }
 .ev-at-name { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-.ev-head { padding: 18px 18px 4px; }
+.ev-head { padding: 20px 18px 4px; }
 .ev-head > h1:first-child { margin-top: 0; }
 .ev-head h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.12; margin-top: 8px; }
 /* What it is, a pill in its kind's colours over its title (a date that is
@@ -1252,10 +1252,37 @@ body:has(#sheets > .ssr) #scrim { display: block; }
 }
 .ev-kind .ev-off { font-size: 12px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
 .ev-sub { margin: 5px 0 0; color: var(--text-2); font-size: 19px; font-style: italic; font-weight: 500; line-height: 1.25; }
-.ev-sub + .ev-when { margin-top: 8px; }
-.ev-when { margin: 6px 0 0; color: var(--text-2); font-size: 16px; font-weight: 550; }
+/* What, when and where under the title (Kevin, 9 Nov 2026; next.js
+   eventFactsHTML): a line each with its sign, apart enough to read at a
+   glance; the day and the time in the title's ink, a little larger than a
+   row's; the place free to wrap. */
+.ev-facts { display: flex; flex-direction: column; gap: 13px; margin-top: 18px; }
+.ev-fact { display: flex; align-items: flex-start; gap: 12px; margin: 0; color: var(--text); font-size: 16px; line-height: 1.35; }
+.ev-fact > svg { flex: none; width: 20px; height: 20px; margin-top: 1px; color: var(--text-2); }
+.ev-fact > span { min-width: 0; overflow-wrap: break-word; }
+.ev-day { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
+.ev-time { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ev-where { padding: 1px 0; }
+.ev-where b { display: block; font-weight: 650; }
+.ev-where small { display: block; margin-top: 2px; color: var(--text-2); font-size: 15px; }
+.ev-langs { color: var(--text-2); font-size: 15px; }
+/* Its link closes the words, a hairline between them and what to do. */
+.event .sheet-link { margin: 0 18px; padding: 14px 0 12px; border-bottom: 1px solid var(--line); }
 .ev-desc { margin: 16px 18px 0; padding: 14px 16px; background: var(--card); border-radius: 16px; font-size: 15px; line-height: 1.45; box-shadow: var(--shadow); overflow-wrap: anywhere; }
-.event .details { margin-top: 14px; }
+/* Its Calendar: the date open first, then those after it (next.js
+   calendarHTML), further from the card's words than a parish's Calendar is
+   from its timetable. */
+.ev-cal { margin-top: 40px; }
+.ev-cal .sec { padding-bottom: 4px; }
+.ev-cal-what { margin: 0 18px; color: var(--text-2); font-size: 14px; }
+/* The date the card is open on: a quiet outline round its stretch of the
+   rule, in the parish's colour; the dates after it as any Calendar's. */
+.cu .slot:has(> .erow.cur) {
+  margin: 4px -10px 2px; padding: 5px 10px 5px 23px; border-radius: 12px; border-top: 0;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pc, var(--accent)) 50%, transparent);
+}
+.cu .slot:has(> .erow.cur)::before { left: 10px; }
+.cu .slot:has(> .erow.cur) + .slot { border-top: 0; }
 
 /* A small sheet's head. */
 .lay-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 18px 6px; }
