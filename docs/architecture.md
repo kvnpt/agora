@@ -158,7 +158,10 @@ Archangels its subtitle), and still the service it is called (`anyTitle`).
 (`/sgr/talk`, `/sgr/wed/liturgy`, `/sgr/evening`, `/sgr/en`) opens the first that
 answers it as an event's card, in front of St George's own plain card (`openMatch`
 in next.js): a step back, or the event's Parish, is the parish. Under the event,
-the others that answer ("More talks"), a season ahead at most (`matchFeedHTML`).
+its Calendar: that event first, outlined, then the others that answer, a season
+ahead at most (`calendarHTML`). A date of a regular service has one however its
+card was reached: that date, then its timetable line's dates after it (Kevin,
+9 Nov 2026), and the Worker's first paint of its card has the same.
 The event's card keeps the link followed (`segsFor({ parish, focus })`), so sharing
 it shares that. With none on file, the parish's plain card is all there is, at
 `/sgr`, as if the link had named only the parish. A card's own Filters focus it

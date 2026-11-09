@@ -710,7 +710,7 @@ reader gives `end_date` for one event over several days — a festival Friday to
 Sunday is ONE entry — and never matches one to a Sunday's service. Published
 it is only a later `end_utc`; the page calls an event multi-day when it ends on a
 later day of the parish's calendar and lasts at least twelve hours, says its span
-on the card ("Fri 13 Nov 6pm – Sun 15 Nov 4pm", painted and drawn alike),
+on the card ("Friday 13 – Sunday 15 November" over "6pm Fri – 4pm Sun", painted and drawn alike),
 and keeps it in the feed after its first day: the bundle and the projection
 take a one-off whose `end_utc` reaches into the window, and Today puts one
 that began earlier and is still running under **Happening now**. The app v3

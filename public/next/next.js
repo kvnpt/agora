@@ -166,6 +166,28 @@
     if (key === addDays(t, 1)) return long ? `Tomorrow · ${base}` : 'Tomorrow';
     return base;
   }
+  /** "Thursday 19 November", with its year when it is not this one. */
+  function fullDate(key) {
+    const d = new Date(key + 'T00:00:00Z');
+    return `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_LONG[d.getUTCMonth()]}${key.slice(0, 4) === todayKey().slice(0, 4) ? '' : ` ${key.slice(0, 4)}`}`;
+  }
+  /**
+   * An event's day and time as its card says them, a line each (Kevin,
+   * 9 Nov 2026): "Today · Monday 9 November" over "6:30pm – 8:30pm". Over
+   * days (a weekend camp), the span over each end's time and day; a vigil
+   * past midnight is one night.
+   */
+  function eventWhen(start, last, overDays) {
+    const t = todayKey();
+    if (overDays) {
+      const a = new Date(start.date + 'T00:00:00Z'), b = new Date(last.date + 'T00:00:00Z');
+      // One month's is said once: "Friday 13 – Sunday 15 November".
+      const from = start.date.slice(0, 7) === last.date.slice(0, 7) ? `${WD_LONG[a.getUTCDay()]} ${a.getUTCDate()}` : fullDate(start.date);
+      return { day: `${from} – ${fullDate(last.date)}`, time: `${hm12(start.hm)} ${WD[a.getUTCDay()]} – ${hm12(last.hm)} ${WD[b.getUTCDay()]}` };
+    }
+    const rel = start.date === t ? 'Today · ' : start.date === addDays(t, 1) ? 'Tomorrow · ' : '';
+    return { day: rel + fullDate(start.date), time: `${hm12(start.hm)}${last && last.hm ? ` – ${hm12(last.hm)}` : ''}` };
+  }
   function whenShort(e) {
     const l = local(e);
     const t = todayKey();
@@ -1016,6 +1038,9 @@
     place: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
     pin: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
     clock: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    // An event's what, when and where (eventFactsHTML), in outline as the clock is.
+    cal: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+    where: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 21s-6.5-6.4-6.5-11.3a6.5 6.5 0 0 1 13 0C18.5 14.6 12 21 12 21z"/><circle cx="12" cy="9.7" r="2.3"/></svg>',
     check: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
     bookmark: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9z"/></svg>',
     bookmarkOn: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9z"/></svg>',
@@ -1471,7 +1496,7 @@
    * alone wears none, and one in two languages still says both.
    */
   const langBadge = (langs, asked) => !!(langs && langs.length) && !(asked && langs.every(l => langIs(l, asked)));
-  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false, tint = null } = {}) {
+  function eventRow(e, { showDay = false, now = false, here = null, focus = null, lit = false, lang: asked = null, same = false, tint = null, current = null } = {}) {
     const p = S.byId.get(e.parish_id);
     const l = local(e);
     const d = distOf(e.lat != null ? e : p);
@@ -1495,7 +1520,9 @@
     // `tint`: the colour of its own stretch of a Calendar's rule.
     // No roundel: its kind is a word under its time where its name does not say it.
     const kind = window.AgoraEventTypes.rowWord(e.event_type);
-    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}" type="button" data-event="${esc(e.id)}"${tint ? ` style="--pc:${tint}"` : ''}>
+    // `current`: the date an event's card is open on, first in its Calendar, outlined.
+    const cur = current != null && String(current) === String(e.id);
+    return `<button class="erow${now ? ' now' : ''}${tomb ? ` tomb ${e.status}` : ''}${lit ? ' lit' : ''}${dim ? ' dim' : ''}${cur ? ' cur' : ''}" type="button" data-event="${esc(e.id)}"${cur ? ' aria-current="true"' : ''}${tint ? ` style="--pc:${tint}"` : ''}>
         <span class="etime${same ? ' same' : ''}">${now ? '<i class="live"></i>Now' : timeHTML(l.hm)}${showDay ? `<small>${esc(dayLabel(l.date))}</small>` : ''}${kind ? `<span class="ekind" style="color:${window.AgoraEventTypes.kindColors(e.event_type, dark()).fg}">${esc(kind)}</span>` : ''}</span>
         <span class="ebody"><span class="etitle-row"><span class="etitle">${esc(title)}${lang ? ` ${lang}` : ''}</span>${tomb ? `<span class="etomb">${esc(tomb)}</span>` : ''}</span>
           ${e.feast ? `<span class="efeast">${esc(e.feast)}</span>` : ''}
@@ -3371,18 +3398,57 @@
     if (e) openEvent(e.id, { match });
     else toast(`No ${rules[0].title} on file in the next ${Math.round(MATCH_DAYS / 30)} months`);
   }
-  /** "More talks", "More liturgies on Wednesdays": what else answers, under the first. */
-  function matchFeedHTML(m, id) {
-    const list = matchesAt(m).filter(e => String(e.id) !== String(id)).slice(0, MATCH_CAP);
-    if (!list.length) return '';
-    // A line's are its own dates, whatever else its link would find.
-    const label = m.focus && !m.rules ? focusLabel(m.focus) : 'Later dates';
+  /**
+   * An event's Calendar (Kevin, 9 Nov 2026): the date its card is open on,
+   * first and outlined, then the dates after it, so the card reads as one
+   * thing that goes on, not one date and some others. A timetable line's
+   * are its own dates, and so are a regular service's however its card was
+   * reached (its line's, as openLine has them); a link's (/sgr/talks), what
+   * else answers it, a season ahead at most. A one-off reached by itself, or
+   * a date with none after it, has none.
+   */
+  function calendarOf(e, match) {
+    const rid = ruleIdOf(e);
+    const m = match || (rid ? { pid: e.parish_id, focus: null, from: null, rules: lineRuleIds(e.parish_id, rid) } : null);
+    if (!m) return null;
+    const at = local(e), t0 = Date.parse(e.start_utc);
+    const after = matchesAt({ ...m, from: [at.date, todayKey()].sort().pop() })
+      .filter(x => String(x.id) !== String(e.id) && (local(x).date > at.date || (local(x).date === at.date && Date.parse(x.start_utc) > t0)))
+      .slice(0, MATCH_CAP);
+    return after.length ? { m, list: [e, ...after] } : null;
+  }
+  /** The rules of the timetable line a service is on (Monday to Friday's Vespers are one line), else its rule alone. */
+  function lineRuleIds(pid, rid) {
+    const l = TL.linesOf(rulesOf(pid).filter(liveRule), { today: todayKey(), offOf: ruleBreak }).find(x => x.ids.some(id => String(id) === rid));
+    return new Set(l ? l.ids.map(String) : [rid]);
+  }
+  function calendarHTML(e, match) {
+    const c = calendarOf(e, match);
+    if (!c) return '';
+    const { m, list } = c;
     const start = local(list[0]).date;
     const days = daysBetween(start, local(list[list.length - 1]).date) + 1;
-    return `<section class="cu-band ev-more">
-        <h2 class="sec">${m.focus && !m.rules ? `More ${esc(/^Bible\b/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1))}` : esc(label)}</h2>
-        <div class="cu" style="--pc:${parishColor(S.byId.get(m.pid))}">${daysHTML(list, { start, days, row: { here: m.pid, focus: m.focus } })}</div>
+    // A link's are what else answers it ("Talks"), which it says under the title.
+    const what = m.focus && !m.rules ? focusLabel(m.focus) : '';
+    return `<section class="cu-band ev-cal">
+        <h2 class="sec">Calendar</h2>${what ? `<p class="ev-cal-what">${esc(what)}</p>` : ''}
+        <div class="cu" style="--pc:${parishColor(S.byId.get(m.pid))}">${daysHTML(list, { start, days, row: { here: m.pid, focus: m.focus, current: e.id } })}</div>
       </section>`;
+  }
+  /**
+   * An event's Calendar reaches a season ahead, as a link's matches do: the
+   * bundle is asked once for the days it lacks (a monthly men's group has
+   * two dates in its first two months), then the Calendar drawn again.
+   */
+  async function widenCalendar(el) {
+    const e = el._event;
+    if (!e || (!el._match && !ruleIdOf(e))) return;
+    const end = addDays([local(e).date, todayKey()].sort().pop(), MATCH_DAYS);
+    if (holds(end)) return;
+    try { await ensureLoaded(end); } catch (err) { console.warn(err); return; }
+    if (!stack.includes(el)) return;
+    const box = el.querySelector('.ev-cal-box');
+    if (box) box.innerHTML = calendarHTML(el._event, el._match);
   }
 
   function openParish(pid, { entry = true, from = null, focus } = {}) {
@@ -3899,7 +3965,9 @@
     // Over days (a weekend camp), each end says its day. A vigil past midnight is one night.
     const overDays = last && last.date > l.date && endMs(e) - Date.parse(e.start_utc) >= 12 * 3600000;
     const venue = e.location_parish_id && e.location_parish_id !== e.parish_id ? S.byId.get(e.location_parish_id) : null;
-    const where = e.location_override || (venue ? `${venue.name}${venue.address ? ` — ${venue.address}` : ''}` : p?.address) || '';
+    // Where: a place of its own, the church it is held in (its name over its address), or its parish's.
+    const where = e.location_override ? esc(e.location_override)
+      : venue ? `<b>${esc(venue.name)}</b>${venue.address ? `<small>${esc(venue.address)}</small>` : ''}` : esc(p?.address || '');
     const lat = e.location_lat ?? e.lat ?? venue?.lat ?? p?.lat, lng = e.location_lng ?? e.lng ?? venue?.lng ?? p?.lng;
     // The host alone needs no list: its button is in the actions.
     const parishes = eventParishes(e);
@@ -3931,8 +3999,7 @@
           ${off || kind ? `<div class="ev-kind">${off ? `<span class="ev-off">${esc(off)}</span>` : ''}${kind}</div>` : ''}
           <h1>${esc(e.title)}</h1>
           ${e.feast ? `<p class="ev-sub">${esc(e.feast)}</p>` : ''}
-          <p class="ev-when">${overDays ? `${esc(dayLabel(l.date))} ${esc(hm12(l.hm))} – ${esc(dayLabel(last.date))} ${esc(hm12(end))}`
-            : `${esc(dayLabel(l.date, true))} · ${esc(hm12(l.hm))}${end ? `–${esc(hm12(end))}` : ''}`}</p>
+          ${eventFactsHTML(eventWhen(l, end ? last : null, overDays), where, langs)}
           ${off && e.break_note ? `<p class="ev-note">${esc(e.break_note)}</p>` : ''}
           ${into ? `<p class="ev-note">In its place: <button class="ev-link" type="button" data-event="${esc(into.id)}">${esc(into.title)}</button></p>` : ''}
         </div>
@@ -3943,14 +4010,27 @@
           <button class="abtn" type="button" data-parish="${esc(e.parish_id)}">${avatar(p, 'xs')}<span>Parish</span></button>
           ${edits ? `<button class="abtn" type="button" data-edit-event="${esc(e.id)}">${I.pencil}<span>Edit</span></button>` : ''}
         </div>
-        ${where || langs.length ? `<div class="details">${where ? `<div class="drow"><small>Where</small><span>${esc(where)}</span></div>` : ''}${langs.length ? `<div class="drow"><small>Languages</small><span>${esc(langs.join(', '))}</span></div>` : ''}</div>` : ''}
         ${e.description ? (off ? `<div class="ev-desc${offCls}">${stamp}<div class="ev-desc-text">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div></div>`
           : `<div class="ev-desc">${window.AgoraLinkify.linkify(e.description).replace(/\n/g, '<br>')}</div>`) : ''}
         ${parishes.length > 1 ? `<h2 class="sec">Parishes</h2>${parishFold(parishes.length, `<div class="lists">${parishes.map(({ p: x, role }) => `<button class="lrow" type="button" data-parish="${esc(x.id)}">${avatar(x, 'sm')}
           <span class="ln"><b>${esc(x.name)}</b><small>${esc(role)}</small></span>${I.chev}</button>`).join('')}</div>`)}` : ''}
         ${!edits && p ? `<button class="wide-btn" type="button" data-suggest="${esc(rule ? serviceLine(rule) : SUGGEST.event)}" data-pid="${esc(p.id)}">Suggest an edit</button>` : ''}
-        ${match ? matchFeedHTML(match, e.id) : ''}
+        <div class="ev-cal-box">${calendarHTML(e, match)}</div>
         <div class="toolbar-space"></div>`;
+  }
+  /**
+   * Under an event's title, what a person needs to go (Kevin, 9 Nov 2026):
+   * the day, the time, the place and what it is said in, a line each with
+   * its sign, the day and the time brightest, the place free to wrap.
+   * `where` is markup, already escaped.
+   */
+  function eventFactsHTML(when, where, langs) {
+    return `<div class="ev-facts">
+            <p class="ev-fact ev-day">${I.cal}<span>${esc(when.day)}</span></p>
+            <p class="ev-fact ev-time">${I.clock}<span>${esc(when.time)}</span></p>
+            ${where ? `<p class="ev-fact ev-where">${I.where}<span>${where}</span></p>` : ''}
+            ${langs.length ? `<p class="ev-fact ev-langs">${I.chat}<span>${esc(langs.join(', '))}</span></p>` : ''}
+          </div>`;
   }
   /** An event card's toolbar: its bookmark, and its pencil for whoever may edit it. */
   function eventTools(e) {
@@ -3971,6 +4051,7 @@
     const el = pushSheet(html, 'event', { segs: match ? matchSegs(match, e.id) : segsFor({ eventId: e.id }), entry });
     el._event = e;
     el._match = match;
+    widenCalendar(el);
   }
   /**
    * An open event card again, from the bundle as it now is. A date that has
@@ -4736,7 +4817,12 @@
       openParish(b.dataset.parish);
       return;
     }
-    if ((b = t.closest('[data-event]'))) { openEvent(b.dataset.event); return; }
+    if ((b = t.closest('[data-event]'))) {
+      // The date its card is open on, in its own Calendar: back up to it, not a second card of it.
+      if (b.getAttribute('aria-current') === 'true') { const sc = b.closest('.sheet-scroll'); if (sc) sc.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      openEvent(b.dataset.event);
+      return;
+    }
     // Month: its pill beside a Calendar's title, and its grid's own buttons (next/month.js).
     if ((b = t.closest('[data-wk-month]'))) { const el = b.closest('.sheet'); if (el) setMonth(el, !el._month); return; }
     if ((b = t.closest('[data-wk-day]'))) { const el = b.closest('.sheet'); if (el) goToDay(el, b.dataset.wkDay); return; }
