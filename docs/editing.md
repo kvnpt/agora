@@ -386,7 +386,13 @@ published: the draft waits for a person, like any other. What is worth knowing:
   apart), go to the reader as the announcement's own words (`posterContext`'s
   `whatsapp` framing: they may give what the image leaves out; where the two
   disagree, the image wins) and onto the draft as `drafts.message_text`, which
-  the editor shows in a box of its own with **Copy the words**. Words alone,
+  the editor shows as sent, under the open card's Description, whose label
+  line offers **Fill from WhatsApp** (Replace over what the read gave it, Undo
+  just after; a proposed service's Description has the pill too — Kevin,
+  10 Nov 2026, in place of Copy the words). With no card open the words head
+  the cards' column; never a child of `.ee` itself, whose wide layout is a
+  grid of the poster beside the cards (a third thing there took the cards'
+  place, and they scrolled under the sticky poster). Words alone,
   forwarded, are read as the poster itself, with no image. Words *typed*
   within two minutes after a draft (not forwarded) are a note on it — added to
   its words, not read — and a parish link among them (`/sew`,

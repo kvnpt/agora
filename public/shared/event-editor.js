@@ -640,6 +640,9 @@
   const REPEAT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>';
   const convertPillHTML = () =>
     `<button type="button" class="convert-pill" data-act="regular" hidden>${REPEAT_ICON}<span>Weekly</span></button>`;
+  /** "Fill from WhatsApp", at the end of a Description's label line: the words the poster came with, into the box. */
+  const waFillPillHTML = (attrs = 'data-act="wa-fill"', label = 'Fill from WhatsApp', shown = false) =>
+    `<button type="button" class="convert-pill wa-fill-pill" ${attrs}${shown ? '' : ' hidden'}>${WA_ICON}<span>${label}</span></button>`;
   /** A proposed regular service's pill: as tapped, or by its kind (an Other is Parish only). */
   const svcScoped = (sv) => (sv.parish_scoped != null ? !!sv.parish_scoped : sv.event_type === 'other');
 
@@ -699,6 +702,9 @@
       services: [],
       svcOpen: new Set(),
       svcTimer: null,
+      // "Fill from WhatsApp" just tapped: the description it replaced, for Undo.
+      waUndo: null,
+      waSvcUndo: null,
       signBusy: false,
       keptByHand: false,
       // A sign's draft shows its (empty) card only once somebody asks to add an event too.
@@ -749,8 +755,8 @@
           </div>
         </div>
       </div>
-      <div class="ee-wa" data-ee="whatsapp" hidden></div>
       <div class="ee-main">
+        <div class="ee-wa" data-ee="whatsapp" hidden></div>
         <div class="ee-sign" data-ee="sign" aria-live="polite" hidden></div>
         <div class="ee-head" data-ee="head" hidden></div>
         <div class="ee-cards" data-ee="cards"></div>
@@ -930,7 +936,12 @@
     //
     // Forwarded to Agora's number (worker/routes/ingest.mjs): the words it
     // came with, read with it, shown as they were sent — to check the read
-    // against, or to copy what it left out.
+    // against, or to put in the description whole. They sit under the open
+    // card's Description, whose label line offers "Fill from WhatsApp"
+    // (Kevin, 10 Nov 2026), and with no card open, at the head of the column
+    // the cards are in. Never a child of .ee itself: on a wide screen that is
+    // a grid of the poster and the cards, and a third thing there takes the
+    // cards' place beside the poster.
 
     function sentWhen(iso) {
       const t = Date.parse(iso || '');
@@ -939,43 +950,89 @@
         .format(new Date(t)).replace(/\s?(am|pm)$/i, (m) => m.trim().toLowerCase());
     }
 
+    /** What was written with it on WhatsApp, or '' for a draft that did not come that way. */
+    const waWords = () => (state.draft && state.draft.source === 'whatsapp' ? String(state.draft.message_text || '').trim() : '');
+
     function renderWhatsapp() {
       const box = $('whatsapp');
       const d = state.draft;
       const from = !!(d && d.source === 'whatsapp');
       box.hidden = !from;
-      if (!from) { box.innerHTML = ''; return; }
-      // Words alone are what was read: above the box that offers an image.
-      // With a poster, under it, where its read is.
-      const poster = el.querySelector('.ee-poster');
-      if (!d.poster_path && box.nextElementSibling !== poster) poster.before(box);
-      else if (d.poster_path && box.previousElementSibling !== poster) poster.after(box);
-      const words = String(d.message_text || '').trim();
+      if (!from) { box.innerHTML = ''; placeWhatsapp(); return; }
+      const words = waWords();
       const who = senderOf(d);
       const at = sentWhen(d.created_at);
       box.innerHTML = `<div class="ee-wa-head">${WA_ICON}<span>From WhatsApp${who ? ` · ${esc(who)}` : ''}${at ? ` · ${esc(at)}` : ''}</span></div>`
         + (words ? `<div class="ee-wa-text" data-ee="wa-text">${esc(words)}</div>` : '<div class="ee-wa-text ee-wa-none">Nothing was written with it.</div>')
         + '<div class="ee-wa-status" data-ee="wa-status" aria-live="polite" hidden></div>'
         + '<div class="ee-wa-actions">'
-        + (words ? '<button type="button" class="ee-link" data-act="wa-more" hidden>Show all</button>'
-          + '<button type="button" class="ee-link" data-act="wa-copy">Copy the words</button>' : '')
+        + (words ? '<button type="button" class="ee-link" data-act="wa-more" hidden>Show all</button>' : '')
         + (!d.poster_path && words ? '<button type="button" class="ee-link" data-act="wa-read">Read them again</button>' : '')
         + '</div>';
-      const text = box.querySelector('[data-ee="wa-text"]');
       const more = box.querySelector('[data-act="wa-more"]');
-      if (text && more) {
-        // Long words fold to a few lines, with the way to see them all.
-        requestAnimationFrame(() => { more.hidden = text.scrollHeight <= text.clientHeight + 2; });
-        more.addEventListener('click', () => { text.classList.add('is-open'); more.hidden = true; });
-      }
-      const copy = box.querySelector('[data-act="wa-copy"]');
-      if (copy) copy.addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(words); copy.textContent = 'Copied'; } catch { copy.textContent = 'Could not copy'; }
-        setTimeout(() => { copy.textContent = 'Copy the words'; }, 2000);
-      });
+      if (more) more.addEventListener('click', () => { box.querySelector('[data-ee="wa-text"]').classList.add('is-open'); more.hidden = true; });
       const again = box.querySelector('[data-act="wa-read"]');
       if (again) again.addEventListener('click', () => { if (!(state.read && state.read.active)) startRead(null); });
+      placeWhatsapp();
       renderWhatsappStatus();
+    }
+
+    /**
+     * The words to where they can be used: under the Description of the card
+     * that is open (the only card, or the one tapped open), else first in the
+     * cards' column. And each card's "Fill from WhatsApp" as its description
+     * now stands. Called whenever a card is redrawn.
+     */
+    function placeWhatsapp() {
+      const box = $('whatsapp');
+      const cards = state.cards.filter(c => c.els);
+      const open = !box.hidden
+        ? cards.find(c => (!state.multi || c.open) && !c.els.body.hidden && !c.els.root.classList.contains('is-join'))
+        : null;
+      if (open) {
+        if (box.parentElement !== open.els.descRow) open.els.descRow.append(box);
+      } else {
+        const main = el.querySelector('.ee-main');
+        if (main.firstElementChild !== box) main.prepend(box);
+      }
+      // Long words fold to a few lines, with the way to see them all: measured where they now are.
+      const text = box.querySelector('[data-ee="wa-text"]');
+      const more = box.querySelector('[data-act="wa-more"]');
+      if (text && more && !text.classList.contains('is-open')) {
+        requestAnimationFrame(() => { more.hidden = text.scrollHeight <= text.clientHeight + 2; });
+      }
+      for (const c of cards) refreshWaFill(c, c === open);
+    }
+
+    /**
+     * A card's "Fill from WhatsApp": offered where the words are shown and
+     * the description is not already them. Over a description the read gave
+     * it says Replace; just filled, it is Undo, until the box is typed in.
+     */
+    function refreshWaFill(card, shown) {
+      const pill = card.els.waFill;
+      if (!pill) return;
+      const words = waWords();
+      const now = String(card.fields.description || '').trim();
+      const undo = state.waUndo && state.waUndo.key === card.key && now === words ? state.waUndo : null;
+      if (!undo && state.waUndo && state.waUndo.key === card.key) state.waUndo = null;
+      pill.hidden = !shown || !words || card.publish.state === 'done' || (!undo && now === words);
+      pill.querySelector('span').textContent = undo ? 'Undo' : now ? 'Replace with WhatsApp' : 'Fill from WhatsApp';
+      pill.setAttribute('aria-label', undo ? 'Put back the description as it was'
+        : now ? 'Replace the description with the words sent on WhatsApp' : 'Fill the description with the words sent on WhatsApp');
+    }
+
+    function fillFromWhatsapp(card) {
+      const box = card.els.inputs.description;
+      const words = waWords();
+      if (!box || !words) return;
+      const was = box.value;
+      const undo = state.waUndo && state.waUndo.key === card.key && was.trim() === words ? state.waUndo : null;
+      const next = undo ? undo.was : words;
+      state.waUndo = undo ? null : { key: card.key, was };
+      box.value = next;
+      onInput(card, 'description', next, true);
+      flush(card);
     }
 
     /** The status line, in the WhatsApp box, when there is no poster panel to show it. */
@@ -1134,7 +1191,14 @@
           ${row('title', 'Title', `<input id="${fieldId(card, 'title')}" data-ee-field="title" placeholder="Feast of the Dormition" autocomplete="off">`)}
           ${row('feast', 'Subtitle', `<input id="${fieldId(card, 'feast')}" data-ee-field="feast" placeholder="Optional — the saint or feast of the day, or the topic" autocomplete="off">`,
             '<div class="ee-hint" data-hint="feast"></div>')}
-          ${row('description', 'Description', `<textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="2" placeholder="Optional"></textarea>`)}
+          <!-- Words that came by WhatsApp (renderWhatsapp) sit under this
+               field's box, and its label line offers to fill it with them
+               (Kevin, 10 Nov 2026: in place of "Copy the words"). -->
+          <div class="ee-row" data-row="description">
+            <div class="ee-row-head"><label for="${fieldId(card, 'description')}">Description<span class="ee-mark" hidden>from poster</span></label><span class="ee-row-pills">${waFillPillHTML()}</span></div>
+            <textarea id="${fieldId(card, 'description')}" data-ee-field="description" rows="2" placeholder="Optional"></textarea>
+            <div class="ee-notes"></div>
+          </div>
           <div class="ee-row" data-row="event_type">
             <div class="ee-row-head"><label for="${fieldId(card, 'event_type')}">Kind<span class="ee-mark" hidden>from poster</span></label>${scopePillHTML()}</div>
             <select id="${fieldId(card, 'event_type')}" data-ee-field="event_type" data-kind-picker="buttons"><option value="">Choose a kind</option>${kinds}</select>
@@ -1213,6 +1277,8 @@
         theirBtn: node.querySelector('[data-act="their"]'),
         whereRow: node.querySelector('[data-row="location_override"]'),
         regular: node.querySelector('[data-act="regular"]'),
+        descRow: node.querySelector('[data-row="description"]'),
+        waFill: node.querySelector('[data-act="wa-fill"]'),
         scope: node.querySelector('[data-ee-scope]'),
         inputs: {},
       };
@@ -1262,6 +1328,7 @@
       card.els.newThere.addEventListener('click', () => notThatOne(card));
       card.els.theirBtn.addEventListener('click', () => makeTheirs(card));
       card.els.regular.addEventListener('click', () => makeRegular(card));
+      card.els.waFill.addEventListener('click', () => fillFromWhatsapp(card));
       card.els.combine.addEventListener('toggle', () => { if (card.els.combine.open) renderCombine(card); });
       card.els.bin.addEventListener('click', () => toggleDiscard(card));
       $('cards').appendChild(node);
@@ -1755,6 +1822,7 @@
       card.els.body.hidden = !single && !card.open && !peek;
       card.els.root.classList.toggle('is-published', card.publish.state === 'done');
       refreshAsk(card);
+      placeWhatsapp();
     }
 
     /**
@@ -2605,7 +2673,7 @@
             <div class="ee-svc-field"><span>Weeks of the month</span><div class="ee-days ee-svc-weeks" role="group" aria-label="Weeks of the month">${['every', ...S.WEEKS].map(w => `<label class="ee-day"><input type="checkbox" data-sf="week" data-week="${w}" data-i="${i}"${(w === 'every' ? !sv.week_of_month : weeks.includes(w)) ? ' checked' : ''}><span>${WEEK_WORDS[w]}</span></label>`).join('')}</div></div>
             ${!sv.event_type || SERVICE_KINDS.has(sv.event_type) ? `<div class="ee-svc-field"><span>Languages</span><input data-sf="languages" data-i="${i}" value="${esc((sv.languages || []).join(', '))}" data-lang-picker data-lp-jurisdiction="${esc((state.parish && state.parish.jurisdiction) || '')}" autocomplete="off"></div>` : ''}
             ${flyer ? `
-            ${field('Description', `<textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date">${esc(sv.description || '')}</textarea>`)}
+            <div class="ee-svc-field"><span class="ee-svc-head"><span>Description</span>${svcWaPillHTML(sv, i)}</span><textarea data-sf="description" data-i="${i}" rows="3" placeholder="Shown on every date" aria-label="Description">${esc(sv.description || '')}</textarea></div>
             <div class="ee-grid">
               ${field('From', `<input type="date" data-sf="effective_from" data-i="${i}" value="${esc(sv.effective_from || '')}">`)}
               ${field('Until', `<input type="date" data-sf="effective_to" data-i="${i}" value="${esc(sv.effective_to || '')}">`)}
@@ -2669,6 +2737,7 @@
         renderSign();
         return;
       }
+      if (act === 'wa-fill') { fillServiceFromWhatsapp(i); return; }
       if (act === 'scope') {
         const sv = state.services[i];
         if (!sv) return;
@@ -2696,6 +2765,30 @@
         sync();
       }
     });
+
+    /**
+     * A proposed service's "Fill from WhatsApp", as a card's (refreshWaFill):
+     * the words it came with into its Description, Replace over what the read
+     * gave it, Undo just after.
+     */
+    function svcWaPillHTML(sv, i) {
+      const words = waWords();
+      const now = String(sv.description || '').trim();
+      const undo = state.waSvcUndo && state.waSvcUndo.i === i && now === words;
+      if (!words || (!undo && now === words)) return '';
+      return waFillPillHTML(`data-act="wa-fill" data-i="${i}"`, undo ? 'Undo' : now ? 'Replace with WhatsApp' : 'Fill from WhatsApp', true);
+    }
+
+    function fillServiceFromWhatsapp(i) {
+      const box = $('sign').querySelector(`textarea[data-sf="description"][data-i="${i}"]`);
+      const words = waWords();
+      if (!box || !words) return;
+      const undo = state.waSvcUndo && state.waSvcUndo.i === i && box.value.trim() === words ? state.waSvcUndo : null;
+      state.waSvcUndo = undo ? null : { i, was: box.value };
+      box.value = undo ? undo.was : words;
+      // As leaving the box would: saved, and the panel redrawn with its pill.
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    }
 
     function onServiceEdit(e) {
       const inp = e.target.closest('[data-sf]');

@@ -1450,7 +1450,7 @@ body.dialog-open { overflow: hidden; }
 .form-modal { max-width: 560px; }
 /* The editor's own action bar sticks to the foot and carries its own padding. */
 .new-event-modal { padding-bottom: 0; }
-@media (min-width: 900px) { .new-event-modal:has(.ee.has-poster) { max-width: 940px; } }
+@media (min-width: 900px) { .new-event-modal:has(.ee.has-poster) { max-width: 1040px; } }
 .escalate-modal h2 { margin: 0 0 12px; padding-right: 36px; font-size: 17px; font-weight: 700; }
 
 /* A form (editing.js frame()): a card with its own bar, Cancel · title ·
