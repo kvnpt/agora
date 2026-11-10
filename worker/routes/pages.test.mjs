@@ -39,7 +39,7 @@ class S {
 
 const PARISH = 'antiochian-stgeorge-redfern';
 const GREEK_QLD = 'greek-gopssc-buderim';
-const COLLECTION_PATHS = new Set(collections.COLLECTIONS.map(c => c.path));
+const COLLECTION_PATHS = new Set([...collections.COLLECTIONS, ...collections.PLACES].map(c => c.path));
 // Wednesday 30 September 2026, midday in Sydney.
 const NOW = Date.parse('2026-09-30T02:00:00Z');
 const SHELL = fs.readFileSync('public/index.html', 'utf8');
@@ -861,6 +861,74 @@ test('every other link stays noindex: a hand-picked list, a mix of filters, an e
   }
   assert.equal(card((await get('/serbian')).html), '', 'an empty collection has no card to paint');
   assert.equal(meta((await get('/greek/qld')).html, 'property', 'og:image'), 'https://orthodoxy.au/og/greek.jpg');
+});
+
+// ── a city's own pages ───────────────────────────────────────────────────
+
+test("a city's English services are a page of their own: indexed, named for the search, its times said", async () => {
+  const { raw, get } = fresh();
+  raw.prepare(`UPDATE schedules SET languages = '["English"]'`).run();
+  const sydney = listed(raw, '/english/syd');
+  assert.ok(sydney.length >= 2, 'the seed has Sydney parishes with English services');
+  for (const p of ['/english/syd', '/english/sydney', '/syd/en', '/sydney/english']) {
+    const { html } = await get(p);
+    assert.equal(robots(html), 'index,follow', p);
+    assert.equal(canonical(html), 'https://orthodoxy.au/english/sydney', `${p}: the city spelt out, the words people search`);
+    assert.equal(title(html), 'English Orthodox churches in Sydney — service times | orthodoxy.au', p);
+  }
+  const { html } = await get('/english/syd');
+  const said = meta(html, 'name', 'description');
+  assert.match(said, new RegExp(`^${sydney.length} parishes with services in English\\. `), 'how many, then their times');
+  assert.match(said, /: Sun \d+(:\d\d)?(am|pm) [^·]*Liturgy/, "each parish said by its Liturgy, as a parish's own page says its times");
+  assert.equal(meta(html, 'property', 'og:image'), 'https://orthodoxy.au/og/c-english.jpg');
+  const c = card(html);
+  assert.match(c, /^<section class="sheet collection has-map open ssr" role="dialog" aria-label="Orthodox services in English in Sydney">/,
+    "titled as the page's card From link is, so nothing changes when the page takes over");
+  assert.match(c, /<h1>Orthodox services in English in Sydney<\/h1>/);
+  assert.match(c, /<a class="citem-head" href="\/sgr">[\s\S]*?<b>St George Cathedral, Redfern<\/b>/, 'each parish a link to its card');
+  assert.match(c, /orthodoxy\.au.*english.*sydney/s, 'its own link under its title');
+  // Not "services in English", which a /services link narrows to: the same page, its own link.
+  assert.equal(canonical((await get('/services/en/syd')).html), 'https://orthodoxy.au/syd/services/en');
+  assert.equal(robots((await get('/services/en/syd')).html), 'noindex,follow');
+});
+
+test("a city's own page lists every parish in it, and waits for two with times", async () => {
+  const { raw, get } = fresh();
+  const { html } = await get('/sydney');
+  assert.equal(canonical(html), 'https://orthodoxy.au/sydney');
+  assert.equal(title(html), 'Orthodox churches in Sydney — service times | orthodoxy.au');
+  const withTimes = listed(raw, '/sydney').length;
+  assert.equal(robots(html), withTimes >= 2 ? 'index,follow' : 'noindex,follow');
+  assert.match(meta(html, 'name', 'description'), new RegExp(`^\\d+ Orthodox parishes in Sydney, ${withTimes} with their service times\\.`));
+  assert.equal(canonical((await get('/syd')).html), 'https://orthodoxy.au/sydney', 'however the link spells it');
+  // More parishes than a collection's card paints (30): a city's paints them all.
+  const add = raw.prepare("INSERT INTO parishes (id, name, jurisdiction, lat, lng, timezone) VALUES (?, ?, 'greek', ?, 151.1, 'Australia/Sydney')");
+  for (let i = 0; i < 32; i++) add.run(`greek-test-${i}`, `Test Parish ${i}, Sydney`, -33.80 - i / 1000);
+  const sydneyCard = card((await get('/sydney')).html);
+  const items = (sydneyCard.match(/<article class="citem">/g) || []).length;
+  assert.ok(items > 32, `${items} painted`);
+  assert.equal(items, Number((/<b>(\d+) parishes<\/b>/.exec(sydneyCard) || [])[1]), 'every parish in it painted, not the first 30');
+
+  // Below two parishes with times a city has that parish's page, and its own is noindex.
+  raw.prepare('DELETE FROM schedules').run();
+  rule(raw, PARISH, 0, '10:00', 'Divine Liturgy', { languages: '["English"]' });
+  for (const p of ['/sydney', '/english/sydney']) assert.equal(robots((await get(p)).html), 'noindex,follow', p);
+  rule(raw, 'antiochian-stmichaelgabriel-ryde', 0, '09:00', 'Divine Liturgy', { languages: '["English"]' });
+  for (const p of ['/sydney', '/english/sydney']) assert.equal(robots((await get(p)).html), 'index,follow', p);
+  assert.equal(robots((await get('/greek/sydney')).html), 'noindex,follow', 'a jurisdiction in a city is a mix of filters');
+});
+
+test("the sitemap lists a city's pages once they list two parishes with times", () => {
+  const { raw } = fresh();
+  const parishes = raw.prepare("SELECT * FROM parishes WHERE id != '_unassigned'").all();
+  const ids = () => indexedCollections({ parishes, rules: raw.prepare('SELECT * FROM schedules WHERE active = 1').all(), overrides: {}, logos: {} },
+    NOW, 'https://orthodoxy.au').map(c => c.id);
+  raw.prepare('DELETE FROM schedules').run();
+  rule(raw, PARISH, 0, '10:00', 'Divine Liturgy', { languages: '["English"]' });
+  assert.ok(!ids().includes('en-syd') && !ids().includes('city-syd'));
+  rule(raw, 'antiochian-stmichaelgabriel-ryde', 0, '09:00', 'Divine Liturgy', { languages: '["English"]' });
+  assert.ok(ids().includes('en-syd') && ids().includes('city-syd'));
+  assert.ok(!ids().includes('en-mel'), 'and only the cities that have them');
 });
 
 test("a jurisdiction's logo is its collection's preview once /admin has one", async () => {

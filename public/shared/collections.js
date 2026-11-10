@@ -1,14 +1,15 @@
 // The collections: slices of the parishes that filters alone can say.
 //
 // /en, /sun/liturgy, /greek, /in-arabic, /monasteries — each one a link, a
-// card on the page's shelves, a page the Worker answers that a search engine
-// may index, and a chat app's preview with a picture of its own
-// (public/og/c-<id>.jpg, drawn by scripts/build-og-images.mjs; a
-// jurisdiction's is its logo once /admin has one, else its card). A list of
-// parishes picked by hand (/sgr+snb) is a link as well, but it is its maker's
-// and nobody's collection, so it is never one of these and never indexed. Nor
-// is every other mix of filters: /greek/qld/wed/evening is a fine link and an
-// endless space of pages, and these are the ones somebody chose.
+// card on the page's shelves (all but PLACES, a city's own pages), a
+// page the Worker answers that a search engine may index, and a chat app's
+// preview with a picture of its own (public/og/c-<id>.jpg, drawn by
+// scripts/build-og-images.mjs; a jurisdiction's is its logo once /admin has
+// one, else its card). A list of parishes picked by hand (/sgr+snb) is a
+// link as well, but it is its maker's and nobody's collection, so it is never
+// one of these and never indexed. Nor is every other mix of filters:
+// /greek/qld/wed/evening is a fine link and an endless space of pages, and
+// these are the ones somebody chose.
 //
 // Shared because three readers name them and have to agree: the page's
 // shelves (public/next/next.js), the Worker's page for the link — its title,
@@ -25,6 +26,7 @@
   const isCjs = typeof module === 'object' && !!module.exports;
   const urlState = isCjs ? require('./url-state.js') : (root && root.AgoraUrlState);
   const languages = isCjs ? require('./languages.js') : (root && root.AgoraLanguages);
+  const locations = isCjs ? require('./locations.js') : (root && root.AgoraLocations);
 
   const CURATED = [
     { id: 'english', path: '/services/en', title: 'English services', kicker: 'Language',
@@ -60,6 +62,32 @@
 
   const COLLECTIONS = [...CURATED, ...LANGUAGES, ...JURISDICTIONS];
 
+  // A city's churches, and its English services: what somebody looking for a
+  // church searches ("Orthodox church Sydney", "English Orthodox Sydney").
+  // Not on the page's shelves, which have the whole country's (/services/en,
+  // /greek). They are here for a search engine: until November 2026 /sydney
+  // and /english/syd were mixes of filters, noindex, with nothing painted, so
+  // Google had no page to rank for those words (Kevin, 10 Nov 2026). Each is
+  // named by its city spelt out, the words people search, and is indexed
+  // once it lists `minParishes` parishes with times: a city with one has that
+  // parish's own page. The page opens either as it opens any link that asks
+  // something, a card From link (next.js opensCard).
+  const PLACES = (locations ? locations.LOCATIONS : []).filter(l => l.kind === 'city').flatMap(l => {
+    const name = (l.aliases && l.aliases[0]) || l.slug;
+    return [
+      { id: `city-${l.slug}`, group: 'place', city: l.label, path: `/${name}`,
+        title: `Orthodox parishes in ${l.label}`, kicker: 'Place',
+        headTitle: `Orthodox churches in ${l.label}`,
+        blurb: `Orthodox parishes in ${l.label}, with their service times.`,
+        image: '/og/default.jpg', minParishes: 2 },
+      { id: `en-${l.slug}`, group: 'place', city: l.label, lang: 'English', path: `/english/${name}`,
+        title: `English services in ${l.label}`, kicker: 'English',
+        headTitle: `English Orthodox churches in ${l.label}`,
+        blurb: `Orthodox parishes in ${l.label} with services in English, and their times.`,
+        image: '/og/c-english.jpg', minParishes: 2 },
+    ];
+  });
+
   // How each is drawn on its card: its colour and what is on it. The page's
   // shelves and cards draw it, and so does the Worker's first paint of a
   // collection's card, so the two cannot differ.
@@ -94,6 +122,8 @@
       const j = colorOf ? colorOf(c.jurisdiction) : '#64748b';
       return { art: `radial-gradient(120% 90% at 85% 10%, ${shade(j, 0.35)}, ${j} 55%, ${shade(j, -0.4)})`, color: j };
     }
+    // A place's card is the page's card From link, in its colour.
+    if (c.group === 'place') return { tint: '#475569' };
     if (c.group === 'language') {
       const [glyph, tint] = LANGUAGE_LOOK[c.lang] || [c.title.slice(0, 2), '#64748b'];
       return { glyph, tint };
@@ -131,14 +161,14 @@
     const key = meaningOf(route);
     if (key == null) return null;
     if (!byMeaning) {
-      byMeaning = new Map(COLLECTIONS.map(c => [meaningOf(urlState.classifyPath(c.path)), c]));
+      byMeaning = new Map([...COLLECTIONS, ...PLACES].map(c => [meaningOf(urlState.classifyPath(c.path)), c]));
     }
     return byMeaning.get(key) || null;
   }
 
   const byId = (id) => COLLECTIONS.find(c => c.id === id) || null;
 
-  const api = { COLLECTIONS, CURATED, LANGUAGES, JURISDICTIONS, JURISDICTION_NAMES, LANGUAGE_LOOK, meaningOf, collectionFor, byId, lookOf, lookStyle, shade };
+  const api = { COLLECTIONS, CURATED, LANGUAGES, JURISDICTIONS, PLACES, JURISDICTION_NAMES, LANGUAGE_LOOK, meaningOf, collectionFor, byId, lookOf, lookStyle, shade };
   if (isCjs) module.exports = api;
   else if (root) root.AgoraCollections = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

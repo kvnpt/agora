@@ -812,7 +812,7 @@
   /**
    * Follow one of this site's links from inside the page, as if it had been
    * opened: the card it names, over the page as it is; a link with no card
-   * (/sydney) is a step of the map's.
+   * (/greek/qld) is a step of the map's.
    */
   function go(path) {
     if (panelOpen()) setPanel(false);
@@ -841,15 +841,23 @@
    * search's words, a collection (/sun/liturgy, /greek), or parishes asked
    * something (/smg+smk/feast, /wed/evening, a date). A card's filters are
    * that card's alone (Kevin, 5 Nov 2026): they never become the page's, so
-   * closing it is the page as it was. A place alone (/sydney, /greek/qld)
-   * opens none: it is a view of the map.
+   * closing it is the page as it was. A place alone (/greek/qld, /nsw) opens
+   * none: it is a view of the map. A city's own page (/sydney; collections.js
+   * PLACES) is the exception, a card of its parishes, since a search engine
+   * reads the page after its script and found only a map there (Kevin, 10 Nov
+   * 2026).
    */
   function opensCard(route, path) {
     const f = route.f;
     return !!(route.parish || route.eventId || route.donate || route.words || collectionAt(path)
-      || route.from || f.parishIds || asksWhat(f) || f.lang);
+      || route.from || f.parishIds || asksWhat(f) || f.lang || placeAt(path));
   }
-  /** The map's own filters from an address with no card: /sydney, /greek/qld, a step back through them. */
+  /** Is this address a city's own page (/sydney, /english/syd), which a search engine is offered? */
+  function placeAt(path) {
+    const c = window.AgoraCollections.collectionFor(window.AgoraUrlState.classifyPath(path, { today: todayKey() }));
+    return !!c && c.group === 'place';
+  }
+  /** The map's own filters from an address with no card: /greek/qld, /nsw, a step back through them. */
   function applyPage(route, { animate = true } = {}) {
     S.juris = route.juris;
     S.f = route.f;
@@ -867,8 +875,9 @@
    * it, in front of the parish's own, plain card.
    */
   function openRoute(route, path, { entry = true, animate = true } = {}) {
-    // A parish's card leaves the page's map looking at it; a card of parishes takes the map itself.
-    if (route.parish || route.eventId || route.donate) frameRoute(route, animate);
+    // A parish's card leaves the page's map looking at it; a card of parishes
+    // takes the map itself, and a city's leaves it on the city once it closes.
+    if (route.parish || route.eventId || route.donate || placeAt(path)) frameRoute(route, animate);
     if (route.parish && route.focus) return openMatch(route.parish, route.focus, { entry, from: route.from });
     if (route.parish) return openParish(route.parish, { entry, from: route.from, focus: null });
     if (route.eventId) return openEvent(route.eventId, { entry });
@@ -1342,7 +1351,9 @@
     const loc = regionOf(f);
     const list = f.listId && listById(f.listId);
     const named = f.parishIds ? [...f.parishIds].map(id => S.byId.get(id)).filter(Boolean) : null;
-    const asks = asksWhat(f) || !!f.lang || !!juris || f.monasteries;
+    // A city's own page (/sydney) is titled by its place, as its head is; the
+    // map's parishes where it happens to be looking, by their count.
+    const asks = asksWhat(f) || !!f.lang || !!juris || f.monasteries || (!here && !!loc);
     let what = W.headingOf(r, { loc });
     if (list) what += ` from ${list.name}`;
     else if (named) what += ` at ${named.length} parishes`;
@@ -1939,14 +1950,15 @@
    * Coming up from `k` (a date from a link, or tomorrow). One parish in view
    * is that parish's card. The page has no feed of its own.
    */
-  function openInView({ at = null, from = null, link = null, view = null, entry = true } = {}) {
+  function openInView({ at = null, from = null, link = null, view = null, place = false, entry = true } = {}) {
     // From a link (its route), the link's own filters, and the parishes it
     // means wherever they are when it asks something; else (a date alone, or
     // the chip) those the map is showing. From the chip or Today, the map's
     // own filters: it is the map's card.
     const f0 = link ? link.f : S.f, j0 = link ? link.juris : S.juris;
     // A saved view (/greek+serbian) is its parishes wherever they are, as a list is.
-    const everywhere = !!link && !!(view || f0.parishIds || asksWhat(f0) || f0.lang);
+    // A city's own page (/sydney) is every parish in it, as its head says.
+    const everywhere = !!link && !!(view || place || f0.parishIds || asksWhat(f0) || f0.lang);
     const inView = (p) => everywhere || !S.inView || S.inView.has(p.id);
     const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && parishMatches(p, f, juris)).map(p => p.id);
     const ids = pick(f0);
@@ -1987,12 +1999,13 @@
    * A link that names a collection opens its card. One that names parishes
    * or asks something of them (/smg+smk/feast, /wed/evening) opens them as a
    * card From link, as the In view card is (Kevin, 2 Nov 2026), and so does
-   * a date. A place alone (/sydney, /greek/qld) is the map, framed on it.
+   * a date and a city's own page (/sydney). Any other place alone
+   * (/greek/qld) is the map, framed on it.
    */
   function openPageCard(route, path, { entry = true } = {}) {
     const c = collectionAt(path);
     if (c) return openCollection(c, { from: route.from, entry });
-    openInView({ from: route.from, link: route, entry });
+    openInView({ from: route.from, link: route, place: placeAt(path), entry });
   }
 
   function renderFeeds() {
@@ -5121,7 +5134,7 @@
     renderCollections();
     // greek.orthodoxy.au never gets here: the Worker sends it to /greek (lib/admin-host.mjs).
     // A link that opens a card keeps its filters to the card, over a plain
-    // page; one that opens none (/sydney), or the map's own address kept by
+    // page; one that opens none (/greek/qld), or the map's own address kept by
     // a Sign in with no card open, is the map's.
     const asCard = !(kept && !kept.card) && opensCard(route, path);
     if (!asCard) { S.juris = route.juris; S.f = route.f; }

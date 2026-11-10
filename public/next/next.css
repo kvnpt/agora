@@ -2120,6 +2120,8 @@ body.dialog-open { overflow: hidden; }
 .foot-rule::before, .foot-rule::after { content: ""; width: 44px; height: 1px; background: var(--line-strong); }
 .foot-rule span { width: 5px; height: 5px; background: var(--text-3); opacity: .7; transform: rotate(45deg); }
 .foot .foot-end { margin: 0; }
+/* The cities' own pages: what they are on one line, the cities under it. */
+.foot-places span { display: block; }
 .foot-link {
   padding: 0; border: 0; background: none; font: inherit; cursor: pointer;
   color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 2px;

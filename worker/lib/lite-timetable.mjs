@@ -24,6 +24,7 @@ import collections from '../../public/shared/collections.js';
 import urlState from '../../public/shared/url-state.js';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
 import linkWords from '../../public/shared/link-words.js';
+import lines from '../../public/shared/timetable-lines.js';
 import { localDateOf } from '../../public/shared/tz.mjs';
 import { previewLogo } from './juris-logos.mjs';
 import { jurisLabel, weekFrom, parishSlug, isNarrowed, time12 } from './lite-page.mjs';
@@ -206,7 +207,38 @@ function upcomingWords(m) {
   return `${said.join(' · ')}${m.upcoming.length > UPCOMING_SAID ? ' · and more' : ''}.`;
 }
 
+/**
+ * A city's page (collections.js PLACES), as a search result shows it: "14
+ * parishes with services in English. St George Cathedral, Redfern: Wed 7pm
+ * Liturgy · …", or "71 Orthodox parishes in Sydney, 30 with their service
+ * times. …" — each parish by the first line of its timetable that answers,
+ * those with the most lines first, as a parish's own page says its times
+ * (Kevin, 10 Nov 2026: Google quotes /smg's).
+ */
+const PLACE_SAID = 3;
+function placeWords(m) {
+  const c = m.collection;
+  const listed = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes)).filter(x => x.rules.length)
+    .map(x => ({ ...x, lines: lines.linesOf(x.rules, { today: x.rules[0]._today }) }))
+    .sort((a, b) => b.lines.length - a.lines.length || String(a.parish.name).localeCompare(String(b.parish.name)));
+  if (!listed.length) return 'Nothing on file for this yet.';
+  // Its Liturgy where it has one: what somebody looking for a church comes for.
+  const said = listed.slice(0, PLACE_SAID).map(({ parish, lines: ls }) => {
+    const l = ls.find(x => x.r.event_type === 'liturgy') || ls[0];
+    const when = [l.q, lines.dayList(l.days), lines.clockText(l.r.start_time)].filter(Boolean).join(' ');
+    return `${parish.name}: ${when} ${l.r.title}${l.notes && l.notes.length ? ` (${l.notes[0]})` : ''}`;
+  });
+  const more = listed.length - said.length;
+  const lead = c.lang
+    ? `${plural(listed.length, 'parish', 'parishes')} with services in English.`
+    : `${plural(m.scopeCount, 'Orthodox parish', 'Orthodox parishes')} in ${c.city}, ${listed.length} with their service times.`;
+  return `${lead} ${said.join(' · ')}${more ? ` · and ${more} more` : ''}.`;
+}
+
 export function timetableMeta(m) {
+  if (m.collection && m.collection.group === 'place') {
+    return { title: `${m.collection.headTitle} — service times`, description: placeWords(m) };
+  }
   const heading = timetableHeading(m);
   const listed = m.groups.flatMap(g => g.juris.flatMap(j => j.parishes));
   const names = listed.slice(0, 4).map(x => x.parish.name).join(', ');
@@ -229,7 +261,9 @@ export function timetableMeta(m) {
  * of near-copies of these.
  */
 export function timetableIndexable(m) {
-  return !!m.collection && !m.named && m.groups.length > 0;
+  // A city's English page waits for enough parishes to be a page of its own.
+  const enough = !m.collection || !m.collection.minParishes || m.parishCount >= m.collection.minParishes;
+  return !!m.collection && !m.named && m.groups.length > 0 && enough;
 }
 
 /**

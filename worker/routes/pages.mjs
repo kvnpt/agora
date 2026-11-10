@@ -31,7 +31,7 @@ import { cachedHtml, cachedText, revalidated, hashEtag } from '../lib/data-versi
 import { liteModel, liteWindow, liteDays, liteStartDate, parishSlug, collectionFeed, COLLECTION_FEED_DAYS,
   wordsQuery, answersRoute, WORDS_WINDOW_DAYS } from '../lib/lite-page.mjs';
 import jurisColors from '../../public/shared/jurisdiction-colors.js';
-import { timetableModel, timetableIndexable, timetableMeta } from '../lib/lite-timetable.mjs';
+import { timetableModel, timetableIndexable, timetableMeta, timetableHeading } from '../lib/lite-timetable.mjs';
 import { homeMeta, otherMeta, parishMeta, timetableHeadMeta, wordsMeta, headHTML, withPage } from '../lib/page-head.mjs';
 import { parishCardHTML, eventCardHTML, collectionCardHTML } from '../lib/page-card.mjs';
 import { sitemapXml } from '../lib/seo.mjs';
@@ -127,11 +127,17 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
       .catch((err) => { console.error(`[preview] what is on ${url.pathname}: ${err && err.message}`); return null; });
   }
   const head = headHTML(timetableHeadMeta(m));
+  // A city's page (collections.js PLACES) is the card the page opens for a
+  // link that asks something, From link, so its card is titled as that one
+  // is, over the same list: no swap of words when the page takes over. All
+  // of its parishes, which are what a search engine reads it for.
+  const place = !!m.collection && m.collection.group === 'place';
+  const painted = place ? { ...m, collection: { ...m.collection, title: timetableHeading(m) } } : m;
   if (lite) {
     // The lite version has no page to filter, so every filter link is a
     // card: a collection's own, any other mix under its heading, and all of
     // its parishes rather than the first 30.
-    const as = m.collection || { id: 'link', title: timetableMeta(m).title, path: new URL(m.canonical).pathname };
+    const as = painted.collection || { id: 'link', title: timetableMeta(m).title, path: new URL(m.canonical).pathname };
     if (!m.groups.length) return { status: 200, head, card: '' };
     // And what is on at them this week, which the full page projects itself.
     const feed = await collectionFeedOf(env, m, page.route, now).catch((err) => {
@@ -143,7 +149,8 @@ async function timetablePage(env, url, page, now, { lite = false } = {}) {
   return {
     status: 200, head,
     // A collection's link opens its card (next.js); any other mix of filters is the page itself.
-    card: m.collection && m.groups.length ? collectionCardHTML(m, { rules: rows.rules, map: true }) : '',
+    card: m.collection && m.groups.length
+      ? collectionCardHTML(painted, { rules: rows.rules, map: true, ...(place ? { limit: Infinity } : {}) }) : '',
   };
 }
 
@@ -181,10 +188,11 @@ const missing = (url) => ({ status: 404, head: headHTML(otherMeta(url.origin)) }
 /**
  * The collections a search engine is offered: every one whose page lists
  * somebody — timetableIndexable, asked of each. /talks and /social as well,
- * since v3 answers them with the same page as any other collection.
+ * since v3 answers them with the same page as any other collection, and a
+ * city's English services once it lists enough parishes (/english/sydney).
  */
 export function indexedCollections({ parishes, rules, overrides, logos }, now, origin) {
-  return collections.COLLECTIONS.filter(c => {
+  return [...collections.COLLECTIONS, ...collections.PLACES].filter(c => {
     const page = pageOf(c.path, now);
     if (!page || page.kind !== 'timetable') return false;
     const m = timetableModel({ parishes, rules, overrides, logos, route: page.route, now, origin });

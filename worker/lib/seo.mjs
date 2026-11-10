@@ -2,7 +2,8 @@
 //
 // The parish pages, one per parish at its short link, and the collections
 // (public/shared/collections.js) whose page lists somebody: /en, /greek,
-// /sun/liturgy, /monasteries. Event pages and every other date, day and
+// /sun/liturgy, /monasteries, and a city's own pages once they list two
+// parishes with times (/sydney, /english/sydney). Event pages and every other date, day and
 // service variant are served with `noindex` (lite-page.mjs, lite-timetable.mjs)
 // — the variants are an infinite URL space, and the stored one-offs are mostly
 // a parish calendar republishing its weekly services, which is not what a
