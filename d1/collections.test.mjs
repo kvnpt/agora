@@ -53,3 +53,24 @@ test("every collection's preview picture is drawn (scripts/build-og-images.mjs)"
   const fs = require('node:fs');
   for (const c of C.COLLECTIONS) assert.ok(fs.existsSync(`public${c.image}`), `${c.image} is missing`);
 });
+
+test("a city's own pages are found at their links, however spelt, and no parish can take them", () => {
+  const ids = new Set(C.COLLECTIONS.map(c => c.id));
+  for (const c of C.PLACES) {
+    assert.equal(of(c.path), c.id, c.path);
+    assert.ok(!ids.has(c.id), `${c.id} twice`);
+    ids.add(c.id);
+    assert.ok(c.title && c.headTitle && c.blurb && c.city && c.minParishes >= 2, c.id);
+    assert.ok(require('node:fs').existsSync(`public${c.image}`), `${c.image} is missing`);
+    for (const seg of c.path.split('/').filter(Boolean)) assert.ok(slugs.reservedSlugReason(seg), `${seg} is not reserved`);
+  }
+  assert.equal(of('/syd'), 'city-syd');
+  assert.equal(of('/english/syd'), 'en-syd');
+  assert.equal(of('/en/sydney'), 'en-syd');
+  assert.equal(of('/melbourne/english'), 'en-mel');
+  // Not on the page's shelves, and not every place: a state, a jurisdiction in a city, English only.
+  for (const p of ['/nsw', '/greek/sydney', '/services/en/syd', '/english-only/syd', '/sydney/liturgy', '/sydney/2026-11-15']) {
+    assert.ok(!(C.collectionFor(U.classifyPath(p)) || {}).group, p);
+  }
+  assert.ok(C.PLACES.every(c => c.group === 'place') && !C.COLLECTIONS.some(c => c.group === 'place'));
+});

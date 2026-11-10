@@ -137,8 +137,9 @@ collection's parishes are asked again, a list keeps them (`filters`, a path, in
 
 Any other mix of filters is the page itself, filtered, and gets only its head; the
 page opens a card **From link** over it when the link names parishes or asks
-something of them (`/smg+smk/feast`, `/wed/evening`), or has a date. A place alone
-(`/sydney`, `/greek/qld`) is the map, framed on it. A few parishes by name (three at
+something of them (`/smg+smk/feast`, `/wed/evening`), or has a date, and so does a
+city's own page (`/sydney`, below). Any other place alone (`/greek/qld`, `/nsw`) is
+the map, framed on it. A few parishes by name (three at
 most) are said by their acronyms, with no "Orthodox": "Feasts at SMG and SMK"
 (`shortHeadingOf` in `link-words.js`), in its head and on its card; under the title,
 the parishes' short names while there are four or fewer.
@@ -257,6 +258,38 @@ else — event pages, date, day and service variants, a list picked by hand
 variants are an infinite URL space, and the collections are the ones somebody chose.
 That was the owner's ruling for v3 (October 2026); before it, only the parish pages
 were indexed, and the timetable pages waited on Search Console.
+
+**A city's own pages** are indexed too (Kevin, 10 Nov 2026): `/sydney`, "Orthodox
+churches in Sydney", every parish there with its times; and `/english/sydney`,
+"English Orthodox churches in Sydney", those with services in English. They are
+`PLACES` in `collections.js`, one pair per city in `locations.js`, named by the
+city spelt out, which are the words people search, and answered as a collection
+is (`/syd/en` and `/sydney/english` canonicalise to `/english/sydney`). Until
+then `/english/syd` was a mix of filters: noindex, canonical to another noindex
+page, nothing painted and in no sitemap, so a search for "English Orthodox
+Sydney" had no page here to find, while each parish ranked for its own name
+because its head and card say its times. What makes them pages:
+
+- **Indexed once they list two parishes with times** (`minParishes`,
+  `timetableIndexable`); a city with one has that parish's page. In November 2026
+  that was Sydney, Melbourne, Brisbane, Adelaide and Wollongong, and English in the
+  first four. The sitemap lists those that are.
+- **Their own words** (`placeWords` in `lite-timetable.mjs`): the title says what is
+  searched for, and the description says the times as a parish's does — "14
+  parishes with services in English. St. George Cathedral, Redfern: Sun 8am Matins
+  & Divine Liturgy · …", each parish by its Liturgy line, the fullest timetables
+  first.
+- **Their card painted, every parish in it** (not a collection's first 30), titled
+  as the page's own card From link is, which the page opens for them (`placeAt` in
+  next.js), so a search engine reads a list before the script and after it. That
+  card is the one change a person sees: `/sydney` was the map alone before.
+- **Linked from every page**: the foot of `index.html` names the four cities' pages,
+  so they are found from more than the sitemap. A city whose page is not indexed
+  is better left off it.
+
+They stay a fixed handful, picked as the collections were. A jurisdiction in a
+city (`/greek/sydney`), a state (`/nsw`), English only (`/english-only/syd`) and
+every other mix stay noindex.
 
 **Each collection previews with its own card**, `public/og/c-<id>.jpg`, drawn by
 `scripts/build-og-images.mjs c-` in the colour of its card on the page's shelves. A

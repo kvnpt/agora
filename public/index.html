@@ -212,13 +212,22 @@
   <!-- The way to the lite version by hand (worker/lib/lite-mode.mjs). -->
   <p class="lite-switch"><a href="?lite=1" rel="nofollow">Lite version</a> for slow phones</p>
 
-  <!-- The foot of the page, small and faint (Kevin, 27 Oct 2026): who keeps
-       it fresh and the way to join them, the suggest form as a permanent
-       editor (next.js, becomeEditor); who made it, and the parish to visit;
-       then the year and the disclaimer, a card of its own (openDisclaimer).
-       A rule above and below sets the credits apart from the lite version
-       and the disclaimer. -->
+  <!-- The foot of the page, small and faint (Kevin, 27 Oct 2026): the
+       cities' own pages; who keeps it fresh and the way to join them, the
+       suggest form as a permanent editor (next.js, becomeEditor); who made
+       it, and the parish to visit; then the year and the disclaimer, a card
+       of its own (openDisclaimer). A rule above and below sets the credits
+       apart from the cities and the disclaimer. -->
   <footer class="foot">
+    <!-- The cities' own pages (collections.js PLACES), as links on every page,
+         so a search engine finds them from more than the sitemap (Kevin,
+         10 Nov 2026). The cities with at least two parishes with times;
+         a city whose page is not indexed yet (lite-timetable.mjs
+         timetableIndexable) is better left off. -->
+    <p class="foot-places"><span>Orthodox churches in</span>
+      <a class="foot-link" href="/sydney" data-go>Sydney</a> · <a class="foot-link" href="/melbourne" data-go>Melbourne</a> · <a class="foot-link" href="/brisbane" data-go>Brisbane</a> · <a class="foot-link" href="/adelaide" data-go>Adelaide</a></p>
+    <p class="foot-places"><span>English services in</span>
+      <a class="foot-link" href="/english/sydney" data-go>Sydney</a> · <a class="foot-link" href="/english/melbourne" data-go>Melbourne</a> · <a class="foot-link" href="/english/brisbane" data-go>Brisbane</a> · <a class="foot-link" href="/english/adelaide" data-go>Adelaide</a></p>
     <div class="foot-rule" aria-hidden="true"><span></span></div>
     <p>Kept fresh by volunteers. <button class="foot-link" type="button" data-become-editor>Become an editor</button></p>
     <p>Made with <svg class="foot-heart" viewBox="0 0 24 24" width="11" height="11" role="img" aria-label="love"><path fill="currentColor" d="M12 21s-8.5-5.2-8.5-11.4A4.9 4.9 0 0 1 12 6.6a4.9 4.9 0 0 1 8.5 3C20.5 15.8 12 21 12 21z"/></svg> by Kevin Paul &amp; Friends<br>

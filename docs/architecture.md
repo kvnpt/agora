@@ -173,7 +173,10 @@ it go, back to `/sgr` (`focusOf`, `rowAnswers`, `parishTodayHTML`).
 card (`/sun/liturgy`, `/smg+smk/feast`, `/greek`, a date, a search's words) gives
 its filters to the card it opens and never to the page (`opensCard`, `openRoute`
 in next.js): the page under it is plain, and closing it is `/`. A link with no
-card (`/sydney`, `/greek/qld`) is a view of the map (`applyPage`). A history entry
+card (`/greek/qld`, `/nsw`) is a view of the map (`applyPage`); a city's own page
+(`/sydney`, `/english/syd`; `PLACES` in `collections.js`) is a card of its
+parishes over the map framed on it, so that a search engine has a list to read
+(Kevin, 10 Nov 2026). A history entry
 with no card (`depth` 0) is the map's filters; one with a card reopens the card.
 A card opened from another card, or from the map, starts plain: no parish card
 takes the focus of what was under it; a link that finds one parish opens as that

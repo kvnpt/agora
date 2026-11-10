@@ -1,8 +1,10 @@
 # orthodoxy.au
 #
-# Parish pages (/<acronym>) are for indexing; the sitemap lists them. Event
-# pages and date/service views are reachable but carry `noindex` themselves,
-# and the lite pages mark their links to them `nofollow`.
+# Parish pages (/<acronym>), the collections (/greek, /services/en) and the
+# cities' own pages (/sydney, /english/sydney) are for indexing; the sitemap
+# lists them. Event pages and date/service views are reachable but carry
+# `noindex` themselves, and the lite pages mark their links to them
+# `nofollow`.
 User-agent: *
 Allow: /
 Disallow: /api/
