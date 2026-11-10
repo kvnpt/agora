@@ -113,16 +113,21 @@
 .paste-note { margin: 6px 2px 0; font-size: 12.5px; line-height: 1.45; color: var(--text-2, var(--muted, #6b7280)); }
 .paste-note[hidden] { display: none; }
 
-/* A poster that came by WhatsApp: the words it was sent with, as sent. */
+/* A poster that came by WhatsApp: the words it was sent with, as sent —
+   under the open card's Description, which its label line's "Fill from
+   WhatsApp" fills with them (event-editor.js placeWhatsapp). A message, not
+   a field: tinted like a chat bubble, so it is not taken for a second box. */
 .ee-wa {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--ee-field);
+  border: 1px solid color-mix(in srgb, var(--success, #16a34a) 22%, transparent);
+  border-radius: 4px 14px 14px 14px;
+  background: color-mix(in srgb, var(--success, #16a34a) 7%, transparent);
   font-size: 13.5px;
   line-height: 1.45;
 }
+/* With no card open, first in the cards' column: the column's gap spaces it. */
+.ee-main > .ee-wa { margin: 0; }
 .ee-wa[hidden] { display: none; }
 .ee-wa-head { display: flex; align-items: center; gap: 6px; color: var(--text-2, var(--muted, #6b7280)); font-size: 12.5px; margin-bottom: 4px; }
 .ee-wa-head svg { flex: 0 0 auto; }
@@ -179,18 +184,24 @@
 .ee-read-notes .ee-note { margin: 0; font-size: 12px; }
 
 /* On a wide screen the poster sits beside the cards, so the two can be
-   compared without scrolling — checking them against it is the whole job. */
+   compared without scrolling — checking them against it is the whole job.
+   Two columns, the poster's and the cards' (.ee-main), and everything else
+   across both: named by column rather than left to the order, so a box put
+   between the two can never take the cards' place beside the poster (the
+   WhatsApp words did, 10 Nov 2026, and the cards went under the poster,
+   which held its place over them as they scrolled). */
 @media (min-width: 900px) {
   .ee.has-poster {
     display: grid;
-    grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 34%) minmax(0, 1fr);
     align-items: start;
-    gap: 14px 22px;
+    gap: 14px 24px;
   }
-  .ee.has-poster .ee-strip, .ee.has-poster .ee-parish, .ee.has-poster .ee-suggest { grid-column: 1 / -1; }
-  .ee.has-poster .ee-poster { position: sticky; top: 0; }
+  .ee.has-poster > * { grid-column: 1 / -1; }
+  .ee.has-poster > .ee-poster { grid-column: 1; position: sticky; top: 0; }
+  .ee.has-poster > .ee-main { grid-column: 2; }
   .ee.has-poster .ee-poster-card { flex-direction: column; }
-  .ee.has-poster .ee-thumb { width: 100%; max-height: 62vh; object-fit: contain; }
+  .ee.has-poster .ee-thumb { width: 100%; max-height: 64vh; object-fit: contain; }
 }
 .ee-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
@@ -375,7 +386,10 @@
 }
 .ee input[type="checkbox"] { width: auto; min-height: 0; padding: 0; -webkit-appearance: checkbox; appearance: auto; }
 .ee input[type="file"] { display: none; }
-.ee textarea { min-height: 72px; resize: vertical; }
+/* Grows with what is in it, so words filled in whole (Fill from WhatsApp)
+   can be read back without scrolling a box; where field-sizing is not
+   supported it stays a box of its own height. */
+.ee textarea { min-height: 72px; max-height: 50vh; resize: vertical; field-sizing: content; }
 .ee select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b8f98' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
