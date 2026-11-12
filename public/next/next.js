@@ -94,6 +94,7 @@
     loadedTo: null,          // the last day the bundle holds
     loads: 0,                // bumped as the bundle widens
     panel: null,             // the filters open under their button: { pushed }
+    todayAll: false,         // the page's Today opened in full with Show all (clipToday)
   };
 
   /**
@@ -1264,6 +1265,7 @@
     closeFilters();
     document.body.classList.toggle('map-full', on);
     $('#btn-fullscreen').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+    if (!on) clipToday();
     syncDock();
     setTimeout(() => map && map.resize(), 30);
     setTimeout(() => map && map.resize(), 320);
@@ -1390,13 +1392,24 @@
     // None here: the way to the nearest, or to the filters when none anywhere answers them.
     const away = ps.length ? '' : nearestWords();
     chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
-    // The words and the way on in a pill of their own, beside the logos.
-    const pill = (text) => `<span class="inview-pill">${text}<span class="inview-go">${I.chev}</span></span>`;
-    chip.innerHTML = one
-      ? `${logos(1)}${pill(`<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span>`)}`
-      : ps.length
-        ? `${logos(7)}${pill(`<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span>`)}`
-        : pill(`<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span>`);
+    // On a phone, a button on the map (Kevin, 12 Nov 2026): up to three
+    // logos in a box of one size, larger the fewer they are, and the count;
+    // one parish is its name, the map's width, over Near me.
+    const fab = !WIDE.matches;
+    chip.classList.toggle('fab', fab);
+    $('#viewport').classList.toggle('chip-one', fab && !!one);
+    const n = Math.min(3, ps.length);
+    chip.innerHTML = fab
+      ? one
+        ? `<span class="iv-logos n1">${avatar(one, 'stack')}</span><span class="iv-name">${esc(one.full_name || one.name)}</span><span class="inview-go">${I.chev}</span>`
+        : ps.length
+          ? `<span class="iv-logos n${n}">${ranked.slice(0, n).map(p => avatar(p, 'stack')).join('')}</span><span class="iv-count">${ps.length} ${placeNoun(ps.length)}</span><span class="inview-go">${I.chev}</span>`
+          : `<span class="iv-count">${esc(away)}</span><span class="inview-go">${I.chev}</span>`
+      : one
+        ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+        : ps.length
+          ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+          : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
     $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`;
   }
@@ -1546,25 +1559,51 @@
   }
 
   /**
-   * Where Today is: on a phone, in the map's card under the parishes it holds,
-   * the two one card (Kevin, 12 Nov 2026); on a wide screen, at the head of
-   * the left column, under any WhatsApp drafts, as it was.
+   * Where Today and the parishes in view are. On a phone the map and Today
+   * are one card (Kevin, 12 Nov 2026): the parishes in view a button on the
+   * map, Today under it. On a wide screen the parishes in view are the
+   * page's heading under the map, and Today heads the left column, under
+   * any WhatsApp drafts, as they were.
    */
   function placeToday() {
-    const t = $('#today');
-    if (WIDE.matches) { if (t.parentElement !== $('.col-side')) $('#favs').before(t); }
-    else if (t.parentElement !== $('#vc-shell')) $('#vc-shell').append(t);
+    const t = $('#today'), chip = $('#inview');
+    if (WIDE.matches) {
+      if (t.parentElement !== $('.col-side')) $('#favs').before(t);
+      if (chip.parentElement === $('#viewport')) $('#viewport').after(chip);
+    } else {
+      if (t.parentElement !== $('#vc-shell')) $('#vc-shell').append(t);
+      if (chip.parentElement !== $('#viewport')) $('#viewport').append(chip);
+    }
   }
   placeToday();
-  WIDE.addEventListener('change', placeToday);
+  WIDE.addEventListener('change', () => { placeToday(); if (S.parishes.length) { renderInViewChip(); clipToday(); } });
+
+  /**
+   * The page's Today is all of the day, cut off under a fade where it runs
+   * long, and Show all opens the rest in place; Tomorrow is at its foot once
+   * it is open (Kevin, 12 Nov 2026). Open stays open while the map moves.
+   * The cut is next.css's (.today.clipped .tlist), kept to when it hides
+   * more than a row or so.
+   */
+  const TODAY_CUT = 460;
+  function clipToday() {
+    const box = $('#today'), list = $('.tlist', box), more = $('.tmore', box);
+    if (!list || !more) return;
+    // Not drawn (the full-screen map hides it): measured again when it is.
+    if (!list.getClientRects().length) return;
+    const clip = !S.todayAll && list.scrollHeight > TODAY_CUT + 100;
+    box.classList.toggle('clipped', clip);
+    more.hidden = !clip;
+  }
 
   function renderToday() {
     const on = feedFor(2).filter(e => eventPasses(e));
     // Nothing in view but something elsewhere says so, and the way to it,
     // rather than going without a word; nothing anywhere is still no box.
-    const html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
+    const html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang, full: true }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
     $('#today').innerHTML = html;
     $('#today').hidden = !html;
+    clipToday();
   }
   function todayAwayHTML() {
     const d = new Date(todayKey() + 'T00:00:00Z');
@@ -1588,7 +1627,7 @@
    * day where it is not; 'none' when there is none. `clear` names the focus
    * on the button that lets it go.
    */
-  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null } = {}) {
+  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null, full = false } = {}) {
     const now = Date.now();
     const t = todayKey();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
@@ -1608,16 +1647,18 @@
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
     if (!live.length && !later.length && !showsTomorrow && !next && !clear) return '';
+    // `full`, the page's: the whole day, cut off by clipToday where it runs long.
+    const upTo = (es, n) => (full ? es : es.slice(0, n));
     if (live.length) {
-      body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), { now: true })}`;
-      if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
+      body += `<div class="tsub">Happening now</div>${rows(upTo(live, 4), { now: true })}`;
+      if (later.length) body += `<div class="tsub">Later today</div>${rows(upTo(later, 3))}`;
     } else if (later.length) {
       if (later.every(isEvening)) title = 'This evening';
-      body += rows(later.slice(0, 5));
+      body += rows(upTo(later, 5));
     } else if (showsTomorrow) {
       title = 'Tomorrow';
       k = addDays(t, 1);
-      body += rows(tomorrow.slice(0, 4));
+      body += rows(upTo(tomorrow, 4));
     } else body += '<div class="tempty">Nothing more today.</div>';
     // The next that answers the focus, by its day, where the rows above do not have it.
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
@@ -1629,7 +1670,7 @@
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
     return `<header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}</header>
-      ${body}
+      ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
       <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
@@ -4785,6 +4826,7 @@
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
     if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else showNearest(); return; }
+    if (t.closest('[data-act="today-all"]')) { S.todayAll = true; clipToday(); return; }
     if ((b = t.closest('[data-nearest]'))) {
       closeAll();
       // Today's: the nearest with something on, today or tomorrow.

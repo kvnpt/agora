@@ -31,9 +31,9 @@
   --glass: rgba(255, 255, 255, 0.72);
   --glass-solid: rgba(250, 250, 252, 0.97);
   --glass-line: rgba(255, 255, 255, 0.6);
-  /* The map's card on a phone, the map and Today in it: a quiet grey, so
-     Today's own card reads as held in it. */
-  --shell: #f6f6f8;
+  /* The edge of the phone's one card, the map and Today in it: darker
+     than a card's hairline (Kevin, 12 Nov 2026). */
+  --frame: rgba(0, 0, 0, 0.26);
   /* A card's edge: a hairline, as the app's are. Only what floats (a sheet,
      the toolbar on it, a dialog) is lifted. */
   --shadow: 0 0 0 1px var(--hair);
@@ -76,7 +76,7 @@
     --glass: rgba(36, 36, 42, 0.62);
     --glass-solid: rgba(30, 30, 35, 0.97);
     --glass-line: rgba(255, 255, 255, 0.10);
-    --shell: #1c1e24;
+    --frame: rgba(255, 255, 255, 0.24);
     --shadow: 0 0 0 1px var(--hair);
     --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
     --success: #4ade80;
@@ -166,13 +166,14 @@ body.docked .dock { transform: none; visibility: visible; }
    and in full screen the parish row along the foot of the map. */
 
 .viewport-card { margin: 4px 0 0; }
-/* On a phone, one card: the map at its head, the parishes it holds as the
-   hinge, and Today held under them, a pin on its edge (Kevin, 12 Nov 2026). */
+/* On a phone, one card (Kevin, 12 Nov 2026): the map at its head with the
+   parishes it holds on it as a button, and Today on the same plane under
+   it, a pin on the edge between them. */
 .vc-shell {
   margin: 10px 12px 0;
-  background: var(--shell);
-  border-radius: 22px;
-  box-shadow: 0 0 0 1px var(--hair);
+  background: var(--card);
+  border-radius: 22px; overflow: hidden;
+  box-shadow: 0 0 0 1px var(--frame);
 }
 
 /* The jurisdiction tabs (app.css .jurisdiction-banner): each in its own
@@ -199,7 +200,7 @@ body.docked .dock { transform: none; visibility: visible; }
 .jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-bottom-color: transparent; opacity: 1; }
 
 .viewport {
-  position: relative; height: min(36vh, 290px);
+  position: relative; height: min(44vh, 352px);
   margin: 0; border-radius: 22px 22px 0 0; overflow: hidden;
   background: var(--card-2);
   /* Safari clips a WebGL canvas to the radius only on its own layer. */
@@ -229,13 +230,15 @@ body.map-beside .viewport .map-filters { top: 16px; }
 }
 body.map-full .viewport::after { display: none; }
 /* In the phone's one card the card's own edge frames the map: the glow
-   inside it, and a hairline where the map ends and the hinge begins. */
+   inside it, and a hairline where the map ends and Today begins. With no
+   Today, the map is the card, rounded all round. */
 @media (max-width: 1079px) {
   .viewport::after { box-shadow: inset 0 -1px 0 var(--hair), inset 0 0 12px 3px rgba(255, 255, 255, .9); }
 }
 @media (max-width: 1079px) and (prefers-color-scheme: dark) {
   .viewport::after { box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .5); }
 }
+.vc-shell:not(:has(> .today:not([hidden]))) > .viewport { border-radius: 22px; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
@@ -311,32 +314,50 @@ body.map-full .map-fs .fs-close { display: block; }
 /* Under the small map, what it holds in words: a stack of logos, the count
    and how many have times. Tapping opens them as a collection. */
 .inview {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  min-height: 62px; padding: 10px 10px 10px 14px;
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 64px; padding: 10px 14px 12px 16px;
   text-align: left;
-  -webkit-tap-highlight-color: transparent;
 }
-/* The words and the way on, in a pill beside the logos. */
-.inview-pill {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
-  padding: 6px 8px 6px 12px; border-radius: 14px;
-  background: var(--card); box-shadow: 0 0 0 1px var(--hair);
-}
-.inview:active .inview-pill { background: var(--card-2); }
 .stackrow { display: flex; flex: none; }
 .stackrow .av { margin-left: -9px; box-shadow: var(--av-ring), 0 0 0 2px var(--card); }
-/* Under the phone's map, seven logos and the pill share the width. */
-.inview .stackrow .av { --s: 28px; margin-left: -10px; box-shadow: var(--av-ring), 0 0 0 2px var(--shell); }
-.inview .stackrow .av:first-child { margin-left: 0; }
-.inview.one .stackrow .av { --s: 36px; }
 .stackrow .av:first-child { margin-left: 0; }
 .inview-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; white-space: nowrap; }
-.inview-text > *, .inview-text b, .inview-text small { overflow: hidden; text-overflow: ellipsis; }
+.inview-text b, .inview-text small { overflow: hidden; text-overflow: ellipsis; }
 .inview-text small { color: var(--text-2); font-size: 13px; }
 .inview-go { color: var(--text-3); }
 /* One parish in view is that parish, by its full name, on up to two lines. */
 .inview.one .inview-text { white-space: normal; }
 .inview.one .inview-text b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
+/* On a phone, a button on the map's foot at the left, as Near me is at the
+   right (Kevin, 12 Nov 2026): the logos in a box of one size, three at most
+   and larger the fewer, then the count and the way on. One parish is its
+   name, across the map, over Near me. */
+.inview.fab {
+  position: absolute; left: 10px; bottom: 10px; z-index: 2;
+  width: auto; max-width: calc(100% - 74px); min-height: 44px; gap: 8px;
+  padding: 3px 10px 3px 3px; border-radius: 22px;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+  -webkit-tap-highlight-color: transparent;
+}
+.inview.fab.one { right: 10px; max-width: none; }
+.viewport.chip-one .map-locate { display: none; }
+.iv-logos { flex: none; display: flex; align-items: center; justify-content: center; width: 60px; height: 36px; }
+.iv-logos .av { box-shadow: var(--av-ring), 0 0 0 1.5px var(--card); }
+.iv-logos.n3 .av { --s: 28px; }
+.iv-logos.n3 .av + .av { margin-left: -12px; }
+.iv-logos.n2 .av { --s: 34px; }
+.iv-logos.n2 .av + .av { margin-left: -8px; }
+.iv-logos.n1 { width: 36px; }
+.iv-logos.n1 .av { --s: 36px; }
+.iv-count { min-width: 0; font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inview.fab:not(:has(.iv-logos)) { padding-left: 14px; }
+.iv-name {
+  flex: 1; min-width: 0; font-size: 14.5px; font-weight: 650; line-height: 1.2;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.inview.fab .inview-go { flex: none; display: grid; margin-left: -2px; color: var(--text-2); }
 
 /* The parish row (app.css .parish-filter-row-wrap), full screen only: the
    count, then every parish as its logo ringed in its colour, in view first. */
@@ -435,7 +456,7 @@ body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0;
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
 body.map-full .map-filters { top: calc(41px + 62px + env(safe-area-inset-top)); }
 body.map-full .inview, body.map-full .vc-shell > .today { display: none; }
-body.map-full .vc-shell { margin: 0; background: transparent; border-radius: 0; box-shadow: none; }
+body.map-full .vc-shell { margin: 0; background: transparent; border-radius: 0; box-shadow: none; overflow: visible; }
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
@@ -623,19 +644,36 @@ body.map-full .parish-row {
 /* A Today with the day and the evening divides them, as a day of the feed does. */
 .today[hidden] { display: none; }
 .today .eve { position: relative; padding: 10px 18px 2px; }
-/* In the phone's one card, held under the parishes in view, with a pin on
-   its edge where the map's card hands on to it: what is on is what is on
-   where the map is looking. The pin breaks the hairline it sits on. */
-.vc-shell > .today { position: relative; margin: 18px 8px 8px; border-radius: 15px; overflow: visible; }
+/* In the phone's one card, on the map's plane under it, with a pin on the
+   edge between them: what is on is what is on where the map is looking.
+   The pin breaks the hairline it sits on. */
+.vc-shell > .today { position: relative; margin: 0; border-radius: 0; box-shadow: none; background: none; overflow: visible; }
 .vc-shell > .today::before {
-  content: ''; position: absolute; top: -1px; left: calc(50% - 15px); width: 30px; height: 1px; background: var(--shell);
+  content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--card);
 }
 .vc-shell > .today::after {
-  content: ''; position: absolute; top: -12px; left: calc(50% - 8px); width: 16px; height: 20px;
+  content: ''; position: absolute; top: -8px; left: calc(50% - 8px); width: 16px; height: 20px;
   background: var(--dist);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
+/* The page's Today cut off under a fade where it runs long (next.js
+   clipToday, TODAY_CUT), Show all opening the rest in place; Tomorrow at
+   its foot once it is open. */
+.today.clipped .tlist {
+  max-height: 460px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+}
+.today.clipped .see-all { display: none; }
+.tmore {
+  position: relative; display: flex; align-items: center; gap: 4px; width: max-content;
+  margin: -18px auto 16px; padding: 9px 14px 9px 18px; border-radius: 999px;
+  background: var(--card); box-shadow: 0 0 0 1px var(--line-strong), 0 2px 8px rgba(0, 0, 0, .06);
+  color: var(--accent); font-weight: 600; font-size: 15px;
+}
+.tmore[hidden] { display: none; }
+.tmore svg { transform: rotate(90deg); }
 /* A collection's own Today, above its timetables, and a parish's above its timetable. */
 .ctoday, .ptoday { margin: 14px 18px 0; }
 /* A parish card's focus (/sgr/talk): its next lit in the parish's colour, under
@@ -2095,7 +2133,7 @@ body.dialog-open { overflow: hidden; }
 
   /* The map: across the page, rounded, its tabs above it on the page. */
   .viewport-card { margin: 6px 0 0; background: none; border: 0; border-radius: 0; overflow: visible; }
-  .vc-shell { margin: 0; background: none; border-radius: 0; box-shadow: none; }
+  .vc-shell { margin: 0; background: none; border-radius: 0; box-shadow: none; overflow: visible; }
   .jurisdiction-banner { margin: 0 var(--pad); background: none; border-top: 0; }
   body.map-full .jurisdiction-banner { margin: 0; background: var(--card); }
   .viewport { height: clamp(420px, 62vh, 720px); margin: 14px var(--pad) 0; border-radius: 28px; }
@@ -2105,16 +2143,13 @@ body.dialog-open { overflow: hidden; }
 
   /* What it holds, under it, as the page's heading. */
   .inview { min-height: 0; gap: 16px; padding: 20px var(--pad) 6px; }
-  .inview .stackrow .av, .inview.one .stackrow .av { --s: 40px; margin-left: -11px; box-shadow: var(--av-ring), 0 0 0 2.5px var(--bg); }
+  .inview .stackrow .av { --s: 40px; margin-left: -11px; box-shadow: var(--av-ring), 0 0 0 2.5px var(--bg); }
   .inview .stackrow .av:first-child { margin-left: 0; }
   .inview-text { font-size: 30px; letter-spacing: -.02em; line-height: 1.15; }
   .inview-text b { font-weight: 700; }
   .inview-text small { margin-top: 2px; font-size: 16px; letter-spacing: 0; }
   .inview.one .inview-text b { line-height: 1.15; }
   .inview-go svg { width: 22px; height: 22px; }
-  /* Here the words are the page's heading, not a pill. */
-  .inview-pill { gap: 16px; padding: 0; background: none; box-shadow: none; }
-  .inview:active .inview-pill { background: none; }
 
   /* The right column's shelves: laid out, not scrolled sideways. */
   #shelf-collections .shelf-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; overflow: visible; }

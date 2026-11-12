@@ -124,10 +124,11 @@
     <section class="viewport-card" id="viewport-card">
       <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
       <!-- On a phone the map and Today are one card (Kevin, 12 Nov 2026): the
-           map, what it holds as the hinge between them, and Today under a
-           pin, because what is on is what is on where the map is looking.
-           Wide, Today goes to the head of the left column (next.js,
-           placeToday) and this is the map and its heading. -->
+           map, with what it holds as a button on it, and Today under it on
+           the same plane, a pin between them, because what is on is what is
+           on where the map is looking. Wide, Today goes to the head of the
+           left column and the chip under the map (next.js, placeToday): the
+           map and its heading. -->
       <div class="vc-shell" id="vc-shell">
       <div class="viewport" id="viewport">
         <div id="map"></div>
@@ -155,8 +156,9 @@
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.06-.23l-18 7a1 1 0 0 0 .08 1.89l7.6 2.17 2.17 7.6a1 1 0 0 0 .93.73h.03a1 1 0 0 0 .93-.64l7-18a1 1 0 0 0-.22-1.06z"/></svg>
         </button>
       </div>
-      <!-- What the viewport holds, said in words under the small map: a count,
-           where the map is looking, and up to seven logos; one parish by its
+      <!-- What the viewport holds: on a phone a button on the map, up to
+           three logos and the count; wide, words under the map, a count,
+           where the map is looking, and up to seven logos. One parish by its
            name. Panning changes it. -->
       <button class="inview" type="button" id="inview" aria-label="Parishes in view"></button>
       <!-- Full screen, the app's parish row at the foot of the map instead:
