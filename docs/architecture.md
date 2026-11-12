@@ -137,10 +137,16 @@ On a phone the map and Today are one card (`.vc-shell`, Kevin, 12 Nov 2026):
 the chip is a button on the map's foot, three logos at most in a box of one
 size and the count ("63 parishes ›"); one parish is its name across the map,
 over Near me. Today is on the map's plane under it, a pin on the edge between
-them, because Today is what is on where the map is looking. The page's Today
-is the whole day, cut off under a fade where it runs long (`clipToday`), and
-Show all opens the rest in place with Tomorrow at its foot. Wide (1080px and
-up), Today heads the left column and the chip is the page's heading under
+them on a blue edge, because Today is what is on where the map is looking.
+The page's Today is the whole day, cut off under a fade where it runs long
+(`clipToday`), and Show all opens the rest in place with Tomorrow at its
+foot. Its two buttons on the right make it yours instead (`S.todayMode`,
+`todayMine`): what you bookmarked, or what is on at your favourites,
+wherever the map is and whatever its filters ask. Then the pin goes and the
+edge is the card's own outline, and Tomorrow goes on in your Bookmarks' or
+Favourites' card. Each Today row has the Calendar's line in the colour of
+the jurisdiction it is held in (a parish card's in the parish's). Wide (1080px
+and up), Today heads the left column and the chip is the page's heading under
 the map (`placeToday` in `next.js`), as before.
 
 **Several jurisdictions, or several days, are one segment**: `/antiochian+greek`,

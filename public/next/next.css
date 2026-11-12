@@ -229,14 +229,14 @@ body.map-beside .viewport .map-filters { top: 16px; }
   .viewport::after { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5); }
 }
 body.map-full .viewport::after { display: none; }
-/* In the phone's one card the card's own edge frames the map: the glow
-   inside it, and a hairline where the map ends and Today begins. With no
-   Today, the map is the card, rounded all round. */
+/* In the phone's one card the card's own edge frames the map, with the
+   glow inside it; where the map ends and Today begins is Today's own edge
+   (.vc-shell > .today). With no Today, the map is the card, rounded all round. */
 @media (max-width: 1079px) {
-  .viewport::after { box-shadow: inset 0 -1px 0 var(--hair), inset 0 0 12px 3px rgba(255, 255, 255, .9); }
+  .viewport::after { box-shadow: inset 0 0 12px 3px rgba(255, 255, 255, .9); }
 }
 @media (max-width: 1079px) and (prefers-color-scheme: dark) {
-  .viewport::after { box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .5); }
+  .viewport::after { box-shadow: none; }
 }
 .vc-shell:not(:has(> .today:not([hidden]))) > .viewport { border-radius: 22px; }
 .map-fs {
@@ -353,6 +353,10 @@ body.map-full .map-fs .fs-close { display: block; }
 .iv-logos.n1 .av { --s: 36px; }
 .iv-count { min-width: 0; font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inview.fab:not(:has(.iv-logos)) { padding-left: 14px; }
+/* Two or three logos start inside the button's round end, the first one's
+   middle on its curve's (Kevin, 12 Nov 2026). */
+.inview.fab:has(.iv-logos.n3) { padding-left: 8px; }
+.inview.fab:has(.iv-logos.n2) { padding-left: 6px; }
 .iv-name {
   flex: 1; min-width: 0; font-size: 14.5px; font-weight: 650; line-height: 1.2;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
@@ -433,8 +437,8 @@ body.map-full .map-fs .fs-close { display: block; }
   .distance-mid { color: #5b95cc; }
   .distance-far { color: #6c8399; }
 }
-.dist { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dist.distance-near { font-weight: 700; }
+/* How far, lighter than the words beside it (Kevin, 12 Nov 2026): its blue says it. */
+.dist { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* A parish with no logo: its acronym in its colour on white (app.css). */
 .avatar-acronym {
   background: linear-gradient(155deg, #ffffff 0%, #f1f2f5 100%);
@@ -635,7 +639,13 @@ body.map-full .parish-row {
    meet: the time and the name on one line at the top of the row, no taller
    than what is in it, a hairline between them inset to the words as the
    Calendar's are. The row is still the whole width to tap. */
-.today .erow { position: relative; padding: 10px 18px; min-height: 0; align-items: flex-start; }
+.today .erow { position: relative; padding: 10px 18px 10px 31px; min-height: 0; align-items: flex-start; }
+/* Each row's line in the colour of the jurisdiction it is held in (its
+   --pc, next.js todayHTML), as a Calendar's rows have it (Kevin, 12 Nov 2026). */
+.today .erow::after {
+  content: ''; position: absolute; left: 18px; top: 10px; bottom: 10px;
+  width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
+}
 .today .erow .etime { padding-top: 2px; }
 .today .erow + .erow { border-top: 0; }
 .today .erow + .erow::before, .today .erow + .eve::before {
@@ -646,8 +656,15 @@ body.map-full .parish-row {
 .today .eve { position: relative; padding: 10px 18px 2px; }
 /* In the phone's one card, on the map's plane under it, with a pin on the
    edge between them: what is on is what is on where the map is looking.
-   The pin breaks the hairline it sits on. */
-.vc-shell > .today { position: relative; margin: 0; border-radius: 0; box-shadow: none; background: none; overflow: visible; }
+   The edge is blue, as how far is, and the pin breaks it. Yours (your
+   bookmarks or favourites, next.js todayMine) are not the map's: no pin,
+   and the edge the card's own outline, all the way across (Kevin, 12 Nov 2026). */
+.vc-shell > .today {
+  position: relative; margin: 0; border-radius: 0; box-shadow: none; background: none; overflow: visible;
+  border-top: 1px solid color-mix(in srgb, var(--dist) 75%, transparent);
+}
+.vc-shell > .today.mine { border-top-color: var(--frame); }
+.vc-shell > .today.mine::before, .vc-shell > .today.mine::after { content: none; }
 .vc-shell > .today::before {
   content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--card);
 }
@@ -666,6 +683,8 @@ body.map-full .parish-row {
   mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
 }
 .today.clipped .see-all { display: none; }
+/* Yours with none yet has no button at its foot: room under its words. */
+.today:not(:has(.see-all)) .tlist { padding-bottom: 14px; }
 .tmore {
   position: relative; display: flex; align-items: center; gap: 4px; width: max-content;
   margin: -18px auto 16px; padding: 9px 14px 9px 18px; border-radius: 999px;
@@ -683,6 +702,24 @@ body.map-full .parish-row {
 .erow.dim, .tt-line.dim { opacity: .38; }
 .tsub.tnext { color: var(--pc, var(--accent)); }
 .card-head:has(.tfocus) { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+/* The page's Today's two buttons, on its right: your bookmarks, your
+   favourites, each in its list's colour once on (next.js todayModesHTML). */
+.card-head:has(.tmodes) { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tmodes { flex: none; display: flex; gap: 2px; margin-right: -8px; }
+.tmode {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  color: var(--text-2); transition: background-color .15s, color .15s;
+}
+.tmode svg { width: 21px; height: 21px; }
+.tmode.bm { --tm: #4f46e5; }
+.tmode.fav { --tm: #b45309; }
+@media (prefers-color-scheme: dark) {
+  .tmode.bm { --tm: #a5b4fc; }
+  .tmode.fav { --tm: #fbbf24; }
+}
+.tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); }
+@media (hover: hover) { .tmode:hover { background: var(--hover, color-mix(in srgb, var(--text) 6%, transparent)); } .tmode[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--tm) 18%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .tmode { transition: none; } }
 .tfocus {
   flex: none; display: inline-flex; align-items: center; gap: 4px; max-width: 55%;
   margin-top: 2px; padding: 5px 8px 5px 11px; border-radius: 16px;
