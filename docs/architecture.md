@@ -133,6 +133,13 @@ Scrolled past it and the filters, both ride in the dock at the top of the page
 names a region or parishes frames them (`frameRegion`, `fitTo`), so it lands
 showing everything it means. It is not in the URL.
 
+On a phone the map, that chip and Today are one card (`.vc-shell`, Kevin,
+12 Nov 2026): the map at its head, the chip as the hinge (the logos, then the
+words in a pill), and Today's own card held under it with a pin on its edge,
+because Today is what is on where the map is looking. Wide (1080px and up),
+Today is moved to the head of the left column (`placeToday` in `next.js`) and
+the map and its chip are the page's heading, as before.
+
 **Several jurisdictions, or several days, are one segment**: `/antiochian+greek`,
 `/wed+fri`, written in the tabs' order and from Sunday; `/greek/antiochian` and
 `/fri/wed` read the same. A filter holds one as its key or its number, as every

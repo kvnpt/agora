@@ -123,6 +123,12 @@
          and the map is map.js itself. -->
     <section class="viewport-card" id="viewport-card">
       <nav class="jurisdiction-banner" id="juris-row" aria-label="Jurisdictions"></nav>
+      <!-- On a phone the map and Today are one card (Kevin, 12 Nov 2026): the
+           map, what it holds as the hinge between them, and Today under a
+           pin, because what is on is what is on where the map is looking.
+           Wide, Today goes to the head of the left column (next.js,
+           placeToday) and this is the map and its heading. -->
+      <div class="vc-shell" id="vc-shell">
       <div class="viewport" id="viewport">
         <div id="map"></div>
         <!-- The app's gum-tree loader, over the map alone while it loads: the
@@ -165,6 +171,9 @@
         </button>
         <div class="parish-pills" id="parish-pills"></div>
       </div>
+      <!-- Today, before anything else: what is on where the map is looking. -->
+      <section class="today card" id="today" aria-label="Today"></section>
+      </div>
     </section>
 
     <!-- The map's filters, the app's pills, opened from its button. -->
@@ -181,12 +190,10 @@
          the right. Narrower, these two are nothing, and it all runs on. -->
     <div class="col-side">
     <!-- Posters this person forwarded to Agora's WhatsApp number, read into
-         drafts nobody has opened yet (next.js paintWhatsappHome): first,
-         because they are waiting on them. -->
+         drafts nobody has opened yet (next.js paintWhatsappHome): first after
+         the map and Today, because they are waiting on them. Wide, Today
+         comes back in here, under them. -->
     <section class="wa-drafts" id="wa-drafts" hidden></section>
-
-    <!-- Today, before anything else. -->
-    <section class="today card" id="today" aria-label="Today"></section>
 
     <!-- Favourites, open on the page: each starred parish and what is next
          there. Then the other lists, bookmarks and saved views, small. -->

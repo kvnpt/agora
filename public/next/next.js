@@ -1390,11 +1390,13 @@
     // None here: the way to the nearest, or to the filters when none anywhere answers them.
     const away = ps.length ? '' : nearestWords();
     chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
+    // The words and the way on in a pill of their own, beside the logos.
+    const pill = (text) => `<span class="inview-pill">${text}<span class="inview-go">${I.chev}</span></span>`;
     chip.innerHTML = one
-      ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+      ? `${logos(1)}${pill(`<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span>`)}`
       : ps.length
-        ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
+        ? `${logos(7)}${pill(`<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span>`)}`
+        : pill(`<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span>`);
     // The dock's, in a line: its short name where the chip has room for the full one.
     $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`;
   }
@@ -1542,6 +1544,19 @@
         ${e.poster_path ? `<img class="ethumb" ${posterThumb(e.poster_path, 160)} alt="" loading="lazy" fetchpriority="low" onerror="${THUMB_FALLBACK}this.remove()">` : ''}
       </button>`;
   }
+
+  /**
+   * Where Today is: on a phone, in the map's card under the parishes it holds,
+   * the two one card (Kevin, 12 Nov 2026); on a wide screen, at the head of
+   * the left column, under any WhatsApp drafts, as it was.
+   */
+  function placeToday() {
+    const t = $('#today');
+    if (WIDE.matches) { if (t.parentElement !== $('.col-side')) $('#favs').before(t); }
+    else if (t.parentElement !== $('#vc-shell')) $('#vc-shell').append(t);
+  }
+  placeToday();
+  WIDE.addEventListener('change', placeToday);
 
   function renderToday() {
     const on = feedFor(2).filter(e => eventPasses(e));
