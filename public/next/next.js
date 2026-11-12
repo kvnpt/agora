@@ -3861,7 +3861,7 @@
           <div class="ckind"><span class="ckicker">${esc(c.kicker || '')}</span>${badges.map(badgeHTML).join('')}</div>
           <h1>${esc(c.title)}</h1>
           <div class="chero-acts">
-            ${c.listId || c.viewPath ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Save as list</span></button>`}
+            ${c.listId || c.viewPath ? '' : `<button class="hbtn" type="button" data-act="savelist">${I.plus}<span>Create list</span></button>`}
             <button class="hbtn" type="button" data-act="share">${I.share}<span>Share</span></button>
             ${c.listId && c.listId !== 'fav' ? `<button class="hbtn" type="button" data-act="renamelist">${I.pencil}<span>Rename</span></button>
             <button class="hbtn" type="button" data-act="deletelist">${I.x}<span>Delete</span></button>` : ''}
@@ -4441,15 +4441,15 @@
   /** What a saved view keeps: the page's filters, without a date, which would pass. */
   const viewSegs = () => segsFor({ juris: S.juris, f: S.f });
   /**
-   * Save view: the page as its filters make it, kept in Your lists. View
-   * saved: tap to let it go. Not plain Save, which is an event's (the Saved
-   * card); a view is not kept there (Kevin, 12 Nov 2026).
+   * Create list: the page as its filters make it, kept in Your lists, as a
+   * collection's card has it. In your lists: tap to let it go. Not Save,
+   * which is an event's, kept on the Saved card (Kevin, 12 Nov 2026).
    */
   function saveViewHTML() {
     const path = pathOf(viewSegs());
     if (path === '/') return '';
     const on = isSavedView(path);
-    return `<button class="fpill fpill-ghost${on ? ' fpill-saved' : ''}" type="button" data-act="save-view" aria-pressed="${on}">${on ? `${CHECK}<span>View saved</span>` : 'Save view'}</button>`;
+    return `<button class="fpill fpill-ghost${on ? ' fpill-saved' : ''}" type="button" data-act="save-view" aria-pressed="${on}">${on ? `${CHECK}<span>In your lists</span>` : `${I.plusSm}<span>Create list</span>`}</button>`;
   }
   // ── Filters, popped out ───────────────────────────────────────────────
   //
