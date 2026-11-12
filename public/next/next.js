@@ -2090,6 +2090,10 @@
    * went a week bar too far, its heading and first rows under it; and a month
    * just closed was still its height, so a day picked stopped that much short
    * (Kevin, 12 Nov 2026). Only the card's own list moves.
+   *
+   * It stays there while what is above it settles (a picture that fails to
+   * load is taken out, and its row with less in it), for a few seconds or
+   * till the card is touched.
    */
   function toDay(el, k, { smooth = true } = {}) {
     if (!el || !el.querySelector('.cu')) return;
@@ -2097,10 +2101,39 @@
     const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
     const to = day || el.querySelector('.cu-band');
     if (!to || !sc) return;
-    const held = holdWeek(el);
-    const top = sc.scrollTop + to.getBoundingClientRect().top - sc.getBoundingClientRect().top - held.bar - (day ? held.wk : 0);
     const still = !smooth || matchMedia('(prefers-reduced-motion: reduce)').matches;
-    sc.scrollTo({ top: Math.max(0, Math.round(top)), behavior: still ? 'auto' : 'smooth' });
+    const aim = () => {
+      const held = holdWeek(el);
+      return Math.max(0, Math.round(sc.scrollTop + to.getBoundingClientRect().top - sc.getBoundingClientRect().top - held.bar - (day ? held.wk : 0)));
+    };
+    let top = aim();
+    sc.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+    if (el._dayHold) el._dayHold();
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (!to.isConnected) { stop(); return; }
+        const next = aim();
+        if (Math.abs(next - top) < 2) return;
+        top = next;
+        sc.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+      });
+    });
+    const touch = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    const timer = setTimeout(() => stop(), 5000);
+    const stop = () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      touch.forEach(t => el.removeEventListener(t, stop, true));
+      if (el._dayHold === stop) el._dayHold = null;
+    };
+    for (const c of sc.children) ro.observe(c);
+    // Anything done in the card (its ↑, a swipe, a key) lets the list go.
+    touch.forEach(t => el.addEventListener(t, stop, { capture: true, passive: true }));
+    el._dayHold = stop;
   }
   /**
    * A link that names a collection opens its card. One that names parishes
