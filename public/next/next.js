@@ -804,9 +804,16 @@
     else applyPage(route);
   });
 
+  /**
+   * What a link names, its date aside. A card's date goes into its link
+   * (setCardDate: the Greek card from 18 Nov is /greek/2026-11-18), so the
+   * link opens that card again from that day, not a card of whatever the
+   * map shows.
+   */
+  const meantAt = (path) => ({ ...window.AgoraUrlState.classifyPath(path, { today: todayKey() }), dateFocus: null, precision: null });
   /** The collection a link names (/en, /greek, /talks), as the page has it, or null. */
   function collectionAt(path) {
-    const r = window.AgoraUrlState.classifyPath(path, { today: todayKey() });
+    const r = meantAt(path);
     const meant = window.AgoraCollections.collectionFor(r);
     if (meant) return COLL.get(meant.id) || null;
     // /greek/sun/liturgy: Sunday Liturgy under a jurisdiction, as its shelf opens it on /greek.
@@ -859,7 +866,7 @@
   }
   /** Is this address a city's own page (/sydney, /english/syd), which a search engine is offered? */
   function placeAt(path) {
-    const c = window.AgoraCollections.collectionFor(window.AgoraUrlState.classifyPath(path, { today: todayKey() }));
+    const c = window.AgoraCollections.collectionFor(meantAt(path));
     return !!c && c.group === 'place';
   }
   /** The map's own filters from an address with no card: /greek/qld, /nsw, a step back through them. */
@@ -2097,8 +2104,9 @@
     const mine = !link && S.todayMode ? mineIds(S.todayMode) : null;
     const f0 = link ? link.f : mine ? blankFilters() : S.f, j0 = link ? link.juris : mine ? null : S.juris;
     // A saved view (/greek+serbian) is its parishes wherever they are, as a list is.
-    // A city's own page (/sydney) is every parish in it, as its head says.
-    const everywhere = !!link && !!(view || place || f0.parishIds || asksWhat(f0) || f0.lang);
+    // A city's own page (/sydney) is every parish in it, as its head says,
+    // and so is any region a link names (/qld/2026-11-18), wherever the map is.
+    const everywhere = !!link && !!(view || place || f0.parishIds || asksWhat(f0) || f0.lang || f0.location);
     const inView = (p) => (everywhere || !S.inView || S.inView.has(p.id)) && (!mine || mine.has(p.id));
     const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && parishMatches(p, f, juris)).map(p => p.id);
     const ids = pick(f0);
@@ -2191,7 +2199,12 @@
    */
   function openPageCard(route, path, { entry = true } = {}) {
     const c = collectionAt(path);
-    if (c) return openCollection(c, { from: route.from, entry });
+    if (c) {
+      // From its date (/greek/2026-11-18), at that day, as In view opens at one.
+      openCollection(c, { from: route.from, entry });
+      if (route.from) toDay(stack[stack.length - 1], route.from);
+      return;
+    }
     openInView({ from: route.from, link: route, place: placeAt(path), entry });
   }
 
@@ -5367,6 +5380,11 @@
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncSaved(); });
     }).catch(() => {});
     await mapStarted;
+    // What the map shows, counted now the parishes are here. Its first count
+    // can come before them (map.js counts 150ms after its style is read) and
+    // find none, and a date's card (/2026-11-18) is the parishes in view: it
+    // opened on "0 parishes in Sydney" (Kevin, 12 Nov 2026).
+    onView();
     // The card a link names, one step on from the plain page: closing it is
     // that page, whose map is drawn first.
     if (asCard) refilter({ url: 'none' });
@@ -5383,7 +5401,7 @@
     }
     // The WhatsApp reply's link: its draft, over the parish card it opened.
     openLinkedDraft(signedIn, linkedDraft, arrivedAt);
-    // A map that settled before the parishes came counted none in view: count again.
+    // The map a link framed (/greek/qld) shows other parishes: count again.
     onView();
     // The loader is the map's: it goes when the map has drawn, its tiles in
     // and its dots on. Not on 'idle', which a ringing halo never lets come.
