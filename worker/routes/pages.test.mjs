@@ -363,7 +363,7 @@ test('a poster previews as a JPEG cut to size; a logo, an og card and a Preview 
   assert.equal(previewImage(`${pv}/posters/a.png`, pv), `${pv}/posters/a.png`);
 });
 
-test('a painted Today: no count, Later today only under Happening now, This evening, Tomorrow, and the evening divided off', async () => {
+test('a painted Today: no count, what is on now first with no heading, Later today after it, This evening, Tomorrow, and the evening divided off', async () => {
   const today = async (setup) => {
     const { raw, get } = fresh();
     raw.prepare('DELETE FROM schedules WHERE parish_id = ?').run(PARISH);
@@ -380,9 +380,10 @@ test('a painted Today: no count, Later today only under Happening now, This even
   assert.match(c, /<h2>Today<\/h2>/);
   assert.doesNotMatch(c, /class="tsub"/, 'no Later today with nothing on now');
   assert.match(c, /Paraklesis[\s\S]*<div class="eve">[\s\S]*Vespers/);
-  // On now: Happening now, uncounted, then Later today.
+  // On now: first, each row saying Now, with no heading of its own (Kevin, 12 Nov 2026), then Later today.
   c = await today(raw => { rule(raw, PARISH, 3, '11:00', 'Divine Liturgy'); rule(raw, PARISH, 3, '18:00', 'Vespers'); });
-  assert.match(c, /<h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<div class="tsub">Happening now<\/div>[\s\S]*Divine Liturgy[\s\S]*<div class="tsub">Later today<\/div><div class="eve">[\s\S]*Vespers/);
+  assert.match(c, /<h2>Today<\/h2><p>Wednesday 30 Sep<\/p><\/div><\/header>\s*<a class="erow now"[\s\S]*Divine Liturgy[\s\S]*<div class="tsub">Later today<\/div><div class="eve">[\s\S]*Vespers/);
+  assert.doesNotMatch(c, /Happening now/);
   assert.doesNotMatch(c, /on now/);
   // The day done: tomorrow, by its title and date, going on to the week.
   c = await today(raw => rule(raw, PARISH, 4, '07:00', 'Matins'));
