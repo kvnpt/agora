@@ -724,7 +724,8 @@ function addUserLocSourceAndLayer(state) {
     source: USER_SOURCE,
     paint: {
       'circle-radius': 4.5,
-      'circle-color': '#4285f4',
+      // The location blue (--dist in next.css): you are this colour everywhere.
+      'circle-color': '#007aff',
       'circle-stroke-color': '#ffffff',
       'circle-stroke-width': 2
     }

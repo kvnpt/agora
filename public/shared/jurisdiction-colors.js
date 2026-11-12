@@ -17,17 +17,28 @@
 // those. See the note in map.js on why its dots and labels read jurisdiction
 // and nothing else.
 (function (root) {
-  // What production shows, as set in /admin in October 2026. The defaults had
-  // drifted from it entirely — Antiochian navy against the purple everyone
-  // sees — and the lite pages, which read the table before the overrides
-  // reached them, showed the stale set.
+  // Chosen together in November 2026 (Kevin, 13 Nov), to be told apart at a
+  // glance on a 2px line or a 5px dot: every pair at least 10 apart (OKLab
+  // ΔE×100) in light and in dark (liftForDark below), and at least 7 for
+  // red–green colour-blind readers. Today the closest pair is Serbian and
+  // Macedonian.
+  //   greek       the Greek flag's blue. The page's links and buttons
+  //               (--accent in next.css) are the same blue, on purpose; your
+  //               location (--dist) is a separate, electric blue.
+  //   antiochian  a bright violet: a deeper purple beside that Greek looks
+  //               the same colour to a red–green colour-blind reader.
+  //   serbian     a clear red; macedonian toward cerise, away from it.
+  //   russian     a true orange; romanian a deep green, darker than
+  //               Serbian's red and away from the green of "on now".
+  // A change here is a change for every link preview too: re-run
+  // scripts/build-og-images.mjs. /admin → Colours can still override one.
   const JURISDICTION_COLORS = {
-    antiochian: '#7c3bc1',
-    greek: '#0061fe',
-    serbian: '#cc2234',
-    russian: '#d38301',
-    romanian: '#4e7a27',
-    macedonian: '#b92d5d',
+    antiochian: '#8d52e3',
+    greek: '#0d5eaf',
+    serbian: '#d22e2c',
+    russian: '#e47c01',
+    romanian: '#40731a',
+    macedonian: '#b94082',
   };
 
   // 'other' is in the schema's CHECK but not in the table: a jurisdiction with

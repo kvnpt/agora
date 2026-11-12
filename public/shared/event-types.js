@@ -26,17 +26,23 @@
 
   // Each kind's colours — the type dot on a card, the badge in a drawer, the
   // kind picker's chips — as [background, text], in light and in dark. One
-  // table, so a kind looks the same wherever it is named (app.css's
-  // .badge-<kind> rules carry the same pairs, for the markup that has no JS).
+  // table, so a kind looks the same wherever it is named (/admin's .k-<kind>
+  // badges carry the same pairs, for the markup that has no JS).
+  //
+  // Feast gold, Talk terracotta, Youth teal, Social deep green (Kevin, 13 Nov
+  // 2026). Until then Feast and Talk were one gold, Youth was Prayer's blue,
+  // and Social was Romanian's green. Each event type's text colour is now at
+  // least 7.5 from every other's and about 10 from every jurisdiction's
+  // (jurisdiction-colors.js), so a row's word and its line do not read as one.
   const COLORS = {
     light: {
-      liturgy: ['#e8d5e8', '#6b2d6b'], prayer: ['#d5e0f0', '#2d4a7a'], feast: ['#f5ecd0', '#7a6520'],
-      talk: ['#f0e8d5', '#7a5a20'], youth: ['#d0e8f5', '#2d5a8a'], social: ['#d5ead5', '#2d6a2d'],
+      liturgy: ['#e8d5e8', '#6b2d6b'], prayer: ['#d5e0f0', '#2d4a7a'], feast: ['#f1e7ce', '#896a00'],
+      talk: ['#fee1d6', '#8d3c18'], youth: ['#d2eef1', '#006169'], social: ['#dbeedb', '#15561d'],
       other: ['#e8e8e8', '#555555'],
     },
     dark: {
-      liturgy: ['#3a2840', '#d4a3d4'], prayer: ['#1f2a3a', '#9bb8e0'], feast: ['#3a3220', '#d4c082'],
-      talk: ['#3a2f1c', '#d4b682'], youth: ['#1c303d', '#a8c8de'], social: ['#1f2e1f', '#a3c8a3'],
+      liturgy: ['#3a2840', '#d4a3d4'], prayer: ['#1f2a3a', '#9bb8e0'], feast: ['#362d13', '#d9bb68'],
+      talk: ['#40271d', '#f9a686'], youth: ['#163336', '#71cfd9'], social: ['#213322', '#95cf96'],
       other: ['#26272c', '#aaaaaa'],
     },
   };
@@ -51,9 +57,9 @@
   // The kinds a row of the Calendar, Today or search says in a word under its
   // time. A liturgy's or a prayer's name already says what it is ("Divine
   // Liturgy", "Vespers"), and "Other" says nothing; a feast's "Great Vespers"
-  // or a social's "Paniyiri" does not. Said in words, not a colour: Feast and
-  // Talk, Prayer and Youth are too near in colour to tell apart on their own,
-  // and a row's colour is its jurisdiction's.
+  // or a social's "Paniyiri" does not. Said in words, not a colour: a row's
+  // colour is its jurisdiction's, and a word is read where a colour beside
+  // another is only compared.
   const ROW_WORD_KINDS = ['feast', 'talk', 'youth', 'social'];
   /** 'feast' -> 'Feast'; '' for a kind its row does not say. */
   const rowWord = (id) => (ROW_WORD_KINDS.includes(id) ? eventTypeLabel(id) : '');

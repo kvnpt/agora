@@ -14,9 +14,12 @@
   --line: rgba(60, 60, 67, 0.14);
   /* Today's rows, a hairline you can see. */
   --line-strong: rgba(60, 60, 67, 0.26);
-  --accent: #2c6cb4;
-  /* A distance from you, as the app's are. */
-  --dist: #2196f3;
+  /* The app's own blue is Greek's (jurisdiction-colors.js), on purpose: most
+     of the parishes are Greek (Kevin, 13 Nov 2026). */
+  --accent: #0d5eaf;
+  /* You: your distances, the edge and its pin, your dot on the map. The
+     electric blue phones use for where you are, kept clear of Greek's. */
+  --dist: #007aff;
   --live: #2fb350;
   --evening: #2c3d72;
   /* Hairlines, and the app's own tokens for the pieces taken from it. */
@@ -62,8 +65,10 @@
     --text-3: #6f6f78;
     --line: rgba(255, 255, 255, 0.10);
     --line-strong: rgba(255, 255, 255, 0.20);
-    --accent: #5b8fd6;
-    --dist: #4aa8f7;
+    /* Greek as dark mode lifts it (liftForDark), and the phone's dark-mode
+       location blue. */
+    --accent: #58a1f7;
+    --dist: #0a84ff;
     --live: #38c75c;
     --evening: #8ba3d4;
     --hair: rgba(255, 255, 255, 0.12);
@@ -426,16 +431,16 @@ body.map-full .map-fs .fs-close { display: block; }
   border-radius: 999px;
   pointer-events: none;
 }
-/* How far, in the app's blues: the nearer, the deeper (app.css). On the dark
-   scheme, the nearer the brighter and more saturated; far fades toward grey.
-   Wherever a distance is said. */
-.distance-near { color: #1565c0; }
-.distance-mid { color: #42a5f5; }
-.distance-far { color: #90caf9; }
+/* How far, in the location blue (--dist): the nearer, the more electric; far
+   fades, lighter on the light scheme and toward grey on the dark. Every step
+   is kept clear of Greek's blue. Wherever a distance is said. */
+.distance-near { color: #007aff; }
+.distance-mid { color: #4da3ff; }
+.distance-far { color: #a3cbff; }
 @media (prefers-color-scheme: dark) {
-  .distance-near { color: #47adff; }
-  .distance-mid { color: #5b95cc; }
-  .distance-far { color: #6c8399; }
+  .distance-near { color: #0a84ff; }
+  .distance-mid { color: #3a76b8; }
+  .distance-far { color: #5a7591; }
 }
 /* How far, lighter than the words beside it (Kevin, 12 Nov 2026): its blue says it. */
 .dist { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }

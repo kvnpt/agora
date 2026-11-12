@@ -561,7 +561,7 @@ test("an event's card says its kind in a pill, and its subtitle under its title"
     VALUES (?, 'manual', 'Men''s Group', 'St Joseph the Betrothed', '2026-10-10T08:00:00Z', 'talk', 'approved', 'headless') RETURNING id`).get(PARISH).id;
   const c = card((await get(`/${id}`)).html);
   // No poster: the band says the kind at its head, in the parish's colour, and the church at its foot.
-  assert.match(c, /<div class="ev-band" style="--j:#7c3bc1">\s*<span class="ev-band-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/span>\s*<a class="ev-at" href="\/sgr"><span class="av [^>]*>[\s\S]*?<\/span><span class="ev-at-name">St George Antiochian Orthodox Cathedral<\/span><\/a><\/div>/);
+  assert.match(c, /<div class="ev-band" style="--j:#8d52e3">\s*<span class="ev-band-kind"><span class="kpill" style="--k-bg:[^"]+">Talk<\/span><\/span>\s*<a class="ev-at" href="\/sgr"><span class="av [^>]*>[\s\S]*?<\/span><span class="ev-at-name">St George Antiochian Orthodox Cathedral<\/span><\/a><\/div>/);
   assert.match(c, /<div class="ev-head">\s*<h1>Men&#39;s Group<\/h1>\s*<p class="ev-sub">St Joseph the Betrothed<\/p>/, 'and not again over the title');
   // A poster has no band: the pill is over the title.
   const poster = raw.prepare(`INSERT INTO events (parish_id, source_adapter, title, start_utc, event_type, status, mutation_type, poster_path)
@@ -1121,8 +1121,8 @@ test('the lite version of a collection colours each row by the jurisdiction it i
   const cu = between((await lite('/antiochian')).html, '<section class="cu-band" id="coming-up">');
   const slot = cu.match(/<div class="slot rows">(?:(?!<div class="slot)[\s\S])*?Liturgy at home[\s\S]*?<\/div>(?=<div class="slot|<\/section>)/);
   assert.ok(slot, 'one slot, each row its own stretch');
-  assert.match(slot[0], /style="--pc:#7c3bc1">[\s\S]*?Liturgy at home/, 'at home, in its own jurisdiction\'s colour');
-  assert.match(slot[0], /style="--pc:#0061fe">[\s\S]*?Liturgy away/, 'away, in the colour of the church it is held in');
+  assert.match(slot[0], /style="--pc:#8d52e3">[\s\S]*?Liturgy at home/, 'at home, in its own jurisdiction\'s colour');
+  assert.match(slot[0], /style="--pc:#0d5eaf">[\s\S]*?Liturgy away/, 'away, in the colour of the church it is held in');
   assert.equal((slot[0].match(/<span class="etime">/g) || []).length, 1, 'and 9am said once');
 });
 

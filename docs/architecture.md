@@ -351,6 +351,15 @@ about Greek. `jurisdiction_colors` in D1 does not make it four: it holds only
 the rows */admin* → Colours has deliberately changed, absence means the file's
 value, and a reset deletes the row rather than writing the default into it.
 
+**Two blues, one job each.** The page's own blue (`--accent` in `next.css`:
+links, buttons) is Greek's, on purpose: most of the parishes are Greek. Where
+you are (`--dist`: the distances, the edge between the map and Today and its
+pin, and your dot in `map.js`) is the electric blue phones use for location,
+kept apart from Greek's in both schemes. The six jurisdictions, the event types
+(`event-types.js`) and these two were chosen together in November 2026, at
+least 10 apart (OKLab ΔE×100) where they sit side by side; a change to one is
+checked against the rest.
+
 **Parishes have no colour of their own.** `public/bundle.js` puts the
 jurisdiction's colour on every parish as `color` the moment the bundle lands —
 before the join copies it onto rules and events as `parish_color` — so every
