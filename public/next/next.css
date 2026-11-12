@@ -31,6 +31,9 @@
   --glass: rgba(255, 255, 255, 0.72);
   --glass-solid: rgba(250, 250, 252, 0.97);
   --glass-line: rgba(255, 255, 255, 0.6);
+  /* The edge of the phone's one card, the map and Today in it: darker
+     than a card's hairline (Kevin, 12 Nov 2026). */
+  --frame: rgba(0, 0, 0, 0.26);
   /* A card's edge: a hairline, as the app's are. Only what floats (a sheet,
      the toolbar on it, a dialog) is lifted. */
   --shadow: 0 0 0 1px var(--hair);
@@ -73,6 +76,7 @@
     --glass: rgba(36, 36, 42, 0.62);
     --glass-solid: rgba(30, 30, 35, 0.97);
     --glass-line: rgba(255, 255, 255, 0.10);
+    --frame: rgba(255, 255, 255, 0.24);
     --shadow: 0 0 0 1px var(--hair);
     --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
     --success: #4ade80;
@@ -161,14 +165,15 @@ body.docked .dock { transform: none; visibility: visible; }
    a shadow: the jurisdiction tabs above the map, the in-view chip under it,
    and in full screen the parish row along the foot of the map. */
 
-.viewport-card {
-  margin: 4px 0 0;
+.viewport-card { margin: 4px 0 0; }
+/* On a phone, one card (Kevin, 12 Nov 2026): the map at its head with the
+   parishes it holds on it as a button, and Today on the same plane under
+   it, a pin on the edge between them. */
+.vc-shell {
+  margin: 10px 12px 0;
   background: var(--card);
-  border-top: 1px solid var(--hair);
-  border-bottom: 1px solid var(--hair);
-}
-@media (min-width: 600px) {
-  .viewport-card { border: 1px solid var(--hair); border-radius: 2px; overflow: hidden; }
+  border-radius: 22px; overflow: hidden;
+  box-shadow: 0 0 0 1px var(--frame);
 }
 
 /* The jurisdiction tabs (app.css .jurisdiction-banner): each in its own
@@ -177,14 +182,15 @@ body.docked .dock { transform: none; visibility: visible; }
 .jurisdiction-banner {
   display: flex; overflow-x: auto; scrollbar-width: none;
   background: var(--card);
+  border-top: 1px solid var(--hair);
   border-bottom: 1px solid var(--hair);
 }
 .jurisdiction-banner::-webkit-scrollbar { display: none; }
 .jurisdiction-chip {
   flex: none;
-  padding: 0 14px;
+  padding: 0 13px;
   height: 40px;
-  font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  font-size: 12.5px; font-weight: 650; letter-spacing: 0.02em; text-transform: uppercase;
   white-space: nowrap;
   color: var(--j);
   border-bottom: 2px solid var(--j);
@@ -194,8 +200,8 @@ body.docked .dock { transform: none; visibility: visible; }
 .jurisdiction-banner .jurisdiction-chip.active { background: var(--j); color: #fff; border-bottom-color: transparent; opacity: 1; }
 
 .viewport {
-  position: relative; height: min(46vh, 380px);
-  margin: 10px 12px 0; border-radius: 14px; overflow: hidden;
+  position: relative; height: min(44vh, 352px);
+  margin: 0; border-radius: 22px 22px 0 0; overflow: hidden;
   background: var(--card-2);
   /* Safari clips a WebGL canvas to the radius only on its own layer. */
   isolation: isolate;
@@ -223,6 +229,16 @@ body.map-beside .viewport .map-filters { top: 16px; }
   .viewport::after { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5); }
 }
 body.map-full .viewport::after { display: none; }
+/* In the phone's one card the card's own edge frames the map, with the
+   glow inside it; where the map ends and Today begins is Today's own edge
+   (.vc-shell > .today). With no Today, the map is the card, rounded all round. */
+@media (max-width: 1079px) {
+  .viewport::after { box-shadow: inset 0 0 12px 3px rgba(255, 255, 255, .9); }
+}
+@media (max-width: 1079px) and (prefers-color-scheme: dark) {
+  .viewport::after { box-shadow: none; }
+}
+.vc-shell:not(:has(> .today:not([hidden]))) > .viewport { border-radius: 22px; }
 .map-fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 44px; height: 44px; border-radius: 50%;
@@ -312,6 +328,40 @@ body.map-full .map-fs .fs-close { display: block; }
 /* One parish in view is that parish, by its full name, on up to two lines. */
 .inview.one .inview-text { white-space: normal; }
 .inview.one .inview-text b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
+/* On a phone, a button on the map's foot at the left, as Near me is at the
+   right (Kevin, 12 Nov 2026): the logos in a box of one size, three at most
+   and larger the fewer, then the count and the way on. One parish is its
+   name, across the map, over Near me. */
+.inview.fab {
+  position: absolute; left: 10px; bottom: 10px; z-index: 2;
+  width: auto; max-width: calc(100% - 74px); min-height: 44px; gap: 8px;
+  padding: 3px 10px 3px 3px; border-radius: 22px;
+  background: var(--glass); color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid var(--hair); box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+  -webkit-tap-highlight-color: transparent;
+}
+.inview.fab.one { right: 10px; max-width: none; }
+.viewport.chip-one .map-locate { display: none; }
+.iv-logos { flex: none; display: flex; align-items: center; justify-content: center; width: 60px; height: 36px; }
+.iv-logos .av { box-shadow: var(--av-ring), 0 0 0 1.5px var(--card); }
+.iv-logos.n3 .av { --s: 28px; }
+.iv-logos.n3 .av + .av { margin-left: -12px; }
+.iv-logos.n2 .av { --s: 34px; }
+.iv-logos.n2 .av + .av { margin-left: -8px; }
+.iv-logos.n1 { width: 36px; }
+.iv-logos.n1 .av { --s: 36px; }
+.iv-count { min-width: 0; font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inview.fab:not(:has(.iv-logos)) { padding-left: 14px; }
+/* Two or three logos start inside the button's round end, the first one's
+   middle on its curve's (Kevin, 12 Nov 2026). */
+.inview.fab:has(.iv-logos.n3) { padding-left: 8px; }
+.inview.fab:has(.iv-logos.n2) { padding-left: 6px; }
+.iv-name {
+  flex: 1; min-width: 0; font-size: 14.5px; font-weight: 650; line-height: 1.2;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.inview.fab .inview-go { flex: none; display: grid; margin-left: -2px; color: var(--text-2); }
 
 /* The parish row (app.css .parish-filter-row-wrap), full screen only: the
    count, then every parish as its logo ringed in its colour, in view first. */
@@ -387,8 +437,8 @@ body.map-full .map-fs .fs-close { display: block; }
   .distance-mid { color: #5b95cc; }
   .distance-far { color: #6c8399; }
 }
-.dist { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dist.distance-near { font-weight: 700; }
+/* How far, lighter than the words beside it (Kevin, 12 Nov 2026): its blue says it. */
+.dist { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* A parish with no logo: its acronym in its colour on white (app.css). */
 .avatar-acronym {
   background: linear-gradient(155deg, #ffffff 0%, #f1f2f5 100%);
@@ -406,10 +456,11 @@ body.map-full .map-fs .fs-close { display: block; }
 body.map-full { overflow: hidden; }
 body.map-full .viewport-card { position: fixed; inset: 0; margin: 0; border: 0; border-radius: 0; z-index: 30; background: transparent; }
 body.map-full .viewport { position: absolute; inset: 0; height: auto; margin: 0; border-radius: 0; }
-body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); }
+body.map-full .jurisdiction-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 31; padding-top: env(safe-area-inset-top); border-top: 0; }
 body.map-full .map-fs { top: calc(41px + 10px + env(safe-area-inset-top)); }
 body.map-full .map-filters { top: calc(41px + 62px + env(safe-area-inset-top)); }
-body.map-full .inview { display: none; }
+body.map-full .inview, body.map-full .vc-shell > .today { display: none; }
+body.map-full .vc-shell { margin: 0; background: transparent; border-radius: 0; box-shadow: none; overflow: visible; }
 body.map-full .parish-row {
   display: flex;
   position: fixed; left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 31;
@@ -583,11 +634,65 @@ body.map-full .parish-row {
   padding: 11px 18px; min-height: 60px;
 }
 .erow + .erow { border-top: 1px solid var(--line); }
-.today .erow + .erow, .today .see-all { border-top-color: var(--line-strong); }
+.today .see-all { border-top-color: var(--line-strong); }
+/* Today's rows spaced as a Calendar's are (Kevin, 12 Nov 2026), the two to
+   meet: the time and the name on one line at the top of the row, no taller
+   than what is in it, a hairline between them inset to the words as the
+   Calendar's are. The row is still the whole width to tap. */
+.today .erow { position: relative; padding: 10px 18px 10px 31px; min-height: 0; align-items: flex-start; }
+/* Each row's line in the colour of the jurisdiction it is held in (its
+   --pc, next.js todayHTML), as a Calendar's rows have it (Kevin, 12 Nov 2026). */
+.today .erow::after {
+  content: ''; position: absolute; left: 18px; top: 10px; bottom: 10px;
+  width: 2px; border-radius: 1px; background: var(--pc, var(--text-3));
+}
+.today .erow .etime { padding-top: 2px; }
+.today .erow + .erow { border-top: 0; }
+.today .erow + .erow::before, .today .erow + .eve::before {
+  content: ''; position: absolute; top: 0; left: 18px; right: 18px; height: 1px; background: var(--line-strong);
+}
 /* A Today with the day and the evening divides them, as a day of the feed does. */
 .today[hidden] { display: none; }
-.today .eve { padding: 10px 18px 2px; }
-.today .erow + .eve { border-top: 1px solid var(--line-strong); }
+.today .eve { position: relative; padding: 10px 18px 2px; }
+/* In the phone's one card, on the map's plane under it, with a pin on the
+   edge between them: what is on is what is on where the map is looking.
+   The edge is blue, as how far is, and the pin breaks it. Yours (your
+   bookmarks or favourites, next.js todayMine) are not the map's: no pin,
+   and the edge the card's own outline, all the way across (Kevin, 12 Nov 2026). */
+.vc-shell > .today {
+  position: relative; margin: 0; border-radius: 0; box-shadow: none; background: none; overflow: visible;
+  border-top: 1px solid color-mix(in srgb, var(--dist) 75%, transparent);
+}
+.vc-shell > .today.mine { border-top-color: var(--frame); }
+.vc-shell > .today.mine::before, .vc-shell > .today.mine::after { content: none; }
+.vc-shell > .today::before {
+  content: ''; position: absolute; top: -1px; left: calc(50% - 14px); width: 28px; height: 1px; background: var(--card);
+}
+.vc-shell > .today::after {
+  content: ''; position: absolute; top: -8px; left: calc(50% - 8px); width: 16px; height: 20px;
+  background: var(--dist);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath fill-rule='evenodd' d='M8 0a7 7 0 0 0-7 7c0 4.9 5.6 11.2 6.3 12a.9.9 0 0 0 1.4 0C9.4 18.2 15 11.9 15 7a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* The page's Today cut off under a fade where it runs long (next.js
+   clipToday, TODAY_CUT), Show all opening the rest in place; Tomorrow at
+   its foot once it is open. */
+.today.clipped .tlist {
+  max-height: 460px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+}
+.today.clipped .see-all { display: none; }
+/* Yours with none yet has no button at its foot: room under its words. */
+.today:not(:has(.see-all)) .tlist { padding-bottom: 14px; }
+.tmore {
+  position: relative; display: flex; align-items: center; gap: 4px; width: max-content;
+  margin: -18px auto 16px; padding: 9px 14px 9px 18px; border-radius: 999px;
+  background: var(--card); box-shadow: 0 0 0 1px var(--line-strong), 0 2px 8px rgba(0, 0, 0, .06);
+  color: var(--accent); font-weight: 600; font-size: 15px;
+}
+.tmore[hidden] { display: none; }
+.tmore svg { transform: rotate(90deg); }
 /* A collection's own Today, above its timetables, and a parish's above its timetable. */
 .ctoday, .ptoday { margin: 14px 18px 0; }
 /* A parish card's focus (/sgr/talk): its next lit in the parish's colour, under
@@ -597,6 +702,24 @@ body.map-full .parish-row {
 .erow.dim, .tt-line.dim { opacity: .38; }
 .tsub.tnext { color: var(--pc, var(--accent)); }
 .card-head:has(.tfocus) { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+/* The page's Today's two buttons, on its right: your bookmarks, your
+   favourites, each in its list's colour once on (next.js todayModesHTML). */
+.card-head:has(.tmodes) { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tmodes { flex: none; display: flex; gap: 2px; margin-right: -8px; }
+.tmode {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  color: var(--text-2); transition: background-color .15s, color .15s;
+}
+.tmode svg { width: 21px; height: 21px; }
+.tmode.bm { --tm: #4f46e5; }
+.tmode.fav { --tm: #b45309; }
+@media (prefers-color-scheme: dark) {
+  .tmode.bm { --tm: #a5b4fc; }
+  .tmode.fav { --tm: #fbbf24; }
+}
+.tmode[aria-pressed="true"] { color: var(--tm); background: color-mix(in srgb, var(--tm) 13%, transparent); }
+@media (hover: hover) { .tmode:hover { background: var(--hover, color-mix(in srgb, var(--text) 6%, transparent)); } .tmode[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--tm) 18%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .tmode { transition: none; } }
 .tfocus {
   flex: none; display: inline-flex; align-items: center; gap: 4px; max-width: 55%;
   margin-top: 2px; padding: 5px 8px 5px 11px; border-radius: 16px;
@@ -2047,7 +2170,8 @@ body.dialog-open { overflow: hidden; }
 
   /* The map: across the page, rounded, its tabs above it on the page. */
   .viewport-card { margin: 6px 0 0; background: none; border: 0; border-radius: 0; overflow: visible; }
-  .jurisdiction-banner { margin: 0 var(--pad); background: none; }
+  .vc-shell { margin: 0; background: none; border-radius: 0; box-shadow: none; overflow: visible; }
+  .jurisdiction-banner { margin: 0 var(--pad); background: none; border-top: 0; }
   body.map-full .jurisdiction-banner { margin: 0; background: var(--card); }
   .viewport { height: clamp(420px, 62vh, 720px); margin: 14px var(--pad) 0; border-radius: 28px; }
   .map-fs { top: 16px; right: 16px; }

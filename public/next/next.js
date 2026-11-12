@@ -94,6 +94,8 @@
     loadedTo: null,          // the last day the bundle holds
     loads: 0,                // bumped as the bundle widens
     panel: null,             // the filters open under their button: { pushed }
+    todayAll: false,         // the page's Today opened in full with Show all (clipToday)
+    todayMode: null,         // the page's Today as your bookmarks ('bm') or favourites ('fav'), not the map's (todayMine)
   };
 
   /**
@@ -214,7 +216,8 @@
     const x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(x));
   }
-  const fmtKm = (d) => d < 1 ? `${Math.round(d * 1000 / 50) * 50}m` : d < 10 ? `${d.toFixed(1)}km` : `${Math.round(d)}km`;
+  // Whole kilometres, a decimal only under one (Kevin, 12 Nov 2026): 0.6km, 3km.
+  const fmtKm = (d) => (Math.round(d * 10) < 10 ? `${Math.max(1, Math.round(d * 10)) / 10}km` : `${Math.round(d)}km`);
   /** How far, in the app's blues: the nearer, the deeper (app.css .distance-near/-mid/-far). */
   const distClass = (d) => (d <= 5 ? 'distance-near' : d <= 15 ? 'distance-mid' : 'distance-far');
   const distHTML = (d, tag = 'em') => `<${tag} class="dist ${distClass(d)}">${esc(fmtKm(d))}</${tag}>`;
@@ -1264,6 +1267,7 @@
     closeFilters();
     document.body.classList.toggle('map-full', on);
     $('#btn-fullscreen').setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+    if (!on) clipToday();
     syncDock();
     setTimeout(() => map && map.resize(), 30);
     setTimeout(() => map && map.resize(), 320);
@@ -1390,11 +1394,24 @@
     // None here: the way to the nearest, or to the filters when none anywhere answers them.
     const away = ps.length ? '' : nearestWords();
     chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
-    chip.innerHTML = one
-      ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-      : ps.length
-        ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
-        : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
+    // On a phone, a button on the map (Kevin, 12 Nov 2026): up to three
+    // logos in a box of one size, larger the fewer they are, and the count;
+    // one parish is its name, the map's width, over Near me.
+    const fab = !WIDE.matches;
+    chip.classList.toggle('fab', fab);
+    $('#viewport').classList.toggle('chip-one', fab && !!one);
+    const n = Math.min(3, ps.length);
+    chip.innerHTML = fab
+      ? one
+        ? `<span class="iv-logos n1">${avatar(one, 'stack')}</span><span class="iv-name">${esc(one.full_name || one.name)}</span><span class="inview-go">${I.chev}</span>`
+        : ps.length
+          ? `<span class="iv-logos n${n}">${ranked.slice(0, n).map(p => avatar(p, 'stack')).join('')}</span><span class="iv-count">${ps.length} ${placeNoun(ps.length)}</span><span class="inview-go">${I.chev}</span>`
+          : `<span class="iv-count">${esc(away)}</span><span class="inview-go">${I.chev}</span>`
+      : one
+        ? `${logos(1)}<span class="inview-text"><b>${esc(one.full_name || one.name)}</b><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+        : ps.length
+          ? `${logos(7)}<span class="inview-text"><span>Viewing <b>${ps.length} ${placeNoun(ps.length)}</b></span><small>${place}</small></span><span class="inview-go">${I.chev}</span>`
+          : `<span class="inview-text"><b>No ${placeNoun(0)} here</b><small>${place ? `${place} · ` : ''}${esc(away)}</small></span><span class="inview-go">${I.chev}</span>`;
     // The dock's, in a line: its short name where the chip has room for the full one.
     $('.dock-chip').innerHTML = `${ps.length ? logos(one ? 1 : 3) : ''}<span class="dock-chip-t"><b>${one ? esc(one.name) : ps.length ? `Viewing ${ps.length}` : 'None in view'}</b><small>${ps.length ? place : esc(away)}</small></span>`;
   }
@@ -1435,7 +1452,7 @@
       let dist = '';
       if (S.loc && isFinite(p.lat) && p.lat != null) {
         const k = km(S.loc, p);
-        dist = `<span class="pill-dist ${distClass(k)}">${esc(k < 10 ? k.toFixed(1) : String(Math.round(k)))}km</span>`;
+        dist = `<span class="pill-dist ${distClass(k)}">${esc(fmtKm(k))}</span>`;
       }
       return `<button class="parish-pill pill-${tone}" type="button" data-parish="${esc(p.id)}" style="--pill-ring:${shown(jColor(p.jurisdiction))}" title="${esc(p.name || '')}" aria-label="${esc(p.name || p.acronym || '')}">${pillLogo(p)}${star}${dist}</button>`;
     }).join('');
@@ -1543,17 +1560,83 @@
       </button>`;
   }
 
-  function renderToday() {
-    const on = feedFor(2).filter(e => eventPasses(e));
-    // Nothing in view but something elsewhere says so, and the way to it,
-    // rather than going without a word; nothing anywhere is still no box.
-    const html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
-    $('#today').innerHTML = html;
-    $('#today').hidden = !html;
+  /**
+   * Where Today and the parishes in view are. On a phone the map and Today
+   * are one card (Kevin, 12 Nov 2026): the parishes in view a button on the
+   * map, Today under it. On a wide screen the parishes in view are the
+   * page's heading under the map, and Today heads the left column, under
+   * any WhatsApp drafts, as they were.
+   */
+  function placeToday() {
+    const t = $('#today'), chip = $('#inview');
+    if (WIDE.matches) {
+      if (t.parentElement !== $('.col-side')) $('#favs').before(t);
+      if (chip.parentElement === $('#viewport')) $('#viewport').after(chip);
+    } else {
+      if (t.parentElement !== $('#vc-shell')) $('#vc-shell').append(t);
+      if (chip.parentElement !== $('#viewport')) $('#viewport').append(chip);
+    }
   }
+  placeToday();
+  WIDE.addEventListener('change', () => { placeToday(); if (S.parishes.length) { renderInViewChip(); clipToday(); } });
+
+  /**
+   * The page's Today is all of the day, cut off under a fade where it runs
+   * long, and Show all opens the rest in place; Tomorrow is at its foot once
+   * it is open (Kevin, 12 Nov 2026). Open stays open while the map moves.
+   * The cut is next.css's (.today.clipped .tlist), kept to when it hides
+   * more than a row or so.
+   */
+  const TODAY_CUT = 460;
+  function clipToday() {
+    const box = $('#today'), list = $('.tlist', box), more = $('.tmore', box);
+    if (!list || !more) return;
+    // Not drawn (the full-screen map hides it): measured again when it is.
+    if (!list.getClientRects().length) return;
+    const clip = !S.todayAll && list.scrollHeight > TODAY_CUT + 100;
+    box.classList.toggle('clipped', clip);
+    more.hidden = !clip;
+  }
+
+  function renderToday() {
+    const mode = S.todayMode;
+    let html;
+    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, empty: todayMineEmpty(mode) });
+    else {
+      const on = feedFor(2).filter(e => eventPasses(e));
+      // Nothing in view but something elsewhere says so, and the way to it,
+      // rather than going without a word; nothing anywhere is still no box.
+      html = todayHTML(on.filter(inViewEvent), { lang: S.f.lang, full: true, mode }) || (S.bounds && todayHTML(on) ? todayAwayHTML() : '');
+    }
+    const box = $('#today');
+    box.innerHTML = html;
+    box.hidden = !html;
+    // Yours, not the map's: the pin between them goes, and the edge is the card's own (next.css).
+    box.classList.toggle('mine', !!mode);
+    clipToday();
+  }
+  /**
+   * The page's Today as yours rather than the map's (Kevin, 12 Nov 2026):
+   * what you bookmarked, or what is on at the parishes you starred, wherever
+   * the map is and whatever its filters ask. A cancelled one still says so.
+   */
+  function todayMine(mode) {
+    const m = marks(), fav = new Set(favIds());
+    return feedFor(2).filter(e => (visible(e) || tombOf(e))
+      && (mode === 'bm' ? isBookmarked(e, m) : [e.location_parish_id, ...eventParishIds(e)].some(id => fav.has(id))));
+  }
+  function todayMineEmpty(mode) {
+    if (mode === 'bm') return readLS(BOOKMARKS).length ? 'Nothing you bookmarked is on today.' : 'Bookmark a service or an event to see it here.';
+    return favIds().length ? 'Nothing more on today at your favourites.' : 'Star a parish to see what’s on there today.';
+  }
+  /** The page's Today's two buttons, on its right: your bookmarks, your favourites; a second tap is the map's again. */
+  const todayModesHTML = () => {
+    const btn = (m, label, off, on) => `<button class="tmode ${m}" type="button" data-today-mode="${m}" aria-pressed="${S.todayMode === m}" aria-label="${label}" title="${label}">${S.todayMode === m ? on : off}</button>`;
+    return `<div class="tmodes" role="group" aria-label="Today">${btn('bm', 'Today’s bookmarks', I.bookmark, I.bookmarkOn)}${btn('fav', 'Today at your favourites', I.star, I.starOn)}</div>`;
+  };
   function todayAwayHTML() {
     const d = new Date(todayKey() + 'T00:00:00Z');
-    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div></header>
+    return `<header class="card-head"><div><h2>Today</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${todayModesHTML()}</header>
       <div class="tempty">Nothing on in view.</div>
       <button class="see-all" type="button" data-nearest="on">Show what's on nearest ${I.chev}</button>`;
   }
@@ -1573,7 +1656,7 @@
    * day where it is not; 'none' when there is none. `clear` names the focus
    * on the button that lets it go.
    */
-  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null } = {}) {
+  function todayHTML(all, { here = null, focus = null, next = null, clear = '', lang = null, full = false, mode, empty = '' } = {}) {
     const now = Date.now();
     const t = todayKey();
     const live = all.filter(e => Date.parse(e.start_utc) <= now && endMs(e) > now);
@@ -1588,22 +1671,26 @@
       let div = '';
       if (!isEvening(e)) day = true;
       else if (!eve) { eve = true; if (day) div = EVENING; }
-      return div + eventRow(e, { ...o, here, focus, lang, lit: !!next && next.id === e.id });
+      // Each row's line in the colour of the jurisdiction it is held in, as
+      // a collection's Calendar has it; a parish's card's are the parish's.
+      return div + eventRow(e, { ...o, here, focus, lang, lit: !!next && next.id === e.id, tint: here ? null : venueColor(e) });
     }).join('');
     let title = 'Today', k = t, body = '';
     const showsTomorrow = !live.length && !later.length && tomorrow.length > 0;
-    if (!live.length && !later.length && !showsTomorrow && !next && !clear) return '';
+    if (!live.length && !later.length && !showsTomorrow && !next && !clear && !empty) return '';
+    // `full`, the page's: the whole day, cut off by clipToday where it runs long.
+    const upTo = (es, n) => (full ? es : es.slice(0, n));
     if (live.length) {
-      body += `<div class="tsub">Happening now</div>${rows(live.slice(0, 4), { now: true })}`;
-      if (later.length) body += `<div class="tsub">Later today</div>${rows(later.slice(0, 3))}`;
+      body += `<div class="tsub">Happening now</div>${rows(upTo(live, 4), { now: true })}`;
+      if (later.length) body += `<div class="tsub">Later today</div>${rows(upTo(later, 3))}`;
     } else if (later.length) {
       if (later.every(isEvening)) title = 'This evening';
-      body += rows(later.slice(0, 5));
+      body += rows(upTo(later, 5));
     } else if (showsTomorrow) {
       title = 'Tomorrow';
       k = addDays(t, 1);
-      body += rows(tomorrow.slice(0, 4));
-    } else body += '<div class="tempty">Nothing more today.</div>';
+      body += rows(upTo(tomorrow, 4));
+    } else body += `<div class="tempty">${esc(empty || 'Nothing more today.')}</div>`;
     // The next that answers the focus, by its day, where the rows above do not have it.
     if (next === 'none') body += `<div class="tsub">${esc(clear)}</div><div class="tempty">None on file in the next few months.</div>`;
     else if (next && !seen.includes(next.id)) {
@@ -1613,9 +1700,13 @@
     const d = new Date(k + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
-    return `<header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}</header>
-      ${body}
-      <button class="see-all" type="button" data-jump="tomorrow">${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
+    // The page's (`mode` given, null for the map's) has its two buttons on
+    // the right; as yours, Tomorrow goes on in your Favourites' or
+    // Bookmarks' own card, and there is none to go on to before you have any.
+    const onTo = mode === 'fav' ? favIds().length : mode === 'bm' ? readLS(BOOKMARKS).length : true;
+    return `<header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML() : ''}</header>
+      ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
+      ${onTo ? `<button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>` : ''}`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
@@ -1797,6 +1888,8 @@
     $('#shelf-lists').innerHTML = rows.length ? `${secHead('Your lists')}<div class="hlist">${rows.join('')}
         <button class="hrow new" type="button" data-newlist><span class="hic">${I.plusSm}</span><span class="ht"><b>New list</b></span></button></div>` : '';
     renderPanel();
+    // A Today of your bookmarks or favourites follows them as they change.
+    if (S.todayMode) renderToday();
   }
 
   // ── What's on: the one-offs, poster first ─────────────────────────────
@@ -1993,7 +2086,8 @@
   function toDay(el, k, { smooth = true } = {}) {
     if (!el || !el.querySelector('.cu')) return;
     const day = [...el.querySelectorAll('.cu [data-date]')].find(d => d.dataset.date >= k);
-    (day || el.querySelector('.cu-band')).scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+    const to = day || el.querySelector('.cu-band');
+    if (to) to.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
   }
   /**
    * A link that names a collection opens its card. One that names parishes
@@ -4136,7 +4230,7 @@
       if (!byDay.has(k)) byDay.set(k, []);
       byDay.get(k).push(e);
     }
-    const days = [...byDay].map(([k, es]) => `<section class="sday"><h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span></h3>${es.map(e => eventRow(e)).join('')}</section>`).join('');
+    const days = [...byDay].map(([k, es]) => `<section class="sday" data-date="${k}"><h3 class="dh${weekdayOf(k) === 0 ? ' sun' : ''}"><span>${esc(dayLabel(k, true))}</span></h3>${es.map(e => eventRow(e)).join('')}</section>`).join('');
     // A service bookmarked whole: its line, and its parish, which opens.
     const services = rules.map(r => {
       const p = S.byId.get(r.parish_id);
@@ -4770,6 +4864,8 @@
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
     if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else showNearest(); return; }
+    if (t.closest('[data-act="today-all"]')) { S.todayAll = true; clipToday(); return; }
+    if ((b = t.closest('[data-today-mode]'))) { const m = b.dataset.todayMode; S.todayMode = S.todayMode === m ? null : m; renderToday(); return; }
     if ((b = t.closest('[data-nearest]'))) {
       closeAll();
       // Today's: the nearest with something on, today or tomorrow.
@@ -4844,9 +4940,13 @@
     if ((b = t.closest('[data-jump]'))) {
       // Tomorrow on: a card's Today goes on in the card's own Calendar, the
       // page's in the In view card's.
+      // Your Today's goes on in your Favourites' card, or your Bookmarks'.
       const sheet = b.closest('.sheet');
       const k = addDays(todayKey(), 1);
-      if (sheet) toDay(sheet, k); else openInView({ at: k });
+      if (sheet) toDay(sheet, k);
+      else if (b.dataset.mine === 'fav') { const c = COLL.get('list-fav'); if (c) { openCollection(c); toDay(stack[stack.length - 1], k); } }
+      else if (b.dataset.mine === 'bm') toDay(openBookmarks(), k);
+      else openInView({ at: k });
       return;
     }
 
