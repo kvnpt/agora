@@ -1271,7 +1271,7 @@ body:has(#sheets > .ssr) #scrim { display: block; }
   background: rgba(255, 255, 255, .18); font-weight: 650; font-size: 14.5px;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
-/* A label that wraps ("Save as list" beside two others) stays centred under
+/* A label that wraps ("Create list" beside two others) stays centred under
    its icon, and the icons stay level along the row. */
 .hbtn span { text-align: center; line-height: 1.2; }
 /* Every head but a jurisdiction's is its tint (.soft): the words in the
