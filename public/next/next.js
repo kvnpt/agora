@@ -1099,16 +1099,19 @@
   window.agoraSheetY = () => window.innerHeight;
   // What lights a halo, and which parishes are "active": this page's filters,
   // never the viewport (map.js's own rule).
-  window.applyFilters = window.applyNonViewportFilters = (evs) => evs.filter(e => eventPasses(e, { scoped: false }));
+  // Yours are lit whatever the filters ask, as Today has them.
+  window.applyFilters = window.applyNonViewportFilters = (evs) => evs.filter(e => (S.todayMode && !S.mapCard ? visible(e) : eventPasses(e, { scoped: false })));
   window.agoraOnViewportMapPhase = () => onView();
 
   function syncMap() {
     if (!map) return;
     // In a card, the card's parishes and nothing of the page's.
     const own = S.mapCard;
+    // Yours (Today's bookmark or star): their places only, lit by their own.
+    const mode = !own && S.todayMode, mine = mode ? mineIds(mode) : null;
     const dim = S.juris || filtersOn();
-    mapState.parishes = own ? S.parishes.filter(p => own.ids.has(p.id)) : dim ? S.parishes.filter(parishPasses) : S.parishes;
-    mapState.events = own ? feedFor(2).filter(e => eventParishIds(e).some(id => own.ids.has(id))) : feedFor(2);
+    mapState.parishes = own ? S.parishes.filter(p => own.ids.has(p.id)) : mine ? S.parishes.filter(p => mine.has(p.id)) : dim ? S.parishes.filter(parishPasses) : S.parishes;
+    mapState.events = own ? feedFor(2).filter(e => eventParishIds(e).some(id => own.ids.has(id))) : mine ? feedFor(2).filter(e => isMine(mode, e)) : feedFor(2);
     mapState.locationActive = !!S.loc;
     mapState.userLat = S.loc ? S.loc.lat : null;
     mapState.userLng = S.loc ? S.loc.lng : null;
@@ -1332,7 +1335,8 @@
   // collection.
 
   function viewParishes() {
-    return S.parishes.filter(p => (!S.inView || S.inView.has(p.id)) && parishPasses(p));
+    const mine = S.todayMode ? mineIds(S.todayMode) : null;
+    return S.parishes.filter(p => (!S.inView || S.inView.has(p.id)) && (mine ? mine.has(p.id) : parishPasses(p)));
   }
   // What the places in view are called: monasteries under /monasteries.
   const placeNoun = (n) => S.f.monasteries ? (n === 1 ? 'monastery' : 'monasteries') : (n === 1 ? 'parish' : 'parishes');
@@ -1392,7 +1396,7 @@
     const chip = $('#inview');
     chip.classList.toggle('one', !!one);
     // None here: the way to the nearest, or to the filters when none anywhere answers them.
-    const away = ps.length ? '' : nearestWords();
+    const away = ps.length ? '' : S.todayMode === 'fav' ? 'Show your favourites' : S.todayMode === 'bm' ? 'Show your bookmarks' : nearestWords();
     chip.setAttribute('aria-label', one ? `${one.full_name || one.name}: open its card` : !ps.length ? `No ${placeNoun(0)} here: ${away}` : S.f.monasteries ? 'Monasteries in view' : 'Parishes in view');
     // On a phone, a button on the map (Kevin, 12 Nov 2026): up to three
     // logos in a box of one size, larger the fewer they are, and the count;
@@ -1599,9 +1603,11 @@
   }
 
   function renderToday() {
+    // Yours with none left (the last star taken off) is the map's again.
+    if (S.todayMode && !hasMine(S.todayMode)) { setTodayMode(null); return; }
     const mode = S.todayMode;
     let html;
-    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, empty: todayMineEmpty(mode) });
+    if (mode) html = todayHTML(todayMine(mode), { full: true, mode, empty: mode === 'bm' ? 'Nothing more today that you bookmarked.' : 'Nothing more today at your favourites.' });
     else {
       const on = feedFor(2).filter(e => eventPasses(e));
       // Nothing in view but something elsewhere says so, and the way to it,
@@ -1616,23 +1622,57 @@
     clipToday();
   }
   /**
-   * The page's Today as yours rather than the map's (Kevin, 12 Nov 2026):
-   * what you bookmarked, or what is on at the parishes you starred, wherever
-   * the map is and whatever its filters ask. A cancelled one still says so.
+   * The page as yours rather than the map's (Kevin, 12 Nov 2026): Today is
+   * what you bookmarked, or what is on at the parishes you starred, all of
+   * it, wherever the map is looking and whatever its filters ask; the map
+   * shows only their places (syncMap), and the parishes button counts those
+   * (viewParishes). A cancelled one still says so.
    */
+  const isMine = (mode, e, m = marks(), fav = new Set(favIds())) =>
+    mode === 'bm' ? isBookmarked(e, m) : [e.location_parish_id, ...eventParishIds(e)].some(id => fav.has(id));
   function todayMine(mode) {
     const m = marks(), fav = new Set(favIds());
-    return feedFor(2).filter(e => (visible(e) || tombOf(e))
-      && (mode === 'bm' ? isBookmarked(e, m) : [e.location_parish_id, ...eventParishIds(e)].some(id => fav.has(id))));
+    return feedFor(2).filter(e => (visible(e) || tombOf(e)) && isMine(mode, e, m, fav));
   }
-  function todayMineEmpty(mode) {
-    if (mode === 'bm') return readLS(BOOKMARKS).length ? 'Nothing you bookmarked is on today.' : 'Bookmark a service or an event to see it here.';
-    return favIds().length ? 'Nothing more on today at your favourites.' : 'Star a parish to see what’s on there today.';
+  /**
+   * Yours, read once while nothing changes (a map move asks again; the
+   * bookmarks' days ahead are a long read): whether you have any — a parish
+   * starred, or a bookmark still to come, as Your lists' Bookmarks row has
+   * it — and their places: your favourites, or where what you bookmarked is held.
+   */
+  const mineCache = new Map();
+  function mineOf(mode) {
+    const key = `${lsGet(mode === 'bm' ? BOOKMARKS : FAV)}|${S.loads}|${new Date().toISOString().slice(0, 13)}`;
+    const had = mineCache.get(mode);
+    if (had && had.key === key) return had;
+    let ids;
+    if (mode === 'fav') ids = new Set(favIds());
+    else {
+      const { dates, rules } = readLS(BOOKMARKS).length ? bookmarked() : { dates: [], rules: [] };
+      ids = new Set([...dates, ...rules].map(x => x.location_parish_id || x.parish_id).filter(id => S.byId.has(id)));
+      ids.any = dates.length > 0 || rules.length > 0;
+    }
+    const out = { key, ids, has: mode === 'fav' ? ids.size > 0 : ids.any };
+    mineCache.set(mode, out);
+    return out;
   }
-  /** The page's Today's two buttons, on its right: your bookmarks, your favourites; a second tap is the map's again. */
+  const hasMine = (mode) => mineOf(mode).has;
+  const mineIds = (mode) => mineOf(mode).ids;
+  function setTodayMode(mode) {
+    S.todayMode = mode;
+    renderToday();
+    syncMap();
+    renderInView();
+  }
+  /**
+   * The page's Today's buttons, on its right: your bookmarks and your
+   * favourites, each only once you have some (Kevin, 12 Nov 2026); a second
+   * tap is the map's again.
+   */
   const todayModesHTML = () => {
     const btn = (m, label, off, on) => `<button class="tmode ${m}" type="button" data-today-mode="${m}" aria-pressed="${S.todayMode === m}" aria-label="${label}" title="${label}">${S.todayMode === m ? on : off}</button>`;
-    return `<div class="tmodes" role="group" aria-label="Today">${btn('bm', 'Today’s bookmarks', I.bookmark, I.bookmarkOn)}${btn('fav', 'Today at your favourites', I.star, I.starOn)}</div>`;
+    const bs = [hasMine('bm') && btn('bm', 'Your bookmarks', I.bookmark, I.bookmarkOn), hasMine('fav') && btn('fav', 'Your favourites', I.star, I.starOn)].filter(Boolean);
+    return bs.length ? `<div class="tmodes" role="group" aria-label="Today">${bs.join('')}</div>` : '';
   };
   function todayAwayHTML() {
     const d = new Date(todayKey() + 'T00:00:00Z');
@@ -1700,13 +1740,14 @@
     const d = new Date(k + 'T00:00:00Z');
     // Tomorrow is the Events feed's, from its day on: the rest of the week,
     // once tomorrow is here already.
-    // The page's (`mode` given, null for the map's) has its two buttons on
-    // the right; as yours, Tomorrow goes on in your Favourites' or
-    // Bookmarks' own card, and there is none to go on to before you have any.
-    const onTo = mode === 'fav' ? favIds().length : mode === 'bm' ? readLS(BOOKMARKS).length : true;
-    return `<header class="card-head"><div><h2>${title}</h2><p>${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML() : ''}</header>
+    // The page's (`mode` given, null for the map's) has its buttons on the
+    // right; as yours, Tomorrow goes on in your Favourites' or Bookmarks' own card.
+    // Yours is titled so, its day under it: "Favourites", "Today · Sunday 15 Nov".
+    const date = `${WD_LONG[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
+    const head = mode === 'bm' ? 'Bookmarks' : mode === 'fav' ? 'Favourites' : title;
+    return `<header class="card-head"><div><h2>${head}</h2><p>${mode ? `${title} · ` : ''}${date}</p></div>${clear ? `<button class="tfocus" type="button" data-act="unfocus" aria-label="${esc(`Show everything, not only ${clear.toLowerCase()}`)}"><span>${esc(clear)}</span>${I.x}</button>` : ''}${mode !== undefined ? todayModesHTML() : ''}</header>
       ${full ? `<div class="tlist">${body}</div><button class="tmore" type="button" data-act="today-all" hidden>Show all ${I.chev}</button>` : body}
-      ${onTo ? `<button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>` : ''}`;
+      <button class="see-all" type="button" data-jump="tomorrow"${mode ? ` data-mine="${mode}"` : ''}>${showsTomorrow ? 'This week' : !live.length && !later.length ? 'Calendar' : 'Tomorrow'} ${I.chev}</button>`;
   }
 
   // ── The page under Today: Favourites, lists, collections ──────────────
@@ -1888,8 +1929,9 @@
     $('#shelf-lists').innerHTML = rows.length ? `${secHead('Your lists')}<div class="hlist">${rows.join('')}
         <button class="hrow new" type="button" data-newlist><span class="hic">${I.plusSm}</span><span class="ht"><b>New list</b></span></button></div>` : '';
     renderPanel();
-    // A Today of your bookmarks or favourites follows them as they change.
-    if (S.todayMode) renderToday();
+    // Today's buttons come with your first bookmark or star, and yours
+    // (Today and the map) follows them as they change.
+    if (S.parishes.length && S.bounds) { renderToday(); if (S.todayMode) { syncMap(); renderInView(); } }
   }
 
   // ── What's on: the one-offs, poster first ─────────────────────────────
@@ -2048,11 +2090,13 @@
     // means wherever they are when it asks something; else (a date alone, or
     // the chip) those the map is showing. From the chip or Today, the map's
     // own filters: it is the map's card.
-    const f0 = link ? link.f : S.f, j0 = link ? link.juris : S.juris;
+    // The map as yours (Today's bookmark or star): yours in view, unfiltered, as the map shows them.
+    const mine = !link && S.todayMode ? mineIds(S.todayMode) : null;
+    const f0 = link ? link.f : mine ? blankFilters() : S.f, j0 = link ? link.juris : mine ? null : S.juris;
     // A saved view (/greek+serbian) is its parishes wherever they are, as a list is.
     // A city's own page (/sydney) is every parish in it, as its head says.
     const everywhere = !!link && !!(view || place || f0.parishIds || asksWhat(f0) || f0.lang);
-    const inView = (p) => everywhere || !S.inView || S.inView.has(p.id);
+    const inView = (p) => (everywhere || !S.inView || S.inView.has(p.id)) && (!mine || mine.has(p.id));
     const pick = (f, juris = j0) => S.parishes.filter(p => inView(p) && parishMatches(p, f, juris)).map(p => p.id);
     const ids = pick(f0);
     const say = (xs, f, juris) => viewWords(xs, f, juris, { here: !everywhere });
@@ -4863,9 +4907,9 @@
       return;
     }
     if (t.closest('#btn-favourites')) { const c = COLL.get('list-fav'); if (c) openCollection(c); return; }
-    if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else showNearest(); return; }
+    if (t.closest('#inview, [data-inview]')) { if (viewParishes().length) openInView(); else if (S.todayMode) { window.scrollTo({ top: 0, behavior: 'smooth' }); fitTo(mineIds(S.todayMode)); } else showNearest(); return; }
     if (t.closest('[data-act="today-all"]')) { S.todayAll = true; clipToday(); return; }
-    if ((b = t.closest('[data-today-mode]'))) { const m = b.dataset.todayMode; S.todayMode = S.todayMode === m ? null : m; renderToday(); return; }
+    if ((b = t.closest('[data-today-mode]'))) { const m = b.dataset.todayMode; setTodayMode(S.todayMode === m ? null : m); return; }
     if ((b = t.closest('[data-nearest]'))) {
       closeAll();
       // Today's: the nearest with something on, today or tomorrow.
